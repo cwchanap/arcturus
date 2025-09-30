@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+package-lock.json
+bun.lock
+
+# Build outputs
+dist/
+.astro/
+
+# Environment files
+.env
+.env.*
+
+# Logs
+*.log
+
+# Database
+drizzle/**/*.sql
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other
+coverage/
+.cache/

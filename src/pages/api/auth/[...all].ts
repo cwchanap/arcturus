@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 
 export const ALL: APIRoute = async (context) => {
 	const runtime = context.locals.runtime;
-	
+
 	if (!runtime?.env?.DB) {
 		return new Response('Database not configured', { status: 500 });
 	}
@@ -13,6 +13,6 @@ export const ALL: APIRoute = async (context) => {
 	const baseURL = `${url.protocol}//${url.host}`;
 
 	const auth = createAuth(runtime.env.DB, runtime.env, baseURL);
-	
+
 	return auth.handler(context.request);
 };

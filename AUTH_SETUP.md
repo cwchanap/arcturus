@@ -214,17 +214,20 @@ Extend the schema in `src/db/schema.ts` as needed for your application.
 ## Architecture
 
 ### Server-Side Components
+
 - `src/lib/auth.ts` - Better Auth server configuration (accepts DB binding and env)
 - `src/middleware.ts` - Global middleware that adds session to all requests
 - `src/pages/api/auth/[...all].ts` - Handles all auth API routes
 
 ### Client-Side Components
+
 - `src/lib/auth-client.ts` - Better Auth client for browser interactions
 - `src/pages/signin.astro` & `signup.astro` - Authentication pages
 - `src/pages/dashboard.astro` - Example protected page
 - `src/components/UserNav.astro` - Navigation component showing user state
 
 ### Database
+
 - `src/db/schema.ts` - Drizzle ORM schema definitions
 - `src/lib/db.ts` - Database client factory
 - `drizzle.config.ts` - Drizzle Kit configuration for migrations
@@ -234,6 +237,7 @@ Extend the schema in `src/db/schema.ts` as needed for your application.
 ### "Database not configured" error
 
 Ensure:
+
 1. D1 database is created: `bunx wrangler d1 list`
 2. `wrangler.toml` has the correct `database_id` (not "YOUR_DATABASE_ID_HERE")
 3. Migrations are applied: `bun run db:migrate:local`
@@ -241,6 +245,7 @@ Ensure:
 ### Authentication not working locally
 
 Check:
+
 1. Dev server is running: `bun run dev`
 2. Database migrations are applied
 3. No errors in the console
@@ -248,6 +253,7 @@ Check:
 ### OAuth redirect issues
 
 Verify:
+
 1. Callback URLs match exactly in OAuth provider settings
 2. For local dev: `http://localhost:4321/api/auth/callback/{provider}`
 3. For production: `https://your-domain.com/api/auth/callback/{provider}`
@@ -256,6 +262,7 @@ Verify:
 ### Build fails
 
 Try:
+
 1. Delete `node_modules` and reinstall: `rm -rf node_modules && bun install`
 2. Clear Astro cache: `rm -rf .astro`
 3. Rebuild: `bun run build`
@@ -314,16 +321,19 @@ Example of adding a posts table:
 
 ```typescript
 export const posts = sqliteTable('posts', {
-  id: text('id').primaryKey(),
-  title: text('title').notNull(),
-  content: text('content').notNull(),
-  userId: text('userId').notNull().references(() => user.id),
-  createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+	id: text('id').primaryKey(),
+	title: text('title').notNull(),
+	content: text('content').notNull(),
+	userId: text('userId')
+		.notNull()
+		.references(() => user.id),
+	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 });
 ```
 
 2. Generate migration:
+
 ```bash
 bun run db:generate
 ```
@@ -331,12 +341,14 @@ bun run db:generate
 3. Review the generated SQL in `drizzle/` directory
 
 4. Apply migration:
+
 ```bash
 bun run db:migrate:local  # For local
 bun run db:migrate:remote # For production
 ```
 
 5. Use in your code:
+
 ```typescript
 import { createDb } from '../lib/db';
 

@@ -3,6 +3,7 @@
 ## 🚀 Get Started in 3 Steps
 
 ### 1. Install & Setup Database
+
 ```bash
 # Install dependencies
 bun install
@@ -17,12 +18,14 @@ bunx wrangler d1 create arcturus-db
 ```
 
 ### 2. Apply Database Schema
+
 ```bash
 # Apply migrations to local database
 bun run db:migrate:local
 ```
 
 ### 3. Start Development
+
 ```bash
 # Start dev server
 bun run dev
@@ -33,6 +36,7 @@ bun run dev
 ## 📋 Common Commands
 
 ### Development
+
 ```bash
 bun run dev              # Start dev server (http://localhost:4321)
 bun run build            # Build for production
@@ -40,6 +44,7 @@ bun run preview          # Preview production build
 ```
 
 ### Database
+
 ```bash
 bun run db:generate      # Generate new migration after schema changes
 bun run db:migrate:local # Apply migrations locally
@@ -47,6 +52,7 @@ bun run db:studio        # Open Drizzle Studio (visual DB manager)
 ```
 
 ### Deployment
+
 ```bash
 # Set production secret (first time only)
 openssl rand -base64 32  # Generate secret
@@ -58,13 +64,13 @@ bun run deploy           # Build and deploy to Cloudflare
 
 ## 🔐 Authentication Routes
 
-| Route | Description |
-|-------|-------------|
-| `/` | Home page (public) |
-| `/signin` | Sign in page |
-| `/signup` | Sign up page |
-| `/dashboard` | Protected page (requires auth) |
-| `/api/auth/*` | Auth API endpoints |
+| Route         | Description                    |
+| ------------- | ------------------------------ |
+| `/`           | Home page (public)             |
+| `/signin`     | Sign in page                   |
+| `/signup`     | Sign up page                   |
+| `/dashboard`  | Protected page (requires auth) |
+| `/api/auth/*` | Auth API endpoints             |
 
 ## 🏗️ Project Structure
 
@@ -100,6 +106,7 @@ src/
 ## 🔧 Adding OAuth (Optional)
 
 ### GitHub
+
 1. Create OAuth App at https://github.com/settings/developers
 2. Set callback URL: `http://localhost:4321/api/auth/callback/github`
 3. Add to `.env`:
@@ -109,6 +116,7 @@ src/
    ```
 
 ### Google
+
 1. Create OAuth App at https://console.cloud.google.com/
 2. Set redirect URI: `http://localhost:4321/api/auth/callback/google`
 3. Add to `.env`:
@@ -120,11 +128,13 @@ src/
 ## 🐛 Troubleshooting
 
 ### "Database not configured"
+
 - Make sure D1 database is created
 - Check `wrangler.toml` has correct `database_id`
 - Run `bun run db:migrate:local`
 
 ### Build fails
+
 ```bash
 rm -rf node_modules .astro dist
 bun install
@@ -132,6 +142,7 @@ bun run build
 ```
 
 ### Can't sign in locally
+
 - Check dev server is running
 - Check browser console for errors
 - Verify database has tables: `bun run db:studio`

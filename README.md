@@ -10,6 +10,7 @@ An Astro project with Better Auth, Drizzle ORM, and Cloudflare D1 database integ
 - 🗄️ **Drizzle ORM** - TypeScript ORM
 - ☁️ **Cloudflare D1** - Edge-native SQL database
 - 🌐 **Cloudflare Workers** - Deploy globally on the edge
+- ✨ **Code Quality** - ESLint, Prettier, Husky, lint-staged
 
 ## Authentication Features
 
@@ -68,18 +69,35 @@ Visit `http://localhost:4321`
 
 ## Available Scripts
 
+### Development
+
 - `bun run dev` - Start development server
 - `bun run build` - Build for production
 - `bun run preview` - Preview production build
+
+### Database
+
 - `bun run db:generate` - Generate database migrations
-- `bun run db:migrate` - Apply migrations locally
+- `bun run db:migrate:local` - Apply migrations locally
+- `bun run db:migrate:remote` - Apply migrations to production
 - `bun run db:studio` - Open Drizzle Studio
+
+### Code Quality
+
+- `bun run lint` - Check code with ESLint
+- `bun run lint:fix` - Fix ESLint issues
+- `bun run format` - Format code with Prettier
+- `bun run format:check` - Check formatting
+
+### Deployment
+
 - `bun run deploy` - Build and deploy to Cloudflare
 
 ## Project Structure
 
 ```
 /
+├── .husky/                # Git hooks
 ├── drizzle/              # Database migrations
 ├── public/               # Static assets
 ├── src/
@@ -114,6 +132,7 @@ Visit `http://localhost:4321`
 ## Database Schema
 
 The project includes tables for:
+
 - **users** - User accounts
 - **sessions** - Active sessions
 - **accounts** - OAuth provider accounts
@@ -134,6 +153,17 @@ wrangler deploy
 ```
 
 For detailed deployment instructions, see [AUTH_SETUP.md](./AUTH_SETUP.md).
+
+## Code Quality
+
+This project uses modern linting and formatting tools:
+
+- **ESLint** - Flat config with TypeScript and Astro support
+- **Prettier** - Consistent code formatting
+- **Husky** - Git hooks for automated checks
+- **lint-staged** - Run checks only on changed files
+
+See [CODE_QUALITY.md](./CODE_QUALITY.md) for details.
 
 ## Configuration
 
@@ -162,4 +192,3 @@ Detailed instructions in [AUTH_SETUP.md](./AUTH_SETUP.md).
 ## License
 
 MIT
-

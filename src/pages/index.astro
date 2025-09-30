@@ -28,39 +28,44 @@ const user = Astro.locals.user;
 				<h2 class="text-4xl font-extrabold text-gray-900 sm:text-5xl md:text-6xl">
 					Welcome to <span class="text-indigo-600">Arcturus</span>
 				</h2>
-				<p class="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
-					A modern authentication system built with Astro, Better Auth, Drizzle ORM, and Cloudflare D1.
+				<p
+					class="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl"
+				>
+					A modern authentication system built with Astro, Better Auth, Drizzle ORM, and Cloudflare
+					D1.
 				</p>
-				
-				{!user ? (
-					<div class="mt-5 max-w-md mx-auto sm:flex sm:justify-center md:mt-8">
-						<div class="rounded-md shadow">
+
+				{
+					!user ? (
+						<div class="mt-5 max-w-md mx-auto sm:flex sm:justify-center md:mt-8">
+							<div class="rounded-md shadow">
+								<a
+									href="/signup"
+									class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10"
+								>
+									Get Started
+								</a>
+							</div>
+							<div class="mt-3 rounded-md shadow sm:mt-0 sm:ml-3">
+								<a
+									href="/signin"
+									class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10"
+								>
+									Sign In
+								</a>
+							</div>
+						</div>
+					) : (
+						<div class="mt-5 max-w-md mx-auto">
 							<a
-								href="/signup"
-								class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10"
+								href="/dashboard"
+								class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10"
 							>
-								Get Started
+								Go to Dashboard
 							</a>
 						</div>
-						<div class="mt-3 rounded-md shadow sm:mt-0 sm:ml-3">
-							<a
-								href="/signin"
-								class="w-full flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-indigo-600 bg-white hover:bg-gray-50 md:py-4 md:text-lg md:px-10"
-							>
-								Sign In
-							</a>
-						</div>
-					</div>
-				) : (
-					<div class="mt-5 max-w-md mx-auto">
-						<a
-							href="/dashboard"
-							class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10"
-						>
-							Go to Dashboard
-						</a>
-					</div>
-				)}
+					)
+				}
 			</div>
 
 			<!-- Features -->
@@ -69,12 +74,26 @@ const user = Astro.locals.user;
 					<div class="pt-6">
 						<div class="flow-root bg-white rounded-lg px-6 pb-8">
 							<div class="-mt-6">
-								<div class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg">
-									<svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+								<div
+									class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg"
+								>
+									<svg
+										class="h-6 w-6 text-white"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+										></path>
 									</svg>
 								</div>
-								<h3 class="mt-8 text-lg font-medium text-gray-900 tracking-tight">Secure Authentication</h3>
+								<h3 class="mt-8 text-lg font-medium text-gray-900 tracking-tight">
+									Secure Authentication
+								</h3>
 								<p class="mt-5 text-base text-gray-500">
 									Built with Better Auth for secure email/password and OAuth authentication.
 								</p>
@@ -85,9 +104,21 @@ const user = Astro.locals.user;
 					<div class="pt-6">
 						<div class="flow-root bg-white rounded-lg px-6 pb-8">
 							<div class="-mt-6">
-								<div class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg">
-									<svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+								<div
+									class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg"
+								>
+									<svg
+										class="h-6 w-6 text-white"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"
+										></path>
 									</svg>
 								</div>
 								<h3 class="mt-8 text-lg font-medium text-gray-900 tracking-tight">Cloudflare D1</h3>
@@ -101,12 +132,25 @@ const user = Astro.locals.user;
 					<div class="pt-6">
 						<div class="flow-root bg-white rounded-lg px-6 pb-8">
 							<div class="-mt-6">
-								<div class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg">
-									<svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+								<div
+									class="inline-flex items-center justify-center p-3 bg-indigo-500 rounded-md shadow-lg"
+								>
+									<svg
+										class="h-6 w-6 text-white"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											stroke-width="2"
+											d="M13 10V3L4 14h7v7l9-11h-7z"></path>
 									</svg>
 								</div>
-								<h3 class="mt-8 text-lg font-medium text-gray-900 tracking-tight">Edge Performance</h3>
+								<h3 class="mt-8 text-lg font-medium text-gray-900 tracking-tight">
+									Edge Performance
+								</h3>
 								<p class="mt-5 text-base text-gray-500">
 									Deployed on Cloudflare Workers for blazing fast global performance.
 								</p>

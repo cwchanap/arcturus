@@ -1,0 +1,41 @@
+---
+interface Props {
+	value: string;
+	suit: 'hearts' | 'diamonds' | 'clubs' | 'spades';
+	faceDown?: boolean;
+}
+
+const { value, suit, faceDown = false } = Astro.props;
+
+const suitSymbols = {
+	hearts: '♥',
+	diamonds: '♦',
+	clubs: '♣',
+	spades: '♠',
+};
+
+const suitColors = {
+	hearts: 'text-red-600',
+	diamonds: 'text-red-600',
+	clubs: 'text-gray-900',
+	spades: 'text-gray-900',
+};
+---
+
+<div class="playing-card w-20 h-28 flex items-center justify-center">
+	{
+		faceDown ? (
+			<div class="absolute inset-1 bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
+				<div class="text-white text-4xl">🎴</div>
+			</div>
+		) : (
+			<div class="w-full h-full p-2 flex flex-col">
+				<div class={`text-xl font-bold ${suitColors[suit]}`}>{value}</div>
+				<div class={`flex-1 flex items-center justify-center text-4xl ${suitColors[suit]}`}>
+					{suitSymbols[suit]}
+				</div>
+				<div class={`text-xl font-bold text-right ${suitColors[suit]} rotate-180`}>{value}</div>
+			</div>
+		)
+	}
+</div>

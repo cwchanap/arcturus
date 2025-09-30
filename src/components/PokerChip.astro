@@ -1,0 +1,20 @@
+---
+interface Props {
+	value: number;
+	color?: 'red' | 'blue' | 'green' | 'black' | 'gold';
+}
+
+const { value, color = 'red' } = Astro.props;
+
+const chipColors = {
+	red: 'bg-red-600 border-white',
+	blue: 'bg-blue-600 border-white',
+	green: 'bg-green-600 border-white',
+	black: 'bg-gray-900 border-yellow-400',
+	gold: 'bg-gradient-to-br from-yellow-400 to-amber-600 border-white',
+};
+---
+
+<div class={`poker-chip ${chipColors[color]} text-white text-xs font-bold chip-stack`}>
+	${value}
+</div>

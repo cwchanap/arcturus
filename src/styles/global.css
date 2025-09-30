@@ -1,1 +1,132 @@
 @import 'tailwindcss';
+
+/* Gambling Theme CSS Variables */
+:root {
+	--casino-gold: #ffd700;
+	--casino-dark-gold: #c5a028;
+	--casino-red: #dc2626;
+	--casino-dark-red: #991b1b;
+	--casino-green: #059669;
+	--casino-dark-green: #065f46;
+	--felt-green: #0a5f38;
+	--felt-dark: #064331;
+	--card-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+	--glow-gold: 0 0 20px rgba(255, 215, 0, 0.4);
+	--glow-red: 0 0 20px rgba(220, 38, 38, 0.4);
+}
+
+/* Background patterns */
+body {
+	background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+	min-height: 100vh;
+}
+
+/* Card styling */
+.playing-card {
+	aspect-ratio: 2.5 / 3.5;
+	background: white;
+	border-radius: 0.5rem;
+	box-shadow: var(--card-shadow);
+	position: relative;
+	transition: transform 0.3s ease;
+}
+
+.playing-card:hover {
+	transform: translateY(-8px) rotate(2deg);
+}
+
+/* Chip styling */
+.poker-chip {
+	width: 3rem;
+	height: 3rem;
+	border-radius: 50%;
+	border: 4px solid white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: bold;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+	position: relative;
+}
+
+.poker-chip::before {
+	content: '';
+	position: absolute;
+	inset: -2px;
+	border-radius: 50%;
+	border: 2px dashed rgba(255, 255, 255, 0.3);
+}
+
+/* Felt table */
+.felt-table {
+	background: radial-gradient(ellipse at center, var(--felt-green) 0%, var(--felt-dark) 100%);
+	border: 8px solid #8b4513;
+	box-shadow:
+		inset 0 0 30px rgba(0, 0, 0, 0.3),
+		0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Neon glow effect */
+.neon-glow {
+	text-shadow:
+		0 0 10px currentColor,
+		0 0 20px currentColor,
+		0 0 30px currentColor;
+}
+
+/* Gold button */
+.btn-gold {
+	background: linear-gradient(145deg, var(--casino-gold) 0%, var(--casino-dark-gold) 100%);
+	color: #1f2937;
+	font-weight: bold;
+	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+	transition: all 0.3s ease;
+}
+
+.btn-gold:hover {
+	box-shadow: var(--glow-gold);
+	transform: translateY(-2px);
+}
+
+/* Game card hover effect */
+.game-card {
+	transition: all 0.3s ease;
+	border: 2px solid transparent;
+}
+
+.game-card:hover {
+	border-color: var(--casino-gold);
+	box-shadow: var(--glow-gold);
+	transform: scale(1.05);
+}
+
+/* Slot machine animation */
+@keyframes spin {
+	from {
+		transform: rotateY(0deg);
+	}
+	to {
+		transform: rotateY(360deg);
+	}
+}
+
+.spinning {
+	animation: spin 0.5s linear;
+}
+
+/* Chip stack animation */
+@keyframes chipStack {
+	0% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-4px);
+	}
+	100% {
+		transform: translateY(0);
+	}
+}
+
+.chip-stack:hover {
+	animation: chipStack 0.5s ease-in-out;
+}

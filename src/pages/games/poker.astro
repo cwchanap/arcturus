@@ -1,0 +1,492 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import PlayingCard from '../../components/PlayingCard.astro';
+import PokerChip from '../../components/PokerChip.astro';
+
+const user = Astro.locals.user;
+
+if (!user) {
+	return Astro.redirect('/signin');
+}
+---
+
+<CasinoLayout title="Texas Hold'em Poker - Arcturus Casino">
+	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+		<!-- Game Header -->
+		<div class="flex items-center justify-between mb-8">
+			<div>
+				<a
+					href="/games"
+					class="text-slate-400 hover:text-yellow-400 transition-colors mb-2 inline-block"
+				>
+					← Back to Games
+				</a>
+				<h1
+					class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-500"
+				>
+					Texas Hold'em Poker
+				</h1>
+			</div>
+			<div class="flex items-center gap-4">
+				<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
+					<div class="text-xs text-slate-400 mb-1">Your Balance</div>
+					<div class="text-2xl font-bold text-yellow-400">$1,000</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Poker Table -->
+		<div class="felt-table rounded-3xl p-8 mb-8 relative min-h-[600px]">
+			<!-- Pot Display -->
+			<div class="absolute top-8 left-1/2 -translate-x-1/2">
+				<div
+					class="bg-slate-900/80 backdrop-blur-sm px-6 py-3 rounded-full border-2 border-yellow-500/50"
+				>
+					<div class="text-xs text-slate-400 text-center mb-1">POT</div>
+					<div class="text-2xl font-bold text-yellow-400" id="pot-amount">$0</div>
+				</div>
+			</div>
+
+			<!-- Community Cards -->
+			<div class="absolute top-32 left-1/2 -translate-x-1/2">
+				<div class="flex gap-3" id="community-cards">
+					<div
+						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+					>
+						?
+					</div>
+					<div
+						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+					>
+						?
+					</div>
+					<div
+						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+					>
+						?
+					</div>
+					<div
+						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+					>
+						?
+					</div>
+					<div
+						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+					>
+						?
+					</div>
+				</div>
+			</div>
+
+			<!-- Opponents (simplified - 3 positions) -->
+			<div class="absolute top-8 left-8">
+				<div class="bg-slate-900/80 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
+					<div class="text-sm text-slate-300 mb-2">Player 2</div>
+					<div class="flex gap-2 mb-2" id="opponent1-cards">
+						<PlayingCard value="?" suit="spades" faceDown={true} />
+						<PlayingCard value="?" suit="spades" faceDown={true} />
+					</div>
+					<div class="text-xs text-yellow-400">$500</div>
+				</div>
+			</div>
+
+			<div class="absolute top-8 right-8">
+				<div class="bg-slate-900/80 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
+					<div class="text-sm text-slate-300 mb-2">Player 3</div>
+					<div class="flex gap-2 mb-2" id="opponent2-cards">
+						<PlayingCard value="?" suit="spades" faceDown={true} />
+						<PlayingCard value="?" suit="spades" faceDown={true} />
+					</div>
+					<div class="text-xs text-yellow-400">$750</div>
+				</div>
+			</div>
+
+			<!-- Player's Hand -->
+			<div class="absolute bottom-8 left-1/2 -translate-x-1/2">
+				<div class="bg-slate-900/90 backdrop-blur-sm p-6 rounded-xl border-2 border-yellow-500/50">
+					<div class="text-center mb-4">
+						<div class="text-sm text-slate-400 mb-1">Your Hand</div>
+						<div class="text-lg font-bold text-yellow-400" id="hand-strength">--</div>
+					</div>
+					<div class="flex gap-3 justify-center mb-4" id="player-cards">
+						<!-- Cards will be inserted here by JavaScript -->
+					</div>
+					<div class="text-sm text-center text-yellow-400">
+						Your Bet: <span id="current-bet">$0</span>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Game Controls -->
+		<div class="bg-slate-900 rounded-xl p-6 border border-slate-700">
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+				<!-- Betting Controls -->
+				<div>
+					<h3 class="text-lg font-bold text-white mb-4">Betting Controls</h3>
+					<div class="space-y-3">
+						<div class="flex gap-2">
+							<button
+								id="btn-fold"
+								class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								FOLD
+							</button>
+							<button
+								id="btn-check"
+								class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								CHECK
+							</button>
+						</div>
+						<div class="flex gap-2">
+							<button
+								id="btn-call"
+								class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								CALL
+							</button>
+							<button
+								id="btn-raise"
+								class="flex-1 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-700 hover:to-amber-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								RAISE
+							</button>
+						</div>
+						<div class="flex gap-2 items-center">
+							<input
+								type="range"
+								id="bet-slider"
+								min="10"
+								max="1000"
+								step="10"
+								value="50"
+								class="flex-1"
+							/>
+							<span id="bet-amount" class="text-yellow-400 font-bold min-w-[80px] text-right"
+								>$50</span
+							>
+						</div>
+					</div>
+				</div>
+
+				<!-- Quick Bet Chips -->
+				<div>
+					<h3 class="text-lg font-bold text-white mb-4">Quick Bet</h3>
+					<div class="grid grid-cols-4 gap-3">
+						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="10">
+							<PokerChip value={10} color="red" />
+						</button>
+						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="25">
+							<PokerChip value={25} color="blue" />
+						</button>
+						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="50">
+							<PokerChip value={50} color="green" />
+						</button>
+						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="100">
+							<PokerChip value={100} color="black" />
+						</button>
+					</div>
+					<button id="btn-deal" class="w-full mt-4 btn-gold py-4 rounded-lg font-bold text-lg">
+						DEAL NEW HAND
+					</button>
+				</div>
+			</div>
+
+			<!-- Game Status -->
+			<div class="mt-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
+				<div class="text-sm text-slate-400 mb-1">Game Status</div>
+				<div id="game-status" class="text-lg font-bold text-yellow-400">
+					Click "DEAL NEW HAND" to start
+				</div>
+			</div>
+		</div>
+
+		<!-- Game Info -->
+		<div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+			<div class="bg-slate-900 rounded-xl p-6 border border-slate-700">
+				<h3 class="text-xl font-bold text-yellow-400 mb-4">🎯 Game Rules</h3>
+				<ul class="space-y-2 text-sm text-slate-300">
+					<li>• Each player gets 2 hole cards</li>
+					<li>• 5 community cards revealed in stages</li>
+					<li>• Make the best 5-card hand</li>
+					<li>• Highest hand wins the pot</li>
+				</ul>
+			</div>
+
+			<div class="bg-slate-900 rounded-xl p-6 border border-slate-700">
+				<h3 class="text-xl font-bold text-yellow-400 mb-4">🏆 Hand Rankings</h3>
+				<ul class="space-y-2 text-sm text-slate-300">
+					<li>• Royal Flush</li>
+					<li>• Straight Flush</li>
+					<li>• Four of a Kind</li>
+					<li>• Full House</li>
+					<li>• Flush</li>
+				</ul>
+			</div>
+
+			<div class="bg-slate-900 rounded-xl p-6 border border-slate-700">
+				<h3 class="text-xl font-bold text-yellow-400 mb-4">💰 Betting</h3>
+				<ul class="space-y-2 text-sm text-slate-300">
+					<li>• Minimum bet: $10</li>
+					<li>• Maximum bet: $1,000</li>
+					<li>• Fold to quit round</li>
+					<li>• Check to pass</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+</CasinoLayout>
+
+<script>
+	// Poker game logic
+	type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
+	type Card = { value: string; suit: Suit; rank: number };
+
+	class PokerGame {
+		private deck: Card[] = [];
+		private playerHand: Card[] = [];
+		private communityCards: Card[] = [];
+		private pot = 0;
+		private playerBalance = 1000;
+		private currentBet = 0;
+		private gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' = 'preflop';
+
+		constructor() {
+			this.initDeck();
+			this.attachEventListeners();
+		}
+
+		private initDeck() {
+			const suits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
+			const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+
+			this.deck = [];
+			for (const suit of suits) {
+				for (let i = 0; i < values.length; i++) {
+					this.deck.push({ value: values[i], suit, rank: i + 2 });
+				}
+			}
+		}
+
+		private shuffle() {
+			for (let i = this.deck.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+			}
+		}
+
+		private drawCard(): Card {
+			return this.deck.pop()!;
+		}
+
+		public dealNewHand() {
+			this.initDeck();
+			this.shuffle();
+			this.playerHand = [this.drawCard(), this.drawCard()];
+			this.communityCards = [];
+			this.pot = 20; // Blinds
+			this.currentBet = 0;
+			this.gamePhase = 'preflop';
+
+			this.renderPlayerCards();
+			this.renderCommunityCards();
+			this.updateUI();
+			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
+		}
+
+		private renderPlayerCards() {
+			const container = document.getElementById('player-cards');
+			if (!container) return;
+
+			container.innerHTML = this.playerHand
+				.map(
+					(card) => `
+				<div class="playing-card w-20 h-28 flex items-center justify-center">
+					<div class="w-full h-full p-2 flex flex-col">
+						<div class="text-xl font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							${card.value}
+						</div>
+						<div class="flex-1 flex items-center justify-center text-4xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							${this.getSuitSymbol(card.suit)}
+						</div>
+						<div class="text-xl font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+							${card.value}
+						</div>
+					</div>
+				</div>
+			`,
+				)
+				.join('');
+
+			this.evaluateHand();
+		}
+
+		private renderCommunityCards() {
+			const container = document.getElementById('community-cards');
+			if (!container) return;
+
+			const cards = [...this.communityCards];
+			while (cards.length < 5) {
+				cards.push(null);
+			}
+
+			container.innerHTML = cards
+				.map((card) => {
+					if (!card) {
+						return `
+						<div class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600">
+							?
+						</div>
+					`;
+					}
+					return `
+					<div class="playing-card w-20 h-28 flex items-center justify-center">
+						<div class="w-full h-full p-2 flex flex-col">
+							<div class="text-xl font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${card.value}
+							</div>
+							<div class="flex-1 flex items-center justify-center text-4xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${this.getSuitSymbol(card.suit)}
+							</div>
+							<div class="text-xl font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+								${card.value}
+							</div>
+						</div>
+					</div>
+				`;
+				})
+				.join('');
+		}
+
+		private getSuitSymbol(suit: Suit): string {
+			const symbols = {
+				hearts: '♥',
+				diamonds: '♦',
+				clubs: '♣',
+				spades: '♠',
+			};
+			return symbols[suit];
+		}
+
+		private evaluateHand() {
+			const strengthEl = document.getElementById('hand-strength');
+			if (!strengthEl) return;
+
+			const allCards = [...this.playerHand, ...this.communityCards];
+			if (allCards.length < 2) {
+				strengthEl.textContent = '--';
+				return;
+			}
+
+			// Simplified hand evaluation
+			const values = allCards.map((c) => c.value);
+			const suits = allCards.map((c) => c.suit);
+
+			const valueCounts: Record<string, number> = {};
+			values.forEach((v) => (valueCounts[v] = (valueCounts[v] || 0) + 1));
+
+			const counts = Object.values(valueCounts).sort((a, b) => b - a);
+			const isFlush = suits.every((s) => s === suits[0]) && suits.length >= 5;
+
+			if (counts[0] === 4) strengthEl.textContent = 'Four of a Kind';
+			else if (counts[0] === 3 && counts[1] === 2) strengthEl.textContent = 'Full House';
+			else if (isFlush) strengthEl.textContent = 'Flush';
+			else if (counts[0] === 3) strengthEl.textContent = 'Three of a Kind';
+			else if (counts[0] === 2 && counts[1] === 2) strengthEl.textContent = 'Two Pair';
+			else if (counts[0] === 2) strengthEl.textContent = 'Pair';
+			else strengthEl.textContent = 'High Card';
+		}
+
+		private updateUI() {
+			document.getElementById('pot-amount')!.textContent = `$${this.pot}`;
+			document.getElementById('current-bet')!.textContent = `$${this.currentBet}`;
+		}
+
+		private updateGameStatus(message: string) {
+			document.getElementById('game-status')!.textContent = message;
+		}
+
+		private nextPhase() {
+			if (this.gamePhase === 'preflop') {
+				this.gamePhase = 'flop';
+				this.communityCards.push(this.drawCard(), this.drawCard(), this.drawCard());
+				this.updateGameStatus('Flop revealed!');
+			} else if (this.gamePhase === 'flop') {
+				this.gamePhase = 'turn';
+				this.communityCards.push(this.drawCard());
+				this.updateGameStatus('Turn card revealed!');
+			} else if (this.gamePhase === 'turn') {
+				this.gamePhase = 'river';
+				this.communityCards.push(this.drawCard());
+				this.updateGameStatus('River card revealed!');
+			} else if (this.gamePhase === 'river') {
+				this.gamePhase = 'showdown';
+				this.updateGameStatus('Showdown! You won! 🎉');
+				this.playerBalance += this.pot;
+				this.pot = 0;
+			}
+
+			this.renderCommunityCards();
+			this.evaluateHand();
+			this.updateUI();
+		}
+
+		private attachEventListeners() {
+			document.getElementById('btn-deal')?.addEventListener('click', () => this.dealNewHand());
+
+			document.getElementById('btn-fold')?.addEventListener('click', () => {
+				this.updateGameStatus('You folded. Opponents win.');
+				setTimeout(() => this.dealNewHand(), 2000);
+			});
+
+			document.getElementById('btn-check')?.addEventListener('click', () => {
+				this.updateGameStatus('You checked');
+				setTimeout(() => this.nextPhase(), 1000);
+			});
+
+			document.getElementById('btn-call')?.addEventListener('click', () => {
+				const callAmount = 20;
+				this.currentBet += callAmount;
+				this.pot += callAmount;
+				this.updateUI();
+				this.updateGameStatus(`You called $${callAmount}`);
+				setTimeout(() => this.nextPhase(), 1000);
+			});
+
+			document.getElementById('btn-raise')?.addEventListener('click', () => {
+				const raiseAmount = parseInt(
+					(document.getElementById('bet-slider') as HTMLInputElement).value,
+				);
+				this.currentBet += raiseAmount;
+				this.pot += raiseAmount;
+				this.updateUI();
+				this.updateGameStatus(`You raised $${raiseAmount}`);
+				setTimeout(() => this.nextPhase(), 1000);
+			});
+
+			const betSlider = document.getElementById('bet-slider') as HTMLInputElement;
+			const betAmount = document.getElementById('bet-amount');
+			betSlider?.addEventListener('input', (e) => {
+				const value = (e.target as HTMLInputElement).value;
+				if (betAmount) betAmount.textContent = `$${value}`;
+			});
+
+			// Quick bet chips
+			document.querySelectorAll('.quick-bet-chip').forEach((btn) => {
+				btn.addEventListener('click', (e) => {
+					const amount = (e.currentTarget as HTMLElement).dataset.amount;
+					if (amount && betSlider) {
+						betSlider.value = amount;
+						if (betAmount) betAmount.textContent = `$${amount}`;
+					}
+				});
+			});
+		}
+	}
+
+	// Initialize game when DOM is loaded
+	if (typeof window !== 'undefined') {
+		new PokerGame();
+	}
+</script>

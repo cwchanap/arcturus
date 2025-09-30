@@ -12,8 +12,18 @@ const user = Astro.locals.user;
 		<nav class="bg-white shadow-sm">
 			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 				<div class="flex justify-between h-16">
-					<div class="flex items-center">
+					<div class="flex items-center gap-8">
 						<h1 class="text-2xl font-bold text-indigo-600">Arcturus</h1>
+						{
+							user && (
+								<a
+									href="/games"
+									class="text-gray-700 hover:text-indigo-600 font-semibold transition-colors flex items-center gap-2"
+								>
+									🎰 Casino
+								</a>
+							)
+						}
 					</div>
 					<div class="flex items-center">
 						<UserNav />
@@ -31,8 +41,8 @@ const user = Astro.locals.user;
 				<p
 					class="mt-3 max-w-md mx-auto text-base text-gray-500 sm:text-lg md:mt-5 md:text-xl md:max-w-3xl"
 				>
-					A modern authentication system built with Astro, Better Auth, Drizzle ORM, and Cloudflare
-					D1.
+					A modern platform with authentication and casino gaming built with Astro, Better Auth,
+					Drizzle ORM, and Cloudflare D1.
 				</p>
 
 				{
@@ -56,12 +66,18 @@ const user = Astro.locals.user;
 							</div>
 						</div>
 					) : (
-						<div class="mt-5 max-w-md mx-auto">
+						<div class="mt-5 max-w-md mx-auto flex gap-3">
+							<a
+								href="/games"
+								class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-700 hover:to-amber-700 md:py-4 md:text-lg md:px-10"
+							>
+								🎰 Play Casino
+							</a>
 							<a
 								href="/dashboard"
 								class="inline-flex items-center justify-center px-8 py-3 border border-transparent text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 md:py-4 md:text-lg md:px-10"
 							>
-								Go to Dashboard
+								Dashboard
 							</a>
 						</div>
 					)

@@ -1,14 +1,14 @@
 ---
 interface Props {
 	name: string;
-	image: string;
+	icon: string;
 	players: number;
 	minBet: number;
 	href: string;
 	featured?: boolean;
 }
 
-const { name, image, players, minBet, href, featured = false } = Astro.props;
+const { name, icon, players, minBet, href, featured = false } = Astro.props;
 ---
 
 <a href={href} class="game-card block bg-slate-800 rounded-xl overflow-hidden relative group">
@@ -22,13 +22,15 @@ const { name, image, players, minBet, href, featured = false } = Astro.props;
 		)
 	}
 
-	<div class="relative overflow-hidden h-48">
-		<img
-			src={image}
-			alt={name}
-			class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-		/>
-		<div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
+	<div
+		class="relative overflow-hidden h-48 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center"
+	>
+		<div
+			class="text-9xl transition-transform duration-300 group-hover:scale-110 group-hover:rotate-6"
+		>
+			{icon}
+		</div>
+		<div class="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent opacity-60"></div>
 	</div>
 
 	<div class="p-6">
@@ -56,7 +58,7 @@ const { name, image, players, minBet, href, featured = false } = Astro.props;
 						d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"
 					></path>
 				</svg>
-				<span>Min ${minBet}</span>
+				<span>Min {minBet} chips</span>
 			</div>
 		</div>
 

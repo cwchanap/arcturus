@@ -98,6 +98,15 @@ const db = createDb(Astro.locals.runtime.env.DB);
 const playerData = await db.select().from(players).where(eq(players.userId, user.id));
 ```
 
+### Test Accounts
+
+When validating auth flows in the Chrome Dev MCP environment, use the shared QA account:
+
+- Email: `test@cwchanap.dev`
+- Password: `password123`
+
+Reset credentials after demos and purge any leftover D1 records tied to this login.
+
 ## Development Workflow
 
 ### Essential Commands

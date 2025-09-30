@@ -29,28 +29,6 @@ export function createAuth(db: D1Database, env: Env, baseURL?: string) {
 		authConfig.trustedOrigins = [baseURL];
 	}
 
-	// Configure social providers only if credentials are available
-	const githubClientId = env.GITHUB_CLIENT_ID || process.env.GITHUB_CLIENT_ID;
-	const githubClientSecret = env.GITHUB_CLIENT_SECRET || process.env.GITHUB_CLIENT_SECRET;
-	const googleClientId = env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
-	const googleClientSecret = env.GOOGLE_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
-
-	if (githubClientId && githubClientSecret) {
-		authConfig.socialProviders = authConfig.socialProviders || {};
-		authConfig.socialProviders.github = {
-			clientId: githubClientId,
-			clientSecret: githubClientSecret,
-		};
-	}
-
-	if (googleClientId && googleClientSecret) {
-		authConfig.socialProviders = authConfig.socialProviders || {};
-		authConfig.socialProviders.google = {
-			clientId: googleClientId,
-			clientSecret: googleClientSecret,
-		};
-	}
-
 	return betterAuth(authConfig);
 }
 

@@ -1,0 +1,39 @@
+---
+const user = Astro.locals.user;
+---
+
+<div class="flex items-center gap-4">
+	{user ? (
+		<div class="flex items-center gap-3">
+			{user.image && (
+				<img
+					src={user.image}
+					alt={user.name}
+					class="h-8 w-8 rounded-full"
+				/>
+			)}
+			<span class="text-sm font-medium text-gray-700">{user.name}</span>
+			<a
+				href="/dashboard"
+				class="text-sm text-indigo-600 hover:text-indigo-500"
+			>
+				Dashboard
+			</a>
+		</div>
+	) : (
+		<div class="flex items-center gap-3">
+			<a
+				href="/signin"
+				class="text-sm text-gray-700 hover:text-gray-900"
+			>
+				Sign In
+			</a>
+			<a
+				href="/signup"
+				class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
+			>
+				Sign Up
+			</a>
+		</div>
+	)}
+</div>

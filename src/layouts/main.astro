@@ -1,6 +1,11 @@
 ---
 import '../styles/global.css';
-const { content } = Astro.props;
+
+interface Props {
+	title?: string;
+}
+
+const { title = 'Arcturus' } = Astro.props;
 ---
 
 <html lang="en">
@@ -8,7 +13,7 @@ const { content } = Astro.props;
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width" />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<title>{content.title}</title>
+		<title>{title}</title>
 	</head>
 	<body>
 		<slot />

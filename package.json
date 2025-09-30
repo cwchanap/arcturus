@@ -12,6 +12,7 @@
 		"db:migrate:local": "wrangler d1 execute arcturus-db --local --file=./drizzle/0000_powerful_wrecking_crew.sql",
 		"db:migrate:remote": "wrangler d1 execute arcturus-db --remote --file=./drizzle/0000_powerful_wrecking_crew.sql",
 		"db:studio": "drizzle-kit studio",
+		"setup:db": "bun scripts/setup-local-db.ts",
 		"deploy": "astro build && wrangler deploy",
 		"prepare": "husky",
 		"lint": "eslint . --max-warnings 0",

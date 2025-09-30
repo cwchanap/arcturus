@@ -12,6 +12,9 @@ export default defineConfig({
 			enabled: true,
 		},
 	}),
+	server: {
+		port: 2000,
+	},
 	vite: {
 		plugins: [tailwindcss()],
 	},

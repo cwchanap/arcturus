@@ -42,7 +42,7 @@ bun install
 wrangler login
 
 # Create D1 database
-wrangler d1 create arcturus-db
+wrangler d1 create arcturus
 
 # Update wrangler.toml with your database ID
 

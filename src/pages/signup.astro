@@ -123,9 +123,16 @@ import CasinoLayout from '../layouts/casino.astro';
 				password,
 			});
 			window.location.href = '/';
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Sign up error:', error);
-			alert('Sign up failed. Please try again.');
+			// Try to get more specific error information
+			let errorMessage = 'Sign up failed. Please try again.';
+			if (error.message) {
+				errorMessage = `Sign up failed: ${error.message}`;
+			} else if (error.data?.message) {
+				errorMessage = `Sign up failed: ${error.data.message}`;
+			}
+			alert(errorMessage);
 		}
 	});
 </script>

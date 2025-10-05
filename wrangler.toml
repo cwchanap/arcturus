@@ -2,12 +2,12 @@ name = "arcturus"
 compatibility_date = "2024-01-01"
 
 # D1 Database Binding
-# After creating your D1 database with: wrangler d1 create arcturus-db
+# After creating your D1 database with: wrangler d1 create arcturus
 # Replace 'YOUR_DATABASE_ID_HERE' with the actual database ID from the output
 [[d1_databases]]
 binding = "DB"
-database_name = "arcturus-db"
-database_id = "8096c11f-5b0e-464c-87be-2bbf9b1dcaaf"
+database_name = "arcturus"
+database_id = "4668c401-69c0-4aa2-ab3a-91d876b185b0"
 
 # Optional: KV namespace for sessions (if needed)
 # Uncomment and configure if you want to use KV for session storage

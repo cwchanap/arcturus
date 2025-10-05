@@ -1,21 +1,21 @@
 ---
-import '../styles/global.css';
+import AppLayout from './AppLayout.astro';
 
 interface Props {
 	title?: string;
+	headerSticky?: boolean;
+	bodyClass?: string;
+	footerClass?: string;
 }
 
-const { title = 'Arcturus' } = Astro.props;
+const { title = 'Arcturus', headerSticky, bodyClass, footerClass } = Astro.props as Props;
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<title>{title}</title>
-	</head>
-	<body>
-		<slot />
-	</body>
-</html>
+<AppLayout
+	title={title}
+	headerSticky={headerSticky}
+	bodyClass={bodyClass}
+	footerClass={footerClass}
+>
+	<slot />
+</AppLayout>

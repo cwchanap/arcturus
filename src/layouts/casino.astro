@@ -1,146 +1,21 @@
 ---
-import '../styles/global.css';
-import UserNav from '../components/UserNav.astro';
+import AppLayout from './AppLayout.astro';
 
 interface Props {
 	title?: string;
+	headerSticky?: boolean;
+	bodyClass?: string;
+	footerClass?: string;
 }
 
-const { title = 'Arcturus Casino' } = Astro.props;
-const user = Astro.locals.user;
+const { title = 'Arcturus Casino', headerSticky, bodyClass, footerClass } = Astro.props as Props;
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<title>{title}</title>
-	</head>
-	<body class="min-h-screen">
-		<!-- Casino Header -->
-		<header
-			class="border-b border-yellow-500/20 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50"
-		>
-			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-				<div class="flex justify-between items-center h-20">
-					<!-- Logo -->
-					<a href="/" class="flex items-center gap-3 group">
-						<div class="text-4xl transition-transform group-hover:rotate-12">🎰</div>
-						<div>
-							<h1
-								class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 neon-glow"
-							>
-								ARCTURUS
-							</h1>
-							<p class="text-xs text-slate-400 uppercase tracking-wider">Premium Casino</p>
-						</div>
-					</a>
-
-					<!-- Navigation -->
-					<nav class="hidden md:flex items-center gap-8">
-						<a
-							href="/games"
-							class="text-slate-300 hover:text-yellow-400 font-semibold transition-colors"
-						>
-							Games
-						</a>
-						<a
-							href="/games/tournaments"
-							class="text-slate-300 hover:text-yellow-400 font-semibold transition-colors"
-						>
-							Tournaments
-						</a>
-						<a
-							href="/games/leaderboard"
-							class="text-slate-300 hover:text-yellow-400 font-semibold transition-colors"
-						>
-							Leaderboard
-						</a>
-					</nav>
-
-					<!-- User Area -->
-					<div class="flex items-center gap-4">
-						{
-							user && (
-								<div class="hidden md:flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-full border border-yellow-500/30">
-									<svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-										<path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z" />
-										<path
-											fill-rule="evenodd"
-											d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z"
-											clip-rule="evenodd"
-										/>
-									</svg>
-									<span class="text-yellow-400 font-bold text-lg">$1,000</span>
-								</div>
-							)
-						}
-						<UserNav />
-					</div>
-				</div>
-			</div>
-		</header>
-
-		<!-- Main Content -->
-		<main>
-			<slot />
-		</main>
-
-		<!-- Footer -->
-		<footer class="border-t border-yellow-500/20 bg-slate-900/80 mt-20">
-			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-				<div class="grid grid-cols-1 md:grid-cols-4 gap-8">
-					<div>
-						<h3 class="text-yellow-400 font-bold text-lg mb-4">About</h3>
-						<ul class="space-y-2 text-sm text-slate-400">
-							<li><a href="#" class="hover:text-yellow-400 transition-colors">About Us</a></li>
-							<li>
-								<a href="#" class="hover:text-yellow-400 transition-colors">Responsible Gaming</a>
-							</li>
-							<li>
-								<a href="#" class="hover:text-yellow-400 transition-colors">Privacy Policy</a>
-							</li>
-						</ul>
-					</div>
-					<div>
-						<h3 class="text-yellow-400 font-bold text-lg mb-4">Games</h3>
-						<ul class="space-y-2 text-sm text-slate-400">
-							<li>
-								<a href="/games" class="hover:text-yellow-400 transition-colors">All Games</a>
-							</li>
-							<li>
-								<a href="/games/poker" class="hover:text-yellow-400 transition-colors">Poker</a>
-							</li>
-							<li>
-								<a href="/games/blackjack" class="hover:text-yellow-400 transition-colors"
-									>Blackjack</a
-								>
-							</li>
-						</ul>
-					</div>
-					<div>
-						<h3 class="text-yellow-400 font-bold text-lg mb-4">Support</h3>
-						<ul class="space-y-2 text-sm text-slate-400">
-							<li><a href="#" class="hover:text-yellow-400 transition-colors">Help Center</a></li>
-							<li><a href="#" class="hover:text-yellow-400 transition-colors">Contact Us</a></li>
-							<li><a href="#" class="hover:text-yellow-400 transition-colors">FAQ</a></li>
-						</ul>
-					</div>
-					<div>
-						<h3 class="text-yellow-400 font-bold text-lg mb-4">Legal</h3>
-						<ul class="space-y-2 text-sm text-slate-400">
-							<li>
-								<a href="#" class="hover:text-yellow-400 transition-colors">Terms of Service</a>
-							</li>
-							<li><a href="#" class="hover:text-yellow-400 transition-colors">18+ Only</a></li>
-						</ul>
-					</div>
-				</div>
-				<div class="border-t border-yellow-500/20 mt-8 pt-8 text-center text-sm text-slate-500">
-					<p>© 2025 Arcturus Casino. All rights reserved. Play responsibly.</p>
-				</div>
-			</div>
-		</footer>
-	</body>
-</html>
+<AppLayout
+	title={title}
+	headerSticky={headerSticky}
+	bodyClass={bodyClass}
+	footerClass={footerClass}
+>
+	<slot />
+</AppLayout>

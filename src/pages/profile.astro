@@ -1,5 +1,5 @@
 ---
-import Layout from '../layouts/main.astro';
+import CasinoLayout from '../layouts/casino.astro';
 
 const session = Astro.locals.session;
 
@@ -8,72 +8,110 @@ if (!session) {
 }
 
 const { user } = session;
+const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'A';
 ---
 
-<Layout title="Profile">
-	<div class="min-h-screen bg-gray-50">
-		<nav class="bg-white shadow-sm">
-			<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-				<div class="flex justify-between h-16">
-					<div class="flex items-center">
-						<h1 class="text-xl font-semibold">Profile</h1>
-					</div>
-					<div class="flex items-center">
-						<button
-							id="signout-btn"
-							class="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-						>
-							Sign out
-						</button>
-					</div>
-				</div>
-			</div>
-		</nav>
+<CasinoLayout title="Player Profile - Arcturus Casino">
+	<section class="relative overflow-hidden">
+		<div class="absolute inset-0 pointer-events-none">
+			<div class="absolute top-24 -left-20 h-72 w-72 bg-yellow-500/10 rounded-full blur-3xl"></div>
+			<div class="absolute bottom-10 right-0 h-64 w-64 bg-amber-500/10 rounded-full blur-3xl"></div>
+		</div>
 
-		<main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-			<div class="px-4 py-6 sm:px-0">
-				<div class="bg-white shadow overflow-hidden sm:rounded-lg">
-					<div class="px-4 py-5 sm:px-6">
-						<h3 class="text-lg leading-6 font-medium text-gray-900">Profile Information</h3>
-						<p class="mt-1 max-w-2xl text-sm text-gray-500">Your account details</p>
+		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<div class="bg-slate-900/80 border border-yellow-500/20 rounded-3xl shadow-2xl">
+				<div class="flex flex-col gap-10 p-8 sm:p-12">
+					<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
+						<div class="flex items-center gap-5">
+							<div
+								class="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 text-3xl font-bold text-slate-900"
+							>
+								{
+									user.image ? (
+										<img
+											src={user.image}
+											alt={user.name ?? user.email ?? 'Player Avatar'}
+											class="h-20 w-20 rounded-2xl object-cover"
+										/>
+									) : (
+										<span>{fallbackInitial}</span>
+									)
+								}
+							</div>
+							<div>
+								<p class="text-sm uppercase tracking-widest text-yellow-400/80">Player Profile</p>
+								<h1 class="mt-2 text-3xl font-semibold text-white">
+									{user.name ?? 'Casino Adventurer'}
+								</h1>
+								<p class="text-slate-400">{user.email}</p>
+							</div>
+						</div>
+						<div class="flex items-center gap-4 self-start md:self-auto">
+							<span
+								class={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-widest ${
+									user.emailVerified
+										? 'border-emerald-400/40 text-emerald-300'
+										: 'border-yellow-500/40 text-yellow-300'
+								}`}
+							>
+								{user.emailVerified ? 'Email Verified' : 'Verification Pending'}
+							</span>
+							<button
+								id="signout-btn"
+								type="button"
+								class="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-yellow-500/40 bg-slate-900/60 px-6 py-3 text-sm font-semibold text-yellow-300 transition focus:outline-none focus:ring-2 focus:ring-yellow-500/60 focus:ring-offset-2 focus:ring-offset-slate-900"
+							>
+								<span
+									class="absolute inset-0 -z-10 translate-y-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 opacity-90 transition-transform duration-300 group-hover:translate-y-0"
+								></span>
+								<span class="group-hover:text-slate-900">Sign out</span>
+							</button>
+						</div>
 					</div>
-					<div class="border-t border-gray-200">
-						<dl>
-							<div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-								<dt class="text-sm font-medium text-gray-500">Name</dt>
-								<dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-									{user.name}
-								</dd>
-							</div>
-							<div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-								<dt class="text-sm font-medium text-gray-500">Email</dt>
-								<dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-									{user.email}
-								</dd>
-							</div>
-							<div class="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-								<dt class="text-sm font-medium text-gray-500">Email Verified</dt>
-								<dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-									{user.emailVerified ? 'Yes' : 'No'}
-								</dd>
-							</div>
-							{
-								user.image && (
-									<div class="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-										<dt class="text-sm font-medium text-gray-500">Avatar</dt>
-										<dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-											<img src={user.image} alt="Avatar" class="h-12 w-12 rounded-full" />
-										</dd>
-									</div>
-								)
-							}
-						</dl>
+
+					<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+						<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+							<h2 class="text-lg font-semibold text-white">Account Details</h2>
+							<dl class="mt-6 space-y-4 text-sm text-slate-300">
+								<div class="flex items-start justify-between">
+									<dt class="text-slate-400">Player Name</dt>
+									<dd class="font-medium text-white">{user.name ?? 'Not set'}</dd>
+								</div>
+								<div class="flex items-start justify-between">
+									<dt class="text-slate-400">Email Address</dt>
+									<dd class="font-medium text-white">{user.email}</dd>
+								</div>
+								<div class="flex items-start justify-between">
+									<dt class="text-slate-400">Email Status</dt>
+									<dd class="font-medium text-white">
+										{user.emailVerified ? 'Verified' : 'Awaiting verification'}
+									</dd>
+								</div>
+							</dl>
+						</div>
+						<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+							<h2 class="text-lg font-semibold text-white">Casino Tips</h2>
+							<ul class="mt-6 space-y-4 text-sm text-slate-300">
+								<li class="flex items-start gap-3">
+									<span class="text-xl">🎁</span>
+									<span>Claim your daily chip bonus to keep the games going.</span>
+								</li>
+								<li class="flex items-start gap-3">
+									<span class="text-xl">🏆</span>
+									<span>Visit the tournaments page to join upcoming events.</span>
+								</li>
+								<li class="flex items-start gap-3">
+									<span class="text-xl">🤝</span>
+									<span>Invite friends for exclusive in-game rewards.</span>
+								</li>
+							</ul>
+						</div>
 					</div>
 				</div>
 			</div>
-		</main>
-	</div>
-</Layout>
+		</div>
+	</section>
+</CasinoLayout>
 
 <script>
 	import { authClient } from '../lib/auth-client';

@@ -126,7 +126,7 @@ Visit `http://localhost:4321`
 - `/` - Home page
 - `/signin` - Sign in page
 - `/signup` - Sign up page
-- `/dashboard` - Protected dashboard (requires authentication)
+- `/profile` - Protected profile page (requires authentication)
 - `/api/auth/*` - Authentication API endpoints
 
 ## Database Schema

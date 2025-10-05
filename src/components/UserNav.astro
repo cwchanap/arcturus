@@ -8,8 +8,8 @@ const user = Astro.locals.user;
 			<div class="flex items-center gap-3">
 				{user.image && <img src={user.image} alt={user.name} class="h-8 w-8 rounded-full" />}
 				<span class="text-sm font-medium text-gray-700">{user.name}</span>
-				<a href="/dashboard" class="text-sm text-indigo-600 hover:text-indigo-500">
-					Dashboard
+				<a href="/profile" class="text-sm text-indigo-600 hover:text-indigo-500">
+					Profile
 				</a>
 			</div>
 		) : (

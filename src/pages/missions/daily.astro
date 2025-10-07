@@ -1,0 +1,332 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import { MissionType, getMissionProgress, getUserChipBalance } from '../../lib/missions';
+import { createDb } from '../../lib/db';
+
+const session = Astro.locals.session;
+
+if (!session) {
+	return Astro.redirect('/signin');
+}
+
+const dbBinding = Astro.locals.runtime?.env?.DB;
+
+if (!dbBinding) {
+	throw new Error('Database not available');
+}
+
+const db = createDb(dbBinding);
+
+const mission = MissionType.DAILY_LOGIN;
+const progress = await getMissionProgress(db, session.user.id, mission);
+const chipBalance = await getUserChipBalance(db, session.user.id);
+
+const formattedChipBalance =
+	chipBalance === null ? '—' : new Intl.NumberFormat('en-US').format(chipBalance);
+
+const completedLabel = progress.completedToday ? 'Completed' : 'Complete';
+const lastCompletedLabel = progress.completedDate
+	? new Intl.DateTimeFormat('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+		}).format(progress.completedDate)
+	: 'Not yet';
+---
+
+<CasinoLayout title="Daily Mission - Arcturus Casino" bodyClass="bg-slate-950 text-slate-100">
+	<section class="relative overflow-hidden">
+		<div class="absolute inset-0 pointer-events-none">
+			<div class="absolute top-24 -left-20 h-72 w-72 bg-yellow-500/10 rounded-full blur-3xl"></div>
+			<div class="absolute bottom-10 right-0 h-64 w-64 bg-amber-500/10 rounded-full blur-3xl"></div>
+		</div>
+
+		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<header class="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-12">
+				<div>
+					<p class="text-sm uppercase tracking-widest text-yellow-400/80">Daily Mission</p>
+					<h1 class="mt-2 text-4xl font-semibold text-white flex items-center gap-3">
+						<span>Claim Your Daily Prize</span>
+						<span class="text-3xl">🎯</span>
+					</h1>
+					<p class="mt-3 text-slate-300 max-w-2xl">
+						Log in each day to collect bonus chips and keep your streak alive. Complete the mission
+						to boost your bankroll instantly.
+					</p>
+				</div>
+				<div class="rounded-2xl border border-yellow-500/20 bg-slate-900/70 px-6 py-4 text-right">
+					<p class="text-xs uppercase tracking-widest text-yellow-400/60">Current Balance</p>
+					<p class="mt-1 text-3xl font-bold text-yellow-400" data-chip-balance>
+						{formattedChipBalance} chips
+					</p>
+				</div>
+			</header>
+
+			<div class="space-y-6">
+				<div class="rounded-3xl border border-yellow-500/20 bg-slate-900/80 p-8 shadow-2xl">
+					<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+						<div class="flex items-start gap-4">
+							<div
+								class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 text-2xl"
+							>
+								🎁
+							</div>
+							<div>
+								<h2 class="text-2xl font-semibold text-white">{mission.title}</h2>
+								<p class="mt-2 text-slate-300">{mission.description}</p>
+								<div class="mt-4 flex items-center gap-3 text-sm">
+									<span
+										class="inline-flex items-center gap-2 rounded-full border border-yellow-500/30 bg-slate-900/40 px-3 py-1 text-yellow-300"
+									>
+										<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+											<path
+												d="M10 2a1 1 0 01.894.553l1.382 2.804 3.092.449a1 1 0 01.554 1.706l-2.237 2.18.528 3.073a1 1 0 01-1.451 1.054L10 12.347l-2.762 1.452a1 1 0 01-1.451-1.054l.528-3.073-2.237-2.18a1 1 0 01.554-1.706l3.092-.45L9.106 2.553A1 1 0 0110 2z"
+											></path>
+										</svg>
+										<span>Reward: {mission.reward.toLocaleString()} chips</span>
+									</span>
+									<span
+										class="text-slate-400"
+										data-last-completed
+										data-prefix="Last completed:"
+										data-default={lastCompletedLabel}
+									>
+										Last completed: {lastCompletedLabel}
+									</span>
+								</div>
+							</div>
+						</div>
+						<div class="flex flex-col items-end gap-4">
+							<span
+								class={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-widest ${
+									progress.completedToday
+										? 'border-emerald-500/30 text-emerald-300'
+										: 'border-yellow-500/30 text-yellow-300'
+								}`}
+								data-mission-status
+							>
+								{progress.completedToday ? 'Completed Today' : 'Ready to Claim'}
+							</span>
+							<button
+								type="button"
+								class={`group relative inline-flex items-center gap-2 overflow-hidden rounded-full border px-6 py-3 text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 ${
+									progress.completedToday
+										? 'border-emerald-500/50 bg-emerald-600/10 text-emerald-300 cursor-not-allowed'
+										: 'border-yellow-500/50 bg-slate-900/60 text-yellow-300 hover:bg-yellow-500/10 hover:text-yellow-200 focus:ring-yellow-500/60'
+								}`}
+								data-mission-action
+								disabled={progress.completedToday}
+							>
+								{completedLabel}
+							</button>
+							<p class="text-sm text-slate-400" data-mission-message>
+								{
+									progress.completedToday
+										? 'Come back tomorrow for another reward.'
+										: 'Finish the mission to receive your chips instantly.'
+								}
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+			<p
+				class="text-sm text-slate-400 text-right"
+				data-last-completed
+				data-default={lastCompletedLabel}
+			>
+				{lastCompletedLabel}
+			</p>
+		</div>
+	</section>
+	<div
+		class="pointer-events-none fixed inset-x-0 top-6 z-50 flex justify-center px-4 opacity-0 transition-all duration-300"
+		data-toast
+		hidden
+	>
+		<div
+			class="pointer-events-auto flex max-w-sm items-start gap-3 rounded-2xl border border-yellow-500/40 bg-slate-900/90 px-6 py-4 text-sm font-semibold text-yellow-100 shadow-2xl ring-1 ring-yellow-500/30 backdrop-blur"
+			data-toast-content
+			role="status"
+			aria-live="polite"
+		>
+			<span class="text-lg" data-toast-icon>✨</span>
+			<p data-toast-message>Mission updated.</p>
+		</div>
+	</div>
+</CasinoLayout>
+
+<script>
+	const actionButton = document.querySelector<HTMLButtonElement>('[data-mission-action]');
+	const messageEl = document.querySelector<HTMLElement>('[data-mission-message]');
+	const balanceEls = document.querySelectorAll<HTMLElement>('[data-chip-balance]');
+	const lastCompletedEls = document.querySelectorAll<HTMLElement>('[data-last-completed]');
+	const defaultLastCompleted = lastCompletedEls[0]?.dataset.default ?? 'Not yet';
+
+	const toast = document.querySelector<HTMLElement>('[data-toast]');
+	const toastContent = toast?.querySelector<HTMLElement>('[data-toast-content]');
+	const toastMessage = toast?.querySelector<HTMLElement>('[data-toast-message]');
+	const toastIcon = toast?.querySelector<HTMLElement>('[data-toast-icon]');
+	const toastVariants = {
+		success: ['border-emerald-500/40', 'text-emerald-200', 'ring-emerald-500/30'],
+		info: ['border-yellow-500/40', 'text-yellow-100', 'ring-yellow-500/30'],
+		error: ['border-red-500/40', 'text-red-200', 'ring-red-500/30'],
+	} as const;
+	const toastIcons = {
+		success: '🎉',
+		info: 'ℹ️',
+		error: '⚠️',
+	} as const;
+	let toastTimeout: number | null = null;
+
+	function formatNumber(value: number) {
+		return new Intl.NumberFormat('en-US').format(value);
+	}
+
+	function setLastCompletedLabel(label: string) {
+		lastCompletedEls.forEach((element) => {
+			const prefix = element.dataset.prefix;
+			element.textContent = prefix ? `${prefix} ${label}` : label;
+			element.dataset.current = label;
+		});
+	}
+
+	setLastCompletedLabel(defaultLastCompleted);
+
+	function updateLastCompletedFromDate(date: Date | null) {
+		if (!date) {
+			setLastCompletedLabel(defaultLastCompleted);
+			return;
+		}
+
+		const formatted = new Intl.DateTimeFormat('en-US', {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit',
+		}).format(date);
+
+		setLastCompletedLabel(formatted);
+	}
+
+	function hideToast() {
+		if (!toast) return;
+
+		toast.classList.add('opacity-0', 'translate-y-2');
+		toast.classList.remove('opacity-100', 'translate-y-0');
+
+		if (toastTimeout !== null) {
+			window.clearTimeout(toastTimeout);
+			toastTimeout = null;
+		}
+
+		window.setTimeout(() => {
+			toast.hidden = true;
+		}, 250);
+	}
+
+	function showToast(message: string, variant: 'success' | 'info' | 'error' = 'info') {
+		if (!toast || !toastContent || !toastMessage || !toastIcon) {
+			return;
+		}
+
+		if (toastTimeout !== null) {
+			window.clearTimeout(toastTimeout);
+			toastTimeout = null;
+		}
+
+		toastMessage.textContent = message;
+		toastIcon.textContent = toastIcons[variant];
+
+		toastContent.classList.remove(
+			...toastVariants.success,
+			...toastVariants.info,
+			...toastVariants.error,
+		);
+		toastContent.classList.add(...toastVariants[variant]);
+
+		toast.hidden = false;
+		toast.classList.remove('opacity-0', 'translate-y-2');
+		toast.classList.add('opacity-100', 'translate-y-0');
+
+		toastTimeout = window.setTimeout(() => {
+			hideToast();
+		}, 4000);
+	}
+
+	toastContent?.addEventListener('click', () => hideToast());
+
+	actionButton?.addEventListener('click', async () => {
+		if (!actionButton || !messageEl) return;
+
+		actionButton.disabled = true;
+		actionButton.textContent = 'Processing...';
+		messageEl.textContent = 'Completing mission...';
+
+		try {
+			const response = await fetch('/api/missions/daily-login', {
+				method: 'POST',
+				headers: {
+					accept: 'application/json',
+				},
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to complete mission');
+			}
+
+			const data = await response.json();
+
+			if (data.completedToday) {
+				actionButton.textContent = 'Completed';
+				actionButton.disabled = true;
+				actionButton.classList.remove('border-yellow-500/50', 'text-yellow-300');
+				actionButton.classList.add('border-emerald-500/50', 'text-emerald-300');
+				messageEl.textContent =
+					data.status === 'completed'
+						? `Success! ${formatNumber(data.reward)} chips added to your balance.`
+						: 'Already completed for today. Come back tomorrow.';
+				showToast(
+					data.status === 'completed'
+						? `Success! ${formatNumber(data.reward)} chips added to your balance.`
+						: 'Already completed for today. Come back tomorrow.',
+					data.status === 'completed' ? 'success' : 'info',
+				);
+			} else {
+				actionButton.disabled = false;
+				actionButton.textContent = 'Complete';
+				messageEl.textContent = 'Unable to complete mission. Please try again.';
+				showToast('Unable to complete mission. Please try again.', 'error');
+			}
+
+			const chipBalance = typeof data.chipBalance === 'number' ? data.chipBalance : null;
+			if (chipBalance !== null) {
+				balanceEls.forEach((element) => {
+					element.textContent = `${formatNumber(chipBalance)} chips`;
+				});
+			}
+
+			const statusBadge = document.querySelector<HTMLElement>('[data-mission-status]');
+			if (data.completedToday && statusBadge) {
+				statusBadge.textContent = 'Completed Today';
+				statusBadge.classList.remove('border-yellow-500/30', 'text-yellow-300');
+				statusBadge.classList.add('border-emerald-500/30', 'text-emerald-300');
+			}
+
+			if (data.completedToday && data.completedDate) {
+				updateLastCompletedFromDate(new Date(data.completedDate));
+			} else if (!data.completedToday) {
+				updateLastCompletedFromDate(data.completedDate ? new Date(data.completedDate) : null);
+			}
+		} catch (error) {
+			console.error(error);
+			actionButton.disabled = false;
+			actionButton.textContent = 'Complete';
+			messageEl.textContent = 'Something went wrong. Please try again.';
+			showToast('Something went wrong. Please try again.', 'error');
+		}
+	});
+</script>

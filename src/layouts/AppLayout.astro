@@ -16,8 +16,23 @@ const {
 	footerClass = 'mt-20',
 } = Astro.props as Props;
 const headerSticky = headerStickyProp ?? true;
-const user = Astro.locals.user;
+const session = Astro.locals.session;
+const user = Astro.locals.user ?? session?.user ?? null;
 const headerPositionClass = headerSticky ? 'sticky top-0 z-50' : '';
+const rawChipBalance = user?.chipBalance;
+const parsedChipBalance =
+	typeof rawChipBalance === 'number'
+		? rawChipBalance
+		: typeof rawChipBalance === 'string'
+			? Number(rawChipBalance)
+			: null;
+const chipBalance = Number.isFinite(parsedChipBalance)
+	? (parsedChipBalance as number)
+	: user
+		? 0
+		: null;
+const formattedChipBalance =
+	chipBalance === null ? null : new Intl.NumberFormat('en-US').format(chipBalance);
 ---
 
 <html lang="en">
@@ -54,6 +69,12 @@ const headerPositionClass = headerSticky ? 'sticky top-0 z-50' : '';
 								Games
 							</a>
 							<a
+								href="/missions/daily"
+								class="text-slate-300 hover:text-yellow-400 font-semibold transition-colors"
+							>
+								Daily Mission
+							</a>
+							<a
 								href="/games/tournaments"
 								class="text-slate-300 hover:text-yellow-400 font-semibold transition-colors"
 							>
@@ -79,7 +100,9 @@ const headerPositionClass = headerSticky ? 'sticky top-0 z-50' : '';
 												clip-rule="evenodd"
 											/>
 										</svg>
-										<span class="text-yellow-400 font-bold text-lg">$1,000</span>
+										<span class="text-yellow-400 font-bold text-lg" data-chip-balance>
+											{formattedChipBalance ? `${formattedChipBalance} chips` : '— chips'}
+										</span>
 									</div>
 								)
 							}

@@ -19,6 +19,7 @@ declare namespace App {
 				email: string;
 				emailVerified: boolean;
 				image?: string | null;
+				chipBalance: number;
 				createdAt: Date;
 				updatedAt: Date;
 			};
@@ -39,6 +40,7 @@ declare namespace App {
 			email: string;
 			emailVerified: boolean;
 			image?: string | null;
+			chipBalance: number;
 			createdAt: Date;
 			updatedAt: Date;
 		} | null;

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
 	id: text('id').primaryKey(),
@@ -6,6 +6,7 @@ export const user = sqliteTable('user', {
 	email: text('email').notNull().unique(),
 	emailVerified: integer('emailVerified', { mode: 'boolean' }).notNull(),
 	image: text('image'),
+	chipBalance: integer('chipBalance').notNull().default(10000),
 	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 });
@@ -49,3 +50,17 @@ export const verification = sqliteTable('verification', {
 	createdAt: integer('createdAt', { mode: 'timestamp' }),
 	updatedAt: integer('updatedAt', { mode: 'timestamp' }),
 });
+
+export const mission = sqliteTable(
+	'mission',
+	{
+		missionId: text('missionId').notNull(),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id),
+		completedDate: integer('completedDate', { mode: 'timestamp' }),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.missionId] }),
+	}),
+);

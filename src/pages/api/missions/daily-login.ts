@@ -5,6 +5,7 @@ import {
 	completeMission,
 	getMissionProgress,
 	getUserChipBalance,
+	resetMissionProgress,
 } from '../../../lib/missions';
 import { getMockD1Database } from '../../../lib/mock-d1';
 
@@ -75,6 +76,32 @@ export const POST: APIRoute = async ({ locals }) => {
 		status: result.status,
 		missionId: result.progress.mission.id,
 		reward: result.progress.mission.reward,
+		completedToday: result.progress.completedToday,
+		completedDate: result.progress.completedDate?.toISOString() ?? null,
+		chipBalance: result.chipBalance,
+	});
+};
+
+export const DELETE: APIRoute = async ({ locals }) => {
+	if (!import.meta.env.DEV) {
+		return jsonResponse({ error: 'Not found' }, { status: 404 });
+	}
+
+	const session = locals.session;
+	if (!session) {
+		return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
+	}
+
+	const db = await getDb(locals);
+	if (!db) {
+		return jsonResponse({ error: 'Database unavailable' }, { status: 500 });
+	}
+
+	const result = await resetMissionProgress(db, session.user.id, missionType);
+
+	return jsonResponse({
+		status: 'reset',
+		missionId: result.progress.mission.id,
 		completedToday: result.progress.completedToday,
 		completedDate: result.progress.completedDate?.toISOString() ?? null,
 		chipBalance: result.chipBalance,

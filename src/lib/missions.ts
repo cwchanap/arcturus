@@ -188,3 +188,21 @@ export async function completeMission(
 export async function getUserChipBalance(db: Database, userId: string) {
 	return getChipBalance(db, userId);
 }
+
+export async function resetMissionProgress(db: Database, userId: string, missionType: MissionType) {
+	await ensureMissionSchema(db);
+	await ensureMissionExists(db, userId, missionType);
+
+	await db
+		.update(mission)
+		.set({ completedDate: null })
+		.where(and(eq(mission.userId, userId), eq(mission.missionId, missionType.id)));
+
+	const progress = await getMissionProgress(db, userId, missionType);
+	const chipBalance = await getChipBalance(db, userId);
+
+	return {
+		progress,
+		chipBalance,
+	};
+}

@@ -5,13 +5,14 @@ import GameCard from '../components/GameCard.astro';
 // Check if user is logged in
 const user = Astro.locals.user;
 
-const featuredGames = [
+const games = [
 	{
 		name: "Texas Hold'em Poker",
 		icon: '🃏',
 		players: 1247,
 		minBet: 10,
 		href: '/games/poker',
+		featured: true,
 	},
 	{
 		name: 'Blackjack',
@@ -19,6 +20,7 @@ const featuredGames = [
 		players: 892,
 		minBet: 5,
 		href: '/games/blackjack',
+		featured: true,
 	},
 	{
 		name: 'Roulette',
@@ -27,7 +29,30 @@ const featuredGames = [
 		minBet: 1,
 		href: '/games/roulette',
 	},
+	{
+		name: 'Baccarat',
+		icon: '🎴',
+		players: 432,
+		minBet: 25,
+		href: '/games/baccarat',
+	},
+	{
+		name: 'Craps',
+		icon: '🎲',
+		players: 321,
+		minBet: 5,
+		href: '/games/craps',
+	},
+	{
+		name: 'Slots',
+		icon: '🎰',
+		players: 2134,
+		minBet: 1,
+		href: '/games/slots',
+	},
 ];
+
+const featuredGames = games.filter((game) => game.featured);
 ---
 
 <CasinoLayout title="Arcturus Casino - Premium Online Gaming">
@@ -98,7 +123,7 @@ const featuredGames = [
 					) : (
 						<div class="flex flex-col sm:flex-row gap-4 justify-center items-center">
 							<a
-								href="/games"
+								href="#games"
 								class="group relative px-10 py-5 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 rounded-xl font-bold text-xl text-slate-900 hover:shadow-2xl hover:shadow-yellow-500/50 transition-all duration-300 transform hover:scale-105"
 							>
 								<span class="relative z-10">🎮 Play Now</span>
@@ -139,37 +164,57 @@ const featuredGames = [
 		</div>
 	</div>
 
-	<!-- Featured Games Section -->
-	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-		<div class="text-center mb-12">
+	<!-- Games Showcase -->
+	<section id="games" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 space-y-16">
+		<div class="text-center">
 			<h2 class="text-4xl font-bold text-white mb-4 flex items-center justify-center gap-3">
 				<span>🔥</span>
 				<span>Featured Games</span>
 				<span>🔥</span>
 			</h2>
-			<p class="text-xl text-slate-400">Most popular games chosen by our community</p>
+			<p class="text-xl text-slate-400">Most popular tables heating up right now</p>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
 			{featuredGames.map((game) => <GameCard {...game} />)}
 		</div>
 
-		<div class="text-center">
-			<a
-				href="/games"
-				class="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-lg font-bold text-lg text-slate-900 hover:from-yellow-300 hover:to-amber-400 transition-all duration-300 transform hover:scale-105"
-			>
-				<span>View All Games</span>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-				</svg>
-			</a>
+		<div class="space-y-8">
+			<div class="flex items-center gap-3">
+				<div class="text-3xl">🎮</div>
+				<h3 class="text-3xl font-bold text-white">All Games</h3>
+			</div>
+			<p class="text-slate-400 max-w-3xl">
+				Sharpen your skills across our full table lineup. Everything is free to play—earn chips, try
+				new strategies, and find your next favorite game.
+			</p>
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+				{games.map((game) => <GameCard {...game} />)}
+			</div>
 		</div>
-	</div>
+
+		<div class="pt-8">
+			<div
+				class="bg-gradient-to-r from-yellow-600 via-amber-600 to-yellow-600 rounded-2xl p-8 md:p-12 text-center relative overflow-hidden"
+			>
+				<div
+					class="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmZmZmYiIGZpbGwtb3BhY2l0eT0iMC4xIj48cGF0aCBkPSJNMzYgMzRjMC0yLjIxLTEuNzktNC00LTRzLTQgMS43OS00IDQgMS43OSA0IDQgNCA0LTEuNzkgNC00em0wLTEwYzAtMi4yMS0xLjc5LTQtNC00cy00IDEuNzktNCA0IDEuNzkgNCA0IDQgNC0xLjc5IDQtNHoiLz48L2c+PC9nPjwvc3ZnPg==')] opacity-20"
+				>
+				</div>
+				<div class="relative">
+					<h3 class="text-3xl md:text-4xl font-bold text-slate-900 mb-4">🎁 Welcome Bonus</h3>
+					<p class="text-xl text-slate-800 mb-6">
+						Get a 100% chip match on your first refill plus an exclusive VIP table invite.
+					</p>
+					<button
+						class="bg-slate-900 text-yellow-400 px-8 py-4 rounded-lg font-bold text-lg hover:bg-slate-800 transition-colors"
+					>
+						Claim Bonus
+					</button>
+				</div>
+			</div>
+		</div>
+	</section>
 
 	<!-- Why Choose Us Section -->
 	<div class="bg-slate-800/30 py-20">

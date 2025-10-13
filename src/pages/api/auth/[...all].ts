@@ -1,6 +1,5 @@
 import { createAuth } from '../../../lib/auth';
 import type { APIRoute } from 'astro';
-import { getMockD1Database } from '../../../lib/mock-d1';
 
 export const ALL: APIRoute = async (context) => {
 	// Try to get runtime from context.locals first (production)
@@ -11,6 +10,7 @@ export const ALL: APIRoute = async (context) => {
 	// Fallback to mock D1 database (development)
 	if (!db && import.meta.env.DEV) {
 		try {
+			const { getMockD1Database } = await import('../../../lib/mock-d1');
 			db = await getMockD1Database();
 			env = { DB: db, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET } as Env;
 		} catch (error) {

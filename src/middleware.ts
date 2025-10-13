@@ -3,7 +3,6 @@ import { defineMiddleware } from 'astro:middleware';
 import { eq } from 'drizzle-orm';
 import { createAuth } from './lib/auth';
 import { createDb } from './lib/db';
-import { getMockD1Database } from './lib/mock-d1';
 import { user as userTable } from './db/schema';
 
 let chipBalanceColumnEnsured = false;
@@ -35,6 +34,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
 	if (!dbBinding && import.meta.env.DEV) {
 		try {
+			const { getMockD1Database } = await import('./lib/mock-d1');
 			dbBinding = await getMockD1Database();
 			env = {
 				DB: dbBinding,

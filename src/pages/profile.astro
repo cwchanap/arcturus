@@ -1,5 +1,7 @@
 ---
 import CasinoLayout from '../layouts/casino.astro';
+import { createDb } from '../lib/db';
+import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
 
 const session = Astro.locals.session;
 
@@ -9,6 +11,64 @@ if (!session) {
 
 const { user } = session;
 const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'A';
+
+const runtime = Astro.locals.runtime;
+
+let dbBinding = runtime?.env?.DB ?? null;
+
+if (!dbBinding && import.meta.env.DEV) {
+	try {
+		const { getMockD1Database } = await import('../lib/mock-d1');
+		dbBinding = await getMockD1Database();
+	} catch (error) {
+		console.error('Error creating mock D1 database for profile page:', error);
+	}
+}
+
+let aiSettings = {
+	provider: 'openai',
+	model: 'gpt-4o',
+	openaiApiKey: null as string | null,
+	geminiApiKey: null as string | null,
+	updatedAt: new Date(0),
+};
+
+if (dbBinding) {
+	try {
+		const db = createDb(dbBinding);
+		const result = await getLlmSettings(db, user.id);
+		aiSettings = {
+			provider: result.provider,
+			model: result.model,
+			openaiApiKey: result.openaiApiKey,
+			geminiApiKey: result.geminiApiKey,
+			updatedAt: result.updatedAt,
+		};
+	} catch (error) {
+		console.error('Error loading AI rival settings:', error);
+	}
+}
+
+const aiModelOptions = AI_MODELS;
+const aiProviderOptions = AI_PROVIDERS;
+const providerLabels = {
+	openai: 'OpenAI',
+	gemini: 'Gemini',
+} as const;
+const modelLabels: Record<string, string> = {
+	'gpt-4o': 'GPT-4o',
+	'gemini-2.5-flash': 'Gemini 2.5 Flash',
+	'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+};
+const aiSettingsPayload = JSON.stringify({
+	provider: aiSettings.provider,
+	model: aiSettings.model,
+	openaiApiKey: aiSettings.openaiApiKey,
+	geminiApiKey: aiSettings.geminiApiKey,
+	hasOpenaiKey: Boolean(aiSettings.openaiApiKey),
+	hasGeminiKey: Boolean(aiSettings.geminiApiKey),
+	updatedAt: aiSettings.updatedAt.toISOString(),
+});
 ---
 
 <CasinoLayout title="Player Profile - Arcturus Casino">
@@ -109,6 +169,133 @@ const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUp
 					</div>
 				</div>
 			</div>
+
+			<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<h2 class="text-lg font-semibold text-white">AI Rival Settings</h2>
+						<p class="text-sm text-slate-400">
+							Choose your model provider and store API keys to enable the Gemini or OpenAI poker
+							rival.
+						</p>
+					</div>
+					<p
+						id="ai-settings-feedback"
+						class="text-xs font-semibold uppercase tracking-widest text-slate-400 text-right"
+					>
+						Updated {
+							aiSettings.updatedAt.getTime() ? aiSettings.updatedAt.toLocaleDateString() : '—'
+						}
+					</p>
+				</div>
+
+				<form
+					id="ai-settings-form"
+					class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2"
+					data-initial-provider={aiSettings.provider}
+					data-initial-settings={aiSettingsPayload}
+				>
+					<div class="col-span-full sm:col-span-1">
+						<label for="ai-provider" class="block text-sm font-medium text-slate-200">
+							Model Provider
+						</label>
+						<select
+							id="ai-provider"
+							name="provider"
+							class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+						>
+							{
+								aiProviderOptions.map((provider) => (
+									<option value={provider} selected={aiSettings.provider === provider}>
+										{providerLabels[provider]}
+									</option>
+								))
+							}
+						</select>
+					</div>
+					<div class="col-span-full sm:col-span-1">
+						<label for="ai-model" class="block text-sm font-medium text-slate-200">
+							Model Variant
+						</label>
+						<select
+							id="ai-model"
+							name="model"
+							class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+							data-model-options={JSON.stringify(aiModelOptions)}
+							data-model-labels={JSON.stringify(modelLabels)}
+							data-initial-model={aiSettings.model}
+						>
+							{
+								aiModelOptions[aiSettings.provider].map((model) => (
+									<option value={model} selected={aiSettings.model === model}>
+										{modelLabels[model] ?? model}
+									</option>
+								))
+							}
+						</select>
+					</div>
+
+					<div class="col-span-full space-y-2">
+						<label for="openai-api-key" class="block text-sm font-medium text-slate-200">
+							OpenAI API Key
+						</label>
+						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+							<input
+								id="openai-api-key"
+								name="openaiApiKey"
+								type="password"
+								placeholder="sk-..."
+								class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+								autocomplete="off"
+							/>
+							<span
+								id="openai-key-status"
+								class="text-xs font-semibold uppercase tracking-widest text-slate-400"
+							>
+								{aiSettings.openaiApiKey ? 'Saved' : 'Not saved'}
+							</span>
+						</div>
+						<p class="text-xs text-slate-400">
+							Required for the GPT-4o rival. Keys are stored per account and never shown back in
+							full.
+						</p>
+					</div>
+
+					<div class="col-span-full space-y-2">
+						<label for="gemini-api-key" class="block text-sm font-medium text-slate-200">
+							Gemini API Key
+						</label>
+						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+							<input
+								id="gemini-api-key"
+								name="geminiApiKey"
+								type="password"
+								placeholder="AIza..."
+								class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+								autocomplete="off"
+							/>
+							<span
+								id="gemini-key-status"
+								class="text-xs font-semibold uppercase tracking-widest text-slate-400"
+							>
+								{aiSettings.geminiApiKey ? 'Saved' : 'Not saved'}
+							</span>
+						</div>
+						<p class="text-xs text-slate-400">
+							Used for Gemini Flash rivals. Leave blank to keep the previously stored key.
+						</p>
+					</div>
+
+					<div class="col-span-full flex justify-end">
+						<button
+							type="submit"
+							class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-yellow-500 via-amber-500 to-yellow-600 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:from-yellow-400 hover:to-amber-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/60 focus:ring-offset-2 focus:ring-offset-slate-950"
+						>
+							Save Rival Preferences
+						</button>
+					</div>
+				</form>
+			</div>
 		</div>
 	</section>
 </CasinoLayout>
@@ -124,6 +311,177 @@ const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUp
 			window.location.href = '/signin';
 		} catch (error) {
 			console.error('Sign out error:', error);
+		}
+	});
+
+	let aiState = {
+		provider: 'openai',
+		model: 'gpt-4o',
+		hasOpenaiKey: false,
+		hasGeminiKey: false,
+	};
+
+	const aiForm = document.getElementById('ai-settings-form');
+
+	if (aiForm instanceof HTMLFormElement && typeof aiForm.dataset.initialSettings === 'string') {
+		try {
+			const parsed = JSON.parse(aiForm.dataset.initialSettings);
+			aiState = {
+				provider: parsed.provider ?? aiState.provider,
+				model: parsed.model ?? aiState.model,
+				hasOpenaiKey: Boolean(parsed.hasOpenaiKey),
+				hasGeminiKey: Boolean(parsed.hasGeminiKey),
+			};
+		} catch (error) {
+			console.error('Failed to parse initial AI settings:', error);
+		}
+	}
+
+	const providerSelect = document.getElementById('ai-provider');
+	const modelSelect = document.getElementById('ai-model');
+	const openaiInput = document.getElementById('openai-api-key');
+	const geminiInput = document.getElementById('gemini-api-key');
+	const openaiStatus = document.getElementById('openai-key-status');
+	const geminiStatus = document.getElementById('gemini-key-status');
+	const feedbackEl = document.getElementById('ai-settings-feedback');
+
+	let modelOptions = {};
+	if (typeof modelSelect?.dataset.modelOptions === 'string') {
+		try {
+			modelOptions = JSON.parse(modelSelect.dataset.modelOptions);
+		} catch (error) {
+			console.error('Failed to parse model options dataset:', error);
+		}
+	}
+
+	let modelLabels = {};
+	if (typeof modelSelect?.dataset.modelLabels === 'string') {
+		try {
+			modelLabels = JSON.parse(modelSelect.dataset.modelLabels);
+		} catch (error) {
+			console.error('Failed to parse model labels dataset:', error);
+		}
+	}
+
+	function updateKeyStatus() {
+		if (openaiStatus) {
+			openaiStatus.textContent = aiState.hasOpenaiKey ? 'Saved' : 'Not saved';
+		}
+		if (geminiStatus) {
+			geminiStatus.textContent = aiState.hasGeminiKey ? 'Saved' : 'Not saved';
+		}
+	}
+
+	function setFeedback(message, tone = 'neutral') {
+		if (!feedbackEl) return;
+
+		feedbackEl.textContent = message;
+		feedbackEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-slate-400');
+		if (tone === 'success') {
+			feedbackEl.classList.add('text-emerald-400');
+		} else if (tone === 'error') {
+			feedbackEl.classList.add('text-rose-400');
+		} else {
+			feedbackEl.classList.add('text-slate-400');
+		}
+	}
+
+	function populateModels(provider, desiredModel) {
+		if (!(modelSelect instanceof HTMLSelectElement)) return;
+
+		const models = Array.isArray(modelOptions?.[provider]) ? modelOptions[provider] : [];
+		modelSelect.innerHTML = '';
+
+		models.forEach((model) => {
+			const option = document.createElement('option');
+			option.value = model;
+			option.textContent = modelLabels?.[model] ?? model;
+			if (model === desiredModel) {
+				option.selected = true;
+			}
+			modelSelect.appendChild(option);
+		});
+
+		if (models.length > 0 && !models.includes(desiredModel)) {
+			modelSelect.value = models[0];
+		}
+	}
+
+	if (providerSelect instanceof HTMLSelectElement) {
+		providerSelect.value = aiState.provider;
+		populateModels(aiState.provider, aiState.model);
+
+		providerSelect.addEventListener('change', () => {
+			const nextProvider = providerSelect.value;
+			populateModels(
+				nextProvider,
+				modelSelect instanceof HTMLSelectElement ? modelSelect.value : '',
+			);
+		});
+	}
+
+	updateKeyStatus();
+
+	aiForm?.addEventListener('submit', async (event) => {
+		event.preventDefault();
+		if (
+			!(providerSelect instanceof HTMLSelectElement) ||
+			!(modelSelect instanceof HTMLSelectElement)
+		) {
+			return;
+		}
+
+		const payload = {
+			provider: providerSelect.value,
+			model: modelSelect.value,
+			openaiApiKey: openaiInput instanceof HTMLInputElement ? openaiInput.value.trim() : '',
+			geminiApiKey: geminiInput instanceof HTMLInputElement ? geminiInput.value.trim() : '',
+		};
+
+		setFeedback('Saving…', 'neutral');
+
+		try {
+			const response = await fetch('/api/profile/llm-settings', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify(payload),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				throw new Error(errorText || `Request failed with status ${response.status}`);
+			}
+
+			const data = await response.json();
+			const updated = data?.settings ?? {};
+
+			aiState = {
+				provider: updated.provider ?? payload.provider,
+				model: updated.model ?? payload.model,
+				hasOpenaiKey: Boolean(updated.hasOpenaiKey),
+				hasGeminiKey: Boolean(updated.hasGeminiKey),
+			};
+
+			if (providerSelect.value !== aiState.provider) {
+				providerSelect.value = aiState.provider;
+			}
+
+			populateModels(aiState.provider, aiState.model);
+			updateKeyStatus();
+
+			if (openaiInput instanceof HTMLInputElement) {
+				openaiInput.value = '';
+			}
+			if (geminiInput instanceof HTMLInputElement) {
+				geminiInput.value = '';
+			}
+
+			setFeedback('Rival preferences saved', 'success');
+		} catch (error) {
+			console.error('Failed to save AI rival settings:', error);
+			setFeedback('Could not save preferences', 'error');
 		}
 	});
 </script>

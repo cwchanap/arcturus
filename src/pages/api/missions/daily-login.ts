@@ -7,7 +7,6 @@ import {
 	getUserChipBalance,
 	resetMissionProgress,
 } from '../../../lib/missions';
-import { getMockD1Database } from '../../../lib/mock-d1';
 
 function jsonResponse(body: Record<string, unknown>, init?: ResponseInit) {
 	return new Response(JSON.stringify(body), {
@@ -23,6 +22,7 @@ async function getDb(locals: App.Locals) {
 
 	if (!dbBinding && import.meta.env.DEV) {
 		try {
+			const { getMockD1Database } = await import('../../../lib/mock-d1');
 			dbBinding = await getMockD1Database();
 		} catch (error) {
 			console.error('Error creating mock D1 database:', error);

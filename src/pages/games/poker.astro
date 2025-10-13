@@ -200,6 +200,26 @@ if (!user) {
 					Click "DEAL NEW HAND" to start
 				</div>
 			</div>
+
+			<div class="mt-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
+				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<div class="text-sm text-slate-400 mb-1">AI Rival</div>
+						<div id="ai-rival-status" class="text-sm text-slate-300">Loading rival settings…</div>
+					</div>
+					<button
+						id="btn-ai-move"
+						class="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:from-blue-400 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+					>
+						Ask AI Rival
+					</button>
+				</div>
+				<p class="mt-3 text-xs text-slate-500">
+					Configure API keys in your
+					<a href="/profile" class="text-yellow-400 hover:underline">profile settings</a>
+					to enable Gemini or OpenAI rivals.
+				</p>
+			</div>
 		</div>
 
 		<!-- Game Info -->
@@ -242,6 +262,19 @@ if (!user) {
 	// Poker game logic
 	type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
 	type Card = { value: string; suit: Suit; rank: number };
+	type AiProvider = 'openai' | 'gemini';
+	type AiSettings = {
+		provider: AiProvider;
+		model: string;
+		openaiApiKey: string | null;
+		geminiApiKey: string | null;
+	};
+	type AiMoveType = 'fold' | 'check' | 'call' | 'raise';
+	type AiMove = {
+		move: AiMoveType;
+		amount?: number | null;
+		raw: string;
+	};
 
 	class PokerGame {
 		private deck: Card[] = [];
@@ -251,10 +284,14 @@ if (!user) {
 		private playerBalance = 1000;
 		private currentBet = 0;
 		private gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' = 'preflop';
+		private aiSettings: AiSettings | null = null;
 
 		constructor() {
 			this.initDeck();
 			this.attachEventListeners();
+			this.highlightSuggestedMove(null);
+			this.setAiButtonState({ disabled: true });
+			this.loadAiSettings();
 		}
 
 		private initDeck() {
@@ -292,6 +329,7 @@ if (!user) {
 			this.renderPlayerCards();
 			this.renderCommunityCards();
 			this.updateUI();
+			this.highlightSuggestedMove(null);
 			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
 		}
 
@@ -407,6 +445,377 @@ if (!user) {
 			document.getElementById('game-status')!.textContent = message;
 		}
 
+		private setAiButtonState(options: { loading?: boolean; disabled?: boolean } = {}) {
+			const button = document.getElementById('btn-ai-move');
+			if (!(button instanceof HTMLButtonElement)) {
+				return;
+			}
+
+			if (!button.dataset.originalLabel) {
+				button.dataset.originalLabel = button.textContent ?? 'Ask AI Rival';
+			}
+
+			if (typeof options.disabled === 'boolean') {
+				button.disabled = options.disabled;
+			}
+
+			if (options.loading) {
+				button.textContent = 'Thinking…';
+				button.classList.add('animate-pulse');
+			} else {
+				button.textContent = button.dataset.originalLabel ?? 'Ask AI Rival';
+				button.classList.remove('animate-pulse');
+			}
+		}
+
+		private updateAiStatus(message?: string, tone: 'neutral' | 'success' | 'error' = 'neutral') {
+			const statusEl = document.getElementById('ai-rival-status');
+			if (!statusEl) return;
+
+			let text = message;
+			let resolvedTone = tone;
+
+			if (!text) {
+				if (!this.aiSettings) {
+					text = 'AI rival not configured.';
+					resolvedTone = 'error';
+				} else {
+					const providerLabel =
+						this.aiSettings.provider === 'openai'
+							? 'OpenAI GPT-4o'
+							: `Gemini ${this.aiSettings.model}`;
+					const hasKey = Boolean(this.getAiKey(this.aiSettings));
+					if (hasKey) {
+						text = `Ready with ${providerLabel}`;
+						resolvedTone = 'success';
+					} else {
+						text = `Missing ${this.aiSettings.provider === 'openai' ? 'OpenAI' : 'Gemini'} API key`;
+						resolvedTone = 'error';
+					}
+				}
+			}
+
+			statusEl.textContent = text;
+			statusEl.classList.remove('text-slate-300', 'text-emerald-400', 'text-rose-400');
+
+			if (resolvedTone === 'success') {
+				statusEl.classList.add('text-emerald-400');
+			} else if (resolvedTone === 'error') {
+				statusEl.classList.add('text-rose-400');
+			} else {
+				statusEl.classList.add('text-slate-300');
+			}
+		}
+
+		private getAiKey(settings: AiSettings | null): string | null {
+			if (!settings) return null;
+			if (settings.provider === 'openai') {
+				return settings.openaiApiKey ?? null;
+			}
+			if (settings.provider === 'gemini') {
+				return settings.geminiApiKey ?? null;
+			}
+			return null;
+		}
+
+		private async loadAiSettings() {
+			this.updateAiStatus('Loading rival settings…', 'neutral');
+			try {
+				const response = await fetch('/api/profile/llm-settings');
+				if (!response.ok) {
+					throw new Error(`Unexpected status ${response.status}`);
+				}
+				const data = await response.json();
+				const settings = data?.settings;
+				if (
+					settings &&
+					(settings.provider === 'openai' || settings.provider === 'gemini') &&
+					typeof settings.model === 'string'
+				) {
+					this.aiSettings = {
+						provider: settings.provider,
+						model: settings.model,
+						openaiApiKey: typeof settings.openaiApiKey === 'string' ? settings.openaiApiKey : null,
+						geminiApiKey: typeof settings.geminiApiKey === 'string' ? settings.geminiApiKey : null,
+					};
+					const hasKey = Boolean(this.getAiKey(this.aiSettings));
+					this.setAiButtonState({ disabled: !hasKey });
+					this.updateAiStatus();
+				} else {
+					this.aiSettings = null;
+					this.setAiButtonState({ disabled: true });
+					this.updateAiStatus('No AI rival settings stored yet.', 'error');
+				}
+			} catch (error) {
+				console.error('Failed to load AI rival settings:', error);
+				this.aiSettings = null;
+				this.setAiButtonState({ disabled: true });
+				this.updateAiStatus('Unable to load rival settings.', 'error');
+			}
+		}
+
+		private formatCard(card: Card) {
+			return `${card.value}${this.getSuitSymbol(card.suit)}`;
+		}
+
+		private formatCards(cards: Card[]) {
+			return cards.length ? cards.map((card) => this.formatCard(card)).join(', ') : 'None';
+		}
+
+		private buildPrompt() {
+			const phaseLabel = this.gamePhase.toUpperCase();
+			const playerCards = this.formatCards(this.playerHand);
+			const communityCards = this.communityCards.length
+				? this.formatCards(this.communityCards)
+				: 'Not revealed yet';
+
+			return `You are an AI poker rival advising the user on Texas Hold'em strategy.
+Game phase: ${phaseLabel}
+Player hole cards: ${playerCards}
+Community cards: ${communityCards}
+Pot size: $${this.pot}
+Current player bet to match: $${this.currentBet}
+
+Respond with a JSON object describing your recommended move.
+Use the shape {"move":"fold|check|call|raise","amount":number?}. Amount is required only for raises.
+Keep the JSON as the only output.`;
+		}
+
+		private async requestAiMove() {
+			const settings = this.aiSettings;
+			const apiKey = this.getAiKey(settings);
+			if (!settings || !apiKey) {
+				this.updateAiStatus('AI rival not ready. Check your profile settings.', 'error');
+				this.setAiButtonState({ disabled: true });
+				return;
+			}
+
+			this.setAiButtonState({ loading: true, disabled: true });
+			this.updateAiStatus('Consulting the rival…', 'neutral');
+
+			try {
+				const prompt = this.buildPrompt();
+				let rawResponse = '';
+
+				if (settings.provider === 'openai') {
+					rawResponse = await this.callOpenAi(prompt, settings.model, apiKey);
+				} else {
+					rawResponse = await this.callGemini(prompt, settings.model, apiKey);
+				}
+
+				const move = this.parseAiMove(rawResponse);
+				this.applyAiMove(move);
+
+				const stillHasKey = Boolean(this.getAiKey(this.aiSettings));
+				this.setAiButtonState({ loading: false, disabled: !stillHasKey });
+			} catch (error) {
+				console.error('AI rival failed to respond:', error);
+				this.updateAiStatus('Rival could not decide. Try again.', 'error');
+				const stillHasKey = Boolean(this.getAiKey(this.aiSettings));
+				this.setAiButtonState({ loading: false, disabled: !stillHasKey });
+			}
+		}
+
+		private async callOpenAi(prompt: string, model: string, apiKey: string) {
+			const response = await fetch('https://api.openai.com/v1/chat/completions', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					authorization: `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({
+					model,
+					messages: [
+						{
+							role: 'system',
+							content:
+								'You are an elite poker rival helping determine the next move. Answer in JSON only.',
+						},
+						{ role: 'user', content: prompt },
+					],
+					temperature: 0.6,
+				}),
+			});
+
+			const data = await response.json();
+			if (!response.ok) {
+				const message =
+					typeof data?.error?.message === 'string'
+						? data.error.message
+						: `OpenAI request failed with status ${response.status}`;
+				throw new Error(message);
+			}
+
+			return (
+				data?.choices?.[0]?.message?.content ?? JSON.stringify({ move: 'check', amount: null })
+			);
+		}
+
+		private async callGemini(prompt: string, model: string, apiKey: string) {
+			const response = await fetch(
+				`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+				{
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
+					},
+					body: JSON.stringify({
+						generationConfig: {
+							temperature: 0.6,
+						},
+						contents: [
+							{
+								role: 'user',
+								parts: [
+									{
+										text: `You are an elite poker rival helping determine the next move. Answer in JSON only.\n${prompt}`,
+									},
+								],
+							},
+						],
+					}),
+				},
+			);
+
+			const data = await response.json();
+			if (!response.ok) {
+				const message =
+					data?.error?.message ??
+					data?.error ??
+					`Gemini request failed with status ${response.status}`;
+				throw new Error(typeof message === 'string' ? message : 'Unknown Gemini error');
+			}
+
+			const text = data?.candidates?.[0]?.content?.parts
+				?.map((part: { text?: string }) => part.text ?? '')
+				.join('')
+				.trim();
+
+			return text || JSON.stringify({ move: 'check', amount: null });
+		}
+
+		private parseAiMove(raw: string): AiMove {
+			const source = typeof raw === 'string' ? raw.trim() : '';
+			let payload = source;
+
+			const jsonMatch = source.match(/\{[\s\S]*\}/);
+			if (jsonMatch) {
+				payload = jsonMatch[0];
+			}
+
+			let parsed: Record<string, unknown> | null = null;
+
+			try {
+				parsed = JSON.parse(payload);
+			} catch (_error) {
+				// ignore parse error and fallback to heuristics
+			}
+
+			let move: AiMoveType | null = null;
+			let amount: number | null = null;
+
+			if (parsed && typeof parsed === 'object') {
+				const rawMove = parsed.move;
+				if (typeof rawMove === 'string') {
+					const normalized = rawMove.toLowerCase();
+					if (
+						normalized === 'fold' ||
+						normalized === 'check' ||
+						normalized === 'call' ||
+						normalized === 'raise'
+					) {
+						move = normalized;
+					}
+				}
+
+				const rawAmount = parsed.amount;
+				if (rawAmount !== undefined && rawAmount !== null) {
+					const attempt = Number(rawAmount);
+					if (!Number.isNaN(attempt)) {
+						amount = attempt;
+					}
+				}
+			}
+
+			if (!move) {
+				if (/fold/i.test(source)) move = 'fold';
+				else if (/check/i.test(source)) move = 'check';
+				else if (/call/i.test(source)) move = 'call';
+				else if (/raise/i.test(source)) move = 'raise';
+				else move = 'check';
+			}
+
+			if (move === 'raise' && (amount === null || Number.isNaN(amount))) {
+				const amountMatch = source.match(/(\d{2,4})/);
+				if (amountMatch) {
+					amount = Number(amountMatch[1]);
+				}
+			}
+
+			return {
+				move,
+				amount: Number.isFinite(amount) ? amount : null,
+				raw: source,
+			};
+		}
+
+		private clampRaise(amount: number | null) {
+			if (amount === null || Number.isNaN(amount)) {
+				return null;
+			}
+			const clamped = Math.max(10, Math.min(Math.round(amount), 1000));
+			return clamped;
+		}
+
+		private highlightSuggestedMove(move: AiMoveType | null) {
+			const buttonMap: Record<AiMoveType, string> = {
+				fold: 'btn-fold',
+				check: 'btn-check',
+				call: 'btn-call',
+				raise: 'btn-raise',
+			};
+
+			(Object.keys(buttonMap) as AiMoveType[]).forEach((key) => {
+				const el = document.getElementById(buttonMap[key]);
+				if (!(el instanceof HTMLButtonElement)) return;
+				el.classList.remove('ring-2', 'ring-offset-2', 'ring-yellow-400');
+				if (move && key === move) {
+					el.classList.add('ring-2', 'ring-offset-2', 'ring-yellow-400');
+				}
+			});
+		}
+
+		private applyAiMove(move: AiMove) {
+			this.highlightSuggestedMove(move.move);
+
+			let description = '';
+			if (move.move === 'fold') {
+				description = 'fold';
+			} else if (move.move === 'check') {
+				description = 'check';
+			} else if (move.move === 'call') {
+				description = 'call';
+			} else if (move.move === 'raise') {
+				const raise = this.clampRaise(move.amount);
+				if (raise !== null) {
+					const slider = document.getElementById('bet-slider');
+					const betLabel = document.getElementById('bet-amount');
+					if (slider instanceof HTMLInputElement) {
+						slider.value = String(raise);
+					}
+					if (betLabel) {
+						betLabel.textContent = `$${raise}`;
+					}
+					description = `raise $${raise}`;
+				} else {
+					description = 'raise';
+				}
+			}
+
+			this.updateAiStatus(`Suggested move: ${description.toUpperCase()}`, 'success');
+			this.updateGameStatus(`AI rival recommends you ${description || move.move}.`);
+		}
+
 		private nextPhase() {
 			if (this.gamePhase === 'preflop') {
 				this.gamePhase = 'flop';
@@ -481,6 +890,10 @@ if (!user) {
 						if (betAmount) betAmount.textContent = `$${amount}`;
 					}
 				});
+			});
+
+			document.getElementById('btn-ai-move')?.addEventListener('click', () => {
+				void this.requestAiMove();
 			});
 		}
 	}

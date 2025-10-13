@@ -9,8 +9,8 @@ binding = "DB"
 database_name = "arcturus"
 database_id = "4668c401-69c0-4aa2-ab3a-91d876b185b0"
 
-# Optional: KV namespace for sessions (if needed)
-# Uncomment and configure if you want to use KV for session storage
-# [[kv_namespaces]]
-# binding = "SESSION"
-# id = "YOUR_KV_ID_HERE"
+# KV namespace for sessions (used by @astrojs/cloudflare adapter)
+[[kv_namespaces]]
+binding = "SESSION"
+id = "1563c3eed6704e83897b1b53fdc0d3e2"
+preview_id = "65898cef372b402bbb79dc25e9964be4"

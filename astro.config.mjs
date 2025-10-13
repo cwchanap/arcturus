@@ -16,6 +16,13 @@ export default defineConfig({
 		port: 2000,
 	},
 	vite: {
-		plugins: [tailwindcss()],
+		// Temporarily disable Tailwind to test build
+		// plugins: [tailwindcss()],
+		ssr: {
+			external: ['better-sqlite3'],
+		},
+		optimizeDeps: {
+			exclude: ['better-sqlite3'],
+		},
 	},
 });

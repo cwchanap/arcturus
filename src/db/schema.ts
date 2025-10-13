@@ -64,3 +64,15 @@ export const mission = sqliteTable(
 		pk: primaryKey({ columns: [table.userId, table.missionId] }),
 	}),
 );
+
+export const llmSettings = sqliteTable('llm_settings', {
+	userId: text('userId')
+		.primaryKey()
+		.references(() => user.id),
+	provider: text('provider').notNull().default('openai'),
+	model: text('model').notNull().default('gpt-4o'),
+	openaiApiKey: text('openaiApiKey'),
+	geminiApiKey: text('geminiApiKey'),
+	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+});

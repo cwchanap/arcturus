@@ -2,9 +2,14 @@ import type { D1Database } from '@cloudflare/workers-types';
 
 // Utility to access the local wrangler-managed SQLite database during development.
 export async function getMockD1Database(): Promise<D1Database> {
+	if (import.meta.env.PROD) {
+		throw new Error('Mock D1 database is only available during local development.');
+	}
+
 	const fs = await import('node:fs/promises');
 	const { join } = await import('node:path');
-	const { default: Database } = await import('better-sqlite3');
+	const moduleName = 'better-sqlite3';
+	const { default: Database } = await import(/* @vite-ignore */ moduleName);
 
 	const wranglerDir = join(process.cwd(), '.wrangler/state/v3/d1/miniflare-D1DatabaseObject');
 	const files = await fs.readdir(wranglerDir);

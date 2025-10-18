@@ -16,7 +16,9 @@ const runtime = Astro.locals.runtime;
 
 let dbBinding = runtime?.env?.DB ?? null;
 
-if (!dbBinding && import.meta.env.DEV) {
+// Only try to create mock database if we're in dev AND have a runtime context
+// During build, runtime won't be properly initialized, so skip this
+if (!dbBinding && import.meta.env.DEV && runtime) {
 	try {
 		const { getMockD1Database } = await import('../lib/mock-d1');
 		dbBinding = await getMockD1Database();

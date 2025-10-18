@@ -32,7 +32,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	let env = runtime?.env ?? null;
 	let dbBinding = env?.DB ?? null;
 
-	if (!dbBinding && import.meta.env.DEV) {
+	// Only try mock database if we have a runtime context (not during build)
+	if (!dbBinding && import.meta.env.DEV && runtime) {
 		try {
 			const { getMockD1Database } = await import('./lib/mock-d1');
 			dbBinding = await getMockD1Database();

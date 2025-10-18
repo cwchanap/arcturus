@@ -43,7 +43,7 @@
 		"tailwindcss": "^4.1.13"
 	},
 	"devDependencies": {
-		"@astrojs/cloudflare": "^12.6.9",
+		"@astrojs/cloudflare": "^12.6.10",
 		"@cloudflare/workers-types": "^4.20250927.0",
 		"@eslint/js": "^9.36.0",
 		"drizzle-kit": "^0.31.5",

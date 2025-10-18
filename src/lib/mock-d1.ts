@@ -12,6 +12,16 @@ export async function getMockD1Database(): Promise<D1Database> {
 	const { default: Database } = await import(/* @vite-ignore */ moduleName);
 
 	const wranglerDir = join(process.cwd(), '.wrangler/state/v3/d1/miniflare-D1DatabaseObject');
+
+	// Check if directory exists to prevent hanging during build
+	try {
+		await fs.access(wranglerDir);
+	} catch {
+		throw new Error(
+			'Wrangler D1 directory not found - make sure dev server has been run at least once',
+		);
+	}
+
 	const files = await fs.readdir(wranglerDir);
 	const dbFile = files.find((file) => file.endsWith('.sqlite'));
 

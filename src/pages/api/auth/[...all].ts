@@ -7,8 +7,9 @@ export const ALL: APIRoute = async (context) => {
 	let env = runtime?.env;
 	let db: D1Database | null = env?.DB || null;
 
-	// Fallback to mock D1 database (development)
-	if (!db && import.meta.env.DEV) {
+	// Fallback to mock D1 database (development) - only if we have a runtime context
+	// During build, runtime won't be available, so skip this
+	if (!db && import.meta.env.DEV && runtime) {
 		try {
 			const { getMockD1Database } = await import('../../../lib/mock-d1');
 			db = await getMockD1Database();

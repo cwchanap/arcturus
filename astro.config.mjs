@@ -8,21 +8,27 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
 	output: 'server',
 	adapter: cloudflare({
-		platformProxy: {
-			enabled: true,
-		},
+		imageService: 'compile',
 	}),
 	server: {
 		port: 2000,
 	},
 	vite: {
-		// Temporarily disable Tailwind to test build
-		// plugins: [tailwindcss()],
+		plugins: [tailwindcss()],
 		ssr: {
-			external: ['better-sqlite3'],
+			external: [
+				'better-sqlite3',
+				'better-auth',
+				'better-auth/client',
+				'better-auth/adapters/drizzle',
+				'drizzle-orm',
+				'drizzle-orm/d1',
+				'drizzle-orm/sqlite-core',
+			],
+			noExternal: [],
 		},
 		optimizeDeps: {
-			exclude: ['better-sqlite3'],
+			exclude: ['better-sqlite3', 'better-auth', 'drizzle-orm'],
 		},
 	},
 });

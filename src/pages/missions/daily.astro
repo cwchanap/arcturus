@@ -5,16 +5,16 @@ import { createDb } from '../../lib/db';
 
 const session = Astro.locals.session;
 
-if (!session) {
-	return Astro.redirect('/signin');
+// During build, locals won't be available - just export the component shell
+if (!session || !Astro.locals.runtime?.env?.DB) {
+	if (!session) {
+		return Astro.redirect('/signin');
+	}
+	// During build, return a loading state or error page
+	return new Response('Service temporarily unavailable', { status: 503 });
 }
 
-const dbBinding = Astro.locals.runtime?.env?.DB;
-
-if (!dbBinding) {
-	throw new Error('Database not available');
-}
-
+const dbBinding = Astro.locals.runtime.env.DB;
 const db = createDb(dbBinding);
 const isDev = import.meta.env.DEV;
 

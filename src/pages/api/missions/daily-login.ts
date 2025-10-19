@@ -18,18 +18,7 @@ function jsonResponse(body: Record<string, unknown>, init?: ResponseInit) {
 }
 
 async function getDb(locals: App.Locals) {
-	let dbBinding = locals.runtime?.env?.DB ?? null;
-
-	// Only try mock database if we have a runtime context (not during build)
-	if (!dbBinding && import.meta.env.DEV && locals.runtime) {
-		try {
-			const { getMockD1Database } = await import('../../../lib/mock-d1');
-			dbBinding = await getMockD1Database();
-		} catch (error) {
-			console.error('Error creating mock D1 database:', error);
-		}
-	}
-
+	const dbBinding = locals.runtime?.env?.DB ?? null;
 	return dbBinding ? createDb(dbBinding) : null;
 }
 

@@ -14,18 +14,7 @@ const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUp
 
 const runtime = Astro.locals.runtime;
 
-let dbBinding = runtime?.env?.DB ?? null;
-
-// Only try to create mock database if we're in dev AND have a runtime context
-// During build, runtime won't be properly initialized, so skip this
-if (!dbBinding && import.meta.env.DEV && runtime) {
-	try {
-		const { getMockD1Database } = await import('../lib/mock-d1');
-		dbBinding = await getMockD1Database();
-	} catch (error) {
-		console.error('Error creating mock D1 database for profile page:', error);
-	}
-}
+const dbBinding = runtime?.env?.DB ?? null;
 
 let aiSettings = {
 	provider: 'openai',
@@ -172,7 +161,7 @@ const aiSettingsPayload = JSON.stringify({
 				</div>
 			</div>
 
-			<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+			<div class="mt-8 rounded-2xl border border-white/5 bg-slate-950/40 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<h2 class="text-lg font-semibold text-white">AI Rival Settings</h2>
@@ -238,53 +227,50 @@ const aiSettingsPayload = JSON.stringify({
 					</div>
 
 					<div class="col-span-full space-y-2">
-						<label for="openai-api-key" class="block text-sm font-medium text-slate-200">
-							OpenAI API Key
+						<label
+							id="api-key-label"
+							for="api-key"
+							class="block text-sm font-medium text-slate-200"
+						>
+							{aiSettings.provider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
 						</label>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 							<input
-								id="openai-api-key"
-								name="openaiApiKey"
+								id="api-key"
+								name="apiKey"
 								type="password"
-								placeholder="sk-..."
+								placeholder={aiSettings.provider === 'openai' ? 'sk-...' : 'AIza...'}
 								class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
 								autocomplete="off"
 							/>
-							<span
-								id="openai-key-status"
-								class="text-xs font-semibold uppercase tracking-widest text-slate-400"
-							>
-								{aiSettings.openaiApiKey ? 'Saved' : 'Not saved'}
-							</span>
+							<div class="flex items-center gap-2">
+								<span
+									id="api-key-status"
+									class="text-xs font-semibold uppercase tracking-widest text-slate-400"
+								>
+									{
+										(aiSettings.provider === 'openai' && aiSettings.openaiApiKey) ||
+										(aiSettings.provider === 'gemini' && aiSettings.geminiApiKey)
+											? 'Saved'
+											: 'Not saved'
+									}
+								</span>
+								<button
+									type="button"
+									id="clear-api-key"
+									class="text-xs text-rose-400 hover:text-rose-300 underline focus:outline-none focus:ring-1 focus:ring-rose-500 rounded px-1"
+									style="display: none;"
+								>
+									Clear
+								</button>
+							</div>
 						</div>
-						<p class="text-xs text-slate-400">
-							Required for the GPT-4o rival. Keys are stored per account and never shown back in
-							full.
-						</p>
-					</div>
-
-					<div class="col-span-full space-y-2">
-						<label for="gemini-api-key" class="block text-sm font-medium text-slate-200">
-							Gemini API Key
-						</label>
-						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-							<input
-								id="gemini-api-key"
-								name="geminiApiKey"
-								type="password"
-								placeholder="AIza..."
-								class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
-								autocomplete="off"
-							/>
-							<span
-								id="gemini-key-status"
-								class="text-xs font-semibold uppercase tracking-widest text-slate-400"
-							>
-								{aiSettings.geminiApiKey ? 'Saved' : 'Not saved'}
-							</span>
-						</div>
-						<p class="text-xs text-slate-400">
-							Used for Gemini Flash rivals. Leave blank to keep the previously stored key.
+						<p id="api-key-help" class="text-xs text-slate-400">
+							{
+								aiSettings.provider === 'openai'
+									? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
+									: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.'
+							}
 						</p>
 					</div>
 
@@ -341,11 +327,15 @@ const aiSettingsPayload = JSON.stringify({
 
 	const providerSelect = document.getElementById('ai-provider');
 	const modelSelect = document.getElementById('ai-model');
-	const openaiInput = document.getElementById('openai-api-key');
-	const geminiInput = document.getElementById('gemini-api-key');
-	const openaiStatus = document.getElementById('openai-key-status');
-	const geminiStatus = document.getElementById('gemini-key-status');
+	const apiKeyInput = document.getElementById('api-key');
+	const apiKeyLabel = document.getElementById('api-key-label');
+	const apiKeyStatus = document.getElementById('api-key-status');
+	const apiKeyHelp = document.getElementById('api-key-help');
+	const clearKeyButton = document.getElementById('clear-api-key');
 	const feedbackEl = document.getElementById('ai-settings-feedback');
+
+	// Track if user wants to explicitly clear the API key
+	let clearKeyRequested = false;
 
 	let modelOptions = {};
 	if (typeof modelSelect?.dataset.modelOptions === 'string') {
@@ -365,13 +355,32 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	}
 
-	function updateKeyStatus() {
-		if (openaiStatus) {
-			openaiStatus.textContent = aiState.hasOpenaiKey ? 'Saved' : 'Not saved';
+	function updateApiKeyUI(provider: string, clearInput = false) {
+		if (!apiKeyLabel || !apiKeyInput || !apiKeyStatus || !apiKeyHelp) return;
+
+		const isOpenAI = provider === 'openai';
+
+		apiKeyLabel.textContent = isOpenAI ? 'OpenAI API Key' : 'Gemini API Key';
+
+		if (apiKeyInput instanceof HTMLInputElement) {
+			apiKeyInput.placeholder = isOpenAI ? 'sk-...' : 'AIza...';
+			// Only clear input when explicitly requested (e.g., provider change)
+			if (clearInput) {
+				apiKeyInput.value = '';
+			}
 		}
-		if (geminiStatus) {
-			geminiStatus.textContent = aiState.hasGeminiKey ? 'Saved' : 'Not saved';
+
+		const hasKey = isOpenAI ? aiState.hasOpenaiKey : aiState.hasGeminiKey;
+		apiKeyStatus.textContent = hasKey ? 'Saved' : 'Not saved';
+
+		// Show/hide Clear button based on whether key is saved
+		if (clearKeyButton instanceof HTMLButtonElement) {
+			clearKeyButton.style.display = hasKey ? 'inline-block' : 'none';
 		}
+
+		apiKeyHelp.textContent = isOpenAI
+			? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
+			: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.';
 	}
 
 	function setFeedback(message, tone = 'neutral') {
@@ -419,10 +428,28 @@ const aiSettingsPayload = JSON.stringify({
 				nextProvider,
 				modelSelect instanceof HTMLSelectElement ? modelSelect.value : '',
 			);
+			clearKeyRequested = false; // Reset clear flag when changing provider
+			updateApiKeyUI(nextProvider, true); // Clear input when provider changes
 		});
 	}
 
-	updateKeyStatus();
+	updateApiKeyUI(aiState.provider);
+
+	// Handle Clear button click
+	if (clearKeyButton instanceof HTMLButtonElement) {
+		clearKeyButton.addEventListener('click', () => {
+			if (confirm('Are you sure you want to remove your saved API key?')) {
+				clearKeyRequested = true;
+				if (apiKeyInput instanceof HTMLInputElement) {
+					apiKeyInput.value = '';
+				}
+				// Trigger form submission
+				if (aiForm instanceof HTMLFormElement) {
+					aiForm.requestSubmit();
+				}
+			}
+		});
+	}
 
 	aiForm?.addEventListener('submit', async (event) => {
 		event.preventDefault();
@@ -433,12 +460,35 @@ const aiSettingsPayload = JSON.stringify({
 			return;
 		}
 
-		const payload = {
-			provider: providerSelect.value,
+		const currentProvider = providerSelect.value;
+		const apiKeyValue = apiKeyInput instanceof HTMLInputElement ? apiKeyInput.value.trim() : '';
+
+		// Payload logic:
+		// - If user clicked "Clear" → send empty string → server clears key
+		// - If user entered a value → send value → server updates key
+		// - If field is empty and no clear requested → don't send → server preserves key
+		// - Inactive provider → don't send (undefined) → server preserves existing key
+		const payload: {
+			provider: string;
+			model: string;
+			openaiApiKey?: string;
+			geminiApiKey?: string;
+		} = {
+			provider: currentProvider,
 			model: modelSelect.value,
-			openaiApiKey: openaiInput instanceof HTMLInputElement ? openaiInput.value.trim() : '',
-			geminiApiKey: geminiInput instanceof HTMLInputElement ? geminiInput.value.trim() : '',
 		};
+
+		// Include API key if: user entered value OR explicitly requested to clear
+		if (apiKeyValue.length > 0 || clearKeyRequested) {
+			if (currentProvider === 'openai') {
+				payload.openaiApiKey = apiKeyValue; // Empty string if clearing
+			} else if (currentProvider === 'gemini') {
+				payload.geminiApiKey = apiKeyValue; // Empty string if clearing
+			}
+		}
+
+		// Reset clear flag after building payload
+		clearKeyRequested = false;
 
 		setFeedback('Saving…', 'neutral');
 
@@ -471,14 +521,7 @@ const aiSettingsPayload = JSON.stringify({
 			}
 
 			populateModels(aiState.provider, aiState.model);
-			updateKeyStatus();
-
-			if (openaiInput instanceof HTMLInputElement) {
-				openaiInput.value = '';
-			}
-			if (geminiInput instanceof HTMLInputElement) {
-				geminiInput.value = '';
-			}
+			updateApiKeyUI(aiState.provider, true); // Clear input after successful save
 
 			setFeedback('Rival preferences saved', 'success');
 		} catch (error) {

@@ -28,23 +28,8 @@ async function ensureChipBalanceColumn(db: D1Database) {
 
 export const onRequest = defineMiddleware(async (context, next) => {
 	const runtime = context.locals.runtime;
-
-	let env = runtime?.env ?? null;
-	let dbBinding = env?.DB ?? null;
-
-	// Only try mock database if we have a runtime context (not during build)
-	if (!dbBinding && import.meta.env.DEV && runtime) {
-		try {
-			const { getMockD1Database } = await import('./lib/mock-d1');
-			dbBinding = await getMockD1Database();
-			env = {
-				DB: dbBinding,
-				BETTER_AUTH_SECRET: env?.BETTER_AUTH_SECRET ?? process.env.BETTER_AUTH_SECRET,
-			} as Env;
-		} catch (mockError) {
-			console.error('Error creating mock D1 database:', mockError);
-		}
-	}
+	const env = runtime?.env ?? null;
+	const dbBinding = env?.DB ?? null;
 
 	if (!dbBinding || !env) {
 		context.locals.session = null;

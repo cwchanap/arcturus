@@ -62,14 +62,34 @@ export async function getLlmSettings(db: Database, userId: string): Promise<LlmS
 export async function upsertLlmSettings(db: Database, userId: string, input: LlmSettingsInput) {
 	const now = new Date();
 
+	// Get existing settings to preserve keys not being updated
+	const existing = await getLlmSettings(db, userId);
+
+	// Only update the key for the current provider
+	// - If key is undefined (not in payload), preserve existing key
+	// - If key is null or empty string, clear the key (allow revocation)
+	// - If key is a non-empty string, store the new key
+	const openaiKey =
+		input.provider === 'openai'
+			? input.openaiApiKey !== undefined
+				? input.openaiApiKey
+				: existing.openaiApiKey
+			: existing.openaiApiKey;
+	const geminiKey =
+		input.provider === 'gemini'
+			? input.geminiApiKey !== undefined
+				? input.geminiApiKey
+				: existing.geminiApiKey
+			: existing.geminiApiKey;
+
 	await db
 		.insert(llmSettings)
 		.values({
 			userId,
 			provider: input.provider,
 			model: input.model,
-			openaiApiKey: input.openaiApiKey ?? null,
-			geminiApiKey: input.geminiApiKey ?? null,
+			openaiApiKey: openaiKey,
+			geminiApiKey: geminiKey,
 			createdAt: now,
 			updatedAt: now,
 		})
@@ -78,8 +98,8 @@ export async function upsertLlmSettings(db: Database, userId: string, input: Llm
 			set: {
 				provider: input.provider,
 				model: input.model,
-				openaiApiKey: input.openaiApiKey ?? null,
-				geminiApiKey: input.geminiApiKey ?? null,
+				openaiApiKey: openaiKey,
+				geminiApiKey: geminiKey,
 				updatedAt: now,
 			},
 		});

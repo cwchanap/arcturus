@@ -17,18 +17,7 @@ function jsonResponse(body: Record<string, unknown>, init?: ResponseInit) {
 }
 
 async function getDb(locals: App.Locals) {
-	let dbBinding = locals.runtime?.env?.DB ?? null;
-
-	// Only try mock database if we have a runtime context (not during build)
-	if (!dbBinding && import.meta.env.DEV && locals.runtime) {
-		try {
-			const { getMockD1Database } = await import('../../../lib/mock-d1');
-			dbBinding = await getMockD1Database();
-		} catch (error) {
-			console.error('Error creating mock D1 database:', error);
-		}
-	}
-
+	const dbBinding = locals.runtime?.env?.DB ?? null;
 	return dbBinding ? createDb(dbBinding) : null;
 }
 
@@ -84,14 +73,23 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
 	const provider = typeof payload.provider === 'string' ? payload.provider.toLowerCase() : '';
 	const model = typeof payload.model === 'string' ? payload.model : '';
+
+	// Handle API keys:
+	// - undefined (not in payload) → keep as undefined to preserve existing key
+	// - empty string → convert to null to clear the key
+	// - non-empty string → use the trimmed value
 	const openaiApiKey =
-		typeof payload.openaiApiKey === 'string' && payload.openaiApiKey.trim().length > 0
-			? payload.openaiApiKey.trim()
-			: null;
+		payload.openaiApiKey === undefined
+			? undefined
+			: typeof payload.openaiApiKey === 'string' && payload.openaiApiKey.trim().length > 0
+				? payload.openaiApiKey.trim()
+				: null;
 	const geminiApiKey =
-		typeof payload.geminiApiKey === 'string' && payload.geminiApiKey.trim().length > 0
-			? payload.geminiApiKey.trim()
-			: null;
+		payload.geminiApiKey === undefined
+			? undefined
+			: typeof payload.geminiApiKey === 'string' && payload.geminiApiKey.trim().length > 0
+				? payload.geminiApiKey.trim()
+				: null;
 
 	if (!isValidProvider(provider)) {
 		return jsonResponse({ error: 'Unsupported provider' }, { status: 400 });

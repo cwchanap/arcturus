@@ -260,8 +260,31 @@ if (!user) {
 
 <script>
 	// Poker game logic
-	type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
-	type Card = { value: string; suit: Suit; rank: number };
+	import type { Card, Suit, Player, BettingRound, GameContext } from '../../lib/poker';
+	import {
+		STARTING_CHIPS,
+		SMALL_BLIND,
+		BIG_BLIND,
+		createPlayer,
+		createAIPlayer,
+		placeBet,
+		postBlind,
+		foldPlayer,
+		resetPlayerForNewHand,
+		resetCurrentBets,
+		dealCardsToPlayer,
+		awardChips,
+		getActivePlayers,
+		getNextPlayerIndex,
+		isBettingRoundComplete,
+		getHighestBet,
+		getCallAmount,
+		calculatePot,
+		createAIConfig,
+		makeAIDecision,
+	} from '../../lib/poker';
+	import type { AIConfig } from '../../lib/poker';
+
 	type AiProvider = 'openai' | 'gemini';
 	type AiSettings = {
 		provider: AiProvider;
@@ -278,16 +301,24 @@ if (!user) {
 
 	class PokerGame {
 		private deck: Card[] = [];
-		private playerHand: Card[] = [];
+		private players: Player[] = [];
 		private communityCards: Card[] = [];
 		private pot = 0;
-		private playerBalance = 1000;
-		private currentBet = 0;
 		private gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' = 'preflop';
+		private bettingRound: BettingRound | null = null;
+		private currentPlayerIndex = 0;
+		private dealerIndex = 0;
+		private smallBlindIndex = 1;
+		private bigBlindIndex = 2;
+		private minimumBet = BIG_BLIND;
+		private lastRaiseAmount = BIG_BLIND;
 		private aiSettings: AiSettings | null = null;
+		private isProcessingAction = false;
+		private aiConfigs: Map<number, AIConfig> = new Map();
 
 		constructor() {
 			this.initDeck();
+			this.initPlayers();
 			this.attachEventListeners();
 			this.highlightSuggestedMove(null);
 			this.setAiButtonState({ disabled: true });
@@ -306,6 +337,19 @@ if (!user) {
 			}
 		}
 
+		private initPlayers() {
+			this.players = [
+				createPlayer(0, 'You', STARTING_CHIPS, false),
+				createAIPlayer(1, 'Player 2', STARTING_CHIPS),
+				createAIPlayer(2, 'Player 3', STARTING_CHIPS),
+			];
+			this.players[this.dealerIndex].isDealer = true;
+
+			// Assign AI personalities
+			this.aiConfigs.set(1, createAIConfig('tight-aggressive'));
+			this.aiConfigs.set(2, createAIConfig('loose-aggressive'));
+		}
+
 		private shuffle() {
 			for (let i = this.deck.length - 1; i > 0; i--) {
 				const j = Math.floor(Math.random() * (i + 1));
@@ -318,26 +362,63 @@ if (!user) {
 		}
 
 		public dealNewHand() {
+			// Reset deck and shuffle
 			this.initDeck();
 			this.shuffle();
-			this.playerHand = [this.drawCard(), this.drawCard()];
-			this.communityCards = [];
-			this.pot = 20; // Blinds
-			this.currentBet = 0;
-			this.gamePhase = 'preflop';
 
+			// Reset players for new hand
+			this.players = this.players.map(resetPlayerForNewHand);
+
+			// Deal 2 cards to each player
+			for (let i = 0; i < this.players.length; i++) {
+				const card1 = this.drawCard();
+				const card2 = this.drawCard();
+				this.players[i] = dealCardsToPlayer(this.players[i], [card1, card2]);
+			}
+
+			// Reset community cards
+			this.communityCards = [];
+
+			// Post blinds
+			this.players[this.smallBlindIndex] = postBlind(
+				this.players[this.smallBlindIndex],
+				SMALL_BLIND,
+			);
+			this.players[this.bigBlindIndex] = postBlind(this.players[this.bigBlindIndex], BIG_BLIND);
+
+			// Set game state
+			this.pot = calculatePot(this.players);
+			this.gamePhase = 'preflop';
+			this.bettingRound = 'preflop';
+			this.minimumBet = BIG_BLIND;
+			this.lastRaiseAmount = BIG_BLIND;
+
+			// Start with player after big blind
+			this.currentPlayerIndex = (this.bigBlindIndex + 1) % this.players.length;
+
+			// Render UI
 			this.renderPlayerCards();
 			this.renderCommunityCards();
+			this.updateOpponentUI();
 			this.updateUI();
 			this.highlightSuggestedMove(null);
-			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
+
+			if (this.currentPlayerIndex === 0) {
+				this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
+			} else {
+				this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+				this.processAITurn();
+			}
 		}
 
 		private renderPlayerCards() {
 			const container = document.getElementById('player-cards');
 			if (!container) return;
 
-			container.innerHTML = this.playerHand
+			const humanPlayer = this.players[0];
+			if (!humanPlayer) return;
+
+			container.innerHTML = humanPlayer.hand
 				.map(
 					(card) => `
 				<div class="playing-card w-20 h-28 flex items-center justify-center">
@@ -364,7 +445,7 @@ if (!user) {
 			const container = document.getElementById('community-cards');
 			if (!container) return;
 
-			const cards = [...this.communityCards];
+			const cards: (Card | null)[] = [...this.communityCards];
 			while (cards.length < 5) {
 				cards.push(null);
 			}
@@ -397,6 +478,166 @@ if (!user) {
 				.join('');
 		}
 
+		private updateOpponentUI() {
+			// Update opponent chip counts
+			if (this.players[1]) {
+				const opponent1Chips = document
+					.querySelector('#opponent1-cards')
+					?.parentElement?.querySelector('.text-xs.text-yellow-400');
+				if (opponent1Chips) {
+					opponent1Chips.textContent = `$${this.players[1].chips}`;
+				}
+			}
+			if (this.players[2]) {
+				const opponent2Chips = document
+					.querySelector('#opponent2-cards')
+					?.parentElement?.querySelector('.text-xs.text-yellow-400');
+				if (opponent2Chips) {
+					opponent2Chips.textContent = `$${this.players[2].chips}`;
+				}
+			}
+		}
+
+		private async processAITurn() {
+			if (this.isProcessingAction) return;
+			if (this.currentPlayerIndex === 0) return; // Not AI's turn
+
+			const currentPlayer = this.players[this.currentPlayerIndex];
+			if (!currentPlayer || !currentPlayer.isAI) return;
+
+			// Random delay for AI decision (800-1500ms)
+			const delay = 800 + Math.random() * 700;
+			await new Promise((resolve) => setTimeout(resolve, delay));
+
+			// Get AI config
+			const aiConfig = this.aiConfigs.get(currentPlayer.id);
+			if (!aiConfig) {
+				// Fallback: just check/fold
+				const highestBet = getHighestBet(this.players);
+				const callAmount = getCallAmount(currentPlayer, highestBet);
+				if (callAmount === 0) {
+					this.updateGameStatus(`${currentPlayer.name} checks`);
+				} else {
+					this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
+					this.updateGameStatus(`${currentPlayer.name} folds`);
+				}
+				this.advanceTurn();
+				return;
+			}
+
+			// Build game context for AI
+			const context: GameContext = {
+				player: currentPlayer,
+				players: this.players,
+				communityCards: this.communityCards,
+				pot: this.pot,
+				minimumBet: this.minimumBet,
+				phase: this.gamePhase,
+				bettingRound: this.bettingRound,
+				position: this.getPlayerPosition(currentPlayer),
+			};
+
+			// Get AI decision
+			const decision = makeAIDecision(context, aiConfig);
+
+			// Execute decision
+			const highestBet = getHighestBet(this.players);
+			const callAmount = getCallAmount(currentPlayer, highestBet);
+
+			switch (decision.action) {
+				case 'fold':
+					this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
+					this.updateGameStatus(`${currentPlayer.name} folds`);
+					break;
+
+				case 'check':
+					this.updateGameStatus(`${currentPlayer.name} checks`);
+					break;
+
+				case 'call':
+					if (callAmount > 0 && callAmount <= currentPlayer.chips) {
+						this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
+						this.pot = calculatePot(this.players);
+						this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
+						this.updateUI();
+						this.updateOpponentUI();
+					} else {
+						// Can't afford to call, fold instead
+						this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
+						this.updateGameStatus(`${currentPlayer.name} folds`);
+					}
+					break;
+
+				case 'raise': {
+					const raiseAmount = decision.amount || this.minimumBet;
+					const totalBet = highestBet + raiseAmount;
+					const amountToAdd = totalBet - currentPlayer.currentBet;
+
+					if (amountToAdd <= currentPlayer.chips) {
+						this.players[this.currentPlayerIndex] = placeBet(currentPlayer, amountToAdd);
+						this.lastRaiseAmount = raiseAmount;
+						this.minimumBet = raiseAmount;
+						this.pot = calculatePot(this.players);
+						this.updateGameStatus(`${currentPlayer.name} raises $${raiseAmount}`);
+						this.updateUI();
+						this.updateOpponentUI();
+					} else {
+						// Can't afford to raise, call instead
+						if (callAmount > 0 && callAmount <= currentPlayer.chips) {
+							this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
+							this.pot = calculatePot(this.players);
+							this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
+							this.updateUI();
+							this.updateOpponentUI();
+						} else {
+							this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
+							this.updateGameStatus(`${currentPlayer.name} folds`);
+						}
+					}
+					break;
+				}
+
+				default:
+					break;
+			}
+
+			this.advanceTurn();
+		}
+
+		private advanceTurn() {
+			// Check if betting round is complete
+			if (isBettingRoundComplete(this.players)) {
+				// Move to next phase
+				setTimeout(() => this.nextPhase(), 1000);
+				return;
+			}
+
+			// Move to next player
+			this.currentPlayerIndex = getNextPlayerIndex(this.players, this.currentPlayerIndex);
+
+			if (this.currentPlayerIndex === 0) {
+				this.updateGameStatus('Your turn!');
+			} else {
+				this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+				this.processAITurn();
+			}
+		}
+
+		private getPlayerPosition(player: Player): 'early' | 'middle' | 'late' {
+			const dealerIndex = this.dealerIndex;
+			const playerIndex = this.players.findIndex((p) => p.id === player.id);
+			const positionFromDealer =
+				(playerIndex - dealerIndex + this.players.length) % this.players.length;
+
+			if (positionFromDealer <= 1) {
+				return 'early';
+			} else if (positionFromDealer === 2) {
+				return 'middle';
+			} else {
+				return 'late';
+			}
+		}
+
 		private getSuitSymbol(suit: Suit): string {
 			const symbols = {
 				hearts: '♥',
@@ -411,7 +652,10 @@ if (!user) {
 			const strengthEl = document.getElementById('hand-strength');
 			if (!strengthEl) return;
 
-			const allCards = [...this.playerHand, ...this.communityCards];
+			const humanPlayer = this.players[0];
+			if (!humanPlayer) return;
+
+			const allCards = [...humanPlayer.hand, ...this.communityCards];
 			if (allCards.length < 2) {
 				strengthEl.textContent = '--';
 				return;
@@ -438,7 +682,17 @@ if (!user) {
 
 		private updateUI() {
 			document.getElementById('pot-amount')!.textContent = `$${this.pot}`;
-			document.getElementById('current-bet')!.textContent = `$${this.currentBet}`;
+			const humanPlayer = this.players[0];
+			if (humanPlayer) {
+				document.getElementById('current-bet')!.textContent = `$${humanPlayer.currentBet}`;
+				// Update player balance in header
+				const balanceEl = document.querySelector(
+					'.bg-slate-800.px-6.py-3 .text-2xl.font-bold.text-yellow-400',
+				);
+				if (balanceEl) {
+					balanceEl.textContent = `$${humanPlayer.chips}`;
+				}
+			}
 		}
 
 		private updateGameStatus(message: string) {
@@ -564,17 +818,21 @@ if (!user) {
 
 		private buildPrompt() {
 			const phaseLabel = this.gamePhase.toUpperCase();
-			const playerCards = this.formatCards(this.playerHand);
+			const humanPlayer = this.players[0];
+			const playerCards = this.formatCards(humanPlayer?.hand || []);
 			const communityCards = this.communityCards.length
 				? this.formatCards(this.communityCards)
 				: 'Not revealed yet';
+
+			const highestBet = getHighestBet(this.players);
+			const callAmount = humanPlayer ? getCallAmount(humanPlayer, highestBet) : 0;
 
 			return `You are an AI poker rival advising the user on Texas Hold'em strategy.
 Game phase: ${phaseLabel}
 Player hole cards: ${playerCards}
 Community cards: ${communityCards}
 Pot size: $${this.pot}
-Current player bet to match: $${this.currentBet}
+Current bet to match: $${callAmount}
 
 Respond with a JSON object describing your recommended move.
 Use the shape {"move":"fold|check|call|raise","amount":number?}. Amount is required only for raises.
@@ -817,61 +1075,135 @@ Keep the JSON as the only output.`;
 		}
 
 		private nextPhase() {
+			// Reset current bets for new betting round
+			this.players = this.players.map(resetCurrentBets);
+
 			if (this.gamePhase === 'preflop') {
 				this.gamePhase = 'flop';
+				this.bettingRound = 'flop';
 				this.communityCards.push(this.drawCard(), this.drawCard(), this.drawCard());
 				this.updateGameStatus('Flop revealed!');
 			} else if (this.gamePhase === 'flop') {
 				this.gamePhase = 'turn';
+				this.bettingRound = 'turn';
 				this.communityCards.push(this.drawCard());
 				this.updateGameStatus('Turn card revealed!');
 			} else if (this.gamePhase === 'turn') {
 				this.gamePhase = 'river';
+				this.bettingRound = 'river';
 				this.communityCards.push(this.drawCard());
 				this.updateGameStatus('River card revealed!');
 			} else if (this.gamePhase === 'river') {
 				this.gamePhase = 'showdown';
-				this.updateGameStatus('Showdown! You won! 🎉');
-				this.playerBalance += this.pot;
+				this.bettingRound = null;
+				// Simple showdown: last player standing wins (proper hand comparison in Phase 4)
+				const activePlayers = getActivePlayers(this.players);
+				if (activePlayers.length === 1) {
+					const winner = activePlayers[0];
+					this.players[winner.id] = awardChips(winner, this.pot);
+					this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
+				} else {
+					// For now, just award to first active player (will be replaced with proper hand comparison)
+					const winner = activePlayers[0];
+					this.players[winner.id] = awardChips(winner, this.pot);
+					this.updateGameStatus(`${winner.name} wins! 🎉`);
+				}
 				this.pot = 0;
+				this.updateUI();
+				this.updateOpponentUI();
+				// Auto-deal new hand after 3 seconds
+				setTimeout(() => this.dealNewHand(), 3000);
+				return;
 			}
+
+			// Start new betting round from dealer
+			this.currentPlayerIndex = (this.dealerIndex + 1) % this.players.length;
+			this.currentPlayerIndex = getNextPlayerIndex(this.players, this.dealerIndex);
 
 			this.renderCommunityCards();
 			this.evaluateHand();
 			this.updateUI();
+
+			if (this.currentPlayerIndex === 0) {
+				this.updateGameStatus('Your turn!');
+			} else {
+				this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+				this.processAITurn();
+			}
 		}
 
 		private attachEventListeners() {
 			document.getElementById('btn-deal')?.addEventListener('click', () => this.dealNewHand());
 
 			document.getElementById('btn-fold')?.addEventListener('click', () => {
-				this.updateGameStatus('You folded. Opponents win.');
-				setTimeout(() => this.dealNewHand(), 2000);
+				if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+				this.isProcessingAction = true;
+
+				try {
+					this.players[0] = foldPlayer(this.players[0]);
+					this.updateUI();
+					this.updateGameStatus('You folded');
+				} finally {
+					this.isProcessingAction = false;
+				}
+				this.advanceTurn();
 			});
 
 			document.getElementById('btn-check')?.addEventListener('click', () => {
-				this.updateGameStatus('You checked');
-				setTimeout(() => this.nextPhase(), 1000);
+				if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+				const highestBet = getHighestBet(this.players);
+				if (this.players[0].currentBet < highestBet) return; // Can't check if there's a bet
+
+				this.isProcessingAction = true;
+				try {
+					this.updateGameStatus('You checked');
+				} finally {
+					this.isProcessingAction = false;
+				}
+				this.advanceTurn();
 			});
 
 			document.getElementById('btn-call')?.addEventListener('click', () => {
-				const callAmount = 20;
-				this.currentBet += callAmount;
-				this.pot += callAmount;
-				this.updateUI();
-				this.updateGameStatus(`You called $${callAmount}`);
-				setTimeout(() => this.nextPhase(), 1000);
+				if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+				this.isProcessingAction = true;
+
+				try {
+					const highestBet = getHighestBet(this.players);
+					const callAmount = getCallAmount(this.players[0], highestBet);
+
+					if (callAmount > 0) {
+						this.players[0] = placeBet(this.players[0], callAmount);
+						this.pot = calculatePot(this.players);
+						this.updateUI();
+						this.updateGameStatus(`You called $${callAmount}`);
+					}
+				} finally {
+					this.isProcessingAction = false;
+				}
+				this.advanceTurn();
 			});
 
 			document.getElementById('btn-raise')?.addEventListener('click', () => {
-				const raiseAmount = parseInt(
-					(document.getElementById('bet-slider') as HTMLInputElement).value,
-				);
-				this.currentBet += raiseAmount;
-				this.pot += raiseAmount;
-				this.updateUI();
-				this.updateGameStatus(`You raised $${raiseAmount}`);
-				setTimeout(() => this.nextPhase(), 1000);
+				if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+				this.isProcessingAction = true;
+
+				try {
+					const raiseAmount = parseInt(
+						(document.getElementById('bet-slider') as HTMLInputElement).value,
+					);
+					const highestBet = getHighestBet(this.players);
+					const totalBet = highestBet + raiseAmount;
+					const amountToAdd = totalBet - this.players[0].currentBet;
+					this.players[0] = placeBet(this.players[0], amountToAdd);
+					this.lastRaiseAmount = raiseAmount;
+					this.minimumBet = raiseAmount;
+					this.pot = calculatePot(this.players);
+					this.updateUI();
+					this.updateGameStatus(`You raised $${raiseAmount}`);
+				} finally {
+					this.isProcessingAction = false;
+				}
+				this.advanceTurn();
 			});
 
 			const betSlider = document.getElementById('bet-slider') as HTMLInputElement;

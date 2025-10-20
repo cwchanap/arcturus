@@ -54,8 +54,7 @@ const modelLabels: Record<string, string> = {
 const aiSettingsPayload = JSON.stringify({
 	provider: aiSettings.provider,
 	model: aiSettings.model,
-	openaiApiKey: aiSettings.openaiApiKey,
-	geminiApiKey: aiSettings.geminiApiKey,
+	// Never send actual API keys to the client (security)
 	hasOpenaiKey: Boolean(aiSettings.openaiApiKey),
 	hasGeminiKey: Boolean(aiSettings.geminiApiKey),
 	updatedAt: aiSettings.updatedAt.toISOString(),
@@ -235,14 +234,90 @@ const aiSettingsPayload = JSON.stringify({
 							{aiSettings.provider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
 						</label>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-							<input
-								id="api-key"
-								name="apiKey"
-								type="password"
-								placeholder={aiSettings.provider === 'openai' ? 'sk-...' : 'AIza...'}
-								class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
-								autocomplete="off"
-							/>
+							<div class="relative flex-1">
+								<input
+									id="api-key"
+									name="apiKey"
+									type="password"
+									placeholder={aiSettings.provider === 'openai' ? 'sk-...' : 'AIza...'}
+									class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 pr-20 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+									autocomplete="off"
+								/>
+								<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+									<button
+										type="button"
+										id="show-api-key"
+										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										title="Show API key"
+										style="display: none;"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+											<circle cx="12" cy="12" r="3"></circle>
+										</svg>
+									</button>
+									<button
+										type="button"
+										id="hide-api-key"
+										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										title="Hide API key"
+										style="display: none;"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+											<path
+												d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"
+											></path>
+											<path
+												d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"
+											></path>
+											<line x1="2" x2="22" y1="2" y2="22"></line>
+										</svg>
+									</button>
+									<button
+										type="button"
+										id="copy-api-key"
+										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										title="Copy API key"
+										style="display: none;"
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+										>
+											<rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+											<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+										</svg>
+									</button>
+								</div>
+							</div>
 							<div class="flex items-center gap-2">
 								<span
 									id="api-key-status"
@@ -286,6 +361,28 @@ const aiSettingsPayload = JSON.stringify({
 			</div>
 		</div>
 	</section>
+
+	<!-- Toast Notification -->
+	<div
+		id="toast-notification"
+		class="fixed bottom-4 right-4 bg-emerald-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 transition-all duration-300 opacity-0 pointer-events-none translate-y-2"
+		style="z-index: 9999;"
+	>
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			width="20"
+			height="20"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<polyline points="20 6 9 17 4 12"></polyline>
+		</svg>
+		<span id="toast-message">Copied to clipboard!</span>
+	</div>
 </CasinoLayout>
 
 <script>
@@ -332,10 +429,21 @@ const aiSettingsPayload = JSON.stringify({
 	const apiKeyStatus = document.getElementById('api-key-status');
 	const apiKeyHelp = document.getElementById('api-key-help');
 	const clearKeyButton = document.getElementById('clear-api-key');
+	const showKeyButton = document.getElementById('show-api-key');
+	const hideKeyButton = document.getElementById('hide-api-key');
+	const copyKeyButton = document.getElementById('copy-api-key');
 	const feedbackEl = document.getElementById('ai-settings-feedback');
+	const toastEl = document.getElementById('toast-notification');
+	const toastMessage = document.getElementById('toast-message');
 
 	// Track if user wants to explicitly clear the API key
 	let clearKeyRequested = false;
+	// Cache for revealed API key (only fetched when user requests to see it)
+	let revealedApiKey: string | null = null;
+	let isKeyRevealed = false;
+	// Store key lengths for proper masking
+	let openaiKeyLength = 0;
+	let geminiKeyLength = 0;
 
 	let modelOptions = {};
 	if (typeof modelSelect?.dataset.modelOptions === 'string') {
@@ -359,18 +467,40 @@ const aiSettingsPayload = JSON.stringify({
 		if (!apiKeyLabel || !apiKeyInput || !apiKeyStatus || !apiKeyHelp) return;
 
 		const isOpenAI = provider === 'openai';
+		const hasKey = isOpenAI ? aiState.hasOpenaiKey : aiState.hasGeminiKey;
 
+		// Always update label and help text
 		apiKeyLabel.textContent = isOpenAI ? 'OpenAI API Key' : 'Gemini API Key';
+
+		apiKeyHelp.textContent = isOpenAI
+			? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
+			: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.';
 
 		if (apiKeyInput instanceof HTMLInputElement) {
 			apiKeyInput.placeholder = isOpenAI ? 'sk-...' : 'AIza...';
-			// Only clear input when explicitly requested (e.g., provider change)
+
+			// If clearing input (e.g., provider change), clear it
 			if (clearInput) {
+				apiKeyInput.value = '';
+			}
+			// If key is currently revealed, don't change the value
+			else if (isKeyRevealed) {
+				// Keep the revealed key, just update placeholder
+				apiKeyInput.placeholder = 'Saved key (masked)';
+			}
+			// If key is saved, show masked placeholder to indicate it
+			else if (hasKey) {
+				const keyLength = isOpenAI ? openaiKeyLength : geminiKeyLength;
+				// Use actual key length if known, otherwise default to 20
+				apiKeyInput.value = '•'.repeat(keyLength || 20);
+				apiKeyInput.placeholder = 'Saved key (masked)';
+			}
+			// No key saved, keep input empty
+			else {
 				apiKeyInput.value = '';
 			}
 		}
 
-		const hasKey = isOpenAI ? aiState.hasOpenaiKey : aiState.hasGeminiKey;
 		apiKeyStatus.textContent = hasKey ? 'Saved' : 'Not saved';
 
 		// Show/hide Clear button based on whether key is saved
@@ -378,12 +508,25 @@ const aiSettingsPayload = JSON.stringify({
 			clearKeyButton.style.display = hasKey ? 'inline-block' : 'none';
 		}
 
-		apiKeyHelp.textContent = isOpenAI
-			? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
-			: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.';
+		// Show/hide show, hide, and copy buttons based on whether key is saved
+		if (showKeyButton instanceof HTMLButtonElement) {
+			showKeyButton.style.display = hasKey && !isKeyRevealed ? 'block' : 'none';
+		}
+		if (hideKeyButton instanceof HTMLButtonElement) {
+			hideKeyButton.style.display = hasKey && isKeyRevealed ? 'block' : 'none';
+		}
+		if (copyKeyButton instanceof HTMLButtonElement) {
+			copyKeyButton.style.display = hasKey ? 'block' : 'none';
+		}
+
+		// Reset revealed state when clearing or changing provider
+		if (clearInput) {
+			revealedApiKey = null;
+			isKeyRevealed = false;
+		}
 	}
 
-	function setFeedback(message, tone = 'neutral') {
+	function setFeedback(message: string, tone = 'neutral') {
 		if (!feedbackEl) return;
 
 		feedbackEl.textContent = message;
@@ -395,6 +538,19 @@ const aiSettingsPayload = JSON.stringify({
 		} else {
 			feedbackEl.classList.add('text-slate-400');
 		}
+	}
+
+	function showToast(message: string) {
+		if (!toastEl || !toastMessage) return;
+
+		toastMessage.textContent = message;
+		toastEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
+		toastEl.classList.add('opacity-100', 'translate-y-0');
+
+		setTimeout(() => {
+			toastEl.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
+			toastEl.classList.remove('opacity-100', 'translate-y-0');
+		}, 3000);
 	}
 
 	function populateModels(provider, desiredModel) {
@@ -421,6 +577,7 @@ const aiSettingsPayload = JSON.stringify({
 	if (providerSelect instanceof HTMLSelectElement) {
 		providerSelect.value = aiState.provider;
 		populateModels(aiState.provider, aiState.model);
+		updateApiKeyUI(aiState.provider); // Initialize input to show masked value if key is saved
 
 		providerSelect.addEventListener('change', () => {
 			const nextProvider = providerSelect.value;
@@ -429,11 +586,128 @@ const aiSettingsPayload = JSON.stringify({
 				modelSelect instanceof HTMLSelectElement ? modelSelect.value : '',
 			);
 			clearKeyRequested = false; // Reset clear flag when changing provider
-			updateApiKeyUI(nextProvider, true); // Clear input when provider changes
+			revealedApiKey = null; // Clear cached key when switching providers
+			isKeyRevealed = false; // Reset revealed state
+			updateApiKeyUI(nextProvider, false); // Show masked value for saved keys
 		});
 	}
 
 	updateApiKeyUI(aiState.provider);
+
+	// Fetch actual API key from server (only when user requests to see/copy it)
+	async function fetchApiKey(provider: string): Promise<string | null> {
+		try {
+			const response = await fetch('/api/profile/reveal-api-key', {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+				},
+				body: JSON.stringify({ provider }),
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to retrieve API key');
+			}
+
+			const data: unknown = await response.json();
+
+			// Type guard: ensure data has apiKey property
+			if (data && typeof data === 'object' && 'apiKey' in data && typeof data.apiKey === 'string') {
+				return data.apiKey;
+			}
+
+			return null;
+		} catch (error) {
+			console.error('Error fetching API key:', error);
+			return null;
+		}
+	}
+
+	// Handle Show API key button click
+	if (showKeyButton instanceof HTMLButtonElement) {
+		showKeyButton.addEventListener('click', async () => {
+			const currentProvider =
+				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
+
+			if (!revealedApiKey) {
+				// Fetch the key from server if not cached
+				revealedApiKey = await fetchApiKey(currentProvider);
+
+				if (!revealedApiKey) {
+					console.error('Failed to fetch API key');
+					alert('Failed to retrieve API key');
+					return;
+				}
+
+				// Store the key length for proper masking
+				if (currentProvider === 'openai') {
+					openaiKeyLength = revealedApiKey.length;
+				} else {
+					geminiKeyLength = revealedApiKey.length;
+				}
+			}
+
+			// Show the actual key
+			if (apiKeyInput instanceof HTMLInputElement) {
+				apiKeyInput.value = revealedApiKey;
+				apiKeyInput.type = 'text';
+			}
+			isKeyRevealed = true;
+			updateApiKeyUI(currentProvider);
+		});
+	}
+
+	// Handle Hide API key button click
+	if (hideKeyButton instanceof HTMLButtonElement) {
+		hideKeyButton.addEventListener('click', () => {
+			const currentProvider =
+				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
+
+			// Hide the key
+			if (apiKeyInput instanceof HTMLInputElement) {
+				const keyLength = currentProvider === 'openai' ? openaiKeyLength : geminiKeyLength;
+				apiKeyInput.value = '•'.repeat(keyLength || 20);
+				apiKeyInput.type = 'password';
+			}
+			isKeyRevealed = false;
+			updateApiKeyUI(currentProvider);
+		});
+	}
+
+	// Handle Copy API key button click
+	if (copyKeyButton instanceof HTMLButtonElement) {
+		copyKeyButton.addEventListener('click', async () => {
+			if (!revealedApiKey) {
+				// Fetch the key from server if not cached
+				const currentProvider =
+					providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
+				revealedApiKey = await fetchApiKey(currentProvider);
+
+				if (!revealedApiKey) {
+					alert('Failed to retrieve API key');
+					return;
+				}
+			}
+
+			// Store the key length for proper masking
+			const currentProvider =
+				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
+			if (currentProvider === 'openai') {
+				openaiKeyLength = revealedApiKey.length;
+			} else {
+				geminiKeyLength = revealedApiKey.length;
+			}
+
+			// Copy to clipboard
+			try {
+				await navigator.clipboard.writeText(revealedApiKey);
+				showToast('API key copied to clipboard!');
+			} catch (error) {
+				console.error('Failed to copy to clipboard:', error);
+				showToast('Failed to copy to clipboard');
+			}
+		});
+	}
 
 	// Handle Clear button click
 	if (clearKeyButton instanceof HTMLButtonElement) {
@@ -463,10 +737,15 @@ const aiSettingsPayload = JSON.stringify({
 		const currentProvider = providerSelect.value;
 		const apiKeyValue = apiKeyInput instanceof HTMLInputElement ? apiKeyInput.value.trim() : '';
 
+		// Ignore masked placeholder - treat it as empty
+		// Check if the value is only bullet characters (any length)
+		const isMaskedPlaceholder = apiKeyValue.length > 0 && /^•+$/.test(apiKeyValue);
+		const actualKeyValue = isMaskedPlaceholder ? '' : apiKeyValue;
+
 		// Payload logic:
 		// - If user clicked "Clear" → send empty string → server clears key
-		// - If user entered a value → send value → server updates key
-		// - If field is empty and no clear requested → don't send → server preserves key
+		// - If user entered a new value → send value → server updates key
+		// - If field is empty/masked and no clear requested → don't send → server preserves key
 		// - Inactive provider → don't send (undefined) → server preserves existing key
 		const payload: {
 			provider: string;
@@ -478,12 +757,12 @@ const aiSettingsPayload = JSON.stringify({
 			model: modelSelect.value,
 		};
 
-		// Include API key if: user entered value OR explicitly requested to clear
-		if (apiKeyValue.length > 0 || clearKeyRequested) {
+		// Include API key if: user entered a new value OR explicitly requested to clear
+		if ((actualKeyValue.length > 0 && !isMaskedPlaceholder) || clearKeyRequested) {
 			if (currentProvider === 'openai') {
-				payload.openaiApiKey = apiKeyValue; // Empty string if clearing
+				payload.openaiApiKey = actualKeyValue; // Empty string if clearing, new value if updating
 			} else if (currentProvider === 'gemini') {
-				payload.geminiApiKey = apiKeyValue; // Empty string if clearing
+				payload.geminiApiKey = actualKeyValue; // Empty string if clearing, new value if updating
 			}
 		}
 
@@ -521,7 +800,7 @@ const aiSettingsPayload = JSON.stringify({
 			}
 
 			populateModels(aiState.provider, aiState.model);
-			updateApiKeyUI(aiState.provider, true); // Clear input after successful save
+			updateApiKeyUI(aiState.provider); // Update UI to show masked value if key is saved
 
 			setFeedback('Rival preferences saved', 'success');
 		} catch (error) {

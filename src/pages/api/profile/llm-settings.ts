@@ -25,6 +25,8 @@ function serializeSettings(settings: Awaited<ReturnType<typeof getLlmSettings>>)
 	return {
 		provider: settings.provider,
 		model: settings.model,
+		// Include API keys for poker.astro AI rival functionality
+		// Note: Profile page uses /api/profile/reveal-api-key for on-demand access
 		openaiApiKey: settings.openaiApiKey,
 		geminiApiKey: settings.geminiApiKey,
 		hasOpenaiKey: Boolean(settings.openaiApiKey),

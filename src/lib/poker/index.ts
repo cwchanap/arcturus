@@ -68,6 +68,7 @@ export {
 	evaluatePostflopHand,
 	calculatePotOdds,
 	estimateDrawingOuts,
+	determineShowdownWinners,
 } from './handEvaluator';
 
 // AI strategy

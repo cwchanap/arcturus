@@ -19,15 +19,18 @@ export function calculateRoundPot(players: Player[]): number {
 }
 
 /**
- * Distributes pot to winners
- * For now, handles simple case (no side pots)
+ * Distributes pot to winners, ensuring all chips are awarded
+ * Remainder chips go to first winner(s) in array order
  */
 export function distributePot(winners: Player[], pot: number): Map<number, number> {
 	const distribution = new Map<number, number>();
-	const sharePerWinner = Math.floor(pot / winners.length);
+	const baseShare = Math.floor(pot / winners.length);
+	const remainder = pot % winners.length;
 
-	for (const winner of winners) {
-		distribution.set(winner.id, sharePerWinner);
+	for (let i = 0; i < winners.length; i++) {
+		// First 'remainder' winners get an extra chip
+		const share = baseShare + (i < remainder ? 1 : 0);
+		distribution.set(winners[i].id, share);
 	}
 
 	return distribution;

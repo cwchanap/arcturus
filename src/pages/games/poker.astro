@@ -280,6 +280,8 @@ if (!user) {
 		getHighestBet,
 		getCallAmount,
 		calculatePot,
+		distributePot,
+		determineShowdownWinners,
 		createAIConfig,
 		makeAIDecision,
 	} from '../../lib/poker';
@@ -1075,6 +1077,19 @@ Keep the JSON as the only output.`;
 		}
 
 		private nextPhase() {
+			// Check if only one player remains (everyone else folded)
+			const activePlayers = getActivePlayers(this.players);
+			if (activePlayers.length === 1) {
+				const winner = activePlayers[0];
+				this.players[winner.id] = awardChips(winner, this.pot);
+				this.updateGameStatus(`${winner.name} wins $${this.pot}! (Everyone else folded) 🎉`);
+				this.pot = 0;
+				this.updateUI();
+				this.updateOpponentUI();
+				setTimeout(() => this.dealNewHand(), 3000);
+				return;
+			}
+
 			// Reset current bets for new betting round
 			this.players = this.players.map(resetCurrentBets);
 
@@ -1096,17 +1111,33 @@ Keep the JSON as the only output.`;
 			} else if (this.gamePhase === 'river') {
 				this.gamePhase = 'showdown';
 				this.bettingRound = null;
-				// Simple showdown: last player standing wins (proper hand comparison in Phase 4)
+				// Determine winner(s) by comparing hands
 				const activePlayers = getActivePlayers(this.players);
 				if (activePlayers.length === 1) {
+					// Only one player left - they win by default
 					const winner = activePlayers[0];
 					this.players[winner.id] = awardChips(winner, this.pot);
 					this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
 				} else {
-					// For now, just award to first active player (will be replaced with proper hand comparison)
-					const winner = activePlayers[0];
-					this.players[winner.id] = awardChips(winner, this.pot);
-					this.updateGameStatus(`${winner.name} wins! 🎉`);
+					// Multiple players - compare hands to find winner(s)
+					const winners = determineShowdownWinners(activePlayers, this.communityCards);
+					if (winners.length === 1) {
+						// Single winner
+						const winner = winners[0];
+						this.players[winner.id] = awardChips(winner, this.pot);
+						this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
+					} else {
+						// Tie - split pot (remainder chips go to first winner(s))
+						const distribution = distributePot(winners, this.pot);
+						for (const [playerId, amount] of distribution.entries()) {
+							const player = this.players.find((p) => p.id === playerId);
+							if (player) {
+								this.players[playerId] = awardChips(player, amount);
+							}
+						}
+						const winnerNames = winners.map((w) => w.name).join(', ');
+						this.updateGameStatus(`Tie! ${winnerNames} split the $${this.pot} pot 🤝`);
+					}
 				}
 				this.pot = 0;
 				this.updateUI();

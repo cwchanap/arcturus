@@ -287,7 +287,7 @@ This document outlines the implementation plan for adding AI opponents to the Te
   - [x] Update button labels (e.g., "CALL $20") - basic implementation
 
 - [ ] **Task 2.6**: Create Playwright smoke test
-  - [ ] Set up Playwright test file: `tests/poker-turn-flow.spec.ts`
+  - [x] Set up Playwright test file: `tests/poker-turn-flow.spec.ts`
   - [ ] Test: Deal → Player checks → AI acts → Phase advances
   - [ ] Test: Player folds → AI wins → New hand starts
   - [ ] Test: Complete betting round → Flop reveals
@@ -417,22 +417,23 @@ This document outlines the implementation plan for adding AI opponents to the Te
   - [ ] All-in scenarios with side pots (basic support exists, needs testing)
   - [ ] Multiple all-ins (calculateSidePots exists but not fully integrated)
 
-- [ ] **Task 4.6**: Write hand evaluator unit tests (REQUIRED)
-  - [ ] Set up Bun test file: `src/lib/poker/handEvaluator.test.ts`
-  - [ ] Test all 10 hand rankings (Royal Flush → High Card)
-  - [ ] Test tie-breakers with kickers (e.g., A-high vs K-high)
-  - [ ] Test edge cases: Ace high/low in straights, suited vs unsuited
-  - [ ] Test `compareHands()` with 20+ scenarios
-  - [ ] Achieve 100% coverage on hand evaluation logic
-  - [ ] Add tests to `bun run test` command
+- [x] **Task 4.6**: Write hand evaluator unit tests (REQUIRED)
+  - [x] Set up Bun test file: `src/lib/poker/handEvaluator.test.ts`
+  - [x] Test all 10 hand rankings (Royal Flush → High Card)
+  - [x] Test tie-breakers with kickers (e.g., A-high vs K-high)
+  - [x] Test edge cases: Ace high/low in straights, suited vs unsuited
+  - [x] Test `compareHands()` with comprehensive scenarios
+  - [ ] Achieve 100% coverage on hand evaluation logic _(Needs coverage tooling)_
+  - [x] Add tests to `bun run test` command _(package.json `test` script now runs Bun specs)_
+  - [x] Add coverage script (`bun run test:coverage`) _(produces text & lcov reports in `coverage/`)_
 
-- [ ] **Task 4.7**: Write pot calculator unit tests (REQUIRED)
-  - [ ] Set up Bun test file: `src/lib/poker/potCalculator.test.ts`
-  - [ ] Test simple pot calculation (sum all bets)
-  - [ ] Test side pot with one all-in player
-  - [ ] Test side pot with multiple all-ins
-  - [ ] Test split pot scenarios
-  - [ ] Test edge cases: exact chip amounts, rounding
+- [x] **Task 4.7**: Write pot calculator unit tests (REQUIRED)
+  - [x] Set up Bun test file: `src/lib/poker/potCalculator.test.ts`
+  - [x] Test simple pot calculation (sum all bets)
+  - [x] Test side pot with one all-in player
+  - [x] Test side pot with multiple all-ins
+  - [x] Test split pot scenarios
+  - [x] Test edge cases: exact chip amounts, rounding
 
 ---
 

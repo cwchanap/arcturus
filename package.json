@@ -18,7 +18,9 @@
 		"lint": "eslint . --max-warnings 0",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"test": "bun test",
+		"test:coverage": "bun test src/lib/poker --coverage --coverage-reporter=text --coverage-reporter=lcov"
 	},
 	"lint-staged": {
 		"*.{js,mjs,ts,tsx,astro}": [

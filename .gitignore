@@ -25,3 +25,5 @@ pnpm-debug.log*
 .wrangler/
 
 drizzle/meta/*
+test-results/
+coverage/

@@ -126,7 +126,7 @@ describe('determineShowdownWinners()', () => {
 				],
 			],
 			[
-				['K', 'hearts'],
+				['K', 'spades'],
 				['9', 'hearts'],
 				['9', 'clubs'],
 				['2', 'spades'],
@@ -138,6 +138,7 @@ describe('determineShowdownWinners()', () => {
 	});
 
 	test('Flush beats Straight', () => {
+		// Make the board produce a 3-4-5-6-7 straight (so Player 2 has a straight)
 		const winners = evaluateWinners(
 			[
 				[
@@ -152,7 +153,7 @@ describe('determineShowdownWinners()', () => {
 			[
 				['4', 'spades'],
 				['6', 'spades'],
-				['8', 'spades'],
+				['7', 'spades'], // changed from 8 to 7 so the board is 3-4-5-6-7
 				['3', 'hearts'],
 				['5', 'clubs'],
 			],
@@ -213,8 +214,8 @@ describe('determineShowdownWinners()', () => {
 		const winners = evaluateWinners(
 			[
 				[
-					['9', 'hearts'],
-					['9', 'spades'],
+					['K', 'hearts'],
+					['Q', 'hearts'],
 				],
 				[
 					['A', 'clubs'],
@@ -237,7 +238,7 @@ describe('determineShowdownWinners()', () => {
 		const winners = evaluateWinners(
 			[
 				[
-					['A', 'hearts'],
+					['9', 'hearts'],
 					['K', 'clubs'],
 				],
 				[

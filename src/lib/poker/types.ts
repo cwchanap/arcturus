@@ -24,6 +24,29 @@ export type PlayerAction = 'fold' | 'check' | 'call' | 'raise';
 
 export type BettingRound = 'preflop' | 'flop' | 'turn' | 'river';
 
+/**
+ * Game settings for poker configuration
+ */
+export interface GameSettings {
+	startingChips: number;
+	smallBlind: number;
+	bigBlind: number;
+	aiSpeed: 'slow' | 'normal' | 'fast';
+	aiPersonality1: 'tight-aggressive' | 'loose-aggressive' | 'tight-passive' | 'loose-passive';
+	aiPersonality2: 'tight-aggressive' | 'loose-aggressive' | 'tight-passive' | 'loose-passive';
+	useLLMAI: boolean; // Enable LLM-powered AI opponents
+}
+
+export const DEFAULT_SETTINGS: GameSettings = {
+	startingChips: 500,
+	smallBlind: 5,
+	bigBlind: 10,
+	aiSpeed: 'normal',
+	aiPersonality1: 'tight-aggressive',
+	aiPersonality2: 'loose-aggressive',
+	useLLMAI: false, // Default to rule-based AI
+};
+
 export interface Player {
 	id: number;
 	name: string;

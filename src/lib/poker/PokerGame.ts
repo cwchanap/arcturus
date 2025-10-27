@@ -6,8 +6,6 @@
 import type { Card, Player, BettingRound, GameContext } from './types';
 import type { AIConfig } from './aiStrategy';
 import {
-	STARTING_CHIPS,
-	SMALL_BLIND,
 	BIG_BLIND,
 	createPlayer,
 	createAIPlayer,
@@ -32,12 +30,15 @@ import {
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
+import { GameSettingsManager } from './GameSettingsManager';
+import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
 export class PokerGame {
 	// Helper classes
 	private deck: DeckManager;
 	private ui: PokerUIRenderer;
 	private aiRival: AIRivalAssistant;
+	private settingsManager: GameSettingsManager;
 
 	// Game state
 	private players: Player[] = [];
@@ -53,48 +54,111 @@ export class PokerGame {
 	private lastRaiseAmount = BIG_BLIND;
 	private isProcessingAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
+	private pendingChipReset = false; // Flag to reset chips on next deal
 
 	constructor() {
 		this.deck = new DeckManager();
 		this.ui = new PokerUIRenderer();
 		this.aiRival = new AIRivalAssistant();
+		this.settingsManager = new GameSettingsManager();
 
 		this.initPlayers();
 		this.attachEventListeners();
+		this.attachSettingsListeners();
+		this.renderSettingsPanel();
+		this.updateBetControls(); // Initialize bet controls based on settings
 		this.aiRival.highlightSuggestedMove(null);
 	}
 
 	private initPlayers() {
+		const settings = this.settingsManager.getSettings();
 		this.players = [
-			createPlayer(0, 'You', STARTING_CHIPS, false),
-			createAIPlayer(1, 'Player 2', STARTING_CHIPS),
-			createAIPlayer(2, 'Player 3', STARTING_CHIPS),
+			createPlayer(0, 'You', settings.startingChips, false),
+			createAIPlayer(1, 'Player 2', settings.startingChips),
+			createAIPlayer(2, 'Player 3', settings.startingChips),
 		];
 		this.players[this.dealerIndex].isDealer = true;
 
-		// Assign AI personalities
-		this.aiConfigs.set(1, createAIConfig('tight-aggressive'));
-		this.aiConfigs.set(2, createAIConfig('loose-aggressive'));
+		// Assign AI personalities from settings
+		this.aiConfigs.set(1, createAIConfig(settings.aiPersonality1));
+		this.aiConfigs.set(2, createAIConfig(settings.aiPersonality2));
+
+		// Update blinds from settings
+		this.minimumBet = settings.bigBlind;
+		this.lastRaiseAmount = settings.bigBlind;
+	}
+
+	/**
+	 * Get LLM settings from user profile for AI opponents
+	 * Returns null if not configured or LLM AI is disabled
+	 */
+	private async getLLMSettings(): Promise<{
+		provider: 'openai' | 'gemini';
+		apiKey: string;
+		model: string;
+	} | null> {
+		try {
+			const response = await fetch('/api/profile/llm-settings');
+			if (!response.ok) {
+				return null;
+			}
+			const data = (await response.json()) as any;
+			const settings = data?.settings;
+
+			if (!settings || (settings.provider !== 'openai' && settings.provider !== 'gemini')) {
+				return null;
+			}
+
+			const apiKey = settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+
+			if (!apiKey || typeof apiKey !== 'string') {
+				return null;
+			}
+
+			// Use provider-specific default models
+			const defaultModel = settings.provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro';
+
+			return {
+				provider: settings.provider,
+				apiKey,
+				model: typeof settings.model === 'string' ? settings.model : defaultModel,
+			};
+		} catch (error) {
+			console.error('Failed to load LLM settings:', error);
+			return null;
+		}
 	}
 
 	public dealNewHand() {
+		// Clear LLM cache for new hand
+		clearLLMCache();
+
 		// Check for eliminated players (0 chips)
+		const settings = this.settingsManager.getSettings();
+
+		// Apply pending chip reset if settings were changed
+		if (this.pendingChipReset) {
+			this.players = this.players.map((p) => ({ ...p, chips: settings.startingChips }));
+			this.pendingChipReset = false;
+			this.updateGameStatus(`Chip stacks reset to $${settings.startingChips} for new game`);
+		}
+
 		const eliminatedPlayers = this.players.filter((p) => p.chips === 0);
 		if (eliminatedPlayers.length > 0) {
 			for (const player of eliminatedPlayers) {
 				if (player.id === 0) {
 					// Human player eliminated - offer rebuy
-					const rebuy = confirm(`You're out of chips! Rebuy for $${STARTING_CHIPS}?`);
+					const rebuy = confirm(`You're out of chips! Rebuy for $${settings.startingChips}?`);
 					if (rebuy) {
-						this.players[0] = { ...this.players[0], chips: STARTING_CHIPS };
+						this.players[0] = { ...this.players[0], chips: settings.startingChips };
 					} else {
 						this.updateGameStatus('Game Over - You ran out of chips!');
 						return; // Stop the game
 					}
 				} else {
 					// AI player eliminated - auto rebuy
-					this.players[player.id] = { ...this.players[player.id], chips: STARTING_CHIPS };
-					this.updateGameStatus(`${player.name} rebuys for $${STARTING_CHIPS}`);
+					this.players[player.id] = { ...this.players[player.id], chips: settings.startingChips };
+					this.updateGameStatus(`${player.name} rebuys for $${settings.startingChips}`);
 				}
 			}
 		}
@@ -111,7 +175,7 @@ export class PokerGame {
 		// Reset deck and shuffle
 		this.deck.reset();
 
-		// Reset players for new hand
+		// Reset players for new hand (preserves chips from previous hands)
 		this.players = this.players.map(resetPlayerForNewHand);
 
 		// Deal 2 cards to each player
@@ -124,21 +188,28 @@ export class PokerGame {
 		// Reset community cards
 		this.communityCards = [];
 
-		// Post blinds
-		this.players[this.smallBlindIndex] = postBlind(this.players[this.smallBlindIndex], SMALL_BLIND);
-		this.players[this.bigBlindIndex] = postBlind(this.players[this.bigBlindIndex], BIG_BLIND);
+		// Post blinds using settings
+		this.players[this.smallBlindIndex] = postBlind(
+			this.players[this.smallBlindIndex],
+			settings.smallBlind,
+		);
+		this.players[this.bigBlindIndex] = postBlind(
+			this.players[this.bigBlindIndex],
+			settings.bigBlind,
+		);
 
 		// Set game state
 		this.pot = calculatePot(this.players);
 		this.gamePhase = 'preflop';
 		this.bettingRound = 'preflop';
-		this.minimumBet = BIG_BLIND;
-		this.lastRaiseAmount = BIG_BLIND;
+		this.minimumBet = settings.bigBlind;
+		this.lastRaiseAmount = settings.bigBlind;
 
 		// Start with player after big blind
 		this.currentPlayerIndex = (this.bigBlindIndex + 1) % this.players.length;
 
 		// Render UI
+		this.ui.hideOpponentHands(); // Hide opponent cards for new hand
 		this.ui.renderPlayerCards(this.players[0], this.communityCards);
 		this.ui.renderCommunityCards(this.communityCards);
 		this.ui.updateOpponentUI(this.players);
@@ -160,8 +231,9 @@ export class PokerGame {
 		const currentPlayer = this.players[this.currentPlayerIndex];
 		if (!currentPlayer || !currentPlayer.isAI) return;
 
-		// Random delay for AI decision (800-1500ms)
-		const delay = 800 + Math.random() * 700;
+		// AI decision delay based on settings
+		const aiDelay = this.settingsManager.getAIDelay();
+		const delay = aiDelay.min + Math.random() * (aiDelay.max - aiDelay.min);
 		await new Promise((resolve) => setTimeout(resolve, delay));
 
 		// Get AI config
@@ -192,22 +264,47 @@ export class PokerGame {
 			position: this.getPlayerPosition(currentPlayer),
 		};
 
-		// Get AI decision
-		const decision = makeAIDecision(context, aiConfig);
+		// Get AI decision (LLM or rule-based)
+		const settings = this.settingsManager.getSettings();
+		let decision;
+
+		if (settings.useLLMAI) {
+			// Try LLM-based AI with fallback to rule-based
+			const llmSettings = await this.getLLMSettings();
+			decision = await makeLLMDecision(context, aiConfig.personality, llmSettings);
+		} else {
+			// Use rule-based AI
+			decision = makeAIDecision(context, aiConfig);
+		}
 
 		// Execute decision
 		const highestBet = getHighestBet(this.players);
 		const callAmount = getCallAmount(currentPlayer, highestBet);
 
+		// Validate decision legality - prevent checking when facing a bet
+		if (decision.action === 'check' && callAmount > 0) {
+			// Illegal check - convert to call or fold
+			console.warn(
+				`${currentPlayer.name} attempted illegal check with callAmount=$${callAmount}, converting to call/fold`,
+			);
+			decision = {
+				...decision,
+				action: callAmount <= currentPlayer.chips ? 'call' : 'fold',
+				reasoning: `${decision.reasoning} (illegal check converted)`,
+			};
+		}
+
 		switch (decision.action) {
 			case 'fold':
 				this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 				this.updateGameStatus(`${currentPlayer.name} folds`);
+				this.ui.showAIDecision(currentPlayer.id, 'fold');
 				break;
 
 			case 'check':
 				this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
 				this.updateGameStatus(`${currentPlayer.name} checks`);
+				this.ui.showAIDecision(currentPlayer.id, 'check');
 				break;
 
 			case 'call':
@@ -215,12 +312,14 @@ export class PokerGame {
 					this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 					this.pot = calculatePot(this.players);
 					this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
+					this.ui.showAIDecision(currentPlayer.id, 'call', callAmount);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
 					// Can't afford to call, fold instead
 					this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 					this.updateGameStatus(`${currentPlayer.name} folds`);
+					this.ui.showAIDecision(currentPlayer.id, 'fold');
 				}
 				break;
 
@@ -235,6 +334,7 @@ export class PokerGame {
 					this.minimumBet = raiseAmount;
 					this.pot = calculatePot(this.players);
 					this.updateGameStatus(`${currentPlayer.name} raises $${raiseAmount}`);
+					this.ui.showAIDecision(currentPlayer.id, 'raise', raiseAmount);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
@@ -243,11 +343,13 @@ export class PokerGame {
 						this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 						this.pot = calculatePot(this.players);
 						this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
+						this.ui.showAIDecision(currentPlayer.id, 'call', callAmount);
 						this.ui.updateUI(this.pot, this.players[0]);
 						this.ui.updateOpponentUI(this.players);
 					} else {
 						this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 						this.updateGameStatus(`${currentPlayer.name} folds`);
+						this.ui.showAIDecision(currentPlayer.id, 'fold');
 					}
 				}
 				break;
@@ -343,6 +445,10 @@ export class PokerGame {
 			} else {
 				// Multiple players - compare hands to find winner(s)
 				const winners = determineShowdownWinners(activePlayers, this.communityCards);
+
+				// Reveal opponent hands at showdown
+				this.ui.revealOpponentHands(this.players, winners);
+
 				if (winners.length === 1) {
 					// Single winner
 					const winner = winners[0];
@@ -486,6 +592,177 @@ export class PokerGame {
 				this.players,
 				(message: string) => this.updateGameStatus(message),
 			);
+		});
+	}
+
+	private attachSettingsListeners() {
+		// Toggle settings panel
+		document.getElementById('btn-toggle-settings')?.addEventListener('click', () => {
+			const panel = document.getElementById('settings-panel');
+			if (panel) {
+				panel.classList.toggle('hidden');
+			}
+		});
+
+		// Save settings
+		document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+			const startingChipsEl = document.getElementById(
+				'setting-starting-chips',
+			) as HTMLInputElement | null;
+			const smallBlindEl = document.getElementById(
+				'setting-small-blind',
+			) as HTMLInputElement | null;
+			const bigBlindEl = document.getElementById('setting-big-blind') as HTMLInputElement | null;
+			const aiSpeedEl = document.getElementById('setting-ai-speed') as HTMLSelectElement | null;
+			const aiPersonality1El = document.getElementById(
+				'setting-ai-personality-1',
+			) as HTMLSelectElement | null;
+			const aiPersonality2El = document.getElementById(
+				'setting-ai-personality-2',
+			) as HTMLSelectElement | null;
+			const useLLMAIEl = document.getElementById('setting-use-llm-ai') as HTMLInputElement | null;
+
+			// Validate all required elements are present
+			if (
+				!startingChipsEl ||
+				!smallBlindEl ||
+				!bigBlindEl ||
+				!aiSpeedEl ||
+				!aiPersonality1El ||
+				!aiPersonality2El ||
+				!useLLMAIEl
+			) {
+				console.error('Settings form is missing required elements');
+				this.updateGameStatus('Error: Settings form is incomplete. Please refresh the page.');
+				return;
+			}
+
+			// Parse and validate values
+			const startingChips = parseInt(startingChipsEl.value || '500');
+			const smallBlind = parseInt(smallBlindEl.value || '5');
+			const bigBlind = parseInt(bigBlindEl.value || '10');
+			const aiSpeed = (aiSpeedEl.value || 'normal') as 'slow' | 'normal' | 'fast';
+			const aiPersonality1 = (aiPersonality1El.value || 'tight-aggressive') as
+				| 'tight-aggressive'
+				| 'loose-aggressive'
+				| 'tight-passive'
+				| 'loose-passive';
+			const aiPersonality2 = (aiPersonality2El.value || 'loose-aggressive') as
+				| 'tight-aggressive'
+				| 'loose-aggressive'
+				| 'tight-passive'
+				| 'loose-passive';
+			const useLLMAI = useLLMAIEl.checked;
+
+			this.settingsManager.updateSettings({
+				startingChips,
+				smallBlind,
+				bigBlind,
+				aiSpeed,
+				aiPersonality1,
+				aiPersonality2,
+				useLLMAI,
+			});
+
+			// Update AI configs
+			this.aiConfigs.set(1, createAIConfig(aiPersonality1));
+			this.aiConfigs.set(2, createAIConfig(aiPersonality2));
+
+			// Mark that chips should be reset on next deal
+			this.pendingChipReset = true;
+
+			// Update bet controls to reflect new minimum bet
+			this.updateBetControls();
+
+			// Notify user
+			this.updateGameStatus('Settings saved! Start a new hand to apply changes.');
+
+			// Hide settings panel
+			document.getElementById('settings-panel')?.classList.add('hidden');
+		});
+
+		// Reset settings
+		document.getElementById('btn-reset-settings')?.addEventListener('click', () => {
+			this.settingsManager.resetToDefaults();
+			this.renderSettingsPanel();
+
+			// Update AI configs to match reset defaults
+			const defaults = this.settingsManager.getSettings();
+			this.aiConfigs.set(1, createAIConfig(defaults.aiPersonality1));
+			this.aiConfigs.set(2, createAIConfig(defaults.aiPersonality2));
+
+			// Mark that chips should be reset on next deal
+			this.pendingChipReset = true;
+
+			// Update bet controls to reflect reset minimum bet
+			this.updateBetControls();
+
+			this.updateGameStatus('Settings reset to defaults');
+		});
+	}
+
+	private renderSettingsPanel() {
+		const settings = this.settingsManager.getSettings();
+
+		// Get elements with proper typing
+		const startingChipsInput = document.getElementById(
+			'setting-starting-chips',
+		) as HTMLInputElement | null;
+		const smallBlindInput = document.getElementById(
+			'setting-small-blind',
+		) as HTMLInputElement | null;
+		const bigBlindInput = document.getElementById('setting-big-blind') as HTMLInputElement | null;
+		const aiSpeedSelect = document.getElementById('setting-ai-speed') as HTMLSelectElement | null;
+		const aiPersonality1Select = document.getElementById(
+			'setting-ai-personality-1',
+		) as HTMLSelectElement | null;
+		const aiPersonality2Select = document.getElementById(
+			'setting-ai-personality-2',
+		) as HTMLSelectElement | null;
+		const useLLMAICheckbox = document.getElementById(
+			'setting-use-llm-ai',
+		) as HTMLInputElement | null;
+
+		// Update form values with null checks
+		if (startingChipsInput) startingChipsInput.value = settings.startingChips.toString();
+		if (smallBlindInput) smallBlindInput.value = settings.smallBlind.toString();
+		if (bigBlindInput) bigBlindInput.value = settings.bigBlind.toString();
+		if (aiSpeedSelect) aiSpeedSelect.value = settings.aiSpeed;
+		if (aiPersonality1Select) aiPersonality1Select.value = settings.aiPersonality1;
+		if (aiPersonality2Select) aiPersonality2Select.value = settings.aiPersonality2;
+		if (useLLMAICheckbox) useLLMAICheckbox.checked = settings.useLLMAI;
+	}
+
+	private updateBetControls() {
+		const settings = this.settingsManager.getSettings();
+		const minBet = settings.bigBlind;
+
+		// Update bet slider to use minimum bet from settings
+		const betSlider = document.getElementById('bet-slider') as HTMLInputElement | null;
+		if (betSlider) {
+			betSlider.min = minBet.toString();
+			betSlider.step = minBet.toString();
+			betSlider.value = (minBet * 2).toString(); // Default to 2x big blind
+
+			// Update bet amount display
+			const betAmount = document.getElementById('bet-amount');
+			if (betAmount) {
+				betAmount.textContent = `$${minBet * 2}`;
+			}
+		}
+
+		// Update quick-bet chips based on big blind
+		const quickBetButtons = document.querySelectorAll('.quick-bet-chip');
+		const multipliers = [1, 2.5, 5, 10]; // Multiples of big blind
+		quickBetButtons.forEach((btn, index) => {
+			const amount = Math.round(minBet * multipliers[index]);
+			(btn as HTMLElement).dataset.amount = amount.toString();
+
+			// Update chip display text (PokerChip renders a div.poker-chip)
+			const chipDisplay = btn.querySelector('.poker-chip');
+			if (chipDisplay) {
+				chipDisplay.textContent = `$${amount}`;
+			}
 		});
 	}
 }

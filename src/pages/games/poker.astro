@@ -220,6 +220,142 @@ if (!user) {
 					to enable Gemini or OpenAI rivals.
 				</p>
 			</div>
+
+			<!-- Game Settings -->
+			<div class="mt-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
+				<div class="flex items-center justify-between mb-3">
+					<div class="text-sm text-slate-400">Game Settings</div>
+					<button
+						id="btn-toggle-settings"
+						class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded transition"
+					>
+						⚙️ Configure
+					</button>
+				</div>
+
+				<!-- Collapsible Settings Panel -->
+				<div id="settings-panel" class="hidden mt-4 space-y-4">
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<!-- Starting Chips -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">Starting Chips</label>
+							<input
+								type="number"
+								id="setting-starting-chips"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+								min="100"
+								max="10000"
+								step="100"
+							/>
+						</div>
+
+						<!-- Small Blind -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">Small Blind</label>
+							<input
+								type="number"
+								id="setting-small-blind"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+								min="1"
+								max="100"
+								step="1"
+							/>
+						</div>
+
+						<!-- Big Blind -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">Big Blind</label>
+							<input
+								type="number"
+								id="setting-big-blind"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+								min="2"
+								max="200"
+								step="1"
+							/>
+						</div>
+
+						<!-- AI Speed -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">AI Speed</label>
+							<select
+								id="setting-ai-speed"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							>
+								<option value="slow">Slow (1.5-2.5s)</option>
+								<option value="normal">Normal (0.8-1.5s)</option>
+								<option value="fast">Fast (0.3-0.6s)</option>
+							</select>
+						</div>
+
+						<!-- AI Player 2 Personality -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">Player 2 Style</label>
+							<select
+								id="setting-ai-personality-1"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							>
+								<option value="tight-aggressive">Tight-Aggressive</option>
+								<option value="loose-aggressive">Loose-Aggressive</option>
+								<option value="tight-passive">Tight-Passive</option>
+								<option value="loose-passive">Loose-Passive</option>
+							</select>
+						</div>
+
+						<!-- AI Player 3 Personality -->
+						<div>
+							<label class="block text-xs text-slate-400 mb-1">Player 3 Style</label>
+							<select
+								id="setting-ai-personality-2"
+								class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							>
+								<option value="tight-aggressive">Tight-Aggressive</option>
+								<option value="loose-aggressive">Loose-Aggressive</option>
+								<option value="tight-passive">Tight-Passive</option>
+								<option value="loose-passive">Loose-Passive</option>
+							</select>
+						</div>
+					</div>
+
+					<!-- LLM AI Toggle -->
+					<div class="p-4 bg-slate-900 rounded-lg border border-slate-600">
+						<div class="flex items-center gap-3">
+							<input
+								type="checkbox"
+								id="setting-use-llm-ai"
+								class="w-5 h-5 bg-slate-800 border-slate-600 rounded text-yellow-500 focus:ring-2 focus:ring-yellow-500"
+							/>
+							<label for="setting-use-llm-ai" class="flex-1">
+								<div class="text-sm text-white font-semibold">Use LLM-Powered AI Opponents</div>
+								<div class="text-xs text-slate-400 mt-1">
+									Enable OpenAI/Gemini for smarter, more human-like AI play. Requires API key
+									configured in profile.
+								</div>
+							</label>
+						</div>
+					</div>
+
+					<!-- Action Buttons -->
+					<div class="flex gap-2 pt-2">
+						<button
+							id="btn-save-settings"
+							class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-semibold transition"
+						>
+							Save Settings
+						</button>
+						<button
+							id="btn-reset-settings"
+							class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded transition"
+						>
+							Reset
+						</button>
+					</div>
+
+					<p class="text-xs text-slate-500">
+						⚠️ Settings apply to new hands only. Start a new hand after saving.
+					</p>
+				</div>
+			</div>
 		</div>
 
 		<!-- Game Info -->

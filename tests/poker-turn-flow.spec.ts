@@ -29,18 +29,15 @@ test.describe('Poker turn flow smoke test', () => {
 		await dealButton.click();
 
 		await expect(page.locator('#player-cards .playing-card')).toHaveCount(2, { timeout: 5000 });
-		await expect(page.locator('#community-cards .playing-card'))
-			.not.toHaveCount(0, { timeout: 5000 })
-			.catch(() => undefined);
+		await expect(page.locator('#community-cards .playing-card')).not.toHaveCount(0, {
+			timeout: 5000,
+		});
 
 		const status = page.locator('#game-status');
 		await expect(status).toContainText('Your turn', { timeout: 5000 });
 
 		await page.getByRole('button', { name: 'CHECK' }).click();
 
-		await expect(status)
-			.not.toContainText('Your turn', { timeout: 1000 })
-			.catch(() => undefined);
 		await expect(status).toContainText(/Waiting for Player \d/, { timeout: 5000 });
 
 		await expect(status).toContainText('Waiting for', { timeout: 5000 });

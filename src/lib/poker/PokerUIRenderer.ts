@@ -88,6 +88,8 @@ export class PokerUIRenderer {
 			if (opponent1Chips) {
 				opponent1Chips.textContent = `$${players[1].chips}`;
 			}
+			// Update folded state
+			this.updateFoldedState(1, players[1].folded);
 		}
 		if (players[2]) {
 			const opponent2Chips = document
@@ -96,6 +98,171 @@ export class PokerUIRenderer {
 			if (opponent2Chips) {
 				opponent2Chips.textContent = `$${players[2].chips}`;
 			}
+			// Update folded state
+			this.updateFoldedState(2, players[2].folded);
+		}
+	}
+
+	/**
+	 * Update folded state indicator for opponent
+	 */
+	private updateFoldedState(playerIndex: number, folded: boolean) {
+		const container = document.getElementById(`opponent${playerIndex === 1 ? '1' : '2'}-cards`);
+		if (!container) return;
+
+		const parent = container.parentElement;
+		if (!parent) return;
+
+		if (folded) {
+			parent.classList.add('opacity-40');
+			parent.classList.add('grayscale');
+			// Add folded badge if not exists
+			if (!parent.querySelector('.folded-badge')) {
+				const badge = document.createElement('div');
+				badge.className =
+					'folded-badge absolute top-0 right-0 bg-red-600 text-white text-xs px-2 py-1 rounded';
+				badge.textContent = 'FOLDED';
+				parent.style.position = 'relative';
+				parent.appendChild(badge);
+			}
+		} else {
+			parent.classList.remove('opacity-40');
+			parent.classList.remove('grayscale');
+			// Remove folded badge if exists
+			const badge = parent.querySelector('.folded-badge');
+			if (badge) {
+				badge.remove();
+			}
+		}
+	}
+
+	/**
+	 * Show AI decision next to opponent badge
+	 */
+	public showAIDecision(playerIndex: number, action: string, amount?: number) {
+		const container = document.getElementById(`opponent${playerIndex === 1 ? '1' : '2'}-cards`);
+		if (!container) return;
+
+		const parent = container.parentElement;
+		if (!parent) return;
+
+		// Remove existing decision badge
+		const existingBadge = parent.querySelector('.ai-decision-badge');
+		if (existingBadge) {
+			existingBadge.remove();
+		}
+
+		// Create decision badge
+		const badge = document.createElement('div');
+		badge.className =
+			'ai-decision-badge absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs px-2 py-1 rounded font-semibold shadow-lg whitespace-nowrap z-10';
+		parent.style.position = 'relative';
+
+		// Style based on action
+		switch (action.toLowerCase()) {
+			case 'fold':
+				badge.className += ' bg-red-600 text-white';
+				badge.textContent = '✕ FOLD';
+				break;
+			case 'check':
+				badge.className += ' bg-blue-600 text-white';
+				badge.textContent = '✓ CHECK';
+				break;
+			case 'call':
+				badge.className += ' bg-green-600 text-white';
+				badge.textContent = `✓ CALL $${amount || 0}`;
+				break;
+			case 'raise':
+				badge.className += ' bg-yellow-600 text-white';
+				badge.textContent = `↑ RAISE $${amount || 0}`;
+				break;
+			default:
+				badge.className += ' bg-gray-600 text-white';
+				badge.textContent = action.toUpperCase();
+		}
+
+		parent.appendChild(badge);
+
+		// Auto-remove after 3 seconds
+		setTimeout(() => {
+			if (badge.parentElement) {
+				badge.remove();
+			}
+		}, 3000);
+	}
+
+	public revealOpponentHands(players: Player[], winners: Player[]) {
+		// Reveal Player 2's hand
+		if (players[1] && !players[1].folded) {
+			const opponent1Container = document.getElementById('opponent1-cards');
+			if (opponent1Container) {
+				const isWinner = winners.some((w) => w.id === players[1].id);
+				opponent1Container.innerHTML = players[1].hand
+					.map(
+						(card) => `
+					<div class="playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-16 h-24 flex items-center justify-center">
+						<div class="w-full h-full p-1.5 flex flex-col">
+							<div class="text-sm font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${card.value}
+							</div>
+							<div class="flex-1 flex items-center justify-center text-2xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${this.getSuitSymbol(card.suit)}
+							</div>
+							<div class="text-sm font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+								${card.value}
+							</div>
+						</div>
+					</div>
+				`,
+					)
+					.join('');
+			}
+		}
+
+		// Reveal Player 3's hand
+		if (players[2] && !players[2].folded) {
+			const opponent2Container = document.getElementById('opponent2-cards');
+			if (opponent2Container) {
+				const isWinner = winners.some((w) => w.id === players[2].id);
+				opponent2Container.innerHTML = players[2].hand
+					.map(
+						(card) => `
+					<div class="playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-16 h-24 flex items-center justify-center">
+						<div class="w-full h-full p-1.5 flex flex-col">
+							<div class="text-sm font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${card.value}
+							</div>
+							<div class="flex-1 flex items-center justify-center text-2xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+								${this.getSuitSymbol(card.suit)}
+							</div>
+							<div class="text-sm font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+								${card.value}
+							</div>
+						</div>
+					</div>
+				`,
+					)
+					.join('');
+			}
+		}
+	}
+
+	public hideOpponentHands() {
+		// Reset to face-down cards
+		const opponent1Container = document.getElementById('opponent1-cards');
+		const opponent2Container = document.getElementById('opponent2-cards');
+
+		const faceDownCard = `
+			<div class="card-back w-16 h-24 bg-gradient-to-br from-blue-900 to-purple-900 rounded-lg border-2 border-yellow-500/30 flex items-center justify-center">
+				<div class="text-yellow-500 text-2xl">🂠</div>
+			</div>
+		`;
+
+		if (opponent1Container) {
+			opponent1Container.innerHTML = faceDownCard + faceDownCard;
+		}
+		if (opponent2Container) {
+			opponent2Container.innerHTML = faceDownCard + faceDownCard;
 		}
 	}
 

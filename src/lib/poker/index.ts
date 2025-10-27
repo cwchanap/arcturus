@@ -16,7 +16,9 @@ export type {
 	GameContext,
 	AIStrategy,
 	AIDecisionLog,
+	GameSettings,
 } from './types';
+export { DEFAULT_SETTINGS } from './types';
 
 // Constants
 export {

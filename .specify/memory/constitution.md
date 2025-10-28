@@ -1,21 +1,26 @@
 <!--
 SYNC IMPACT REPORT
-Version: 0.0.0 → 1.0.0
-Rationale: Initial constitution defining core principles for Arcturus Casino project
+Version: 1.0.0 → 1.0.1
+Rationale: Accuracy and consistency fixes for code quality standards and testing commands
 
-Modified Principles: N/A (initial creation)
-Added Sections:
-  - Core Principles (5 principles)
-  - Code Quality Standards
-  - Development Workflow
-  - Governance
+Modified Principles:
+  - Code Quality Standards: Corrected indentation specification (tabs, not spaces)
+  - Testing Standards: Updated test coverage command to reflect actual scope
+  - Development Workflow: Added dev server port documentation
+
+Added Sections: None
+Removed Sections: None
 
 Templates requiring updates:
-  ✅ .specify/templates/plan-template.md - Constitution Check section exists
-  ✅ .specify/templates/spec-template.md - Requirements aligned with principles
-  ✅ .specify/templates/tasks-template.md - Task structure supports test-first approach
+  ✅ .specify/templates/plan-template.md - No changes needed (already aligned)
+  ✅ .specify/templates/spec-template.md - No changes needed (already aligned)
+  ✅ .specify/templates/tasks-template.md - No changes needed (already aligned)
+  ⚠️  AGENTS.md - Already correct (tabs with width 2)
+  ⚠️  package.json - E2E test script missing (Playwright tests mentioned but no script exists)
 
-Follow-up TODOs: None
+Follow-up TODOs:
+  - Consider adding `test:e2e` script for Playwright tests (mentioned in principle but not implemented)
+  - Consider adding generic `test:coverage` that covers all modules (currently poker-only)
 -->
 
 # Arcturus Casino Constitution
@@ -49,7 +54,7 @@ Testing is mandatory for business logic, game mechanics, and critical user flows
 - Playwright tests MUST cover critical user journeys (sign-in → game play → actions)
 - Tests MUST be written before or alongside implementation (TDD encouraged but not strictly enforced)
 - Test files MUST be colocated with source files (e.g., `handEvaluator.test.ts` next to `handEvaluator.ts`)
-- Coverage reports MUST be generated via `bun test:coverage` and reviewed before PRs merge
+- Coverage reports MUST be generated via `bun test --coverage` and reviewed before PRs merge (example: `bun test src/lib/poker --coverage` for poker module)
 
 **Rationale**: Casino gaming logic requires high reliability. Users expect games to work correctly, and bugs in game mechanics directly impact trust and user satisfaction. Test coverage ensures correctness and enables confident refactoring.
 
@@ -111,7 +116,7 @@ Security is paramount for authentication, player data, and game fairness. All fe
 
 ### Formatting & Style (Auto-Enforced)
 
-- **Indentation**: Tabs (width 2 spaces)
+- **Indentation**: Tabs (visual width 2 spaces when rendered)
 - **Quotes**: Single quotes for strings
 - **Semicolons**: Required
 - **Line Length**: 100 characters (soft limit, Prettier handles wrapping)
@@ -152,12 +157,17 @@ Security is paramount for authentication, player data, and game fairness. All fe
 4. If hooks fail, fix errors and re-stage files
 5. Commit message MUST follow conventional commits style (e.g., `feat:`, `fix:`, `docs:`)
 
+### Development Server
+
+- Local development server runs on **port 2000** (configured in `astro.config.mjs`)
+- Access via `http://localhost:2000` after running `bun run dev`
+
 ### Testing Workflow
 
 1. For new game logic: Write unit tests in `.test.ts` files colocated with source
 2. For new user flows: Add Playwright tests in `tests/` directory
-3. Run tests locally: `bun test` (unit) and `bun run test:e2e` (integration, if configured)
-4. Generate coverage: `bun test:coverage` and review reports in `coverage/`
+3. Run tests locally: `bun test` (unit) and `bun test tests/` (integration with Playwright)
+4. Generate coverage: `bun test <module-path> --coverage` (e.g., `bun test src/lib/poker --coverage`)
 5. Ensure >80% coverage for game logic before marking PR ready
 
 ### Pull Request Requirements
@@ -219,4 +229,4 @@ This constitution supersedes all other development practices. When conflicts ari
 - For repository structure and workflow, refer to `AGENTS.md`
 - For authentication setup, refer to `AUTH_SETUP.md`
 
-**Version**: 1.0.0 | **Ratified**: 2025-10-27 | **Last Amended**: 2025-10-27
+**Version**: 1.0.1 | **Ratified**: 2025-10-27 | **Last Amended**: 2025-10-27

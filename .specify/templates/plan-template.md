@@ -31,7 +31,38 @@
 
 _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
-[Gates determined based on constitution file]
+**Principle I - Code Quality First**:
+
+- [ ] ESLint and Prettier configuration verified
+- [ ] TypeScript strict mode enabled
+- [ ] Pre-commit hooks functional (Husky + lint-staged)
+
+**Principle II - Testing Standards**:
+
+- [ ] Test files colocated with source (`.test.ts` files planned)
+- [ ] Coverage target >80% defined for game logic
+- [ ] Integration tests planned for critical user flows
+
+**Principle III - User Experience Consistency**:
+
+- [ ] Using `casino.astro` layout for game pages
+- [ ] Authentication checks implemented (`Astro.locals.user`)
+- [ ] Reusable components identified (PlayingCard, PokerChip, Button, etc.)
+- [ ] Accessibility requirements documented
+
+**Principle IV - Performance Requirements**:
+
+- [ ] Initial page load <2s target documented
+- [ ] Database queries using proper indexes
+- [ ] Code-splitting strategy defined
+- [ ] Performance measurement plan documented
+
+**Principle V - Security & Data Integrity**:
+
+- [ ] No secrets in code (using `.dev.vars` or Wrangler secrets)
+- [ ] Cloudflare bindings (`runtime.env.DB`) used correctly
+- [ ] Authentication validation on protected routes
+- [ ] Database migrations planned (local → remote workflow)
 
 ## Project Structure
 

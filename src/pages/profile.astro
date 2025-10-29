@@ -31,8 +31,8 @@ if (dbBinding) {
 		aiSettings = {
 			provider: result.provider,
 			model: result.model,
-			openaiApiKey: result.openaiApiKey,
-			geminiApiKey: result.geminiApiKey,
+			openaiApiKey: result.openaiApiKey ?? null,
+			geminiApiKey: result.geminiApiKey ?? null,
 			updatedAt: result.updatedAt,
 		};
 	} catch (error) {
@@ -216,11 +216,13 @@ const aiSettingsPayload = JSON.stringify({
 							data-initial-model={aiSettings.model}
 						>
 							{
-								aiModelOptions[aiSettings.provider].map((model) => (
-									<option value={model} selected={aiSettings.model === model}>
-										{modelLabels[model] ?? model}
-									</option>
-								))
+								aiModelOptions[aiSettings.provider as keyof typeof aiModelOptions].map(
+									(model: string) => (
+										<option value={model} selected={aiSettings.model === model}>
+											{modelLabels[model] ?? model}
+										</option>
+									),
+								)
 							}
 						</select>
 					</div>
@@ -387,9 +389,12 @@ const aiSettingsPayload = JSON.stringify({
 
 <script>
 	import { authClient } from '../lib/auth-client';
+	import { ProfileUiState, type AiState } from '../lib/profile-ui-state';
+	import { fetchApiKey } from '../lib/profile-api';
+	import { populateModels, showToast, handleAiSettingsSubmit } from '../lib/profile-form-handlers';
 
+	// Sign out handler
 	const signoutBtn = document.getElementById('signout-btn');
-
 	signoutBtn?.addEventListener('click', async () => {
 		try {
 			await authClient.signOut();
@@ -399,7 +404,8 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	});
 
-	let aiState = {
+	// Initialize AI state from form data
+	let aiState: AiState = {
 		provider: 'openai',
 		model: 'gpt-4o',
 		hasOpenaiKey: false,
@@ -407,7 +413,6 @@ const aiSettingsPayload = JSON.stringify({
 	};
 
 	const aiForm = document.getElementById('ai-settings-form');
-
 	if (aiForm instanceof HTMLFormElement && typeof aiForm.dataset.initialSettings === 'string') {
 		try {
 			const parsed = JSON.parse(aiForm.dataset.initialSettings);
@@ -422,30 +427,23 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	}
 
-	const providerSelect = document.getElementById('ai-provider');
-	const modelSelect = document.getElementById('ai-model');
-	const apiKeyInput = document.getElementById('api-key');
+	// Get DOM elements
+	const providerSelect = document.getElementById('ai-provider') as HTMLSelectElement | null;
+	const modelSelect = document.getElementById('ai-model') as HTMLSelectElement | null;
+	const apiKeyInput = document.getElementById('api-key') as HTMLInputElement | null;
 	const apiKeyLabel = document.getElementById('api-key-label');
 	const apiKeyStatus = document.getElementById('api-key-status');
 	const apiKeyHelp = document.getElementById('api-key-help');
-	const clearKeyButton = document.getElementById('clear-api-key');
-	const showKeyButton = document.getElementById('show-api-key');
-	const hideKeyButton = document.getElementById('hide-api-key');
-	const copyKeyButton = document.getElementById('copy-api-key');
+	const clearKeyButton = document.getElementById('clear-api-key') as HTMLButtonElement | null;
+	const showKeyButton = document.getElementById('show-api-key') as HTMLButtonElement | null;
+	const hideKeyButton = document.getElementById('hide-api-key') as HTMLButtonElement | null;
+	const copyKeyButton = document.getElementById('copy-api-key') as HTMLButtonElement | null;
 	const feedbackEl = document.getElementById('ai-settings-feedback');
 	const toastEl = document.getElementById('toast-notification');
 	const toastMessage = document.getElementById('toast-message');
 
-	// Track if user wants to explicitly clear the API key
-	let clearKeyRequested = false;
-	// Cache for revealed API key (only fetched when user requests to see it)
-	let revealedApiKey: string | null = null;
-	let isKeyRevealed = false;
-	// Store key lengths for proper masking
-	let openaiKeyLength = 0;
-	let geminiKeyLength = 0;
-
-	let modelOptions = {};
+	// Parse model options and labels
+	let modelOptions: Record<string, string[]> = {};
 	if (typeof modelSelect?.dataset.modelOptions === 'string') {
 		try {
 			modelOptions = JSON.parse(modelSelect.dataset.modelOptions);
@@ -454,7 +452,7 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	}
 
-	let modelLabels = {};
+	let modelLabels: Record<string, string> = {};
 	if (typeof modelSelect?.dataset.modelLabels === 'string') {
 		try {
 			modelLabels = JSON.parse(modelSelect.dataset.modelLabels);
@@ -463,261 +461,86 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	}
 
-	function updateApiKeyUI(provider: string, clearInput = false) {
-		if (!apiKeyLabel || !apiKeyInput || !apiKeyStatus || !apiKeyHelp) return;
+	// Initialize UI state manager
+	const uiState = new ProfileUiState(
+		{
+			apiKeyInput,
+			apiKeyLabel,
+			apiKeyStatus,
+			apiKeyHelp,
+			clearKeyButton,
+			showKeyButton,
+			hideKeyButton,
+			copyKeyButton,
+		},
+		aiState,
+	);
 
-		const isOpenAI = provider === 'openai';
-		const hasKey = isOpenAI ? aiState.hasOpenaiKey : aiState.hasGeminiKey;
+	// Track if user wants to explicitly clear the API key
+	let clearKeyRequested = false;
 
-		// Always update label and help text
-		apiKeyLabel.textContent = isOpenAI ? 'OpenAI API Key' : 'Gemini API Key';
-
-		apiKeyHelp.textContent = isOpenAI
-			? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
-			: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.';
-
-		if (apiKeyInput instanceof HTMLInputElement) {
-			apiKeyInput.placeholder = isOpenAI ? 'sk-...' : 'AIza...';
-
-			// If clearing input (e.g., provider change), clear it
-			if (clearInput) {
-				apiKeyInput.value = '';
-			}
-			// If key is currently revealed, don't change the value
-			else if (isKeyRevealed) {
-				// Keep the revealed key, just update placeholder
-				apiKeyInput.placeholder = 'Saved key (masked)';
-			}
-			// If key is saved, show masked placeholder to indicate it
-			else if (hasKey) {
-				const keyLength = isOpenAI ? openaiKeyLength : geminiKeyLength;
-				// Use actual key length if known, otherwise default to 20
-				apiKeyInput.value = '•'.repeat(keyLength || 20);
-				apiKeyInput.placeholder = 'Saved key (masked)';
-			}
-			// No key saved, keep input empty
-			else {
-				apiKeyInput.value = '';
-			}
-		}
-
-		apiKeyStatus.textContent = hasKey ? 'Saved' : 'Not saved';
-
-		// Show/hide Clear button based on whether key is saved
-		if (clearKeyButton instanceof HTMLButtonElement) {
-			clearKeyButton.style.display = hasKey ? 'inline-block' : 'none';
-		}
-
-		// Show/hide show, hide, and copy buttons based on whether key is saved
-		if (showKeyButton instanceof HTMLButtonElement) {
-			showKeyButton.style.display = hasKey && !isKeyRevealed ? 'block' : 'none';
-		}
-		if (hideKeyButton instanceof HTMLButtonElement) {
-			hideKeyButton.style.display = hasKey && isKeyRevealed ? 'block' : 'none';
-		}
-		if (copyKeyButton instanceof HTMLButtonElement) {
-			copyKeyButton.style.display = hasKey ? 'block' : 'none';
-		}
-
-		// Reset revealed state when clearing or changing provider
-		if (clearInput) {
-			revealedApiKey = null;
-			isKeyRevealed = false;
-		}
-	}
-
-	function setFeedback(message: string, tone = 'neutral') {
-		if (!feedbackEl) return;
-
-		feedbackEl.textContent = message;
-		feedbackEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-slate-400');
-		if (tone === 'success') {
-			feedbackEl.classList.add('text-emerald-400');
-		} else if (tone === 'error') {
-			feedbackEl.classList.add('text-rose-400');
-		} else {
-			feedbackEl.classList.add('text-slate-400');
-		}
-	}
-
-	function showToast(message: string) {
-		if (!toastEl || !toastMessage) return;
-
-		toastMessage.textContent = message;
-		toastEl.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-2');
-		toastEl.classList.add('opacity-100', 'translate-y-0');
-
-		setTimeout(() => {
-			toastEl.classList.add('opacity-0', 'pointer-events-none', 'translate-y-2');
-			toastEl.classList.remove('opacity-100', 'translate-y-0');
-		}, 3000);
-	}
-
-	function populateModels(provider, desiredModel) {
-		if (!(modelSelect instanceof HTMLSelectElement)) return;
-
-		const models = Array.isArray(modelOptions?.[provider]) ? modelOptions[provider] : [];
-		modelSelect.innerHTML = '';
-
-		models.forEach((model) => {
-			const option = document.createElement('option');
-			option.value = model;
-			option.textContent = modelLabels?.[model] ?? model;
-			if (model === desiredModel) {
-				option.selected = true;
-			}
-			modelSelect.appendChild(option);
-		});
-
-		if (models.length > 0 && !models.includes(desiredModel)) {
-			modelSelect.value = models[0];
-		}
-	}
-
-	if (providerSelect instanceof HTMLSelectElement) {
+	// Initialize provider select and populate models
+	if (providerSelect) {
 		providerSelect.value = aiState.provider;
-		populateModels(aiState.provider, aiState.model);
-		updateApiKeyUI(aiState.provider); // Initialize input to show masked value if key is saved
+		populateModels(modelSelect, aiState.provider, aiState.model, modelOptions, modelLabels);
+		uiState.updateApiKeyUI(aiState.provider);
 
 		providerSelect.addEventListener('change', () => {
 			const nextProvider = providerSelect.value;
 			populateModels(
+				modelSelect,
 				nextProvider,
-				modelSelect instanceof HTMLSelectElement ? modelSelect.value : '',
+				modelSelect?.value ?? '',
+				modelOptions,
+				modelLabels,
 			);
-			clearKeyRequested = false; // Reset clear flag when changing provider
-			revealedApiKey = null; // Clear cached key when switching providers
-			isKeyRevealed = false; // Reset revealed state
-			updateApiKeyUI(nextProvider, false); // Show masked value for saved keys
+			clearKeyRequested = false;
+			uiState.clearRevealedKey();
+			uiState.updateApiKeyUI(nextProvider, false);
 		});
 	}
 
-	updateApiKeyUI(aiState.provider);
-
-	// Fetch actual API key from server (only when user requests to see/copy it)
-	async function fetchApiKey(provider: string): Promise<string | null> {
-		try {
-			const response = await fetch('/api/profile/reveal-api-key', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-				},
-				body: JSON.stringify({ provider }),
-			});
-
-			if (!response.ok) {
-				throw new Error('Failed to retrieve API key');
-			}
-
-			const data: unknown = await response.json();
-
-			// Type guard: ensure data has apiKey property
-			if (data && typeof data === 'object' && 'apiKey' in data && typeof data.apiKey === 'string') {
-				return data.apiKey;
-			}
-
-			return null;
-		} catch (error) {
-			console.error('Error fetching API key:', error);
-			return null;
-		}
-	}
-
-	// Handle Show API key button click
-	if (showKeyButton instanceof HTMLButtonElement) {
+	// Show API key button
+	if (showKeyButton) {
 		showKeyButton.addEventListener('click', async () => {
-			const currentProvider =
-				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
-
-			if (!revealedApiKey) {
-				// Fetch the key from server if not cached
-				revealedApiKey = await fetchApiKey(currentProvider);
-
-				if (!revealedApiKey) {
-					console.error('Failed to fetch API key');
-					alert('Failed to retrieve API key');
-					return;
-				}
-
-				// Store the key length for proper masking
-				if (currentProvider === 'openai') {
-					openaiKeyLength = revealedApiKey.length;
-				} else {
-					geminiKeyLength = revealedApiKey.length;
-				}
+			const currentProvider = providerSelect?.value ?? aiState.provider;
+			const success = await uiState.revealApiKey(currentProvider, fetchApiKey);
+			if (success) {
+				uiState.updateApiKeyUI(currentProvider);
 			}
-
-			// Show the actual key
-			if (apiKeyInput instanceof HTMLInputElement) {
-				apiKeyInput.value = revealedApiKey;
-				apiKeyInput.type = 'text';
-			}
-			isKeyRevealed = true;
-			updateApiKeyUI(currentProvider);
 		});
 	}
 
-	// Handle Hide API key button click
-	if (hideKeyButton instanceof HTMLButtonElement) {
+	// Hide API key button
+	if (hideKeyButton) {
 		hideKeyButton.addEventListener('click', () => {
-			const currentProvider =
-				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
-
-			// Hide the key
-			if (apiKeyInput instanceof HTMLInputElement) {
-				const keyLength = currentProvider === 'openai' ? openaiKeyLength : geminiKeyLength;
-				apiKeyInput.value = '•'.repeat(keyLength || 20);
-				apiKeyInput.type = 'password';
-			}
-			isKeyRevealed = false;
-			updateApiKeyUI(currentProvider);
+			const currentProvider = providerSelect?.value ?? aiState.provider;
+			uiState.hideApiKey(currentProvider);
+			uiState.updateApiKeyUI(currentProvider);
 		});
 	}
 
-	// Handle Copy API key button click
-	if (copyKeyButton instanceof HTMLButtonElement) {
+	// Copy API key button
+	if (copyKeyButton) {
 		copyKeyButton.addEventListener('click', async () => {
-			if (!revealedApiKey) {
-				// Fetch the key from server if not cached
-				const currentProvider =
-					providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
-				revealedApiKey = await fetchApiKey(currentProvider);
-
-				if (!revealedApiKey) {
-					alert('Failed to retrieve API key');
-					return;
-				}
-			}
-
-			// Store the key length for proper masking
-			const currentProvider =
-				providerSelect instanceof HTMLSelectElement ? providerSelect.value : aiState.provider;
-			if (currentProvider === 'openai') {
-				openaiKeyLength = revealedApiKey.length;
+			const currentProvider = providerSelect?.value ?? aiState.provider;
+			const success = await uiState.copyApiKey(currentProvider, fetchApiKey);
+			if (success) {
+				showToast(toastEl, toastMessage, 'API key copied to clipboard!');
 			} else {
-				geminiKeyLength = revealedApiKey.length;
-			}
-
-			// Copy to clipboard
-			try {
-				await navigator.clipboard.writeText(revealedApiKey);
-				showToast('API key copied to clipboard!');
-			} catch (error) {
-				console.error('Failed to copy to clipboard:', error);
-				showToast('Failed to copy to clipboard');
+				showToast(toastEl, toastMessage, 'Failed to copy to clipboard');
 			}
 		});
 	}
 
-	// Handle Clear button click
-	if (clearKeyButton instanceof HTMLButtonElement) {
+	// Clear API key button
+	if (clearKeyButton) {
 		clearKeyButton.addEventListener('click', () => {
 			if (confirm('Are you sure you want to remove your saved API key?')) {
 				clearKeyRequested = true;
-				if (apiKeyInput instanceof HTMLInputElement) {
+				if (apiKeyInput) {
 					apiKeyInput.value = '';
 				}
-				// Trigger form submission
 				if (aiForm instanceof HTMLFormElement) {
 					aiForm.requestSubmit();
 				}
@@ -725,87 +548,31 @@ const aiSettingsPayload = JSON.stringify({
 		});
 	}
 
+	// Form submission
 	aiForm?.addEventListener('submit', async (event) => {
-		event.preventDefault();
-		if (
-			!(providerSelect instanceof HTMLSelectElement) ||
-			!(modelSelect instanceof HTMLSelectElement)
-		) {
-			return;
-		}
+		await handleAiSettingsSubmit(
+			event as SubmitEvent,
+			aiState,
+			providerSelect,
+			modelSelect,
+			apiKeyInput,
+			clearKeyRequested,
+			feedbackEl,
+			(updatedState) => {
+				// On success, update state and UI
+				uiState.updateAiState(updatedState);
+				Object.assign(aiState, updatedState);
 
-		const currentProvider = providerSelect.value;
-		const apiKeyValue = apiKeyInput instanceof HTMLInputElement ? apiKeyInput.value.trim() : '';
+				if (providerSelect && providerSelect.value !== aiState.provider) {
+					providerSelect.value = aiState.provider;
+				}
 
-		// Ignore masked placeholder - treat it as empty
-		// Check if the value is only bullet characters (any length)
-		const isMaskedPlaceholder = apiKeyValue.length > 0 && /^•+$/.test(apiKeyValue);
-		const actualKeyValue = isMaskedPlaceholder ? '' : apiKeyValue;
+				populateModels(modelSelect, aiState.provider, aiState.model, modelOptions, modelLabels);
+				uiState.updateApiKeyUI(aiState.provider);
+			},
+		);
 
-		// Payload logic:
-		// - If user clicked "Clear" → send empty string → server clears key
-		// - If user entered a new value → send value → server updates key
-		// - If field is empty/masked and no clear requested → don't send → server preserves key
-		// - Inactive provider → don't send (undefined) → server preserves existing key
-		const payload: {
-			provider: string;
-			model: string;
-			openaiApiKey?: string;
-			geminiApiKey?: string;
-		} = {
-			provider: currentProvider,
-			model: modelSelect.value,
-		};
-
-		// Include API key if: user entered a new value OR explicitly requested to clear
-		if ((actualKeyValue.length > 0 && !isMaskedPlaceholder) || clearKeyRequested) {
-			if (currentProvider === 'openai') {
-				payload.openaiApiKey = actualKeyValue; // Empty string if clearing, new value if updating
-			} else if (currentProvider === 'gemini') {
-				payload.geminiApiKey = actualKeyValue; // Empty string if clearing, new value if updating
-			}
-		}
-
-		// Reset clear flag after building payload
+		// Reset clear flag after submission
 		clearKeyRequested = false;
-
-		setFeedback('Saving…', 'neutral');
-
-		try {
-			const response = await fetch('/api/profile/llm-settings', {
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-				},
-				body: JSON.stringify(payload),
-			});
-
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(errorText || `Request failed with status ${response.status}`);
-			}
-
-			const data = await response.json();
-			const updated = data?.settings ?? {};
-
-			aiState = {
-				provider: updated.provider ?? payload.provider,
-				model: updated.model ?? payload.model,
-				hasOpenaiKey: Boolean(updated.hasOpenaiKey),
-				hasGeminiKey: Boolean(updated.hasGeminiKey),
-			};
-
-			if (providerSelect.value !== aiState.provider) {
-				providerSelect.value = aiState.provider;
-			}
-
-			populateModels(aiState.provider, aiState.model);
-			updateApiKeyUI(aiState.provider); // Update UI to show masked value if key is saved
-
-			setFeedback('Rival preferences saved', 'success');
-		} catch (error) {
-			console.error('Failed to save AI rival settings:', error);
-			setFeedback('Could not save preferences', 'error');
-		}
 	});
 </script>

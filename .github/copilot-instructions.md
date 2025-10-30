@@ -366,3 +366,7 @@ See `src/lib/missions.ts` for daily login rewards pattern:
 - Daily login tracking with calendar day comparison
 - Chip balance updates via SQL increment
 - Graceful schema initialization (dynamic column addition)
+
+### bun not found
+
+Restart the shell : `zsh -il -c 'bun --version'`. Then you can run bun directly

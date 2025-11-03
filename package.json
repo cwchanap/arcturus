@@ -20,7 +20,11 @@
 		"format": "prettier --write .",
 		"format:check": "prettier --check .",
 		"test": "bun test",
-		"test:coverage": "bun test src/lib/poker --coverage --coverage-reporter=text --coverage-reporter=lcov"
+		"test:coverage": "bun test src/lib/poker --coverage --coverage-reporter=text --coverage-reporter=lcov",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui",
+		"test:e2e:headed": "playwright test --headed",
+		"test:e2e:report": "playwright show-report"
 	},
 	"lint-staged": {
 		"*.{js,mjs,ts,tsx,astro}": [
@@ -48,6 +52,7 @@
 		"@astrojs/cloudflare": "^12.6.10",
 		"@cloudflare/workers-types": "^4.20250927.0",
 		"@eslint/js": "^9.36.0",
+		"@playwright/test": "^1.56.1",
 		"drizzle-kit": "^0.31.5",
 		"eslint": "^9.36.0",
 		"eslint-config-prettier": "^10.1.8",

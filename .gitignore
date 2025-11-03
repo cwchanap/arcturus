@@ -27,3 +27,5 @@ pnpm-debug.log*
 drizzle/meta/*
 test-results/
 coverage/
+tests/.auth/
+playwright-report/

@@ -99,9 +99,18 @@ import CasinoLayout from '../layouts/casino.astro';
 				password,
 			});
 			window.location.href = '/';
-		} catch (error) {
+		} catch (error: any) {
 			console.error('Sign in error:', error);
-			alert('Sign in failed. Please check your credentials.');
+			// Try to get more specific error information
+			let errorMessage = 'Sign in failed. Please check your credentials.';
+			if (error.message) {
+				errorMessage = `Sign in failed: ${error.message}`;
+			} else if (error.data?.message) {
+				errorMessage = `Sign in failed: ${error.data.message}`;
+			} else if (error.statusText) {
+				errorMessage = `Sign in failed: ${error.statusText}`;
+			}
+			alert(errorMessage);
 		}
 	});
 </script>

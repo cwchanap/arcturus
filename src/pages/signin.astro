@@ -94,13 +94,18 @@ import CasinoLayout from '../layouts/casino.astro';
 		const password = formData.get('password') as string;
 
 		try {
-			await authClient.signIn.email({
+			const result = await authClient.signIn.email({
 				email,
 				password,
 			});
-			window.location.href = '/';
+			// Check if the result indicates success before redirecting
+			if (result?.data?.user || result?.url) {
+				window.location.href = '/';
+			}
 		} catch (error: any) {
 			console.error('Sign in error:', error);
+			e.preventDefault(); // Prevent any default form behavior that might cause redirect
+
 			// Try to get more specific error information
 			let errorMessage = 'Sign in failed. Please check your credentials.';
 			if (error.message) {
@@ -109,8 +114,30 @@ import CasinoLayout from '../layouts/casino.astro';
 				errorMessage = `Sign in failed: ${error.data.message}`;
 			} else if (error.statusText) {
 				errorMessage = `Sign in failed: ${error.statusText}`;
+			} else if (typeof error === 'string') {
+				errorMessage = `Sign in failed: ${error}`;
 			}
-			alert(errorMessage);
+
+			// Show error message in the page instead of redirecting
+			showErrorMessage(errorMessage);
 		}
 	});
+
+	function showErrorMessage(message: string) {
+		// Remove any existing error messages
+		const existingError = document.querySelector('.error-message');
+		if (existingError) {
+			existingError.remove();
+		}
+
+		// Create error message element
+		const errorDiv = document.createElement('div');
+		errorDiv.className =
+			'error-message mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm';
+		errorDiv.textContent = message;
+
+		// Insert error message at the top of the form
+		const form = document.getElementById('signin-form');
+		form?.insertBefore(errorDiv, form.firstChild);
+	}
 </script>

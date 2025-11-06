@@ -102,20 +102,26 @@ import CasinoLayout from '../layouts/casino.astro';
 			if (result?.data?.user || result?.url) {
 				window.location.href = '/';
 			}
-		} catch (error: any) {
+		} catch (error: unknown) {
 			console.error('Sign in error:', error);
-			e.preventDefault(); // Prevent any default form behavior that might cause redirect
+			// Prevent default was already called at the start of the submit handler.
+			// Here we only handle/log the error and show user feedback.
 
-			// Try to get more specific error information
+			// Try to get more specific error information without using `any`.
 			let errorMessage = 'Sign in failed. Please check your credentials.';
-			if (error.message) {
-				errorMessage = `Sign in failed: ${error.message}`;
-			} else if (error.data?.message) {
-				errorMessage = `Sign in failed: ${error.data.message}`;
-			} else if (error.statusText) {
-				errorMessage = `Sign in failed: ${error.statusText}`;
-			} else if (typeof error === 'string') {
+
+			if (typeof error === 'string') {
 				errorMessage = `Sign in failed: ${error}`;
+			} else if (error instanceof Error && error.message) {
+				errorMessage = `Sign in failed: ${error.message}`;
+			} else if (error && typeof error === 'object') {
+				const maybe = error as Record<string, unknown>;
+				const data = maybe.data as Record<string, unknown> | undefined;
+				if (data && typeof data.message === 'string') {
+					errorMessage = `Sign in failed: ${data.message}`;
+				} else if (typeof maybe.statusText === 'string') {
+					errorMessage = `Sign in failed: ${maybe.statusText}`;
+				}
 			}
 
 			// Show error message in the page instead of redirecting

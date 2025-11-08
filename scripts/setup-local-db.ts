@@ -17,7 +17,7 @@ process.env.WRANGLER_LOG_PATH = process.env.WRANGLER_LOG_PATH ?? PROJECT_LOG_PAT
 function exec(command: string) {
 	try {
 		execSync(command, { stdio: 'inherit', env: process.env });
-	} catch (error) {
+	} catch (_error) {
 		console.error(`\n❌ Error executing command: ${command}`);
 		process.exit(1);
 	}

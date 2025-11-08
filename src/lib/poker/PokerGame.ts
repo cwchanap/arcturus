@@ -102,9 +102,9 @@ export class PokerGame {
 			if (!response.ok) {
 				return null;
 			}
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			const data = (await response.json()) as any;
 			const settings = data?.settings;
-
 			if (!settings || (settings.provider !== 'openai' && settings.provider !== 'gemini')) {
 				return null;
 			}

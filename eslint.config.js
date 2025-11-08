@@ -48,4 +48,21 @@ export default tseslint.config(
 			'no-console': 'off',
 		},
 	},
+
+	// Scripts can use console.log
+	{
+		files: ['scripts/**/*.ts'],
+		rules: {
+			'no-console': 'off',
+		},
+	},
+
+	// Tests - relax some rules; console.log is warned (not errored) to keep CI signal focused
+	{
+		files: ['tests/**/*.ts', '**/*.test.ts', '**/*.spec.ts'],
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'off',
+			'@typescript-eslint/no-unused-vars': 'off',
+		},
+	},
 );

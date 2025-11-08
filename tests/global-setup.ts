@@ -17,9 +17,6 @@ async function globalSetup(_config: FullConfig) {
 	const TEST_PASSWORD = 'PlaywrightTest123!';
 	const TEST_NAME = 'E2E Test User';
 
-	// eslint-disable-next-line no-console
-	console.log('🔐 Setting up authentication for E2E tests...');
-
 	const browser = await chromium.launch();
 	const context = await browser.newContext();
 	const page = await context.newPage();
@@ -38,10 +35,6 @@ async function globalSetup(_config: FullConfig) {
 
 		// Wait for navigation after signup
 		await page.waitForURL('http://localhost:2000/', { timeout: 15000 });
-
-		// Debug: Check the current page and look for any authentication indicators
-		const currentUrl = page.url();
-		console.log(`Current URL after signup: ${currentUrl}`);
 
 		// Multiple ways to verify we're logged in
 		const authChecks = [
@@ -63,21 +56,17 @@ async function globalSetup(_config: FullConfig) {
 		for (const { name, check } of authChecks) {
 			try {
 				const isVisible = await check();
-				console.log(`✅ ${name}: ${isVisible ? 'Found' : 'Not found'}`);
 				if (isVisible) {
 					authenticated = true;
 					break;
 				}
-			} catch (error) {
-				console.log(
-					`❌ ${name}: Error - ${error instanceof Error ? error.message : 'Unknown error'}`,
-				);
+			} catch (_error) {
+				// Silent failure, will try next check
 			}
 		}
 
 		if (!authenticated) {
 			// Try signing in as fallback
-			console.log('Signup might have failed, trying sign in...');
 			await page.goto('http://localhost:2000/signin');
 			await page.fill('input[name="email"]', TEST_EMAIL);
 			await page.fill('input[name="password"]', TEST_PASSWORD);
@@ -88,15 +77,12 @@ async function globalSetup(_config: FullConfig) {
 			for (const { name, check } of authChecks) {
 				try {
 					const isVisible = await check();
-					console.log(`🔄 Post-signin ${name}: ${isVisible ? 'Found' : 'Not found'}`);
 					if (isVisible) {
 						authenticated = true;
 						break;
 					}
-				} catch (error) {
-					console.log(
-						`❌ Post-signin ${name}: Error - ${error instanceof Error ? error.message : 'Unknown error'}`,
-					);
+				} catch (_error) {
+					// Silent failure, will try next check
 				}
 			}
 		}
@@ -107,25 +93,8 @@ async function globalSetup(_config: FullConfig) {
 			);
 		}
 
-		// eslint-disable-next-line no-console
-		console.log('✅ Authentication successful!');
-
 		// Save authentication state
 		await context.storageState({ path: authFile });
-		// eslint-disable-next-line no-console
-		console.log(`💾 Auth state saved to ${authFile}`);
-	} catch (error) {
-		console.error('❌ Authentication setup failed:', error);
-		console.error(
-			'\n⚠️  Manual setup required. Create the test account by running:',
-			`\n   1. Start dev server: bun run dev`,
-			`\n   2. Visit http://localhost:2000/signup`,
-			`\n   3. Create account with:`,
-			`\n      - Email: ${TEST_EMAIL}`,
-			`\n      - Password: ${TEST_PASSWORD}`,
-			`\n      - Name: ${TEST_NAME}\n`,
-		);
-		throw error;
 	} finally {
 		await context.close();
 		await browser.close();

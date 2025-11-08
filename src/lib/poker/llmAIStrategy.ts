@@ -159,6 +159,7 @@ async function callOpenAI(prompt: string, model: string, apiKey: string): Promis
 			throw new Error(`OpenAI API error: ${response.status}`);
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const data = (await response.json()) as any;
 		return data?.choices?.[0]?.message?.content ?? '';
 	} catch (error) {
@@ -199,6 +200,7 @@ async function callGemini(prompt: string, model: string, apiKey: string): Promis
 			throw new Error(`Gemini API error: ${response.status}`);
 		}
 
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		const data = (await response.json()) as any;
 		const text = data?.candidates?.[0]?.content?.parts
 			?.map((part: { text?: string }) => part.text ?? '')

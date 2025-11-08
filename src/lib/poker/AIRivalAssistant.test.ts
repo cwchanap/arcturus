@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 import { AIRivalAssistant } from './AIRivalAssistant';
 import type { Card, Player } from './types';

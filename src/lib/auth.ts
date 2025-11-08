@@ -20,15 +20,9 @@ export function createAuth(db: D1Database, env: Env, baseURL?: string) {
 		secret,
 		emailAndPassword: {
 			enabled: true,
-			requireEmailVerification: false, // Set to false for development
-			async sendVerificationRequest() {
-				// For development, we can skip email verification
-				console.log('Verification request would be sent');
-			},
-			password: {
-				// Configure password requirements
-				minLength: 6,
-			},
+			// For now, email verification is disabled. Before enabling this in production,
+			// you must configure Better Auth's email verification flow and your email provider.
+			requireEmailVerification: false,
 		},
 	};
 

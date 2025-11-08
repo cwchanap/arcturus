@@ -123,6 +123,7 @@ import CasinoLayout from '../layouts/casino.astro';
 				password,
 			});
 			window.location.href = '/';
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		} catch (error: any) {
 			console.error('Sign up error:', error);
 			// Try to get more specific error information

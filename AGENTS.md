@@ -31,3 +31,7 @@ Use short, imperative commit subjects (see `git log` examples such as `Update lo
 ## Security & Configuration Tips
 
 Store secrets in local `.dev.vars` files or Wrangler environment variables; never commit credentials. Follow `AUTH_SETUP.md` when adjusting providers and document new environment keys in PRs. Confirm `wrangler.toml` bindings stay aligned with the latest Drizzle migrations before deploying.
+
+## Tool call
+
+When you need to search docs, use `context7` tools.

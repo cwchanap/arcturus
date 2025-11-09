@@ -68,6 +68,33 @@ export class PokerGame {
 		this.renderSettingsPanel();
 		this.updateBetControls(); // Initialize bet controls based on settings
 		this.aiRival.highlightSuggestedMove(null);
+
+		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
+		void this.checkLlmConfigOnLoad();
+	}
+
+	/**
+	 * Check LLM configuration once on page load.
+	 * If LLM AI is enabled but no valid key is configured, show the overlay and
+	 * prevent the user from starting LLM-powered games until resolved.
+	 */
+	private async checkLlmConfigOnLoad() {
+		const settings = this.settingsManager.getSettings();
+		if (!settings.useLLMAI) {
+			return;
+		}
+
+		const llmSettings = await this.getLLMSettings();
+		if (!llmSettings) {
+			// Inform via status and show the overlay card
+			this.updateGameStatus(
+				'LLM AI is enabled but no valid API key is configured. Update your profile settings or disable LLM in Game Settings.',
+			);
+			const overlay = document.getElementById('llm-overlay');
+			if (overlay) {
+				overlay.classList.remove('hidden');
+			}
+		}
 	}
 
 	private initPlayers() {
@@ -129,9 +156,28 @@ export class PokerGame {
 		}
 	}
 
-	public dealNewHand() {
+	public async dealNewHand() {
 		// Clear LLM cache for new hand
 		clearLLMCache();
+
+		// If LLM-powered AI is enabled, ensure the user has a valid API key configured
+		const llmAwareSettings = this.settingsManager.getSettings();
+		if (llmAwareSettings.useLLMAI) {
+			const llmSettings = await this.getLLMSettings();
+			if (!llmSettings) {
+				this.updateGameStatus(
+					'LLM AI is enabled but no valid API key is configured. Update your profile settings to start a new game.',
+				);
+
+				// Show non-intrusive overlay on the table instead of using a popup
+				const overlay = document.getElementById('llm-overlay');
+				if (overlay) {
+					overlay.classList.remove('hidden');
+				}
+
+				return;
+			}
+		}
 
 		// Check for eliminated players (0 chips)
 		const settings = this.settingsManager.getSettings();

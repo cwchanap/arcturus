@@ -7,7 +7,7 @@ import { execSync } from 'child_process';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 
-const MIGRATION_FILE = './drizzle/0000_powerful_wrecking_crew.sql';
+const MIGRATION_FILE = './drizzle/0000_yellow_ender_wiggin.sql';
 const DB_NAME = 'arcturus';
 
 // Keep Wrangler logs inside the project so sandboxed environments can write them.

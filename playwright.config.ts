@@ -4,7 +4,7 @@ import { defineConfig, devices } from '@playwright/test';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-	testDir: './tests',
+	testDir: './e2e',
 	/* Run tests in files in parallel */
 	fullyParallel: true,
 	/* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -16,7 +16,7 @@ export default defineConfig({
 	/* Reporter to use. See https://playwright.dev/docs/test-reporters */
 	reporter: 'html',
 	/* Global setup - signs in once and saves auth state */
-	globalSetup: './tests/global-setup.ts',
+	globalSetup: './e2e/global-setup.ts',
 	/* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
 	use: {
 		/* Base URL to use in actions like `await page.goto('/')`. */
@@ -24,7 +24,7 @@ export default defineConfig({
 		/* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
 		trace: 'on-first-retry',
 		/* Use saved authentication state for all tests */
-		storageState: './tests/.auth/user.json',
+		storageState: './e2e/.auth/user.json',
 	},
 
 	/* Configure projects for major browsers */

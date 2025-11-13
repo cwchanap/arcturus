@@ -20,12 +20,14 @@ test.describe('Profile Page', () => {
 	});
 
 	test('displays account details section', async ({ page }) => {
-		// Check Account Details section
-		const accountDetails = page.locator('text=Account Details').locator('..');
+		// Check Account Details section container tied to the "Account Details" heading
+		const accountDetails = page
+			.getByRole('heading', { name: 'Account Details', level: 2 })
+			.locator('xpath=..');
 
-		await expect(accountDetails.locator('text=Player Name')).toBeVisible();
-		await expect(accountDetails.locator('text=Email Address')).toBeVisible();
-		await expect(accountDetails.locator('text=Email Status')).toBeVisible();
+		await expect(accountDetails.getByText('Player Name')).toBeVisible();
+		await expect(accountDetails.getByText('Email Address')).toBeVisible();
+		await expect(accountDetails.getByText('Email Status')).toBeVisible();
 	});
 
 	test('displays casino tips section', async ({ page }) => {
@@ -122,8 +124,11 @@ test.describe('Profile Page', () => {
 		// Click save
 		await saveButton.click();
 
-		// Wait for form submission (check for updated feedback or no error)
-		await page.waitForTimeout(1000);
+		// Wait for the save operation to complete before asserting
+		await page.waitForResponse(
+			(response) =>
+				response.url().includes('/api/profile/llm-settings') && response.status() === 200,
+		);
 
 		// Verify no error occurred and page is still on profile
 		await expect(page).toHaveURL('/profile');
@@ -149,7 +154,7 @@ test.describe('Profile Page', () => {
 		const page = await context.newPage();
 
 		// Try to access profile without auth
-		await page.goto('http://localhost:2000/profile');
+		await page.goto('/profile');
 
 		// Should redirect to signin
 		await page.waitForURL('/signin', { timeout: 10000 });
@@ -159,10 +164,8 @@ test.describe('Profile Page', () => {
 	});
 
 	test('displays user avatar or initial', async ({ page }) => {
-		// Check for avatar/initial container
-		const avatarContainer = page.locator(
-			'.rounded-2xl.bg-gradient-to-br.from-yellow-400.via-amber-500.to-yellow-600',
-		);
+		// Locate avatar using semantic test id instead of Tailwind classes
+		const avatarContainer = page.getByTestId('user-avatar');
 		await expect(avatarContainer).toBeVisible();
 
 		// Should contain either an image or text initial

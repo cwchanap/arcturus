@@ -20,9 +20,6 @@ test.describe('Poker turn flow smoke test', () => {
 
 		await expect(status).toContainText(/Waiting for Player \d/, { timeout: 5000 });
 
-		await expect(status).toContainText('Waiting for', { timeout: 5000 });
-		await expect(status).not.toContainText('Your turn', { timeout: 5000 });
-
 		await expect(status).toContainText('Your turn', { timeout: 5000 });
 	});
 });

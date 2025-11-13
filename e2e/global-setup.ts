@@ -63,7 +63,7 @@ async function globalSetup(config: FullConfig) {
 
 		// Helper to run the auth checks until one passes
 		const verifyAuthenticated = async (): Promise<boolean> => {
-			for (const { name, check } of authChecks) {
+			for (const { name: _name, check } of authChecks) {
 				try {
 					const isVisible = await check();
 					if (isVisible) {
@@ -99,7 +99,7 @@ async function globalSetup(config: FullConfig) {
 
 		// Save authentication state
 		await context.storageState({ path: authFile });
-	} catch (error: any) {
+	} catch (error: unknown) {
 		const currentUrl = page.url();
 		console.error('Global setup signup/signin failed');
 		console.error(`Base URL: ${baseURL}`);

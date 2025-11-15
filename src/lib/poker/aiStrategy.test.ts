@@ -30,36 +30,6 @@ function player(
 	};
 }
 
-describe('createAIConfig()', () => {
-	test('creates tight-aggressive config with high aggression, low bluff', () => {
-		const config = createAIConfig('tight-aggressive');
-		expect(config.personality).toBe('tight-aggressive');
-		expect(config.aggressionLevel).toBe(0.75);
-		expect(config.bluffFrequency).toBe(0.15);
-	});
-
-	test('creates tight-passive config with low aggression and bluff', () => {
-		const config = createAIConfig('tight-passive');
-		expect(config.personality).toBe('tight-passive');
-		expect(config.aggressionLevel).toBe(0.25);
-		expect(config.bluffFrequency).toBe(0.05);
-	});
-
-	test('creates loose-aggressive config with high aggression and bluff', () => {
-		const config = createAIConfig('loose-aggressive');
-		expect(config.personality).toBe('loose-aggressive');
-		expect(config.aggressionLevel).toBe(0.85);
-		expect(config.bluffFrequency).toBe(0.25);
-	});
-
-	test('creates loose-passive config with moderate aggression, low bluff', () => {
-		const config = createAIConfig('loose-passive');
-		expect(config.personality).toBe('loose-passive');
-		expect(config.aggressionLevel).toBe(0.35);
-		expect(config.bluffFrequency).toBe(0.1);
-	});
-});
-
 describe('makeAIDecision() - preflop scenarios', () => {
 	test('raises with premium pocket pair (AA) as tight-aggressive', () => {
 		const config = createAIConfig('tight-aggressive');

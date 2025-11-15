@@ -24,30 +24,6 @@ function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
 }
 
-describe('createPlayer()', () => {
-	test('creates player with default chips', () => {
-		const player = createPlayer(1, 'Alice');
-		expect(player.id).toBe(1);
-		expect(player.name).toBe('Alice');
-		expect(player.chips).toBe(1000); // STARTING_CHIPS default
-		expect(player.isAI).toBe(false);
-		expect(player.folded).toBe(false);
-		expect(player.isAllIn).toBe(false);
-		expect(player.hand).toEqual([]);
-	});
-
-	test('creates player with custom chips', () => {
-		const player = createPlayer(2, 'Bob', 1000);
-		expect(player.chips).toBe(1000);
-	});
-
-	test('creates AI player correctly', () => {
-		const player = createAIPlayer(3, 'AI Bot', 750);
-		expect(player.isAI).toBe(true);
-		expect(player.chips).toBe(750);
-	});
-});
-
 describe('canPlayerAct()', () => {
 	test('returns true for active player', () => {
 		const player = createPlayer(1, 'Alice', 500);

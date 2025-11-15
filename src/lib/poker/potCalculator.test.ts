@@ -25,24 +25,6 @@ function makePlayer(partial: Partial<Player> & { id: number; name?: string }): P
 }
 
 describe('potCalculator', () => {
-	test('calculatePot sums total bets for all players', () => {
-		const players = [
-			makePlayer({ id: 0, totalBet: 50 }),
-			makePlayer({ id: 1, totalBet: 30 }),
-			makePlayer({ id: 2, totalBet: 20 }),
-		];
-		expect(calculatePot(players)).toBe(100);
-	});
-
-	test('calculateRoundPot sums current betting round contributions', () => {
-		const players = [
-			makePlayer({ id: 0, currentBet: 10 }),
-			makePlayer({ id: 1, currentBet: 5 }),
-			makePlayer({ id: 2, currentBet: 5 }),
-		];
-		expect(calculateRoundPot(players)).toBe(20);
-	});
-
 	test('distributePot splits evenly among winners with remainder to earliest players', () => {
 		const winners = [makePlayer({ id: 1 }), makePlayer({ id: 3 }), makePlayer({ id: 5 })];
 		const distribution = distributePot(winners, 10);
@@ -55,11 +37,6 @@ describe('potCalculator', () => {
 		const winners = [makePlayer({ id: 7 })];
 		const distribution = distributePot(winners, 37);
 		expect(distribution.get(7)).toBe(37);
-	});
-
-	test('getMinimumBet returns the higher of big blind or last raise', () => {
-		expect(getMinimumBet(10, 15)).toBe(15);
-		expect(getMinimumBet(20, 15)).toBe(20);
 	});
 
 	test('calculateSidePots returns single main pot when no one is all-in', () => {

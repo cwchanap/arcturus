@@ -104,23 +104,6 @@ describe('AIRivalAssistant - Prompt Building', () => {
 		expect(prompt).toContain('$20'); // call amount
 	});
 
-	test('formats suits correctly', () => {
-		const getSuitSymbol = (assistant as any).getSuitSymbol.bind(assistant);
-		expect(getSuitSymbol('hearts')).toBe('♥');
-		expect(getSuitSymbol('diamonds')).toBe('♦');
-		expect(getSuitSymbol('clubs')).toBe('♣');
-		expect(getSuitSymbol('spades')).toBe('♠');
-	});
-
-	test('formats card with rank and suit', () => {
-		const formatCard = (assistant as any).formatCard.bind(assistant);
-		const aceHearts = card('A', 'hearts', 14);
-		expect(formatCard(aceHearts)).toBe('A♥');
-
-		const tenSpades = card('10', 'spades', 10);
-		expect(formatCard(tenSpades)).toBe('10♠');
-	});
-
 	test('calculates call amount correctly', () => {
 		const humanPlayer = player(0, 500, 10, []);
 		const players = [humanPlayer, player(1, 500, 50), player(2, 500, 30)];

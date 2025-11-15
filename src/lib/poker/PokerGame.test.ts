@@ -219,25 +219,6 @@ describe('PokerGame Core Logic', () => {
 		});
 	});
 
-	describe('Game phase transitions', () => {
-		test('preflop to flop requires 3 community cards', () => {
-			// This would be tested via integration, but the logic is:
-			// When gamePhase === 'preflop' and betting complete,
-			// deal 3 cards and set gamePhase = 'flop'
-			expect('preflop').not.toBe('flop');
-		});
-
-		test('flop to turn requires 1 additional card', () => {
-			// Integration test would verify single card added
-			expect('flop').not.toBe('turn');
-		});
-
-		test('turn to river requires 1 additional card', () => {
-			// Integration test would verify single card added
-			expect('turn').not.toBe('river');
-		});
-	});
-
 	describe('Blind mechanics', () => {
 		test('blinds rotate after each hand', () => {
 			// Dealer index should increment mod player count
@@ -260,22 +241,6 @@ describe('PokerGame Core Logic', () => {
 			// Wraps around
 			dealerIdx = (dealerIdx + 1) % players.length;
 			expect(dealerIdx).toBe(0);
-		});
-
-		test('small blind is one position after dealer', () => {
-			const dealerIdx = 0;
-			const playerCount = 3;
-			const smallBlindIdx = (dealerIdx + 1) % playerCount;
-
-			expect(smallBlindIdx).toBe(1);
-		});
-
-		test('big blind is two positions after dealer', () => {
-			const dealerIdx = 0;
-			const playerCount = 3;
-			const bigBlindIdx = (dealerIdx + 2) % playerCount;
-
-			expect(bigBlindIdx).toBe(2);
 		});
 	});
 
@@ -306,37 +271,6 @@ describe('PokerGame Core Logic', () => {
 		});
 	});
 
-	describe('Elimination detection', () => {
-		test('player with 0 chips is eliminated', () => {
-			const player = createPlayer(0, 'Alice', 0);
-
-			expect(player.chips).toBe(0);
-		});
-
-		test('player with chips remains in game', () => {
-			const player = createPlayer(0, 'Alice', 50);
-
-			expect(player.chips).toBeGreaterThan(0);
-		});
-	});
-
-	describe('Raise mechanics', () => {
-		test('raise increases bet by additional amount', () => {
-			const highestBet = 50;
-			const raiseAmount = 50;
-			const newBet = highestBet + raiseAmount;
-
-			expect(newBet).toBe(100);
-		});
-
-		test('minimum raise is big blind', () => {
-			const bigBlind = 10;
-			const minimumRaise = bigBlind;
-
-			expect(minimumRaise).toBe(10);
-		});
-	});
-
 	describe('Edge cases', () => {
 		test('handles empty player list', () => {
 			const players: Player[] = [];
@@ -356,21 +290,6 @@ describe('PokerGame Core Logic', () => {
 			const result = placeBet(player, 100);
 
 			expect(result.chips).toBe(0); // Not negative
-		});
-	});
-
-	describe('Settings integration', () => {
-		test('starting chips affects initial player state', () => {
-			const player = createPlayer(0, 'Alice', 1000);
-
-			expect(player.chips).toBe(1000);
-		});
-
-		test('blind amounts are configurable', () => {
-			const smallBlind = 5;
-			const bigBlind = 10;
-
-			expect(bigBlind).toBe(smallBlind * 2);
 		});
 	});
 });

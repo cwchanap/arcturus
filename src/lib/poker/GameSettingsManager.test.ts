@@ -386,7 +386,7 @@ describe('GameSettingsManager', () => {
 			expect(settings).toEqual(originalSettings);
 		});
 
-		test('handles null values in localStorage', () => {
+		test('preserves null values from localStorage over defaults', () => {
 			mockLocalStorage.store['poker_game_settings'] = JSON.stringify({
 				...DEFAULT_SETTINGS,
 				startingChips: null,
@@ -395,8 +395,8 @@ describe('GameSettingsManager', () => {
 			const manager2 = new GameSettingsManager();
 			const settings = manager2.getSettings();
 
-			// Should merge with defaults, so null gets overwritten
-			expect(settings.startingChips).toBeDefined();
+			// Null values in localStorage overwrite defaults due to spread operator
+			expect(settings.startingChips).toBe(null);
 		});
 
 		test('multiple rapid updates are handled correctly', () => {

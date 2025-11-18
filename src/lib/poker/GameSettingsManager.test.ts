@@ -12,6 +12,19 @@ describe('GameSettingsManager', () => {
 		clear: () => void;
 	};
 
+	// Helper function to mock console.error and ensure proper cleanup
+	const withMockedConsoleError = (testFn: (consoleErrorSpy: ReturnType<typeof mock>) => void) => {
+		const consoleErrorSpy = mock(() => {});
+		const originalConsoleError = console.error;
+		console.error = consoleErrorSpy;
+
+		try {
+			testFn(consoleErrorSpy);
+		} finally {
+			console.error = originalConsoleError;
+		}
+	};
+
 	beforeEach(() => {
 		// Create mock localStorage
 		mockLocalStorage = {
@@ -76,36 +89,28 @@ describe('GameSettingsManager', () => {
 		});
 
 		test('handles corrupted localStorage data', () => {
-			const consoleErrorSpy = mock(() => {});
-			const originalConsoleError = console.error;
-			console.error = consoleErrorSpy;
+			withMockedConsoleError((consoleErrorSpy) => {
+				mockLocalStorage.store['poker_game_settings'] = 'invalid json {{{';
+				manager = new GameSettingsManager();
 
-			mockLocalStorage.store['poker_game_settings'] = 'invalid json {{{';
-			manager = new GameSettingsManager();
-
-			const settings = manager.getSettings();
-			expect(settings).toEqual(DEFAULT_SETTINGS);
-			expect(consoleErrorSpy).toHaveBeenCalled();
-
-			console.error = originalConsoleError;
+				const settings = manager.getSettings();
+				expect(settings).toEqual(DEFAULT_SETTINGS);
+				expect(consoleErrorSpy).toHaveBeenCalled();
+			});
 		});
 
 		test('handles localStorage.getItem throwing error', () => {
-			const consoleErrorSpy = mock(() => {});
-			const originalConsoleError = console.error;
-			console.error = consoleErrorSpy;
+			withMockedConsoleError((consoleErrorSpy) => {
+				mockLocalStorage.getItem = mock(() => {
+					throw new Error('localStorage unavailable');
+				});
 
-			mockLocalStorage.getItem = mock(() => {
-				throw new Error('localStorage unavailable');
+				manager = new GameSettingsManager();
+				const settings = manager.getSettings();
+
+				expect(settings).toEqual(DEFAULT_SETTINGS);
+				expect(consoleErrorSpy).toHaveBeenCalled();
 			});
-
-			manager = new GameSettingsManager();
-			const settings = manager.getSettings();
-
-			expect(settings).toEqual(DEFAULT_SETTINGS);
-			expect(consoleErrorSpy).toHaveBeenCalled();
-
-			console.error = originalConsoleError;
 		});
 	});
 
@@ -194,22 +199,18 @@ describe('GameSettingsManager', () => {
 		});
 
 		test('handles localStorage.setItem throwing error', () => {
-			const consoleErrorSpy = mock(() => {});
-			const originalConsoleError = console.error;
-			console.error = consoleErrorSpy;
+			withMockedConsoleError((consoleErrorSpy) => {
+				mockLocalStorage.setItem = mock(() => {
+					throw new Error('localStorage full');
+				});
 
-			mockLocalStorage.setItem = mock(() => {
-				throw new Error('localStorage full');
+				manager.updateSettings({ startingChips: 1500 });
+
+				// Settings should still be updated in memory
+				const settings = manager.getSettings();
+				expect(settings.startingChips).toBe(1500);
+				expect(consoleErrorSpy).toHaveBeenCalled();
 			});
-
-			manager.updateSettings({ startingChips: 1500 });
-
-			// Settings should still be updated in memory
-			const settings = manager.getSettings();
-			expect(settings.startingChips).toBe(1500);
-			expect(consoleErrorSpy).toHaveBeenCalled();
-
-			console.error = originalConsoleError;
 		});
 
 		test('preserves other settings when updating partial settings', () => {
@@ -273,21 +274,17 @@ describe('GameSettingsManager', () => {
 		});
 
 		test('handles localStorage.setItem throwing error during reset', () => {
-			const consoleErrorSpy = mock(() => {});
-			const originalConsoleError = console.error;
-			console.error = consoleErrorSpy;
+			withMockedConsoleError((consoleErrorSpy) => {
+				mockLocalStorage.setItem = mock(() => {
+					throw new Error('localStorage unavailable');
+				});
 
-			mockLocalStorage.setItem = mock(() => {
-				throw new Error('localStorage unavailable');
+				manager.resetToDefaults();
+
+				const settings = manager.getSettings();
+				expect(settings).toEqual(DEFAULT_SETTINGS);
+				expect(consoleErrorSpy).toHaveBeenCalled();
 			});
-
-			manager.resetToDefaults();
-
-			const settings = manager.getSettings();
-			expect(settings).toEqual(DEFAULT_SETTINGS);
-			expect(consoleErrorSpy).toHaveBeenCalled();
-
-			console.error = originalConsoleError;
 		});
 	});
 
@@ -464,22 +461,17 @@ describe('GameSettingsManager', () => {
 			manager = new GameSettingsManager();
 			manager.updateSettings({ startingChips: 1500 });
 
-			// Simulate localStorage failure
-			const consoleErrorSpy = mock(() => {});
-			const originalConsoleError = console.error;
-			console.error = consoleErrorSpy;
+			withMockedConsoleError((consoleErrorSpy) => {
+				mockLocalStorage.setItem = mock(() => {
+					throw new Error('localStorage full');
+				});
 
-			mockLocalStorage.setItem = mock(() => {
-				throw new Error('localStorage full');
+				// Settings should still work in memory
+				manager.updateSettings({ aiSpeed: 'fast' });
+				const settings = manager.getSettings();
+				expect(settings.startingChips).toBe(1500);
+				expect(settings.aiSpeed).toBe('fast');
 			});
-
-			// Settings should still work in memory
-			manager.updateSettings({ aiSpeed: 'fast' });
-			const settings = manager.getSettings();
-			expect(settings.startingChips).toBe(1500);
-			expect(settings.aiSpeed).toBe('fast');
-
-			console.error = originalConsoleError;
 		});
 	});
 });

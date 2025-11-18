@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
  * Creates test user if needed and signs in with the test account, then saves the authentication state.
  */
 async function globalSetup(config: FullConfig) {
-	const authFile = path.join(__dirname, '.auth', 'user.json');
+	const authFile = path.join(process.cwd(), 'e2e', '.auth', 'user.json');
 
 	// Test account credentials - dedicated for E2E testing
 	const TEST_EMAIL = 'e2e-test@arcturus.local';
@@ -45,9 +45,8 @@ async function globalSetup(config: FullConfig) {
 		// Wait for navigation after signup
 		await page.waitForURL(`${baseURL}/`, { timeout: 15000 });
 
-		// Multiple ways to verify we're logged in
+		// Multiple ways to verify we're logged in (only elements that require auth)
 		const authChecks = [
-			{ name: 'Chip Balance text', check: () => page.locator('text=Chip Balance').isVisible() },
 			{
 				name: 'Chip balance data attribute',
 				check: () => page.locator('span[data-chip-balance]').isVisible(),
@@ -55,10 +54,6 @@ async function globalSetup(config: FullConfig) {
 			{ name: 'Dashboard button', check: () => page.locator('text=Dashboard').isVisible() },
 			{ name: 'Play Now button', check: () => page.locator('text=Play Now').isVisible() },
 			{ name: 'User name display', check: () => page.locator(`text=${TEST_NAME}`).isVisible() },
-			{
-				name: 'Daily Mission link',
-				check: () => page.locator('a[href="/missions/daily"]').isVisible(),
-			},
 		];
 
 		// Helper to run the auth checks until one passes

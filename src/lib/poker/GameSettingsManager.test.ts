@@ -389,17 +389,39 @@ describe('GameSettingsManager', () => {
 			expect(settings).toEqual(originalSettings);
 		});
 
-		test('preserves null values from localStorage over defaults', () => {
+		test('filters out null values from localStorage and uses defaults', () => {
 			mockLocalStorage.store['poker_game_settings'] = JSON.stringify({
 				...DEFAULT_SETTINGS,
 				startingChips: null,
+				aiSpeed: 'fast', // Valid value should be preserved
 			});
 
 			const manager2 = new GameSettingsManager();
 			const settings = manager2.getSettings();
 
-			// Null values in localStorage overwrite defaults due to spread operator
-			expect(settings.startingChips).toBe(null);
+			// Null values should be filtered out to prevent invalid states
+			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
+			// Valid values should still be loaded
+			expect(settings.aiSpeed).toBe('fast');
+		});
+
+		test('filters out undefined values from localStorage', () => {
+			// Manually create an object with undefined to test filtering
+			const corruptedSettings = {
+				startingChips: 1000,
+				smallBlind: undefined,
+				bigBlind: 20,
+			};
+
+			mockLocalStorage.store['poker_game_settings'] = JSON.stringify(corruptedSettings);
+
+			const manager2 = new GameSettingsManager();
+			const settings = manager2.getSettings();
+
+			// Undefined values should be filtered out
+			expect(settings.startingChips).toBe(1000);
+			expect(settings.smallBlind).toBe(DEFAULT_SETTINGS.smallBlind);
+			expect(settings.bigBlind).toBe(20);
 		});
 
 		test('multiple rapid updates are handled correctly', () => {

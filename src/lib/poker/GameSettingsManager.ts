@@ -22,10 +22,18 @@ export class GameSettingsManager {
 			const stored = localStorage.getItem(SETTINGS_KEY);
 			if (stored) {
 				const parsed = JSON.parse(stored);
+				// Filter out null/undefined values to prevent invalid states
+				const validSettings: Partial<GameSettings> = {};
+				for (const key in parsed) {
+					if (parsed[key] != null) {
+						// != null checks for both null and undefined
+						validSettings[key as keyof GameSettings] = parsed[key];
+					}
+				}
 				// Validate and merge with defaults to ensure all fields exist
 				return {
 					...DEFAULT_SETTINGS,
-					...parsed,
+					...validSettings,
 				};
 			}
 		} catch (error) {

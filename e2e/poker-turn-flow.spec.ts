@@ -23,7 +23,7 @@ async function ensureLoggedIn(page: Page) {
 
 test.describe('Poker turn flow smoke test', () => {
 	test('deal, human check, AI acts, next phase continues', async ({ page }) => {
-		// Navigate to poker game as an authenticated user
+		// Ensure authentication and navigate to poker game
 		await ensureLoggedIn(page);
 		await page.goto('/games/poker', { waitUntil: 'networkidle' });
 

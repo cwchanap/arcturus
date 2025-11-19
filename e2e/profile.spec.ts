@@ -23,7 +23,7 @@ async function ensureLoggedIn(page: Page) {
 
 test.describe('Profile Page', () => {
 	test.beforeEach(async ({ page }) => {
-		// Navigate to profile page (already authenticated via global setup)
+		// Ensure user is logged in before each test
 		await ensureLoggedIn(page);
 		await page.goto('/profile');
 	});

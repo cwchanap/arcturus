@@ -45,7 +45,7 @@ async function globalSetup(config: FullConfig) {
 		// Wait for navigation after signup
 		await page.waitForURL(`${baseURL}/`, { timeout: 15000 });
 
-		// Multiple ways to verify we're logged in (only elements that require auth)
+		// Verify we're logged in by checking for authenticated user elements
 		const authChecks = [
 			{
 				name: 'Chip balance data attribute',

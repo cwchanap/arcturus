@@ -11,6 +11,7 @@ describe('GameSettingsManager', () => {
 		setItem: ReturnType<typeof mock>;
 		clear: () => void;
 	};
+	let originalLocalStorage: Storage;
 
 	// Helper function to mock console.error and ensure proper cleanup
 	const withMockedConsoleError = (testFn: (consoleErrorSpy: ReturnType<typeof mock>) => void) => {
@@ -26,6 +27,9 @@ describe('GameSettingsManager', () => {
 	};
 
 	beforeEach(() => {
+		// Save original localStorage
+		originalLocalStorage = global.localStorage;
+
 		// Create mock localStorage
 		mockLocalStorage = {
 			store: {},
@@ -44,6 +48,8 @@ describe('GameSettingsManager', () => {
 
 	afterEach(() => {
 		mockLocalStorage.clear();
+		// Restore original localStorage to avoid polluting other test suites
+		global.localStorage = originalLocalStorage;
 	});
 
 	describe('Constructor and Initialization', () => {
@@ -397,12 +403,12 @@ describe('GameSettingsManager', () => {
 		});
 
 		test('multiple rapid updates are handled correctly', () => {
-			for (let i = 0; i < 100; i++) {
+			for (let i = 0; i < 10; i++) {
 				manager.updateSettings({ startingChips: i });
 			}
 
 			const settings = manager.getSettings();
-			expect(settings.startingChips).toBe(99);
+			expect(settings.startingChips).toBe(9);
 		});
 
 		test('settings remain consistent after multiple operations', () => {

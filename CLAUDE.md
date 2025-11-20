@@ -242,8 +242,9 @@ Tables defined in `src/db/schema.ts`:
 
 **Test Account**:
 
-- Email: `test@cwchanap.dev`
-- Password: `password123`
+- Name: `E2E Test User`
+- Email: `e2e-test@arcturus.local`
+- Password: `PlaywrightTest123!`
 
 ## Code Style
 

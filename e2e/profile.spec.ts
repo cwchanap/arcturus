@@ -1,18 +1,24 @@
 import { test, expect } from '@playwright/test';
+import { ensureLoggedIn } from './auth-helpers';
 import { TEST_USER } from './auth.setup';
 
 test.describe('Profile Page', () => {
 	test.beforeEach(async ({ page }) => {
-		// Navigate to profile page (already authenticated via global setup)
+		// Ensure user is logged in before each test
+		await ensureLoggedIn(page);
 		await page.goto('/profile');
 	});
 
 	test('displays user information correctly', async ({ page }) => {
-		// Check page title
-		await expect(page.locator('h1')).toContainText('E2E Test User');
+		// Check page title within the main content (avoid header h1 in layout)
+		const profileHeading = page.locator('main h1').first();
+		await expect(profileHeading).toContainText(TEST_USER.name);
 
-		// Check email is displayed
-		await expect(page.locator('text=' + TEST_USER.email)).toBeVisible();
+		// Check email is displayed within the Account Details section
+		const accountDetails = page
+			.getByRole('heading', { name: 'Account Details', level: 2 })
+			.locator('xpath=..');
+		await expect(accountDetails.locator('dd').filter({ hasText: TEST_USER.email })).toBeVisible();
 
 		// Check profile sections are present
 		await expect(page.locator('text=Account Details')).toBeVisible();
@@ -149,17 +155,13 @@ test.describe('Profile Page', () => {
 	});
 
 	test('profile page is protected (requires auth)', async ({ browser }) => {
-		// Create a new context without auth state
-		const context = await browser.newContext();
+		// Use a fresh context with no stored auth state
+		const context = await browser.newContext({ storageState: undefined });
 		const page = await context.newPage();
 
-		// Try to access profile without auth
 		await page.goto('/profile');
 
-		// Should redirect to signin
-		await page.waitForURL('/signin', { timeout: 10000 });
-		await expect(page).toHaveURL('/signin');
-
+		await expect(page).toHaveURL(/\/signin/);
 		await context.close();
 	});
 
@@ -182,9 +184,10 @@ test.describe('Profile Page', () => {
 		// Reload page with new viewport
 		await page.reload();
 
-		// Check that main elements are still visible
-		await expect(page.locator('h1')).toBeVisible();
-		await expect(page.locator('text=Account Details')).toBeVisible();
-		await expect(page.locator('text=AI Rival Settings')).toBeVisible();
+		// Check that main profile elements are still visible
+		const profileHeading = page.locator('main h1').first();
+		await expect(profileHeading).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Account Details', level: 2 })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'AI Rival Settings', level: 2 })).toBeVisible();
 	});
 });

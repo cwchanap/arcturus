@@ -1,4 +1,5 @@
 import { chromium, type FullConfig } from '@playwright/test';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,6 +12,10 @@ const __dirname = path.dirname(__filename);
  */
 async function globalSetup(config: FullConfig) {
 	const authFile = path.join(process.cwd(), 'e2e', '.auth', 'user.json');
+	const authDir = path.dirname(authFile);
+	if (!fs.existsSync(authDir)) {
+		fs.mkdirSync(authDir, { recursive: true });
+	}
 
 	// Test account credentials - dedicated for E2E testing
 	const TEST_EMAIL = 'e2e-test@arcturus.local';

@@ -119,18 +119,18 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### Game Logic Extensions
 
-- [ ] T038 [P] [US2] Extend BlackjackGame class in `src/lib/blackjack/BlackjackGame.ts` - add doubleDown() method (validate 2-card hand totaling 9/10/11, double bet, deal one card, auto-stand)
-- [ ] T039 [P] [US2] Extend BlackjackGame class - add split() method (validate same rank, sufficient chips, create second hand, deal one card to each, manage activeHandIndex)
-- [ ] T040 [P] [US2] Update BlackjackGame unit tests in `BlackjackGame.test.ts` - test doubleDown scenarios (valid hands, insufficient chips, card count)
-- [ ] T041 [P] [US2] Update BlackjackGame unit tests - test split scenarios (matching pairs, non-matching pairs, multiple hands, chip validation)
+- [x] T038 [P] [US2] Extend BlackjackGame class in `src/lib/blackjack/BlackjackGame.ts` - add doubleDown() method (validate 2-card hand totaling 9/10/11, double bet, deal one card, auto-stand)
+- [x] T039 [P] [US2] Extend BlackjackGame class - add split() method (validate same rank, sufficient chips, create second hand, deal one card to each, manage activeHandIndex)
+- [x] T040 [P] [US2] Update BlackjackGame unit tests in `BlackjackGame.test.ts` - test doubleDown scenarios (valid hands, insufficient chips, card count)
+- [x] T041 [P] [US2] Update BlackjackGame unit tests - test split scenarios (matching pairs, non-matching pairs, multiple hands, chip validation)
 
 ### UI Extensions
 
-- [ ] T042 [US2] Add Double Down button to `src/pages/games/blackjack.astro` (button with conditional enable/disable, tooltip for chip requirement)
-- [ ] T043 [US2] Add Split button to `src/pages/games/blackjack.astro` (button with conditional enable/disable, tooltip for chip requirement)
-- [ ] T044 [US2] Update BlackjackUIRenderer in `BlackjackUIRenderer.ts` - add renderSplitHands() method (display multiple player hands, highlight active hand)
-- [ ] T045 [US2] Update BlackjackUIRenderer - modify updateActions() to handle Double/Split button states based on game state
-- [ ] T046 [US2] Wire up Double Down and Split buttons in blackjack.astro `<script>` (attach click handlers, update UI after actions)
+- [x] T042 [US2] Add Double Down button to `src/pages/games/blackjack.astro` (button with conditional enable/disable, tooltip for chip requirement)
+- [x] T043 [US2] Add Split button to `src/pages/games/blackjack.astro` (button with conditional enable/disable, tooltip for chip requirement)
+- [x] T044 [US2] Update BlackjackUIRenderer in `BlackjackUIRenderer.ts` - add renderSplitHands() method (display multiple player hands, highlight active hand)
+- [x] T045 [US2] Update BlackjackUIRenderer - modify updateActions() to handle Double/Split button states based on game state
+- [x] T046 [US2] Wire up Double Down and Split buttons in blackjack.astro `<script>` (attach click handlers, update UI after actions)
 
 ### Testing
 

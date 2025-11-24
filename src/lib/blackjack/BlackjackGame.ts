@@ -1,11 +1,11 @@
 /**
  * BlackjackGame - Main game state manager
- * MVP version: supports bet, deal, hit, stand (no double/split yet)
+ * Supports: bet, deal, hit, stand, double down, split
  */
 
-import type { BlackjackGameState, RoundOutcome, RoundResult, BlackjackAction } from './types';
+import type { BlackjackGameState, RoundOutcome, RoundResult, BlackjackAction, Hand } from './types';
 import { DeckManager } from './DeckManager';
-import { compareHands, isBlackjack, isBust } from './handEvaluator';
+import { compareHands, isBlackjack, isBust, calculateHandValue } from './handEvaluator';
 import { shouldDealerHit } from './dealerStrategy';
 import { BLACKJACK_PAYOUT, WIN_PAYOUT, DEFAULT_MIN_BET, DEFAULT_MAX_BET } from './constants';
 
@@ -227,6 +227,112 @@ export class BlackjackGame {
 	}
 
 	/**
+	 * Player doubles down (doubles bet, receives one card, automatically stands)
+	 */
+	public doubleDown(): void {
+		if (this.state.phase !== 'player-turn') {
+			throw new Error('Can only double down during player turn');
+		}
+
+		const activeHand = this.state.playerHands[this.state.activeHandIndex];
+
+		// Validate: must have exactly 2 cards
+		if (activeHand.cards.length !== 2) {
+			throw new Error('Can only double down on initial 2-card hand');
+		}
+
+		// Validate: hand must total 9, 10, or 11
+		const handValue = calculateHandValue(activeHand.cards);
+		if (handValue.value < 9 || handValue.value > 11) {
+			throw new Error('Can only double down on hand totaling 9, 10, or 11');
+		}
+
+		// Validate: player must have enough chips to double bet
+		if (activeHand.bet > this.state.playerBalance) {
+			throw new Error('Insufficient balance to double down');
+		}
+
+		// Double the bet
+		this.state.playerBalance -= activeHand.bet;
+		this.state.pot += activeHand.bet;
+		activeHand.bet *= 2;
+
+		// Deal one card
+		activeHand.cards.push(this.deck.deal());
+
+		// Automatically stand (move to dealer turn)
+		if (isBust(activeHand)) {
+			this.state.phase = 'complete';
+		} else {
+			this.state.phase = 'dealer-turn';
+		}
+	}
+
+	/**
+	 * Player splits hand (creates two hands from a pair)
+	 */
+	public split(): void {
+		if (this.state.phase !== 'player-turn') {
+			throw new Error('Can only split during player turn');
+		}
+
+		const activeHand = this.state.playerHands[this.state.activeHandIndex];
+
+		// Validate: must have exactly 2 cards
+		if (activeHand.cards.length !== 2) {
+			throw new Error('Can only split initial 2-card hand');
+		}
+
+		// Validate: both cards must be same rank
+		if (activeHand.cards[0].rank !== activeHand.cards[1].rank) {
+			throw new Error('Can only split pairs of same rank');
+		}
+
+		// Validate: player must have enough chips for second bet
+		if (activeHand.bet > this.state.playerBalance) {
+			throw new Error('Insufficient balance to split');
+		}
+
+		// Deduct second bet from balance
+		this.state.playerBalance -= activeHand.bet;
+		this.state.pot += activeHand.bet;
+
+		// Create second hand with second card
+		const secondCard = activeHand.cards.pop()!;
+		const newHand: Hand = {
+			cards: [secondCard],
+			bet: activeHand.bet,
+			isDealer: false,
+		};
+
+		// Deal one card to each hand
+		activeHand.cards.push(this.deck.deal());
+		newHand.cards.push(this.deck.deal());
+
+		// Add new hand to player hands
+		this.state.playerHands.push(newHand);
+
+		// Continue playing first hand (activeHandIndex stays 0)
+	}
+
+	/**
+	 * Move to next hand after current hand is complete
+	 */
+	public nextHand(): void {
+		if (this.state.phase !== 'player-turn') {
+			throw new Error('Can only move to next hand during player turn');
+		}
+
+		// Check if there are more hands to play
+		if (this.state.activeHandIndex < this.state.playerHands.length - 1) {
+			this.state.activeHandIndex++;
+		} else {
+			// All hands complete, move to dealer turn
+			this.state.phase = 'dealer-turn';
+		}
+	}
+
+	/**
 	 * Get available actions for current game state
 	 */
 	public getAvailableActions(): BlackjackAction[] {
@@ -234,8 +340,30 @@ export class BlackjackGame {
 			return [];
 		}
 
-		// MVP: only hit and stand
-		return ['hit', 'stand'];
+		const activeHand = this.state.playerHands[this.state.activeHandIndex];
+		const actions: BlackjackAction[] = ['hit', 'stand'];
+
+		// Double down available on 2-card hands totaling 9-11 with sufficient chips
+		if (activeHand.cards.length === 2) {
+			const handValue = calculateHandValue(activeHand.cards);
+			if (
+				handValue.value >= 9 &&
+				handValue.value <= 11 &&
+				activeHand.bet <= this.state.playerBalance
+			) {
+				actions.push('double-down');
+			}
+
+			// Split available on matching pairs with sufficient chips
+			if (
+				activeHand.cards[0].rank === activeHand.cards[1].rank &&
+				activeHand.bet <= this.state.playerBalance
+			) {
+				actions.push('split');
+			}
+		}
+
+		return actions;
 	}
 
 	/**

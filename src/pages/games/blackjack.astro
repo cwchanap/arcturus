@@ -1,0 +1,445 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+
+const user = Astro.locals.user;
+
+if (!user) {
+	return Astro.redirect('/signin');
+}
+
+const initialBalance = user.chipBalance || 1000;
+---
+
+<CasinoLayout title="Blackjack - Arcturus Casino">
+	<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+		<!-- Game Header -->
+		<div class="flex items-center justify-between mb-8">
+			<div>
+				<a
+					href="/games"
+					class="text-slate-400 hover:text-yellow-400 transition-colors mb-2 inline-block"
+				>
+					← Back to Games
+				</a>
+				<h1
+					class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-500"
+				>
+					Blackjack
+				</h1>
+			</div>
+			<div class="flex items-center gap-4">
+				<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
+					<div class="text-xs text-slate-400 mb-1">Your Balance</div>
+					<div class="text-2xl font-bold text-yellow-400" id="player-balance">
+						${initialBalance}
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Blackjack Table -->
+		<div class="felt-table rounded-3xl p-8 mb-8 relative min-h-[600px]">
+			<!-- Game Status Message -->
+			<div class="absolute top-4 left-1/2 -translate-x-1/2 text-center">
+				<div
+					id="game-status"
+					class="text-lg font-semibold text-yellow-400 bg-slate-900/80 backdrop-blur-sm px-6 py-2 rounded-full border border-yellow-500/30"
+				>
+					Place your bet to start
+				</div>
+			</div>
+
+			<!-- Dealer Area -->
+			<div class="absolute top-20 left-1/2 -translate-x-1/2 w-full max-w-md">
+				<div class="text-center mb-4">
+					<div class="text-sm text-slate-400 mb-2">Dealer</div>
+					<div id="dealer-value" class="text-xl font-bold text-white mb-4">-</div>
+				</div>
+				<div id="dealer-cards" class="flex justify-center gap-3 min-h-[120px]">
+					<!-- Dealer cards will be rendered here -->
+				</div>
+			</div>
+
+			<!-- Player Area -->
+			<div class="absolute bottom-20 left-1/2 -translate-x-1/2 w-full max-w-md">
+				<div id="player-cards" class="flex justify-center gap-3 min-h-[120px] mb-4">
+					<!-- Player cards will be rendered here -->
+				</div>
+				<div class="text-center">
+					<div id="player-value" class="text-xl font-bold text-white mb-2">-</div>
+					<div id="current-bet" class="text-sm text-slate-400">Bet: $0</div>
+				</div>
+			</div>
+
+			<!-- Betting Controls -->
+			<div
+				id="betting-controls"
+				class="absolute bottom-4 left-1/2 -translate-x-1/2 w-full max-w-lg"
+			>
+				<div class="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-700">
+					<div class="mb-4">
+						<label for="bet-amount" class="block text-sm text-slate-400 mb-2">Bet Amount</label>
+						<input
+							type="number"
+							id="bet-amount"
+							min="10"
+							max="500"
+							value="50"
+							step="10"
+							class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-yellow-500 focus:outline-none"
+						/>
+					</div>
+					<div class="flex gap-2 mb-4">
+						<button
+							class="bet-quick flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 transition-colors"
+							data-amount="25">$25</button
+						>
+						<button
+							class="bet-quick flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 transition-colors"
+							data-amount="50">$50</button
+						>
+						<button
+							class="bet-quick flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 transition-colors"
+							data-amount="100">$100</button
+						>
+						<button
+							class="bet-quick flex-1 bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 transition-colors"
+							data-amount="200">$200</button
+						>
+					</div>
+					<button
+						id="btn-deal"
+						class="w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
+					>
+						Deal
+					</button>
+				</div>
+			</div>
+
+			<!-- Game Controls -->
+			<div
+				id="game-controls"
+				class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 w-full max-w-lg"
+			>
+				<div class="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-700">
+					<div class="flex gap-3">
+						<button
+							id="btn-hit"
+							class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+						>
+							Hit
+						</button>
+						<button
+							id="btn-stand"
+							class="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+						>
+							Stand
+						</button>
+					</div>
+					<button
+						id="btn-new-round"
+						class="hidden w-full mt-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
+					>
+						New Round
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+</CasinoLayout>
+
+<style>
+	.felt-table {
+		background: radial-gradient(ellipse at center, #1e7b4e 0%, #165c3a 100%);
+		box-shadow:
+			inset 0 2px 4px rgba(0, 0, 0, 0.3),
+			0 4px 8px rgba(0, 0, 0, 0.2);
+	}
+
+	.card {
+		width: 80px;
+		height: 112px;
+		background: white;
+		border-radius: 8px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		font-size: 24px;
+		font-weight: bold;
+		box-shadow:
+			0 2px 8px rgba(0, 0, 0, 0.2),
+			0 0 0 1px rgba(0, 0, 0, 0.1);
+		animation: card-deal 0.3s ease-out;
+	}
+
+	.card-hidden {
+		background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+		color: #475569;
+		font-size: 48px;
+	}
+
+	.card[data-suit='hearts'],
+	.card[data-suit='diamonds'] {
+		color: #dc2626;
+	}
+
+	.card[data-suit='clubs'],
+	.card[data-suit='spades'] {
+		color: #1e293b;
+	}
+
+	@keyframes card-deal {
+		from {
+			opacity: 0;
+			transform: translateY(-20px) scale(0.8);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+</style>
+
+<script>
+	import { BlackjackGame } from '../../lib/blackjack/BlackjackGame';
+
+	// Get initial balance from DOM
+	const balanceEl = document.getElementById('player-balance');
+	const initialBalance = parseInt(balanceEl?.textContent?.replace(/[^0-9]/g, '') || '1000');
+
+	// Initialize game
+	const game = new BlackjackGame(initialBalance, 10, 500);
+
+	// DOM elements
+	const bettingControls = document.getElementById('betting-controls')!;
+	const gameControls = document.getElementById('game-controls')!;
+	const betAmountInput = document.getElementById('bet-amount') as HTMLInputElement;
+	const btnDeal = document.getElementById('btn-deal')!;
+	const btnHit = document.getElementById('btn-hit')!;
+	const btnStand = document.getElementById('btn-stand')!;
+	const btnNewRound = document.getElementById('btn-new-round')!;
+	const statusEl = document.getElementById('game-status')!;
+	const balanceDisplay = document.getElementById('player-balance')!;
+
+	// Quick bet buttons
+	document.querySelectorAll('.bet-quick').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const amount = btn.getAttribute('data-amount');
+			if (amount && betAmountInput) {
+				betAmountInput.value = amount;
+			}
+		});
+	});
+
+	// Deal button
+	btnDeal.addEventListener('click', () => {
+		const betAmount = parseInt(betAmountInput.value);
+		if (isNaN(betAmount) || betAmount < 10 || betAmount > 500) {
+			statusEl.textContent = 'Invalid bet amount';
+			return;
+		}
+
+		if (betAmount > game.getBalance()) {
+			statusEl.textContent = 'Insufficient balance';
+			return;
+		}
+
+		try {
+			game.placeBet(betAmount);
+			game.deal();
+
+			// Update UI
+			renderGame();
+			bettingControls.classList.add('hidden');
+			gameControls.classList.remove('hidden');
+
+			const state = game.getState();
+			if (state.phase === 'complete') {
+				// Immediate blackjack or push
+				setTimeout(() => handleRoundComplete(), 500);
+			}
+		} catch (error) {
+			statusEl.textContent = (error as Error).message;
+		}
+	});
+
+	// Hit button
+	btnHit.addEventListener('click', () => {
+		try {
+			game.hit();
+			renderGame();
+
+			const state = game.getState();
+			if (state.phase === 'complete') {
+				// Player busted
+				setTimeout(() => handleRoundComplete(), 500);
+			}
+		} catch (error) {
+			statusEl.textContent = (error as Error).message;
+		}
+	});
+
+	// Stand button
+	btnStand.addEventListener('click', () => {
+		try {
+			game.stand();
+			statusEl.textContent = 'Dealer playing...';
+			renderGame();
+
+			// Play dealer turn with delay for animation
+			setTimeout(() => {
+				game.playDealerTurn();
+				renderGame();
+				setTimeout(() => handleRoundComplete(), 1000);
+			}, 1000);
+		} catch (error) {
+			statusEl.textContent = (error as Error).message;
+		}
+	});
+
+	// New round button
+	btnNewRound.addEventListener('click', () => {
+		game.startNewRound();
+		renderGame();
+		bettingControls.classList.remove('hidden');
+		gameControls.classList.add('hidden');
+		btnNewRound.classList.add('hidden');
+		statusEl.textContent = 'Place your bet to start';
+	});
+
+	// Render game state
+	function renderGame() {
+		const state = game.getState();
+
+		// Render player hand
+		const playerHand = state.playerHands[0];
+		if (playerHand) {
+			const playerCardsEl = document.getElementById('player-cards')!;
+			const playerValueEl = document.getElementById('player-value')!;
+			const currentBetEl = document.getElementById('current-bet')!;
+
+			playerCardsEl.innerHTML = playerHand.cards
+				.map(
+					(card) =>
+						`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
+				)
+				.join('');
+
+			playerValueEl.textContent = getHandDisplay(playerHand.cards);
+			currentBetEl.textContent = `Bet: $${playerHand.bet}`;
+		}
+
+		// Render dealer hand
+		const dealerCardsEl = document.getElementById('dealer-cards')!;
+		const dealerValueEl = document.getElementById('dealer-value')!;
+		const hideCard = state.phase === 'player-turn' || state.phase === 'dealing';
+
+		if (state.dealerHand.cards.length > 0) {
+			const visibleCards = hideCard ? [state.dealerHand.cards[0]] : state.dealerHand.cards;
+
+			dealerCardsEl.innerHTML =
+				visibleCards
+					.map(
+						(card) =>
+							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
+					)
+					.join('') + (hideCard ? '<div class="card card-hidden">🂠</div>' : '');
+
+			dealerValueEl.textContent = hideCard ? '?' : getHandDisplay(state.dealerHand.cards);
+		} else {
+			dealerCardsEl.innerHTML = '';
+			dealerValueEl.textContent = '-';
+		}
+
+		// Update balance
+		balanceDisplay.textContent = `$${game.getBalance()}`;
+
+		// Update button states
+		const actions = game.getAvailableActions();
+		btnHit.disabled = !actions.includes('hit');
+		btnStand.disabled = !actions.includes('stand');
+	}
+
+	// Handle round completion
+	async function handleRoundComplete() {
+		const outcomes = game.settleRound();
+		const outcome = outcomes[0];
+
+		// Display result
+		let message = '';
+		switch (outcome.result) {
+			case 'blackjack':
+				message = '🎉 BLACKJACK! You win!';
+				break;
+			case 'win':
+				message = '✓ You win!';
+				break;
+			case 'loss':
+				message = '✗ Dealer wins';
+				break;
+			case 'push':
+				message = '🤝 Push (Tie)';
+				break;
+		}
+		statusEl.textContent = message;
+
+		// Update balance in database
+		try {
+			await fetch('/api/chips/update', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					newBalance: game.getBalance(),
+					delta: outcome.payout - outcome.handIndex, // Simplified
+					gameType: 'blackjack',
+				}),
+			});
+		} catch (error) {
+			console.error('Failed to update balance:', error);
+		}
+
+		// Show new round button
+		btnNewRound.classList.remove('hidden');
+		renderGame();
+	}
+
+	// Helper functions
+	function getSuitSymbol(suit: string): string {
+		const symbols: Record<string, string> = {
+			hearts: '♥',
+			diamonds: '♦',
+			clubs: '♣',
+			spades: '♠',
+		};
+		return symbols[suit] || suit;
+	}
+
+	function getHandDisplay(cards: { rank: string; suit: string }[]): string {
+		let total = 0;
+		let aces = 0;
+
+		for (const card of cards) {
+			if (card.rank === 'A') {
+				aces++;
+				total += 11;
+			} else if (['K', 'Q', 'J'].includes(card.rank)) {
+				total += 10;
+			} else {
+				total += parseInt(card.rank);
+			}
+		}
+
+		while (total > 21 && aces > 0) {
+			total -= 10;
+			aces--;
+		}
+
+		if (total > 21) return 'Bust';
+		if (aces > 0 && total <= 21) return `Soft ${total}`;
+		return total.toString();
+	}
+
+	// Initial render
+	renderGame();
+</script>

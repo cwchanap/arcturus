@@ -122,23 +122,37 @@ const initialBalance = user.chipBalance || 1000;
 				class="hidden absolute bottom-4 left-1/2 -translate-x-1/2 w-full max-w-lg"
 			>
 				<div class="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-6 border border-slate-700">
-					<div class="flex gap-3">
+					<div class="grid grid-cols-2 gap-3 mb-3">
 						<button
 							id="btn-hit"
-							class="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+							class="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
 						>
 							Hit
 						</button>
 						<button
 							id="btn-stand"
-							class="flex-1 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+							class="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
 						>
 							Stand
+						</button>
+						<button
+							id="btn-double"
+							class="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+							title="Double your bet and receive one card"
+						>
+							Double Down
+						</button>
+						<button
+							id="btn-split"
+							class="bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+							title="Split your pair into two hands"
+						>
+							Split
 						</button>
 					</div>
 					<button
 						id="btn-new-round"
-						class="hidden w-full mt-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
+						class="hidden w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
 					>
 						New Round
 					</button>
@@ -216,9 +230,11 @@ const initialBalance = user.chipBalance || 1000;
 	const gameControls = document.getElementById('game-controls')!;
 	const betAmountInput = document.getElementById('bet-amount') as HTMLInputElement;
 	const btnDeal = document.getElementById('btn-deal')!;
-	const btnHit = document.getElementById('btn-hit')!;
-	const btnStand = document.getElementById('btn-stand')!;
-	const btnNewRound = document.getElementById('btn-new-round')!;
+	const btnHit = document.getElementById('btn-hit') as HTMLButtonElement;
+	const btnStand = document.getElementById('btn-stand') as HTMLButtonElement;
+	const btnDouble = document.getElementById('btn-double') as HTMLButtonElement;
+	const btnSplit = document.getElementById('btn-split') as HTMLButtonElement;
+	const btnNewRound = document.getElementById('btn-new-round') as HTMLButtonElement;
 	const statusEl = document.getElementById('game-status')!;
 	const balanceDisplay = document.getElementById('player-balance')!;
 
@@ -283,7 +299,35 @@ const initialBalance = user.chipBalance || 1000;
 	// Stand button
 	btnStand.addEventListener('click', () => {
 		try {
-			game.stand();
+			const state = game.getState();
+			// Check if there are more hands to play (after split)
+			if (state.playerHands.length > 1 && state.activeHandIndex < state.playerHands.length - 1) {
+				game.stand();
+				game.nextHand();
+				statusEl.textContent = `Playing hand ${state.activeHandIndex + 2}...`;
+				renderGame();
+			} else {
+				// All hands complete, play dealer turn
+				game.stand();
+				statusEl.textContent = 'Dealer playing...';
+				renderGame();
+
+				// Play dealer turn with delay for animation
+				setTimeout(() => {
+					game.playDealerTurn();
+					renderGame();
+					setTimeout(() => handleRoundComplete(), 1000);
+				}, 1000);
+			}
+		} catch (error) {
+			statusEl.textContent = (error as Error).message;
+		}
+	});
+
+	// Double Down button
+	btnDouble.addEventListener('click', () => {
+		try {
+			game.doubleDown();
 			statusEl.textContent = 'Dealer playing...';
 			renderGame();
 
@@ -293,6 +337,17 @@ const initialBalance = user.chipBalance || 1000;
 				renderGame();
 				setTimeout(() => handleRoundComplete(), 1000);
 			}, 1000);
+		} catch (error) {
+			statusEl.textContent = (error as Error).message;
+		}
+	});
+
+	// Split button
+	btnSplit.addEventListener('click', () => {
+		try {
+			game.split();
+			statusEl.textContent = 'Playing hand 1...';
+			renderGame();
 		} catch (error) {
 			statusEl.textContent = (error as Error).message;
 		}
@@ -312,22 +367,48 @@ const initialBalance = user.chipBalance || 1000;
 	function renderGame() {
 		const state = game.getState();
 
-		// Render player hand
-		const playerHand = state.playerHands[0];
-		if (playerHand) {
-			const playerCardsEl = document.getElementById('player-cards')!;
-			const playerValueEl = document.getElementById('player-value')!;
-			const currentBetEl = document.getElementById('current-bet')!;
+		// Render player hand(s)
+		const playerCardsEl = document.getElementById('player-cards')!;
+		const playerValueEl = document.getElementById('player-value')!;
+		const currentBetEl = document.getElementById('current-bet')!;
 
-			playerCardsEl.innerHTML = playerHand.cards
-				.map(
-					(card) =>
-						`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-				)
-				.join('');
-
-			playerValueEl.textContent = getHandDisplay(playerHand.cards);
-			currentBetEl.textContent = `Bet: $${playerHand.bet}`;
+		if (state.playerHands.length > 0) {
+			// If split, show all hands with active hand highlighted
+			if (state.playerHands.length > 1) {
+				const handsHTML = state.playerHands
+					.map((hand, index) => {
+						const isActive = index === state.activeHandIndex;
+						const borderClass = isActive ? 'border-2 border-yellow-400' : 'border border-slate-600';
+						const cardsHTML = hand.cards
+							.map(
+								(card) =>
+									`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
+							)
+							.join('');
+						return `
+							<div class="flex flex-col items-center gap-2 p-3 rounded-lg ${borderClass}">
+								<div class="text-xs text-slate-400">Hand ${index + 1}</div>
+								<div class="flex gap-2">${cardsHTML}</div>
+								<div class="text-sm font-bold">${getHandDisplay(hand.cards)}</div>
+							</div>
+						`;
+					})
+					.join('');
+				playerCardsEl.innerHTML = handsHTML;
+				playerValueEl.textContent = '';
+				currentBetEl.textContent = `Bet per hand: $${state.playerHands[0].bet}`;
+			} else {
+				// Single hand - normal display
+				const playerHand = state.playerHands[0];
+				playerCardsEl.innerHTML = playerHand.cards
+					.map(
+						(card) =>
+							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
+					)
+					.join('');
+				playerValueEl.textContent = getHandDisplay(playerHand.cards);
+				currentBetEl.textContent = `Bet: $${playerHand.bet}`;
+			}
 		}
 
 		// Render dealer hand
@@ -359,6 +440,8 @@ const initialBalance = user.chipBalance || 1000;
 		const actions = game.getAvailableActions();
 		btnHit.disabled = !actions.includes('hit');
 		btnStand.disabled = !actions.includes('stand');
+		btnDouble.disabled = !actions.includes('double-down');
+		btnSplit.disabled = !actions.includes('split');
 	}
 
 	// Handle round completion

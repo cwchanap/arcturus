@@ -1,232 +1,243 @@
+# Arcturus Casino Platform Constitution
+
 <!--
-SYNC IMPACT REPORT
-Version: 1.0.0 → 1.0.1
-Rationale: Accuracy and consistency fixes for code quality standards and testing commands
+Sync Impact Report (2025-11-23):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Version Change: [UNVERSIONED] → 1.0.0 (Initial constitution)
 
-Modified Principles:
-  - Code Quality Standards: Corrected indentation specification (tabs, not spaces)
-  - Testing Standards: Updated test coverage command to reflect actual scope
-  - Development Workflow: Added dev server port documentation
+Principles Defined:
+- I. Edge-First Runtime (NEW): Cloudflare Workers constraints
+- II. Factory Pattern for Bindings (NEW): Environment access patterns
+- III. Modular Game Architecture (NEW): Game logic organization
+- IV. Test Coverage Standards (NEW): Unit + E2E testing requirements
+- V. Code Quality Enforcement (NEW): Automated quality gates
 
-Added Sections: None
-Removed Sections: None
+Sections Added:
+- Core Principles (5 principles defined)
+- Development Standards (tech stack, code style, testing)
+- Deployment & Security (Cloudflare patterns, secrets management)
+- Governance (amendment process, compliance)
 
-Templates requiring updates:
-  ✅ .specify/templates/plan-template.md - No changes needed (already aligned)
-  ✅ .specify/templates/spec-template.md - No changes needed (already aligned)
-  ✅ .specify/templates/tasks-template.md - No changes needed (already aligned)
-  ⚠️  AGENTS.md - Already correct (tabs with width 2)
-  ⚠️  package.json - E2E test script missing (Playwright tests mentioned but no script exists)
+Templates Updated:
+✅ plan-template.md - Constitution Check section aligned
+✅ spec-template.md - Requirements structure aligned
+✅ tasks-template.md - Task categorization aligned
+✅ checklist-template.md - Format compatible
+✅ agent-file-template.md - References updated
 
-Follow-up TODOs:
-  - Consider adding `test:e2e` script for Playwright tests (mentioned in principle but not implemented)
-  - Consider adding generic `test:coverage` that covers all modules (currently poker-only)
+Follow-up TODOs: None
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 -->
-
-# Arcturus Casino Constitution
 
 ## Core Principles
 
-### I. Code Quality First
+### I. Edge-First Runtime
 
-Code quality is non-negotiable and enforced automatically before code enters the repository.
+**All code MUST run on Cloudflare Workers edge runtime, NOT Node.js.**
+
+- MUST use `Astro.locals.runtime.env` for environment variables (NEVER `process.env`)
+- MUST use factory patterns for D1 database and KV bindings
+- MUST test with Cloudflare Workers compatibility in mind
+- MUST avoid Node.js-specific APIs (fs, child_process, etc.)
+
+**Rationale**: Cloudflare Workers provide global edge distribution with zero cold starts. Using Node.js patterns breaks deployment. This constraint ensures production parity and prevents "works locally" failures.
+
+### II. Factory Pattern for Bindings
+
+**All Cloudflare bindings (D1, KV, secrets) MUST be accessed via factory functions.**
+
+- Database access: `createDb(Astro.locals.runtime.env.DB)`
+- Auth instance: `createAuth(dbBinding, env, baseURL)`
+- MUST NOT pass raw bindings through component props
+- MUST centralize binding logic in `src/lib/` modules
+
+**Rationale**: Factory patterns enforce type safety, enable testing with mocks, and provide a single source of truth for binding configuration. Direct binding access creates tight coupling and makes unit testing impossible.
+
+### III. Modular Game Architecture
+
+**Game logic MUST be extracted to standalone, testable modules in `src/lib/{game}/`.**
+
+- Pure functions for game rules (e.g., hand evaluation, pot calculation)
+- Class-based game state managers (e.g., `PokerGame.ts`)
+- UI rendering separated from game logic (e.g., `PokerUIRenderer.ts`)
+- AI/strategy modules isolated (e.g., `aiStrategy.ts`, `llmAIStrategy.ts`)
+- MUST include unit tests for all game logic modules
+
+**Rationale**: Casino games have complex rules that require thorough testing. Modular architecture enables unit testing of game logic independently of UI, supports code reuse across games, and prevents monolithic page files.
+
+### IV. Test Coverage Standards
+
+**Features MUST have appropriate test coverage before deployment.**
+
+- **Unit Tests** (Bun): Game logic, utilities, pure functions
+- **E2E Tests** (Playwright): Critical user flows (auth, gameplay, transactions)
+- MUST test Cloudflare Workers-specific patterns (env access, D1 queries)
+- E2E tests MUST reuse auth state via global setup (no repeated logins)
+- MUST NOT deploy features with failing tests
+
+**Rationale**: Casino platforms handle real money (chips) and must be reliable. Comprehensive testing prevents bugs that could affect user balances or game fairness. E2E tests validate production-like behavior on Cloudflare Workers.
+
+### V. Code Quality Enforcement
+
+**Code quality is enforced automatically via pre-commit hooks and CI.**
+
+- **Tabs** (width 2) for indentation, **single quotes**, **semicolons required**
+- ESLint MUST pass with **0 warnings** (max-warnings=0)
+- Prettier MUST pass format checks
+- Husky + lint-staged run checks on commit
+- MUST NOT bypass hooks with `--no-verify` without explicit justification
+
+**Rationale**: Automated enforcement ensures consistency across contributions, prevents style debates, and catches common errors before PR review. Zero-warning policy prevents warning accumulation.
+
+## Development Standards
+
+### Technology Stack
+
+**Core Technologies** (NON-NEGOTIABLE):
+
+- **Runtime**: Cloudflare Workers (edge compute)
+- **Framework**: Astro SSR (`output: 'server'`) with Cloudflare adapter
+- **Authentication**: Better Auth (session-based, NOT JWT)
+- **Database**: Drizzle ORM + Cloudflare D1 (edge SQLite)
+- **Styling**: Tailwind CSS v4 (via Vite plugin, NOT PostCSS)
+- **Package Manager**: Bun (NOT npm/yarn/pnpm)
+- **Testing**: Bun (unit) + Playwright (E2E)
+
+### Code Style
+
+**Naming Conventions**:
+
+- Astro components: `PascalCase.astro` (e.g., `PlayingCard.astro`)
+- Routes: `kebab-case.astro` (e.g., `poker.astro`)
+- TypeScript: `camelCase` for variables/functions, `PascalCase` for types/classes
+- Database tables: `snake_case` (Drizzle convention, e.g., `llm_settings`)
+
+**File Organization**:
+
+- Components: `/src/components/` (reusable UI)
+- Pages: `/src/pages/` (routes, API endpoints)
+- Game logic: `/src/lib/{game}/` (modular, testable)
+- Layouts: `/src/layouts/` (use `casino.astro` for games)
+- Database: `/src/db/schema.ts` (single source of truth)
+
+### Testing Requirements
+
+**Unit Tests** (`bun run test`):
+
+- MUST test pure functions (game rules, utilities)
+- MUST NOT rely on global state or external dependencies
+- MUST run in isolation without network/database access
+
+**E2E Tests** (`bun run test:e2e`):
+
+- MUST cover critical user journeys (signup, signin, game play, chip transactions)
+- MUST use global setup for authentication (save to `e2e/.auth/user.json`)
+- MUST clean up test data after runs
+- MUST test against local Cloudflare Workers dev server (port 2000)
+
+**Test Account** (for E2E):
+
+- Email: `e2e-test@arcturus.local`
+- Password: `PlaywrightTest123!`
+- Name: `E2E Test User`
+
+## Deployment & Security
+
+### Database Migrations
+
+**Migration Workflow** (MANDATORY):
+
+1. Edit `src/db/schema.ts` (single source of truth)
+2. Generate migration: `bun run db:generate`
+3. Apply locally: `bun run db:migrate:local`
+4. Test with dev server: `bun run dev`
+5. Deploy to production: `bun run db:migrate:remote` (ONLY after testing)
 
 **Rules**:
 
-- ESLint and Prettier MUST pass before commits (enforced via Husky pre-commit hooks)
-- TypeScript strict mode MUST be enabled for all `.ts` and `.astro` files
-- No `console.log` statements in production code (warnings allowed, errors/warnings permitted)
-- Unused variables MUST be prefixed with `_` if intentionally unused
-- All Astro components MUST follow PascalCase naming conventions
-- Route files MUST use kebab-case matching their URL paths
-- Named exports MUST be preferred over default exports for shared utilities
+- MUST update `package.json` migration script paths when adding new migrations
+- MUST test migrations locally before production deployment
+- MUST handle missing columns gracefully in middleware (see `chipBalance` pattern)
 
-**Rationale**: Automated quality gates prevent technical debt accumulation and ensure consistency across the codebase. Pre-commit hooks catch issues before they reach code review, reducing reviewer cognitive load and maintaining high standards.
+### Secrets Management
 
-### II. Testing Standards
+**Cloudflare Secrets** (MANDATORY):
 
-Testing is mandatory for business logic, game mechanics, and critical user flows. Tests MUST exist before features are considered complete.
+- MUST store secrets via `wrangler secret put` (NOT in `wrangler.toml` or `.env`)
+- MUST access secrets via `Astro.locals.runtime.env.SECRET_NAME`
+- MUST generate `BETTER_AUTH_SECRET` with `openssl rand -base64 32`
+- MUST rotate secrets on security incidents
 
-**Rules**:
+**User Secrets** (LLM API keys):
 
-- All game logic in `src/lib/poker/` or similar MUST have unit tests with >80% coverage
-- Integration tests MUST exist for authentication flows and game state transitions
-- Playwright tests MUST cover critical user journeys (sign-in → game play → actions)
-- Tests MUST be written before or alongside implementation (TDD encouraged but not strictly enforced)
-- Test files MUST be colocated with source files (e.g., `handEvaluator.test.ts` next to `handEvaluator.ts`)
-- Coverage reports MUST be generated via `bun test --coverage` and reviewed before PRs merge (example: `bun test src/lib/poker --coverage` for poker module)
+- MUST encrypt API keys in `llm_settings` table
+- MUST validate API keys before storing
+- MUST NOT log or expose API keys in error messages
 
-**Rationale**: Casino gaming logic requires high reliability. Users expect games to work correctly, and bugs in game mechanics directly impact trust and user satisfaction. Test coverage ensures correctness and enables confident refactoring.
+### Protected Routes
 
-### III. User Experience Consistency
+**Authentication Pattern** (MANDATORY):
 
-User experience MUST be consistent across all games and pages, following established patterns and components.
-
-**Rules**:
-
-- All game pages MUST use `casino.astro` layout for consistent theming
-- All games MUST require authentication and redirect unauthenticated users to `/signin`
-- Reusable components (`PlayingCard.astro`, `PokerChip.astro`, `Button.astro`, `GameCard.astro`) MUST be used instead of duplicating UI patterns
-- Game actions MUST provide immediate visual feedback (loading states, animations, transitions)
-- Error messages MUST be user-friendly and actionable (avoid technical jargon)
-- All interactive elements MUST have accessible labels and keyboard navigation support
-- Color contrast MUST meet WCAG AA standards for readability
-
-**Rationale**: Consistency builds user trust and reduces cognitive load. Players should feel familiar with controls and navigation across all games. Reusable components ensure design system integrity and accelerate development.
-
-### IV. Performance Requirements
-
-Performance is critical for user satisfaction on edge deployments. All features MUST meet baseline performance standards.
+```astro
+---
+const user = Astro.locals.user; // Injected by middleware
+if (!user) return Astro.redirect('/signin');
+---
+```
 
 **Rules**:
 
-- Initial page load MUST complete in <2 seconds on 3G connections
-- Time to Interactive (TTI) MUST be <3 seconds for game pages
-- Database queries MUST use indexes and avoid N+1 queries
-- Client-side JavaScript bundles MUST be code-split per route (Astro's default behavior)
-- Images MUST be optimized and served in modern formats (WebP/AVIF with fallbacks)
-- Cloudflare Workers response time MUST average <100ms (p95 <200ms)
-- Game state updates MUST render within 16ms (60fps) to avoid jank
-
-**Measurement**:
-
-- Use Lighthouse CI for production builds (`bun run build && bun run preview`)
-- Monitor Cloudflare Analytics for edge performance metrics
-- Profile client-side rendering with Chrome DevTools Performance tab
-
-**Rationale**: Edge deployment on Cloudflare Workers provides low latency, but inefficient code negates this advantage. Casino users expect snappy interactions; slow games feel broken and untrustworthy.
-
-### V. Security & Data Integrity
-
-Security is paramount for authentication, player data, and game fairness. All features MUST follow secure development practices.
-
-**Rules**:
-
-- Secrets MUST NEVER be committed to version control (use `.dev.vars` or Wrangler secrets)
-- Database access MUST use Cloudflare bindings (`Astro.locals.runtime.env.DB`), NOT `process.env`
-- All API routes handling sensitive data MUST validate authentication via `Astro.locals.user`
-- User input MUST be validated and sanitized before database operations (use Drizzle's type safety)
-- Session tokens MUST be httpOnly, secure, and SameSite=Lax
-- Database migrations MUST be tested locally before applying to production (`db:migrate:local` then `db:migrate:remote`)
-- SQL injection MUST be prevented via parameterized queries (Drizzle ORM enforces this)
-
-**Rationale**: Casino platforms handle sensitive player data and financial transactions (even virtual). Security breaches destroy trust irreparably. Defense-in-depth and secure-by-default patterns are non-negotiable.
-
-## Code Quality Standards
-
-### Formatting & Style (Auto-Enforced)
-
-- **Indentation**: Tabs (visual width 2 spaces when rendered)
-- **Quotes**: Single quotes for strings
-- **Semicolons**: Required
-- **Line Length**: 100 characters (soft limit, Prettier handles wrapping)
-- **Trailing Commas**: Always (improves diffs)
-
-### TypeScript Standards
-
-- Strict mode MUST be enabled (`tsconfig.json` → `strict: true`)
-- `any` type is prohibited except with explicit justification and `@ts-expect-error` comment
-- Type inference is preferred over explicit annotations when obvious
-- Interfaces MUST be preferred over type aliases for object shapes
-- Enums SHOULD be avoided in favor of string literal unions
-
-### Component Standards
-
-- Astro components MUST separate concerns (logic in frontmatter, UI in template)
-- Client-side JavaScript MUST be isolated in `<script>` tags with explicit `is:inline` or bundled behavior
-- Props MUST be typed via TypeScript interfaces
-- Components MUST be documented with JSDoc comments for complex APIs
-
-### Database Standards
-
-- Schema changes MUST go through migrations (`bun run db:generate`)
-- Direct SQL MUST be avoided (use Drizzle query builder)
-- Foreign keys MUST be defined for relational integrity
-- Indexes MUST be added for frequently queried columns
-
-## Development Workflow
-
-### Pre-Commit Workflow
-
-1. Code changes are made in feature branch
-2. Run `bun run lint` and `bun run format:check` manually before commit
-3. Husky pre-commit hook runs automatically:
-   - ESLint with `--max-warnings 0`
-   - Prettier formatting check
-   - Lint-staged applies fixes to staged files
-4. If hooks fail, fix errors and re-stage files
-5. Commit message MUST follow conventional commits style (e.g., `feat:`, `fix:`, `docs:`)
-
-### Development Server
-
-- Local development server runs on **port 2000** (configured in `astro.config.mjs`)
-- Access via `http://localhost:2000` after running `bun run dev`
-
-### Testing Workflow
-
-1. For new game logic: Write unit tests in `.test.ts` files colocated with source
-2. For new user flows: Add Playwright tests in `tests/` directory
-3. Run tests locally: `bun test` (unit) and `bun test tests/` (integration with Playwright)
-4. Generate coverage: `bun test <module-path> --coverage` (e.g., `bun test src/lib/poker --coverage`)
-5. Ensure >80% coverage for game logic before marking PR ready
-
-### Pull Request Requirements
-
-PRs MUST include:
-
-- Description of changes and link to related issue/spec
-- Screenshots or screen recordings for UI changes
-- Test results (unit + integration coverage)
-- Confirmation that `bun run preview` was tested locally
-- Database migration verification if schema changed
-- Performance impact assessment for large features
-
-### Review Checklist
-
-Reviewers MUST verify:
-
-- Constitution compliance (principles I-V)
-- Test coverage meets standards
-- No hard-coded secrets or credentials
-- Cloudflare bindings used correctly (`runtime.env.DB`)
-- Error handling present for API routes and database operations
-- Accessibility standards met (keyboard nav, ARIA labels, color contrast)
-
-### Deployment Workflow
-
-1. Merge PR to `main` branch
-2. Run `bun run build` to generate production build
-3. Apply migrations to production: `bun run db:migrate:remote`
-4. Deploy to Cloudflare: `bun run deploy`
-5. Verify deployment via Cloudflare dashboard and tail logs: `wrangler tail`
-6. Smoke test critical paths (sign-in, game load, basic actions)
+- MUST protect all routes in `/pages/games/` and `/pages/profile.astro`
+- MUST use middleware-injected `Astro.locals.user` (includes `chipBalance`)
+- MUST NOT implement custom auth checks (use middleware pattern)
 
 ## Governance
 
-This constitution supersedes all other development practices. When conflicts arise between this document and other guidance (README, AGENTS.md, etc.), this constitution takes precedence.
+### Constitution Authority
 
-**Amendment Process**:
+This constitution supersedes all other development practices and style guides. When in conflict:
 
-- Amendments MUST be proposed via Pull Request to `.specify/memory/constitution.md`
-- Version MUST be bumped according to semantic versioning:
-  - **MAJOR**: Backward-incompatible principle removal or redefinition
-  - **MINOR**: New principle added or materially expanded guidance
-  - **PATCH**: Clarifications, typo fixes, non-semantic refinements
-- Amendments MUST include rationale and impact assessment
-- Dependent templates (plan, spec, tasks) MUST be updated to reflect changes
-- Sync impact report MUST be generated and prepended as HTML comment
+1. **Constitution** takes precedence
+2. **CLAUDE.md** provides implementation guidance (MUST align with constitution)
+3. **Local conventions** apply only where constitution is silent
 
-**Compliance Review**:
+### Amendment Process
 
-- All PRs MUST verify compliance with this constitution
-- Principle violations MUST be justified and documented in `plan.md` → Complexity Tracking section
-- Unjustified violations MUST be rejected in code review
-- Recurring violations indicate need for constitution amendment or additional tooling
+**MAJOR version** (X.0.0): Backward-incompatible changes
 
-**Runtime Development Guidance**:
+- Removing/redefining core principles
+- Changing non-negotiable tech stack requirements
+- Removing mandatory gates or checks
 
-- For day-to-day development patterns, refer to `.github/copilot-instructions.md`
-- For repository structure and workflow, refer to `AGENTS.md`
-- For authentication setup, refer to `AUTH_SETUP.md`
+**MINOR version** (0.X.0): Additive changes
 
-**Version**: 1.0.1 | **Ratified**: 2025-10-27 | **Last Amended**: 2025-10-27
+- Adding new principles or sections
+- Expanding guidance on existing principles
+- Adding new mandatory requirements
+
+**PATCH version** (0.0.X): Clarifications
+
+- Fixing typos or wording
+- Adding examples or rationale
+- Non-semantic refinements
+
+### Compliance Review
+
+**Pre-commit checks** (automated):
+
+- Linting (ESLint with 0 warnings)
+- Formatting (Prettier)
+- Commit message format (via Husky)
+
+**PR requirements** (mandatory):
+
+- Constitution compliance verification
+- Test coverage for new features
+- Migration scripts for schema changes
+- Deployment checklist completion (for production PRs)
+
+**Runtime guidance**: See `CLAUDE.md` for day-to-day development patterns and troubleshooting.
+
+---
+
+**Version**: 1.0.0 | **Ratified**: 2025-11-23 | **Last Amended**: 2025-11-23

@@ -105,8 +105,6 @@ _Example of marking unclear requirements:_
 <!--
   ACTION REQUIRED: Define measurable success criteria.
   These must be technology-agnostic and measurable.
-  Per Constitution Principle IV (Performance Requirements), include performance targets.
-  Per Constitution Principle III (User Experience), include UX consistency metrics.
 -->
 
 ### Measurable Outcomes
@@ -115,17 +113,3 @@ _Example of marking unclear requirements:_
 - **SC-002**: [Measurable metric, e.g., "System handles 1000 concurrent users without degradation"]
 - **SC-003**: [User satisfaction metric, e.g., "90% of users successfully complete primary task on first attempt"]
 - **SC-004**: [Business metric, e.g., "Reduce support tickets related to [X] by 50%"]
-
-### Performance Targets _(per Constitution Principle IV)_
-
-- **PT-001**: Initial page load completes in <2 seconds on 3G connections
-- **PT-002**: Time to Interactive (TTI) <3 seconds for interactive features
-- **PT-003**: Database queries execute in <50ms (p95)
-- **PT-004**: Client-side interactions render at 60fps (16ms per frame)
-
-### User Experience Targets _(per Constitution Principle III)_
-
-- **UX-001**: Feature uses established UI components (PlayingCard, PokerChip, Button, etc.)
-- **UX-002**: Feature follows casino.astro layout pattern for consistency
-- **UX-003**: All interactive elements have keyboard navigation support
-- **UX-004**: Color contrast meets WCAG AA standards

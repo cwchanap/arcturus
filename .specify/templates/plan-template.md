@@ -31,38 +31,15 @@
 
 _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
-**Principle I - Code Quality First**:
+Verify compliance with `.specify/memory/constitution.md`:
 
-- [ ] ESLint and Prettier configuration verified
-- [ ] TypeScript strict mode enabled
-- [ ] Pre-commit hooks functional (Husky + lint-staged)
+- [ ] **Edge-First Runtime**: Feature uses `Astro.locals.runtime.env` (NOT `process.env`)
+- [ ] **Factory Pattern**: Database/KV access uses factory functions (`createDb`, `createAuth`)
+- [ ] **Modular Architecture**: Game logic extracted to `src/lib/{game}/` with pure functions
+- [ ] **Test Coverage**: Unit tests (Bun) + E2E tests (Playwright) planned
+- [ ] **Code Quality**: ESLint/Prettier pre-commit hooks configured
 
-**Principle II - Testing Standards**:
-
-- [ ] Test files colocated with source (`.test.ts` files planned)
-- [ ] Coverage target >80% defined for game logic
-- [ ] Integration tests planned for critical user flows
-
-**Principle III - User Experience Consistency**:
-
-- [ ] Using `casino.astro` layout for game pages
-- [ ] Authentication checks implemented (`Astro.locals.user`)
-- [ ] Reusable components identified (PlayingCard, PokerChip, Button, etc.)
-- [ ] Accessibility requirements documented
-
-**Principle IV - Performance Requirements**:
-
-- [ ] Initial page load <2s target documented
-- [ ] Database queries using proper indexes
-- [ ] Code-splitting strategy defined
-- [ ] Performance measurement plan documented
-
-**Principle V - Security & Data Integrity**:
-
-- [ ] No secrets in code (using `.dev.vars` or Wrangler secrets)
-- [ ] Cloudflare bindings (`runtime.env.DB`) used correctly
-- [ ] Authentication validation on protected routes
-- [ ] Database migrations planned (local → remote workflow)
+_Document any exceptions or additional complexity here with justification._
 
 ## Project Structure
 

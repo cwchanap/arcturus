@@ -344,3 +344,12 @@ if (!user) return Astro.redirect('/signin');
 - `PokerChip.astro` - Casino chips
 - `GameCard.astro` - Game selection cards
 - `UserNav.astro` - User balance/nav
+
+## Active Technologies
+
+- TypeScript 5.x (Astro SSR environment) + Astro 5.x, Drizzle ORM, Better Auth, Tailwind CSS v4, existing `llm-settings` infrastructure (001-blackjack-game)
+- Cloudflare D1 (existing schema - reuses `user.chipBalance` and `llm_settings` table, no new tables needed) (001-blackjack-game)
+
+## Recent Changes
+
+- 001-blackjack-game: Added TypeScript 5.x (Astro SSR environment) + Astro 5.x, Drizzle ORM, Better Auth, Tailwind CSS v4, existing `llm-settings` infrastructure

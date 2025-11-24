@@ -1,0 +1,258 @@
+/**
+ * BlackjackGame - Main game state manager
+ * MVP version: supports bet, deal, hit, stand (no double/split yet)
+ */
+
+import type { BlackjackGameState, RoundOutcome, RoundResult, BlackjackAction } from './types';
+import { DeckManager } from './DeckManager';
+import { compareHands, isBlackjack, isBust } from './handEvaluator';
+import { shouldDealerHit } from './dealerStrategy';
+import { BLACKJACK_PAYOUT, WIN_PAYOUT, DEFAULT_MIN_BET, DEFAULT_MAX_BET } from './constants';
+
+export class BlackjackGame {
+	private state: BlackjackGameState;
+	private deck: DeckManager;
+	private minBet: number;
+	private maxBet: number;
+
+	constructor(initialBalance: number, minBet = DEFAULT_MIN_BET, maxBet = DEFAULT_MAX_BET) {
+		this.minBet = minBet;
+		this.maxBet = maxBet;
+		this.deck = new DeckManager();
+
+		this.state = {
+			phase: 'betting',
+			playerHands: [],
+			activeHandIndex: 0,
+			dealerHand: { cards: [], bet: 0, isDealer: true },
+			playerBalance: initialBalance,
+			pot: 0,
+		};
+	}
+
+	/**
+	 * Get current game state (read-only)
+	 */
+	public getState(): Readonly<BlackjackGameState> {
+		return { ...this.state };
+	}
+
+	/**
+	 * Place a bet and initialize a new round
+	 */
+	public placeBet(amount: number): void {
+		if (this.state.phase !== 'betting') {
+			throw new Error('Can only place bet during betting phase');
+		}
+
+		if (amount < this.minBet || amount > this.maxBet) {
+			throw new Error(`Bet must be between ${this.minBet} and ${this.maxBet}`);
+		}
+
+		if (amount > this.state.playerBalance) {
+			throw new Error('Insufficient balance');
+		}
+
+		// Deduct bet from balance
+		this.state.playerBalance -= amount;
+		this.state.pot = amount;
+
+		// Initialize player hand with bet
+		this.state.playerHands = [
+			{
+				cards: [],
+				bet: amount,
+				isDealer: false,
+			},
+		];
+		this.state.activeHandIndex = 0;
+
+		// Reset dealer hand
+		this.state.dealerHand = { cards: [], bet: 0, isDealer: true };
+
+		// Move to dealing phase
+		this.state.phase = 'dealing';
+	}
+
+	/**
+	 * Deal initial cards (2 to player, 2 to dealer)
+	 */
+	public deal(): void {
+		if (this.state.phase !== 'dealing') {
+			throw new Error('Can only deal during dealing phase');
+		}
+
+		const playerHand = this.state.playerHands[0];
+
+		// Deal 2 cards to player
+		playerHand.cards.push(this.deck.deal());
+		playerHand.cards.push(this.deck.deal());
+
+		// Deal 2 cards to dealer
+		this.state.dealerHand.cards.push(this.deck.deal());
+		this.state.dealerHand.cards.push(this.deck.deal());
+
+		// Check for immediate blackjack
+		const playerBlackjack = isBlackjack(playerHand);
+		const dealerBlackjack = isBlackjack(this.state.dealerHand);
+
+		if (playerBlackjack || dealerBlackjack) {
+			// Both have blackjack = push
+			// Only player has blackjack = player wins 1.5x
+			// Only dealer has blackjack = dealer wins
+			this.state.phase = 'complete';
+		} else {
+			// Normal gameplay
+			this.state.phase = 'player-turn';
+		}
+	}
+
+	/**
+	 * Player hits (receives another card)
+	 */
+	public hit(): void {
+		if (this.state.phase !== 'player-turn') {
+			throw new Error('Can only hit during player turn');
+		}
+
+		const activeHand = this.state.playerHands[this.state.activeHandIndex];
+		activeHand.cards.push(this.deck.deal());
+
+		// Check if busted
+		if (isBust(activeHand)) {
+			this.state.phase = 'complete';
+		}
+	}
+
+	/**
+	 * Player stands (ends turn)
+	 */
+	public stand(): void {
+		if (this.state.phase !== 'player-turn') {
+			throw new Error('Can only stand during player turn');
+		}
+
+		// Move to dealer turn
+		this.state.phase = 'dealer-turn';
+	}
+
+	/**
+	 * Play dealer's turn (dealer draws according to rules)
+	 */
+	public playDealerTurn(): void {
+		if (this.state.phase !== 'dealer-turn') {
+			throw new Error('Can only play dealer turn during dealer-turn phase');
+		}
+
+		// Dealer draws until should stand
+		while (shouldDealerHit(this.state.dealerHand)) {
+			this.state.dealerHand.cards.push(this.deck.deal());
+		}
+
+		// Move to complete phase
+		this.state.phase = 'complete';
+	}
+
+	/**
+	 * Settle the round and calculate payouts
+	 * Returns array of outcomes (one per hand)
+	 */
+	public settleRound(): RoundOutcome[] {
+		if (this.state.phase !== 'complete') {
+			throw new Error('Can only settle during complete phase');
+		}
+
+		const outcomes: RoundOutcome[] = [];
+		const dealerHand = this.state.dealerHand;
+
+		// Handle each player hand
+		for (let i = 0; i < this.state.playerHands.length; i++) {
+			const playerHand = this.state.playerHands[i];
+			const bet = playerHand.bet;
+
+			let result: RoundResult;
+			let payout: number;
+
+			const playerBlackjack = isBlackjack(playerHand);
+			const dealerBlackjack = isBlackjack(dealerHand);
+			const playerBust = isBust(playerHand);
+			const dealerBust = isBust(dealerHand);
+
+			if (playerBlackjack && dealerBlackjack) {
+				// Both blackjack = push
+				result = 'push';
+				payout = bet; // Return bet
+			} else if (playerBlackjack) {
+				// Player blackjack wins 1.5x
+				result = 'blackjack';
+				payout = bet + bet * BLACKJACK_PAYOUT;
+			} else if (dealerBlackjack || playerBust) {
+				// Dealer blackjack or player bust = loss
+				result = 'loss';
+				payout = 0;
+			} else if (dealerBust) {
+				// Dealer bust = player wins
+				result = 'win';
+				payout = bet + bet * WIN_PAYOUT;
+			} else {
+				// Compare hands
+				const comparison = compareHands(playerHand, dealerHand);
+				if (comparison > 0) {
+					result = 'win';
+					payout = bet + bet * WIN_PAYOUT;
+				} else if (comparison < 0) {
+					result = 'loss';
+					payout = 0;
+				} else {
+					result = 'push';
+					payout = bet; // Return bet
+				}
+			}
+
+			// Update balance
+			this.state.playerBalance += payout;
+
+			outcomes.push({
+				handIndex: i,
+				result,
+				payout,
+			});
+		}
+
+		// Reset for next round
+		this.state.phase = 'betting';
+		this.state.pot = 0;
+
+		return outcomes;
+	}
+
+	/**
+	 * Get available actions for current game state
+	 */
+	public getAvailableActions(): BlackjackAction[] {
+		if (this.state.phase !== 'player-turn') {
+			return [];
+		}
+
+		// MVP: only hit and stand
+		return ['hit', 'stand'];
+	}
+
+	/**
+	 * Get current balance
+	 */
+	public getBalance(): number {
+		return this.state.playerBalance;
+	}
+
+	/**
+	 * Start a new round (resets to betting phase)
+	 */
+	public startNewRound(): void {
+		this.state.phase = 'betting';
+		this.state.playerHands = [];
+		this.state.dealerHand = { cards: [], bet: 0, isDealer: true };
+		this.state.pot = 0;
+		this.state.activeHandIndex = 0;
+	}
+}

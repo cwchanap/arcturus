@@ -134,13 +134,13 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### Testing
 
-- [ ] T047 [US2] Create E2E test for split action at `e2e/blackjack-split.spec.ts` (test split pair → play first hand → play second hand → dealer turn → outcome)
-- [ ] T048 [US2] Test E2E scenario: double down with hand total 11
-- [ ] T049 [US2] Test E2E scenario: double down with hand total 10
-- [ ] T050 [US2] Test E2E scenario: split pair of 8s and win both hands
-- [ ] T051 [US2] Test E2E scenario: split pair, win one hand, lose other
-- [ ] T052 [US2] Test E2E scenario: insufficient chips disables Double/Split buttons
-- [ ] T053 [US2] Run E2E tests: `bun run test:e2e e2e/blackjack-split.spec.ts`
+- [x] T047 [US2] Create E2E test for split action at `e2e/blackjack-split.spec.ts` (test split pair → play first hand → play second hand → dealer turn → outcome)
+- [x] T048 [US2] Test E2E scenario: double down with hand total 11
+- [x] T049 [US2] Test E2E scenario: double down with hand total 10
+- [x] T050 [US2] Test E2E scenario: split pair of 8s and win both hands
+- [x] T051 [US2] Test E2E scenario: split pair, win one hand, lose other
+- [x] T052 [US2] Test E2E scenario: insufficient chips disables Double/Split buttons
+- [x] T053 [US2] Run E2E tests: `bun run test:e2e e2e/blackjack-split.spec.ts`
 
 ### User Story 2 Validation
 

@@ -167,10 +167,10 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### LLM Integration
 
-- [ ] T058 [P] [US3] Implement LLM Blackjack strategy in `src/lib/blackjack/llmBlackjackStrategy.ts` (getBlackjackAdvice function - fetch settings, construct prompt, call OpenAI/Gemini API)
-- [ ] T059 [P] [US3] Create Blackjack-specific prompt template in llmBlackjackStrategy.ts (include player hand, dealer card, available actions, request brief advice)
-- [ ] T060 [P] [US3] Add error handling in llmBlackjackStrategy.ts (no API key, API failure, timeout, network error)
-- [ ] T061 [P] [US3] Create unit tests for llmBlackjackStrategy in `llmBlackjackStrategy.test.ts` (mock API calls, test error scenarios)
+- [x] T058 [P] [US3] Implement LLM Blackjack strategy in `src/lib/blackjack/llmBlackjackStrategy.ts` (getBlackjackAdvice function - fetch settings, construct prompt, call OpenAI/Gemini API)
+- [x] T059 [P] [US3] Create Blackjack-specific prompt template in llmBlackjackStrategy.ts (include player hand, dealer card, available actions, request brief advice)
+- [x] T060 [P] [US3] Add error handling in llmBlackjackStrategy.ts (no API key, API failure, timeout, network error)
+- [x] T061 [P] [US3] Create unit tests for llmBlackjackStrategy in `llmBlackjackStrategy.test.ts` (mock API calls, test error scenarios)
 
 ### UI Integration
 

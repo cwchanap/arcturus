@@ -54,3 +54,12 @@ export {
 export { shouldDealerHit, shouldDealerStand } from './dealerStrategy';
 export { BlackjackGame } from './BlackjackGame';
 export { BlackjackUIRenderer } from './BlackjackUIRenderer';
+
+// LLM Strategy
+export {
+	getBlackjackAdvice,
+	getRoundCommentary,
+	type LLMSettings,
+	type BlackjackAdviceContext,
+	type BlackjackAdvice,
+} from './llmBlackjackStrategy';

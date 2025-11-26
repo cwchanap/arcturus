@@ -174,12 +174,12 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### UI Integration
 
-- [ ] T062 [US3] Add "Ask AI Rival" button to `src/pages/games/blackjack.astro` (positioned near action buttons, disabled when not player's turn)
-- [ ] T063 [US3] Add AI advice display area in blackjack.astro (message box for AI responses, loading state, error messages)
-- [ ] T064 [US3] Add LLM configuration overlay to blackjack.astro (modal showing API key requirement, link to profile settings, "Play without LLM" button)
-- [ ] T065 [US3] Wire up AI advice in blackjack.astro `<script>` (click handler calls llmBlackjackStrategy, displays advice, handles errors)
-- [ ] T066 [US3] Implement overlay logic in blackjack.astro (show if LLM enabled but no API key, close on button click or API key config)
-- [ ] T067 [US3] Add round outcome commentary in blackjack.astro (call LLM at round end for brief comment, display in game status area)
+- [x] T062 [US3] Add "Ask AI Rival" button to `src/pages/games/blackjack.astro` (positioned near action buttons, disabled when not player's turn)
+- [x] T063 [US3] Add AI advice display area in blackjack.astro (message box for AI responses, loading state, error messages)
+- [x] T064 [US3] Add LLM configuration overlay to blackjack.astro (modal showing API key requirement, link to profile settings, "Play without LLM" button)
+- [x] T065 [US3] Wire up AI advice in blackjack.astro `<script>` (click handler calls llmBlackjackStrategy, displays advice, handles errors)
+- [x] T066 [US3] Implement overlay logic in blackjack.astro (show if LLM enabled but no API key, close on button click or API key config)
+- [x] T067 [US3] Add round outcome commentary in blackjack.astro (call LLM at round end for brief comment, display in game status area)
 
 ### Testing
 

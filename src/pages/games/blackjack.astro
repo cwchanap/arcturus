@@ -150,11 +150,78 @@ const initialBalance = user.chipBalance || 1000;
 							Split
 						</button>
 					</div>
+
+					<!-- AI Rival Section -->
+					<div class="border-t border-slate-600 pt-3 mt-3">
+						<div class="flex items-center gap-3">
+							<button
+								id="btn-ai-rival"
+								class="flex-1 bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-600 hover:to-teal-700 text-white font-bold py-2 px-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
+								title="Get AI strategy advice"
+							>
+								<span>🤖</span>
+								<span id="btn-ai-rival-text">Ask AI Rival</span>
+							</button>
+						</div>
+						<div
+							id="ai-advice-box"
+							class="hidden mt-3 p-3 bg-slate-800/80 rounded-lg border border-cyan-500/30"
+						>
+							<div class="flex items-start gap-2">
+								<span class="text-cyan-400">💡</span>
+								<div>
+									<div id="ai-advice-action" class="font-bold text-cyan-400 mb-1"></div>
+									<div id="ai-advice-reasoning" class="text-sm text-slate-300"></div>
+								</div>
+							</div>
+						</div>
+					</div>
+
 					<button
 						id="btn-new-round"
-						class="hidden w-full bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
+						class="hidden w-full mt-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all transform hover:scale-105"
 					>
 						New Round
+					</button>
+				</div>
+			</div>
+
+			<!-- AI Commentary Box (shown after round) -->
+			<div
+				id="ai-commentary-box"
+				class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-900/95 backdrop-blur-sm rounded-2xl p-6 border border-cyan-500/50 max-w-sm text-center z-10"
+			>
+				<div class="text-4xl mb-3">🎰</div>
+				<div id="ai-commentary-text" class="text-lg text-slate-200"></div>
+			</div>
+		</div>
+
+		<!-- LLM Configuration Overlay -->
+		<div
+			id="llm-config-overlay"
+			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center"
+		>
+			<div class="bg-slate-900 rounded-2xl p-8 max-w-md mx-4 border border-slate-700">
+				<div class="text-center mb-6">
+					<div class="text-5xl mb-4">🤖</div>
+					<h2 class="text-2xl font-bold text-white mb-2">AI Rival Not Configured</h2>
+					<p class="text-slate-400">
+						To get AI-powered strategy advice, you need to configure your API key in your profile
+						settings.
+					</p>
+				</div>
+				<div class="space-y-3">
+					<a
+						href="/profile"
+						class="block w-full bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-600 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-lg text-center transition-all"
+					>
+						Configure API Key
+					</a>
+					<button
+						id="btn-close-overlay"
+						class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 px-6 rounded-lg transition-colors border border-slate-600"
+					>
+						Play Without AI
 					</button>
 				</div>
 			</div>
@@ -217,6 +284,12 @@ const initialBalance = user.chipBalance || 1000;
 
 <script>
 	import { BlackjackGame } from '../../lib/blackjack/BlackjackGame';
+	import {
+		getBlackjackAdvice,
+		getRoundCommentary,
+		type LLMSettings,
+		type BlackjackAdviceContext,
+	} from '../../lib/blackjack/llmBlackjackStrategy';
 
 	// Get initial balance from DOM
 	const balanceEl = document.getElementById('player-balance');
@@ -224,6 +297,10 @@ const initialBalance = user.chipBalance || 1000;
 
 	// Initialize game
 	const game = new BlackjackGame(initialBalance, 10, 500);
+
+	// LLM settings state
+	let llmSettings: LLMSettings | null = null;
+	let llmConfigured = false;
 
 	// DOM elements
 	const bettingControls = document.getElementById('betting-controls')!;
@@ -237,6 +314,62 @@ const initialBalance = user.chipBalance || 1000;
 	const btnNewRound = document.getElementById('btn-new-round') as HTMLButtonElement;
 	const statusEl = document.getElementById('game-status')!;
 	const balanceDisplay = document.getElementById('player-balance')!;
+
+	// AI Rival DOM elements
+	const btnAiRival = document.getElementById('btn-ai-rival') as HTMLButtonElement;
+	const btnAiRivalText = document.getElementById('btn-ai-rival-text')!;
+	const aiAdviceBox = document.getElementById('ai-advice-box')!;
+	const aiAdviceAction = document.getElementById('ai-advice-action')!;
+	const aiAdviceReasoning = document.getElementById('ai-advice-reasoning')!;
+	const aiCommentaryBox = document.getElementById('ai-commentary-box')!;
+	const aiCommentaryText = document.getElementById('ai-commentary-text')!;
+	const llmConfigOverlay = document.getElementById('llm-config-overlay')!;
+	const btnCloseOverlay = document.getElementById('btn-close-overlay')!;
+
+	// Load LLM settings on page load
+	async function loadLlmSettings() {
+		try {
+			const response = await fetch('/api/profile/llm-settings');
+			if (!response.ok) {
+				llmSettings = null;
+				llmConfigured = false;
+				return;
+			}
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const data = (await response.json()) as any;
+			const settings = data?.settings;
+
+			if (
+				settings &&
+				(settings.provider === 'openai' || settings.provider === 'gemini') &&
+				typeof settings.model === 'string'
+			) {
+				const apiKey =
+					settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+
+				if (apiKey && typeof apiKey === 'string' && apiKey.length > 0) {
+					llmSettings = {
+						provider: settings.provider,
+						model: settings.model,
+						apiKey: apiKey,
+					};
+					llmConfigured = true;
+				} else {
+					llmSettings = null;
+					llmConfigured = false;
+				}
+			} else {
+				llmSettings = null;
+				llmConfigured = false;
+			}
+		} catch (_error) {
+			llmSettings = null;
+			llmConfigured = false;
+		}
+	}
+
+	// Initialize LLM settings
+	loadLlmSettings();
 
 	// Quick bet buttons
 	document.querySelectorAll('.bet-quick').forEach((btn) => {
@@ -360,8 +493,90 @@ const initialBalance = user.chipBalance || 1000;
 		bettingControls.classList.remove('hidden');
 		gameControls.classList.add('hidden');
 		btnNewRound.classList.add('hidden');
+		aiAdviceBox.classList.add('hidden');
+		aiCommentaryBox.classList.add('hidden');
 		statusEl.textContent = 'Place your bet to start';
 	});
+
+	// AI Rival button
+	btnAiRival.addEventListener('click', async () => {
+		const state = game.getState();
+
+		// Check if we're in player turn
+		if (state.phase !== 'player-turn') {
+			return;
+		}
+
+		// Check if LLM is configured
+		if (!llmConfigured) {
+			llmConfigOverlay.classList.remove('hidden');
+			return;
+		}
+
+		// Show loading state
+		btnAiRival.disabled = true;
+		btnAiRivalText.textContent = 'Thinking...';
+		aiAdviceBox.classList.add('hidden');
+
+		try {
+			const activeHand = state.playerHands[state.activeHandIndex];
+			const dealerUpCard = state.dealerHand.cards[0];
+
+			const context: BlackjackAdviceContext = {
+				playerHand: activeHand,
+				dealerUpCard: dealerUpCard,
+				availableActions: game.getAvailableActions(),
+				playerBalance: game.getBalance(),
+				currentBet: activeHand.bet,
+			};
+
+			const advice = await getBlackjackAdvice(context, llmSettings);
+
+			// Display advice
+			aiAdviceBox.classList.remove('hidden');
+			aiAdviceAction.textContent = advice.recommendedAction
+				? `Recommended: ${advice.recommendedAction.toUpperCase()}`
+				: 'No specific recommendation';
+			aiAdviceReasoning.textContent = advice.reasoning;
+
+			// Highlight recommended button
+			highlightRecommendedAction(advice.recommendedAction);
+		} catch (_error) {
+			aiAdviceBox.classList.remove('hidden');
+			aiAdviceAction.textContent = 'Unable to get advice';
+			aiAdviceReasoning.textContent = 'Try again or play without AI assistance.';
+		} finally {
+			btnAiRival.disabled = false;
+			btnAiRivalText.textContent = 'Ask AI Rival';
+		}
+	});
+
+	// Close overlay button
+	btnCloseOverlay.addEventListener('click', () => {
+		llmConfigOverlay.classList.add('hidden');
+	});
+
+	// Highlight recommended action button
+	function highlightRecommendedAction(action: string | null) {
+		// Remove existing highlights
+		[btnHit, btnStand, btnDouble, btnSplit].forEach((btn) => {
+			btn.classList.remove('ring-2', 'ring-offset-2', 'ring-cyan-400');
+		});
+
+		if (!action) return;
+
+		const buttonMap: Record<string, HTMLButtonElement> = {
+			hit: btnHit,
+			stand: btnStand,
+			'double-down': btnDouble,
+			split: btnSplit,
+		};
+
+		const targetBtn = buttonMap[action];
+		if (targetBtn && !targetBtn.disabled) {
+			targetBtn.classList.add('ring-2', 'ring-offset-2', 'ring-cyan-400');
+		}
+	}
 
 	// Render game state
 	function renderGame() {
@@ -446,6 +661,7 @@ const initialBalance = user.chipBalance || 1000;
 
 	// Handle round completion
 	async function handleRoundComplete() {
+		const state = game.getState();
 		const outcomes = game.settleRound();
 		const outcome = outcomes[0];
 
@@ -466,6 +682,35 @@ const initialBalance = user.chipBalance || 1000;
 				break;
 		}
 		statusEl.textContent = message;
+
+		// Hide advice box and clear highlights
+		aiAdviceBox.classList.add('hidden');
+		highlightRecommendedAction(null);
+
+		// Get AI commentary if configured
+		if (llmConfigured && llmSettings) {
+			try {
+				const playerHand = state.playerHands[0];
+				const dealerHand = state.dealerHand;
+				const commentary = await getRoundCommentary(
+					playerHand,
+					dealerHand,
+					outcome.result,
+					llmSettings,
+				);
+
+				// Show commentary briefly
+				aiCommentaryText.textContent = commentary;
+				aiCommentaryBox.classList.remove('hidden');
+
+				// Auto-hide after 4 seconds
+				setTimeout(() => {
+					aiCommentaryBox.classList.add('hidden');
+				}, 4000);
+			} catch (_error) {
+				// Silently fail - commentary is optional
+			}
+		}
 
 		// Update balance in database
 		try {

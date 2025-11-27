@@ -11,7 +11,11 @@ const initialBalance = user.chipBalance || 1000;
 ---
 
 <CasinoLayout title="Blackjack - Arcturus Casino">
-	<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+	<div
+		id="blackjack-root"
+		data-user-id={user.id}
+		class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+	>
 		<!-- Game Header -->
 		<div class="flex items-center justify-between mb-8">
 			<div>
@@ -227,6 +231,111 @@ const initialBalance = user.chipBalance || 1000;
 			</div>
 		</div>
 	</div>
+
+	<!-- Game Settings Panel -->
+	<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-10">
+		<div class="mt-6 p-4 bg-slate-900 rounded-xl border border-slate-700">
+			<div class="flex items-center justify-between mb-3">
+				<div class="text-sm text-slate-400">Game Settings</div>
+				<button
+					id="btn-toggle-settings"
+					class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded transition"
+				>
+					⚙️ Configure
+				</button>
+			</div>
+			<div id="settings-panel" class="hidden mt-4 space-y-4">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<div>
+						<label class="block text-xs text-slate-400 mb-1" for="setting-starting-chips"
+							>Starting Chips</label
+						>
+						<input
+							type="number"
+							id="setting-starting-chips"
+							class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							min="100"
+							max="10000"
+							step="100"
+						/>
+					</div>
+					<div>
+						<label class="block text-xs text-slate-400 mb-1" for="setting-min-bet"
+							>Minimum Bet</label
+						>
+						<input
+							type="number"
+							id="setting-min-bet"
+							class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							min="1"
+							max="1000"
+							step="5"
+						/>
+					</div>
+					<div>
+						<label class="block text-xs text-slate-400 mb-1" for="setting-max-bet"
+							>Maximum Bet</label
+						>
+						<input
+							type="number"
+							id="setting-max-bet"
+							class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+							min="10"
+							max="5000"
+							step="10"
+						/>
+					</div>
+					<div>
+						<label class="block text-xs text-slate-400 mb-1" for="setting-dealer-speed"
+							>Dealer Speed</label
+						>
+						<select
+							id="setting-dealer-speed"
+							class="w-full bg-slate-900 text-white px-3 py-2 rounded border border-slate-600 focus:border-yellow-500 focus:outline-none"
+						>
+							<option value="slow">Slow (1.5s)</option>
+							<option value="normal">Normal (1.0s)</option>
+							<option value="fast">Fast (0.5s)</option>
+						</select>
+					</div>
+				</div>
+				<div class="p-4 bg-slate-900 rounded-lg border border-slate-600">
+					<div class="flex items-center gap-3">
+						<input
+							type="checkbox"
+							id="setting-use-llm"
+							class="w-5 h-5 bg-slate-800 border-slate-600 rounded text-yellow-500 focus:ring-2 focus:ring-yellow-500"
+						/>
+						<label for="setting-use-llm" class="flex-1">
+							<div class="text-sm text-white font-semibold">Use LLM-Powered AI Rival</div>
+							<div class="text-xs text-slate-400 mt-1">
+								Enable OpenAI/Gemini-powered advice and commentary. Requires API key configured in
+								your profile.
+							</div>
+						</label>
+					</div>
+				</div>
+				<div class="flex gap-2 pt-2">
+					<button
+						id="btn-save-settings"
+						class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-semibold transition"
+					>
+						Save Settings
+					</button>
+					<button
+						id="btn-reset-settings"
+						class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded transition"
+					>
+						Reset
+					</button>
+				</div>
+				<p class="text-xs text-slate-500">
+					⚠️ Settings apply to new rounds only. Finish the current round or start a new one after
+					saving.
+				</p>
+			</div>
+		</div>
+	</div>
 </CasinoLayout>
 
 <style>
@@ -283,491 +392,7 @@ const initialBalance = user.chipBalance || 1000;
 </style>
 
 <script>
-	import { BlackjackGame } from '../../lib/blackjack/BlackjackGame';
-	import {
-		getBlackjackAdvice,
-		getRoundCommentary,
-		type LLMSettings,
-		type BlackjackAdviceContext,
-	} from '../../lib/blackjack/llmBlackjackStrategy';
+	import { initBlackjackClient } from '../../lib/blackjack/blackjackClient';
 
-	// Get initial balance from DOM
-	const balanceEl = document.getElementById('player-balance');
-	const initialBalance = parseInt(balanceEl?.textContent?.replace(/[^0-9]/g, '') || '1000');
-
-	// Initialize game
-	const game = new BlackjackGame(initialBalance, 10, 500);
-
-	// LLM settings state
-	let llmSettings: LLMSettings | null = null;
-	let llmConfigured = false;
-
-	// DOM elements
-	const bettingControls = document.getElementById('betting-controls')!;
-	const gameControls = document.getElementById('game-controls')!;
-	const betAmountInput = document.getElementById('bet-amount') as HTMLInputElement;
-	const btnDeal = document.getElementById('btn-deal')!;
-	const btnHit = document.getElementById('btn-hit') as HTMLButtonElement;
-	const btnStand = document.getElementById('btn-stand') as HTMLButtonElement;
-	const btnDouble = document.getElementById('btn-double') as HTMLButtonElement;
-	const btnSplit = document.getElementById('btn-split') as HTMLButtonElement;
-	const btnNewRound = document.getElementById('btn-new-round') as HTMLButtonElement;
-	const statusEl = document.getElementById('game-status')!;
-	const balanceDisplay = document.getElementById('player-balance')!;
-
-	// AI Rival DOM elements
-	const btnAiRival = document.getElementById('btn-ai-rival') as HTMLButtonElement;
-	const btnAiRivalText = document.getElementById('btn-ai-rival-text')!;
-	const aiAdviceBox = document.getElementById('ai-advice-box')!;
-	const aiAdviceAction = document.getElementById('ai-advice-action')!;
-	const aiAdviceReasoning = document.getElementById('ai-advice-reasoning')!;
-	const aiCommentaryBox = document.getElementById('ai-commentary-box')!;
-	const aiCommentaryText = document.getElementById('ai-commentary-text')!;
-	const llmConfigOverlay = document.getElementById('llm-config-overlay')!;
-	const btnCloseOverlay = document.getElementById('btn-close-overlay')!;
-
-	// Load LLM settings on page load
-	async function loadLlmSettings() {
-		try {
-			const response = await fetch('/api/profile/llm-settings');
-			if (!response.ok) {
-				llmSettings = null;
-				llmConfigured = false;
-				return;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const data = (await response.json()) as any;
-			const settings = data?.settings;
-
-			if (
-				settings &&
-				(settings.provider === 'openai' || settings.provider === 'gemini') &&
-				typeof settings.model === 'string'
-			) {
-				const apiKey =
-					settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-
-				if (apiKey && typeof apiKey === 'string' && apiKey.length > 0) {
-					llmSettings = {
-						provider: settings.provider,
-						model: settings.model,
-						apiKey: apiKey,
-					};
-					llmConfigured = true;
-				} else {
-					llmSettings = null;
-					llmConfigured = false;
-				}
-			} else {
-				llmSettings = null;
-				llmConfigured = false;
-			}
-		} catch (_error) {
-			llmSettings = null;
-			llmConfigured = false;
-		}
-	}
-
-	// Initialize LLM settings
-	loadLlmSettings();
-
-	// Quick bet buttons
-	document.querySelectorAll('.bet-quick').forEach((btn) => {
-		btn.addEventListener('click', () => {
-			const amount = btn.getAttribute('data-amount');
-			if (amount && betAmountInput) {
-				betAmountInput.value = amount;
-			}
-		});
-	});
-
-	// Deal button
-	btnDeal.addEventListener('click', () => {
-		const betAmount = parseInt(betAmountInput.value);
-		if (isNaN(betAmount) || betAmount < 10 || betAmount > 500) {
-			statusEl.textContent = 'Invalid bet amount';
-			return;
-		}
-
-		if (betAmount > game.getBalance()) {
-			statusEl.textContent = 'Insufficient balance';
-			return;
-		}
-
-		try {
-			game.placeBet(betAmount);
-			game.deal();
-
-			// Update UI
-			renderGame();
-			bettingControls.classList.add('hidden');
-			gameControls.classList.remove('hidden');
-
-			const state = game.getState();
-			if (state.phase === 'complete') {
-				// Immediate blackjack or push
-				setTimeout(() => handleRoundComplete(), 500);
-			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
-		}
-	});
-
-	// Hit button
-	btnHit.addEventListener('click', () => {
-		try {
-			game.hit();
-			renderGame();
-
-			const state = game.getState();
-			if (state.phase === 'complete') {
-				// Player busted
-				setTimeout(() => handleRoundComplete(), 500);
-			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
-		}
-	});
-
-	// Stand button
-	btnStand.addEventListener('click', () => {
-		try {
-			const state = game.getState();
-			// Check if there are more hands to play (after split)
-			if (state.playerHands.length > 1 && state.activeHandIndex < state.playerHands.length - 1) {
-				game.stand();
-				game.nextHand();
-				statusEl.textContent = `Playing hand ${state.activeHandIndex + 2}...`;
-				renderGame();
-			} else {
-				// All hands complete, play dealer turn
-				game.stand();
-				statusEl.textContent = 'Dealer playing...';
-				renderGame();
-
-				// Play dealer turn with delay for animation
-				setTimeout(() => {
-					game.playDealerTurn();
-					renderGame();
-					setTimeout(() => handleRoundComplete(), 1000);
-				}, 1000);
-			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
-		}
-	});
-
-	// Double Down button
-	btnDouble.addEventListener('click', () => {
-		try {
-			game.doubleDown();
-			statusEl.textContent = 'Dealer playing...';
-			renderGame();
-
-			// Play dealer turn with delay for animation
-			setTimeout(() => {
-				game.playDealerTurn();
-				renderGame();
-				setTimeout(() => handleRoundComplete(), 1000);
-			}, 1000);
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
-		}
-	});
-
-	// Split button
-	btnSplit.addEventListener('click', () => {
-		try {
-			game.split();
-			statusEl.textContent = 'Playing hand 1...';
-			renderGame();
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
-		}
-	});
-
-	// New round button
-	btnNewRound.addEventListener('click', () => {
-		game.startNewRound();
-		renderGame();
-		bettingControls.classList.remove('hidden');
-		gameControls.classList.add('hidden');
-		btnNewRound.classList.add('hidden');
-		aiAdviceBox.classList.add('hidden');
-		aiCommentaryBox.classList.add('hidden');
-		statusEl.textContent = 'Place your bet to start';
-	});
-
-	// AI Rival button
-	btnAiRival.addEventListener('click', async () => {
-		const state = game.getState();
-
-		// Check if we're in player turn
-		if (state.phase !== 'player-turn') {
-			return;
-		}
-
-		// Check if LLM is configured
-		if (!llmConfigured) {
-			llmConfigOverlay.classList.remove('hidden');
-			return;
-		}
-
-		// Show loading state
-		btnAiRival.disabled = true;
-		btnAiRivalText.textContent = 'Thinking...';
-		aiAdviceBox.classList.add('hidden');
-
-		try {
-			const activeHand = state.playerHands[state.activeHandIndex];
-			const dealerUpCard = state.dealerHand.cards[0];
-
-			const context: BlackjackAdviceContext = {
-				playerHand: activeHand,
-				dealerUpCard: dealerUpCard,
-				availableActions: game.getAvailableActions(),
-				playerBalance: game.getBalance(),
-				currentBet: activeHand.bet,
-			};
-
-			const advice = await getBlackjackAdvice(context, llmSettings);
-
-			// Display advice
-			aiAdviceBox.classList.remove('hidden');
-			aiAdviceAction.textContent = advice.recommendedAction
-				? `Recommended: ${advice.recommendedAction.toUpperCase()}`
-				: 'No specific recommendation';
-			aiAdviceReasoning.textContent = advice.reasoning;
-
-			// Highlight recommended button
-			highlightRecommendedAction(advice.recommendedAction);
-		} catch (_error) {
-			aiAdviceBox.classList.remove('hidden');
-			aiAdviceAction.textContent = 'Unable to get advice';
-			aiAdviceReasoning.textContent = 'Try again or play without AI assistance.';
-		} finally {
-			btnAiRival.disabled = false;
-			btnAiRivalText.textContent = 'Ask AI Rival';
-		}
-	});
-
-	// Close overlay button
-	btnCloseOverlay.addEventListener('click', () => {
-		llmConfigOverlay.classList.add('hidden');
-	});
-
-	// Highlight recommended action button
-	function highlightRecommendedAction(action: string | null) {
-		// Remove existing highlights
-		[btnHit, btnStand, btnDouble, btnSplit].forEach((btn) => {
-			btn.classList.remove('ring-2', 'ring-offset-2', 'ring-cyan-400');
-		});
-
-		if (!action) return;
-
-		const buttonMap: Record<string, HTMLButtonElement> = {
-			hit: btnHit,
-			stand: btnStand,
-			'double-down': btnDouble,
-			split: btnSplit,
-		};
-
-		const targetBtn = buttonMap[action];
-		if (targetBtn && !targetBtn.disabled) {
-			targetBtn.classList.add('ring-2', 'ring-offset-2', 'ring-cyan-400');
-		}
-	}
-
-	// Render game state
-	function renderGame() {
-		const state = game.getState();
-
-		// Render player hand(s)
-		const playerCardsEl = document.getElementById('player-cards')!;
-		const playerValueEl = document.getElementById('player-value')!;
-		const currentBetEl = document.getElementById('current-bet')!;
-
-		if (state.playerHands.length > 0) {
-			// If split, show all hands with active hand highlighted
-			if (state.playerHands.length > 1) {
-				const handsHTML = state.playerHands
-					.map((hand, index) => {
-						const isActive = index === state.activeHandIndex;
-						const borderClass = isActive ? 'border-2 border-yellow-400' : 'border border-slate-600';
-						const cardsHTML = hand.cards
-							.map(
-								(card) =>
-									`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-							)
-							.join('');
-						return `
-							<div class="flex flex-col items-center gap-2 p-3 rounded-lg ${borderClass}">
-								<div class="text-xs text-slate-400">Hand ${index + 1}</div>
-								<div class="flex gap-2">${cardsHTML}</div>
-								<div class="text-sm font-bold">${getHandDisplay(hand.cards)}</div>
-							</div>
-						`;
-					})
-					.join('');
-				playerCardsEl.innerHTML = handsHTML;
-				playerValueEl.textContent = '';
-				currentBetEl.textContent = `Bet per hand: $${state.playerHands[0].bet}`;
-			} else {
-				// Single hand - normal display
-				const playerHand = state.playerHands[0];
-				playerCardsEl.innerHTML = playerHand.cards
-					.map(
-						(card) =>
-							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-					)
-					.join('');
-				playerValueEl.textContent = getHandDisplay(playerHand.cards);
-				currentBetEl.textContent = `Bet: $${playerHand.bet}`;
-			}
-		}
-
-		// Render dealer hand
-		const dealerCardsEl = document.getElementById('dealer-cards')!;
-		const dealerValueEl = document.getElementById('dealer-value')!;
-		const hideCard = state.phase === 'player-turn' || state.phase === 'dealing';
-
-		if (state.dealerHand.cards.length > 0) {
-			const visibleCards = hideCard ? [state.dealerHand.cards[0]] : state.dealerHand.cards;
-
-			dealerCardsEl.innerHTML =
-				visibleCards
-					.map(
-						(card) =>
-							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-					)
-					.join('') + (hideCard ? '<div class="card card-hidden">🂠</div>' : '');
-
-			dealerValueEl.textContent = hideCard ? '?' : getHandDisplay(state.dealerHand.cards);
-		} else {
-			dealerCardsEl.innerHTML = '';
-			dealerValueEl.textContent = '-';
-		}
-
-		// Update balance
-		balanceDisplay.textContent = `$${game.getBalance()}`;
-
-		// Update button states
-		const actions = game.getAvailableActions();
-		btnHit.disabled = !actions.includes('hit');
-		btnStand.disabled = !actions.includes('stand');
-		btnDouble.disabled = !actions.includes('double-down');
-		btnSplit.disabled = !actions.includes('split');
-	}
-
-	// Handle round completion
-	async function handleRoundComplete() {
-		const state = game.getState();
-		const outcomes = game.settleRound();
-		const outcome = outcomes[0];
-
-		// Display result
-		let message = '';
-		switch (outcome.result) {
-			case 'blackjack':
-				message = '🎉 BLACKJACK! You win!';
-				break;
-			case 'win':
-				message = '✓ You win!';
-				break;
-			case 'loss':
-				message = '✗ Dealer wins';
-				break;
-			case 'push':
-				message = '🤝 Push (Tie)';
-				break;
-		}
-		statusEl.textContent = message;
-
-		// Hide advice box and clear highlights
-		aiAdviceBox.classList.add('hidden');
-		highlightRecommendedAction(null);
-
-		// Get AI commentary if configured
-		if (llmConfigured && llmSettings) {
-			try {
-				const playerHand = state.playerHands[0];
-				const dealerHand = state.dealerHand;
-				const commentary = await getRoundCommentary(
-					playerHand,
-					dealerHand,
-					outcome.result,
-					llmSettings,
-				);
-
-				// Show commentary briefly
-				aiCommentaryText.textContent = commentary;
-				aiCommentaryBox.classList.remove('hidden');
-
-				// Auto-hide after 4 seconds
-				setTimeout(() => {
-					aiCommentaryBox.classList.add('hidden');
-				}, 4000);
-			} catch (_error) {
-				// Silently fail - commentary is optional
-			}
-		}
-
-		// Update balance in database
-		try {
-			await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					newBalance: game.getBalance(),
-					delta: outcome.payout - outcome.handIndex, // Simplified
-					gameType: 'blackjack',
-				}),
-			});
-		} catch (error) {
-			console.error('Failed to update balance:', error);
-		}
-
-		// Show new round button
-		btnNewRound.classList.remove('hidden');
-		renderGame();
-	}
-
-	// Helper functions
-	function getSuitSymbol(suit: string): string {
-		const symbols: Record<string, string> = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit] || suit;
-	}
-
-	function getHandDisplay(cards: { rank: string; suit: string }[]): string {
-		let total = 0;
-		let aces = 0;
-
-		for (const card of cards) {
-			if (card.rank === 'A') {
-				aces++;
-				total += 11;
-			} else if (['K', 'Q', 'J'].includes(card.rank)) {
-				total += 10;
-			} else {
-				total += parseInt(card.rank);
-			}
-		}
-
-		while (total > 21 && aces > 0) {
-			total -= 10;
-			aces--;
-		}
-
-		if (total > 21) return 'Bust';
-		if (aces > 0 && total <= 21) return `Soft ${total}`;
-		return total.toString();
-	}
-
-	// Initial render
-	renderGame();
+	initBlackjackClient();
 </script>

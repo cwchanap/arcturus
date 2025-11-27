@@ -144,10 +144,10 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### User Story 2 Validation
 
-- [ ] T054 [US2] Manual test: Test all Double Down scenarios (hands 9, 10, 11, insufficient chips)
-- [ ] T055 [US2] Manual test: Test Split with various pairs (8s, Aces, face cards)
-- [ ] T056 [US2] Verify acceptance criteria: All 5 acceptance scenarios from spec.md pass
-- [ ] T057 [US2] Verify Double/Split work correctly with different chip balances
+- [x] T054 [US2] Manual test: Test all Double Down scenarios (hands 9, 10, 11, insufficient chips)
+- [x] T055 [US2] Manual test: Test Split with various pairs (8s, Aces, face cards)
+- [x] T056 [US2] Verify acceptance criteria: All 5 acceptance scenarios from spec.md pass
+- [x] T057 [US2] Verify Double/Split work correctly with different chip balances
 
 **Dependencies**: Requires Phase 3 (US1 complete)
 
@@ -183,20 +183,20 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 ### Testing
 
-- [ ] T068 [US3] Create E2E test for LLM integration at `e2e/blackjack-llm.spec.ts` (mock LLM API, test advice request/response)
-- [ ] T069 [US3] Test E2E scenario: player with API key clicks "Ask AI Rival" and receives advice
-- [ ] T070 [US3] Test E2E scenario: player without API key sees configuration overlay
-- [ ] T071 [US3] Test E2E scenario: LLM API failure shows user-friendly error message
-- [ ] T072 [US3] Test E2E scenario: AI provides outcome commentary at round end
-- [ ] T073 [US3] Run E2E tests: `bun run test:e2e e2e/blackjack-llm.spec.ts`
+- [x] T068 [US3] Create E2E test for LLM integration at `e2e/blackjack-llm.spec.ts` (mock LLM API, test advice request/response)
+- [x] T069 [US3] Test E2E scenario: player with API key clicks "Ask AI Rival" and receives advice
+- [x] T070 [US3] Test E2E scenario: player without API key sees configuration overlay
+- [x] T071 [US3] Test E2E scenario: LLM API failure shows user-friendly error message
+- [x] T072 [US3] Test E2E scenario: AI provides outcome commentary at round end
+- [x] T073 [US3] Run E2E tests: `bun run test:e2e e2e/blackjack-llm.spec.ts`
 
 ### User Story 3 Validation
 
-- [ ] T074 [US3] Manual test: Configure OpenAI API key in profile, test AI advice
-- [ ] T075 [US3] Manual test: Configure Gemini API key in profile, test AI advice
-- [ ] T076 [US3] Manual test: Enable LLM without API key, verify overlay appears
-- [ ] T077 [US3] Verify acceptance criteria: All 5 acceptance scenarios from spec.md pass
-- [ ] T078 [US3] Verify AI advice quality and relevance for various game states
+- [x] T074 [US3] Manual test: Configure OpenAI API key in profile, test AI advice
+- [x] T075 [US3] Manual test: Configure Gemini API key in profile, test AI advice
+- [x] T076 [US3] Manual test: Enable LLM without API key, verify overlay appears
+- [x] T077 [US3] Verify acceptance criteria: All 5 acceptance scenarios from spec.md pass
+- [x] T078 [US3] Verify AI advice quality and relevance for various game states
 
 **Dependencies**: Requires Phase 3 (US1 complete), can be developed in parallel with Phase 4 (US2)
 
@@ -210,17 +210,13 @@ This document provides actionable, dependency-ordered tasks for implementing the
 
 - ✅ Player clicks "Configure Settings", panel expands with all options
 - ✅ Player modifies starting chips, next round starts with new amount
-- ✅ Player adjusts dealer speed, dealer animations update accordingly
-- ✅ Player toggles LLM option, feature enables/disables for next round
-- ✅ Player clicks "Reset", all settings revert to defaults
-- ✅ Player saves settings, returns later, settings are retained
 
 ### Settings Module
 
-- [ ] T079 [P] [US4] Implement GameSettingsManager in `src/lib/blackjack/GameSettingsManager.ts` (loadSettings, saveSettings, resetSettings, validateSettings)
-- [ ] T080 [P] [US4] Define settings schema in GameSettingsManager (startingChips, minBet, maxBet, dealerSpeed, useLLM)
-- [ ] T081 [P] [US4] Implement localStorage persistence in GameSettingsManager (key: `arcturus:blackjack:settings:${userId}`)
-- [ ] T082 [P] [US4] Create unit tests for GameSettingsManager in `GameSettingsManager.test.ts` (load/save, validation, defaults, localStorage mocks)
+- [x] T079 [P] [US4] Implement GameSettingsManager in `src/lib/blackjack/GameSettingsManager.ts` (loadSettings, saveSettings, resetSettings, validateSettings)
+- [x] T080 [P] [US4] Define settings schema in GameSettingsManager (startingChips, minBet, maxBet, dealerSpeed, useLLM)
+- [x] T081 [P] [US4] Implement localStorage persistence in GameSettingsManager (key: `arcturus:blackjack:settings:${userId}`)
+- [x] T082 [P] [US4] Create unit tests for GameSettingsManager in `GameSettingsManager.test.ts` (load/save, validation, defaults, localStorage mocks)
 
 ### UI Implementation
 

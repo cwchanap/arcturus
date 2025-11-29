@@ -120,7 +120,13 @@ export class BlackjackGame {
 
 		// Check if busted
 		if (isBust(activeHand)) {
-			this.state.phase = 'complete';
+			// Check if there are more split hands to play
+			if (this.state.activeHandIndex < this.state.playerHands.length - 1) {
+				this.state.activeHandIndex++;
+			} else {
+				// All hands complete (all busted or last hand busted)
+				this.state.phase = 'complete';
+			}
 		}
 	}
 
@@ -132,8 +138,14 @@ export class BlackjackGame {
 			throw new Error('Can only stand during player turn');
 		}
 
-		// Move to dealer turn
-		this.state.phase = 'dealer-turn';
+		// Check if there are more split hands to play
+		if (this.state.activeHandIndex < this.state.playerHands.length - 1) {
+			// Move to next hand
+			this.state.activeHandIndex++;
+		} else {
+			// All hands complete, move to dealer turn
+			this.state.phase = 'dealer-turn';
+		}
 	}
 
 	/**
@@ -260,11 +272,21 @@ export class BlackjackGame {
 		// Deal one card
 		activeHand.cards.push(this.deck.deal());
 
-		// Automatically stand (move to dealer turn)
+		// Check if busted or if there are more hands
 		if (isBust(activeHand)) {
-			this.state.phase = 'complete';
+			// Check if there are more split hands to play
+			if (this.state.activeHandIndex < this.state.playerHands.length - 1) {
+				this.state.activeHandIndex++;
+			} else {
+				this.state.phase = 'complete';
+			}
 		} else {
-			this.state.phase = 'dealer-turn';
+			// Check if there are more split hands to play
+			if (this.state.activeHandIndex < this.state.playerHands.length - 1) {
+				this.state.activeHandIndex++;
+			} else {
+				this.state.phase = 'dealer-turn';
+			}
 		}
 	}
 

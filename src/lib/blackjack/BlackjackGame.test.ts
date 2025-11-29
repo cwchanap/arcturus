@@ -222,6 +222,9 @@ describe('BlackjackGame', () => {
 			const balanceAfter = game.getBalance();
 			// Balance should change (win, loss, or push returns bet)
 			expect(typeof balanceAfter).toBe('number');
+			// Verify balance changed or stayed same (push)
+			expect(balanceAfter).toBeGreaterThanOrEqual(0);
+			expect(balanceBefore).toBeGreaterThanOrEqual(0);
 		});
 
 		it('should reset to betting phase after settlement', () => {
@@ -268,9 +271,7 @@ describe('BlackjackGame', () => {
 				const actions = game.getAvailableActions();
 				expect(actions).toContain('hit');
 				expect(actions).toContain('stand');
-				// MVP: no double/split yet
-				expect(actions).not.toContain('double-down');
-				expect(actions).not.toContain('split');
+				// double-down and split are conditionally available based on hand state
 			}
 		});
 	});

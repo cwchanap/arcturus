@@ -108,9 +108,6 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		const doubleButton = page.getByRole('button', { name: 'Double Down' });
 		await expect(doubleButton).toBeEnabled();
 
-		const balanceBeforeText = await page.locator('#player-balance').innerText();
-		const balanceBefore = parseBalance(balanceBeforeText);
-
 		await doubleButton.click();
 
 		// After double down, dealer should play and round should complete

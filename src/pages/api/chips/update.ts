@@ -23,49 +23,126 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
+	// Parse request body with explicit error handling for malformed JSON
+	let body: { delta?: unknown; gameType?: unknown; previousBalance?: unknown };
 	try {
-		// Parse request body
-		const body = (await request.json()) as {
-			newBalance: number;
-			delta: number;
-			gameType: string;
-		};
-		const { newBalance, delta, gameType } = body;
+		body = await request.json();
+	} catch {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_REQUEST_BODY',
+				message: 'Request body must be valid JSON',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
 
-		// Validate inputs
-		if (typeof newBalance !== 'number' || newBalance < 0) {
-			return new Response(
-				JSON.stringify({
-					success: false,
-					error: 'INVALID_BALANCE',
-					message: 'New balance must be a non-negative number',
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			);
-		}
+	const { delta, gameType, previousBalance: clientPreviousBalance } = body;
 
-		if (gameType !== 'blackjack') {
-			return new Response(
-				JSON.stringify({
-					success: false,
-					error: 'INVALID_GAME_TYPE',
-					message: 'Invalid game type',
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			);
-		}
+	// Validate delta is a finite number
+	if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_DELTA',
+				message: 'Delta must be a finite number',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
 
-		// Get database connection
+	// Validate gameType is a string
+	if (typeof gameType !== 'string') {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_REQUEST_BODY',
+				message: 'gameType must be a string',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	if (gameType !== 'blackjack') {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_GAME_TYPE',
+				message: 'Invalid game type',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate previousBalance if provided (for optimistic locking)
+	if (clientPreviousBalance !== undefined && typeof clientPreviousBalance !== 'number') {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_REQUEST_BODY',
+				message: 'previousBalance must be a number if provided',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Get server-side previous balance (authoritative source)
+	const previousBalance = locals.user.chipBalance;
+
+	// Optimistic locking: reject if client's previousBalance doesn't match server
+	if (clientPreviousBalance !== undefined && clientPreviousBalance !== previousBalance) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'BALANCE_MISMATCH',
+				message: 'Balance has changed. Please refresh and try again.',
+				currentBalance: previousBalance,
+			}),
+			{
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Compute new balance server-side (prevents chip minting attacks)
+	const newBalance = previousBalance + delta;
+
+	// Validate computed balance is non-negative
+	if (newBalance < 0) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INSUFFICIENT_BALANCE',
+				message: 'Insufficient chip balance for this operation',
+				currentBalance: previousBalance,
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Database operations wrapped in try-catch
+	try {
 		const db = createDb(locals.runtime.env.DB);
-
-		// Get current balance for response
-		const previousBalance = locals.user.chipBalance;
 
 		// Update user chip balance
 		await db
@@ -75,7 +152,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			})
 			.where(eq(user.id, locals.user.id));
 
-		// Return success response
+		// Return success response with validated values only
 		return new Response(
 			JSON.stringify({
 				success: true,

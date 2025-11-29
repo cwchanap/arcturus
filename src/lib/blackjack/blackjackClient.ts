@@ -6,6 +6,7 @@ import {
 	type LLMSettings,
 	type BlackjackAdviceContext,
 } from './llmBlackjackStrategy';
+import { getHandValueDisplay } from './handEvaluator';
 
 /**
  * Initialize Blackjack client-side UI and game logic.
@@ -559,7 +560,7 @@ export function initBlackjackClient(): void {
 							<div class="hand-container ${containerClass}">
 								<div class="hand-label">Hand ${index + 1}</div>
 								<div class="hand-cards">${cardsHTML}</div>
-								<div class="hand-value">${getHandDisplay(hand.cards)}</div>
+								<div class="hand-value">${getHandValueDisplay(hand.cards)}</div>
 							</div>
 						`;
 					})
@@ -571,7 +572,7 @@ export function initBlackjackClient(): void {
 				// Single hand - normal display
 				const playerHand = state.playerHands[0];
 				playerCardsEl.innerHTML = playerHand.cards.map((card) => renderPlayingCard(card)).join('');
-				playerValueEl.textContent = getHandDisplay(playerHand.cards);
+				playerValueEl.textContent = getHandValueDisplay(playerHand.cards);
 				currentBetEl.textContent = `Current Bet: $${playerHand.bet}`;
 			}
 		} else {
@@ -598,9 +599,7 @@ export function initBlackjackClient(): void {
 				visibleCards.map((card) => renderPlayingCard(card)).join('') +
 				(hideCard ? renderCardBack() : '');
 
-			dealerValueEl.textContent = hideCard
-				? '?'
-				: getHandDisplay(state.dealerHand.cards as { rank: string; suit: string }[]);
+			dealerValueEl.textContent = hideCard ? '?' : getHandValueDisplay(state.dealerHand.cards);
 		} else {
 			// Show placeholders when no cards dealt
 			dealerCardsEl.innerHTML = `
@@ -623,7 +622,10 @@ export function initBlackjackClient(): void {
 
 	// Handle round completion
 	async function handleRoundComplete() {
+		// IMPORTANT: Capture state BEFORE settleRound() because settleRound() mutates/clears hands.
+		// We need the pre-settlement playerHands for AI commentary and balance calculation.
 		const state = game.getState();
+		const previousBalance = state.playerBalance;
 		const outcomes = game.settleRound();
 		const outcome = outcomes[0];
 
@@ -676,12 +678,15 @@ export function initBlackjackClient(): void {
 
 		// Update balance in database
 		try {
+			const newBalance = game.getBalance();
+			// Delta is the net change: new balance minus what we had before settlement
+			const delta = newBalance - previousBalance;
 			await fetch('/api/chips/update', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					newBalance: game.getBalance(),
-					delta: outcome.payout - outcome.handIndex, // Simplified
+					previousBalance, // For optimistic locking validation
+					delta, // Server computes newBalance from its own previousBalance + delta
 					gameType: 'blackjack',
 				}),
 			});
@@ -703,31 +708,6 @@ export function initBlackjackClient(): void {
 			spades: '♠',
 		};
 		return symbols[suit] || suit;
-	}
-
-	function getHandDisplay(cards: { rank: string; suit: string }[]): string {
-		let total = 0;
-		let aces = 0;
-
-		for (const card of cards) {
-			if (card.rank === 'A') {
-				aces++;
-				total += 11;
-			} else if (['K', 'Q', 'J'].includes(card.rank)) {
-				total += 10;
-			} else {
-				total += parseInt(card.rank, 10);
-			}
-		}
-
-		while (total > 21 && aces > 0) {
-			total -= 10;
-			aces--;
-		}
-
-		if (total > 21) return 'Bust';
-		if (aces > 0 && total <= 21) return `Soft ${total}`;
-		return total.toString();
 	}
 
 	// Initial render

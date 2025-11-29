@@ -7,6 +7,57 @@ import { DEFAULT_SETTINGS } from './constants';
 
 const SETTINGS_KEY_PREFIX = 'arcturus:blackjack:settings:';
 
+/**
+ * Validates settings values are within acceptable ranges
+ * Returns a sanitized settings object with defaults for invalid values
+ */
+function validateSettings(settings: Partial<BlackjackSettings>): Partial<BlackjackSettings> {
+	const validated: Partial<BlackjackSettings> = { ...settings };
+
+	// Validate numeric ranges
+	if (
+		validated.minBet !== undefined &&
+		(typeof validated.minBet !== 'number' || validated.minBet <= 0)
+	) {
+		validated.minBet = DEFAULT_SETTINGS.minBet;
+	}
+	if (
+		validated.maxBet !== undefined &&
+		(typeof validated.maxBet !== 'number' || validated.maxBet <= 0)
+	) {
+		validated.maxBet = DEFAULT_SETTINGS.maxBet;
+	}
+	if (
+		validated.startingChips !== undefined &&
+		(typeof validated.startingChips !== 'number' || validated.startingChips < 0)
+	) {
+		validated.startingChips = DEFAULT_SETTINGS.startingChips;
+	}
+
+	// Ensure minBet <= maxBet
+	const minBet = validated.minBet ?? DEFAULT_SETTINGS.minBet;
+	const maxBet = validated.maxBet ?? DEFAULT_SETTINGS.maxBet;
+	if (minBet > maxBet) {
+		validated.minBet = DEFAULT_SETTINGS.minBet;
+		validated.maxBet = DEFAULT_SETTINGS.maxBet;
+	}
+
+	// Validate dealerSpeed enum
+	if (
+		validated.dealerSpeed !== undefined &&
+		!['slow', 'normal', 'fast'].includes(validated.dealerSpeed)
+	) {
+		validated.dealerSpeed = DEFAULT_SETTINGS.dealerSpeed;
+	}
+
+	// Validate boolean
+	if (validated.useLLM !== undefined && typeof validated.useLLM !== 'boolean') {
+		validated.useLLM = DEFAULT_SETTINGS.useLLM;
+	}
+
+	return validated;
+}
+
 export class GameSettingsManager {
 	private settings: BlackjackSettings;
 	private readonly storageKey: string;
@@ -18,6 +69,7 @@ export class GameSettingsManager {
 
 	/**
 	 * Load settings from localStorage or use defaults
+	 * Validates all loaded values are within acceptable ranges
 	 */
 	private loadSettings(): BlackjackSettings {
 		try {
@@ -33,9 +85,12 @@ export class GameSettingsManager {
 					}
 				}
 
+				// Validate values are within acceptable ranges
+				const validated = validateSettings(validSettings);
+
 				return {
 					...DEFAULT_SETTINGS,
-					...validSettings,
+					...validated,
 				};
 			}
 		} catch (error) {
@@ -65,11 +120,14 @@ export class GameSettingsManager {
 
 	/**
 	 * Update settings and persist them
+	 * Validates all updates before applying
 	 */
 	public updateSettings(newSettings: Partial<BlackjackSettings>): void {
+		// Validate updates before merging
+		const validated = validateSettings(newSettings);
 		this.settings = {
 			...this.settings,
-			...newSettings,
+			...validated,
 		};
 		this.saveSettings();
 	}

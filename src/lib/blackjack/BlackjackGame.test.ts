@@ -301,12 +301,13 @@ describe('BlackjackGame', () => {
 			expect(state.pot).toBe(0);
 		});
 
-		it('should preserve balance', () => {
+		it('should forfeit bet when starting new round without settling (abnormal flow)', () => {
 			const balanceBefore = game.getBalance();
 			game.placeBet(100);
+			// Intentionally skip settleRound() to test forfeit behavior
 			game.startNewRound();
 			const balanceAfter = game.getBalance();
-			expect(balanceAfter).toBe(balanceBefore - 100); // Bet was deducted
+			expect(balanceAfter).toBe(balanceBefore - 100); // Bet was forfeited
 		});
 	});
 
@@ -378,40 +379,57 @@ describe('BlackjackGame', () => {
 
 	describe('split', () => {
 		it('should create two hands from a pair', () => {
-			// Keep dealing until we get a pair
-			let attempts = 0;
-			let gotPair = false;
+			// Create a game and mock the deck to return a pair
+			const testGame = new BlackjackGame(1000, 10, 500);
 
-			while (attempts < 10 && !gotPair) {
-				const testGame = new BlackjackGame(1000, 10, 500);
-				testGame.placeBet(100);
-				testGame.deal();
+			// Mock the deck's deal method to return specific cards for a pair
+			let dealCount = 0;
+			const mockCards = [
+				{ rank: '8' as const, suit: 'hearts' as const }, // Player card 1
+				{ rank: '8' as const, suit: 'diamonds' as const }, // Player card 2 (pair!)
+				{ rank: '6' as const, suit: 'clubs' as const }, // Dealer card 1
+				{ rank: '9' as const, suit: 'spades' as const }, // Dealer card 2
+				{ rank: '3' as const, suit: 'hearts' as const }, // Split hand 1 second card
+				{ rank: '4' as const, suit: 'diamonds' as const }, // Split hand 2 second card
+			];
 
-				const state = testGame.getState();
-				if (state.phase === 'player-turn') {
-					const hand = state.playerHands[0];
-					if (hand.cards[0].rank === hand.cards[1].rank) {
-						gotPair = true;
-
-						const balanceBefore = testGame.getBalance();
-						const betAmount = hand.bet;
-
-						testGame.split();
-
-						const stateAfter = testGame.getState();
-						expect(stateAfter.playerHands.length).toBe(2);
-						expect(stateAfter.playerHands[0].cards.length).toBe(2);
-						expect(stateAfter.playerHands[1].cards.length).toBe(2);
-						expect(stateAfter.playerHands[0].bet).toBe(betAmount);
-						expect(stateAfter.playerHands[1].bet).toBe(betAmount);
-						expect(testGame.getBalance()).toBe(balanceBefore - betAmount);
-					}
+			// Access private deck and mock its deal method
+			const gameAny = testGame as unknown as {
+				deck: { deal: () => { rank: string; suit: string } };
+			};
+			const originalDeal = gameAny.deck.deal.bind(gameAny.deck);
+			gameAny.deck.deal = () => {
+				if (dealCount < mockCards.length) {
+					return mockCards[dealCount++];
 				}
-				attempts++;
-			}
+				return originalDeal();
+			};
 
-			// If we couldn't get a pair in 10 attempts, that's fine for this test
-			expect(attempts).toBeLessThanOrEqual(10);
+			testGame.placeBet(100);
+			testGame.deal();
+
+			const state = testGame.getState();
+			expect(state.phase).toBe('player-turn');
+
+			// Verify we have a pair
+			const hand = state.playerHands[0];
+			expect(hand.cards[0].rank).toBe('8');
+			expect(hand.cards[1].rank).toBe('8');
+
+			const balanceBefore = testGame.getBalance();
+			const betAmount = hand.bet;
+
+			// Perform split
+			testGame.split();
+
+			// Verify split results
+			const stateAfter = testGame.getState();
+			expect(stateAfter.playerHands.length).toBe(2);
+			expect(stateAfter.playerHands[0].cards.length).toBe(2); // Original 8 + new card
+			expect(stateAfter.playerHands[1].cards.length).toBe(2); // Split 8 + new card
+			expect(stateAfter.playerHands[0].bet).toBe(betAmount);
+			expect(stateAfter.playerHands[1].bet).toBe(betAmount);
+			expect(testGame.getBalance()).toBe(balanceBefore - betAmount); // Extra bet deducted
 		});
 
 		it('should throw error when not in player-turn phase', () => {

@@ -198,7 +198,7 @@ describe('dealerStrategy', () => {
 			expect(shouldDealerStand(hand)).toBe(true);
 		});
 
-		it('should both be false for bust (edge case)', () => {
+		it('should stand and not hit when busted (edge case)', () => {
 			const hand: Hand = {
 				cards: [
 					{ rank: 'K', suit: 'hearts' },
@@ -208,7 +208,7 @@ describe('dealerStrategy', () => {
 				bet: 0,
 				isDealer: true,
 			};
-			// When busted: don't hit, but do stand (game over)
+			// When busted: dealer cannot hit (game over), and stand returns true
 			expect(shouldDealerHit(hand)).toBe(false);
 			expect(shouldDealerStand(hand)).toBe(true);
 		});

@@ -167,9 +167,40 @@ export class BlackjackUIRenderer {
 			potContainer: string;
 		},
 	): void {
-		// Render player hand
-		if (state.playerHands.length > 0) {
-			this.renderPlayerHand(state.playerHands[0], selectors.playerHandContainer);
+		// Render player hand(s) - supports split hands
+		const playerContainer = document.querySelector(selectors.playerHandContainer);
+		if (playerContainer && state.playerHands.length > 0) {
+			if (state.playerHands.length === 1) {
+				// Single hand - use existing method
+				this.renderPlayerHand(state.playerHands[0], selectors.playerHandContainer);
+			} else {
+				// Multiple hands (split) - render all with active indicator
+				const handsHTML = state.playerHands
+					.map((hand, index) => {
+						const isActive = index === state.activeHandIndex;
+						const handValue = getHandValueDisplay(hand.cards);
+						const cardsHTML = hand.cards
+							.map(
+								(card) => `
+									<div class="card" data-rank="${card.rank}" data-suit="${card.suit}">
+										${card.rank}${this.getSuitSymbol(card.suit)}
+									</div>
+								`,
+							)
+							.join('');
+						const activeClass = isActive ? 'hand-active' : 'hand-inactive';
+						return `
+							<div class="player-hand ${activeClass}" data-hand-index="${index}">
+								<div class="hand-label">Hand ${index + 1}${isActive ? ' (Active)' : ''}</div>
+								<div class="hand-cards">${cardsHTML}</div>
+								<div class="hand-value">${handValue}</div>
+								<div class="hand-bet">Bet: $${hand.bet}</div>
+							</div>
+						`;
+					})
+					.join('');
+				playerContainer.innerHTML = `<div class="split-hands">${handsHTML}</div>`;
+			}
 		}
 
 		// Render dealer hand (hide second card if player is still playing)

@@ -264,4 +264,129 @@ describe('Blackjack GameSettingsManager', () => {
 			expect(settingsB.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
 		});
 	});
+
+	describe('settings validation', () => {
+		beforeEach(() => {
+			manager = new GameSettingsManager(USER_ID);
+		});
+
+		test('rejects negative minBet and uses default', () => {
+			manager.updateSettings({ minBet: -10 });
+			const settings = manager.getSettings();
+			expect(settings.minBet).toBe(DEFAULT_SETTINGS.minBet);
+		});
+
+		test('rejects zero minBet and uses default', () => {
+			manager.updateSettings({ minBet: 0 });
+			const settings = manager.getSettings();
+			expect(settings.minBet).toBe(DEFAULT_SETTINGS.minBet);
+		});
+
+		test('rejects negative maxBet and uses default', () => {
+			manager.updateSettings({ maxBet: -100 });
+			const settings = manager.getSettings();
+			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
+		});
+
+		test('rejects zero maxBet and uses default', () => {
+			manager.updateSettings({ maxBet: 0 });
+			const settings = manager.getSettings();
+			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
+		});
+
+		test('rejects negative startingChips and uses default', () => {
+			manager.updateSettings({ startingChips: -500 });
+			const settings = manager.getSettings();
+			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
+		});
+
+		test('allows zero startingChips', () => {
+			manager.updateSettings({ startingChips: 0 });
+			const settings = manager.getSettings();
+			expect(settings.startingChips).toBe(0);
+		});
+
+		test('rejects minBet greater than maxBet and uses defaults for both', () => {
+			manager.updateSettings({ minBet: 500, maxBet: 100 });
+			const settings = manager.getSettings();
+			expect(settings.minBet).toBe(DEFAULT_SETTINGS.minBet);
+			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
+		});
+
+		test('accepts valid minBet less than or equal to maxBet', () => {
+			manager.updateSettings({ minBet: 50, maxBet: 500 });
+			const settings = manager.getSettings();
+			expect(settings.minBet).toBe(50);
+			expect(settings.maxBet).toBe(500);
+		});
+
+		test('rejects invalid dealerSpeed and uses default', () => {
+			manager.updateSettings({ dealerSpeed: 'invalid' as 'slow' | 'normal' | 'fast' });
+			const settings = manager.getSettings();
+			expect(settings.dealerSpeed).toBe(DEFAULT_SETTINGS.dealerSpeed);
+		});
+
+		test('accepts valid dealerSpeed values', () => {
+			manager.updateSettings({ dealerSpeed: 'slow' });
+			expect(manager.getSettings().dealerSpeed).toBe('slow');
+
+			manager.updateSettings({ dealerSpeed: 'normal' });
+			expect(manager.getSettings().dealerSpeed).toBe('normal');
+
+			manager.updateSettings({ dealerSpeed: 'fast' });
+			expect(manager.getSettings().dealerSpeed).toBe('fast');
+		});
+
+		test('rejects non-boolean useLLM and uses default', () => {
+			manager.updateSettings({ useLLM: 'true' as unknown as boolean });
+			const settings = manager.getSettings();
+			expect(settings.useLLM).toBe(DEFAULT_SETTINGS.useLLM);
+		});
+
+		test('accepts boolean useLLM values', () => {
+			manager.updateSettings({ useLLM: true });
+			expect(manager.getSettings().useLLM).toBe(true);
+
+			manager.updateSettings({ useLLM: false });
+			expect(manager.getSettings().useLLM).toBe(false);
+		});
+
+		test('validates settings loaded from localStorage', () => {
+			const invalidSettings = {
+				minBet: -10,
+				maxBet: 0,
+				startingChips: -500,
+				dealerSpeed: 'ultra-fast',
+				useLLM: 'yes',
+			};
+
+			mockLocalStorage.store[STORAGE_KEY] = JSON.stringify(invalidSettings);
+			const newManager = new GameSettingsManager(USER_ID);
+
+			const settings = newManager.getSettings();
+			expect(settings.minBet).toBe(DEFAULT_SETTINGS.minBet);
+			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
+			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
+			expect(settings.dealerSpeed).toBe(DEFAULT_SETTINGS.dealerSpeed);
+			expect(settings.useLLM).toBe(DEFAULT_SETTINGS.useLLM);
+		});
+
+		test('rejects non-number minBet and uses default', () => {
+			manager.updateSettings({ minBet: '50' as unknown as number });
+			const settings = manager.getSettings();
+			expect(settings.minBet).toBe(DEFAULT_SETTINGS.minBet);
+		});
+
+		test('rejects non-number maxBet and uses default', () => {
+			manager.updateSettings({ maxBet: '1000' as unknown as number });
+			const settings = manager.getSettings();
+			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
+		});
+
+		test('rejects non-number startingChips and uses default', () => {
+			manager.updateSettings({ startingChips: '2000' as unknown as number });
+			const settings = manager.getSettings();
+			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
+		});
+	});
 });

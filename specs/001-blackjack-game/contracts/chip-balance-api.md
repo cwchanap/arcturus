@@ -33,7 +33,7 @@ Cookie: better-auth.session_token=<session-token>
 
 ```typescript
 interface ChipBalanceUpdateRequest {
-	newBalance: number; // Updated chip balance after round
+	previousBalance: number; // Client's expected current balance (used for optimistic locking)
 	delta: number; // Change amount (positive for win, negative for loss)
 	gameType: 'blackjack'; // Game identifier for audit
 	roundDetails?: {
@@ -48,7 +48,7 @@ interface ChipBalanceUpdateRequest {
 
 ```json
 {
-	"newBalance": 1150,
+	"previousBalance": 1000,
 	"delta": 150,
 	"gameType": "blackjack",
 	"roundDetails": {
@@ -60,10 +60,16 @@ interface ChipBalanceUpdateRequest {
 
 ### Validation Rules
 
-- `newBalance` must be >= 0 (cannot go negative)
-- `delta` must be numeric (positive or negative)
+- `previousBalance` must be >= 0 and match the stored balance (server compares and rejects if mismatch)
+- `delta` must be a finite number (positive or negative)
+- **Server computes `newBalance`** from `previousBalance + delta` - this prevents chip minting attacks
+- Computed `newBalance` must be >= 0 (cannot go negative)
 - `gameType` must be `'blackjack'`
 - User must be authenticated
+
+### Optimistic Locking
+
+The server compares `previousBalance` with the stored chip balance. If they differ (indicating a concurrent modification), the server rejects the update with a 409 Conflict response containing the current balance. The client must refresh and retry.
 
 ---
 
@@ -103,13 +109,24 @@ interface ChipBalanceUpdateResponse {
 }
 ```
 
-#### 400 Bad Request - Invalid Balance
+#### 400 Bad Request - Invalid Delta
 
 ```json
 {
 	"success": false,
-	"error": "INVALID_BALANCE",
-	"message": "New balance cannot be negative"
+	"error": "INVALID_DELTA",
+	"message": "Delta must be a finite number"
+}
+```
+
+#### 400 Bad Request - Insufficient Balance
+
+```json
+{
+	"success": false,
+	"error": "INSUFFICIENT_BALANCE",
+	"message": "Insufficient chip balance for this operation",
+	"currentBalance": 100
 }
 ```
 
@@ -174,7 +191,7 @@ await db
 
 ```typescript
 async function updateChipBalance(
-	newBalance: number,
+	previousBalance: number,
 	delta: number,
 	roundDetails: RoundDetails,
 ): Promise<ChipBalanceUpdateResponse> {
@@ -182,8 +199,8 @@ async function updateChipBalance(
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
-			newBalance,
-			delta,
+			previousBalance, // For optimistic locking validation
+			delta, // Server computes newBalance from previousBalance + delta
 			gameType: 'blackjack',
 			roundDetails,
 		}),
@@ -243,12 +260,13 @@ try {
 
 ## Alternatives Considered
 
-### Alternative 1: Pass Only Delta
+### Alternative 1: Pass newBalance from Client
 
-**Rejected**: Client passes only delta, server calculates new balance
+**Rejected**: Client passes computed newBalance, server trusts it
 
-- **Pro**: Simpler client logic
-- **Con**: No optimistic locking; vulnerable to race conditions
+- **Pro**: Simpler server logic
+- **Con**: Security vulnerability - allows chip minting attacks
+- **Decision**: Server must compute newBalance from delta to prevent manipulation
 
 ### Alternative 2: Optimistic UI Only
 

@@ -156,14 +156,16 @@ describe('DeckManager', () => {
 		it('should produce different card orders after shuffle', () => {
 			const firstDeck: string[] = [];
 			for (let i = 0; i < 10; i++) {
-				firstDeck.push(`${deckManager.deal().rank}${deckManager.deal().suit}`);
+				const card = deckManager.deal();
+				firstDeck.push(`${card.rank}${card.suit}`);
 			}
 
 			deckManager.reset();
 
 			const secondDeck: string[] = [];
 			for (let i = 0; i < 10; i++) {
-				secondDeck.push(`${deckManager.deal().rank}${deckManager.deal().suit}`);
+				const card = deckManager.deal();
+				secondDeck.push(`${card.rank}${card.suit}`);
 			}
 
 			// It's theoretically possible but extremely unlikely for them to be identical

@@ -8,7 +8,8 @@ if (!user) {
 	return Astro.redirect('/signin');
 }
 
-const initialBalance = user.chipBalance || 1000;
+// Use nullish coalescing to preserve zero balance (|| would treat 0 as falsy)
+const initialBalance = user.chipBalance ?? 1000;
 ---
 
 <CasinoLayout title="Blackjack - Arcturus Casino">

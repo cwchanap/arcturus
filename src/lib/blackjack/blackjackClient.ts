@@ -59,18 +59,27 @@ export function initBlackjackClient(): void {
 	const llmConfigOverlay = document.getElementById('llm-config-overlay') as HTMLElement;
 	const btnCloseOverlay = document.getElementById('btn-close-overlay') as HTMLButtonElement;
 
-	// Settings panel elements
-	const btnToggleSettings = document.getElementById('btn-toggle-settings') as HTMLButtonElement;
-	const settingsPanel = document.getElementById('settings-panel') as HTMLElement;
-	const startingChipsInput = document.getElementById('setting-starting-chips') as HTMLInputElement;
-	const minBetInput = document.getElementById('setting-min-bet') as HTMLInputElement;
-	const maxBetInput = document.getElementById('setting-max-bet') as HTMLInputElement;
+	// Settings panel elements (optional - may not exist on page)
+	const btnToggleSettings = document.getElementById(
+		'btn-toggle-settings',
+	) as HTMLButtonElement | null;
+	const settingsPanel = document.getElementById('settings-panel') as HTMLElement | null;
+	const startingChipsInput = document.getElementById(
+		'setting-starting-chips',
+	) as HTMLInputElement | null;
+	const minBetInput = document.getElementById('setting-min-bet') as HTMLInputElement | null;
+	const maxBetInput = document.getElementById('setting-max-bet') as HTMLInputElement | null;
 	const dealerSpeedSelect = document.getElementById(
 		'setting-dealer-speed',
-	) as unknown as HTMLSelectElement;
-	const useLlmCheckbox = document.getElementById('setting-use-llm') as HTMLInputElement;
-	const btnSaveSettings = document.getElementById('btn-save-settings') as HTMLButtonElement;
-	const btnResetSettings = document.getElementById('btn-reset-settings') as HTMLButtonElement;
+	) as HTMLSelectElement | null;
+	const useLlmCheckbox = document.getElementById('setting-use-llm') as HTMLInputElement | null;
+	const btnSaveSettings = document.getElementById('btn-save-settings') as HTMLButtonElement | null;
+	const btnResetSettings = document.getElementById(
+		'btn-reset-settings',
+	) as HTMLButtonElement | null;
+
+	// AI Rival status element
+	const aiRivalStatus = document.getElementById('ai-rival-status') as HTMLElement | null;
 
 	// Load LLM settings on page load
 	async function loadLlmSettings() {
@@ -79,6 +88,7 @@ export function initBlackjackClient(): void {
 			if (!response.ok) {
 				llmSettings = null;
 				llmConfigured = false;
+				updateAiRivalButtonState();
 				return;
 			}
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -112,6 +122,28 @@ export function initBlackjackClient(): void {
 			llmSettings = null;
 			llmConfigured = false;
 		}
+		updateAiRivalButtonState();
+	}
+
+	// Update AI Rival button state based on configuration
+	function updateAiRivalButtonState() {
+		if (llmConfigured) {
+			btnAiRival.disabled = false;
+			btnAiRival.classList.remove('opacity-50', 'cursor-not-allowed');
+			if (aiRivalStatus) {
+				aiRivalStatus.textContent = 'AI advisor ready';
+				aiRivalStatus.classList.remove('text-slate-500');
+				aiRivalStatus.classList.add('text-green-400');
+			}
+		} else {
+			btnAiRival.disabled = true;
+			btnAiRival.classList.add('opacity-50', 'cursor-not-allowed');
+			if (aiRivalStatus) {
+				aiRivalStatus.textContent = 'Configure API keys in profile to enable';
+				aiRivalStatus.classList.remove('text-green-400');
+				aiRivalStatus.classList.add('text-slate-500');
+			}
+		}
 	}
 
 	// Initialize LLM settings
@@ -129,6 +161,14 @@ export function initBlackjackClient(): void {
 	}
 
 	function renderSettingsForm() {
+		if (
+			!startingChipsInput ||
+			!minBetInput ||
+			!maxBetInput ||
+			!dealerSpeedSelect ||
+			!useLlmCheckbox
+		)
+			return;
 		startingChipsInput.value = settings.startingChips.toString();
 		minBetInput.value = settings.minBet.toString();
 		maxBetInput.value = settings.maxBet.toString();
@@ -136,68 +176,84 @@ export function initBlackjackClient(): void {
 		useLlmCheckbox.checked = settings.useLLM;
 	}
 
-	// Settings panel toggle
-	btnToggleSettings.addEventListener('click', () => {
-		settingsPanel.classList.toggle('hidden');
-	});
-
-	// Save settings
-	btnSaveSettings.addEventListener('click', () => {
-		const newStartingChips = parseInt(startingChipsInput.value || `${settings.startingChips}`, 10);
-		const newMinBet = parseInt(minBetInput.value || `${settings.minBet}`, 10);
-		const newMaxBet = parseInt(maxBetInput.value || `${settings.maxBet}`, 10);
-		const newDealerSpeed = (dealerSpeedSelect.value || settings.dealerSpeed) as
-			| 'slow'
-			| 'normal'
-			| 'fast';
-		const newUseLlm = useLlmCheckbox.checked;
-
-		if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
-			statusEl.textContent = 'Starting chips must be a positive number.';
-			return;
-		}
-
-		if (
-			Number.isNaN(newMinBet) ||
-			Number.isNaN(newMaxBet) ||
-			newMinBet <= 0 ||
-			newMaxBet <= 0 ||
-			newMinBet >= newMaxBet
-		) {
-			statusEl.textContent = 'Minimum bet must be less than maximum bet and both positive.';
-			return;
-		}
-
-		settingsManager.updateSettings({
-			startingChips: newStartingChips,
-			minBet: newMinBet,
-			maxBet: newMaxBet,
-			dealerSpeed: newDealerSpeed,
-			useLLM: newUseLlm,
+	// Settings panel toggle (only if elements exist)
+	if (btnToggleSettings && settingsPanel) {
+		btnToggleSettings.addEventListener('click', () => {
+			settingsPanel.classList.toggle('hidden');
 		});
+	}
 
-		settings = settingsManager.getSettings();
-		dealerDelay = settingsManager.getDealerDelay();
-		llmUserEnabled = settings.useLLM;
+	// Save settings (only if elements exist)
+	if (
+		btnSaveSettings &&
+		startingChipsInput &&
+		minBetInput &&
+		maxBetInput &&
+		dealerSpeedSelect &&
+		useLlmCheckbox
+	) {
+		btnSaveSettings.addEventListener('click', () => {
+			const newStartingChips = parseInt(
+				startingChipsInput.value || `${settings.startingChips}`,
+				10,
+			);
+			const newMinBet = parseInt(minBetInput.value || `${settings.minBet}`, 10);
+			const newMaxBet = parseInt(maxBetInput.value || `${settings.maxBet}`, 10);
+			const newDealerSpeed = (dealerSpeedSelect.value || settings.dealerSpeed) as
+				| 'slow'
+				| 'normal'
+				| 'fast';
+			const newUseLlm = useLlmCheckbox.checked;
 
-		applyBetConstraints();
-		renderSettingsForm();
+			if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
+				statusEl.textContent = 'Starting chips must be a positive number.';
+				return;
+			}
 
-		statusEl.textContent = 'Settings saved. They will apply to new rounds.';
-	});
+			if (
+				Number.isNaN(newMinBet) ||
+				Number.isNaN(newMaxBet) ||
+				newMinBet <= 0 ||
+				newMaxBet <= 0 ||
+				newMinBet >= newMaxBet
+			) {
+				statusEl.textContent = 'Minimum bet must be less than maximum bet and both positive.';
+				return;
+			}
 
-	// Reset settings
-	btnResetSettings.addEventListener('click', () => {
-		settingsManager.resetToDefaults();
-		settings = settingsManager.getSettings();
-		dealerDelay = settingsManager.getDealerDelay();
-		llmUserEnabled = settings.useLLM;
+			settingsManager.updateSettings({
+				startingChips: newStartingChips,
+				minBet: newMinBet,
+				maxBet: newMaxBet,
+				dealerSpeed: newDealerSpeed,
+				useLLM: newUseLlm,
+			});
 
-		applyBetConstraints();
-		renderSettingsForm();
+			settings = settingsManager.getSettings();
+			dealerDelay = settingsManager.getDealerDelay();
+			llmUserEnabled = settings.useLLM;
 
-		statusEl.textContent = 'Settings reset to defaults.';
-	});
+			applyBetConstraints();
+			renderSettingsForm();
+
+			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
+		});
+	}
+
+	// Reset settings (only if elements exist)
+	if (btnResetSettings) {
+		btnResetSettings.addEventListener('click', () => {
+			settingsManager.resetToDefaults();
+			settings = settingsManager.getSettings();
+			dealerDelay = settingsManager.getDealerDelay();
+			llmUserEnabled = settings.useLLM;
+
+			applyBetConstraints();
+			renderSettingsForm();
+
+			statusEl.textContent = 'Settings reset to defaults.';
+		});
+	}
 
 	applyBetConstraints();
 	renderSettingsForm();
@@ -233,6 +289,7 @@ export function initBlackjackClient(): void {
 			renderGame();
 			bettingControls.classList.add('hidden');
 			gameControls.classList.remove('hidden');
+			statusEl.textContent = 'Your turn - Hit or Stand?';
 
 			const state = game.getState();
 			if (state.phase === 'complete') {
@@ -334,6 +391,23 @@ export function initBlackjackClient(): void {
 		btnNewRound.classList.add('hidden');
 		aiAdviceBox.classList.add('hidden');
 		aiCommentaryBox.classList.add('hidden');
+
+		// Reset card placeholders
+		const playerCardsEl = document.getElementById('player-cards');
+		const dealerCardsEl = document.getElementById('dealer-cards');
+		if (playerCardsEl) {
+			playerCardsEl.innerHTML = `
+				<div class="card-placeholder"></div>
+				<div class="card-placeholder"></div>
+			`;
+		}
+		if (dealerCardsEl) {
+			dealerCardsEl.innerHTML = `
+				<div class="card-placeholder"></div>
+				<div class="card-placeholder"></div>
+			`;
+		}
+
 		statusEl.textContent = 'Place your bet to start';
 	});
 
@@ -430,6 +504,38 @@ export function initBlackjackClient(): void {
 		}
 	}
 
+	// Render a single playing card (similar to PlayingCard.astro)
+	function renderPlayingCard(card: { rank: string; suit: string }): string {
+		const suitSymbol = getSuitSymbol(card.suit);
+		const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
+		const colorClass = isRed ? 'card-red' : 'card-black';
+
+		return `
+			<div class="playing-card ${colorClass}">
+				<div class="playing-card-inner">
+					<div class="card-corner card-corner-top">
+						<span class="card-rank">${card.rank}</span>
+						<span class="card-suit-small">${suitSymbol}</span>
+					</div>
+					<span class="card-suit-center">${suitSymbol}</span>
+					<div class="card-corner card-corner-bottom">
+						<span class="card-rank">${card.rank}</span>
+						<span class="card-suit-small">${suitSymbol}</span>
+					</div>
+				</div>
+			</div>
+		`;
+	}
+
+	// Render a face-down card
+	function renderCardBack(): string {
+		return `
+			<div class="playing-card-back">
+				<span class="card-back-icon">🎴</span>
+			</div>
+		`;
+	}
+
 	// Render game state
 	function renderGame() {
 		const state = game.getState();
@@ -447,18 +553,13 @@ export function initBlackjackClient(): void {
 				const handsHTML = state.playerHands
 					.map((hand, index) => {
 						const isActive = index === state.activeHandIndex;
-						const borderClass = isActive ? 'border-2 border-yellow-400' : 'border border-slate-600';
-						const cardsHTML = hand.cards
-							.map(
-								(card) =>
-									`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-							)
-							.join('');
+						const containerClass = isActive ? 'active-hand' : 'inactive-hand';
+						const cardsHTML = hand.cards.map((card) => renderPlayingCard(card)).join('');
 						return `
-							<div class="flex flex-col items-center gap-2 p-3 rounded-lg ${borderClass}">
-								<div class="text-xs text-slate-400">Hand ${index + 1}</div>
-								<div class="flex gap-2">${cardsHTML}</div>
-								<div class="text-sm font-bold">${getHandDisplay(hand.cards)}</div>
+							<div class="hand-container ${containerClass}">
+								<div class="hand-label">Hand ${index + 1}</div>
+								<div class="hand-cards">${cardsHTML}</div>
+								<div class="hand-value">${getHandDisplay(hand.cards)}</div>
 							</div>
 						`;
 					})
@@ -469,15 +570,18 @@ export function initBlackjackClient(): void {
 			} else {
 				// Single hand - normal display
 				const playerHand = state.playerHands[0];
-				playerCardsEl.innerHTML = playerHand.cards
-					.map(
-						(card) =>
-							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-					)
-					.join('');
+				playerCardsEl.innerHTML = playerHand.cards.map((card) => renderPlayingCard(card)).join('');
 				playerValueEl.textContent = getHandDisplay(playerHand.cards);
-				currentBetEl.textContent = `Bet: $${playerHand.bet}`;
+				currentBetEl.textContent = `Current Bet: $${playerHand.bet}`;
 			}
+		} else {
+			// Show placeholders when no cards dealt
+			playerCardsEl.innerHTML = `
+				<div class="card-placeholder"></div>
+				<div class="card-placeholder"></div>
+			`;
+			playerValueEl.textContent = '-';
+			currentBetEl.textContent = 'Current Bet: $0';
 		}
 
 		// Render dealer hand
@@ -491,23 +595,23 @@ export function initBlackjackClient(): void {
 			const visibleCards = hideCard ? [state.dealerHand.cards[0]] : state.dealerHand.cards;
 
 			dealerCardsEl.innerHTML =
-				visibleCards
-					.map(
-						(card) =>
-							`<div class="card" data-suit="${card.suit}">${card.rank}${getSuitSymbol(card.suit)}</div>`,
-					)
-					.join('') + (hideCard ? '<div class="card card-hidden">🂠</div>' : '');
+				visibleCards.map((card) => renderPlayingCard(card)).join('') +
+				(hideCard ? renderCardBack() : '');
 
 			dealerValueEl.textContent = hideCard
 				? '?'
 				: getHandDisplay(state.dealerHand.cards as { rank: string; suit: string }[]);
 		} else {
-			dealerCardsEl.innerHTML = '';
+			// Show placeholders when no cards dealt
+			dealerCardsEl.innerHTML = `
+				<div class="card-placeholder"></div>
+				<div class="card-placeholder"></div>
+			`;
 			dealerValueEl.textContent = '-';
 		}
 
 		// Update balance
-		balanceDisplay.textContent = `$${game.getBalance()}`;
+		balanceDisplay.textContent = `$${game.getBalance().toLocaleString()}`;
 
 		// Update button states
 		const actions = game.getAvailableActions();

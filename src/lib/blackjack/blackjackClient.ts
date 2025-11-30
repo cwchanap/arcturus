@@ -317,6 +317,9 @@ export function initBlackjackClient(): void {
 			dealerDelay = settingsManager.getDealerDelay();
 			llmUserEnabled = settings.useLLM;
 
+			// Update game instance bet limits so new rounds honor configured limits immediately
+			game.updateBetLimits(settings.minBet, settings.maxBet);
+
 			applyBetConstraints();
 			renderSettingsForm();
 
@@ -773,6 +776,7 @@ export function initBlackjackClient(): void {
 					previousBalance: serverSyncedBalance, // Use server-synced balance for optimistic locking
 					delta, // Server computes newBalance from its own previousBalance + delta
 					gameType: 'blackjack',
+					maxBet: settings.maxBet, // Send configured max bet so server can validate delta appropriately
 				}),
 			});
 

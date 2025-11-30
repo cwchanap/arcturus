@@ -406,6 +406,21 @@ export class BlackjackGame {
 	}
 
 	/**
+	 * Set player balance (used when settings change starting chips)
+	 * Only allowed during betting phase to prevent mid-round manipulation
+	 */
+	public setBalance(newBalance: number): boolean {
+		if (this.state.phase !== 'betting') {
+			return false; // Cannot change balance mid-round
+		}
+		if (newBalance >= 0) {
+			this.state.playerBalance = newBalance;
+			return true;
+		}
+		return false;
+	}
+
+	/**
 	 * Start a new round (resets to betting phase)
 	 */
 	public startNewRound(): void {

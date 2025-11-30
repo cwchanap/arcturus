@@ -8,6 +8,11 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
 	output: 'server',
 	adapter: cloudflare({
+		// Using 'passthrough' because:
+		// - 'compile' uses sharp which has native deps incompatible with Workers
+		// - 'cloudflare' requires paid Cloudflare Image Resizing feature
+		// For a casino app with minimal image needs, passthrough is sufficient.
+		// Images are served as-is; optimize source assets at build time if needed.
 		imageService: 'passthrough',
 		platformProxy: {
 			enabled: true,

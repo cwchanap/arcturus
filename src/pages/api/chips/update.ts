@@ -8,9 +8,12 @@ import { user } from '../../../db/schema';
 import { and, eq } from 'drizzle-orm';
 import { DEFAULT_MAX_BET } from '../../../lib/blackjack/constants';
 
-// Maximum allowed delta magnitude (prevents chip minting attacks)
-// Set to 4x max bet to account for splits with doubles (2 hands x 2x bet each)
-const MAX_ALLOWED_DELTA_MAGNITUDE = DEFAULT_MAX_BET * 4;
+// Server-enforced absolute maximum bet limit (prevents abuse via manipulated client settings)
+// Players can configure up to this limit in their settings
+const ABSOLUTE_MAX_BET_LIMIT = 10000;
+
+// Multiplier for max delta calculation (accounts for splits with doubles: 2 hands x 2x bet each)
+const MAX_BET_MULTIPLIER = 4;
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	// Validate authentication
@@ -46,7 +49,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	const { delta, gameType, previousBalance: clientPreviousBalance } = body;
+	const { delta, gameType, previousBalance: clientPreviousBalance, maxBet: clientMaxBet } = body;
 
 	// Validate delta is a finite number
 	if (typeof delta !== 'number' || !Number.isFinite(delta)) {
@@ -63,15 +66,26 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
+	// Determine effective max bet: use client's configured maxBet if valid, capped at server limit
+	// This allows players to configure higher bet limits while preventing abuse
+	let effectiveMaxBet = DEFAULT_MAX_BET;
+	if (typeof clientMaxBet === 'number' && clientMaxBet > 0) {
+		effectiveMaxBet = Math.min(clientMaxBet, ABSOLUTE_MAX_BET_LIMIT);
+	}
+
+	// Maximum allowed delta magnitude based on effective max bet
+	// Accounts for splits with doubles (2 hands x 2x bet each = 4x max bet)
+	const maxAllowedDeltaMagnitude = effectiveMaxBet * MAX_BET_MULTIPLIER;
+
 	// Validate delta magnitude to prevent chip minting attacks
 	// Server doesn't have full game state, but can enforce reasonable bounds
 	// based on betting limits (max win = 4x max bet for split+double scenarios)
-	if (Math.abs(delta) > MAX_ALLOWED_DELTA_MAGNITUDE) {
+	if (Math.abs(delta) > maxAllowedDeltaMagnitude) {
 		return new Response(
 			JSON.stringify({
 				success: false,
 				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Delta magnitude exceeds maximum allowed (${MAX_ALLOWED_DELTA_MAGNITUDE})`,
+				message: `Delta magnitude exceeds maximum allowed (${maxAllowedDeltaMagnitude})`,
 			}),
 			{
 				status: 400,

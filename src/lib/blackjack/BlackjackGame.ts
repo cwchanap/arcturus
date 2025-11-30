@@ -396,6 +396,16 @@ export class BlackjackGame {
 	}
 
 	/**
+	 * Update bet limits (used when settings change)
+	 */
+	public updateBetLimits(minBet: number, maxBet: number): void {
+		if (minBet > 0 && maxBet > 0 && minBet <= maxBet) {
+			this.minBet = minBet;
+			this.maxBet = maxBet;
+		}
+	}
+
+	/**
 	 * Start a new round (resets to betting phase)
 	 */
 	public startNewRound(): void {

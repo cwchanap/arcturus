@@ -30,7 +30,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		const maxAttempts = 15;
 		let foundSplit = false;
 
-		for (let attempt = 0; attempt < maxAttempts && !foundSplit; attempt++) {
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
 			await dealNewHand(page, 50);
 
 			const splitButton = page.getByRole('button', { name: 'Split' });
@@ -81,7 +81,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		const maxAttempts = 25;
 		let found = false;
 
-		for (let attempt = 0; attempt < maxAttempts && !found; attempt++) {
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
 			await dealNewHand(page, 50);
 
 			const doubleButton = page.getByRole('button', { name: 'Double Down' });
@@ -128,7 +128,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		const maxAttempts = 25;
 		let found = false;
 
-		for (let attempt = 0; attempt < maxAttempts && !found; attempt++) {
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
 			await dealNewHand(page, 50);
 
 			const doubleButton = page.getByRole('button', { name: 'Double Down' });

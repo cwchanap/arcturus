@@ -361,17 +361,33 @@ export function initBlackjackClient(): void {
 	btnDouble.addEventListener('click', () => {
 		try {
 			game.doubleDown();
-			statusEl.textContent = 'Dealer playing...';
-			renderGame();
+			const stateAfter = game.getState();
 
-			// Play dealer turn with delay for animation based on settings
-			setTimeout(() => {
-				game.playDealerTurn();
+			// Check what phase we're in after double down
+			if (stateAfter.phase === 'player-turn') {
+				// Still in player turn means there's another split hand to play
+				statusEl.textContent = `Playing hand ${stateAfter.activeHandIndex + 1} of ${stateAfter.playerHands.length}...`;
+				renderGame();
+			} else if (stateAfter.phase === 'complete') {
+				// Busted on last hand - go straight to round complete
 				renderGame();
 				setTimeout(() => {
 					void handleRoundComplete();
 				}, dealerDelay);
-			}, dealerDelay);
+			} else {
+				// Dealer turn - play dealer
+				statusEl.textContent = 'Dealer playing...';
+				renderGame();
+
+				// Play dealer turn with delay for animation based on settings
+				setTimeout(() => {
+					game.playDealerTurn();
+					renderGame();
+					setTimeout(() => {
+						void handleRoundComplete();
+					}, dealerDelay);
+				}, dealerDelay);
+			}
 		} catch (error) {
 			statusEl.textContent = (error as Error).message;
 		}

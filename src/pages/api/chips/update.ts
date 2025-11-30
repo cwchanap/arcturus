@@ -6,7 +6,6 @@ import type { APIRoute } from 'astro';
 import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
 import { and, eq } from 'drizzle-orm';
-import { DEFAULT_MAX_BET } from '../../../lib/blackjack/constants';
 
 // Server-enforced absolute maximum bet limit (prevents abuse via manipulated client settings)
 // Players can configure up to this limit in their settings
@@ -32,7 +31,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	// Parse request body with explicit error handling for malformed JSON
-	let body: { delta?: unknown; gameType?: unknown; previousBalance?: unknown };
+	let body: { delta?: unknown; gameType?: unknown; previousBalance?: unknown; maxBet?: unknown };
 	try {
 		body = await request.json();
 	} catch {
@@ -49,7 +48,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	const { delta, gameType, previousBalance: clientPreviousBalance, maxBet: clientMaxBet } = body;
+	const { delta, gameType, previousBalance: clientPreviousBalance } = body;
 
 	// Validate delta is a finite number
 	if (typeof delta !== 'number' || !Number.isFinite(delta)) {
@@ -66,16 +65,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	// Determine effective max bet: use client's configured maxBet if valid, capped at server limit
-	// This allows players to configure higher bet limits while preventing abuse
-	let effectiveMaxBet = DEFAULT_MAX_BET;
-	if (typeof clientMaxBet === 'number' && clientMaxBet > 0) {
-		effectiveMaxBet = Math.min(clientMaxBet, ABSOLUTE_MAX_BET_LIMIT);
-	}
-
-	// Maximum allowed delta magnitude based on effective max bet
+	// Maximum allowed delta magnitude - server-side only, not influenced by client
+	// Uses ABSOLUTE_MAX_BET_LIMIT (not client-provided maxBet) to prevent chip minting
 	// Accounts for splits with doubles (2 hands x 2x bet each = 4x max bet)
-	const maxAllowedDeltaMagnitude = effectiveMaxBet * MAX_BET_MULTIPLIER;
+	const maxAllowedDeltaMagnitude = ABSOLUTE_MAX_BET_LIMIT * MAX_BET_MULTIPLIER;
 
 	// Validate delta magnitude to prevent chip minting attacks
 	// Server doesn't have full game state, but can enforce reasonable bounds
@@ -176,9 +169,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
+	// Check DB binding exists (may be undefined in local dev without Cloudflare bindings)
+	const dbBinding = locals.runtime?.env?.DB ?? null;
+	if (!dbBinding) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'DATABASE_UNAVAILABLE',
+				message: 'Database is not configured',
+			}),
+			{
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
 	// Database operations wrapped in try-catch
 	try {
-		const db = createDb(locals.runtime.env.DB);
+		const db = createDb(dbBinding);
 
 		// Atomic update with optimistic locking via WHERE condition
 		// This prevents TOCTOU race by ensuring balance hasn't changed since we read it

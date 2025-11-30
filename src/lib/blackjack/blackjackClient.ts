@@ -313,12 +313,24 @@ export function initBlackjackClient(): void {
 				useLLM: newUseLlm,
 			});
 
+			const previousStartingChips = settings.startingChips;
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
 			llmUserEnabled = settings.useLLM;
 
 			// Update game instance bet limits so new rounds honor configured limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);
+
+			// Apply starting chips change if modified and currently in betting phase
+			if (newStartingChips !== previousStartingChips) {
+				const balanceUpdated = game.setBalance(newStartingChips);
+				if (balanceUpdated) {
+					// Update the synced balance tracker so chip sync doesn't revert it
+					serverSyncedBalance = newStartingChips;
+					// Re-render to show updated balance
+					renderGame();
+				}
+			}
 
 			applyBetConstraints();
 			renderSettingsForm();

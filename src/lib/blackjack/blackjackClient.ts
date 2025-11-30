@@ -7,6 +7,84 @@ import {
 	type BlackjackAdviceContext,
 } from './llmBlackjackStrategy';
 import { getHandValueDisplay } from './handEvaluator';
+import type { RoundOutcome, RoundResult } from './types';
+
+/**
+ * Format outcome message for display, handling split hands.
+ * Shows individual results for each hand when split, or single result otherwise.
+ */
+function formatOutcomeMessage(outcomes: RoundOutcome[]): string {
+	if (outcomes.length === 1) {
+		// Single hand - use simple message
+		switch (outcomes[0].result) {
+			case 'blackjack':
+				return '🎉 BLACKJACK! You win!';
+			case 'win':
+				return '✓ You win!';
+			case 'loss':
+				return '✗ Dealer wins';
+			case 'push':
+				return '🤝 Push (Tie)';
+		}
+	}
+
+	// Multiple hands (split) - show each hand's result
+	const resultEmoji: Record<RoundResult, string> = {
+		blackjack: '🎉',
+		win: '✓',
+		loss: '✗',
+		push: '🤝',
+	};
+	const resultText: Record<RoundResult, string> = {
+		blackjack: 'Blackjack',
+		win: 'Win',
+		loss: 'Loss',
+		push: 'Push',
+	};
+
+	const handResults = outcomes
+		.map((o, i) => `Hand ${i + 1}: ${resultEmoji[o.result]} ${resultText[o.result]}`)
+		.join(' | ');
+
+	// Determine overall result based on wins vs losses
+	const wins = outcomes.filter((o) => o.result === 'win' || o.result === 'blackjack').length;
+	const losses = outcomes.filter((o) => o.result === 'loss').length;
+
+	let summary = '';
+	if (wins > losses) {
+		summary = ' — Overall: You win! 🎉';
+	} else if (losses > wins) {
+		summary = ' — Overall: Dealer wins';
+	} else {
+		summary = ' — Overall: Split result';
+	}
+
+	return handResults + summary;
+}
+
+/**
+ * Get overall result for AI commentary based on all hand outcomes.
+ * Returns the dominant result for split hands.
+ */
+function getOverallResult(outcomes: RoundOutcome[]): RoundResult {
+	if (outcomes.length === 1) {
+		return outcomes[0].result;
+	}
+
+	// For split hands, determine overall result based on wins vs losses
+	const wins = outcomes.filter((o) => o.result === 'win' || o.result === 'blackjack').length;
+	const losses = outcomes.filter((o) => o.result === 'loss').length;
+
+	if (wins > losses) {
+		// Check if any was blackjack
+		const hasBlackjack = outcomes.some((o) => o.result === 'blackjack');
+		return hasBlackjack ? 'blackjack' : 'win';
+	} else if (losses > wins) {
+		return 'loss';
+	} else {
+		return 'push';
+	}
+}
 
 /**
  * Initialize Blackjack client-side UI and game logic.
@@ -647,24 +725,9 @@ export function initBlackjackClient(): void {
 		// We need the pre-settlement playerHands for AI commentary.
 		const state = game.getState();
 		const outcomes = game.settleRound();
-		const outcome = outcomes[0];
 
-		// Display result
-		let message = '';
-		switch (outcome.result) {
-			case 'blackjack':
-				message = '🎉 BLACKJACK! You win!';
-				break;
-			case 'win':
-				message = '✓ You win!';
-				break;
-			case 'loss':
-				message = '✗ Dealer wins';
-				break;
-			case 'push':
-				message = '🤝 Push (Tie)';
-				break;
-		}
+		// Aggregate outcomes for split hands
+		const message = formatOutcomeMessage(outcomes);
 		statusEl.textContent = message;
 
 		// Hide advice box and clear highlights
@@ -674,12 +737,14 @@ export function initBlackjackClient(): void {
 		// Get AI commentary if configured
 		if (llmConfigured && llmSettings) {
 			try {
+				// For split hands, use the overall result for commentary
+				const overallResult = getOverallResult(outcomes);
 				const playerHand = state.playerHands[0];
 				const dealerHand = state.dealerHand;
 				const commentary = await getRoundCommentary(
 					playerHand,
 					dealerHand,
-					outcome.result,
+					overallResult,
 					llmSettings,
 				);
 

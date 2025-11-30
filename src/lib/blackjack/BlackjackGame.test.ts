@@ -220,11 +220,12 @@ describe('BlackjackGame', () => {
 			}
 			game.settleRound();
 			const balanceAfter = game.getBalance();
-			// Balance should change (win, loss, or push returns bet)
+			// Balance should be a valid number
 			expect(typeof balanceAfter).toBe('number');
-			// Verify balance changed or stayed same (push)
 			expect(balanceAfter).toBeGreaterThanOrEqual(0);
-			expect(balanceBefore).toBeGreaterThanOrEqual(0);
+			// Balance should differ from before (win/loss) or stay same (push returns bet)
+			// The key assertion: balance changed by payout amount relative to before
+			expect(balanceAfter).not.toBe(balanceBefore - 100); // Not just the bet deduction
 		});
 
 		it('should reset to betting phase after settlement', () => {

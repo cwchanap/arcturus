@@ -29,6 +29,11 @@ export function initBlackjackClient(): void {
 	);
 	const initialBalance = Number.isNaN(parsedBalance) ? settings.startingChips : parsedBalance;
 
+	// Track the server-synced balance separately from game state.
+	// This is the balance the server knows about, updated only after successful API calls.
+	// Used for optimistic locking to avoid BALANCE_MISMATCH errors.
+	let serverSyncedBalance = initialBalance;
+
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
 
@@ -325,16 +330,16 @@ export function initBlackjackClient(): void {
 	// Stand button
 	btnStand.addEventListener('click', () => {
 		try {
-			const state = game.getState();
-			// Check if there are more hands to play (after split)
-			if (state.playerHands.length > 1 && state.activeHandIndex < state.playerHands.length - 1) {
-				game.stand();
-				game.nextHand();
-				statusEl.textContent = `Playing hand ${state.activeHandIndex + 2}...`;
+			game.stand();
+			const stateAfter = game.getState();
+
+			// Check if we moved to the next split hand or to dealer turn
+			if (stateAfter.phase === 'player-turn') {
+				// Still in player turn means there's another hand to play
+				statusEl.textContent = `Playing hand ${stateAfter.activeHandIndex + 1} of ${stateAfter.playerHands.length}...`;
 				renderGame();
 			} else {
 				// All hands complete, play dealer turn
-				game.stand();
 				statusEl.textContent = 'Dealer playing...';
 				renderGame();
 
@@ -623,9 +628,8 @@ export function initBlackjackClient(): void {
 	// Handle round completion
 	async function handleRoundComplete() {
 		// IMPORTANT: Capture state BEFORE settleRound() because settleRound() mutates/clears hands.
-		// We need the pre-settlement playerHands for AI commentary and balance calculation.
+		// We need the pre-settlement playerHands for AI commentary.
 		const state = game.getState();
-		const previousBalance = state.playerBalance;
 		const outcomes = game.settleRound();
 		const outcome = outcomes[0];
 
@@ -679,17 +683,29 @@ export function initBlackjackClient(): void {
 		// Update balance in database
 		try {
 			const newBalance = game.getBalance();
-			// Delta is the net change: new balance minus what we had before settlement
-			const delta = newBalance - previousBalance;
-			await fetch('/api/chips/update', {
+			// Delta is the net change from what the server knows about
+			const delta = newBalance - serverSyncedBalance;
+			const response = await fetch('/api/chips/update', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					previousBalance, // For optimistic locking validation
+					previousBalance: serverSyncedBalance, // Use server-synced balance for optimistic locking
 					delta, // Server computes newBalance from its own previousBalance + delta
 					gameType: 'blackjack',
 				}),
 			});
+
+			if (response.ok) {
+				// Update our server-synced balance tracker after successful sync
+				serverSyncedBalance = newBalance;
+			} else {
+				const errorData = await response.json();
+				if (errorData.error === 'BALANCE_MISMATCH' && errorData.currentBalance !== undefined) {
+					// Server has a different balance - sync to it
+					serverSyncedBalance = errorData.currentBalance;
+					console.warn('Balance mismatch detected, synced to server balance:', serverSyncedBalance);
+				}
+			}
 		} catch (error) {
 			console.error('Failed to update balance:', error);
 		}

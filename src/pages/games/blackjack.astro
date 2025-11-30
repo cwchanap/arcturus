@@ -275,6 +275,123 @@ const initialBalance = user.chipBalance ?? 1000;
 			</div>
 		</div>
 
+		<!-- Settings Panel -->
+		<div class="mt-8">
+			<button
+				id="btn-toggle-settings"
+				class="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 px-6 rounded-lg transition-colors border border-slate-600 flex items-center justify-center gap-2"
+			>
+				<span>⚙️</span>
+				<span>Game Settings</span>
+			</button>
+
+			<div
+				id="settings-panel"
+				class="hidden mt-4 bg-slate-900 rounded-xl p-6 border border-slate-700"
+			>
+				<h3 class="text-xl font-bold text-yellow-400 mb-4">⚙️ Game Settings</h3>
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+					<!-- Betting Limits -->
+					<div class="space-y-4">
+						<h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wide">
+							Betting Limits
+						</h4>
+						<div>
+							<label for="setting-starting-chips" class="block text-sm text-slate-400 mb-1"
+								>Starting Chips</label
+							>
+							<input
+								type="number"
+								id="setting-starting-chips"
+								min="100"
+								max="100000"
+								value="1000"
+								class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-yellow-500 focus:outline-none"
+							/>
+						</div>
+						<div>
+							<label for="setting-min-bet" class="block text-sm text-slate-400 mb-1"
+								>Minimum Bet</label
+							>
+							<input
+								type="number"
+								id="setting-min-bet"
+								min="1"
+								max="1000"
+								value="10"
+								class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-yellow-500 focus:outline-none"
+							/>
+						</div>
+						<div>
+							<label for="setting-max-bet" class="block text-sm text-slate-400 mb-1"
+								>Maximum Bet</label
+							>
+							<input
+								type="number"
+								id="setting-max-bet"
+								min="10"
+								max="10000"
+								value="1000"
+								class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-yellow-500 focus:outline-none"
+							/>
+						</div>
+					</div>
+
+					<!-- Game Options -->
+					<div class="space-y-4">
+						<h4 class="text-sm font-semibold text-slate-400 uppercase tracking-wide">
+							Game Options
+						</h4>
+						<div>
+							<label for="setting-dealer-speed" class="block text-sm text-slate-400 mb-1"
+								>Dealer Speed</label
+							>
+							<select
+								id="setting-dealer-speed"
+								class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 text-white focus:border-yellow-500 focus:outline-none"
+							>
+								<option value="slow">Slow (1.5s)</option>
+								<option value="normal" selected>Normal (1s)</option>
+								<option value="fast">Fast (0.5s)</option>
+							</select>
+						</div>
+						<div class="flex items-center gap-3 pt-2">
+							<input
+								type="checkbox"
+								id="setting-use-llm"
+								class="w-5 h-5 bg-slate-800 border border-slate-600 rounded text-yellow-500 focus:ring-yellow-500 focus:ring-offset-slate-900"
+							/>
+							<label for="setting-use-llm" class="text-sm text-slate-300">
+								Enable AI Rival Strategy Advisor
+							</label>
+						</div>
+						<p class="text-xs text-slate-500">
+							Requires API key configured in <a
+								href="/profile"
+								class="text-cyan-400 hover:underline">profile settings</a
+							>
+						</p>
+					</div>
+				</div>
+
+				<!-- Settings Actions -->
+				<div class="mt-6 flex gap-3">
+					<button
+						id="btn-save-settings"
+						class="flex-1 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-slate-900 font-bold py-3 px-6 rounded-lg transition-all"
+					>
+						Save Settings
+					</button>
+					<button
+						id="btn-reset-settings"
+						class="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-3 px-6 rounded-lg transition-colors border border-slate-600"
+					>
+						Reset to Defaults
+					</button>
+				</div>
+			</div>
+		</div>
+
 		<!-- LLM Configuration Overlay -->
 		<div
 			id="llm-config-overlay"

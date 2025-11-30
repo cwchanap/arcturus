@@ -5,7 +5,12 @@
 import type { APIRoute } from 'astro';
 import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { DEFAULT_MAX_BET } from '../../../lib/blackjack/constants';
+
+// Maximum allowed delta magnitude (prevents chip minting attacks)
+// Set to 4x max bet to account for splits with doubles (2 hands x 2x bet each)
+const MAX_ALLOWED_DELTA_MAGNITUDE = DEFAULT_MAX_BET * 4;
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	// Validate authentication
@@ -50,6 +55,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				success: false,
 				error: 'INVALID_DELTA',
 				message: 'Delta must be a finite number',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate delta magnitude to prevent chip minting attacks
+	// Server doesn't have full game state, but can enforce reasonable bounds
+	// based on betting limits (max win = 4x max bet for split+double scenarios)
+	if (Math.abs(delta) > MAX_ALLOWED_DELTA_MAGNITUDE) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'DELTA_EXCEEDS_LIMIT',
+				message: `Delta magnitude exceeds maximum allowed (${MAX_ALLOWED_DELTA_MAGNITUDE})`,
 			}),
 			{
 				status: 400,
@@ -144,13 +166,31 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	try {
 		const db = createDb(locals.runtime.env.DB);
 
-		// Update user chip balance
-		await db
+		// Atomic update with optimistic locking via WHERE condition
+		// This prevents TOCTOU race by ensuring balance hasn't changed since we read it
+		const result = await db
 			.update(user)
 			.set({
 				chipBalance: newBalance,
 			})
-			.where(eq(user.id, locals.user.id));
+			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, previousBalance)));
+
+		// Check if update affected any rows (D1 returns rowsAffected in meta)
+		const rowsAffected = result?.meta?.changes ?? result?.rowsAffected ?? 0;
+		if (rowsAffected === 0) {
+			// Concurrent modification detected - balance changed between read and write
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'BALANCE_MISMATCH',
+					message: 'Balance was modified concurrently. Please refresh and try again.',
+				}),
+				{
+					status: 409,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
 
 		// Return success response with validated values only
 		return new Response(

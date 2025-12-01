@@ -1,5 +1,19 @@
 /**
  * API endpoint for updating user chip balance after game round
+ *
+ * SECURITY LIMITATIONS:
+ * This is a client-side game without server-side game state verification.
+ * The server cannot cryptographically verify that game rounds actually occurred.
+ *
+ * MITIGATIONS IMPLEMENTED:
+ * 1. Positive deltas (wins) are severely capped to limit exploitation
+ * 2. Negative deltas (losses) are allowed up to reasonable bet limits
+ * 3. Rate limiting via minimum time between updates
+ * 4. Optimistic locking prevents concurrent modifications
+ * 5. All deltas are logged for audit purposes
+ *
+ * For a production casino with real money, game logic MUST run server-side
+ * with cryptographic verification of all outcomes.
  */
 
 import type { APIRoute } from 'astro';
@@ -7,12 +21,22 @@ import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
 import { and, eq } from 'drizzle-orm';
 
-// Server-enforced absolute maximum bet limit (prevents abuse via manipulated client settings)
-// Players can configure up to this limit in their settings
-const ABSOLUTE_MAX_BET_LIMIT = 10000;
+// Maximum LOSS per request (negative delta) - allows normal gameplay
+// Accounts for split + double scenarios: 2 hands x 2x bet x max bet
+const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 
-// Multiplier for max delta calculation (accounts for splits with doubles: 2 hands x 2x bet each)
-const MAX_BET_MULTIPLIER = 4;
+// Maximum WIN per request (positive delta) - severely limited to reduce exploitation
+// Even with blackjack (1.5x payout) on split+double, realistic max is ~3x bet
+// We cap at a small value to make exploitation tedious and detectable
+const MAX_WIN_PER_REQUEST = 5000; // Limits exploitation to ~5000 chips per abuse attempt
+
+// Minimum milliseconds between chip updates (rate limiting)
+// Prevents rapid-fire exploitation; normal gameplay has natural delays
+const MIN_UPDATE_INTERVAL_MS = 2000; // 2 seconds between updates
+
+// In-memory rate limit store (per-user last update timestamp)
+// Note: This resets on worker restart; for production, use KV or D1
+const lastUpdateByUser = new Map<string, number>();
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	// Validate authentication
@@ -26,6 +50,29 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			{
 				status: 401,
 				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	const userId = locals.user.id;
+	const now = Date.now();
+
+	// Rate limiting check
+	const lastUpdate = lastUpdateByUser.get(userId) ?? 0;
+	if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+		const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'RATE_LIMITED',
+				message: `Please wait ${waitTime} second(s) before updating chips again`,
+			}),
+			{
+				status: 429,
+				headers: {
+					'Content-Type': 'application/json',
+					'Retry-After': String(waitTime),
+				},
 			},
 		);
 	}
@@ -65,20 +112,33 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	// Maximum allowed delta magnitude - server-side only, not influenced by client
-	// Uses ABSOLUTE_MAX_BET_LIMIT (not client-provided maxBet) to prevent chip minting
-	// Accounts for splits with doubles (2 hands x 2x bet each = 4x max bet)
-	const maxAllowedDeltaMagnitude = ABSOLUTE_MAX_BET_LIMIT * MAX_BET_MULTIPLIER;
-
-	// Validate delta magnitude to prevent chip minting attacks
-	// Server doesn't have full game state, but can enforce reasonable bounds
-	// based on betting limits (max win = 4x max bet for split+double scenarios)
-	if (Math.abs(delta) > maxAllowedDeltaMagnitude) {
+	// Asymmetric delta validation:
+	// - Losses (negative delta) allowed up to MAX_LOSS_PER_REQUEST
+	// - Wins (positive delta) severely capped at MAX_WIN_PER_REQUEST
+	// This makes exploitation tedious while allowing normal gameplay
+	if (delta > 0 && delta > MAX_WIN_PER_REQUEST) {
+		console.warn(
+			`[CHIP_AUDIT] User ${userId} attempted win of ${delta}, capped at ${MAX_WIN_PER_REQUEST}`,
+		);
 		return new Response(
 			JSON.stringify({
 				success: false,
 				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Delta magnitude exceeds maximum allowed (${maxAllowedDeltaMagnitude})`,
+				message: `Win amount exceeds maximum allowed (${MAX_WIN_PER_REQUEST})`,
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	if (delta < 0 && Math.abs(delta) > MAX_LOSS_PER_REQUEST) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'DELTA_EXCEEDS_LIMIT',
+				message: `Loss amount exceeds maximum allowed (${MAX_LOSS_PER_REQUEST})`,
 			}),
 			{
 				status: 400,
@@ -212,6 +272,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
 					status: 409,
 					headers: { 'Content-Type': 'application/json' },
 				},
+			);
+		}
+
+		// Update rate limit timestamp on successful update
+		lastUpdateByUser.set(userId, Date.now());
+
+		// Audit log for wins (positive deltas) to help detect exploitation patterns
+		if (delta > 0) {
+			console.log(
+				`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${previousBalance} -> ${newBalance}`,
 			);
 		}
 

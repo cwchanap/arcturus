@@ -335,7 +335,13 @@ export function initBlackjackClient(): void {
 			applyBetConstraints();
 			renderSettingsForm();
 
-			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
+			// FR-015: Show LLM config overlay if user enabled LLM but hasn't configured API keys
+			if (newUseLlm && !llmConfigured) {
+				llmConfigOverlay.classList.remove('hidden');
+				statusEl.textContent = 'Settings saved. Please configure your API key to use AI features.';
+			} else {
+				statusEl.textContent = 'Settings saved. They will apply to new rounds.';
+			}
 		});
 	}
 
@@ -622,34 +628,33 @@ export function initBlackjackClient(): void {
 		}
 	}
 
-	// Render a single playing card (similar to PlayingCard.astro)
+	// Render a single playing card (matches PlayingCard.astro markup for consistency)
 	function renderPlayingCard(card: { rank: string; suit: string }): string {
 		const suitSymbol = getSuitSymbol(card.suit);
 		const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-		const colorClass = isRed ? 'card-red' : 'card-black';
+		const colorClass = isRed ? 'text-red-600' : 'text-gray-900';
 
+		// Markup structure matches src/components/PlayingCard.astro
 		return `
-			<div class="playing-card ${colorClass}">
-				<div class="playing-card-inner">
-					<div class="card-corner card-corner-top">
-						<span class="card-rank">${card.rank}</span>
-						<span class="card-suit-small">${suitSymbol}</span>
+			<div class="playing-card w-20 h-28 flex items-center justify-center">
+				<div class="w-full h-full p-2 flex flex-col">
+					<div class="text-xl font-bold ${colorClass}">${card.rank}</div>
+					<div class="flex-1 flex items-center justify-center text-4xl ${colorClass}">
+						${suitSymbol}
 					</div>
-					<span class="card-suit-center">${suitSymbol}</span>
-					<div class="card-corner card-corner-bottom">
-						<span class="card-rank">${card.rank}</span>
-						<span class="card-suit-small">${suitSymbol}</span>
-					</div>
+					<div class="text-xl font-bold text-right ${colorClass} rotate-180">${card.rank}</div>
 				</div>
 			</div>
 		`;
 	}
 
-	// Render a face-down card
+	// Render a face-down card (matches PlayingCard.astro faceDown variant)
 	function renderCardBack(): string {
 		return `
-			<div class="playing-card-back">
-				<span class="card-back-icon">🎴</span>
+			<div class="playing-card w-20 h-28 flex items-center justify-center">
+				<div class="absolute inset-1 bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
+					<div class="text-white text-4xl">🎴</div>
+				</div>
 			</div>
 		`;
 	}

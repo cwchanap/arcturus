@@ -210,18 +210,18 @@ export function initBlackjackClient(): void {
 	}
 
 	// Update AI Rival button state based on configuration
+	// Note: Button stays clickable even when unconfigured so users can click
+	// to see the overlay explaining how to configure API keys
 	function updateAiRivalButtonState() {
 		if (llmConfigured) {
-			btnAiRival.disabled = false;
-			btnAiRival.classList.remove('opacity-50', 'cursor-not-allowed');
+			btnAiRival.classList.remove('opacity-50');
 			if (aiRivalStatus) {
 				aiRivalStatus.textContent = 'AI advisor ready';
 				aiRivalStatus.classList.remove('text-slate-500');
 				aiRivalStatus.classList.add('text-green-400');
 			}
 		} else {
-			btnAiRival.disabled = true;
-			btnAiRival.classList.add('opacity-50', 'cursor-not-allowed');
+			btnAiRival.classList.add('opacity-50');
 			if (aiRivalStatus) {
 				aiRivalStatus.textContent = 'Configure API keys in profile to enable';
 				aiRivalStatus.classList.remove('text-green-400');
@@ -346,6 +346,9 @@ export function initBlackjackClient(): void {
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
 			llmUserEnabled = settings.useLLM;
+
+			// Update game instance bet limits so new rounds honor reset limits immediately
+			game.updateBetLimits(settings.minBet, settings.maxBet);
 
 			applyBetConstraints();
 			renderSettingsForm();
@@ -798,9 +801,22 @@ export function initBlackjackClient(): void {
 			} else {
 				const errorData = await response.json();
 				if (errorData.error === 'BALANCE_MISMATCH' && errorData.currentBalance !== undefined) {
-					// Server has a different balance - sync to it
-					serverSyncedBalance = errorData.currentBalance;
-					console.warn('Balance mismatch detected, synced to server balance:', serverSyncedBalance);
+					// Server has a different balance - MUST reset local state to server truth
+					// This prevents playing with inflated chips after a mismatch
+					const serverBalance = errorData.currentBalance as number;
+					serverSyncedBalance = serverBalance;
+
+					// Reset game balance to authoritative server value
+					// setBalance only works in betting phase, which is where we are after round ends
+					game.setBalance(serverBalance);
+
+					console.warn('Balance mismatch detected, reset to server balance:', serverBalance);
+
+					// Re-render to show corrected balance
+					renderGame();
+
+					// Notify user their balance was corrected
+					statusEl.textContent = `Balance corrected to ${serverBalance} chips (server sync).`;
 				}
 			}
 		} catch (error) {

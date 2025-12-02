@@ -96,6 +96,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	const { delta, gameType, previousBalance: clientPreviousBalance } = body;
+	// Note: body.maxBet is intentionally NOT used for validation.
+	// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
+	// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
+	// that apply uniformly regardless of what the client claims.
 
 	// Validate delta is a finite number
 	if (typeof delta !== 'number' || !Number.isFinite(delta)) {

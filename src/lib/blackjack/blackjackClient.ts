@@ -325,8 +325,29 @@ export function initBlackjackClient(): void {
 			if (newStartingChips !== previousStartingChips) {
 				const balanceUpdated = game.setBalance(newStartingChips);
 				if (balanceUpdated) {
-					// Update the synced balance tracker so chip sync doesn't revert it
-					serverSyncedBalance = newStartingChips;
+					// Sync the new balance to the server so it persists
+					// This prevents BALANCE_MISMATCH on the next round
+					const delta = newStartingChips - serverSyncedBalance;
+					fetch('/api/chips/update', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							previousBalance: serverSyncedBalance,
+							delta,
+							gameType: 'blackjack',
+						}),
+					})
+						.then((response) => {
+							if (response.ok) {
+								serverSyncedBalance = newStartingChips;
+							} else {
+								console.warn('Failed to sync starting chips to server');
+							}
+						})
+						.catch((error) => {
+							console.error('Error syncing starting chips:', error);
+						});
+
 					// Re-render to show updated balance
 					renderGame();
 				}

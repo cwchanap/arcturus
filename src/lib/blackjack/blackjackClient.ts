@@ -810,25 +810,49 @@ export function initBlackjackClient(): void {
 			const newBalance = game.getBalance();
 			// Delta is the net change from what the server knows about
 			const delta = newBalance - serverSyncedBalance;
-			const response = await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					previousBalance: serverSyncedBalance, // Use server-synced balance for optimistic locking
-					delta, // Server computes newBalance from its own previousBalance + delta
-					gameType: 'blackjack',
-					maxBet: settings.maxBet, // Send configured max bet so server can validate delta appropriately
-				}),
-			});
 
-			if (response.ok) {
-				// Update our server-synced balance tracker after successful sync
-				serverSyncedBalance = newBalance;
-			} else {
+			// Helper to perform the chip update request
+			const performChipUpdate = async (retryCount = 0): Promise<void> => {
+				const response = await fetch('/api/chips/update', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						previousBalance: serverSyncedBalance,
+						delta,
+						gameType: 'blackjack',
+						maxBet: settings.maxBet,
+					}),
+				});
+
+				if (response.ok) {
+					// Update our server-synced balance tracker after successful sync
+					serverSyncedBalance = newBalance;
+					if (retryCount > 0) {
+						statusEl.textContent = 'Balance synced successfully.';
+					}
+					return;
+				}
+
 				const errorData = await response.json();
 
-				// Handle any sync failure by reverting to last known server balance
-				// This prevents the UI from showing chips that don't exist in the database
+				// Special handling for RATE_LIMITED: retry after delay instead of reverting
+				if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
+					const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10) * 1000;
+					console.warn(
+						`Chip update rate limited, retrying in ${retryAfter}ms (attempt ${retryCount + 1})`,
+					);
+					statusEl.textContent = 'Syncing balance...';
+
+					// Keep the current balance and retry after the rate limit window
+					setTimeout(() => {
+						performChipUpdate(retryCount + 1).catch((err) => {
+							console.error('Retry failed:', err);
+						});
+					}, retryAfter + 100); // Add 100ms buffer
+					return;
+				}
+
+				// For other errors, handle by reverting to server state
 				if (errorData.currentBalance !== undefined) {
 					// Server provided its current balance - use it as authoritative truth
 					const serverBalance = errorData.currentBalance as number;
@@ -836,8 +860,8 @@ export function initBlackjackClient(): void {
 					game.setBalance(serverBalance);
 					renderGame();
 					statusEl.textContent = `Balance synced to ${serverBalance} chips.`;
-				} else {
-					// Server didn't provide balance - revert to last synced value
+				} else if (errorData.error !== 'RATE_LIMITED') {
+					// Only revert for non-rate-limit errors when no server balance provided
 					game.setBalance(serverSyncedBalance);
 					renderGame();
 				}
@@ -847,8 +871,9 @@ export function initBlackjackClient(): void {
 					console.warn('Balance mismatch detected, synced to server balance');
 					statusEl.textContent = 'Balance corrected (server sync).';
 				} else if (errorData.error === 'RATE_LIMITED') {
-					console.warn('Chip update rate limited');
-					statusEl.textContent = 'Update too fast. Balance will sync next round.';
+					// Max retries exceeded
+					console.error('Chip update rate limited, max retries exceeded');
+					statusEl.textContent = 'Sync delayed. Balance will update on next round.';
 				} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
 					console.error('Delta exceeded server limit:', errorData.message);
 					statusEl.textContent = 'Payout exceeded limit. Please try a smaller bet.';
@@ -856,7 +881,9 @@ export function initBlackjackClient(): void {
 					console.error('Chip update failed:', errorData.error, errorData.message);
 					statusEl.textContent = 'Balance sync failed. Will retry next round.';
 				}
-			}
+			};
+
+			await performChipUpdate();
 		} catch (error) {
 			// Network error or other failure - revert to last synced balance
 			console.error('Failed to update balance:', error);

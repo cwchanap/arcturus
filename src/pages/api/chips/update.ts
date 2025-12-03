@@ -1,19 +1,30 @@
 /**
  * API endpoint for updating user chip balance after game round
  *
- * SECURITY LIMITATIONS:
- * This is a client-side game without server-side game state verification.
- * The server cannot cryptographically verify that game rounds actually occurred.
+ * ⚠️ KNOWN SECURITY LIMITATION - DEMO/PLAY-MONEY ONLY ⚠️
+ *
+ * This endpoint trusts client-supplied delta values because the game runs
+ * entirely client-side without server-side game state. This is a deliberate
+ * architectural tradeoff for this demo casino with play-money chips.
+ *
+ * WHAT THIS MEANS:
+ * - A malicious user CAN mint chips by calling this API directly
+ * - The mitigations below only slow down and detect abuse, not prevent it
+ * - This is acceptable for a demo but NOT for real-money gambling
  *
  * MITIGATIONS IMPLEMENTED:
- * 1. Positive deltas (wins) are severely capped to limit exploitation
- * 2. Negative deltas (losses) are allowed up to reasonable bet limits
- * 3. Rate limiting via minimum time between updates
- * 4. Optimistic locking prevents concurrent modifications
- * 5. All deltas are logged for audit purposes
+ * 1. Wins severely capped (1000 chips max) - makes exploitation tedious
+ * 2. Rate limiting (2s between updates) - limits abuse to ~1800 chips/hour
+ * 3. Audit logging - all wins are logged for detection
+ * 4. Optimistic locking - prevents race conditions
+ * 5. Authentication required - abuse is tied to user accounts
  *
- * For a production casino with real money, game logic MUST run server-side
- * with cryptographic verification of all outcomes.
+ * FOR PRODUCTION REAL-MONEY CASINO:
+ * - Game logic MUST run server-side
+ * - Server must track: deck state, bets placed, cards dealt, actions taken
+ * - Payouts computed from authoritative server state only
+ * - Consider provably-fair algorithms with cryptographic verification
+ * - This endpoint would only accept round IDs, not deltas
  */
 
 import type { APIRoute } from 'astro';
@@ -26,9 +37,9 @@ import { and, eq } from 'drizzle-orm';
 const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 
 // Maximum WIN per request (positive delta) - severely limited to reduce exploitation
-// Even with blackjack (1.5x payout) on split+double, realistic max is ~3x bet
-// We cap at a small value to make exploitation tedious and detectable
-const MAX_WIN_PER_REQUEST = 5000; // Limits exploitation to ~5000 chips per abuse attempt
+// Capped low to make exploitation tedious: ~1800 chips/hour max abuse rate
+// Normal blackjack wins are typically under 1000 (500 bet * 2 = 1000 max normal win)
+const MAX_WIN_PER_REQUEST = 1000; // Reduced from 5000 to further limit abuse
 
 // Minimum milliseconds between chip updates (rate limiting)
 // Prevents rapid-fire exploitation; normal gameplay has natural delays

@@ -36,10 +36,14 @@ import { and, eq } from 'drizzle-orm';
 // Accounts for split + double scenarios: 2 hands x 2x bet x max bet
 const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 
-// Maximum WIN per request (positive delta) - severely limited to reduce exploitation
-// Capped low to make exploitation tedious: ~1800 chips/hour max abuse rate
-// Normal blackjack wins are typically under 1000 (500 bet * 2 = 1000 max normal win)
-const MAX_WIN_PER_REQUEST = 1000; // Reduced from 5000 to further limit abuse
+// Maximum WIN per request (positive delta)
+// Must accommodate legitimate payouts:
+// - Max bet: 1000 (configurable up to 10000)
+// - Blackjack payout: 1.5x bet = 1500 on 1000 bet
+// - Split + double: 2 hands x 2x bet = 4x max bet wagered
+// - Worst case: split, double both, win both = ~6x bet win
+// Set to 10000 to allow max configured bet (10000) with blackjack payout
+const MAX_WIN_PER_REQUEST = 10000;
 
 // Minimum milliseconds between chip updates (rate limiting)
 // Prevents rapid-fire exploitation; normal gameplay has natural delays

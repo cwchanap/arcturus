@@ -37,13 +37,13 @@ import { and, eq } from 'drizzle-orm';
 const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 
 // Maximum WIN per request (positive delta)
-// Must accommodate legitimate payouts:
-// - Max bet: 1000 (configurable up to 10000)
-// - Blackjack payout: 1.5x bet = 1500 on 1000 bet
+// Must accommodate legitimate payouts with max configurable bet (10000):
+// - Blackjack payout: 1.5x bet profit
 // - Split + double: 2 hands x 2x bet = 4x max bet wagered
-// - Worst case: split, double both, win both = ~6x bet win
-// Set to 10000 to allow max configured bet (10000) with blackjack payout
-const MAX_WIN_PER_REQUEST = 10000;
+// - Best case: split pair of aces, double both, win both with blackjack
+//   = 4 x 10000 wagered, each hand wins 1.5x = 60000 profit
+// Set to 60000 to cover all legitimate scenarios
+const MAX_WIN_PER_REQUEST = 60000;
 
 // Minimum milliseconds between chip updates (rate limiting)
 // Prevents rapid-fire exploitation; normal gameplay has natural delays

@@ -826,27 +826,43 @@ export function initBlackjackClient(): void {
 				serverSyncedBalance = newBalance;
 			} else {
 				const errorData = await response.json();
-				if (errorData.error === 'BALANCE_MISMATCH' && errorData.currentBalance !== undefined) {
-					// Server has a different balance - MUST reset local state to server truth
-					// This prevents playing with inflated chips after a mismatch
+
+				// Handle any sync failure by reverting to last known server balance
+				// This prevents the UI from showing chips that don't exist in the database
+				if (errorData.currentBalance !== undefined) {
+					// Server provided its current balance - use it as authoritative truth
 					const serverBalance = errorData.currentBalance as number;
 					serverSyncedBalance = serverBalance;
-
-					// Reset game balance to authoritative server value
-					// setBalance only works in betting phase, which is where we are after round ends
 					game.setBalance(serverBalance);
-
-					console.warn('Balance mismatch detected, reset to server balance:', serverBalance);
-
-					// Re-render to show corrected balance
 					renderGame();
+					statusEl.textContent = `Balance synced to ${serverBalance} chips.`;
+				} else {
+					// Server didn't provide balance - revert to last synced value
+					game.setBalance(serverSyncedBalance);
+					renderGame();
+				}
 
-					// Notify user their balance was corrected
-					statusEl.textContent = `Balance corrected to ${serverBalance} chips (server sync).`;
+				// Show appropriate error message to user
+				if (errorData.error === 'BALANCE_MISMATCH') {
+					console.warn('Balance mismatch detected, synced to server balance');
+					statusEl.textContent = 'Balance corrected (server sync).';
+				} else if (errorData.error === 'RATE_LIMITED') {
+					console.warn('Chip update rate limited');
+					statusEl.textContent = 'Update too fast. Balance will sync next round.';
+				} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
+					console.error('Delta exceeded server limit:', errorData.message);
+					statusEl.textContent = 'Payout exceeded limit. Please try a smaller bet.';
+				} else {
+					console.error('Chip update failed:', errorData.error, errorData.message);
+					statusEl.textContent = 'Balance sync failed. Will retry next round.';
 				}
 			}
 		} catch (error) {
+			// Network error or other failure - revert to last synced balance
 			console.error('Failed to update balance:', error);
+			game.setBalance(serverSyncedBalance);
+			renderGame();
+			statusEl.textContent = 'Network error. Balance reverted.';
 		}
 
 		// Show new round button

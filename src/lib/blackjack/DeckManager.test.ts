@@ -98,35 +98,50 @@ describe('DeckManager', () => {
 			expect(deckManager.needsReshuffle()).toBe(false);
 		});
 
-		it('should automatically reshuffle when dealing below threshold', () => {
-			// Deal cards to just above threshold
+		it('should not auto-reshuffle mid-hand when below threshold', () => {
+			// Deal cards to go below reshuffle threshold
 			const cardsToDeal = 52 - RESHUFFLE_THRESHOLD + 1;
 			for (let i = 0; i < cardsToDeal; i++) {
 				deckManager.deal();
 			}
 
-			// Should trigger reshuffle on next deal
+			// We're below threshold now
+			expect(deckManager.needsReshuffle()).toBe(true);
 			const remainingBefore = deckManager.remainingCards();
-			expect(remainingBefore).toBeLessThan(RESHUFFLE_THRESHOLD);
 
+			// Deal one more card - should NOT auto-reshuffle
 			deckManager.deal();
 
-			// After automatic reshuffle, should have 51 cards (52 - 1 dealt)
-			expect(deckManager.remainingCards()).toBe(51);
+			// Deck should have one less card, not have been reset
+			expect(deckManager.remainingCards()).toBe(remainingBefore - 1);
 		});
 
-		it('should reset dealt card count after reshuffle', () => {
+		it('should provide reshuffleIfNeeded for explicit reshuffle control', () => {
 			// Deal cards to go below reshuffle threshold
-			const cardsToDeal = 52 - RESHUFFLE_THRESHOLD + 1; // This puts us at 14 remaining
+			const cardsToDeal = 52 - RESHUFFLE_THRESHOLD + 1;
 			for (let i = 0; i < cardsToDeal; i++) {
 				deckManager.deal();
 			}
-			expect(deckManager.dealtCardCount()).toBe(cardsToDeal);
+			expect(deckManager.needsReshuffle()).toBe(true);
 
-			// Next deal should trigger auto-reshuffle (because we're below threshold)
-			deckManager.deal();
-			// After reshuffle, dealt count should be 1 (just the card dealt after reshuffle)
-			expect(deckManager.dealtCardCount()).toBe(1);
+			// Caller should check needsReshuffle() and call reshuffleIfNeeded() between rounds
+			const didReshuffle = deckManager.reshuffleIfNeeded();
+			expect(didReshuffle).toBe(true);
+			expect(deckManager.needsReshuffle()).toBe(false);
+			expect(deckManager.remainingCards()).toBe(52);
+		});
+
+		it('should handle edge case of dealing from completely empty deck', () => {
+			// Deal all 52 cards
+			for (let i = 0; i < 52; i++) {
+				deckManager.deal();
+			}
+
+			// Deck is now empty - deal should fallback to reset (safety net)
+			const card = deckManager.deal();
+			expect(card).toBeDefined();
+			expect(card.rank).toBeDefined();
+			expect(deckManager.remainingCards()).toBe(51); // Reset happened, then dealt 1
 		});
 	});
 

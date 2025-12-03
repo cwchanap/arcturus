@@ -38,21 +38,32 @@ export class DeckManager {
 
 	/**
 	 * Draw a card from the deck
-	 * Automatically reshuffles if threshold reached
+	 * Note: Does NOT auto-reshuffle to avoid reshuffling mid-hand
+	 * Call reshuffleIfNeeded() at the start of each round instead
 	 */
 	public deal(): Card {
-		// Check if reshuffle needed
-		if (this.needsReshuffle()) {
-			this.reset();
-		}
-
 		const card = this.deck.pop();
 		if (!card) {
-			throw new Error('Deck is empty!');
+			// This should never happen if reshuffleIfNeeded() is called at round start
+			// But handle gracefully by forcing a reshuffle
+			this.reset();
+			return this.deal();
 		}
 
 		this.dealtCards.push(card);
 		return card;
+	}
+
+	/**
+	 * Reshuffle deck if below threshold
+	 * Should be called at the START of each round, never mid-hand
+	 */
+	public reshuffleIfNeeded(): boolean {
+		if (this.needsReshuffle()) {
+			this.reset();
+			return true;
+		}
+		return false;
 	}
 
 	/**

@@ -422,8 +422,12 @@ export class BlackjackGame {
 
 	/**
 	 * Start a new round (resets to betting phase)
+	 * Also reshuffles deck if below threshold (never mid-hand)
 	 */
 	public startNewRound(): void {
+		// Reshuffle at round start if needed (FR-006: never reshuffle mid-hand)
+		this.deck.reshuffleIfNeeded();
+
 		this.state.phase = 'betting';
 		this.state.playerHands = [];
 		this.state.dealerHand = { cards: [], bet: 0, isDealer: true };

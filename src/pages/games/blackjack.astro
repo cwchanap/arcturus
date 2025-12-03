@@ -155,12 +155,15 @@ const initialBalance = user.chipBalance ?? 1000;
 								<PokerChip value={200} color="black" />
 							</button>
 						</div>
-						<button id="btn-deal" class="w-full btn-gold py-4 rounded-lg font-bold text-lg">
+						<button
+							id="btn-deal"
+							class="w-full btn-gold py-4 rounded-lg font-bold text-lg"
+							aria-label="Deal"
+						>
 							DEAL CARDS
 						</button>
 					</div>
 				</div>
-
 				<!-- Game Controls (Hidden Initially) -->
 				<div id="game-controls" class="hidden">
 					<h3 class="text-lg font-bold text-white mb-4 text-center">Your Move</h3>
@@ -184,6 +187,7 @@ const initialBalance = user.chipBalance ?? 1000;
 								id="btn-double"
 								class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
 								title="Double your bet and receive one card"
+								aria-label="Double Down"
 							>
 								<span class="text-xl">💰</span>
 								<span>DOUBLE</span>

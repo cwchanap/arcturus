@@ -294,6 +294,18 @@ describe('Blackjack GameSettingsManager', () => {
 			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
 		});
 
+		test('caps maxBet at ABSOLUTE_MAX_BET (10000)', () => {
+			manager.updateSettings({ maxBet: 50000 });
+			const settings = manager.getSettings();
+			expect(settings.maxBet).toBe(10000); // ABSOLUTE_MAX_BET from constants
+		});
+
+		test('allows maxBet up to ABSOLUTE_MAX_BET', () => {
+			manager.updateSettings({ maxBet: 10000 });
+			const settings = manager.getSettings();
+			expect(settings.maxBet).toBe(10000);
+		});
+
 		test('rejects negative startingChips and uses default', () => {
 			manager.updateSettings({ startingChips: -500 });
 			const settings = manager.getSettings();

@@ -3,7 +3,7 @@
  */
 
 import type { BlackjackSettings } from './types';
-import { DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_SETTINGS, ABSOLUTE_MAX_BET } from './constants';
 
 const SETTINGS_KEY_PREFIX = 'arcturus:blackjack:settings:';
 
@@ -26,6 +26,10 @@ function validateSettings(settings: Partial<BlackjackSettings>): Partial<Blackja
 		(typeof validated.maxBet !== 'number' || validated.maxBet <= 0)
 	) {
 		validated.maxBet = DEFAULT_SETTINGS.maxBet;
+	}
+	// Enforce absolute max bet cap (aligns with server API payout limits)
+	if (validated.maxBet !== undefined && validated.maxBet > ABSOLUTE_MAX_BET) {
+		validated.maxBet = ABSOLUTE_MAX_BET;
 	}
 	if (
 		validated.startingChips !== undefined &&

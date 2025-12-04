@@ -9,6 +9,12 @@ export const DEFAULT_MIN_BET = 10;
 export const DEFAULT_MAX_BET = 1000;
 export const DEFAULT_STARTING_CHIPS = 1000;
 
+// Absolute maximum bet (enforced by server API payout caps)
+// This cap ensures legitimate payouts (split + double + blackjack = 6x bet max)
+// never exceed the server's MAX_WIN_PER_REQUEST limit.
+// Changing this requires updating /api/chips/update.ts limits as well.
+export const ABSOLUTE_MAX_BET = 10000;
+
 // Payout multipliers
 export const BLACKJACK_PAYOUT = 1.5; // 3:2 payout
 export const WIN_PAYOUT = 1.0; // 1:1 payout

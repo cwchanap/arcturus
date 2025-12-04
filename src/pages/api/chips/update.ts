@@ -34,6 +34,7 @@ import { and, eq } from 'drizzle-orm';
 
 // Maximum LOSS per request (negative delta) - allows normal gameplay
 // Accounts for split + double scenarios: 2 hands x 2x bet x max bet
+// IMPORTANT: Max bet is capped at 10,000 by ABSOLUTE_MAX_BET in blackjack/constants.ts
 const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 
 // Maximum WIN per request (positive delta)
@@ -42,7 +43,8 @@ const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
 // - Split + double: 2 hands x 2x bet = 4x max bet wagered
 // - Best case: split pair of aces, double both, win both with blackjack
 //   = 4 x 10000 wagered, each hand wins 1.5x = 60000 profit
-// Set to 60000 to cover all legitimate scenarios
+// IMPORTANT: If ABSOLUTE_MAX_BET in blackjack/constants.ts changes,
+// update this value accordingly: MAX_WIN = 6 * ABSOLUTE_MAX_BET
 const MAX_WIN_PER_REQUEST = 60000;
 
 // Minimum milliseconds between chip updates (rate limiting)

@@ -389,6 +389,56 @@ export class BlackjackGame {
 	}
 
 	/**
+	 * Get detailed availability info for double-down and split actions.
+	 * Returns reason why an action is unavailable for tooltip display.
+	 */
+	public getActionAvailability(): {
+		doubleDown: { available: boolean; reason?: string };
+		split: { available: boolean; reason?: string };
+	} {
+		const result = {
+			doubleDown: { available: false, reason: undefined as string | undefined },
+			split: { available: false, reason: undefined as string | undefined },
+		};
+
+		if (this.state.phase !== 'player-turn') {
+			result.doubleDown.reason = 'Not your turn';
+			result.split.reason = 'Not your turn';
+			return result;
+		}
+
+		const activeHand = this.state.playerHands[this.state.activeHandIndex];
+		const hasEnoughChips = activeHand.bet <= this.state.playerBalance;
+
+		// Check double-down availability
+		if (activeHand.cards.length !== 2) {
+			result.doubleDown.reason = 'Only available on first two cards';
+		} else {
+			const handValue = calculateHandValue(activeHand.cards);
+			if (handValue.value < 9 || handValue.value > 11) {
+				result.doubleDown.reason = 'Only available on hands totaling 9-11';
+			} else if (!hasEnoughChips) {
+				result.doubleDown.reason = `Not enough chips (need $${activeHand.bet} more)`;
+			} else {
+				result.doubleDown.available = true;
+			}
+		}
+
+		// Check split availability
+		if (activeHand.cards.length !== 2) {
+			result.split.reason = 'Only available on first two cards';
+		} else if (activeHand.cards[0].rank !== activeHand.cards[1].rank) {
+			result.split.reason = 'Only available on matching pairs';
+		} else if (!hasEnoughChips) {
+			result.split.reason = `Not enough chips (need $${activeHand.bet} more)`;
+		} else {
+			result.split.available = true;
+		}
+
+		return result;
+	}
+
+	/**
 	 * Get current balance
 	 */
 	public getBalance(): number {

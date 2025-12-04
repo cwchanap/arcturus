@@ -1,5 +1,6 @@
 import { BlackjackGame } from './BlackjackGame';
 import { GameSettingsManager } from './GameSettingsManager';
+import { MAX_CHIP_SYNC_DELTA } from './constants';
 import {
 	getBlackjackAdvice,
 	getRoundCommentary,
@@ -323,11 +324,24 @@ export function initBlackjackClient(): void {
 
 			// Apply starting chips change if modified and currently in betting phase
 			if (newStartingChips !== previousStartingChips) {
+				const delta = newStartingChips - serverSyncedBalance;
+
+				// Check if delta exceeds server's allowed range
+				// Server caps positive deltas at MAX_CHIP_SYNC_DELTA (60000)
+				if (delta > MAX_CHIP_SYNC_DELTA) {
+					const maxAllowed = serverSyncedBalance + MAX_CHIP_SYNC_DELTA;
+					statusEl.textContent = `Starting chips increase too large. Maximum allowed: $${maxAllowed.toLocaleString()}`;
+					// Revert the settings change
+					settingsManager.updateSettings({ startingChips: previousStartingChips });
+					settings = settingsManager.getSettings();
+					renderSettingsForm();
+					return;
+				}
+
 				const balanceUpdated = game.setBalance(newStartingChips);
 				if (balanceUpdated) {
 					// Sync the new balance to the server so it persists
 					// This prevents BALANCE_MISMATCH on the next round
-					const delta = newStartingChips - serverSyncedBalance;
 					fetch('/api/chips/update', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
@@ -337,15 +351,32 @@ export function initBlackjackClient(): void {
 							gameType: 'blackjack',
 						}),
 					})
-						.then((response) => {
+						.then(async (response) => {
 							if (response.ok) {
 								serverSyncedBalance = newStartingChips;
 							} else {
-								console.warn('Failed to sync starting chips to server');
+								// Server rejected the update - revert local state
+								const errorData = await response.json().catch(() => ({}));
+								console.warn('Failed to sync starting chips to server:', errorData);
+								// Revert to server's balance
+								game.setBalance(serverSyncedBalance);
+								settingsManager.updateSettings({ startingChips: serverSyncedBalance });
+								settings = settingsManager.getSettings();
+								renderGame();
+								renderSettingsForm();
+								statusEl.textContent =
+									errorData.message || 'Failed to save starting chips. Please try a smaller value.';
 							}
 						})
 						.catch((error) => {
 							console.error('Error syncing starting chips:', error);
+							// Revert to server's balance on network error
+							game.setBalance(serverSyncedBalance);
+							settingsManager.updateSettings({ startingChips: serverSyncedBalance });
+							settings = settingsManager.getSettings();
+							renderGame();
+							renderSettingsForm();
+							statusEl.textContent = 'Network error saving starting chips. Please try again.';
 						});
 
 					// Re-render to show updated balance
@@ -755,12 +786,28 @@ export function initBlackjackClient(): void {
 		// Update balance
 		balanceDisplay.textContent = `$${game.getBalance().toLocaleString()}`;
 
-		// Update button states
+		// Update button states with dynamic tooltips
 		const actions = game.getAvailableActions();
+		const actionInfo = game.getActionAvailability();
+
 		btnHit.disabled = !actions.includes('hit');
 		btnStand.disabled = !actions.includes('stand');
+
+		// Double-down button with explanatory tooltip
 		btnDouble.disabled = !actions.includes('double-down');
+		if (actionInfo.doubleDown.available) {
+			btnDouble.title = 'Double your bet and receive one card';
+		} else if (actionInfo.doubleDown.reason) {
+			btnDouble.title = actionInfo.doubleDown.reason;
+		}
+
+		// Split button with explanatory tooltip
 		btnSplit.disabled = !actions.includes('split');
+		if (actionInfo.split.available) {
+			btnSplit.title = 'Split your pair into two hands';
+		} else if (actionInfo.split.reason) {
+			btnSplit.title = actionInfo.split.reason;
+		}
 	}
 
 	// Handle round completion

@@ -15,6 +15,11 @@ export const DEFAULT_STARTING_CHIPS = 1000;
 // Changing this requires updating /api/chips/update.ts limits as well.
 export const ABSOLUTE_MAX_BET = 10000;
 
+// Maximum positive chip delta allowed per API request
+// Must match MAX_WIN_PER_REQUEST in /api/chips/update.ts
+// Used to validate starting chip changes before sending to server
+export const MAX_CHIP_SYNC_DELTA = 60000;
+
 // Payout multipliers
 export const BLACKJACK_PAYOUT = 1.5; // 3:2 payout
 export const WIN_PAYOUT = 1.0; // 1:1 payout

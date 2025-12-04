@@ -52,3 +52,11 @@ export interface HandValue {
 	isSoft: boolean;
 	isBust: boolean;
 }
+
+/**
+ * Detailed availability info for an action, including reason if unavailable
+ */
+export interface ActionAvailability {
+	available: boolean;
+	reason?: string;
+}

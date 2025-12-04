@@ -85,10 +85,19 @@ Make your recommendation now:`;
 
 /**
  * Call OpenAI API
+ * @param systemMessage - Optional system message. Defaults to JSON-focused strategy advice.
  */
-async function callOpenAI(prompt: string, model: string, apiKey: string): Promise<string> {
+async function callOpenAI(
+	prompt: string,
+	model: string,
+	apiKey: string,
+	systemMessage?: string,
+): Promise<string> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+
+	const defaultSystem =
+		'You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.';
 
 	try {
 		const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -102,8 +111,7 @@ async function callOpenAI(prompt: string, model: string, apiKey: string): Promis
 				messages: [
 					{
 						role: 'system',
-						content:
-							'You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.',
+						content: systemMessage ?? defaultSystem,
 					},
 					{ role: 'user', content: prompt },
 				],
@@ -131,10 +139,20 @@ async function callOpenAI(prompt: string, model: string, apiKey: string): Promis
 
 /**
  * Call Gemini API
+ * @param systemMessage - Optional system message. Defaults to JSON-focused strategy advice.
  */
-async function callGemini(prompt: string, model: string, apiKey: string): Promise<string> {
+async function callGemini(
+	prompt: string,
+	model: string,
+	apiKey: string,
+	systemMessage?: string,
+): Promise<string> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+
+	const defaultSystem =
+		'You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.';
+	const systemPrefix = systemMessage ?? defaultSystem;
 
 	try {
 		const response = await fetch(
@@ -149,7 +167,7 @@ async function callGemini(prompt: string, model: string, apiKey: string): Promis
 							role: 'user',
 							parts: [
 								{
-									text: `You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.\n\n${prompt}`,
+									text: `${systemPrefix}\n\n${prompt}`,
 								},
 							],
 						},
@@ -334,9 +352,13 @@ export async function getBlackjackAdvice(
 
 /**
  * Get round outcome commentary from LLM
+ * @param playerHands - All player hands (supports split scenarios)
+ * @param dealerHand - The dealer's hand
+ * @param outcome - The overall round outcome
+ * @param llmSettings - LLM configuration (null for default commentary)
  */
 export async function getRoundCommentary(
-	playerHand: Hand,
+	playerHands: Hand[],
 	dealerHand: Hand,
 	outcome: 'win' | 'loss' | 'push' | 'blackjack',
 	llmSettings: LLMSettings | null,
@@ -353,29 +375,56 @@ export async function getRoundCommentary(
 		return defaultComments[outcome];
 	}
 
-	const playerValue = calculateHandValue(playerHand.cards);
 	const dealerValue = calculateHandValue(dealerHand.cards);
 
-	const prompt = `You are a witty casino dealer commenting on a Blackjack hand.
+	// Build hand summary for all player hands (supports split scenarios)
+	const isSplit = playerHands.length > 1;
+	let handsDescription: string;
 
-Result: Player ${outcome.toUpperCase()}
-Player's Hand: ${formatHand(playerHand.cards)} (${playerValue.value})
+	if (isSplit) {
+		// For split hands, describe each hand
+		const handDescriptions = playerHands.map((hand, i) => {
+			const value = calculateHandValue(hand.cards);
+			return `Hand ${i + 1}: ${formatHand(hand.cards)} (${value.value})`;
+		});
+		handsDescription = `Player split into ${playerHands.length} hands:\n${handDescriptions.join('\n')}`;
+	} else {
+		const playerValue = calculateHandValue(playerHands[0].cards);
+		handsDescription = `Player's Hand: ${formatHand(playerHands[0].cards)} (${playerValue.value})`;
+	}
+
+	const prompt = `${handsDescription}
 Dealer's Hand: ${formatHand(dealerHand.cards)} (${dealerValue.value})
 
+Result: Player ${outcome.toUpperCase()}${isSplit ? ' overall' : ''}
+
 Give a brief, entertaining one-liner comment (max 15 words). Be supportive but realistic.
-Respond with ONLY the comment text, no JSON.`;
+Respond with ONLY the comment text, no quotes or JSON.`;
+
+	// Use a plain-text system message for commentary (no JSON requirement)
+	const commentarySystem =
+		'You are a witty casino dealer commenting on Blackjack hands. Respond with only plain text, no JSON.';
 
 	try {
 		let response = '';
 
 		if (llmSettings.provider === 'openai') {
-			response = await callOpenAI(prompt, llmSettings.model, llmSettings.apiKey);
+			response = await callOpenAI(prompt, llmSettings.model, llmSettings.apiKey, commentarySystem);
 		} else {
-			response = await callGemini(prompt, llmSettings.model, llmSettings.apiKey);
+			response = await callGemini(prompt, llmSettings.model, llmSettings.apiKey, commentarySystem);
 		}
 
-		// Clean up response - remove quotes if present
-		const cleaned = response.trim().replace(/^["']|["']$/g, '');
+		// Clean up response - remove quotes and any JSON artifacts if present
+		let cleaned = response.trim().replace(/^["']|["']$/g, '');
+		// Strip any JSON wrapper that might have slipped through
+		if (cleaned.startsWith('{') && cleaned.endsWith('}')) {
+			try {
+				const parsed = JSON.parse(cleaned);
+				cleaned = parsed.comment || parsed.text || parsed.message || defaultComments[outcome];
+			} catch {
+				// Not valid JSON, use as-is
+			}
+		}
 		return cleaned || defaultComments[outcome];
 	} catch (_error) {
 		return defaultComments[outcome];

@@ -557,7 +557,7 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('10', 'hearts'), card('9', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('7', 'diamonds')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'win', null);
+			const comment = await getRoundCommentary([player], dealer, 'win', null);
 
 			expect(comment).toContain('win');
 		});
@@ -566,7 +566,7 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('10', 'hearts'), card('5', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('8', 'diamonds')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'loss', null);
+			const comment = await getRoundCommentary([player], dealer, 'loss', null);
 
 			expect(comment).toBeDefined();
 			expect(comment.length).toBeGreaterThan(0);
@@ -576,7 +576,7 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('10', 'hearts'), card('8', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('8', 'diamonds')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'push', null);
+			const comment = await getRoundCommentary([player], dealer, 'push', null);
 
 			expect(comment).toContain('push');
 		});
@@ -585,7 +585,7 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('A', 'hearts'), card('K', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('7', 'diamonds')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'blackjack', null);
+			const comment = await getRoundCommentary([player], dealer, 'blackjack', null);
 
 			expect(comment.toLowerCase()).toContain('blackjack');
 		});
@@ -612,7 +612,7 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('10', 'hearts'), card('9', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('6', 'diamonds'), card('7', 'hearts')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'win', llmSettings);
+			const comment = await getRoundCommentary([player], dealer, 'win', llmSettings);
 
 			expect(comment).toContain('perfectly');
 		});
@@ -631,11 +631,57 @@ describe('llmBlackjackStrategy', () => {
 			const player = hand([card('10', 'hearts'), card('5', 'spades')]);
 			const dealer = dealerHand([card('10', 'clubs'), card('8', 'diamonds')]);
 
-			const comment = await getRoundCommentary(player, dealer, 'loss', llmSettings);
+			const comment = await getRoundCommentary([player], dealer, 'loss', llmSettings);
 
 			// Should return default comment, not throw
 			expect(comment).toBeDefined();
 			expect(comment.length).toBeGreaterThan(0);
+		});
+
+		test('handles split hands with multiple player hands', async () => {
+			const player1 = hand([card('8', 'hearts'), card('10', 'spades')]); // 18
+			const player2 = hand([card('8', 'diamonds'), card('K', 'clubs')]); // 18
+			const dealer = dealerHand([card('10', 'clubs'), card('7', 'diamonds')]); // 17
+
+			// Without LLM, should return default comment
+			const comment = await getRoundCommentary([player1, player2], dealer, 'win', null);
+
+			expect(comment).toContain('win');
+		});
+
+		test('describes split hands correctly in LLM prompt', async () => {
+			let capturedPrompt = '';
+			mockFetch(async (url: string, options: RequestInit) => {
+				if (url.includes('openai')) {
+					const body = JSON.parse(options.body as string);
+					capturedPrompt = body.messages[1].content;
+					return new Response(
+						JSON.stringify({
+							choices: [{ message: { content: 'Nice split strategy!' } }],
+						}),
+						{ status: 200 },
+					);
+				}
+				throw new Error('Unexpected URL');
+			});
+
+			const llmSettings: LLMSettings = {
+				provider: 'openai',
+				apiKey: 'test-key',
+				model: 'gpt-4o',
+			};
+
+			const player1 = hand([card('8', 'hearts'), card('10', 'spades')]); // 18
+			const player2 = hand([card('8', 'diamonds'), card('3', 'clubs')]); // 11
+
+			const dealer = dealerHand([card('10', 'clubs'), card('7', 'diamonds')]);
+
+			await getRoundCommentary([player1, player2], dealer, 'win', llmSettings);
+
+			// Verify prompt describes both hands
+			expect(capturedPrompt).toContain('split');
+			expect(capturedPrompt).toContain('Hand 1');
+			expect(capturedPrompt).toContain('Hand 2');
 		});
 	});
 });

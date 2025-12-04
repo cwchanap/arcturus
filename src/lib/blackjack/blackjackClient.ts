@@ -783,10 +783,11 @@ export function initBlackjackClient(): void {
 			try {
 				// For split hands, use the overall result for commentary
 				const overallResult = getOverallResult(outcomes);
-				const playerHand = state.playerHands[0];
+				// Pass all player hands so commentary can describe split scenarios accurately
+				const playerHands = state.playerHands;
 				const dealerHand = state.dealerHand;
 				const commentary = await getRoundCommentary(
-					playerHand,
+					playerHands,
 					dealerHand,
 					overallResult,
 					llmSettings,

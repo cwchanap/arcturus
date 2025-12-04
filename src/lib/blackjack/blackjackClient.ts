@@ -735,13 +735,16 @@ export function initBlackjackClient(): void {
 								<div class="hand-label">Hand ${index + 1}</div>
 								<div class="hand-cards">${cardsHTML}</div>
 								<div class="hand-value">${getHandValueDisplay(hand.cards)}</div>
+								<div class="hand-bet">$${hand.bet}</div>
 							</div>
 						`;
 					})
 					.join('');
 				playerCardsEl.innerHTML = handsHTML;
 				playerValueEl.textContent = '';
-				currentBetEl.textContent = `Bet per hand: $${state.playerHands[0].bet}`;
+				// Show active hand's bet (may differ after double-down)
+				const activeHand = state.playerHands[state.activeHandIndex];
+				currentBetEl.textContent = `Hand ${state.activeHandIndex + 1} Bet: $${activeHand.bet}`;
 			} else {
 				// Single hand - normal display
 				const playerHand = state.playerHands[0];

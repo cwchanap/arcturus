@@ -301,7 +301,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 		// Audit log for wins (positive deltas) to help detect exploitation patterns
 		if (delta > 0) {
-			console.log(
+			console.warn(
 				`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${previousBalance} -> ${newBalance}`,
 			);
 		}

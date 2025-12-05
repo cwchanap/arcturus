@@ -728,4 +728,56 @@ describe('BlackjackGame', () => {
 			}
 		});
 	});
+
+	describe('getState vs getDeepState', () => {
+		it('getState returns shallow copy - nested mutation affects internal state', () => {
+			game.placeBet(100);
+			game.deal();
+
+			const shallowState = game.getState();
+			const originalCardCount = shallowState.dealerHand.cards.length;
+
+			// Mutate the nested array (this is bad practice, but we're testing behavior)
+			(shallowState.dealerHand.cards as unknown[]).push({ suit: 'hearts', rank: 'A', value: 11 });
+
+			// Internal state should be affected (shallow copy shares nested refs)
+			const internalState = game.getState();
+			expect(internalState.dealerHand.cards.length).toBe(originalCardCount + 1);
+		});
+
+		it('getDeepState returns deep copy - nested mutation does NOT affect internal state', () => {
+			game.placeBet(100);
+			game.deal();
+
+			const deepState = game.getDeepState();
+			const originalCardCount = deepState.dealerHand.cards.length;
+
+			// Mutate the deep copy
+			deepState.dealerHand.cards.push({ suit: 'hearts', rank: 'A', value: 11 });
+
+			// Internal state should NOT be affected (deep copy is independent)
+			const internalState = game.getState();
+			expect(internalState.dealerHand.cards.length).toBe(originalCardCount);
+		});
+
+		it('getDeepState returns identical data structure', () => {
+			game.placeBet(100);
+			game.deal();
+
+			const shallowState = game.getState();
+			const deepState = game.getDeepState();
+
+			// Values should be equal
+			expect(deepState.phase).toBe(shallowState.phase);
+			expect(deepState.playerBalance).toBe(shallowState.playerBalance);
+			expect(deepState.pot).toBe(shallowState.pot);
+			expect(deepState.dealerHand.cards.length).toBe(shallowState.dealerHand.cards.length);
+			expect(deepState.playerHands.length).toBe(shallowState.playerHands.length);
+
+			// But references should be different
+			expect(deepState.dealerHand).not.toBe(shallowState.dealerHand);
+			expect(deepState.dealerHand.cards).not.toBe(shallowState.dealerHand.cards);
+			expect(deepState.playerHands).not.toBe(shallowState.playerHands);
+		});
+	});
 });

@@ -138,7 +138,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 			}
 
 			const valueText = await page.locator('#player-value').innerText();
-			if (/^10$/.test(valueText)) {
+			if (/10$/.test(valueText) || /Soft 10/i.test(valueText)) {
 				found = true;
 				break;
 			}

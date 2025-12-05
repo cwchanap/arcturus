@@ -32,9 +32,27 @@ export class BlackjackGame {
 
 	/**
 	 * Get current game state (read-only)
+	 *
+	 * Note: This returns a *shallow* copy of the top-level state (the spread
+	 * operator is used). Nested objects such as `playerHands`, `dealerHand`, and
+	 * `cards` arrays still reference the internal state and may be mutated by
+	 * callers. Consumers should treat nested data as read-only and must not
+	 * modify it. If you require a fully independent deep snapshot, use
+	 * {@link getDeepState} instead.
 	 */
 	public getState(): Readonly<BlackjackGameState> {
 		return { ...this.state };
+	}
+
+	/**
+	 * Get a deep-cloned copy of the current game state.
+	 *
+	 * Use this when you need a fully independent snapshot that can be safely
+	 * mutated without affecting the internal game state. Uses `structuredClone`
+	 * for deep copying.
+	 */
+	public getDeepState(): BlackjackGameState {
+		return structuredClone(this.state);
 	}
 
 	/**

@@ -158,23 +158,18 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 	});
 
 	// T052: insufficient chips disables Double/Split buttons
-	test('Double Down and Split disabled when chips are insufficient', async ({ page }) => {
+	test('Double Down disabled when chips are insufficient', async ({ page }) => {
 		await gotoBlackjack(page);
 
 		// Read current balance from DOM to compute delta
 		const currentBalanceText = await page.locator('#player-balance').innerText();
-		const currentBalance = parseBalance(currentBalanceText);
+		let currentBalance = parseBalance(currentBalanceText);
 		const targetBalance = 50;
+		const maxAllowedDelta = 2000; // 4 * 500 (DEFAULT_MAX_BET)
 
-		// Only update if we need to reduce balance
-		if (currentBalance > targetBalance) {
-			// Compute delta to reach target (negative value to reduce)
-			// Server limits delta to 4 * DEFAULT_MAX_BET (4 * 500 = 2000)
-			// If delta exceeds limit, we may need multiple calls or accept partial reduction
+		// Loop until we reach target balance (delta clamping may require multiple calls)
+		while (currentBalance > targetBalance) {
 			const delta = targetBalance - currentBalance;
-			const maxAllowedDelta = 2000; // 4 * 500 (DEFAULT_MAX_BET)
-
-			// Clamp delta to allowed range (for large balances, we reduce incrementally)
 			const clampedDelta = Math.max(delta, -maxAllowedDelta);
 
 			await page.evaluate(
@@ -191,21 +186,20 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 				},
 				{ delta: clampedDelta, previousBalance: currentBalance },
 			);
+
+			await page.reload({ waitUntil: 'networkidle' });
+			const balanceText = await page.locator('#player-balance').innerText();
+			currentBalance = parseBalance(balanceText);
 		}
 
-		await page.reload({ waitUntil: 'networkidle' });
+		expect(currentBalance).toBeLessThanOrEqual(targetBalance);
 
-		const balanceText = await page.locator('#player-balance').innerText();
-		const finalBalance = parseBalance(balanceText);
-		// Balance should be reduced (may not hit exact target if delta was clamped)
-		expect(finalBalance).toBeLessThanOrEqual(currentBalance);
+		// Bet all remaining chips
+		await dealNewHand(page, currentBalance);
 
-		await dealNewHand(page, 50);
-
+		// Double Down should be disabled (requires additional bet amount, but balance is 0)
+		// Note: Split button only appears when player has a pair, so we only test Double Down
 		const doubleButton = page.getByRole('button', { name: 'Double Down' });
-		const splitButton = page.getByRole('button', { name: 'Split' });
-
 		await expect(doubleButton).toBeDisabled();
-		await expect(splitButton).toBeDisabled();
 	});
 });

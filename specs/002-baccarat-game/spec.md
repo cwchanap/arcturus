@@ -15,6 +15,10 @@
 - Q: What should happen when a player's chip balance reaches zero during a Baccarat session? → A: Show "Insufficient Chips" message with button to return to lobby (no automatic redirect)
 - Q: How should the system respond when a player attempts to place an invalid bet (below minimum, above maximum, or exceeding chip balance)? → A: Disable "Deal" button and show inline error message near bet controls until corrected
 
+### Session 2025-12-06
+
+- Q: What constitutes a "new session" for game settings (US5:AC2)? → A: A new session begins on page load (browser refresh or navigation to the Baccarat game page). History is cleared and starting chips setting is applied.
+
 ## User Scenarios & Testing _(mandatory)_
 
 ### User Story 1 - Play Basic Baccarat Round (Priority: P1)

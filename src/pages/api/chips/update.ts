@@ -183,7 +183,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	if (gameType !== 'blackjack') {
+	const validGameTypes = ['blackjack', 'baccarat', 'poker'];
+	if (!validGameTypes.includes(gameType)) {
 		return new Response(
 			JSON.stringify({
 				success: false,

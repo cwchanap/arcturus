@@ -103,8 +103,15 @@ export class BaccaratGame {
 		// Check for existing bet on same type
 		const existingBetIndex = this.state.activeBets.findIndex((b) => b.type === type);
 		if (existingBetIndex >= 0) {
+			const existingAmount = this.state.activeBets[existingBetIndex].amount;
+			if (existingAmount + amount > this.state.settings.maxBet) {
+				return {
+					success: false,
+					error: `Maximum bet is ${this.state.settings.maxBet}`,
+				};
+			}
 			// Update existing bet
-			this.state.activeBets[existingBetIndex].amount += amount;
+			this.state.activeBets[existingBetIndex].amount = existingAmount + amount;
 		} else {
 			// Add new bet
 			const bet: Bet = { type, amount };

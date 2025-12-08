@@ -9,10 +9,16 @@ export class DeckManager {
 	private deck: Card[] = [];
 	private readonly deckCount: number;
 	private readonly reshuffleThreshold: number;
+	private readonly rng: () => number;
 
-	constructor(deckCount: number = DECK_COUNT, reshuffleThreshold: number = RESHUFFLE_THRESHOLD) {
+	constructor(
+		deckCount: number = DECK_COUNT,
+		reshuffleThreshold: number = RESHUFFLE_THRESHOLD,
+		rng: () => number = Math.random,
+	) {
 		this.deckCount = deckCount;
 		this.reshuffleThreshold = reshuffleThreshold;
+		this.rng = rng;
 		this.reset();
 	}
 
@@ -35,7 +41,7 @@ export class DeckManager {
 	 */
 	public shuffle(): void {
 		for (let i = this.deck.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
+			const j = Math.floor(this.rng() * (i + 1));
 			[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
 		}
 	}

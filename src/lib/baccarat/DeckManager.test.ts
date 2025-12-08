@@ -13,6 +13,16 @@ describe('DeckManager', () => {
 		deckManager = new DeckManager();
 	});
 
+	function createSeededRng(seed: number): () => number {
+		let x = seed >>> 0;
+		return () => {
+			x ^= x << 13;
+			x ^= x >>> 17;
+			x ^= x << 5;
+			return (x >>> 0) / 0x100000000;
+		};
+	}
+
 	test('should initialize with correct number of cards', () => {
 		expect(deckManager.remainingCards()).toBe(TOTAL_CARDS);
 	});
@@ -96,24 +106,49 @@ describe('DeckManager', () => {
 		expect(deckManager.remainingCards()).toBe(TOTAL_CARDS);
 	});
 
-	test('shuffle should randomize card order', () => {
-		const manager1 = new DeckManager();
-		const manager2 = new DeckManager();
+	test('shuffle should be deterministic with seeded rng', () => {
+		const rngA = createSeededRng(42);
+		const rngB = createSeededRng(42);
+		const manager1 = new DeckManager(DECK_COUNT, RESHUFFLE_THRESHOLD, rngA);
+		const manager2 = new DeckManager(DECK_COUNT, RESHUFFLE_THRESHOLD, rngB);
 
 		const cards1: ReturnType<typeof manager1.deal>[] = [];
 		const cards2: ReturnType<typeof manager2.deal>[] = [];
 
-		for (let i = 0; i < 10; i++) {
+		for (let i = 0; i < 20; i++) {
 			cards1.push(manager1.deal());
 			cards2.push(manager2.deal());
 		}
 
-		// Highly unlikely that two shuffled decks deal the same first 10 cards
 		const sameOrder = cards1.every(
 			(card, i) => card.rank === cards2[i].rank && card.suit === cards2[i].suit,
 		);
-		// This assertion could theoretically fail, but probability is extremely low
-		expect(sameOrder).toBe(false);
+		expect(sameOrder).toBe(true);
+	});
+
+	test('shuffle should differ with different seeds while preserving card multiset', () => {
+		const manager1 = new DeckManager(DECK_COUNT, RESHUFFLE_THRESHOLD, createSeededRng(1));
+		const manager2 = new DeckManager(DECK_COUNT, RESHUFFLE_THRESHOLD, createSeededRng(2));
+
+		const cards1: ReturnType<typeof manager1.deal>[] = [];
+		const cards2: ReturnType<typeof manager2.deal>[] = [];
+
+		for (let i = 0; i < TOTAL_CARDS; i++) {
+			cards1.push(manager1.deal());
+			cards2.push(manager2.deal());
+		}
+
+		// Same multiset (permutation)
+		const sortKey = (c: { rank: string; suit: string }) => `${c.rank}-${c.suit}`;
+		const sorted1 = cards1.map(sortKey).sort();
+		const sorted2 = cards2.map(sortKey).sort();
+		expect(sorted1).toEqual(sorted2);
+
+		// At least one position differs deterministically
+		const identicalOrder = cards1.every(
+			(card, i) => card.rank === cards2[i].rank && card.suit === cards2[i].suit,
+		);
+		expect(identicalOrder).toBe(false);
 	});
 
 	test('getState should return current deck state', () => {

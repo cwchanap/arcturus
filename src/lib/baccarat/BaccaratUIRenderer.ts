@@ -81,6 +81,7 @@ export class BaccaratUIRenderer {
 		card: Card,
 		containerSelector: string,
 		_position: number,
+		handCards: Card[],
 	): Promise<void> {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
@@ -108,16 +109,10 @@ export class BaccaratUIRenderer {
 		// Wait for animation
 		await this.delay(this.animationSpeed);
 
-		// Update hand value
-		const allCards = cardsContainer.querySelectorAll('.card');
+		// Update hand value using authoritative state
 		const handValueElement = container.querySelector('.hand-value');
-		if (handValueElement && allCards.length > 0) {
-			// Calculate value from cards in DOM
-			const cards: Card[] = Array.from(allCards).map((el) => ({
-				rank: (el as HTMLElement).dataset.rank as Card['rank'],
-				suit: (el as HTMLElement).dataset.suit as Card['suit'],
-			}));
-			const value = getHandValue({ cards });
+		if (handValueElement && handCards.length > 0) {
+			const value = getHandValue({ cards: handCards });
 			handValueElement.textContent = String(value);
 		}
 	}

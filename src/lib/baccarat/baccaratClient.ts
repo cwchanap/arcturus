@@ -190,7 +190,10 @@ export class BaccaratClient {
 		position: number,
 	): Promise<void> {
 		const selector = target === 'player' ? this.selectors.playerHand : this.selectors.bankerHand;
-		await this.renderer.addCardToHand(card, selector, position);
+		const state = this.game.getState();
+		const handCards =
+			target === 'player' ? [...state.playerHand.cards] : [...state.bankerHand.cards];
+		await this.renderer.addCardToHand(card, selector, position, handCards);
 	}
 
 	private handleNatural(hand: 'player' | 'banker', value: number): void {

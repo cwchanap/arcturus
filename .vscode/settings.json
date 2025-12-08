@@ -10,5 +10,4 @@
     ".specify/scripts/bash/": true,
     ".specify/scripts/powershell/": true
   },
-  "coderabbit.agentType": "Kilo Code"
 }

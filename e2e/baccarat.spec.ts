@@ -32,11 +32,17 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 	test('should place a bet and enable deal button', async ({ page }) => {
 		await gotoBaccarat(page);
 
-		// Click on player bet area
-		await page.click('[data-bet-type="player"]');
+		// Explicitly select the lowest-value chip to avoid relying on defaults
+		const lowestChip = page.locator('.chip-select[data-amount="10"]');
+		await lowestChip.click();
+		await expect(lowestChip).toHaveClass(/selected/);
 
-		// Check bet is placed
-		await expect(page.locator('#total-bet')).not.toContainText('$0');
+		// Click on player bet area
+		const playerBetArea = page.locator('[data-bet-type="player"]');
+		await playerBetArea.click();
+
+		// Check bet is placed with the selected chip amount
+		await expect(page.locator('#total-bet')).toContainText('$10');
 
 		// Check deal button is enabled
 		const dealButton = page.locator('#deal-button');
@@ -79,6 +85,9 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 	test('should allow placing multiple bet types', async ({ page }) => {
 		await gotoBaccarat(page);
 
+		// Select $50 chip so each click adds $50; total expected = $100
+		await page.click('.chip-select[data-amount="50"]');
+
 		// Place bets on player and tie
 		await page.click('[data-bet-type="player"]');
 		await page.click('[data-bet-type="tie"]');
@@ -94,7 +103,8 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 	test('should clear bets when clear button is clicked', async ({ page }) => {
 		await gotoBaccarat(page);
 
-		// Place a bet
+		// Place a bet (select chip first to avoid flakiness)
+		await page.click('.chip-select[data-amount="10"]');
 		await page.click('[data-bet-type="player"]');
 		await expect(page.locator('#total-bet')).not.toContainText('$0');
 
@@ -110,6 +120,10 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await gotoBaccarat(page);
 
 		// Play a round
+		const chip = page.locator('.chip-select[data-amount="10"]');
+		await chip.click();
+		await expect(chip).toHaveClass(/selected/);
+
 		await page.click('[data-bet-type="banker"]');
 		await page.click('#deal-button');
 		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
@@ -122,6 +136,10 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 
 		// Check we can place new bets
 		await expect(page.locator('#deal-button')).toBeDisabled();
+
+		await chip.click();
+		await expect(chip).toHaveClass(/selected/);
+
 		await page.click('[data-bet-type="player"]');
 		await expect(page.locator('#deal-button')).toBeEnabled();
 	});
@@ -130,6 +148,7 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await gotoBaccarat(page);
 
 		// Play a round
+		await page.click('.chip-select[data-amount="10"]');
 		await page.click('[data-bet-type="player"]');
 		await page.click('#deal-button');
 		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
@@ -144,25 +163,50 @@ test.describe('Baccarat Game - Side Bets', () => {
 	test('should place player pair bet', async ({ page }) => {
 		await gotoBaccarat(page);
 
-		// Place side bet
-		await page.click('[data-bet-type="playerPair"]');
+		// Select chip and place main bet before side bet
+		const chip = page.locator('.chip-select[data-amount="10"]');
+		await chip.click();
+		await expect(chip).toHaveClass(/selected/);
 
-		// Check bet is active
-		await expect(page.locator('[data-bet-type="playerPair"]')).toHaveClass(/bet-area-active/);
+		const playerBet = page.locator('[data-bet-type="player"]');
+		await playerBet.click();
+		await expect(playerBet).toHaveClass(/bet-area-active/);
+
+		// Place side bet
+		const playerPairBet = page.locator('[data-bet-type="playerPair"]');
+		await playerPairBet.click();
+
+		// Check side bet is active (main bet remains active)
+		await expect(playerPairBet).toHaveClass(/bet-area-active/);
+		await expect(playerBet).toHaveClass(/bet-area-active/);
 	});
 
 	test('should place banker pair bet', async ({ page }) => {
 		await gotoBaccarat(page);
 
-		// Place side bet
-		await page.click('[data-bet-type="bankerPair"]');
+		// Select chip and place required main bet
+		const chip = page.locator('.chip-select[data-amount="10"]');
+		await chip.click();
+		await expect(chip).toHaveClass(/selected/);
 
-		// Check bet is active
-		await expect(page.locator('[data-bet-type="bankerPair"]')).toHaveClass(/bet-area-active/);
+		const bankerBet = page.locator('[data-bet-type="banker"]');
+		await bankerBet.click();
+		await expect(bankerBet).toHaveClass(/bet-area-active/);
+
+		// Place side bet
+		const bankerPairBet = page.locator('[data-bet-type="bankerPair"]');
+		await bankerPairBet.click();
+
+		// Check both bets are active
+		await expect(bankerPairBet).toHaveClass(/bet-area-active/);
+		await expect(bankerBet).toHaveClass(/bet-area-active/);
 	});
 
 	test('should complete round with side bet', async ({ page }) => {
 		await gotoBaccarat(page);
+
+		// Select $50 chip for deterministic bet amounts
+		await page.click('.chip-select[data-amount="50"]');
 
 		// Place main bet and side bet
 		await page.click('[data-bet-type="player"]');
@@ -173,8 +217,7 @@ test.describe('Baccarat Game - Side Bets', () => {
 		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
 
 		// Check results show both bet outcomes
-		const resultsHTML = await page.locator('.result-bets').innerHTML();
-		expect(resultsHTML).toContain('Player');
-		expect(resultsHTML).toContain('P. Pair');
+		await expect(page.locator('.result-bets')).toContainText('Player');
+		await expect(page.locator('.result-bets')).toContainText('P. Pair');
 	});
 });

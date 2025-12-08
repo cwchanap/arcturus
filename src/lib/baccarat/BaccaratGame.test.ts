@@ -216,7 +216,10 @@ describe('BaccaratGame', () => {
 			}
 
 			const stats = game.getStatistics();
-			expect(stats.player + stats.banker + stats.tie).toBeGreaterThanOrEqual(0);
+			expect(stats.player + stats.banker + stats.tie).toBe(10);
+			expect(stats.player).toBeGreaterThanOrEqual(0);
+			expect(stats.banker).toBeGreaterThanOrEqual(0);
+			expect(stats.tie).toBeGreaterThanOrEqual(0);
 		});
 	});
 

@@ -57,8 +57,8 @@ describe('shouldBankerDraw - Player drew', () => {
 	});
 
 	test('should always draw on banker value 0-2', () => {
-		for (let playerThird = 0; playerThird <= 9; playerThird++) {
-			const rank = playerThird === 10 ? '10' : playerThird === 0 ? '10' : String(playerThird);
+		for (let playerThird = 0; playerThird <= 10; playerThird++) {
+			const rank = playerThird === 0 || playerThird === 10 ? '10' : String(playerThird);
 			const card = makeCard(rank as Card['rank']);
 			expect(shouldBankerDraw(0, card, false)).toBe(true);
 			expect(shouldBankerDraw(1, card, false)).toBe(true);

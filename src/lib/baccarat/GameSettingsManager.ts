@@ -14,6 +14,50 @@ export class GameSettingsManager {
 		this.settings = this.loadSettings();
 	}
 
+	private validateSettings(candidate: unknown): BaccaratSettings {
+		const safe: BaccaratSettings = { ...DEFAULT_SETTINGS };
+
+		if (!candidate || typeof candidate !== 'object') {
+			return safe;
+		}
+
+		const parsed = candidate as Partial<BaccaratSettings>;
+
+		if (typeof parsed.startingChips === 'number' && parsed.startingChips >= 0) {
+			safe.startingChips = parsed.startingChips;
+		}
+
+		if (typeof parsed.minBet === 'number' && parsed.minBet >= 1) {
+			safe.minBet = parsed.minBet;
+		}
+
+		if (typeof parsed.maxBet === 'number' && parsed.maxBet >= 1) {
+			safe.maxBet = parsed.maxBet;
+		}
+
+		if (safe.minBet > safe.maxBet) {
+			safe.minBet = safe.maxBet;
+		}
+
+		if (
+			parsed.animationSpeed === 'slow' ||
+			parsed.animationSpeed === 'normal' ||
+			parsed.animationSpeed === 'fast'
+		) {
+			safe.animationSpeed = parsed.animationSpeed;
+		}
+
+		if (typeof parsed.llmEnabled === 'boolean') {
+			safe.llmEnabled = parsed.llmEnabled;
+		}
+
+		if (typeof parsed.soundEnabled === 'boolean') {
+			safe.soundEnabled = parsed.soundEnabled;
+		}
+
+		return safe;
+	}
+
 	/**
 	 * Load settings from localStorage or use defaults
 	 */
@@ -26,11 +70,7 @@ export class GameSettingsManager {
 			const stored = localStorage.getItem(STORAGE_KEY);
 			if (stored) {
 				const parsed = JSON.parse(stored);
-				// Merge with defaults to handle new settings
-				return {
-					...DEFAULT_SETTINGS,
-					...parsed,
-				};
+				return this.validateSettings(parsed);
 			}
 		} catch (error) {
 			console.error('Failed to load baccarat settings:', error);
@@ -76,10 +116,12 @@ export class GameSettingsManager {
 
 		// Ensure minBet <= maxBet
 		const newMinBet = updates.minBet ?? this.settings.minBet;
-		const newMaxBet = updates.maxBet ?? this.settings.maxBet;
+		let newMaxBet = updates.maxBet ?? this.settings.maxBet;
 		if (newMinBet > newMaxBet) {
-			updates.minBet = newMaxBet;
+			newMaxBet = newMinBet;
 		}
+		updates.minBet = newMinBet;
+		updates.maxBet = newMaxBet;
 
 		this.settings = {
 			...this.settings,

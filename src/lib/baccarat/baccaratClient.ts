@@ -125,6 +125,13 @@ export class BaccaratClient {
 
 		const outcome = this.game.deal();
 
+		if (!outcome) {
+			this.renderer.setBettingEnabled(true, this.selectors.bettingArea);
+			this.renderer.setDealButtonEnabled(true, this.selectors.dealButton);
+			this.showError('Could not start round. Please try dealing again.');
+			return null;
+		}
+
 		if (outcome) {
 			// Sync balance with server
 			await this.syncBalance();

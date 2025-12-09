@@ -76,6 +76,14 @@ export class BaccaratGame {
 			return { success: false, error: 'Can only place bets during betting phase' };
 		}
 
+		// Reject non-positive bet amounts
+		if (amount <= 0) {
+			return {
+				success: false,
+				error: 'Bet amount must be positive',
+			};
+		}
+
 		// Validate bet amount
 		if (amount < this.state.settings.minBet) {
 			return {

@@ -155,6 +155,7 @@ describe('BaccaratGame', () => {
 			// After deal, it returns to betting phase
 			const state = game.getState();
 			expect(state.phase).toBe('resolution');
+			expect(game.getBalance()).not.toBe(initialBalance);
 		});
 
 		test('should update balance after round', () => {

@@ -5,6 +5,7 @@
 
 import type { Card } from './types';
 import { getCardValue } from './handEvaluator';
+import { PLAYER_DRAW_THRESHOLD, BANKER_STAND_THRESHOLD } from './constants';
 
 /**
  * Determine if Player should draw a third card
@@ -15,7 +16,7 @@ export function shouldPlayerDraw(playerValue: number): boolean {
 	// Player draws on 0-5
 	// Player stands on 6-7
 	// 8-9 is natural (no draw, handled before this is called)
-	return playerValue <= 5;
+	return playerValue <= PLAYER_DRAW_THRESHOLD;
 }
 
 /**
@@ -32,14 +33,14 @@ export function shouldBankerDraw(
 	playerStood: boolean,
 ): boolean {
 	// Banker always stands on 7 (8-9 is natural, handled separately)
-	if (bankerValue >= 7) {
+	if (bankerValue >= BANKER_STAND_THRESHOLD) {
 		return false;
 	}
 
 	// If Player stood (6-7), Banker follows simpler rules
 	if (playerStood) {
 		// Banker draws on 0-5, stands on 6-7
-		return bankerValue <= 5;
+		return bankerValue <= PLAYER_DRAW_THRESHOLD;
 	}
 
 	// Player drew a third card - use the complex third-card table
@@ -124,7 +125,7 @@ export function explainBankerDecision(
 		return `Banker has natural ${bankerValue} - no draw`;
 	}
 
-	if (bankerValue === 7) {
+	if (bankerValue === BANKER_STAND_THRESHOLD) {
 		return 'Banker stands on 7';
 	}
 

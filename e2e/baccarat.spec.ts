@@ -76,10 +76,14 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await expect(page.locator('.result-scores')).toContainText('Player:');
 		await expect(page.locator('.result-scores')).toContainText('Banker:');
 
-		// Balance should have changed
+		// Balance may stay the same on tie; only assert change on decisive outcomes
 		const newBalanceText = await page.locator('#chip-balance').textContent();
 		const newBalance = parseInt(newBalanceText?.replace(/[$,]/g, '') || '0');
-		expect(newBalance).not.toBe(initialBalance);
+		if (resultText?.includes('Tie')) {
+			expect(newBalance).toBe(initialBalance);
+		} else {
+			expect(newBalance).not.toBe(initialBalance);
+		}
 	});
 
 	test('should allow placing multiple bet types', async ({ page }) => {

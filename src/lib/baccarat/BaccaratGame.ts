@@ -381,23 +381,12 @@ export class BaccaratGame {
 	 * Get statistics from round history
 	 */
 	public getStatistics(): { player: number; banker: number; tie: number } {
-		const total = this.state.roundHistory.length;
-		if (total === 0) {
-			return { player: 0, banker: 0, tie: 0 };
-		}
-
-		const counts = this.state.roundHistory.reduce(
+		return this.state.roundHistory.reduce(
 			(acc, outcome) => {
 				acc[outcome.winner]++;
 				return acc;
 			},
 			{ player: 0, banker: 0, tie: 0 },
 		);
-
-		return {
-			player: Math.round((counts.player / total) * 100),
-			banker: Math.round((counts.banker / total) * 100),
-			tie: Math.round((counts.tie / total) * 100),
-		};
 	}
 }

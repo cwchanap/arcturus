@@ -32,20 +32,33 @@ import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
 import { and, eq } from 'drizzle-orm';
 
-// Maximum LOSS per request (negative delta) - allows normal gameplay
-// Accounts for split + double scenarios: 2 hands x 2x bet x max bet
-// IMPORTANT: Max bet is capped at 10,000 by ABSOLUTE_MAX_BET in blackjack/constants.ts
-const MAX_LOSS_PER_REQUEST = 40000; // 4 * 10000 max bet
-
-// Maximum WIN per request (positive delta)
-// Must accommodate legitimate payouts with max configurable bet (10000):
-// - Blackjack payout: 1.5x bet profit
-// - Split + double: 2 hands x 2x bet = 4x max bet wagered
-// - Best case: split pair of aces, double both, win both with blackjack
-//   = 4 x 10000 wagered, each hand wins 1.5x = 60000 profit
-// IMPORTANT: If ABSOLUTE_MAX_BET in blackjack/constants.ts changes,
-// update this value accordingly: MAX_WIN = 6 * ABSOLUTE_MAX_BET
-const MAX_WIN_PER_REQUEST = 60000;
+// Game-specific betting limits
+// Different games have fundamentally different payout structures:
+// - Blackjack: ~1.5:1 (Natural) to 6:1 (Split+Double scenarios)
+// - Baccarat: 8:1 (Tie) or 11:1 (Pair)
+// - Poker: Potentially huge multipliers (Royal Flush 250:1+) or deep stack play
+//
+// These limits are applied per-request to prevent massive exploitation
+// while allowing legitimate high-roller wins.
+const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
+	blackjack: {
+		// Existing logic: 4 hands x 1.5x payout x 10k max bet = 60k
+		maxWin: 60000,
+		maxLoss: 40000,
+	},
+	baccarat: {
+		// Tie (8:1) or Pair (11:1) with max bet (say 10k)
+		// 10k * 11 = 110k profit. Safety buffer -> 200k.
+		maxWin: 200000,
+		maxLoss: 100000, // 5 simultaneous max bets
+	},
+	poker: {
+		// Royal Flush (250:1) on 1k bet = 250k.
+		// Deep stack all-ins can be even higher.
+		maxWin: 500000,
+		maxLoss: 500000,
+	},
+};
 
 // Minimum milliseconds between chip updates (rate limiting)
 // Prevents rapid-fire exploitation; normal gameplay has natural delays
@@ -133,41 +146,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	// Asymmetric delta validation:
-	// - Losses (negative delta) allowed up to MAX_LOSS_PER_REQUEST
-	// - Wins (positive delta) severely capped at MAX_WIN_PER_REQUEST
-	// This makes exploitation tedious while allowing normal gameplay
-	if (delta > 0 && delta > MAX_WIN_PER_REQUEST) {
-		console.warn(
-			`[CHIP_AUDIT] User ${userId} attempted win of ${delta}, capped at ${MAX_WIN_PER_REQUEST}`,
-		);
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Win amount exceeds maximum allowed (${MAX_WIN_PER_REQUEST})`,
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	if (delta < 0 && Math.abs(delta) > MAX_LOSS_PER_REQUEST) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Loss amount exceeds maximum allowed (${MAX_LOSS_PER_REQUEST})`,
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
 	// Validate gameType is a string
 	if (typeof gameType !== 'string') {
 		return new Response(
@@ -190,6 +168,45 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				success: false,
 				error: 'INVALID_GAME_TYPE',
 				message: 'Invalid game type',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Determine limits based on game type
+	// Fallback to blackjack limits if somehow undefined (should be covered by validGameTypes check)
+	const limits = GAME_LIMITS[gameType as string] || GAME_LIMITS.blackjack;
+	const { maxWin, maxLoss } = limits;
+
+	// Asymmetric delta validation:
+	// - Losses (negative delta) allowed up to maxLoss
+	// - Wins (positive delta) capped at maxWin
+	if (delta > 0 && delta > maxWin) {
+		console.warn(
+			`[CHIP_AUDIT] User ${userId} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
+		);
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'DELTA_EXCEEDS_LIMIT',
+				message: `Win amount exceeds maximum allowed for ${gameType} (${maxWin})`,
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	if (delta < 0 && Math.abs(delta) > maxLoss) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'DELTA_EXCEEDS_LIMIT',
+				message: `Loss amount exceeds maximum allowed for ${gameType} (${maxLoss})`,
 			}),
 			{
 				status: 400,

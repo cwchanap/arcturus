@@ -746,9 +746,13 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		// Stats
 		const stats = game.getStatistics();
-		document.getElementById('stat-player')!.textContent = `${stats.player}%`;
-		document.getElementById('stat-tie')!.textContent = `${stats.tie}%`;
-		document.getElementById('stat-banker')!.textContent = `${stats.banker}%`;
+		const totalRounds = stats.player + stats.banker + stats.tie;
+		const getPercent = (count: number) =>
+			totalRounds > 0 ? Math.round((count / totalRounds) * 100) : 0;
+
+		document.getElementById('stat-player')!.textContent = `${getPercent(stats.player)}%`;
+		document.getElementById('stat-tie')!.textContent = `${getPercent(stats.tie)}%`;
+		document.getElementById('stat-banker')!.textContent = `${getPercent(stats.banker)}%`;
 	}
 
 	function showStatus(message: string) {

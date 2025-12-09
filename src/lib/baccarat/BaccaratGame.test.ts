@@ -217,8 +217,7 @@ describe('BaccaratGame', () => {
 
 			const stats = game.getStatistics();
 			const total = stats.player + stats.banker + stats.tie;
-			expect(total).toBeGreaterThanOrEqual(99);
-			expect(total).toBeLessThanOrEqual(101);
+			expect(total).toBe(10);
 			expect(stats.player).toBeGreaterThanOrEqual(0);
 			expect(stats.banker).toBeGreaterThanOrEqual(0);
 			expect(stats.tie).toBeGreaterThanOrEqual(0);

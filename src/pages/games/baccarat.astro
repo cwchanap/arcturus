@@ -397,7 +397,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 <script>
 	import { BaccaratGame } from '../../lib/baccarat/BaccaratGame';
-	import type { BetType, RoundOutcome } from '../../lib/baccarat/types';
+	import type { BetType, RoundOutcome, Hand } from '../../lib/baccarat/types';
 	import { getHandValue } from '../../lib/baccarat/handEvaluator';
 
 	// Get initial data
@@ -578,12 +578,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		await new Promise((r) => setTimeout(r, 300));
 	}
 
-	function renderHand(
-		container: HTMLElement,
-		hand: { cards: Array<{ rank: string; suit: string }> },
-		label: string,
-		color: string,
-	) {
+	function renderHand(container: HTMLElement, hand: Hand, label: string, color: string) {
 		const colorClassMap: Record<string, string> = {
 			blue: 'text-blue-400',
 			red: 'text-red-400',
@@ -592,10 +587,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		};
 		const colorClass = colorClassMap[color] ?? 'text-blue-400';
 
-		const value =
-			hand.cards.length >= 2
-				? getHandValue(hand as { cards: Array<{ rank: string; suit: string }> })
-				: '';
+		const value = hand.cards.length >= 2 ? getHandValue(hand) : '';
 		const cardsHTML =
 			hand.cards.length > 0
 				? hand.cards
@@ -773,7 +765,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Only sync if there's an actual change
 		if (delta === 0) return;
 
-		try {
+		const performChipUpdate = async (retryCount = 0) => {
 			const response = await fetch('/api/chips/update', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -783,13 +775,73 @@ const initialBalance = user.chipBalance ?? 1000;
 					previousBalance: lastSyncedBalance,
 				}),
 			});
+
 			if (response.ok) {
 				lastSyncedBalance = currentBalance;
-			} else {
-				console.error('Balance sync failed');
+				if (retryCount > 0) {
+					showStatus('Balance synced successfully.');
+				}
+				return;
 			}
+
+			const errorData = (await response.json().catch(() => ({}))) as {
+				error?: string;
+				message?: string;
+				currentBalance?: number;
+			};
+
+			if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
+				const retryAfterHeader = response.headers.get('Retry-After');
+				const retryAfterSeconds = parseInt(retryAfterHeader || '2', 10);
+				const retryAfterMs = (Number.isNaN(retryAfterSeconds) ? 2 : retryAfterSeconds) * 1000;
+				console.warn(
+					`Chip update rate limited, retrying in ${retryAfterMs}ms (attempt ${retryCount + 1})`,
+				);
+				showStatus('Syncing balance...');
+				setTimeout(() => {
+					void performChipUpdate(retryCount + 1);
+				}, retryAfterMs + 100);
+				return;
+			}
+
+			if (errorData.currentBalance !== undefined) {
+				const serverBalance = Number(errorData.currentBalance);
+				if (!Number.isNaN(serverBalance)) {
+					lastSyncedBalance = serverBalance;
+					game.setBalance(serverBalance);
+					updateUI();
+					showStatus(`Balance synced to ${serverBalance} chips.`);
+				}
+			} else if (errorData.error !== 'RATE_LIMITED') {
+				// Revert to last known good balance when server did not provide a value
+				game.setBalance(lastSyncedBalance);
+				updateUI();
+			}
+
+			if (errorData.error === 'BALANCE_MISMATCH') {
+				console.warn('Balance mismatch detected, synced to server balance if provided.');
+				showStatus('Balance corrected (server sync).');
+			} else if (errorData.error === 'RATE_LIMITED') {
+				console.error('Chip update rate limited, max retries exceeded');
+				showStatus('Sync delayed. Balance will update on next round.');
+			} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
+				console.error('Delta exceeded server limit:', errorData.message);
+				showStatus('Payout exceeded limit. Please try a smaller bet.');
+			} else if (errorData.error === 'INSUFFICIENT_BALANCE') {
+				showStatus(errorData.message || 'Insufficient balance on server.');
+			} else {
+				console.error('Chip update failed:', errorData.error, errorData.message);
+				showStatus('Balance sync failed. Will retry next round.');
+			}
+		};
+
+		try {
+			await performChipUpdate();
 		} catch (error) {
 			console.error('Balance sync error:', error);
+			game.setBalance(lastSyncedBalance);
+			updateUI();
+			showStatus('Network error. Balance reverted.');
 		}
 	}
 

@@ -30,3 +30,4 @@ coverage/
 tests/.auth/
 playwright-report/
 e2e/.auth/
+specs/

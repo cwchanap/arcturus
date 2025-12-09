@@ -584,6 +584,14 @@ const initialBalance = user.chipBalance ?? 1000;
 		label: string,
 		color: string,
 	) {
+		const colorClassMap: Record<string, string> = {
+			blue: 'text-blue-400',
+			red: 'text-red-400',
+			emerald: 'text-emerald-400',
+			yellow: 'text-yellow-400',
+		};
+		const colorClass = colorClassMap[color] ?? 'text-blue-400';
+
 		const value =
 			hand.cards.length >= 2
 				? getHandValue(hand as { cards: Array<{ rank: string; suit: string }> })
@@ -610,7 +618,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		container.innerHTML = `
 			<div class="text-center">
-				<div class="text-sm text-${color}-400 uppercase tracking-wider mb-2 font-semibold">${label}</div>
+				<div class="text-sm ${colorClass} uppercase tracking-wider mb-2 font-semibold">${label}</div>
 				<div class="hand-cards flex justify-center gap-3 min-h-[100px] items-center">${cardsHTML}</div>
 				<div class="hand-value text-xl font-bold text-white mt-2">${value}</div>
 			</div>

@@ -5,6 +5,18 @@
 import type { Card, DeckState } from './types';
 import { DECK_COUNT, RANKS, RESHUFFLE_THRESHOLD, SUITS } from './constants';
 
+const buildShoe = (deckCount: number): Card[] => {
+	const shoe: Card[] = [];
+	for (let d = 0; d < deckCount; d++) {
+		for (const suit of SUITS) {
+			for (const rank of RANKS) {
+				shoe.push({ rank, suit });
+			}
+		}
+	}
+	return shoe;
+};
+
 export class DeckManager {
 	private deck: Card[] = [];
 	private readonly deckCount: number;
@@ -26,14 +38,7 @@ export class DeckManager {
 	 * Initialize the shoe with multiple decks
 	 */
 	private initShoe(): void {
-		this.deck = [];
-		for (let d = 0; d < this.deckCount; d++) {
-			for (const suit of SUITS) {
-				for (const rank of RANKS) {
-					this.deck.push({ rank, suit });
-				}
-			}
-		}
+		this.deck = buildShoe(this.deckCount);
 	}
 
 	/**
@@ -54,14 +59,7 @@ export class DeckManager {
 	public deal(): Card {
 		const card = this.deck.pop();
 		if (!card) {
-			// This should never happen if reshuffleIfNeeded() is called at round start
-			// But handle gracefully by forcing a reshuffle
-			this.reset();
-			const newCard = this.deck.pop();
-			if (!newCard) {
-				throw new Error('Failed to deal card after reshuffle');
-			}
-			return newCard;
+			throw new Error('deck empty: reshuffle not allowed mid-round');
 		}
 		return card;
 	}
@@ -119,15 +117,7 @@ export class DeckManager {
  * Create a new shoe with specified number of decks
  */
 export function createShoe(deckCount: number = DECK_COUNT): Card[] {
-	const shoe: Card[] = [];
-	for (let d = 0; d < deckCount; d++) {
-		for (const suit of SUITS) {
-			for (const rank of RANKS) {
-				shoe.push({ rank, suit });
-			}
-		}
-	}
-	return shoe;
+	return buildShoe(deckCount);
 }
 
 /**

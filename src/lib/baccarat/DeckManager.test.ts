@@ -47,18 +47,13 @@ describe('DeckManager', () => {
 		expect(deckManager.remainingCards()).toBe(0);
 	});
 
-	test('should reshuffle automatically if deck becomes empty', () => {
-		// Deal all cards
+	test('should throw if dealing from empty deck mid-round', () => {
 		for (let i = 0; i < TOTAL_CARDS; i++) {
 			deckManager.deal();
 		}
 
 		expect(deckManager.remainingCards()).toBe(0);
-
-		// Deal one more - should trigger automatic reset
-		const card = deckManager.deal();
-		expect(card).toBeDefined();
-		expect(deckManager.remainingCards()).toBe(TOTAL_CARDS - 1);
+		expect(() => deckManager.deal()).toThrow('deck empty: reshuffle not allowed mid-round');
 	});
 
 	test('should report needs reshuffle when below threshold', () => {
@@ -201,11 +196,11 @@ describe('Pure functions', () => {
 		const original = createShoe(1);
 		const shuffled = shuffleDeck(original);
 
-		// Check that order is different (extremely unlikely to be the same)
-		const sameOrder = original.every(
-			(card, i) => card.rank === shuffled[i].rank && card.suit === shuffled[i].suit,
+		// Deterministic check: at least one card moved position
+		const cardMoved = original.some(
+			(card, i) => card.rank !== shuffled[i].rank || card.suit !== shuffled[i].suit,
 		);
-		expect(sameOrder).toBe(false);
+		expect(cardMoved).toBe(true);
 	});
 
 	test('dealCard should return card and remaining deck', () => {

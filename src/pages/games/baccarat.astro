@@ -395,13 +395,15 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 </style>
 
-<script>
+<script type="module">
 	import { BaccaratGame } from '../../lib/baccarat/BaccaratGame';
-	import type { BetType, RoundOutcome, Hand } from '../../lib/baccarat/types';
 	import { getHandValue } from '../../lib/baccarat/handEvaluator';
 
 	// Get initial data
-	const root = document.getElementById('baccarat-root') as HTMLElement;
+	const root = document.getElementById('baccarat-root');
+	if (!root) {
+		throw new Error('Baccarat root element not found');
+	}
 	const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 
 	// Initialize game
@@ -421,27 +423,49 @@ const initialBalance = user.chipBalance ?? 1000;
 	let selectedChipAmount = 50;
 
 	// DOM Elements
-	const balanceEl = document.getElementById('chip-balance')!;
-	const shoeCountEl = document.getElementById('shoe-count')!;
-	const totalBetEl = document.getElementById('total-bet')!;
-	const dealButton = document.getElementById('deal-button') as HTMLButtonElement;
-	const clearBetsButton = document.getElementById('clear-bets-button')!;
-	const newRoundButton = document.getElementById('new-round-button')!;
-	const playerHandEl = document.getElementById('player-hand')!;
-	const bankerHandEl = document.getElementById('banker-hand')!;
-	const roundResultEl = document.getElementById('round-result')!;
-	const bettingAreaEl = document.getElementById('betting-area')!;
-	const activeBetsEl = document.getElementById('active-bets')!;
-	const scoreboardEl = document.getElementById('scoreboard')!;
-	const insufficientOverlay = document.getElementById('insufficient-chips-overlay')!;
-	const statusEl = document.getElementById('game-status')!;
+	const balanceEl = document.getElementById('chip-balance');
+	const shoeCountEl = document.getElementById('shoe-count');
+	const totalBetEl = document.getElementById('total-bet');
+	const dealButton = document.getElementById('deal-button');
+	const clearBetsButton = document.getElementById('clear-bets-button');
+	const newRoundButton = document.getElementById('new-round-button');
+	const playerHandEl = document.getElementById('player-hand');
+	const bankerHandEl = document.getElementById('banker-hand');
+	const roundResultEl = document.getElementById('round-result');
+	const bettingAreaEl = document.getElementById('betting-area');
+	const activeBetsEl = document.getElementById('active-bets');
+	const scoreboardEl = document.getElementById('scoreboard');
+	const insufficientOverlay = document.getElementById('insufficient-chips-overlay');
+	const statusEl = document.getElementById('game-status');
+
+	if (
+		!balanceEl ||
+		!shoeCountEl ||
+		!totalBetEl ||
+		!(dealButton instanceof HTMLButtonElement) ||
+		!clearBetsButton ||
+		!newRoundButton ||
+		!playerHandEl ||
+		!bankerHandEl ||
+		!roundResultEl ||
+		!bettingAreaEl ||
+		!activeBetsEl ||
+		!scoreboardEl ||
+		!insufficientOverlay ||
+		!statusEl
+	) {
+		throw new Error('Baccarat UI elements not found');
+	}
 
 	// Chip selection
 	document.querySelectorAll('.chip-select').forEach((btn) => {
 		btn.addEventListener('click', () => {
 			document.querySelectorAll('.chip-select').forEach((b) => b.classList.remove('selected'));
 			btn.classList.add('selected');
-			selectedChipAmount = Number((btn as HTMLElement).dataset.amount);
+			const amountAttr = btn.getAttribute('data-amount');
+			if (amountAttr) {
+				selectedChipAmount = Number(amountAttr);
+			}
 		});
 	});
 
@@ -451,7 +475,8 @@ const initialBalance = user.chipBalance ?? 1000;
 	// Bet area clicks
 	document.querySelectorAll('[data-bet-type]').forEach((area) => {
 		area.addEventListener('click', () => {
-			const type = (area as HTMLElement).dataset.betType as BetType;
+			const type = area.getAttribute('data-bet-type');
+			if (!type) return;
 			const result = game.placeBet(type, selectedChipAmount);
 			if (result.success) {
 				updateUI();
@@ -510,8 +535,8 @@ const initialBalance = user.chipBalance ?? 1000;
 	});
 
 	// Animation helpers
-	async function animateRound(outcome: RoundOutcome) {
-		const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	async function animateRound(outcome) {
+		const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 		// Deal initial 4 cards with animation
 		await animateCard(playerHandEl, outcome.playerHand.cards[0], 0);
@@ -541,11 +566,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		hideStatus();
 	}
 
-	async function animateCard(
-		container: HTMLElement,
-		card: { rank: string; suit: string },
-		_position: number,
-	) {
+	async function animateCard(container, card, _position) {
 		const cardsContainer = container.querySelector('.hand-cards') || container;
 
 		// Remove placeholders
@@ -564,10 +585,13 @@ const initialBalance = user.chipBalance ?? 1000;
 		cardsContainer.appendChild(cardEl);
 
 		// Update hand value
-		const allCards = Array.from(cardsContainer.querySelectorAll('.card')).map((el) => ({
-			rank: el.querySelector('.card-rank')?.textContent as string,
-			suit: 'hearts' as const, // suit doesn't affect value in baccarat
-		}));
+		const allCards = Array.from(cardsContainer.querySelectorAll('.card')).map((el) => {
+			const rankEl = el.querySelector('.card-rank');
+			return {
+				rank: rankEl ? rankEl.textContent : '',
+				suit: 'hearts', // suit doesn't affect value in baccarat
+			};
+		});
 
 		// Just show card count for now, real value calculated from outcome
 		const valueEl = container.querySelector('.hand-value');
@@ -578,8 +602,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		await new Promise((r) => setTimeout(r, 300));
 	}
 
-	function renderHand(container: HTMLElement, hand: Hand, label: string, color: string) {
-		const colorClassMap: Record<string, string> = {
+	function renderHand(container, hand, label, color) {
+		const colorClassMap = {
 			blue: 'text-blue-400',
 			red: 'text-red-400',
 			emerald: 'text-emerald-400',
@@ -617,7 +641,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		`;
 	}
 
-	function showResult(outcome: RoundOutcome) {
+	function showResult(outcome) {
 		const winnerText =
 			outcome.winner === 'player'
 				? 'Player Wins!'
@@ -658,11 +682,23 @@ const initialBalance = user.chipBalance ?? 1000;
 			})
 			.join('');
 
-		roundResultEl.querySelector('.result-winner')!.textContent = winnerText + naturalText;
-		roundResultEl.querySelector('.result-scores')!.textContent =
-			`Player: ${outcome.playerValue} | Banker: ${outcome.bankerValue}`;
-		roundResultEl.querySelector('.result-pairs')!.textContent = pairText;
-		roundResultEl.querySelector('.result-bets')!.innerHTML = resultsHTML;
+		const winnerEl = roundResultEl.querySelector('.result-winner');
+		const scoresEl = roundResultEl.querySelector('.result-scores');
+		const pairsEl = roundResultEl.querySelector('.result-pairs');
+		const betsEl = roundResultEl.querySelector('.result-bets');
+
+		if (winnerEl) {
+			winnerEl.textContent = winnerText + naturalText;
+		}
+		if (scoresEl) {
+			scoresEl.textContent = `Player: ${outcome.playerValue} | Banker: ${outcome.bankerValue}`;
+		}
+		if (pairsEl) {
+			pairsEl.textContent = pairText;
+		}
+		if (betsEl) {
+			betsEl.innerHTML = resultsHTML;
+		}
 		roundResultEl.classList.remove('hidden');
 
 		// Update rendered hands with final values
@@ -706,7 +742,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		// Update bet area amounts
 		document.querySelectorAll('[data-bet-type]').forEach((area) => {
-			const type = (area as HTMLElement).dataset.betType as BetType;
+			const type = area.getAttribute('data-bet-type');
 			const bet = state.activeBets.find((b) => b.type === type);
 			const amountEl = area.querySelector('.bet-amount');
 			if (amountEl) {
@@ -739,15 +775,24 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Stats
 		const stats = game.getStatistics();
 		const totalRounds = stats.player + stats.banker + stats.tie;
-		const getPercent = (count: number) =>
-			totalRounds > 0 ? Math.round((count / totalRounds) * 100) : 0;
+		const getPercent = (count) => (totalRounds > 0 ? Math.round((count / totalRounds) * 100) : 0);
 
-		document.getElementById('stat-player')!.textContent = `${getPercent(stats.player)}%`;
-		document.getElementById('stat-tie')!.textContent = `${getPercent(stats.tie)}%`;
-		document.getElementById('stat-banker')!.textContent = `${getPercent(stats.banker)}%`;
+		const statPlayerEl = document.getElementById('stat-player');
+		const statTieEl = document.getElementById('stat-tie');
+		const statBankerEl = document.getElementById('stat-banker');
+
+		if (statPlayerEl) {
+			statPlayerEl.textContent = `${getPercent(stats.player)}%`;
+		}
+		if (statTieEl) {
+			statTieEl.textContent = `${getPercent(stats.tie)}%`;
+		}
+		if (statBankerEl) {
+			statBankerEl.textContent = `${getPercent(stats.banker)}%`;
+		}
 	}
 
-	function showStatus(message: string) {
+	function showStatus(message) {
 		statusEl.textContent = message;
 		statusEl.classList.remove('hidden');
 	}
@@ -784,11 +829,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			const errorData = (await response.json().catch(() => ({}))) as {
-				error?: string;
-				message?: string;
-				currentBalance?: number;
-			};
+			const errorData = await response.json().catch(() => ({}));
 
 			if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
 				const retryAfterHeader = response.headers.get('Retry-After');

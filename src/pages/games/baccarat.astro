@@ -805,7 +805,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	async function syncBalance() {
 		const currentBalance = game.getBalance();
-		const delta = currentBalance - lastSyncedBalance;
+		const previousBalance = lastSyncedBalance;
+		const delta = currentBalance - previousBalance;
 
 		// Only sync if there's an actual change
 		if (delta === 0) return;
@@ -817,7 +818,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				body: JSON.stringify({
 					delta,
 					gameType: 'baccarat',
-					previousBalance: lastSyncedBalance,
+					previousBalance,
 				}),
 			});
 

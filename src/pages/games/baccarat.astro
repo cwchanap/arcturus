@@ -849,13 +849,13 @@ const initialBalance = user.chipBalance ?? 1000;
 				const serverBalance = Number(errorData.currentBalance);
 				if (!Number.isNaN(serverBalance)) {
 					lastSyncedBalance = serverBalance;
-					game.setBalance(serverBalance);
+					game.applyServerBalance(serverBalance);
 					updateUI();
 					showStatus(`Balance synced to ${serverBalance} chips.`);
 				}
 			} else if (errorData.error !== 'RATE_LIMITED') {
 				// Revert to last known good balance when server did not provide a value
-				game.setBalance(lastSyncedBalance);
+				game.applyServerBalance(lastSyncedBalance);
 				updateUI();
 			}
 
@@ -880,7 +880,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			await performChipUpdate();
 		} catch (error) {
 			console.error('Balance sync error:', error);
-			game.setBalance(lastSyncedBalance);
+			game.applyServerBalance(lastSyncedBalance);
 			updateUI();
 			showStatus('Network error. Balance reverted.');
 		}

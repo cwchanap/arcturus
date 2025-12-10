@@ -385,6 +385,13 @@ export class BaccaratGame {
 		return false;
 	}
 
+	public applyServerBalance(newBalance: number): void {
+		if (newBalance >= 0) {
+			this.state.chipBalance = newBalance;
+			this.events.onBalanceUpdate?.(newBalance);
+		}
+	}
+
 	/**
 	 * Get statistics from round history
 	 */

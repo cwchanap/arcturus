@@ -252,6 +252,23 @@ describe('BaccaratGame', () => {
 		});
 	});
 
+	describe('Server balance reconciliation', () => {
+		test('applyServerBalance should update balance during betting', () => {
+			game.applyServerBalance(1500);
+			expect(game.getBalance()).toBe(1500);
+		});
+
+		test('applyServerBalance should update balance during resolution phase', () => {
+			game.placeBet('player', 100);
+			const outcome = game.deal();
+			expect(outcome).not.toBeNull();
+			const state = game.getState();
+			expect(state.phase).toBe('resolution');
+			game.applyServerBalance(2000);
+			expect(game.getBalance()).toBe(2000);
+		});
+	});
+
 	describe('Insufficient chips', () => {
 		test('should detect insufficient chips', () => {
 			const lowBalanceGame = new BaccaratGame({

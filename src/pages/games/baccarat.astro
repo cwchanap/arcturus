@@ -841,7 +841,16 @@ const initialBalance = user.chipBalance ?? 1000;
 				);
 				showStatus('Syncing balance...');
 				setTimeout(() => {
-					void performChipUpdate(retryCount + 1);
+					void (async () => {
+						try {
+							await performChipUpdate(retryCount + 1);
+						} catch (error) {
+							console.error('Balance sync retry error:', error);
+							game.applyServerBalance(lastSyncedBalance);
+							updateUI();
+							showStatus('Network error. Balance reverted.');
+						}
+					})();
 				}, retryAfterMs + 100);
 				return;
 			}

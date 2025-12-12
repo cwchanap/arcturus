@@ -511,6 +511,26 @@ describe('PokerUIRenderer', () => {
 			expect(elements['opponent1-cards'].innerHTML).toContain('ring-2 ring-yellow-400');
 			expect(elements['opponent2-cards'].innerHTML).toContain('ring-2 ring-yellow-400');
 		});
+
+		test('uses smaller card styling for opponents', () => {
+			const players = [
+				player(0, 'You', 500),
+				player(1, 'Player 2', 350, [card('A', 'hearts', 14), card('K', 'spades', 13)]),
+				player(2, 'Player 3', 750, [card('Q', 'diamonds', 12), card('J', 'clubs', 11)]),
+			];
+			const winners = [players[1]];
+
+			renderer.revealOpponentHands(players, winners);
+
+			const opp1Html = elements['opponent1-cards'].innerHTML;
+			const opp2Html = elements['opponent2-cards'].innerHTML;
+
+			// Both opponents should use smaller card styling
+			expect(opp1Html).toContain('opponent-card-small');
+			expect(opp1Html).toContain('w-12 h-16');
+			expect(opp2Html).toContain('opponent-card-small');
+			expect(opp2Html).toContain('w-12 h-16');
+		});
 	});
 
 	describe('hideOpponentHands()', () => {
@@ -568,6 +588,27 @@ describe('PokerUIRenderer', () => {
 			expect(elements['pot-amount'].textContent).toBe('$0');
 			expect(elements['current-bet'].textContent).toBe('$0');
 		});
+
+		test('handles missing DOM elements gracefully', () => {
+			const humanPlayer = player(0, 'You', 500);
+			humanPlayer.currentBet = 50;
+
+			// Create a fresh document mock with no elements
+			(global as unknown as { document: unknown }).document = {
+				getElementById: () => null,
+				querySelector: () => null,
+				createElement: () => ({
+					className: '',
+					textContent: '',
+					remove: () => {},
+					parentElement: null,
+				}),
+				querySelectorAll: () => [],
+			};
+
+			// Should not throw when elements are missing
+			expect(() => renderer.updateUI(100, humanPlayer)).not.toThrow();
+		});
 	});
 
 	describe('updateGameStatus()', () => {
@@ -593,6 +634,24 @@ describe('PokerUIRenderer', () => {
 			renderer.updateGameStatus('Player 2 wins!', 'showdown', 500);
 
 			expect(elements['game-status'].textContent).toBe('[Showdown | Pot: $500] Player 2 wins!');
+		});
+
+		test('handles missing status element gracefully', () => {
+			// Create a fresh document mock with no elements
+			(global as unknown as { document: unknown }).document = {
+				getElementById: () => null,
+				querySelector: () => null,
+				createElement: () => ({
+					className: '',
+					textContent: '',
+					remove: () => {},
+					parentElement: null,
+				}),
+				querySelectorAll: () => [],
+			};
+
+			// Should not throw when game-status element is missing
+			expect(() => renderer.updateGameStatus('Test message', 'flop', 100)).not.toThrow();
 		});
 	});
 

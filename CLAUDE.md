@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Arcturus is a casino gaming platform built with Astro SSR, running on Cloudflare Workers. It features Texas Hold'em poker with AI opponents, session-based authentication via Better Auth, and a chip-based economy system stored in Cloudflare D1.
+Arcturus is a casino gaming platform built with Astro SSR, running on Cloudflare Workers. It features multiple casino games (Texas Hold'em Poker, Blackjack, Baccarat) with AI opponents, session-based authentication via Better Auth, and a chip-based economy system stored in Cloudflare D1.
 
 ## Critical Architecture Rules
 
@@ -141,6 +141,7 @@ src/
 ├── components/           # Reusable UI components
 │   ├── PlayingCard.astro  # Casino card component
 │   ├── PokerChip.astro    # Casino chip component
+│   ├── GameCard.astro     # Game selection cards
 │   └── UserNav.astro      # User balance/nav
 ├── layouts/
 │   ├── casino.astro       # Casino theme (use for games)
@@ -148,11 +149,14 @@ src/
 ├── pages/
 │   ├── games/             # Game routes (auth required)
 │   │   ├── index.astro    # Game lobby
-│   │   └── poker.astro    # Texas Hold'em
+│   │   ├── poker.astro    # Texas Hold'em
+│   │   ├── blackjack.astro # Blackjack
+│   │   └── baccarat.astro  # Baccarat
 │   ├── api/
 │   │   ├── auth/[...all].ts    # Better Auth API
 │   │   ├── missions/           # Mission completion endpoints
-│   │   └── profile/            # User settings (LLM config)
+│   │   ├── profile/            # User settings (LLM config)
+│   │   └── chips/update.ts     # Chip balance updates
 │   ├── signin.astro
 │   ├── signup.astro
 │   └── profile.astro
@@ -162,26 +166,51 @@ src/
 │   ├── db.ts              # Database factory
 │   ├── missions.ts        # Mission system logic
 │   ├── llm-settings.ts    # User LLM configuration
-│   └── poker/             # Poker game logic (modular)
+│   ├── poker/             # Poker game logic (modular)
+│   │   ├── types.ts       # TypeScript interfaces
+│   │   ├── constants.ts   # Game constants
+│   │   ├── player.ts      # Player utilities (pure functions)
+│   │   ├── handEvaluator.ts    # Hand ranking logic
+│   │   ├── potCalculator.ts    # Pot + side pots
+│   │   ├── aiStrategy.ts       # AI decision engine
+│   │   ├── llmAIStrategy.ts    # LLM-powered AI
+│   │   ├── PokerGame.ts        # Main game class
+│   │   ├── DeckManager.ts      # Deck shuffling
+│   │   ├── AIRivalAssistant.ts # AI opponent personality
+│   │   ├── PokerUIRenderer.ts  # UI rendering logic
+│   │   └── GameSettingsManager.ts # Settings persistence
+│   ├── blackjack/         # Blackjack game logic (modular)
+│   │   ├── types.ts       # TypeScript interfaces
+│   │   ├── constants.ts   # Game constants
+│   │   ├── handEvaluator.ts    # Hand value calculation
+│   │   ├── dealerStrategy.ts   # Dealer AI logic
+│   │   ├── llmBlackjackStrategy.ts # LLM-powered hints
+│   │   ├── BlackjackGame.ts    # Main game class
+│   │   ├── DeckManager.ts      # Deck shuffling
+│   │   ├── BlackjackUIRenderer.ts # UI rendering logic
+│   │   ├── GameSettingsManager.ts # Settings persistence
+│   │   └── blackjackClient.ts  # Client-side integration
+│   └── baccarat/          # Baccarat game logic (modular)
 │       ├── types.ts       # TypeScript interfaces
 │       ├── constants.ts   # Game constants
-│       ├── player.ts      # Player utilities (pure functions)
-│       ├── handEvaluator.ts    # Hand ranking logic
-│       ├── potCalculator.ts    # Pot + side pots
-│       ├── aiStrategy.ts       # AI decision engine
-│       ├── llmAIStrategy.ts    # LLM-powered AI
-│       ├── PokerGame.ts        # Main game class
+│       ├── handEvaluator.ts    # Hand value calculation
+│       ├── thirdCardRules.ts   # Third card drawing rules
+│       ├── payoutCalculator.ts # Payout logic
+│       ├── llmBaccaratStrategy.ts # LLM-powered hints
+│       ├── BaccaratGame.ts     # Main game class
 │       ├── DeckManager.ts      # Deck shuffling
-│       ├── AIRivalAssistant.ts # AI opponent personality
-│       └── PokerUIRenderer.ts  # UI rendering logic
+│       ├── BaccaratUIRenderer.ts # UI rendering logic
+│       ├── GameSettingsManager.ts # Settings persistence
+│       └── baccaratClient.ts   # Client-side integration
 ├── db/
 │   └── schema.ts          # Drizzle schema (single source of truth)
 └── middleware.ts          # Auth + session injection (runs on ALL requests)
 
 e2e/                       # Playwright E2E tests
 ├── global-setup.ts        # Test authentication setup
-├── auth.setup.ts          # Shared auth state
 ├── poker-turn-flow.spec.ts  # Poker game flow tests
+├── blackjack-*.spec.ts    # Blackjack tests (settings, split, LLM)
+├── baccarat.spec.ts       # Baccarat game flow tests
 └── profile.spec.ts        # Profile page tests
 
 drizzle/                   # Generated SQL migrations
@@ -207,11 +236,21 @@ drizzle/                   # Generated SQL migrations
 
 3. **Middleware Enrichment**: `chipBalance` is automatically added to user object in middleware
 
-4. **Modular Game Logic**: Game logic extracted to `src/lib/{game}/` with pure functions for testability. See poker implementation for reference.
+4. **Modular Game Logic**: Game logic extracted to `src/lib/{game}/` with pure functions for testability. Each game follows the same structure:
+   - `{Game}Game.ts` - Main game class with state management
+   - `{Game}UIRenderer.ts` - UI rendering logic
+   - `DeckManager.ts` - Card deck operations
+   - `GameSettingsManager.ts` - Settings persistence
+   - `handEvaluator.ts` - Hand value/ranking logic
+   - `llm{Game}Strategy.ts` - LLM-powered hints/AI
+   - `{game}Client.ts` - Client-side integration script
+   - `types.ts`, `constants.ts` - TypeScript definitions and game constants
 
 5. **Mission System**: Daily login rewards, chip balance updates via `src/lib/missions.ts`
 
-6. **LLM Integration**: User-configured AI settings (OpenAI/Gemini) for poker assistant via `src/lib/llm-settings.ts` and `src/lib/poker/llmAIStrategy.ts`
+6. **LLM Integration**: User-configured AI settings (OpenAI/Gemini) for game assistants via `src/lib/llm-settings.ts`. Each game has its own LLM strategy module for context-aware hints.
+
+7. **Chip Balance Sync**: Games sync chip balance with server via `POST /api/chips/update` endpoint after each game round.
 
 ## Database Schema
 
@@ -312,7 +351,9 @@ wrangler secret list
 
 ## Building New Games
 
-**Pattern** (see `src/pages/games/poker.astro`):
+**Pattern** (see existing games: poker, blackjack, baccarat):
+
+**1. Page Structure** (`src/pages/games/yourgame.astro`):
 
 ```astro
 ---
@@ -322,36 +363,51 @@ if (!user) return Astro.redirect('/signin');
 ---
 
 <CasinoLayout title="Your Game - Arcturus Casino">
-	<!-- Game UI -->
+	<!-- Game UI with data-testid attributes for E2E tests -->
 </CasinoLayout>
 
 <script>
-	// Client-side game logic
+	import { YourGame } from '../../lib/yourgame/YourGame';
+	if (typeof window !== 'undefined') {
+		new YourGame();
+	}
 </script>
 ```
 
-**Steps**:
+**2. Game Logic Structure** (`src/lib/yourgame/`):
 
-1. Create `src/pages/games/yourgame.astro`
-2. Use `CasinoLayout` + check `Astro.locals.user`
-3. Extract complex logic to `src/lib/yourgame/` with pure functions
-4. Write unit tests for game logic
-5. Add to game lobby (`src/pages/games/index.astro`)
+Create a modular game structure following the established pattern:
 
-**Available Components**:
+- `types.ts` - TypeScript interfaces for game state, cards, settings
+- `constants.ts` - Game constants (bet limits, payouts, etc.)
+- `YourGame.ts` - Main game class managing state and game flow
+- `YourGameUIRenderer.ts` - DOM manipulation and UI updates
+- `DeckManager.ts` - Card deck shuffling and dealing
+- `GameSettingsManager.ts` - LocalStorage persistence for settings
+- `handEvaluator.ts` - Game-specific hand evaluation logic
+- `llmYourGameStrategy.ts` - LLM integration for hints/AI (optional)
+- `yourgameClient.ts` - Client-side integration and event handlers
+- `*.test.ts` - Unit tests for each module
 
-- `PlayingCard.astro` - Cards with suits
-- `PokerChip.astro` - Casino chips
-- `GameCard.astro` - Game selection cards
-- `UserNav.astro` - User balance/nav
+**3. Implementation Steps**:
 
-## Active Technologies
+1. Create game page: `src/pages/games/yourgame.astro`
+2. Build game logic in `src/lib/yourgame/` following modular pattern
+3. Write unit tests for all game logic modules
+4. Add E2E test: `e2e/yourgame.spec.ts`
+5. Update game lobby: add game card to `src/pages/games/index.astro`
+6. Integrate chip balance sync via `POST /api/chips/update`
 
-- Cloudflare D1 (existing schema - reuses `user.chipBalance` and `llm_settings` table) (002-baccarat-game)
+**4. Available Components**:
 
-- TypeScript 5.x (Astro SSR environment) + Astro 5.x, Drizzle ORM, Better Auth, Tailwind CSS v4, existing `llm-settings` infrastructure (001-blackjack-game)
-- Cloudflare D1 (existing schema - reuses `user.chipBalance` and `llm_settings` table, no new tables needed) (001-blackjack-game)
+- `PlayingCard.astro` - Cards with suits (value, suit, faceDown props)
+- `PokerChip.astro` - Casino chips (value, color props)
+- `GameCard.astro` - Game selection cards for lobby
+- `UserNav.astro` - User balance/nav display
 
-## Recent Changes
+**5. Testing Requirements**:
 
-- 001-blackjack-game: Added TypeScript 5.x (Astro SSR environment) + Astro 5.x, Drizzle ORM, Better Auth, Tailwind CSS v4, existing `llm-settings` infrastructure
+- Unit tests for all pure functions (hand evaluation, calculations)
+- E2E tests covering main game flow (place bet, play round, win/lose)
+- Test LLM integration if applicable
+- Test settings persistence

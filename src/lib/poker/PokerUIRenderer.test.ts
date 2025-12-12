@@ -211,7 +211,7 @@ describe('PokerUIRenderer', () => {
 				player(2, 'Player 3', 750),
 			];
 
-			// Mock opponent containers with chip displays
+			// Mock opponent chip elements with direct ID selectors
 			const chipEl1 = { textContent: '$500' };
 			const chipEl2 = { textContent: '$500' };
 
@@ -223,7 +223,6 @@ describe('PokerUIRenderer', () => {
 					classList: { add: () => {}, remove: () => {} },
 					querySelector: (selector: string) => {
 						if (selector === '.folded-badge') return null;
-						if (selector === '.text-xs.text-yellow-400') return chipEl1;
 						return null;
 					},
 					appendChild: () => {},
@@ -242,7 +241,6 @@ describe('PokerUIRenderer', () => {
 					classList: { add: () => {}, remove: () => {} },
 					querySelector: (selector: string) => {
 						if (selector === '.folded-badge') return null;
-						if (selector === '.text-xs.text-yellow-400') return chipEl2;
 						return null;
 					},
 					appendChild: () => {},
@@ -255,6 +253,8 @@ describe('PokerUIRenderer', () => {
 
 			elements['opponent1-cards'] = opp1Container;
 			elements['opponent2-cards'] = opp2Container;
+			elements['opponent1-chips'] = chipEl1;
+			elements['opponent2-chips'] = chipEl2;
 
 			renderer.updateOpponentUI(players);
 
@@ -520,9 +520,9 @@ describe('PokerUIRenderer', () => {
 			const opp1Html = elements['opponent1-cards'].innerHTML;
 			const opp2Html = elements['opponent2-cards'].innerHTML;
 
-			expect(opp1Html).toContain('card-back');
+			expect(opp1Html).toContain('opponent-card-small');
 			expect(opp1Html).toContain('🂠');
-			expect(opp2Html).toContain('card-back');
+			expect(opp2Html).toContain('opponent-card-small');
 			expect(opp2Html).toContain('🂠');
 		});
 
@@ -531,9 +531,8 @@ describe('PokerUIRenderer', () => {
 
 			const html = elements['opponent1-cards'].innerHTML;
 			expect(html).toContain('bg-gradient-to-br');
-			expect(html).toContain('from-blue-900');
-			expect(html).toContain('to-purple-900');
-			expect(html).toContain('border-yellow-500/30');
+			expect(html).toContain('from-blue-600');
+			expect(html).toContain('to-blue-800');
 		});
 	});
 
@@ -551,10 +550,9 @@ describe('PokerUIRenderer', () => {
 		test('updates player balance in header', () => {
 			const humanPlayer = player(0, 'You', 325);
 
-			// Mock the header balance element
+			// Mock the header balance element using getElementById
 			const balanceEl = { textContent: '$500' };
-			(global as unknown as { document: { querySelector: () => unknown } }).document.querySelector =
-				() => balanceEl;
+			elements['player-balance'] = balanceEl;
 
 			renderer.updateUI(0, humanPlayer);
 

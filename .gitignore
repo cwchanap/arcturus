@@ -31,3 +31,4 @@ tests/.auth/
 playwright-report/
 e2e/.auth/
 specs/
+.claude/settings.local.json

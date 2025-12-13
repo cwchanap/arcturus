@@ -80,11 +80,9 @@ export class PokerUIRenderer {
 	}
 
 	public updateOpponentUI(players: Player[]) {
-		// Update opponent chip counts
+		// Update opponent chip counts using direct ID selectors
 		if (players[1]) {
-			const opponent1Chips = document
-				.querySelector('#opponent1-cards')
-				?.parentElement?.querySelector('.text-xs.text-yellow-400');
+			const opponent1Chips = document.getElementById('opponent1-chips');
 			if (opponent1Chips) {
 				opponent1Chips.textContent = `$${players[1].chips}`;
 			}
@@ -92,9 +90,7 @@ export class PokerUIRenderer {
 			this.updateFoldedState(1, players[1].folded);
 		}
 		if (players[2]) {
-			const opponent2Chips = document
-				.querySelector('#opponent2-cards')
-				?.parentElement?.querySelector('.text-xs.text-yellow-400');
+			const opponent2Chips = document.getElementById('opponent2-chips');
 			if (opponent2Chips) {
 				opponent2Chips.textContent = `$${players[2].chips}`;
 			}
@@ -192,7 +188,7 @@ export class PokerUIRenderer {
 	}
 
 	public revealOpponentHands(players: Player[], winners: Player[]) {
-		// Reveal Player 2's hand
+		// Reveal Player 2's hand (smaller cards for opponents)
 		if (players[1] && !players[1].folded) {
 			const opponent1Container = document.getElementById('opponent1-cards');
 			if (opponent1Container) {
@@ -200,15 +196,15 @@ export class PokerUIRenderer {
 				opponent1Container.innerHTML = players[1].hand
 					.map(
 						(card) => `
-					<div class="playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-16 h-24 flex items-center justify-center">
-						<div class="w-full h-full p-1.5 flex flex-col">
-							<div class="text-sm font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
+						<div class="w-full h-full p-1 flex flex-col">
+							<div class="text-xs font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${card.value}
 							</div>
-							<div class="flex-1 flex items-center justify-center text-2xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="flex-1 flex items-center justify-center text-lg ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${this.getSuitSymbol(card.suit)}
 							</div>
-							<div class="text-sm font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+							<div class="text-xs font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
 								${card.value}
 							</div>
 						</div>
@@ -219,7 +215,7 @@ export class PokerUIRenderer {
 			}
 		}
 
-		// Reveal Player 3's hand
+		// Reveal Player 3's hand (smaller cards for opponents)
 		if (players[2] && !players[2].folded) {
 			const opponent2Container = document.getElementById('opponent2-cards');
 			if (opponent2Container) {
@@ -227,15 +223,15 @@ export class PokerUIRenderer {
 				opponent2Container.innerHTML = players[2].hand
 					.map(
 						(card) => `
-					<div class="playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-16 h-24 flex items-center justify-center">
-						<div class="w-full h-full p-1.5 flex flex-col">
-							<div class="text-sm font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
+						<div class="w-full h-full p-1 flex flex-col">
+							<div class="text-xs font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${card.value}
 							</div>
-							<div class="flex-1 flex items-center justify-center text-2xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="flex-1 flex items-center justify-center text-lg ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${this.getSuitSymbol(card.suit)}
 							</div>
-							<div class="text-sm font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+							<div class="text-xs font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
 								${card.value}
 							</div>
 						</div>
@@ -248,13 +244,15 @@ export class PokerUIRenderer {
 	}
 
 	public hideOpponentHands() {
-		// Reset to face-down cards
+		// Reset to face-down cards with smaller size for opponents
 		const opponent1Container = document.getElementById('opponent1-cards');
 		const opponent2Container = document.getElementById('opponent2-cards');
 
 		const faceDownCard = `
-			<div class="card-back w-16 h-24 bg-gradient-to-br from-blue-900 to-purple-900 rounded-lg border-2 border-yellow-500/30 flex items-center justify-center">
-				<div class="text-yellow-500 text-2xl">🂠</div>
+			<div class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center">
+				<div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
+					<div class="text-white text-xl">🂠</div>
+				</div>
 			</div>
 		`;
 
@@ -296,23 +294,22 @@ export class PokerUIRenderer {
 	}
 
 	public updateUI(pot: number, humanPlayer: Player) {
-		document.getElementById('pot-amount')!.textContent = `$${pot}`;
-		document.getElementById('current-bet')!.textContent = `$${humanPlayer.currentBet}`;
+		const potEl = document.getElementById('pot-amount');
+		const betEl = document.getElementById('current-bet');
+		const balanceEl = document.getElementById('player-balance');
 
-		// Update player balance in header
-		const balanceEl = document.querySelector(
-			'.bg-slate-800.px-6.py-3 .text-2xl.font-bold.text-yellow-400',
-		);
-		if (balanceEl) {
-			balanceEl.textContent = `$${humanPlayer.chips}`;
-		}
+		if (potEl) potEl.textContent = `$${pot}`;
+		if (betEl) betEl.textContent = `$${humanPlayer.currentBet}`;
+		if (balanceEl) balanceEl.textContent = `$${humanPlayer.chips}`;
 	}
 
 	public updateGameStatus(message: string, gamePhase: string, pot: number) {
+		const statusEl = document.getElementById('game-status');
+		if (!statusEl) return;
+
 		// Add phase and pot info to status message
 		const phaseLabel = gamePhase.charAt(0).toUpperCase() + gamePhase.slice(1);
 		const potInfo = pot > 0 ? ` | Pot: $${pot}` : '';
-		const fullMessage = `[${phaseLabel}${potInfo}] ${message}`;
-		document.getElementById('game-status')!.textContent = fullMessage;
+		statusEl.textContent = `[${phaseLabel}${potInfo}] ${message}`;
 	}
 }

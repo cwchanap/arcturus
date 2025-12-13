@@ -1,6 +1,5 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
-import PlayingCard from '../../components/PlayingCard.astro';
 import PokerChip from '../../components/PokerChip.astro';
 
 const user = Astro.locals.user;
@@ -30,48 +29,48 @@ if (!user) {
 			<div class="flex items-center gap-4">
 				<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
 					<div class="text-xs text-slate-400 mb-1">Your Balance</div>
-					<div class="text-2xl font-bold text-yellow-400">$1,000</div>
+					<div class="text-2xl font-bold text-yellow-400" id="player-balance">$1,000</div>
 				</div>
 			</div>
 		</div>
 
 		<!-- Poker Table -->
-		<div class="felt-table rounded-3xl p-8 mb-8 relative min-h-[600px]">
-			<!-- Pot Display -->
-			<div class="absolute top-8 left-1/2 -translate-x-1/2">
+		<div class="felt-table p-6 md:p-8 mb-6 relative" style="min-height: 580px;">
+			<!-- Pot Display - Top Center -->
+			<div class="absolute top-6 left-1/2 -translate-x-1/2 z-10">
 				<div
-					class="bg-slate-900/80 backdrop-blur-sm px-6 py-3 rounded-full border-2 border-yellow-500/50"
+					class="bg-slate-900/90 backdrop-blur-sm px-5 py-2.5 rounded-full border-2 border-yellow-500/50 shadow-lg"
 				>
-					<div class="text-xs text-slate-400 text-center mb-1">POT</div>
-					<div class="text-2xl font-bold text-yellow-400" id="pot-amount">$0</div>
+					<div class="text-xs text-slate-400 text-center mb-0.5">POT</div>
+					<div class="text-xl font-bold text-yellow-400" id="pot-amount">$0</div>
 				</div>
 			</div>
 
-			<!-- Community Cards -->
-			<div class="absolute top-32 left-1/2 -translate-x-1/2">
-				<div class="flex gap-3" id="community-cards">
+			<!-- Community Cards - Center -->
+			<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -mt-4">
+				<div class="flex gap-2 md:gap-3" id="community-cards">
 					<div
-						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
 					>
 						?
 					</div>
 					<div
-						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
 					>
 						?
 					</div>
 					<div
-						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
 					>
 						?
 					</div>
 					<div
-						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
 					>
 						?
 					</div>
 					<div
-						class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600"
+						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
 					>
 						?
 					</div>
@@ -81,7 +80,7 @@ if (!user) {
 			<!-- LLM Configuration Overlay -->
 			<div
 				id="llm-overlay"
-				class="hidden absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center"
+				class="hidden absolute inset-0 z-40 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center rounded-[50%/38%]"
 			>
 				<div
 					class="max-w-md w-full mx-4 bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl flex flex-col gap-3"
@@ -121,82 +120,104 @@ if (!user) {
 				</div>
 			</div>
 
-			<!-- Opponents (simplified - 3 positions) -->
-			<div class="absolute top-8 left-8">
-				<div class="bg-slate-900/80 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
-					<div class="text-sm text-slate-300 mb-2">Player 2</div>
-					<div class="flex gap-2 mb-2" id="opponent1-cards">
-						<PlayingCard value="?" suit="spades" faceDown={true} />
-						<PlayingCard value="?" suit="spades" faceDown={true} />
+			<!-- Opponents - Arc positioning around oval table -->
+			<!-- Opponent 1: Top-Left (10 o'clock position) -->
+			<div class="absolute top-16 left-6 md:left-12">
+				<div
+					class="bg-slate-900/85 backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-slate-600/80 shadow-lg"
+				>
+					<div class="text-xs text-slate-300 mb-1.5 font-medium">Player 2</div>
+					<div class="flex gap-1.5 mb-1.5" id="opponent1-cards">
+						<div
+							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
+						>
+							<div
+								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
+							>
+								<div class="text-white text-xl">🂠</div>
+							</div>
+						</div>
+						<div
+							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
+						>
+							<div
+								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
+							>
+								<div class="text-white text-xl">🂠</div>
+							</div>
+						</div>
 					</div>
-					<div class="text-xs text-yellow-400">$500</div>
+					<div class="text-xs text-yellow-400 font-semibold" id="opponent1-chips">$500</div>
 				</div>
 			</div>
 
-			<div class="absolute top-8 right-8">
-				<div class="bg-slate-900/80 backdrop-blur-sm p-4 rounded-lg border border-slate-700">
-					<div class="text-sm text-slate-300 mb-2">Player 3</div>
-					<div class="flex gap-2 mb-2" id="opponent2-cards">
-						<PlayingCard value="?" suit="spades" faceDown={true} />
-						<PlayingCard value="?" suit="spades" faceDown={true} />
+			<!-- Opponent 2: Top-Right (2 o'clock position) -->
+			<div class="absolute top-16 right-6 md:right-12">
+				<div
+					class="bg-slate-900/85 backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-slate-600/80 shadow-lg"
+				>
+					<div class="text-xs text-slate-300 mb-1.5 font-medium">Player 3</div>
+					<div class="flex gap-1.5 mb-1.5" id="opponent2-cards">
+						<div
+							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
+						>
+							<div
+								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
+							>
+								<div class="text-white text-xl">🂠</div>
+							</div>
+						</div>
+						<div
+							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
+						>
+							<div
+								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
+							>
+								<div class="text-white text-xl">🂠</div>
+							</div>
+						</div>
 					</div>
-					<div class="text-xs text-yellow-400">$750</div>
+					<div class="text-xs text-yellow-400 font-semibold" id="opponent2-chips">$750</div>
 				</div>
 			</div>
 
-			<!-- Player's Hand -->
-			<div class="absolute bottom-8 left-1/2 -translate-x-1/2">
-				<div class="bg-slate-900/90 backdrop-blur-sm p-6 rounded-xl border-2 border-yellow-500/50">
-					<div class="text-center mb-4">
-						<div class="text-sm text-slate-400 mb-1">Your Hand</div>
-						<div class="text-lg font-bold text-yellow-400" id="hand-strength">--</div>
+			<!-- Player's Hand with Integrated Controls -->
+			<div class="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 w-full max-w-xl px-3">
+				<div
+					class="bg-slate-900/95 backdrop-blur-sm p-4 md:p-5 rounded-xl border-2 border-yellow-500/40 player-area-glow"
+				>
+					<!-- Hand Display -->
+					<div class="text-center mb-3">
+						<div class="text-xs text-slate-400 mb-0.5">Your Hand</div>
+						<div class="text-base md:text-lg font-bold text-yellow-400" id="hand-strength">--</div>
 					</div>
-					<div class="flex gap-3 justify-center mb-4" id="player-cards">
+					<div class="flex gap-2 md:gap-3 justify-center mb-3" id="player-cards">
 						<!-- Cards will be inserted here by JavaScript -->
 					</div>
-					<div class="text-sm text-center text-yellow-400">
-						Your Bet: <span id="current-bet">$0</span>
-					</div>
-				</div>
-			</div>
-		</div>
 
-		<!-- Game Controls -->
-		<div class="bg-slate-900 rounded-xl p-6 border border-slate-700">
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-				<!-- Betting Controls -->
-				<div>
-					<h3 class="text-lg font-bold text-white mb-4">Betting Controls</h3>
-					<div class="space-y-3">
-						<div class="flex gap-2">
-							<button
-								id="btn-fold"
-								class="flex-1 bg-red-600 hover:bg-red-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								FOLD
+					<!-- Integrated Betting Controls -->
+					<div class="border-t border-slate-700/50 pt-3 space-y-2.5">
+						<!-- Action Buttons Row -->
+						<div class="grid grid-cols-4 gap-1.5 md:gap-2">
+							<button id="btn-fold" class="action-btn bg-red-600 hover:bg-red-700 text-white">
+								Fold
 							</button>
-							<button
-								id="btn-check"
-								class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								CHECK
+							<button id="btn-check" class="action-btn bg-blue-600 hover:bg-blue-700 text-white">
+								Check
 							</button>
-						</div>
-						<div class="flex gap-2">
-							<button
-								id="btn-call"
-								class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-							>
-								CALL
+							<button id="btn-call" class="action-btn bg-green-600 hover:bg-green-700 text-white">
+								Call
 							</button>
 							<button
 								id="btn-raise"
-								class="flex-1 bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-700 hover:to-amber-700 text-white py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+								class="action-btn bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-slate-900"
 							>
-								RAISE
+								Raise
 							</button>
 						</div>
-						<div class="flex gap-2 items-center">
+
+						<!-- Bet Slider Row -->
+						<div class="flex gap-2 items-center px-1">
 							<input
 								type="range"
 								id="bet-slider"
@@ -204,43 +225,54 @@ if (!user) {
 								max="1000"
 								step="10"
 								value="50"
-								class="flex-1"
+								class="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-yellow-500"
 							/>
-							<span id="bet-amount" class="text-yellow-400 font-bold min-w-[80px] text-right"
-								>$50</span
+							<span
+								id="bet-amount"
+								class="text-yellow-400 font-bold min-w-[60px] text-right text-sm">$50</span
 							>
+						</div>
+
+						<!-- Quick Bet Chips Row -->
+						<div class="flex justify-center gap-2 md:gap-3">
+							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="10">
+								<PokerChip value={10} color="red" />
+							</button>
+							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="25">
+								<PokerChip value={25} color="blue" />
+							</button>
+							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="50">
+								<PokerChip value={50} color="green" />
+							</button>
+							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="100">
+								<PokerChip value={100} color="black" />
+							</button>
+						</div>
+
+						<!-- Current Bet Display -->
+						<div class="text-center text-sm text-yellow-400/80">
+							Your Bet: <span id="current-bet" class="font-semibold">$0</span>
 						</div>
 					</div>
 				</div>
-
-				<!-- Quick Bet Chips -->
-				<div>
-					<h3 class="text-lg font-bold text-white mb-4">Quick Bet</h3>
-					<div class="grid grid-cols-4 gap-3">
-						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="10">
-							<PokerChip value={10} color="red" />
-						</button>
-						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="25">
-							<PokerChip value={25} color="blue" />
-						</button>
-						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="50">
-							<PokerChip value={50} color="green" />
-						</button>
-						<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="100">
-							<PokerChip value={100} color="black" />
-						</button>
-					</div>
-					<button id="btn-deal" class="w-full mt-4 btn-gold py-4 rounded-lg font-bold text-lg">
-						DEAL NEW HAND
-					</button>
-				</div>
 			</div>
+		</div>
 
-			<!-- Game Status -->
-			<div class="mt-6 p-4 bg-slate-800 rounded-lg border border-slate-700">
-				<div class="text-sm text-slate-400 mb-1">Game Status</div>
-				<div id="game-status" class="text-lg font-bold text-yellow-400">
-					Click "DEAL NEW HAND" to start
+		<!-- Game Controls - Simplified (main controls now in table) -->
+		<div class="bg-slate-900 rounded-xl p-5 border border-slate-700">
+			<!-- Deal Button + Game Status -->
+			<div class="flex flex-col md:flex-row md:items-center gap-4 mb-5">
+				<button
+					id="btn-deal"
+					class="btn-gold py-3 px-8 rounded-lg font-bold text-lg md:w-auto w-full"
+				>
+					DEAL NEW HAND
+				</button>
+				<div class="flex-1 p-3 bg-slate-800/60 rounded-lg border border-slate-700/50">
+					<div class="text-xs text-slate-400 mb-0.5">Game Status</div>
+					<div id="game-status" class="text-base font-semibold text-yellow-400">
+						Click "DEAL NEW HAND" to start
+					</div>
 				</div>
 			</div>
 

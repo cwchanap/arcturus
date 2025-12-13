@@ -1,0 +1,7 @@
+language: "en"
+
+reviews:
+  path_filters:
+    - "!specs/**"
+    - "!.specify/**"
+    - "!**/drizzle/migrations/**"

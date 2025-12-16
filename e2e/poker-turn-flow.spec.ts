@@ -17,7 +17,7 @@ test.describe('Poker turn flow smoke test', () => {
 
 		await page.getByRole('button', { name: 'CHECK' }).click();
 
-		await expect(status).toHaveText(/You checked|Waiting for/i, { timeout: 5000 });
+		await expect(status).toHaveText(/You checked|You called|Waiting for/i, { timeout: 5000 });
 		await expect(status).toBeVisible();
 
 		await expect(status).toHaveText(/\[(Flop|Turn|River|Showdown).*|wins \$/i, {

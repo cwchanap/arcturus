@@ -2,26 +2,115 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { ensureLoggedIn } from './auth-helpers';
 
+test.describe.configure({ mode: 'serial' });
+
 async function gotoBlackjack(page: Page) {
 	await ensureLoggedIn(page);
-	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
+	await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+}
+
+async function refreshBlackjack(page: Page) {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		await gotoBlackjack(page);
+		if (page.url().includes('/signin')) {
+			await ensureLoggedIn(page);
+			continue;
+		}
+		await page.locator('#player-balance').waitFor({ state: 'visible', timeout: 10000 });
+		return;
+	}
+
+	throw new Error('Failed to refresh blackjack page: redirected to /signin');
+}
+
+async function ensureMinimumBalance(page: Page, minimumBalance: number) {
+	const maxAttempts = 5;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		const balanceText = await page
+			.locator('#player-balance')
+			.innerText()
+			.catch(() => '');
+		const balance = parseBalance(balanceText);
+		if (balance >= minimumBalance) {
+			return;
+		}
+
+		const delta = minimumBalance - balance;
+		const result = await page.evaluate(
+			async ({ delta, previousBalance }) => {
+				const response = await fetch('/api/chips/update', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						delta,
+						gameType: 'blackjack',
+						previousBalance,
+					}),
+				});
+
+				let data: unknown = null;
+				try {
+					data = await response.json();
+				} catch (_error) {
+					void _error;
+				}
+
+				return {
+					ok: response.ok,
+					status: response.status,
+					retryAfter: response.headers.get('Retry-After'),
+					data,
+				};
+			},
+			{ delta, previousBalance: balance },
+		);
+
+		if (result.ok) {
+			await refreshBlackjack(page);
+			continue;
+		}
+
+		if (result.status === 429) {
+			const retryAfter = Number(result.retryAfter ?? '2');
+			const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
+			await page.waitForTimeout(sleepMs);
+			await refreshBlackjack(page);
+			continue;
+		}
+
+		if (result.status === 409) {
+			await refreshBlackjack(page);
+			continue;
+		}
+
+		throw new Error(`Failed to top up balance for test: ${JSON.stringify(result)}`);
+	}
+
+	throw new Error(`Failed to reach minimum balance ${minimumBalance} after retries`);
 }
 
 async function dealNewHand(page: Page, bet: number) {
+	await ensureMinimumBalance(page, bet);
 	const betInput = page.locator('#bet-amount');
 	await betInput.fill(String(bet));
 	await page.getByRole('button', { name: 'Deal' }).click();
-	await page.locator('#game-controls').waitFor({ state: 'visible' });
+	await Promise.race([
+		page.locator('#game-controls').waitFor({ state: 'visible', timeout: 10000 }),
+		page.getByRole('button', { name: 'New Round' }).waitFor({ state: 'visible', timeout: 10000 }),
+	]);
 }
 
 function parseBalance(text: string): number {
-	const digits = text.replace(/[^0-9]/g, '');
-	return Number(digits || '0');
+	const normalized = text.replace(/,/g, '');
+	const match = normalized.match(/-?\d+(?:\.\d+)?/);
+	return Number(match?.[0] ?? '0');
 }
 
 // T047: split pair → play first hand → play second hand → dealer turn → outcome
 // This test is probabilistic: it will try multiple rounds until a split opportunity appears.
 test.describe('Blackjack advanced actions - Split & Double Down', () => {
+	test.setTimeout(60000);
 	test('player can split a pair and complete both hands (if split encountered)', async ({
 		page,
 	}) => {
@@ -39,8 +128,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 				break;
 			}
 
-			// No split yet - reload and try a fresh round
-			await page.reload({ waitUntil: 'networkidle' });
+			await refreshBlackjack(page);
 		}
 
 		if (!foundSplit) {
@@ -87,7 +175,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 			const doubleButton = page.getByRole('button', { name: 'Double Down' });
 			// Skip rounds where double-down is not available
 			if (!(await doubleButton.isEnabled())) {
-				await page.reload({ waitUntil: 'networkidle' });
+				await refreshBlackjack(page);
 				continue;
 			}
 
@@ -97,8 +185,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 				break;
 			}
 
-			// Not the hand we want; reload and try again
-			await page.reload({ waitUntil: 'networkidle' });
+			await refreshBlackjack(page);
 		}
 
 		if (!found) {
@@ -133,7 +220,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 
 			const doubleButton = page.getByRole('button', { name: 'Double Down' });
 			if (!(await doubleButton.isEnabled())) {
-				await page.reload({ waitUntil: 'networkidle' });
+				await refreshBlackjack(page);
 				continue;
 			}
 
@@ -143,7 +230,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 				break;
 			}
 
-			await page.reload({ waitUntil: 'networkidle' });
+			await refreshBlackjack(page);
 		}
 
 		if (!found) {
@@ -166,15 +253,16 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		let currentBalance = parseBalance(currentBalanceText);
 		const targetBalance = 50;
 		const maxAllowedDelta = 2000; // 4 * 500 (DEFAULT_MAX_BET)
+		const epsilon = 0.001;
 
 		// Loop until we reach target balance (delta clamping may require multiple calls)
-		while (currentBalance > targetBalance) {
+		for (let attempt = 0; attempt < 10 && currentBalance > targetBalance + epsilon; attempt++) {
 			const delta = targetBalance - currentBalance;
 			const clampedDelta = Math.max(delta, -maxAllowedDelta);
 
-			await page.evaluate(
+			const result = await page.evaluate(
 				async ({ delta, previousBalance }) => {
-					await fetch('/api/chips/update', {
+					const response = await fetch('/api/chips/update', {
 						method: 'POST',
 						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({
@@ -183,19 +271,46 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 							previousBalance,
 						}),
 					});
+
+					let data: unknown = null;
+					try {
+						data = await response.json();
+					} catch (_error) {
+						void _error;
+					}
+
+					return {
+						ok: response.ok,
+						status: response.status,
+						retryAfter: response.headers.get('Retry-After'),
+						data,
+					};
 				},
 				{ delta: clampedDelta, previousBalance: currentBalance },
 			);
 
-			await page.reload({ waitUntil: 'networkidle' });
+			if (result.ok) {
+				await refreshBlackjack(page);
+			} else if (result.status === 429) {
+				const retryAfter = Number(result.retryAfter ?? '2');
+				const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
+				await page.waitForTimeout(sleepMs);
+				await refreshBlackjack(page);
+			} else if (result.status === 409) {
+				await refreshBlackjack(page);
+			} else {
+				throw new Error(`Failed to reduce balance for test: ${JSON.stringify(result)}`);
+			}
+
 			const balanceText = await page.locator('#player-balance').innerText();
 			currentBalance = parseBalance(balanceText);
 		}
 
-		expect(currentBalance).toBeLessThanOrEqual(targetBalance);
+		expect(currentBalance).toBeLessThanOrEqual(targetBalance + epsilon);
 
 		// Bet all remaining chips
-		await dealNewHand(page, currentBalance);
+		const betAll = Math.max(0, Math.floor(currentBalance));
+		await dealNewHand(page, betAll);
 
 		// Double Down should be disabled (requires additional bet amount, but balance is 0)
 		// Note: Split button only appears when player has a pair, so we only test Double Down

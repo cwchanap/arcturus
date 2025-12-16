@@ -5,7 +5,7 @@ export const waitForHomeRedirect = async (page: Page, timeout = 10000): Promise<
 	try {
 		await Promise.all([
 			page.waitForURL((url) => url.pathname === '/', { timeout }),
-			page.waitForLoadState('networkidle', { timeout }),
+			page.waitForLoadState('domcontentloaded', { timeout }),
 		]);
 		return true;
 	} catch {
@@ -13,14 +13,27 @@ export const waitForHomeRedirect = async (page: Page, timeout = 10000): Promise<
 	}
 };
 
+const isAuthenticated = async (page: Page): Promise<boolean> => {
+	try {
+		await page.goto('/', { waitUntil: 'domcontentloaded' });
+		return await page.locator('[data-chip-balance]').first().isVisible();
+	} catch {
+		return false;
+	}
+};
+
 export const ensureLoggedIn = async (page: Page): Promise<void> => {
+	if (await isAuthenticated(page)) {
+		return;
+	}
+
 	await page.goto('/signin');
 	await page.fill('input[name="email"]', TEST_USER.email);
 	await page.fill('input[name="password"]', TEST_USER.password);
 	await page.click('button[type="submit"]');
 
 	const reachedHome = await waitForHomeRedirect(page);
-	if (reachedHome || page.url().endsWith('/')) {
+	if ((reachedHome || page.url().endsWith('/')) && (await isAuthenticated(page))) {
 		return;
 	}
 
@@ -30,5 +43,9 @@ export const ensureLoggedIn = async (page: Page): Promise<void> => {
 	await page.fill('input[name="password"]', TEST_USER.password);
 	await page.click('button[type="submit"]');
 	await page.waitForURL('/', { timeout: 15000 });
-	await page.waitForLoadState('networkidle', { timeout: 10000 });
+	await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+
+	if (!(await isAuthenticated(page))) {
+		throw new Error('Failed to authenticate test user');
+	}
 };

@@ -6,6 +6,35 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function parseChipBalance(text: string): number | null {
+	const match = text.replace(/,/g, '').match(/(-?\d+(?:\.\d+)?)/);
+	if (!match) return null;
+	const parsed = Number(match[1]);
+	return Number.isFinite(parsed) ? parsed : null;
+}
+
+async function sleep(ms: number) {
+	await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readChipBalanceFromPage(
+	page: import('@playwright/test').Page,
+): Promise<number | null> {
+	const loc = page.locator('[data-chip-balance]');
+	const count = await loc.count();
+	for (let i = 0; i < count; i++) {
+		const text = await loc
+			.nth(i)
+			.innerText()
+			.catch(() => '');
+		const parsed = parseChipBalance(text);
+		if (typeof parsed === 'number') {
+			return parsed;
+		}
+	}
+	return null;
+}
+
 /**
  * Global setup that runs once before all tests.
  * Creates test user if needed and signs in with the test account, then saves the authentication state.
@@ -95,6 +124,64 @@ async function globalSetup(config: FullConfig) {
 			throw new Error(
 				'Login verification failed - no user authentication indicators found after multiple attempts',
 			);
+		}
+
+		const minimumBalance = 1000;
+		await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
+		await page
+			.locator('[data-chip-balance]')
+			.first()
+			.waitFor({ state: 'attached', timeout: 10000 });
+
+		let currentBalance = await readChipBalanceFromPage(page);
+		if (typeof currentBalance !== 'number') {
+			currentBalance = 0;
+		}
+
+		if (currentBalance < minimumBalance) {
+			for (let attempt = 0; attempt < 5; attempt++) {
+				const delta = minimumBalance - currentBalance;
+				const response = await page.request.post(`${baseURL}/api/chips/update`, {
+					data: {
+						delta,
+						gameType: 'blackjack',
+						previousBalance: currentBalance,
+					},
+				});
+
+				if (response.ok()) {
+					await sleep(2100);
+					await page.reload({ waitUntil: 'networkidle' });
+					currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
+					break;
+				}
+
+				if (response.status() === 429) {
+					const retryAfter = Number(response.headers()['retry-after'] ?? '2');
+					await sleep((Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100);
+					currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
+					continue;
+				}
+
+				if (response.status() === 409) {
+					const data = (await response.json().catch(() => null)) as {
+						currentBalance?: number;
+					} | null;
+					if (typeof data?.currentBalance === 'number') {
+						currentBalance = data.currentBalance;
+						continue;
+					}
+				}
+
+				const errorText = await response.text().catch(() => '');
+				throw new Error(`Failed to top up E2E chip balance: ${response.status()} ${errorText}`);
+			}
+
+			if (currentBalance < minimumBalance) {
+				throw new Error(
+					`E2E chip balance top-up did not reach minimum (${currentBalance} < ${minimumBalance})`,
+				);
+			}
 		}
 
 		// Save authentication state

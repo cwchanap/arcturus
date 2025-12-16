@@ -102,11 +102,11 @@ export function initBlackjackClient(): void {
 
 	// Get initial balance from DOM; fall back to settings.startingChips if missing
 	const balanceEl = document.getElementById('player-balance');
-	const parsedBalance = parseInt(
-		balanceEl?.textContent?.replace(/[^0-9]/g, '') || `${settings.startingChips}`,
-		10,
-	);
-	const initialBalance = Number.isNaN(parsedBalance) ? settings.startingChips : parsedBalance;
+	const rawBalanceText = balanceEl?.textContent ?? `${settings.startingChips}`;
+	const normalizedBalanceText = rawBalanceText.replace(/,/g, '');
+	const balanceMatch = normalizedBalanceText.match(/-?\d+(?:\.\d+)?/);
+	const parsedBalance = balanceMatch ? Number(balanceMatch[0]) : Number.NaN;
+	const initialBalance = Number.isFinite(parsedBalance) ? parsedBalance : settings.startingChips;
 
 	// Track the server-synced balance separately from game state.
 	// This is the balance the server knows about, updated only after successful API calls.
@@ -119,6 +119,7 @@ export function initBlackjackClient(): void {
 	// LLM settings state
 	let llmSettings: LLMSettings | null = null;
 	let llmConfigured = false;
+	let llmSettingsLoading: Promise<void> | null = null;
 
 	// DOM elements (static Astro markup guarantees these exist when script runs)
 	const bettingControls = document.getElementById('betting-controls') as HTMLElement;
@@ -173,6 +174,7 @@ export function initBlackjackClient(): void {
 			if (!response.ok) {
 				llmSettings = null;
 				llmConfigured = false;
+				llmConfigOverlay.classList.add('hidden');
 				updateAiRivalButtonState();
 				return;
 			}
@@ -207,6 +209,10 @@ export function initBlackjackClient(): void {
 			llmSettings = null;
 			llmConfigured = false;
 		}
+
+		if (llmConfigured) {
+			llmConfigOverlay.classList.add('hidden');
+		}
 		updateAiRivalButtonState();
 	}
 
@@ -232,7 +238,7 @@ export function initBlackjackClient(): void {
 	}
 
 	// Initialize LLM settings
-	void loadLlmSettings();
+	llmSettingsLoading = loadLlmSettings();
 
 	// Settings helpers
 	function applyBetConstraints() {
@@ -356,12 +362,12 @@ export function initBlackjackClient(): void {
 								serverSyncedBalance = newStartingChips;
 							} else {
 								// Server rejected the update - revert local state
-								const errorData = await response.json().catch(() => ({}));
+								const errorData = (await response.json().catch(() => ({}))) as {
+									message?: string;
+								};
 								console.warn('Failed to sync starting chips to server:', errorData);
 								// Revert to server's balance
 								game.setBalance(serverSyncedBalance);
-								settingsManager.updateSettings({ startingChips: serverSyncedBalance });
-								settings = settingsManager.getSettings();
 								renderGame();
 								renderSettingsForm();
 								statusEl.textContent =
@@ -372,8 +378,6 @@ export function initBlackjackClient(): void {
 							console.error('Error syncing starting chips:', error);
 							// Revert to server's balance on network error
 							game.setBalance(serverSyncedBalance);
-							settingsManager.updateSettings({ startingChips: serverSyncedBalance });
-							settings = settingsManager.getSettings();
 							renderGame();
 							renderSettingsForm();
 							statusEl.textContent = 'Network error saving starting chips. Please try again.';
@@ -387,13 +391,10 @@ export function initBlackjackClient(): void {
 			applyBetConstraints();
 			renderSettingsForm();
 
-			// FR-015: Show LLM config overlay if user enabled LLM but hasn't configured API keys
-			if (newUseLlm && !llmConfigured) {
-				llmConfigOverlay.classList.remove('hidden');
-				statusEl.textContent = 'Settings saved. Please configure your API key to use AI features.';
-			} else {
-				statusEl.textContent = 'Settings saved. They will apply to new rounds.';
+			if (!newUseLlm) {
+				llmConfigOverlay.classList.add('hidden');
 			}
+			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
 		});
 	}
 
@@ -454,9 +455,7 @@ export function initBlackjackClient(): void {
 			const state = game.getState();
 			if (state.phase === 'complete') {
 				// Immediate blackjack or push
-				setTimeout(() => {
-					void handleRoundComplete();
-				}, 500);
+				void handleRoundComplete();
 			}
 		} catch (error) {
 			statusEl.textContent = (error as Error).message;
@@ -591,18 +590,26 @@ export function initBlackjackClient(): void {
 	btnAiRival.addEventListener('click', async () => {
 		const state = game.getState();
 
+		// Check if LLM feature is enabled in settings
+		if (!llmUserEnabled) {
+			statusEl.textContent = 'AI Rival is disabled in game settings.';
+			llmConfigOverlay.classList.add('hidden');
+			return;
+		}
+
 		// Check if we're in player turn
 		if (state.phase !== 'player-turn') {
 			return;
 		}
 
-		// Check if LLM feature is enabled in settings
-		if (!llmUserEnabled) {
-			statusEl.textContent = 'AI Rival is disabled in game settings.';
-			return;
+		// Check if LLM is configured
+		// Note: Settings are loaded async on page load. If the user clicks before that finishes,
+		// we should retry loading here instead of immediately showing the overlay.
+		if (!llmConfigured) {
+			llmSettingsLoading = loadLlmSettings();
+			await llmSettingsLoading;
 		}
 
-		// Check if LLM is configured
 		if (!llmConfigured) {
 			llmConfigOverlay.classList.remove('hidden');
 			return;
@@ -828,6 +835,10 @@ export function initBlackjackClient(): void {
 		aiAdviceBox.classList.add('hidden');
 		highlightRecommendedAction(null);
 
+		// Show new round button immediately so UI/tests can detect completion.
+		// Balance sync and optional commentary can continue asynchronously.
+		btnNewRound.classList.remove('hidden');
+
 		// Get AI commentary if configured
 		if (llmConfigured && llmSettings) {
 			try {
@@ -859,6 +870,15 @@ export function initBlackjackClient(): void {
 		// Update balance in database
 		try {
 			const newBalance = game.getBalance();
+			const statusBeforeSync = statusEl.textContent || '';
+			const preserveRoundResultStatus = /win|wins|Dealer wins|Push|BLACKJACK|Bust/i.test(
+				statusBeforeSync,
+			);
+			const setStatusIfNotRoundResult = (message: string) => {
+				if (!preserveRoundResultStatus) {
+					statusEl.textContent = message;
+				}
+			};
 			// Delta is the net change from what the server knows about
 			const delta = newBalance - serverSyncedBalance;
 
@@ -879,12 +899,16 @@ export function initBlackjackClient(): void {
 					// Update our server-synced balance tracker after successful sync
 					serverSyncedBalance = newBalance;
 					if (retryCount > 0) {
-						statusEl.textContent = 'Balance synced successfully.';
+						setStatusIfNotRoundResult('Balance synced successfully.');
 					}
 					return;
 				}
 
-				const errorData = await response.json();
+				const errorData = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					message?: string;
+					currentBalance?: number;
+				};
 
 				// Special handling for RATE_LIMITED: retry after delay instead of reverting
 				if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
@@ -892,7 +916,7 @@ export function initBlackjackClient(): void {
 					console.warn(
 						`Chip update rate limited, retrying in ${retryAfter}ms (attempt ${retryCount + 1})`,
 					);
-					statusEl.textContent = 'Syncing balance...';
+					setStatusIfNotRoundResult('Syncing balance...');
 
 					// Keep the current balance and retry after the rate limit window
 					setTimeout(() => {
@@ -910,7 +934,7 @@ export function initBlackjackClient(): void {
 					serverSyncedBalance = serverBalance;
 					game.setBalance(serverBalance);
 					renderGame();
-					statusEl.textContent = `Balance synced to ${serverBalance} chips.`;
+					setStatusIfNotRoundResult(`Balance synced to ${serverBalance} chips.`);
 				} else if (errorData.error !== 'RATE_LIMITED') {
 					// Only revert for non-rate-limit errors when no server balance provided
 					game.setBalance(serverSyncedBalance);
@@ -920,17 +944,17 @@ export function initBlackjackClient(): void {
 				// Show appropriate error message to user
 				if (errorData.error === 'BALANCE_MISMATCH') {
 					console.warn('Balance mismatch detected, synced to server balance');
-					statusEl.textContent = 'Balance corrected (server sync).';
+					setStatusIfNotRoundResult('Balance corrected (server sync).');
 				} else if (errorData.error === 'RATE_LIMITED') {
 					// Max retries exceeded
 					console.error('Chip update rate limited, max retries exceeded');
-					statusEl.textContent = 'Sync delayed. Balance will update on next round.';
+					setStatusIfNotRoundResult('Sync delayed. Balance will update on next round.');
 				} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
 					console.error('Delta exceeded server limit:', errorData.message);
-					statusEl.textContent = 'Payout exceeded limit. Please try a smaller bet.';
+					setStatusIfNotRoundResult('Payout exceeded limit. Please try a smaller bet.');
 				} else {
 					console.error('Chip update failed:', errorData.error, errorData.message);
-					statusEl.textContent = 'Balance sync failed. Will retry next round.';
+					setStatusIfNotRoundResult('Balance sync failed. Will retry next round.');
 				}
 			};
 
@@ -943,8 +967,6 @@ export function initBlackjackClient(): void {
 			statusEl.textContent = 'Network error. Balance reverted.';
 		}
 
-		// Show new round button
-		btnNewRound.classList.remove('hidden');
 		renderGame();
 	}
 

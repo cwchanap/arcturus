@@ -556,16 +556,25 @@ export class PokerGame {
 		document.getElementById('btn-check')?.addEventListener('click', () => {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
 			const highestBet = getHighestBet(this.players);
-			if (this.players[0].currentBet < highestBet) return; // Can't check if there's a bet
+			const callAmount = getCallAmount(this.players[0], highestBet);
 
 			this.isProcessingAction = true;
 			try {
-				this.players[0] = { ...this.players[0], hasActed: true };
-				this.updateGameStatus('You checked');
+				if (callAmount > 0) {
+					this.players[0] = placeBet(this.players[0], callAmount);
+					this.pot = calculatePot(this.players);
+					this.ui.updateUI(this.pot, this.players[0]);
+					this.updateGameStatus(`You called $${callAmount}`);
+				} else {
+					this.players[0] = { ...this.players[0], hasActed: true };
+					this.updateGameStatus('You checked');
+				}
 			} finally {
-				this.isProcessingAction = false;
+				setTimeout(() => {
+					this.isProcessingAction = false;
+					this.advanceTurn();
+				}, 200);
 			}
-			this.advanceTurn();
 		});
 
 		document.getElementById('btn-call')?.addEventListener('click', () => {

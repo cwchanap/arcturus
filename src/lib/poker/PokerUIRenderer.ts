@@ -198,13 +198,13 @@ export class PokerUIRenderer {
 						(card) => `
 					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
 						<div class="w-full h-full p-1 flex flex-col">
-							<div class="text-xs font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="opponent-rank font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${card.value}
 							</div>
-							<div class="flex-1 flex items-center justify-center text-lg ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="opponent-suit flex-1 flex items-center justify-center ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${this.getSuitSymbol(card.suit)}
 							</div>
-							<div class="text-xs font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+							<div class="opponent-rank font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
 								${card.value}
 							</div>
 						</div>
@@ -225,13 +225,13 @@ export class PokerUIRenderer {
 						(card) => `
 					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
 						<div class="w-full h-full p-1 flex flex-col">
-							<div class="text-xs font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="opponent-rank font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${card.value}
 							</div>
-							<div class="flex-1 flex items-center justify-center text-lg ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
+							<div class="opponent-suit flex-1 flex items-center justify-center ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
 								${this.getSuitSymbol(card.suit)}
 							</div>
-							<div class="text-xs font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
+							<div class="opponent-rank font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
 								${card.value}
 							</div>
 						</div>
@@ -251,7 +251,7 @@ export class PokerUIRenderer {
 		const faceDownCard = `
 			<div class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center">
 				<div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
-					<div class="text-white text-xl">🂠</div>
+					<div class="text-white opponent-back-icon">🂠</div>
 				</div>
 			</div>
 		`;

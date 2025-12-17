@@ -89,12 +89,16 @@ body {
 	font-size: 0.75rem;
 }
 
-.opponent-card-small .text-xl {
-	font-size: 0.875rem;
+.opponent-rank {
+	font-size: 0.75rem;
 }
 
-.opponent-card-small .text-4xl {
-	font-size: 1.5rem;
+.opponent-suit {
+	font-size: 1.125rem;
+}
+
+.opponent-back-icon {
+	font-size: 0.875rem;
 }
 
 /* Action button compact styling */

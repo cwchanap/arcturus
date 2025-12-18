@@ -368,7 +368,9 @@ export function initBlackjackClient(): void {
 									message?: string;
 								};
 								console.warn('Failed to sync starting chips to server:', errorData);
-								// Revert to server's balance
+								// Revert to server's balance (and revert persisted settings so UI/localStorage match)
+								settingsManager.updateSettings({ startingChips: serverSyncedBalance });
+								settings = settingsManager.getSettings();
 								game.setBalance(serverSyncedBalance);
 								renderGame();
 								renderSettingsForm();
@@ -378,7 +380,9 @@ export function initBlackjackClient(): void {
 						})
 						.catch((error) => {
 							console.error('Error syncing starting chips:', error);
-							// Revert to server's balance on network error
+							// Revert to server's balance on network error (and revert persisted settings)
+							settingsManager.updateSettings({ startingChips: serverSyncedBalance });
+							settings = settingsManager.getSettings();
 							game.setBalance(serverSyncedBalance);
 							renderGame();
 							renderSettingsForm();

@@ -151,10 +151,24 @@ async function globalSetup(config: FullConfig) {
 				});
 
 				if (response.ok()) {
-					await sleep(2100);
-					await page.reload({ waitUntil: 'networkidle' });
-					currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
-					break;
+					let refreshedBalance: number | null = null;
+					for (let readAttempt = 0; readAttempt < 3; readAttempt++) {
+						await sleep(2100);
+						await page.reload({ waitUntil: 'networkidle' });
+						refreshedBalance = await readChipBalanceFromPage(page);
+						if (typeof refreshedBalance === 'number') {
+							break;
+						}
+					}
+
+					if (typeof refreshedBalance === 'number') {
+						currentBalance = refreshedBalance;
+						break;
+					}
+
+					throw new Error(
+						'Chip balance update succeeded but chip balance could not be read from the page after multiple reloads',
+					);
 				}
 
 				if (response.status() === 429) {

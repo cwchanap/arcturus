@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const MINIMUM_E2E_CHIP_BALANCE = 1000;
+
 function parseChipBalance(text: string): number | null {
 	const match = text.replace(/,/g, '').match(/(-?\d+(?:\.\d+)?)/);
 	if (!match) return null;
@@ -126,7 +128,6 @@ async function globalSetup(config: FullConfig) {
 			);
 		}
 
-		const minimumBalance = 1000;
 		await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
 		await page
 			.locator('[data-chip-balance]')
@@ -138,9 +139,9 @@ async function globalSetup(config: FullConfig) {
 			currentBalance = 0;
 		}
 
-		if (currentBalance < minimumBalance) {
+		if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
 			for (let attempt = 0; attempt < 5; attempt++) {
-				const delta = minimumBalance - currentBalance;
+				const delta = MINIMUM_E2E_CHIP_BALANCE - currentBalance;
 				const response = await page.request.post(`${baseURL}/api/chips/update`, {
 					data: {
 						delta,
@@ -164,6 +165,9 @@ async function globalSetup(config: FullConfig) {
 				}
 
 				if (response.status() === 409) {
+					// This parse/cast is intentionally minimal (we only need currentBalance). If E2E failures
+					// become hard to debug, consider parsing a richer error shape (e.g. error/message/code)
+					// and including it in the thrown error to surface more context in test logs.
 					const data = (await response.json().catch(() => null)) as {
 						currentBalance?: number;
 					} | null;
@@ -177,9 +181,9 @@ async function globalSetup(config: FullConfig) {
 				throw new Error(`Failed to top up E2E chip balance: ${response.status()} ${errorText}`);
 			}
 
-			if (currentBalance < minimumBalance) {
+			if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
 				throw new Error(
-					`E2E chip balance top-up did not reach minimum (${currentBalance} < ${minimumBalance})`,
+					`E2E chip balance top-up did not reach minimum (${currentBalance} < ${MINIMUM_E2E_CHIP_BALANCE})`,
 				);
 			}
 		}

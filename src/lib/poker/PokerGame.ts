@@ -557,6 +557,9 @@ export class PokerGame {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
 			const highestBet = getHighestBet(this.players);
 			const callAmount = getCallAmount(this.players[0], highestBet);
+			// UX note: This "Check" action will effectively become a "Call" when callAmount > 0.
+			// Consider updating the button label dynamically ("Call" when a bet must be matched),
+			// or disabling Check when calling is required to avoid confusing players.
 
 			this.isProcessingAction = true;
 			try {

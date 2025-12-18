@@ -106,6 +106,8 @@ export function initBlackjackClient(): void {
 	const normalizedBalanceText = rawBalanceText.replace(/,/g, '');
 	const balanceMatch = normalizedBalanceText.match(/-?\d+(?:\.\d+)?/);
 	const parsedBalance = balanceMatch ? Number(balanceMatch[0]) : Number.NaN;
+	// Number.isFinite() rejects NaN and +/-Infinity, which is sufficient here (we only want a real
+	// numeric balance; anything else falls back to settings.startingChips).
 	const initialBalance = Number.isFinite(parsedBalance) ? parsedBalance : settings.startingChips;
 
 	// Track the server-synced balance separately from game state.
@@ -606,6 +608,9 @@ export function initBlackjackClient(): void {
 		// Note: Settings are loaded async on page load. If the user clicks before that finishes,
 		// we should retry loading here instead of immediately showing the overlay.
 		if (!llmConfigured) {
+			// Potential race: repeated clicks before the first load resolves could start multiple
+			// concurrent loadLlmSettings() calls. Consider guarding with llmSettingsLoading (in-flight
+			// promise) so only one load runs at a time.
 			llmSettingsLoading = loadLlmSettings();
 			await llmSettingsLoading;
 		}
@@ -870,6 +875,10 @@ export function initBlackjackClient(): void {
 		// Update balance in database
 		try {
 			const newBalance = game.getBalance();
+			// NOTE: During async balance sync, we try to avoid overwriting the round-result message.
+			// This is a heuristic based on matching the current status text; if the status is empty or
+			// contains unexpected copy, this can fail and allow intermediate sync messages to appear.
+			// Consider tracking an explicit "round just completed" flag in state instead of regex.
 			const statusBeforeSync = statusEl.textContent || '';
 			const preserveRoundResultStatus = /win|wins|Dealer wins|Push|BLACKJACK|Bust/i.test(
 				statusBeforeSync,

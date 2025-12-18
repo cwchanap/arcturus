@@ -13,7 +13,7 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await gotoBaccarat(page);
 
 		// Check page title
-		await expect(page.getByRole('heading', { name: 'Baccarat' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Baccarat', exact: true })).toBeVisible();
 
 		// Check balance is displayed
 		await expect(page.locator('#chip-balance')).toBeVisible();

@@ -17,6 +17,7 @@ test.describe('Poker turn flow smoke test', () => {
 
 		await page.getByRole('button', { name: 'CHECK' }).click();
 
+		// The CHECK button may auto-call when there is a bet to match, so either status is valid.
 		await expect(status).toHaveText(/You checked|You called|Waiting for/i, { timeout: 5000 });
 		await expect(status).toBeVisible();
 

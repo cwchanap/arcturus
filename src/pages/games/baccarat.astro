@@ -870,6 +870,8 @@ const initialBalance = user.chipBalance ?? 1000;
 				const serverBalance = Number(errorData.currentBalance);
 				if (!Number.isNaN(serverBalance)) {
 					lastSyncedBalance = serverBalance;
+					game.applyServerBalance(serverBalance);
+					updateUI();
 					showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
 				}
 			} else if (errorData.error !== 'RATE_LIMITED') {

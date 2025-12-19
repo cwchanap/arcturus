@@ -13,9 +13,17 @@ export const waitForHomeRedirect = async (page: Page, timeout = 10000): Promise<
 	}
 };
 
-const isAuthenticated = async (page: Page): Promise<boolean> => {
+const isAuthenticated = async (
+	page: Page,
+	options: { skipNavigation?: boolean } = {},
+): Promise<boolean> => {
 	try {
-		await page.goto('/', { waitUntil: 'domcontentloaded' });
+		if (!options.skipNavigation) {
+			await page.goto('/', { waitUntil: 'domcontentloaded' });
+		} else {
+			// Ensure the current page DOM is ready without navigating away
+			await page.waitForLoadState('domcontentloaded');
+		}
 		return await page.locator('[data-chip-balance]').first().isVisible();
 	} catch {
 		return false;
@@ -33,7 +41,7 @@ export const ensureLoggedIn = async (page: Page): Promise<void> => {
 	await page.click('button[type="submit"]');
 
 	const reachedHome = await waitForHomeRedirect(page);
-	if ((reachedHome || page.url().endsWith('/')) && (await isAuthenticated(page))) {
+	if (reachedHome && (await isAuthenticated(page, { skipNavigation: true }))) {
 		return;
 	}
 
@@ -45,7 +53,7 @@ export const ensureLoggedIn = async (page: Page): Promise<void> => {
 	await page.waitForURL('/', { timeout: 15000 });
 	await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
-	if (!(await isAuthenticated(page))) {
+	if (!(await isAuthenticated(page, { skipNavigation: true }))) {
 		throw new Error('Failed to authenticate test user');
 	}
 };

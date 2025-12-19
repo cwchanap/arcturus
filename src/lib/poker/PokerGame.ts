@@ -264,8 +264,10 @@ export class PokerGame {
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
+			this.updateActionButtons();
 		} else {
 			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateActionButtons();
 			this.processAITurn();
 		}
 	}
@@ -421,8 +423,10 @@ export class PokerGame {
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus('Your turn!');
+			this.updateActionButtons();
 		} else {
 			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateActionButtons();
 			this.processAITurn();
 		}
 	}
@@ -444,6 +448,40 @@ export class PokerGame {
 
 	private updateGameStatus(message: string) {
 		this.ui.updateGameStatus(message, this.gamePhase, this.pot);
+	}
+
+	private updateActionButtons() {
+		const btnFold = document.getElementById('btn-fold') as HTMLButtonElement | null;
+		const btnCheck = document.getElementById('btn-check') as HTMLButtonElement | null;
+		const btnCall = document.getElementById('btn-call') as HTMLButtonElement | null;
+		const btnRaise = document.getElementById('btn-raise') as HTMLButtonElement | null;
+
+		if (!btnFold || !btnCheck || !btnCall || !btnRaise) return;
+
+		const humanPlayer = this.players[0];
+		const isHumanTurn = this.currentPlayerIndex === 0;
+
+		if (
+			!humanPlayer ||
+			this.isProcessingAction ||
+			!isHumanTurn ||
+			humanPlayer.folded ||
+			humanPlayer.isAllIn
+		) {
+			btnFold.disabled = true;
+			btnCheck.disabled = true;
+			btnCall.disabled = true;
+			btnRaise.disabled = true;
+			return;
+		}
+
+		const highestBet = getHighestBet(this.players);
+		const callAmount = getCallAmount(humanPlayer, highestBet);
+
+		btnFold.disabled = false;
+		btnCheck.disabled = callAmount > 0;
+		btnCall.disabled = callAmount <= 0 || callAmount > humanPlayer.chips;
+		btnRaise.disabled = humanPlayer.chips <= 0;
 	}
 
 	private nextPhase() {
@@ -530,8 +568,10 @@ export class PokerGame {
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus('Your turn!');
+			this.updateActionButtons();
 		} else {
 			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateActionButtons();
 			this.processAITurn();
 		}
 	}
@@ -542,6 +582,7 @@ export class PokerGame {
 		document.getElementById('btn-fold')?.addEventListener('click', () => {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
 			this.isProcessingAction = true;
+			this.updateActionButtons();
 
 			try {
 				this.players[0] = foldPlayer(this.players[0]);
@@ -557,21 +598,16 @@ export class PokerGame {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
 			const highestBet = getHighestBet(this.players);
 			const callAmount = getCallAmount(this.players[0], highestBet);
-			// UX note: This "Check" action will effectively become a "Call" when callAmount > 0.
-			// Consider updating the button label dynamically ("Call" when a bet must be matched),
-			// or disabling Check when calling is required to avoid confusing players.
+
+			if (callAmount > 0) {
+				return;
+			}
 
 			this.isProcessingAction = true;
+			this.updateActionButtons();
 			try {
-				if (callAmount > 0) {
-					this.players[0] = placeBet(this.players[0], callAmount);
-					this.pot = calculatePot(this.players);
-					this.ui.updateUI(this.pot, this.players[0]);
-					this.updateGameStatus(`You called $${callAmount}`);
-				} else {
-					this.players[0] = { ...this.players[0], hasActed: true };
-					this.updateGameStatus('You checked');
-				}
+				this.players[0] = { ...this.players[0], hasActed: true };
+				this.updateGameStatus('You checked');
 			} finally {
 				setTimeout(() => {
 					this.isProcessingAction = false;
@@ -582,18 +618,24 @@ export class PokerGame {
 
 		document.getElementById('btn-call')?.addEventListener('click', () => {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+			const highestBet = getHighestBet(this.players);
+			const callAmount = getCallAmount(this.players[0], highestBet);
+
+			if (callAmount <= 0) {
+				return;
+			}
+
+			if (callAmount > this.players[0].chips) {
+				return;
+			}
+
 			this.isProcessingAction = true;
-
+			this.updateActionButtons();
 			try {
-				const highestBet = getHighestBet(this.players);
-				const callAmount = getCallAmount(this.players[0], highestBet);
-
-				if (callAmount > 0) {
-					this.players[0] = placeBet(this.players[0], callAmount);
-					this.pot = calculatePot(this.players);
-					this.ui.updateUI(this.pot, this.players[0]);
-					this.updateGameStatus(`You called $${callAmount}`);
-				}
+				this.players[0] = placeBet(this.players[0], callAmount);
+				this.pot = calculatePot(this.players);
+				this.ui.updateUI(this.pot, this.players[0]);
+				this.updateGameStatus(`You called $${callAmount}`);
 			} finally {
 				this.isProcessingAction = false;
 			}
@@ -603,6 +645,7 @@ export class PokerGame {
 		document.getElementById('btn-raise')?.addEventListener('click', () => {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
 			this.isProcessingAction = true;
+			this.updateActionButtons();
 
 			try {
 				const raiseAmount = parseInt(

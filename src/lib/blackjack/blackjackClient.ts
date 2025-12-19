@@ -240,7 +240,13 @@ export function initBlackjackClient(): void {
 	}
 
 	// Initialize LLM settings
-	llmSettingsLoading = loadLlmSettings();
+	const initialLlmSettingsLoad = loadLlmSettings();
+	llmSettingsLoading = initialLlmSettingsLoad;
+	void initialLlmSettingsLoad.finally(() => {
+		if (llmSettingsLoading === initialLlmSettingsLoad) {
+			llmSettingsLoading = null;
+		}
+	});
 
 	// Settings helpers
 	function applyBetConstraints() {
@@ -615,8 +621,22 @@ export function initBlackjackClient(): void {
 			// Potential race: repeated clicks before the first load resolves could start multiple
 			// concurrent loadLlmSettings() calls. Consider guarding with llmSettingsLoading (in-flight
 			// promise) so only one load runs at a time.
-			llmSettingsLoading = loadLlmSettings();
-			await llmSettingsLoading;
+			const inFlight = llmSettingsLoading ?? loadLlmSettings();
+			if (!llmSettingsLoading) {
+				llmSettingsLoading = inFlight;
+			}
+			try {
+				await inFlight;
+			} catch (error) {
+				console.error('Error loading LLM settings:', error);
+				llmSettings = null;
+				llmConfigured = false;
+				updateAiRivalButtonState();
+			} finally {
+				if (llmSettingsLoading === inFlight) {
+					llmSettingsLoading = null;
+				}
+			}
 		}
 
 		if (!llmConfigured) {

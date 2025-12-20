@@ -149,13 +149,21 @@ describe('BaccaratGame', () => {
 		test('should deduct bet from balance during deal', () => {
 			const initialBalance = game.getBalance();
 			game.placeBet('player', 100);
-			game.deal();
+			const outcome = game.deal();
 
 			// Balance should be adjusted based on outcome
 			// After deal, it returns to betting phase
 			const state = game.getState();
+			expect(outcome).not.toBeNull();
 			expect(state.phase).toBe('resolution');
-			expect(game.getBalance()).not.toBe(initialBalance);
+
+			const balance = game.getBalance();
+			if (outcome?.winner === 'tie') {
+				// Player bets push on tie, so balance stays the same
+				expect(balance).toBe(initialBalance);
+			} else {
+				expect(balance).not.toBe(initialBalance);
+			}
 		});
 
 		test('should update balance after round', () => {

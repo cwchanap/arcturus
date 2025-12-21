@@ -1,6 +1,8 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
+import CardContainer from '../../components/CardContainer.astro';
+import SplitHandsContainer from '../../components/SplitHandsContainer.astro';
 
 const user = Astro.locals.user;
 
@@ -69,11 +71,7 @@ const initialBalance = user.chipBalance ?? 1000;
 							?
 						</div>
 					</div>
-					<div id="dealer-cards" class="flex justify-center gap-2 min-h-[90px] items-center">
-						<!-- Dealer cards will be rendered here -->
-						<div class="card-placeholder"></div>
-						<div class="card-placeholder"></div>
-					</div>
+					<CardContainer id="dealer-cards" maxCards={10} size="normal" />
 				</div>
 			</div>
 
@@ -84,14 +82,12 @@ const initialBalance = user.chipBalance ?? 1000;
 						<div class="text-xs text-slate-400 uppercase tracking-wider">Your Hand</div>
 						<div id="player-value" class="text-xl font-bold text-yellow-400">-</div>
 					</div>
-					<div
-						id="player-cards"
-						class="flex justify-center gap-2 min-h-[90px] items-center flex-wrap"
-					>
-						<!-- Player cards will be rendered here -->
-						<div class="card-placeholder"></div>
-						<div class="card-placeholder"></div>
+					<!-- Single hand container -->
+					<div id="player-cards-single">
+						<CardContainer id="player-cards" maxCards={10} size="normal" />
 					</div>
+					<!-- Split hands container (hidden by default) -->
+					<SplitHandsContainer id="player-cards-split" maxHands={4} maxCardsPerHand={10} />
 					<div class="text-center mt-1">
 						<div id="current-bet" class="text-sm text-yellow-400/80 font-medium">
 							Current Bet: $0

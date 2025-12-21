@@ -1,6 +1,7 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
+import BaccaratCardContainer from '../../components/BaccaratCardContainer.astro';
 
 const user = Astro.locals.user;
 
@@ -68,11 +69,8 @@ const initialBalance = user.chipBalance ?? 1000;
 							<div class="text-sm text-red-400 uppercase tracking-wider mb-2 font-semibold">
 								Banker
 							</div>
-							<div class="flex justify-center gap-3 min-h-[100px] items-center">
-								<div class="card-placeholder"></div>
-								<div class="card-placeholder"></div>
-							</div>
-							<div class="hand-value text-xl font-bold text-white mt-2"></div>
+							<BaccaratCardContainer id="banker-cards" maxCards={3} />
+							<div class="hand-value text-xl font-bold text-white mt-2" id="banker-value"></div>
 						</div>
 					</div>
 
@@ -85,11 +83,8 @@ const initialBalance = user.chipBalance ?? 1000;
 							<div class="text-sm text-blue-400 uppercase tracking-wider mb-2 font-semibold">
 								Player
 							</div>
-							<div class="flex justify-center gap-3 min-h-[100px] items-center">
-								<div class="card-placeholder"></div>
-								<div class="card-placeholder"></div>
-							</div>
-							<div class="hand-value text-xl font-bold text-white mt-2"></div>
+							<BaccaratCardContainer id="player-cards" maxCards={3} />
+							<div class="hand-value text-xl font-bold text-white mt-2" id="player-value"></div>
 						</div>
 					</div>
 
@@ -399,6 +394,14 @@ const initialBalance = user.chipBalance ?? 1000;
 	import { BaccaratGame } from '../../lib/baccarat/BaccaratGame';
 	import { getHandValue } from '../../lib/baccarat/handEvaluator';
 	import type { BetType, Card, Hand, RoundOutcome } from '../../lib/baccarat/types';
+	import {
+		clearChildren,
+		createTextSpan,
+		createScoreboardDot,
+		createBetChip,
+		createBetResult,
+	} from '../../lib/dom-utils';
+	import { setSlotState } from '../../lib/card-slot-utils';
 
 	// Get initial data
 	const root = document.getElementById('baccarat-root');
@@ -567,37 +570,14 @@ const initialBalance = user.chipBalance ?? 1000;
 		hideStatus();
 	}
 
-	async function animateCard(container: HTMLElement, card: Card, _position: number) {
-		const cardsContainer = (container.querySelector('.hand-cards') || container) as HTMLElement;
+	async function animateCard(container: HTMLElement, card: Card, position: number) {
+		const cardsContainer = container.querySelector('[data-baccarat-card-container]');
+		if (!cardsContainer) return;
 
-		// Remove placeholders
-		cardsContainer.querySelectorAll('.card-placeholder').forEach((p) => p.remove());
-
-		const cardEl = document.createElement('div');
-		cardEl.className = 'card card-dealing';
-		const suitSymbol =
-			{ hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' }[card.suit] || card.suit;
-		const suitColor =
-			card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-500' : 'text-neutral-900';
-		cardEl.innerHTML = `
-			<span class="card-rank">${card.rank}</span>
-			<span class="card-suit ${suitColor}">${suitSymbol}</span>
-		`;
-		cardsContainer.appendChild(cardEl);
-
-		// Update hand value
-		const allCards = Array.from(cardsContainer.querySelectorAll('.card')).map((el) => {
-			const rankEl = el.querySelector('.card-rank');
-			return {
-				rank: rankEl ? rankEl.textContent : '',
-				suit: 'hearts', // suit doesn't affect value in baccarat
-			};
-		});
-
-		// Just show card count for now, real value calculated from outcome
-		const valueEl = container.querySelector('.hand-value');
-		if (valueEl && allCards.length >= 2) {
-			// We'll update this properly after animation
+		const slots = cardsContainer.querySelectorAll('.card-slot');
+		const slot = slots[position];
+		if (slot) {
+			setSlotState(slot, 'card', { rank: card.rank, suit: card.suit });
 		}
 
 		await new Promise((r) => setTimeout(r, 300));
@@ -606,45 +586,32 @@ const initialBalance = user.chipBalance ?? 1000;
 	function renderHand(
 		container: HTMLElement,
 		hand: Hand,
-		label: string,
-		color: 'blue' | 'red' | 'emerald' | 'yellow',
+		_label: string,
+		_color: 'blue' | 'red' | 'emerald' | 'yellow',
 	) {
-		const colorClassMap = {
-			blue: 'text-blue-400',
-			red: 'text-red-400',
-			emerald: 'text-emerald-400',
-			yellow: 'text-yellow-400',
-		};
-		const colorClass = colorClassMap[color] ?? 'text-blue-400';
-
 		const value = hand.cards.length >= 2 ? getHandValue(hand) : '';
-		const cardsHTML =
-			hand.cards.length > 0
-				? hand.cards
-						.map((card) => {
-							const suitSymbol =
-								{ hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' }[card.suit] || card.suit;
-							const suitColor =
-								card.suit === 'hearts' || card.suit === 'diamonds'
-									? 'text-red-500'
-									: 'text-neutral-900';
-							return `
-							<div class="card">
-								<span class="card-rank">${card.rank}</span>
-								<span class="card-suit ${suitColor}">${suitSymbol}</span>
-							</div>
-						`;
-						})
-						.join('')
-				: '<div class="card-placeholder"></div><div class="card-placeholder"></div>';
 
-		container.innerHTML = `
-			<div class="text-center">
-				<div class="text-sm ${colorClass} uppercase tracking-wider mb-2 font-semibold">${label}</div>
-				<div class="hand-cards flex justify-center gap-3 min-h-[100px] items-center">${cardsHTML}</div>
-				<div class="hand-value text-xl font-bold text-white mt-2">${value}</div>
-			</div>
-		`;
+		// Update card slots
+		const cardsContainer = container.querySelector('[data-baccarat-card-container]');
+		if (cardsContainer) {
+			const slots = cardsContainer.querySelectorAll('.card-slot');
+			slots.forEach((slot, index) => {
+				if (index < hand.cards.length) {
+					const card = hand.cards[index];
+					setSlotState(slot, 'card', { rank: card.rank, suit: card.suit });
+				} else if (index < 2) {
+					setSlotState(slot, 'placeholder');
+				} else {
+					setSlotState(slot, 'hidden');
+				}
+			});
+		}
+
+		// Update hand value
+		const valueEl = container.querySelector('.hand-value');
+		if (valueEl) {
+			valueEl.textContent = String(value);
+		}
 	}
 
 	function showResult(outcome: RoundOutcome) {
@@ -670,26 +637,6 @@ const initialBalance = user.chipBalance ?? 1000;
 			bankerPair: 'B. Pair',
 		};
 
-		const resultsHTML = outcome.betResults
-			.map((result) => {
-				const outcomeClass =
-					result.outcome === 'win'
-						? 'text-green-400'
-						: result.outcome === 'lose'
-							? 'text-red-400'
-							: 'text-yellow-400';
-				const payoutPrefix = result.payout >= 0 ? '+' : '';
-				const typeLabel = typeLabelMap[result.bet.type];
-				return `
-					<div class="bet-result">
-						<span>${typeLabel}</span>
-						<span class="${outcomeClass}">${result.outcome.toUpperCase()}</span>
-						<span class="${outcomeClass}">${payoutPrefix}$${result.payout}</span>
-					</div>
-				`;
-			})
-			.join('');
-
 		const winnerEl = roundResultEl.querySelector('.result-winner');
 		const scoresEl = roundResultEl.querySelector('.result-scores');
 		const pairsEl = roundResultEl.querySelector('.result-pairs');
@@ -705,7 +652,11 @@ const initialBalance = user.chipBalance ?? 1000;
 			pairsEl.textContent = pairText;
 		}
 		if (betsEl) {
-			betsEl.innerHTML = resultsHTML;
+			clearChildren(betsEl);
+			outcome.betResults.forEach((result) => {
+				const typeLabel = typeLabelMap[result.bet.type];
+				betsEl.appendChild(createBetResult(typeLabel, result.outcome, result.payout));
+			});
 		}
 		roundResultEl.classList.remove('hidden');
 
@@ -731,21 +682,21 @@ const initialBalance = user.chipBalance ?? 1000;
 		dealButton.disabled = !game.canDeal();
 
 		// Active bets display
+		clearChildren(activeBetsEl);
 		if (state.activeBets.length === 0) {
-			activeBetsEl.innerHTML = '<span class="text-neutral-500">No bets placed</span>';
+			activeBetsEl.appendChild(createTextSpan('No bets placed', 'text-neutral-500'));
 		} else {
-			activeBetsEl.innerHTML = state.activeBets
-				.map((bet) => {
-					const typeLabel = {
-						player: 'Player',
-						banker: 'Banker',
-						tie: 'Tie',
-						playerPair: 'P. Pair',
-						bankerPair: 'B. Pair',
-					}[bet.type];
-					return `<div class="bet-chip"><span>${typeLabel}</span><span class="text-yellow-400">$${bet.amount}</span></div>`;
-				})
-				.join('');
+			const betTypeLabelMap: Record<string, string> = {
+				player: 'Player',
+				banker: 'Banker',
+				tie: 'Tie',
+				playerPair: 'P. Pair',
+				bankerPair: 'B. Pair',
+			};
+			state.activeBets.forEach((bet) => {
+				const typeLabel = betTypeLabelMap[bet.type] || bet.type;
+				activeBetsEl.appendChild(createBetChip(typeLabel, bet.amount));
+			});
 		}
 
 		// Update bet area amounts
@@ -764,20 +715,13 @@ const initialBalance = user.chipBalance ?? 1000;
 		});
 
 		// Scoreboard
+		clearChildren(scoreboardEl);
 		if (state.roundHistory.length === 0) {
-			scoreboardEl.innerHTML = '<span class="text-neutral-500">No history yet</span>';
+			scoreboardEl.appendChild(createTextSpan('No history yet', 'text-neutral-500'));
 		} else {
-			scoreboardEl.innerHTML = state.roundHistory
-				.map((round) => {
-					const colorClass = {
-						player: 'bg-blue-500',
-						banker: 'bg-red-500',
-						tie: 'bg-green-500',
-					}[round.winner];
-					const label = { player: 'P', banker: 'B', tie: 'T' }[round.winner];
-					return `<span class="scoreboard-dot ${colorClass}">${label}</span>`;
-				})
-				.join('');
+			state.roundHistory.forEach((round) => {
+				scoreboardEl.appendChild(createScoreboardDot(round.winner));
+			});
 		}
 
 		// Stats

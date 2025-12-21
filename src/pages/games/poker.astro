@@ -1,6 +1,7 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
+import PokerCardContainer from '../../components/PokerCardContainer.astro';
 
 const user = Astro.locals.user;
 
@@ -48,33 +49,13 @@ if (!user) {
 
 			<!-- Community Cards - Center -->
 			<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -mt-4">
-				<div class="flex gap-2 md:gap-3" id="community-cards">
-					<div
-						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
-					>
-						?
-					</div>
-					<div
-						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
-					>
-						?
-					</div>
-					<div
-						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
-					>
-						?
-					</div>
-					<div
-						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
-					>
-						?
-					</div>
-					<div
-						class="w-14 h-20 md:w-16 md:h-24 bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg"
-					>
-						?
-					</div>
-				</div>
+				<PokerCardContainer
+					id="community-cards"
+					maxCards={5}
+					size="community"
+					showPlaceholders={true}
+					placeholderText="?"
+				/>
 			</div>
 
 			<!-- LLM Configuration Overlay -->
@@ -127,26 +108,12 @@ if (!user) {
 					class="bg-slate-900/85 backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-slate-600/80 shadow-lg"
 				>
 					<div class="text-xs text-slate-300 mb-1.5 font-medium">Player 2</div>
-					<div class="flex gap-1.5 mb-1.5" id="opponent1-cards">
-						<div
-							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
-						>
-							<div
-								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
-							>
-								<div class="text-white opponent-back-icon">🂠</div>
-							</div>
-						</div>
-						<div
-							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
-						>
-							<div
-								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
-							>
-								<div class="text-white opponent-back-icon">🂠</div>
-							</div>
-						</div>
-					</div>
+					<PokerCardContainer
+						id="opponent1-cards"
+						maxCards={2}
+						size="small"
+						showPlaceholders={false}
+					/>
 					<div class="text-xs text-yellow-400 font-semibold" id="opponent1-chips">$500</div>
 				</div>
 			</div>
@@ -157,26 +124,12 @@ if (!user) {
 					class="bg-slate-900/85 backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-slate-600/80 shadow-lg"
 				>
 					<div class="text-xs text-slate-300 mb-1.5 font-medium">Player 3</div>
-					<div class="flex gap-1.5 mb-1.5" id="opponent2-cards">
-						<div
-							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
-						>
-							<div
-								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
-							>
-								<div class="text-white opponent-back-icon">🂠</div>
-							</div>
-						</div>
-						<div
-							class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center"
-						>
-							<div
-								class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center"
-							>
-								<div class="text-white opponent-back-icon">🂠</div>
-							</div>
-						</div>
-					</div>
+					<PokerCardContainer
+						id="opponent2-cards"
+						maxCards={2}
+						size="small"
+						showPlaceholders={false}
+					/>
 					<div class="text-xs text-yellow-400 font-semibold" id="opponent2-chips">$750</div>
 				</div>
 			</div>
@@ -191,8 +144,13 @@ if (!user) {
 						<div class="text-xs text-slate-400 mb-0.5">Your Hand</div>
 						<div class="text-base md:text-lg font-bold text-yellow-400" id="hand-strength">--</div>
 					</div>
-					<div class="flex gap-2 md:gap-3 justify-center mb-3" id="player-cards">
-						<!-- Cards will be inserted here by JavaScript -->
+					<div class="flex gap-2 md:gap-3 justify-center mb-3">
+						<PokerCardContainer
+							id="player-cards"
+							maxCards={2}
+							size="normal"
+							showPlaceholders={false}
+						/>
 					</div>
 
 					<!-- Integrated Betting Controls -->

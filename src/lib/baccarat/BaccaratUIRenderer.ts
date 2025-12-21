@@ -7,6 +7,14 @@ import type { Card, Hand, RoundOutcome, Bet, BetType } from './types';
 import { getHandValue } from './handEvaluator';
 import { ANIMATION_SPEED_SLOW, ANIMATION_SPEED_NORMAL, ANIMATION_SPEED_FAST } from './constants';
 import type { AnimationSpeed } from './types';
+import {
+	clearChildren,
+	createTextSpan,
+	createBetChip,
+	createBetResult,
+	createScoreboardDot,
+} from '../dom-utils';
+import { setSlotState } from '../card-slot-utils';
 
 export class BaccaratUIRenderer {
 	private animationSpeed: number = ANIMATION_SPEED_NORMAL;
@@ -35,29 +43,36 @@ export class BaccaratUIRenderer {
 	}
 
 	/**
-	 * Render a hand to the DOM
+	 * Render a hand to the DOM using pre-rendered card slots
 	 */
-	public renderHand(hand: Hand, containerSelector: string, label: string): void {
+	public renderHand(hand: Hand, containerSelector: string, _label: string): void {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
 
 		const handValue = hand.cards.length > 0 ? getHandValue(hand) : '';
-		const cardsHTML = hand.cards
-			.map(
-				(card, index) => `
-			<div class="card" data-rank="${card.rank}" data-suit="${card.suit}" style="animation-delay: ${index * 0.2}s">
-				<span class="card-rank">${card.rank}</span>
-				<span class="card-suit ${this.getSuitColor(card.suit)}">${this.getSuitSymbol(card.suit)}</span>
-			</div>
-		`,
-			)
-			.join('');
 
-		container.innerHTML = `
-			<div class="hand-label">${label}</div>
-			<div class="hand-cards">${cardsHTML || '<div class="card-placeholder"></div>'}</div>
-			${handValue !== '' ? `<div class="hand-value">${handValue}</div>` : ''}
-		`;
+		// Find the card container and update slots
+		const cardsContainer = container.querySelector('[data-baccarat-card-container]');
+		if (cardsContainer) {
+			const slots = cardsContainer.querySelectorAll('.card-slot');
+			slots.forEach((slot, index) => {
+				if (index < hand.cards.length) {
+					const card = hand.cards[index];
+					setSlotState(slot, 'card', { rank: card.rank, suit: card.suit });
+				} else if (index < 2) {
+					// Show placeholders for first 2 slots
+					setSlotState(slot, 'placeholder');
+				} else {
+					setSlotState(slot, 'hidden');
+				}
+			});
+		}
+
+		// Update hand value element
+		const valueEl = container.querySelector('.hand-value');
+		if (valueEl) {
+			valueEl.textContent = handValue !== '' ? String(handValue) : '';
+		}
 	}
 
 	/**
@@ -75,36 +90,26 @@ export class BaccaratUIRenderer {
 	}
 
 	/**
-	 * Add a card to hand with animation
+	 * Add a card to hand with animation using pre-rendered slots
 	 */
 	public async addCardToHand(
 		card: Card,
 		containerSelector: string,
-		_position: number,
+		position: number,
 		handCards: Card[],
 	): Promise<void> {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
 
-		const cardsContainer = container.querySelector('.hand-cards');
+		// Find the card container and update the specific slot
+		const cardsContainer = container.querySelector('[data-baccarat-card-container]');
 		if (!cardsContainer) return;
 
-		// Remove placeholder if present
-		const placeholder = cardsContainer.querySelector('.card-placeholder');
-		if (placeholder) {
-			placeholder.remove();
+		const slots = cardsContainer.querySelectorAll('.card-slot');
+		const slot = slots[position];
+		if (slot) {
+			setSlotState(slot, 'card', { rank: card.rank, suit: card.suit });
 		}
-
-		const cardElement = document.createElement('div');
-		cardElement.className = 'card card-dealing';
-		cardElement.dataset.rank = card.rank;
-		cardElement.dataset.suit = card.suit;
-		cardElement.innerHTML = `
-			<span class="card-rank">${card.rank}</span>
-			<span class="card-suit ${this.getSuitColor(card.suit)}">${this.getSuitSymbol(card.suit)}</span>
-		`;
-
-		cardsContainer.appendChild(cardElement);
 
 		// Wait for animation
 		await this.delay(this.animationSpeed);
@@ -124,23 +129,18 @@ export class BaccaratUIRenderer {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
 
+		clearChildren(container);
+
 		if (bets.length === 0) {
-			container.innerHTML = '<span class="text-neutral-500">No bets placed</span>';
+			container.appendChild(createTextSpan('No bets placed', 'text-neutral-500'));
 			return;
 		}
 
-		const betsHTML = bets
-			.map(
-				(bet) => `
-			<div class="bet-chip" data-type="${bet.type}">
-				<span class="bet-type">${this.formatBetType(bet.type)}</span>
-				<span class="bet-amount">$${bet.amount}</span>
-			</div>
-		`,
-			)
-			.join('');
-
-		container.innerHTML = betsHTML;
+		bets.forEach((bet) => {
+			const chip = createBetChip(this.formatBetType(bet.type), bet.amount);
+			chip.dataset.type = bet.type;
+			container.appendChild(chip);
+		});
 	}
 
 	/**
@@ -168,32 +168,35 @@ export class BaccaratUIRenderer {
 		const naturalText = outcome.isNatural ? ' (Natural!)' : '';
 		const pairText = this.formatPairs(outcome.playerPair, outcome.bankerPair);
 
-		const resultsHTML = outcome.betResults
-			.map((result) => {
-				const outcomeClass =
-					result.outcome === 'win'
-						? 'text-green-400'
-						: result.outcome === 'lose'
-							? 'text-red-400'
-							: 'text-yellow-400';
-				const payoutPrefix = result.payout >= 0 ? '+' : '';
-				return `
-				<div class="bet-result">
-					<span>${this.formatBetType(result.bet.type)}</span>
-					<span class="${outcomeClass}">${result.outcome.toUpperCase()}</span>
-					<span class="${outcomeClass}">${payoutPrefix}$${result.payout}</span>
-				</div>
-			`;
-			})
-			.join('');
+		// Build DOM structure
+		const winnerDiv = document.createElement('div');
+		winnerDiv.className = 'result-winner';
+		winnerDiv.textContent = winnerText + naturalText;
 
-		container.innerHTML = `
-			<div class="result-winner">${winnerText}${naturalText}</div>
-			<div class="result-scores">Player: ${outcome.playerValue} | Banker: ${outcome.bankerValue}</div>
-			${pairText ? `<div class="result-pairs">${pairText}</div>` : ''}
-			<div class="result-bets">${resultsHTML}</div>
-		`;
+		const scoresDiv = document.createElement('div');
+		scoresDiv.className = 'result-scores';
+		scoresDiv.textContent = `Player: ${outcome.playerValue} | Banker: ${outcome.bankerValue}`;
 
+		const betsDiv = document.createElement('div');
+		betsDiv.className = 'result-bets';
+		outcome.betResults.forEach((result) => {
+			betsDiv.appendChild(
+				createBetResult(this.formatBetType(result.bet.type), result.outcome, result.payout),
+			);
+		});
+
+		clearChildren(container);
+		container.appendChild(winnerDiv);
+		container.appendChild(scoresDiv);
+
+		if (pairText) {
+			const pairsDiv = document.createElement('div');
+			pairsDiv.className = 'result-pairs';
+			pairsDiv.textContent = pairText;
+			container.appendChild(pairsDiv);
+		}
+
+		container.appendChild(betsDiv);
 		container.classList.remove('hidden');
 	}
 
@@ -234,30 +237,18 @@ export class BaccaratUIRenderer {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
 
+		clearChildren(container);
+
 		if (history.length === 0) {
-			container.innerHTML = '<span class="text-neutral-500">No history yet</span>';
+			container.appendChild(createTextSpan('No history yet', 'text-neutral-500'));
 			return;
 		}
 
-		const dotsHTML = history
-			.map((round) => {
-				const colorClass = {
-					player: 'bg-blue-500',
-					banker: 'bg-red-500',
-					tie: 'bg-green-500',
-				}[round.winner];
-
-				const label = {
-					player: 'P',
-					banker: 'B',
-					tie: 'T',
-				}[round.winner];
-
-				return `<span class="scoreboard-dot ${colorClass}" title="${this.formatWinner(round.winner)}">${label}</span>`;
-			})
-			.join('');
-
-		container.innerHTML = dotsHTML;
+		history.forEach((round) => {
+			const dot = createScoreboardDot(round.winner);
+			dot.title = this.formatWinner(round.winner);
+			container.appendChild(dot);
+		});
 	}
 
 	/**

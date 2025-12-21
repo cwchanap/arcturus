@@ -1,0 +1,55 @@
+---
+/**
+ * CardSlot - A pre-rendered card slot that can display a card or placeholder
+ * JavaScript toggles visibility via data attributes, no DOM creation needed
+ */
+interface Props {
+	id?: string;
+	size?: 'small' | 'normal' | 'large';
+	showPlaceholder?: boolean;
+}
+
+const { id, size = 'normal', showPlaceholder = true } = Astro.props;
+
+const sizeClasses = {
+	small: 'w-12 h-16',
+	normal: 'w-[60px] h-[84px]',
+	large: 'w-20 h-28',
+};
+
+const cardSize = sizeClasses[size];
+---
+
+<div class="card-slot" data-card-slot id={id}>
+	<!-- Placeholder (shown by default) -->
+	<div
+		class:list={[
+			'card-placeholder',
+			cardSize,
+			'bg-white/10 rounded-lg border-2 border-dashed border-white/20',
+			{ hidden: !showPlaceholder },
+		]}
+		data-placeholder
+	>
+	</div>
+
+	<!-- Face-up card (hidden by default) -->
+	<div class:list={['playing-card', cardSize, 'hidden']} data-card-face>
+		<div class="playing-card-inner">
+			<div class="card-corner card-corner-top">
+				<span class="card-rank" data-rank></span>
+				<span class="card-suit-small" data-suit-small></span>
+			</div>
+			<span class="card-suit-center" data-suit-center></span>
+			<div class="card-corner card-corner-bottom">
+				<span class="card-rank" data-rank></span>
+				<span class="card-suit-small" data-suit-small></span>
+			</div>
+		</div>
+	</div>
+
+	<!-- Face-down card (hidden by default) -->
+	<div class:list={['playing-card-back', cardSize, 'hidden']} data-card-back>
+		<span class="card-back-icon">🎴</span>
+	</div>
+</div>

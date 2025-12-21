@@ -1,0 +1,92 @@
+---
+/**
+ * PokerCardContainer - Pre-renders card slots for poker hands
+ * Supports player cards, opponent cards (small), and community cards
+ */
+
+interface Props {
+	id: string;
+	maxCards?: number;
+	size?: 'small' | 'normal' | 'community';
+	showPlaceholders?: boolean;
+	placeholderText?: string;
+}
+
+const {
+	id,
+	maxCards = 5,
+	size = 'normal',
+	showPlaceholders = true,
+	placeholderText = '?',
+} = Astro.props;
+
+const sizeClasses = {
+	small: {
+		container: 'w-12 h-16',
+		rank: 'text-xs',
+		suit: 'text-base',
+		back: 'opponent-card-small',
+	},
+	normal: {
+		container: 'w-16 h-24',
+		rank: 'text-sm',
+		suit: 'text-xl',
+		back: '',
+	},
+	community: {
+		container: 'w-14 h-20 md:w-16 md:h-24',
+		rank: 'text-sm',
+		suit: 'text-xl',
+		back: '',
+	},
+};
+
+const sizes = sizeClasses[size];
+---
+
+<div id={id} class="flex gap-2 justify-center items-center" data-poker-card-container>
+	{
+		Array.from({ length: maxCards }).map((_, i) => (
+			<div
+				class="card-slot"
+				data-slot-index={i}
+				data-slot-state={showPlaceholders ? 'placeholder' : 'hidden'}
+			>
+				{/* Placeholder */}
+				<div
+					class:list={[
+						'card-placeholder',
+						sizes.container,
+						'bg-slate-800/40 rounded-lg border-2 border-dashed border-slate-600/60 flex items-center justify-center text-slate-500 text-lg',
+						{ hidden: !showPlaceholders },
+					]}
+					data-placeholder
+				>
+					{placeholderText}
+				</div>
+
+				{/* Face-up card */}
+				<div class:list={['playing-card hidden', sizes.container]} data-card-face>
+					<div class="playing-card-inner">
+						<div class="card-corner card-corner-top">
+							<span class:list={['card-rank', sizes.rank]} data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+						<span class:list={['card-suit-center', sizes.suit]} data-suit-center />
+						<div class="card-corner card-corner-bottom">
+							<span class:list={['card-rank', sizes.rank]} data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+					</div>
+				</div>
+
+				{/* Face-down card */}
+				<div class:list={['playing-card hidden', sizes.container, sizes.back]} data-card-back>
+					<div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
+						<span class="text-white opponent-back-icon">🂠</span>
+					</div>
+				</div>
+			</div>
+		))
+	}
+</div>

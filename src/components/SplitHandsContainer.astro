@@ -1,0 +1,63 @@
+---
+/**
+ * SplitHandsContainer - Pre-renders slots for split hands in blackjack
+ * Each hand has its own card container, label, value, and bet display
+ */
+
+interface Props {
+	id: string;
+	maxHands?: number;
+	maxCardsPerHand?: number;
+}
+
+const { id, maxHands = 4, maxCardsPerHand = 10 } = Astro.props;
+---
+
+<div id={id} class="hidden flex-wrap justify-center gap-4" data-split-hands-container>
+	{
+		Array.from({ length: maxHands }).map((_, handIndex) => (
+			<div class="hand-container hidden" data-hand-index={handIndex} data-hand-active="false">
+				<div class="hand-label" data-hand-label>
+					Hand {handIndex + 1}
+				</div>
+				<div class="hand-cards flex gap-2" data-hand-cards id={`${id}-hand-${handIndex}-cards`}>
+					{Array.from({ length: maxCardsPerHand }).map((_, cardIndex) => (
+						<div class="card-slot hidden" data-slot-index={cardIndex} data-slot-state="hidden">
+							{/* Placeholder */}
+							<div
+								class="card-placeholder hidden w-[60px] h-[84px] bg-white/10 rounded-lg border-2 border-dashed border-white/20"
+								data-placeholder
+							/>
+
+							{/* Face-up card */}
+							<div class="playing-card hidden w-[60px] h-[84px]" data-card-face>
+								<div class="playing-card-inner">
+									<div class="card-corner card-corner-top">
+										<span class="card-rank text-sm" data-rank />
+										<span class="card-suit-small" data-suit-small />
+									</div>
+									<span class="card-suit-center text-2xl" data-suit-center />
+									<div class="card-corner card-corner-bottom">
+										<span class="card-rank text-sm" data-rank />
+										<span class="card-suit-small" data-suit-small />
+									</div>
+								</div>
+							</div>
+
+							{/* Face-down card */}
+							<div class="playing-card-back hidden w-[60px] h-[84px]" data-card-back>
+								<span class="card-back-icon">🎴</span>
+							</div>
+						</div>
+					))}
+				</div>
+				<div class="hand-value" data-hand-value>
+					-
+				</div>
+				<div class="hand-bet" data-hand-bet>
+					$0
+				</div>
+			</div>
+		))
+	}
+</div>

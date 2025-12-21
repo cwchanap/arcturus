@@ -10,7 +10,10 @@ test.describe('Poker turn flow smoke test', () => {
 		const dealButton = page.getByRole('button', { name: 'DEAL NEW HAND' });
 		await dealButton.click();
 
-		await expect(page.locator('#player-cards .playing-card')).toHaveCount(2, { timeout: 5000 });
+		// With slot-based rendering, check for visible card faces (not hidden)
+		await expect(page.locator('#player-cards .card-slot[data-slot-state="card"]')).toHaveCount(2, {
+			timeout: 5000,
+		});
 
 		const status = page.locator('#game-status');
 		await expect(status).toContainText('Your turn', { timeout: 5000 });

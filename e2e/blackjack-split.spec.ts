@@ -142,10 +142,10 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		await expect(splitButton).toBeEnabled();
 		await splitButton.click();
 
-		// Verify two hands are displayed
-		const playerCards = page.locator('#player-cards');
-		await expect(playerCards.getByText('Hand 1')).toBeVisible();
-		await expect(playerCards.getByText('Hand 2')).toBeVisible();
+		// Verify two hands are displayed (split hands are in #player-cards-split container)
+		const splitContainer = page.locator('#player-cards-split');
+		await expect(splitContainer.getByText('Hand 1')).toBeVisible();
+		await expect(splitContainer.getByText('Hand 2')).toBeVisible();
 
 		// Play both hands by standing twice
 		const standButton = page.getByRole('button', { name: 'Stand' });

@@ -61,7 +61,7 @@ export function populateModels(
 	if (!modelSelect) return;
 
 	const models = Array.isArray(modelOptions?.[provider]) ? modelOptions[provider] : [];
-	modelSelect.innerHTML = '';
+	modelSelect.replaceChildren();
 
 	models.forEach((model) => {
 		const option = document.createElement('option');

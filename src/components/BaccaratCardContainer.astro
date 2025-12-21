@@ -1,0 +1,54 @@
+---
+/**
+ * BaccaratCardContainer - Pre-renders card slots for baccarat hands
+ * Supports player and banker hands with up to 3 cards each
+ */
+
+interface Props {
+	id: string;
+	maxCards?: number;
+}
+
+const { id, maxCards = 3 } = Astro.props;
+---
+
+<div
+	id={id}
+	class="flex justify-center gap-3 min-h-[100px] items-center"
+	data-baccarat-card-container
+>
+	{
+		Array.from({ length: maxCards }).map((_, i) => (
+			<div class="card-slot" data-slot-index={i} data-slot-state={i < 2 ? 'placeholder' : 'hidden'}>
+				{/* Placeholder */}
+				<div
+					class:list={[
+						'card-placeholder w-16 h-24 bg-white/10 rounded-lg border-2 border-dashed border-white/20',
+						{ hidden: i >= 2 },
+					]}
+					data-placeholder
+				/>
+
+				{/* Face-up card */}
+				<div class="baccarat-card hidden w-16 h-24" data-card-face>
+					<div class="baccarat-card-inner">
+						<div class="card-corner card-corner-top">
+							<span class="card-rank text-sm" data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+						<span class="card-suit-center text-2xl" data-suit-center />
+						<div class="card-corner card-corner-bottom">
+							<span class="card-rank text-sm" data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+					</div>
+				</div>
+
+				{/* Face-down card */}
+				<div class="baccarat-card-back hidden w-16 h-24" data-card-back>
+					<span class="card-back-icon">🎴</span>
+				</div>
+			</div>
+		))
+	}
+</div>

@@ -74,7 +74,7 @@ export function createBetResult(
 		push: 'text-yellow-400',
 	};
 	const outcomeClass = outcomeClassMap[outcome];
-	const payoutPrefix = payout >= 0 ? '+' : '';
+	const payoutPrefix = payout >= 0 ? '+' : '-';
 
 	const result = document.createElement('div');
 	result.className = 'bet-result';
@@ -88,7 +88,7 @@ export function createBetResult(
 
 	const payoutSpan = document.createElement('span');
 	payoutSpan.className = outcomeClass;
-	payoutSpan.textContent = `${payoutPrefix}$${payout}`;
+	payoutSpan.textContent = `${payoutPrefix}$${Math.abs(payout)}`;
 
 	result.appendChild(typeSpan);
 	result.appendChild(outcomeSpan);

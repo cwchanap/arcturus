@@ -175,19 +175,6 @@ function createMockContainerWithSlots(numSlots: number): MockElement {
 	return container;
 }
 
-// Factory to create mock elements with parent element support (for updateOpponentUI, showAIDecision tests)
-function createMockElementWithParent(parentOverrides: Partial<MockElement> = {}): MockElement {
-	const el = createMockElement();
-	el.parentElement = {
-		classList: { add: () => {}, remove: () => {} },
-		querySelector: () => null,
-		appendChild: () => {},
-		style: {},
-		...parentOverrides,
-	};
-	return el;
-}
-
 // Mock DOM environment
 function mockDocument() {
 	const elements: Record<string, MockElement> = {};

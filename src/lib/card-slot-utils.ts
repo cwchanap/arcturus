@@ -28,6 +28,9 @@ export function setSlotState(slot: Element, state: SlotState, card?: CardData): 
 	const cardFace = slot.querySelector('[data-card-face]');
 	const cardBack = slot.querySelector('[data-card-back]');
 
+	// Ensure slot visibility matches state
+	slot.classList.toggle('hidden', state === 'hidden');
+
 	// Hide all first
 	placeholder?.classList.add('hidden');
 	cardFace?.classList.add('hidden');

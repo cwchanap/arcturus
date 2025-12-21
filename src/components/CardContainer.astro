@@ -1,0 +1,59 @@
+---
+/**
+ * CardContainer - Pre-renders card slots for a hand
+ * JavaScript only toggles visibility and updates text, no DOM creation
+ */
+interface Props {
+	id: string;
+	maxCards?: number;
+	size?: 'small' | 'normal';
+}
+
+const { id, maxCards = 10, size = 'normal' } = Astro.props;
+
+const sizeClasses = {
+	small: { card: 'w-12 h-16', rank: 'text-xs', suit: 'text-lg' },
+	normal: { card: 'w-[60px] h-[84px]', rank: 'text-sm', suit: 'text-2xl' },
+};
+
+const sizes = sizeClasses[size];
+---
+
+<div id={id} class="flex justify-center gap-2 flex-wrap items-center" data-card-container>
+	{
+		Array.from({ length: maxCards }).map((_, i) => (
+			<div class="card-slot" data-slot-index={i} data-slot-state={i < 2 ? 'placeholder' : 'hidden'}>
+				{/* Placeholder */}
+				<div
+					class:list={[
+						'card-placeholder',
+						sizes.card,
+						'bg-white/10 rounded-lg border-2 border-dashed border-white/20',
+						{ hidden: i >= 2 },
+					]}
+					data-placeholder
+				/>
+
+				{/* Face-up card */}
+				<div class:list={['playing-card hidden', sizes.card]} data-card-face>
+					<div class="playing-card-inner">
+						<div class="card-corner card-corner-top">
+							<span class:list={['card-rank', sizes.rank]} data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+						<span class:list={['card-suit-center', sizes.suit]} data-suit-center />
+						<div class="card-corner card-corner-bottom">
+							<span class:list={['card-rank', sizes.rank]} data-rank />
+							<span class="card-suit-small" data-suit-small />
+						</div>
+					</div>
+				</div>
+
+				{/* Face-down card */}
+				<div class:list={['playing-card-back hidden', sizes.card]} data-card-back>
+					<span class="card-back-icon">🎴</span>
+				</div>
+			</div>
+		))
+	}
+</div>

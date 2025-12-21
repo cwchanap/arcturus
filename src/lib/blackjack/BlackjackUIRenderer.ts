@@ -5,6 +5,7 @@
 
 import type { Hand, BlackjackGameState, BlackjackAction } from './types';
 import { getHandValueDisplay } from './handEvaluator';
+import { clearChildren } from '../dom-utils';
 
 export class BlackjackUIRenderer {
 	/**
@@ -15,21 +16,29 @@ export class BlackjackUIRenderer {
 		if (!container) return;
 
 		const handValue = getHandValueDisplay(hand.cards);
-		const cardsHTML = hand.cards
-			.map(
-				(card) => `
-			<div class="card" data-rank="${card.rank}" data-suit="${card.suit}">
-				${card.rank}${this.getSuitSymbol(card.suit)}
-			</div>
-		`,
-			)
-			.join('');
 
-		container.innerHTML = `
-			<div class="hand-cards">${cardsHTML}</div>
-			<div class="hand-value">${handValue}</div>
-			<div class="hand-bet">Bet: $${hand.bet}</div>
-		`;
+		// Build DOM structure
+		const cardsDiv = document.createElement('div');
+		cardsDiv.className = 'hand-cards';
+		hand.cards.forEach((card) => {
+			const cardEl = this.createBlackjackCard(card.rank, card.suit);
+			cardEl.dataset.rank = card.rank;
+			cardEl.dataset.suit = card.suit;
+			cardsDiv.appendChild(cardEl);
+		});
+
+		const valueDiv = document.createElement('div');
+		valueDiv.className = 'hand-value';
+		valueDiv.textContent = handValue;
+
+		const betDiv = document.createElement('div');
+		betDiv.className = 'hand-bet';
+		betDiv.textContent = `Bet: $${hand.bet}`;
+
+		clearChildren(container);
+		container.appendChild(cardsDiv);
+		container.appendChild(valueDiv);
+		container.appendChild(betDiv);
 	}
 
 	/**
@@ -42,22 +51,31 @@ export class BlackjackUIRenderer {
 		const visibleCards = hideSecondCard ? hand.cards.slice(0, 1) : hand.cards;
 		const handValue = hideSecondCard ? '?' : getHandValueDisplay(hand.cards);
 
-		const cardsHTML = visibleCards
-			.map(
-				(card) => `
-			<div class="card" data-rank="${card.rank}" data-suit="${card.suit}">
-				${card.rank}${this.getSuitSymbol(card.suit)}
-			</div>
-		`,
-			)
-			.join('');
+		// Build DOM structure
+		const cardsDiv = document.createElement('div');
+		cardsDiv.className = 'hand-cards';
 
-		const hiddenCardHTML = hideSecondCard ? '<div class="card card-hidden">🂠</div>' : '';
+		visibleCards.forEach((card) => {
+			const cardEl = this.createBlackjackCard(card.rank, card.suit);
+			cardEl.dataset.rank = card.rank;
+			cardEl.dataset.suit = card.suit;
+			cardsDiv.appendChild(cardEl);
+		});
 
-		container.innerHTML = `
-			<div class="hand-cards">${cardsHTML}${hiddenCardHTML}</div>
-			<div class="hand-value">Dealer: ${handValue}</div>
-		`;
+		if (hideSecondCard) {
+			const hiddenCard = document.createElement('div');
+			hiddenCard.className = 'card card-hidden';
+			hiddenCard.textContent = '🂠';
+			cardsDiv.appendChild(hiddenCard);
+		}
+
+		const valueDiv = document.createElement('div');
+		valueDiv.className = 'hand-value';
+		valueDiv.textContent = `Dealer: ${handValue}`;
+
+		clearChildren(container);
+		container.appendChild(cardsDiv);
+		container.appendChild(valueDiv);
 	}
 
 	/**
@@ -155,6 +173,16 @@ export class BlackjackUIRenderer {
 	}
 
 	/**
+	 * Create a blackjack card element
+	 */
+	private createBlackjackCard(rank: string, suit: string): HTMLDivElement {
+		const card = document.createElement('div');
+		card.className = 'card';
+		card.textContent = `${rank}${this.getSuitSymbol(suit)}`;
+		return card;
+	}
+
+	/**
 	 * Render complete game state (useful for full updates)
 	 */
 	public renderGameState(
@@ -175,31 +203,48 @@ export class BlackjackUIRenderer {
 				this.renderPlayerHand(state.playerHands[0], selectors.playerHandContainer);
 			} else {
 				// Multiple hands (split) - render all with active indicator
-				const handsHTML = state.playerHands
-					.map((hand, index) => {
-						const isActive = index === state.activeHandIndex;
-						const handValue = getHandValueDisplay(hand.cards);
-						const cardsHTML = hand.cards
-							.map(
-								(card) => `
-									<div class="card" data-rank="${card.rank}" data-suit="${card.suit}">
-										${card.rank}${this.getSuitSymbol(card.suit)}
-									</div>
-								`,
-							)
-							.join('');
-						const activeClass = isActive ? 'hand-active' : 'hand-inactive';
-						return `
-							<div class="player-hand ${activeClass}" data-hand-index="${index}">
-								<div class="hand-label">Hand ${index + 1}${isActive ? ' (Active)' : ''}</div>
-								<div class="hand-cards">${cardsHTML}</div>
-								<div class="hand-value">${handValue}</div>
-								<div class="hand-bet">Bet: $${hand.bet}</div>
-							</div>
-						`;
-					})
-					.join('');
-				playerContainer.innerHTML = `<div class="split-hands">${handsHTML}</div>`;
+				const splitHandsDiv = document.createElement('div');
+				splitHandsDiv.className = 'split-hands';
+
+				state.playerHands.forEach((hand, index) => {
+					const isActive = index === state.activeHandIndex;
+					const handValue = getHandValueDisplay(hand.cards);
+					const activeClass = isActive ? 'hand-active' : 'hand-inactive';
+
+					const handDiv = document.createElement('div');
+					handDiv.className = `player-hand ${activeClass}`;
+					handDiv.dataset.handIndex = String(index);
+
+					const labelDiv = document.createElement('div');
+					labelDiv.className = 'hand-label';
+					labelDiv.textContent = `Hand ${index + 1}${isActive ? ' (Active)' : ''}`;
+
+					const cardsDiv = document.createElement('div');
+					cardsDiv.className = 'hand-cards';
+					hand.cards.forEach((card) => {
+						const cardEl = this.createBlackjackCard(card.rank, card.suit);
+						cardEl.dataset.rank = card.rank;
+						cardEl.dataset.suit = card.suit;
+						cardsDiv.appendChild(cardEl);
+					});
+
+					const valueDiv = document.createElement('div');
+					valueDiv.className = 'hand-value';
+					valueDiv.textContent = handValue;
+
+					const betDiv = document.createElement('div');
+					betDiv.className = 'hand-bet';
+					betDiv.textContent = `Bet: $${hand.bet}`;
+
+					handDiv.appendChild(labelDiv);
+					handDiv.appendChild(cardsDiv);
+					handDiv.appendChild(valueDiv);
+					handDiv.appendChild(betDiv);
+					splitHandsDiv.appendChild(handDiv);
+				});
+
+				clearChildren(playerContainer);
+				playerContainer.appendChild(splitHandsDiv);
 			}
 		}
 

@@ -3,6 +3,7 @@
  */
 
 import type { Card, Player, Suit } from './types';
+import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 
 export class PokerUIRenderer {
 	private getSuitSymbol(suit: Suit): string {
@@ -16,28 +17,9 @@ export class PokerUIRenderer {
 	}
 
 	public renderPlayerCards(humanPlayer: Player, communityCards: Card[]) {
-		const container = document.getElementById('player-cards');
-		if (!container) return;
-
-		container.innerHTML = humanPlayer.hand
-			.map(
-				(card) => `
-			<div class="playing-card w-20 h-28 flex items-center justify-center">
-				<div class="w-full h-full p-2 flex flex-col">
-					<div class="text-xl font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-						${card.value}
-					</div>
-					<div class="flex-1 flex items-center justify-center text-4xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-						${this.getSuitSymbol(card.suit)}
-					</div>
-					<div class="text-xl font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
-						${card.value}
-					</div>
-				</div>
-			</div>
-		`,
-			)
-			.join('');
+		// Convert Card type to CardData format expected by card-slot-utils
+		const cards = humanPlayer.hand.map((card) => ({ rank: card.value, suit: card.suit }));
+		renderCardsToContainer('player-cards', cards, { showPlaceholders: 0 });
 
 		this.evaluateHand(humanPlayer, communityCards);
 	}
@@ -46,37 +28,18 @@ export class PokerUIRenderer {
 		const container = document.getElementById('community-cards');
 		if (!container) return;
 
-		const cards: (Card | null)[] = [...communityCards];
-		while (cards.length < 5) {
-			cards.push(null);
-		}
+		// Convert Card type to CardData format
+		const cards = communityCards.map((card) => ({ rank: card.value, suit: card.suit }));
 
-		container.innerHTML = cards
-			.map((card) => {
-				if (!card) {
-					return `
-					<div class="w-20 h-28 bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600 flex items-center justify-center text-slate-600">
-						?
-					</div>
-				`;
-				}
-				return `
-				<div class="playing-card w-20 h-28 flex items-center justify-center">
-					<div class="w-full h-full p-2 flex flex-col">
-						<div class="text-xl font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-							${card.value}
-						</div>
-						<div class="flex-1 flex items-center justify-center text-4xl ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-							${this.getSuitSymbol(card.suit)}
-						</div>
-						<div class="text-xl font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
-							${card.value}
-						</div>
-					</div>
-				</div>
-			`;
-			})
-			.join('');
+		// Update slots - show cards for dealt cards, placeholders for undealt
+		const slots = container.querySelectorAll('.card-slot');
+		slots.forEach((slot, index) => {
+			if (index < cards.length) {
+				setSlotState(slot, 'card', cards[index]);
+			} else {
+				setSlotState(slot, 'placeholder');
+			}
+		});
 	}
 
 	public updateOpponentUI(players: Player[]) {
@@ -188,80 +151,67 @@ export class PokerUIRenderer {
 	}
 
 	public revealOpponentHands(players: Player[], winners: Player[]) {
-		// Reveal Player 2's hand (smaller cards for opponents)
+		// Reveal Player 2's hand
 		if (players[1] && !players[1].folded) {
 			const opponent1Container = document.getElementById('opponent1-cards');
 			if (opponent1Container) {
 				const isWinner = winners.some((w) => w.id === players[1].id);
-				opponent1Container.innerHTML = players[1].hand
-					.map(
-						(card) => `
-					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
-						<div class="w-full h-full p-1 flex flex-col">
-							<div class="opponent-rank font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-								${card.value}
-							</div>
-							<div class="opponent-suit flex-1 flex items-center justify-center ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-								${this.getSuitSymbol(card.suit)}
-							</div>
-							<div class="opponent-rank font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
-								${card.value}
-							</div>
-						</div>
-					</div>
-				`,
-					)
-					.join('');
+				const cards = players[1].hand.map((card) => ({ rank: card.value, suit: card.suit }));
+				const slots = opponent1Container.querySelectorAll('.card-slot');
+				slots.forEach((slot, index) => {
+					if (index < cards.length) {
+						setSlotState(slot, 'card', cards[index]);
+						// Add winner highlight if needed
+						if (isWinner) {
+							slot.classList.add('ring-2', 'ring-yellow-400');
+						}
+					} else {
+						setSlotState(slot, 'hidden');
+					}
+				});
 			}
 		}
 
-		// Reveal Player 3's hand (smaller cards for opponents)
+		// Reveal Player 3's hand
 		if (players[2] && !players[2].folded) {
 			const opponent2Container = document.getElementById('opponent2-cards');
 			if (opponent2Container) {
 				const isWinner = winners.some((w) => w.id === players[2].id);
-				opponent2Container.innerHTML = players[2].hand
-					.map(
-						(card) => `
-					<div class="opponent-card-small playing-card ${isWinner ? 'ring-2 ring-yellow-400' : ''} w-12 h-16 flex items-center justify-center">
-						<div class="w-full h-full p-1 flex flex-col">
-							<div class="opponent-rank font-bold ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-								${card.value}
-							</div>
-							<div class="opponent-suit flex-1 flex items-center justify-center ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'}">
-								${this.getSuitSymbol(card.suit)}
-							</div>
-							<div class="opponent-rank font-bold text-right ${card.suit === 'hearts' || card.suit === 'diamonds' ? 'text-red-600' : 'text-gray-900'} rotate-180">
-								${card.value}
-							</div>
-						</div>
-					</div>
-				`,
-					)
-					.join('');
+				const cards = players[2].hand.map((card) => ({ rank: card.value, suit: card.suit }));
+				const slots = opponent2Container.querySelectorAll('.card-slot');
+				slots.forEach((slot, index) => {
+					if (index < cards.length) {
+						setSlotState(slot, 'card', cards[index]);
+						// Add winner highlight if needed
+						if (isWinner) {
+							slot.classList.add('ring-2', 'ring-yellow-400');
+						}
+					} else {
+						setSlotState(slot, 'hidden');
+					}
+				});
 			}
 		}
 	}
 
 	public hideOpponentHands() {
-		// Reset to face-down cards with smaller size for opponents
+		// Reset to face-down cards for opponents
 		const opponent1Container = document.getElementById('opponent1-cards');
 		const opponent2Container = document.getElementById('opponent2-cards');
 
-		const faceDownCard = `
-			<div class="opponent-card-small playing-card w-12 h-16 flex items-center justify-center">
-				<div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
-					<div class="text-white opponent-back-icon">🂠</div>
-				</div>
-			</div>
-		`;
-
-		if (opponent1Container) {
-			opponent1Container.innerHTML = faceDownCard + faceDownCard;
-		}
-		if (opponent2Container) {
-			opponent2Container.innerHTML = faceDownCard + faceDownCard;
-		}
+		[opponent1Container, opponent2Container].forEach((container) => {
+			if (!container) return;
+			const slots = container.querySelectorAll('.card-slot');
+			slots.forEach((slot, index) => {
+				// Remove any winner highlight
+				slot.classList.remove('ring-2', 'ring-yellow-400');
+				if (index < 2) {
+					setSlotState(slot, 'facedown');
+				} else {
+					setSlotState(slot, 'hidden');
+				}
+			});
+		});
 	}
 
 	private evaluateHand(humanPlayer: Player, communityCards: Card[]) {

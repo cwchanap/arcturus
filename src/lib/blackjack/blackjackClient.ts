@@ -9,6 +9,7 @@ import {
 } from './llmBlackjackStrategy';
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
+import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
 
 /**
  * Format outcome message for display, handling split hands.
@@ -580,20 +581,14 @@ export function initBlackjackClient(): void {
 		aiCommentaryBox.classList.add('hidden');
 
 		// Reset card placeholders
-		const playerCardsEl = document.getElementById('player-cards');
-		const dealerCardsEl = document.getElementById('dealer-cards');
-		if (playerCardsEl) {
-			playerCardsEl.innerHTML = `
-				<div class="card-placeholder"></div>
-				<div class="card-placeholder"></div>
-			`;
-		}
-		if (dealerCardsEl) {
-			dealerCardsEl.innerHTML = `
-				<div class="card-placeholder"></div>
-				<div class="card-placeholder"></div>
-			`;
-		}
+		const singleHandContainer = document.getElementById('player-cards-single');
+		const splitHandsContainer = document.getElementById('player-cards-split');
+		singleHandContainer?.classList.remove('hidden');
+		splitHandsContainer?.classList.add('hidden');
+		splitHandsContainer?.classList.remove('flex');
+
+		clearCardsContainer('player-cards', 2);
+		clearCardsContainer('dealer-cards', 2);
 
 		statusEl.textContent = 'Place your bet to start';
 	});
@@ -716,37 +711,6 @@ export function initBlackjackClient(): void {
 		}
 	}
 
-	// Render a single playing card (matches PlayingCard.astro markup for consistency)
-	function renderPlayingCard(card: { rank: string; suit: string }): string {
-		const suitSymbol = getSuitSymbol(card.suit);
-		const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
-		const colorClass = isRed ? 'text-red-600' : 'text-gray-900';
-
-		// Markup structure matches src/components/PlayingCard.astro
-		return `
-			<div class="playing-card w-20 h-28 flex items-center justify-center">
-				<div class="w-full h-full p-2 flex flex-col">
-					<div class="text-xl font-bold ${colorClass}">${card.rank}</div>
-					<div class="flex-1 flex items-center justify-center text-4xl ${colorClass}">
-						${suitSymbol}
-					</div>
-					<div class="text-xl font-bold text-right ${colorClass} rotate-180">${card.rank}</div>
-				</div>
-			</div>
-		`;
-	}
-
-	// Render a face-down card (matches PlayingCard.astro faceDown variant)
-	function renderCardBack(): string {
-		return `
-			<div class="playing-card w-20 h-28 flex items-center justify-center">
-				<div class="absolute inset-1 bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
-					<div class="text-white text-4xl">🎴</div>
-				</div>
-			</div>
-		`;
-	}
-
 	// Render game state
 	function renderGame() {
 		const state = game.getState();
@@ -758,42 +722,77 @@ export function initBlackjackClient(): void {
 
 		if (!playerCardsEl || !playerValueEl || !currentBetEl) return;
 
+		const singleHandContainer = document.getElementById('player-cards-single');
+		const splitHandsContainer = document.getElementById('player-cards-split');
+
 		if (state.playerHands.length > 0) {
-			// If split, show all hands with active hand highlighted
+			// If split, show split hands container
 			if (state.playerHands.length > 1) {
-				const handsHTML = state.playerHands
-					.map((hand, index) => {
+				// Hide single hand, show split hands
+				singleHandContainer?.classList.add('hidden');
+				splitHandsContainer?.classList.remove('hidden');
+				splitHandsContainer?.classList.add('flex');
+
+				// Update each split hand
+				const handContainers = splitHandsContainer?.querySelectorAll('[data-hand-index]');
+				handContainers?.forEach((container, index) => {
+					if (index < state.playerHands.length) {
+						const hand = state.playerHands[index];
 						const isActive = index === state.activeHandIndex;
-						const containerClass = isActive ? 'active-hand' : 'inactive-hand';
-						const cardsHTML = hand.cards.map((card) => renderPlayingCard(card)).join('');
-						return `
-							<div class="hand-container ${containerClass}">
-								<div class="hand-label">Hand ${index + 1}</div>
-								<div class="hand-cards">${cardsHTML}</div>
-								<div class="hand-value">${getHandValueDisplay(hand.cards)}</div>
-								<div class="hand-bet">$${hand.bet}</div>
-							</div>
-						`;
-					})
-					.join('');
-				playerCardsEl.innerHTML = handsHTML;
+
+						// Show this hand container
+						container.classList.remove('hidden');
+						container.classList.toggle('active-hand', isActive);
+						container.classList.toggle('inactive-hand', !isActive);
+						container.setAttribute('data-hand-active', String(isActive));
+
+						// Update hand label
+						const labelEl = container.querySelector('[data-hand-label]');
+						if (labelEl) labelEl.textContent = `Hand ${index + 1}`;
+
+						// Update hand value
+						const valueEl = container.querySelector('[data-hand-value]');
+						if (valueEl) valueEl.textContent = getHandValueDisplay(hand.cards);
+
+						// Update hand bet
+						const betEl = container.querySelector('[data-hand-bet]');
+						if (betEl) betEl.textContent = `$${hand.bet}`;
+
+						// Render cards to this hand's slots
+						const cardSlots = container.querySelectorAll('.card-slot');
+						cardSlots.forEach((slot, cardIndex) => {
+							if (cardIndex < hand.cards.length) {
+								setSlotState(slot, 'card', hand.cards[cardIndex]);
+							} else {
+								setSlotState(slot, 'hidden');
+							}
+						});
+					} else {
+						// Hide unused hand containers
+						container.classList.add('hidden');
+					}
+				});
+
 				playerValueEl.textContent = '';
-				// Show active hand's bet (may differ after double-down)
 				const activeHand = state.playerHands[state.activeHandIndex];
 				currentBetEl.textContent = `Hand ${state.activeHandIndex + 1} Bet: $${activeHand.bet}`;
 			} else {
-				// Single hand - normal display
+				// Single hand - show single container, hide split
+				singleHandContainer?.classList.remove('hidden');
+				splitHandsContainer?.classList.add('hidden');
+				splitHandsContainer?.classList.remove('flex');
+
 				const playerHand = state.playerHands[0];
-				playerCardsEl.innerHTML = playerHand.cards.map((card) => renderPlayingCard(card)).join('');
+				renderCardsToContainer('player-cards', playerHand.cards, { showPlaceholders: 2 });
 				playerValueEl.textContent = getHandValueDisplay(playerHand.cards);
 				currentBetEl.textContent = `Current Bet: $${playerHand.bet}`;
 			}
 		} else {
 			// Show placeholders when no cards dealt
-			playerCardsEl.innerHTML = `
-				<div class="card-placeholder"></div>
-				<div class="card-placeholder"></div>
-			`;
+			singleHandContainer?.classList.remove('hidden');
+			splitHandsContainer?.classList.add('hidden');
+			splitHandsContainer?.classList.remove('flex');
+			clearCardsContainer('player-cards', 2);
 			playerValueEl.textContent = '-';
 			currentBetEl.textContent = 'Current Bet: $0';
 		}
@@ -806,19 +805,16 @@ export function initBlackjackClient(): void {
 		const hideCard = state.phase === 'player-turn' || state.phase === 'dealing';
 
 		if (state.dealerHand.cards.length > 0) {
-			const visibleCards = hideCard ? [state.dealerHand.cards[0]] : state.dealerHand.cards;
-
-			dealerCardsEl.innerHTML =
-				visibleCards.map((card) => renderPlayingCard(card)).join('') +
-				(hideCard ? renderCardBack() : '');
-
+			// Render dealer cards with facedown option
+			const facedownCount = hideCard ? 1 : 0;
+			renderCardsToContainer('dealer-cards', state.dealerHand.cards, {
+				showPlaceholders: 2,
+				facedownCount,
+			});
 			dealerValueEl.textContent = hideCard ? '?' : getHandValueDisplay(state.dealerHand.cards);
 		} else {
 			// Show placeholders when no cards dealt
-			dealerCardsEl.innerHTML = `
-				<div class="card-placeholder"></div>
-				<div class="card-placeholder"></div>
-			`;
+			clearCardsContainer('dealer-cards', 2);
 			dealerValueEl.textContent = '-';
 		}
 
@@ -1001,17 +997,6 @@ export function initBlackjackClient(): void {
 		}
 
 		renderGame();
-	}
-
-	// Helper functions
-	function getSuitSymbol(suit: string): string {
-		const symbols: Record<string, string> = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit] || suit;
 	}
 
 	// Initial render

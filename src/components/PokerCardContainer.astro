@@ -14,11 +14,23 @@ interface Props {
 
 const {
 	id,
-	maxCards = 5,
+	maxCards: rawMaxCards = 5,
 	size = 'normal',
 	showPlaceholders = true,
 	placeholderText = '?',
 } = Astro.props;
+
+// Validate and clamp maxCards to safe range (1-52)
+const maxCards = (() => {
+	const num = Number(rawMaxCards);
+	if (!Number.isInteger(num) || num < 1 || num > 52) {
+		console.warn(
+			`PokerCardContainer: Invalid maxCards value "${rawMaxCards}". Using default 5. Must be an integer between 1 and 52.`,
+		);
+		return 5;
+	}
+	return num;
+})();
 
 const sizeClasses = {
 	small: {

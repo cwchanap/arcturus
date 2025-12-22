@@ -28,14 +28,25 @@ beforeEach(() => {
 				children: [],
 				classList: {
 					add: function (...classes: string[]) {
-						this.className = classes.join(' ');
+						const current: string[] = element.className
+							? element.className.split(' ').filter(Boolean)
+							: [];
+						for (const cls of classes) {
+							if (!current.includes(cls)) current.push(cls);
+						}
+						element.className = current.join(' ');
 					},
 					contains: function (cls: string) {
-						return this.className.split(' ').includes(cls);
+						const current: string[] = element.className
+							? element.className.split(' ').filter(Boolean)
+							: [];
+						return current.includes(cls);
 					},
 					remove: function (...classes: string[]) {
-						const currentClasses = this.className.split(' ');
-						this.className = currentClasses.filter((cls) => !classes.includes(cls)).join(' ');
+						const current: string[] = element.className
+							? element.className.split(' ').filter(Boolean)
+							: [];
+						element.className = current.filter((cls) => !classes.includes(cls)).join(' ');
 					},
 				},
 				appendChild: function (child: any) {

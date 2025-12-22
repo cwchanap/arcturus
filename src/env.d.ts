@@ -2,27 +2,27 @@
 
 // Declare bun:test module for test files
 declare module 'bun:test' {
-	export function describe(name: string, fn: () => void): void;
-	export function test(name: string, fn: () => void): void;
-	export function beforeEach(fn: () => void): void;
-	export function afterEach(fn: () => void): void;
-	export const expect: {
-		toBe: (value: any) => any;
-		toEqual: (value: any) => any;
-		toBeNull: () => any;
-		toBeDefined: () => any;
-		toBeTruthy: () => any;
-		toBeFalsy: () => any;
-		toBeGreaterThan: (value: number) => any;
-		toBeLessThan: (value: number) => any;
-		toContain: (value: any) => any;
+	export function describe(name: string, fn: () => void | Promise<void>): void;
+	export function test(name: string, fn: () => void | Promise<void>): void;
+	export function beforeEach(fn: () => void | Promise<void>): void;
+	export function afterEach(fn: () => void | Promise<void>): void;
+	export function expect<T>(actual: T): {
+		toBe: (value: T) => void;
+		toEqual: (value: unknown) => void;
+		toBeNull: () => void;
+		toBeDefined: () => void;
+		toBeTruthy: () => void;
+		toBeFalsy: () => void;
+		toBeGreaterThan: (value: number) => void;
+		toBeLessThan: (value: number) => void;
+		toContain: (value: unknown) => void;
 		not: {
-			toBe: (value: any) => any;
-			toEqual: (value: any) => any;
-			Contain: (value: any) => any;
+			toBe: (value: unknown) => void;
+			toEqual: (value: unknown) => void;
+			toContain: (value: unknown) => void;
 		};
-		toThrow: (message?: string) => any;
-		toHaveLength: (length: number) => any;
+		toThrow: (message?: string | RegExp | Error) => void;
+		toHaveLength: (length: number) => void;
 	};
 }
 

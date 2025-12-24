@@ -27,10 +27,18 @@ export class AIRivalAssistant {
 		this.loadAiSettings();
 	}
 
+	// Small helper to avoid DOM access crashes in non-browser environments
+	private getElementById(id: string): HTMLElement | null {
+		if (typeof document === 'undefined' || typeof document.getElementById !== 'function') {
+			return null;
+		}
+		return document.getElementById(id);
+	}
+
 	// === UI State Management ===
 
 	public setButtonState(options: { loading?: boolean; disabled?: boolean } = {}) {
-		const button = document.getElementById('btn-ai-move');
+		const button = this.getElementById('btn-ai-move');
 		if (!(button instanceof HTMLButtonElement)) {
 			return;
 		}
@@ -53,7 +61,7 @@ export class AIRivalAssistant {
 	}
 
 	public updateStatus(message?: string, tone: 'neutral' | 'success' | 'error' = 'neutral') {
-		const statusEl = document.getElementById('ai-rival-status');
+		const statusEl = this.getElementById('ai-rival-status');
 		if (!statusEl) return;
 
 		let text = message;
@@ -111,7 +119,7 @@ export class AIRivalAssistant {
 			if (!response.ok) {
 				throw new Error(`Unexpected status ${response.status}`);
 			}
-			const data = await response.json();
+			const data = (await response.json()) as { settings?: AiSettings | null };
 			const settings = data?.settings;
 			if (
 				settings &&
@@ -211,7 +219,10 @@ Keep the JSON as the only output.`;
 			}),
 		});
 
-		const data = await response.json();
+		const data = (await response.json()) as {
+			error?: { message?: string };
+			choices?: Array<{ message?: { content?: string } }>;
+		};
 		if (!response.ok) {
 			const message =
 				typeof data?.error?.message === 'string'
@@ -249,13 +260,18 @@ Keep the JSON as the only output.`;
 			},
 		);
 
-		const data = await response.json();
+		const data = (await response.json()) as {
+			error?: { message?: string } | string;
+			candidates?: Array<{
+				content?: { parts?: Array<{ text?: string }> };
+			}>;
+		};
 		if (!response.ok) {
 			const message =
-				data?.error?.message ??
-				data?.error ??
-				`Gemini request failed with status ${response.status}`;
-			throw new Error(typeof message === 'string' ? message : 'Unknown Gemini error');
+				typeof data?.error === 'string'
+					? data.error
+					: (data?.error?.message ?? `Gemini request failed with status ${response.status}`);
+			throw new Error(message ?? 'Unknown Gemini error');
 		}
 
 		const text = data?.candidates?.[0]?.content?.parts
@@ -333,8 +349,8 @@ Keep the JSON as the only output.`;
 		};
 	}
 
-	private clampRaise(amount: number | null) {
-		if (amount === null || Number.isNaN(amount)) {
+	private clampRaise(amount: number | null | undefined) {
+		if (amount === null || amount === undefined || Number.isNaN(amount)) {
 			return null;
 		}
 		const clamped = Math.max(10, Math.min(Math.round(amount), 1000));
@@ -352,7 +368,7 @@ Keep the JSON as the only output.`;
 		};
 
 		(Object.keys(buttonMap) as AiMoveType[]).forEach((key) => {
-			const el = document.getElementById(buttonMap[key]);
+			const el = this.getElementById(buttonMap[key]);
 			if (!(el instanceof HTMLButtonElement)) return;
 			el.classList.remove('ring-2', 'ring-offset-2', 'ring-yellow-400');
 			if (move && key === move) {
@@ -374,8 +390,8 @@ Keep the JSON as the only output.`;
 		} else if (move.move === 'raise') {
 			const raise = this.clampRaise(move.amount);
 			if (raise !== null) {
-				const slider = document.getElementById('bet-slider');
-				const betLabel = document.getElementById('bet-amount');
+				const slider = this.getElementById('bet-slider');
+				const betLabel = this.getElementById('bet-amount');
 				if (slider instanceof HTMLInputElement) {
 					slider.value = String(raise);
 				}

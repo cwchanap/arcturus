@@ -39,24 +39,30 @@ export class AIRivalAssistant {
 
 	public setButtonState(options: { loading?: boolean; disabled?: boolean } = {}) {
 		const button = this.getElementById('btn-ai-move');
-		if (!(button instanceof HTMLButtonElement)) {
+		const htmlButton =
+			typeof HTMLButtonElement !== 'undefined' && button instanceof HTMLButtonElement
+				? button
+				: button && (button as Element).nodeType === 1 && (button as Element).tagName === 'BUTTON'
+					? (button as HTMLButtonElement)
+					: null;
+		if (!htmlButton) {
 			return;
 		}
 
-		if (!button.dataset.originalLabel) {
-			button.dataset.originalLabel = button.textContent ?? 'Ask AI Rival';
+		if (!htmlButton.dataset.originalLabel) {
+			htmlButton.dataset.originalLabel = htmlButton.textContent ?? 'Ask AI Rival';
 		}
 
 		if (typeof options.disabled === 'boolean') {
-			button.disabled = options.disabled;
+			htmlButton.disabled = options.disabled;
 		}
 
 		if (options.loading) {
-			button.textContent = 'Thinking…';
-			button.classList.add('animate-pulse');
+			htmlButton.textContent = 'Thinking…';
+			htmlButton.classList.add('animate-pulse');
 		} else {
-			button.textContent = button.dataset.originalLabel ?? 'Ask AI Rival';
-			button.classList.remove('animate-pulse');
+			htmlButton.textContent = htmlButton.dataset.originalLabel ?? 'Ask AI Rival';
+			htmlButton.classList.remove('animate-pulse');
 		}
 	}
 
@@ -369,7 +375,7 @@ Keep the JSON as the only output.`;
 
 		(Object.keys(buttonMap) as AiMoveType[]).forEach((key) => {
 			const el = this.getElementById(buttonMap[key]);
-			if (!(el instanceof HTMLButtonElement)) return;
+			if (!(typeof HTMLButtonElement !== 'undefined' && el instanceof HTMLButtonElement)) return;
 			el.classList.remove('ring-2', 'ring-offset-2', 'ring-yellow-400');
 			if (move && key === move) {
 				el.classList.add('ring-2', 'ring-offset-2', 'ring-yellow-400');
@@ -392,7 +398,7 @@ Keep the JSON as the only output.`;
 			if (raise !== null) {
 				const slider = this.getElementById('bet-slider');
 				const betLabel = this.getElementById('bet-amount');
-				if (slider instanceof HTMLInputElement) {
+				if (typeof HTMLInputElement !== 'undefined' && slider instanceof HTMLInputElement) {
 					slider.value = String(raise);
 				}
 				if (betLabel) {

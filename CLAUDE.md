@@ -268,7 +268,9 @@ Tables defined in `src/db/schema.ts`:
 **Unit Tests**: Bun test runner
 
 - Test files: `*.test.ts` in `src/`
-- Run: `bun run test`
+- Run all: `bun run test`
+- Run single file: `bun test src/lib/poker/handEvaluator.test.ts`
+- Run with pattern: `bun test --test-name-pattern "flush"`
 - Coverage: `bun run test:coverage`
 
 **E2E Tests**: Playwright
@@ -276,10 +278,12 @@ Tables defined in `src/db/schema.ts`:
 - Test files: `e2e/*.spec.ts`
 - Global setup authenticates once and saves state to `e2e/.auth/user.json`
 - All tests reuse authentication state for faster execution
-- Run: `bun run test:e2e`
+- Run all: `bun run test:e2e`
+- Run single file: `bunx playwright test e2e/blackjack-split.spec.ts`
 - UI mode: `bun run test:e2e:ui`
+- Headed mode: `bun run test:e2e:headed`
 
-**Test Account**:
+**Test Account** (E2E):
 
 - Name: `E2E Test User`
 - Email: `e2e-test@arcturus.local`

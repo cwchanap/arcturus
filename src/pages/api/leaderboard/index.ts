@@ -1,9 +1,13 @@
 /**
  * Leaderboard API Endpoint
  *
- * GET /api/leaderboard
- * Returns top 50 players ranked by chip balance.
- * Includes current user's rank if authenticated.
+ * GET /api/leaderboard?limit=50
+ * Returns a configurable number of players ranked by chip balance.
+ *
+ * Query Parameters:
+ * - limit: Number of players to return (default: 50, min: 1, max: 100)
+ *
+ * Includes current user's rank when authenticated.
  */
 
 import type { APIRoute } from 'astro';

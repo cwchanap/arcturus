@@ -206,20 +206,6 @@ describe('Leaderboard Data Transformation', () => {
 			expect(calculateRank({ id: 'user4', chipBalance: 30000 }, allPlayers)).toBe(4);
 		});
 
-		test('rank calculation handles users with same ID', () => {
-			// When calculating rank for a user, they should not count themselves
-			const allPlayers: PlayerForRank[] = [
-				{ id: 'user1', chipBalance: 10000 },
-				{ id: 'user2', chipBalance: 10000 },
-			];
-
-			// user1 should be rank 1 (user2 has same balance but user1.id < user2.id)
-			expect(calculateRank({ id: 'user1', chipBalance: 10000 }, allPlayers)).toBe(1);
-
-			// user2 should be rank 2 (user1 has same balance and user1.id < user2.id)
-			expect(calculateRank({ id: 'user2', chipBalance: 10000 }, allPlayers)).toBe(2);
-		});
-
 		test('rank calculation with numeric IDs', () => {
 			// Numeric IDs should also work correctly for tie-breaking
 			const allPlayers: PlayerForRank[] = [

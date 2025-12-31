@@ -80,6 +80,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
 					chipBalanceValue = 0;
 				}
 
+				// Chip balances are stored/displayed as whole chips.
+				// Historically, some game payout math could produce fractional values; normalize.
+				if (typeof chipBalanceValue === 'number' && Number.isFinite(chipBalanceValue)) {
+					chipBalanceValue = Math.trunc(chipBalanceValue);
+				} else {
+					chipBalanceValue = 0;
+				}
+
 				enrichedUser = {
 					...session.user,
 					chipBalance: chipBalanceValue,

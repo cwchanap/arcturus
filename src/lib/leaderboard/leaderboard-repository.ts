@@ -11,6 +11,33 @@ import type { Database } from '../db';
 import type { RawPlayerData } from './types';
 
 /**
+ * Player data used for rank calculation
+ */
+export interface PlayerForRank {
+	id: string;
+	chipBalance: number;
+}
+
+/**
+ * Calculates a user's rank based on their chip balance and all other players.
+ * Rank is determined by counting users with higher balances or same balance with lower ID.
+ * This is a pure function suitable for unit testing.
+ *
+ * @param currentUser - The user whose rank to calculate
+ * @param allPlayers - All players in the system
+ * @returns The user's rank (1-indexed)
+ */
+export function calculateRank(currentUser: PlayerForRank, allPlayers: PlayerForRank[]): number {
+	const higherRankedCount = allPlayers.filter(
+		(player) =>
+			player.chipBalance > currentUser.chipBalance ||
+			(player.chipBalance === currentUser.chipBalance && player.id < currentUser.id),
+	).length;
+
+	return higherRankedCount + 1;
+}
+
+/**
  * Fetches the top players ordered by chip balance (descending).
  * Uses user ID as a secondary sort for deterministic tie-breaking.
  */

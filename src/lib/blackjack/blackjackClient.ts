@@ -1,6 +1,5 @@
 import { BlackjackGame } from './BlackjackGame';
 import { GameSettingsManager } from './GameSettingsManager';
-import { MAX_CHIP_SYNC_DELTA } from './constants';
 import {
 	getBlackjackAdvice,
 	getRoundCommentary,
@@ -96,6 +95,7 @@ export function initBlackjackClient(): void {
 	// Initialize settings manager (per-user)
 	const rootEl = document.getElementById('blackjack-root');
 	const userId = rootEl?.getAttribute('data-user-id') ?? 'anonymous';
+	const isAnonymousUser = userId === 'anonymous';
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
@@ -337,66 +337,14 @@ export function initBlackjackClient(): void {
 			// Update game instance bet limits so new rounds honor configured limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);
 
-			// Apply starting chips change if modified and currently in betting phase
-			if (newStartingChips !== previousStartingChips) {
-				const delta = newStartingChips - serverSyncedBalance;
-
-				// Check if delta exceeds server's allowed range
-				// Server caps positive deltas at MAX_CHIP_SYNC_DELTA (60000)
-				if (delta > MAX_CHIP_SYNC_DELTA) {
-					const maxAllowed = serverSyncedBalance + MAX_CHIP_SYNC_DELTA;
-					statusEl.textContent = `Starting chips increase too large. Maximum allowed: $${maxAllowed.toLocaleString()}`;
-					// Revert the settings change
-					settingsManager.updateSettings({ startingChips: previousStartingChips });
-					settings = settingsManager.getSettings();
-					renderSettingsForm();
-					return;
-				}
-
+			// Starting chips is a *settings* value. For authenticated users, chip balance is
+			// server-authoritative (to avoid rate-limit / optimistic-lock flakiness), so we do not
+			// attempt to sync or overwrite the user's real balance here.
+			// For anonymous/local sessions, apply it immediately to the in-memory game balance.
+			if (isAnonymousUser && newStartingChips !== previousStartingChips) {
 				const balanceUpdated = game.setBalance(newStartingChips);
 				if (balanceUpdated) {
-					// Sync the new balance to the server so it persists
-					// This prevents BALANCE_MISMATCH on the next round
-					fetch('/api/chips/update', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							previousBalance: serverSyncedBalance,
-							delta,
-							gameType: 'blackjack',
-						}),
-					})
-						.then(async (response) => {
-							if (response.ok) {
-								serverSyncedBalance = newStartingChips;
-							} else {
-								// Server rejected the update - revert local state
-								const errorData = (await response.json().catch(() => ({}))) as {
-									message?: string;
-								};
-								console.warn('Failed to sync starting chips to server:', errorData);
-								// Revert to server's balance (and revert persisted settings so UI/localStorage match)
-								settingsManager.updateSettings({ startingChips: serverSyncedBalance });
-								settings = settingsManager.getSettings();
-								game.setBalance(serverSyncedBalance);
-								renderGame();
-								renderSettingsForm();
-								statusEl.textContent =
-									errorData.message || 'Failed to save starting chips. Please try a smaller value.';
-							}
-						})
-						.catch((error) => {
-							console.error('Error syncing starting chips:', error);
-							// Revert to server's balance on network error (and revert persisted settings)
-							settingsManager.updateSettings({ startingChips: serverSyncedBalance });
-							settings = settingsManager.getSettings();
-							game.setBalance(serverSyncedBalance);
-							renderGame();
-							renderSettingsForm();
-							statusEl.textContent = 'Network error saving starting chips. Please try again.';
-						});
-
-					// Re-render to show updated balance
+					serverSyncedBalance = newStartingChips;
 					renderGame();
 				}
 			}

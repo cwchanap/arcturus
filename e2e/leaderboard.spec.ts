@@ -131,10 +131,26 @@ test.describe('Leaderboard Page', () => {
 	test('chip balances are formatted with commas', async ({ page }) => {
 		await page.goto('/games/leaderboard');
 
-		// Look for formatted numbers (e.g., "10,000" not "10000")
-		// At minimum, the header chip balance or table entries should show formatted numbers
-		const formattedNumber = page.locator('text=/\\d{1,3}(,\\d{3})+/');
-		await expect(formattedNumber.first()).toBeVisible();
+		// Verify chip balance values are rendered using en-US number formatting.
+		// Note: values under 1,000 will not contain a comma, but are still correctly formatted.
+		const chipCells = page.getByTestId('leaderboard-table').locator('tbody tr td:nth-child(3)');
+		await expect(chipCells.first()).toBeVisible();
+
+		const cellCount = await chipCells.count();
+		let matched = false;
+		for (let i = 0; i < cellCount; i++) {
+			const text = (await chipCells.nth(i).textContent()) ?? '';
+			const numericText = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0];
+			if (!numericText) continue;
+			const value = Number(numericText);
+			if (!Number.isFinite(value)) continue;
+			const formatted = new Intl.NumberFormat('en-US').format(value);
+			await expect(chipCells.nth(i)).toContainText(formatted);
+			matched = true;
+			break;
+		}
+
+		expect(matched).toBe(true);
 	});
 
 	test('responsive layout works on mobile', async ({ page }) => {

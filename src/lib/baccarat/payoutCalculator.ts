@@ -42,7 +42,7 @@ export function calculatePayout(bet: Bet, outcome: RoundOutcome): BetResult {
 function calculateMainBetPayout(bet: Bet, winner: Winner, target: 'player'): BetResult {
 	if (winner === target) {
 		// Win: 1:1 payout
-		return { bet, outcome: 'win', payout: bet.amount * PAYOUTS.player };
+		return { bet, outcome: 'win', payout: Math.trunc(bet.amount * PAYOUTS.player) };
 	}
 	if (winner === 'tie') {
 		// Push: bet returned
@@ -59,7 +59,8 @@ function calculateMainBetPayout(bet: Bet, winner: Winner, target: 'player'): Bet
 function calculateBankerBetPayout(bet: Bet, winner: Winner): BetResult {
 	if (winner === 'banker') {
 		// Win: 0.95:1 (5% commission)
-		return { bet, outcome: 'win', payout: bet.amount * PAYOUTS.banker };
+		// Keep chip balances integral: commission can create fractional chip winnings.
+		return { bet, outcome: 'win', payout: Math.trunc(bet.amount * PAYOUTS.banker) };
 	}
 	if (winner === 'tie') {
 		// Push: bet returned
@@ -76,7 +77,7 @@ function calculateBankerBetPayout(bet: Bet, winner: Winner): BetResult {
 function calculateTieBetPayout(bet: Bet, winner: Winner): BetResult {
 	if (winner === 'tie') {
 		// Win: 8:1 payout
-		return { bet, outcome: 'win', payout: bet.amount * PAYOUTS.tie };
+		return { bet, outcome: 'win', payout: Math.trunc(bet.amount * PAYOUTS.tie) };
 	}
 	// Lose (no push on tie bets)
 	return { bet, outcome: 'lose', payout: -bet.amount };
@@ -90,7 +91,7 @@ function calculatePairBetPayout(bet: Bet, isPair: boolean): BetResult {
 	if (isPair) {
 		// Win: 11:1 payout
 		const multiplier = bet.type === 'playerPair' ? PAYOUTS.playerPair : PAYOUTS.bankerPair;
-		return { bet, outcome: 'win', payout: bet.amount * multiplier };
+		return { bet, outcome: 'win', payout: Math.trunc(bet.amount * multiplier) };
 	}
 	// Lose
 	return { bet, outcome: 'lose', payout: -bet.amount };
@@ -143,7 +144,7 @@ export function getPayoutDescription(betType: BetType): string {
  * Does not include the original bet, just the profit
  */
 export function calculatePotentialWinnings(amount: number, betType: BetType): number {
-	return amount * PAYOUTS[betType];
+	return Math.trunc(amount * PAYOUTS[betType]);
 }
 
 /**

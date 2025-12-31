@@ -215,7 +215,9 @@ export class BlackjackGame {
 			} else if (playerBlackjack) {
 				// Player blackjack wins 1.5x
 				result = 'blackjack';
-				payout = bet + bet * BLACKJACK_PAYOUT;
+				// Keep chip balances integral: 3:2 profit can create half-chips on odd bets.
+				// We round the profit portion down to the nearest whole chip.
+				payout = bet + Math.floor(bet * BLACKJACK_PAYOUT);
 			} else if (dealerBlackjack || playerBust) {
 				// Dealer blackjack or player bust = loss
 				result = 'loss';
@@ -239,8 +241,8 @@ export class BlackjackGame {
 				}
 			}
 
-			// Update balance
-			this.state.playerBalance += payout;
+			// Update balance (keep integral)
+			this.state.playerBalance = Math.trunc(this.state.playerBalance + payout);
 
 			outcomes.push({
 				handIndex: i,

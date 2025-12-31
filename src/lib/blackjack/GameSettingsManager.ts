@@ -21,11 +21,17 @@ function validateSettings(settings: Partial<BlackjackSettings>): Partial<Blackja
 	) {
 		validated.minBet = DEFAULT_SETTINGS.minBet;
 	}
+	if (validated.minBet !== undefined && Number.isFinite(validated.minBet)) {
+		validated.minBet = Math.trunc(validated.minBet);
+	}
 	if (
 		validated.maxBet !== undefined &&
 		(typeof validated.maxBet !== 'number' || validated.maxBet <= 0)
 	) {
 		validated.maxBet = DEFAULT_SETTINGS.maxBet;
+	}
+	if (validated.maxBet !== undefined && Number.isFinite(validated.maxBet)) {
+		validated.maxBet = Math.trunc(validated.maxBet);
 	}
 	// Enforce absolute max bet cap (aligns with server API payout limits)
 	if (validated.maxBet !== undefined && validated.maxBet > ABSOLUTE_MAX_BET) {
@@ -36,6 +42,9 @@ function validateSettings(settings: Partial<BlackjackSettings>): Partial<Blackja
 		(typeof validated.startingChips !== 'number' || validated.startingChips < 0)
 	) {
 		validated.startingChips = DEFAULT_SETTINGS.startingChips;
+	}
+	if (validated.startingChips !== undefined && Number.isFinite(validated.startingChips)) {
+		validated.startingChips = Math.trunc(validated.startingChips);
 	}
 
 	// Ensure minBet <= maxBet

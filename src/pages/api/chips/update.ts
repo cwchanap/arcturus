@@ -131,13 +131,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
 	// that apply uniformly regardless of what the client claims.
 
-	// Validate delta is a finite number
-	if (typeof delta !== 'number' || !Number.isFinite(delta)) {
+	// Validate delta is a finite integer
+	if (typeof delta !== 'number' || !Number.isFinite(delta) || !Number.isInteger(delta)) {
 		return new Response(
 			JSON.stringify({
 				success: false,
 				error: 'INVALID_DELTA',
-				message: 'Delta must be a finite number',
+				message: 'Delta must be a finite integer',
 			}),
 			{
 				status: 400,
@@ -216,50 +216,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	// Validate previousBalance if provided (for optimistic locking)
-	if (clientPreviousBalance !== undefined && typeof clientPreviousBalance !== 'number') {
+	if (
+		clientPreviousBalance !== undefined &&
+		(typeof clientPreviousBalance !== 'number' || !Number.isFinite(clientPreviousBalance))
+	) {
 		return new Response(
 			JSON.stringify({
 				success: false,
 				error: 'INVALID_REQUEST_BODY',
-				message: 'previousBalance must be a number if provided',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Get server-side previous balance (authoritative source)
-	const previousBalance = locals.user.chipBalance;
-
-	// Optimistic locking: reject if client's previousBalance doesn't match server
-	if (clientPreviousBalance !== undefined && clientPreviousBalance !== previousBalance) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'BALANCE_MISMATCH',
-				message: 'Balance has changed. Please refresh and try again.',
-				currentBalance: previousBalance,
-			}),
-			{
-				status: 409,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Compute new balance server-side (prevents chip minting attacks)
-	const newBalance = previousBalance + delta;
-
-	// Validate computed balance is non-negative
-	if (newBalance < 0) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INSUFFICIENT_BALANCE',
-				message: 'Insufficient chip balance for this operation',
-				currentBalance: previousBalance,
+				message: 'previousBalance must be a finite number if provided',
 			}),
 			{
 				status: 400,
@@ -288,6 +253,73 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	try {
 		const db = createDb(dbBinding);
 
+		// Load authoritative server balance from DB. This also lets us repair any historical
+		// fractional balances caused by older payout logic.
+		const [currentRow] = await db
+			.select({ chipBalance: user.chipBalance })
+			.from(user)
+			.where(eq(user.id, locals.user.id))
+			.limit(1);
+
+		const rawServerBalance = currentRow?.chipBalance ?? locals.user.chipBalance ?? 0;
+		const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
+
+		// Repair stored balance if it wasn't already an integer.
+		if (rawServerBalance !== serverBalance) {
+			await db.update(user).set({ chipBalance: serverBalance }).where(eq(user.id, locals.user.id));
+		}
+
+		// Optimistic locking: reject if client's previousBalance doesn't match server
+		if (clientPreviousBalance !== undefined) {
+			if (!Number.isInteger(clientPreviousBalance)) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'INVALID_REQUEST_BODY',
+						message: 'previousBalance must be an integer if provided',
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
+			if (clientPreviousBalance !== serverBalance) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'BALANCE_MISMATCH',
+						message: 'Balance has changed. Please refresh and try again.',
+						currentBalance: serverBalance,
+					}),
+					{
+						status: 409,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+		}
+
+		// Compute new balance server-side
+		const newBalance = serverBalance + delta;
+
+		// Validate computed balance is non-negative
+		if (newBalance < 0) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INSUFFICIENT_BALANCE',
+					message: 'Insufficient chip balance for this operation',
+					currentBalance: serverBalance,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
 		// Atomic update with optimistic locking via WHERE condition
 		// This prevents TOCTOU race by ensuring balance hasn't changed since we read it
 		const result = await db
@@ -295,7 +327,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			.set({
 				chipBalance: newBalance,
 			})
-			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, previousBalance)));
+			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
 
 		// Check if update affected any rows (D1 returns rowsAffected in meta)
 		const rowsAffected = result?.meta?.changes ?? result?.rowsAffected ?? 0;
@@ -320,7 +352,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		// Audit log for wins (positive deltas) to help detect exploitation patterns
 		if (delta > 0) {
 			console.warn(
-				`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${previousBalance} -> ${newBalance}`,
+				`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${serverBalance} -> ${newBalance}`,
 			);
 		}
 
@@ -329,7 +361,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			JSON.stringify({
 				success: true,
 				balance: newBalance,
-				previousBalance,
+				previousBalance: serverBalance,
 				delta,
 				message: 'Chip balance updated successfully',
 			}),

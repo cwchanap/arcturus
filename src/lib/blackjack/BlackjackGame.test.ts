@@ -256,6 +256,41 @@ describe('BlackjackGame', () => {
 				expect(() => game.settleRound()).toThrow('Can only settle during complete phase');
 			}
 		});
+
+		it('should keep balances integral for blackjack payouts on odd bets', () => {
+			const testGame = new BlackjackGame(1000, 1, 1000);
+			let dealCount = 0;
+			const mockCards = [
+				{ rank: 'A' as const, suit: 'hearts' as const }, // Player card 1
+				{ rank: 'K' as const, suit: 'spades' as const }, // Player card 2 => Blackjack
+				{ rank: '9' as const, suit: 'clubs' as const }, // Dealer card 1
+				{ rank: '7' as const, suit: 'diamonds' as const }, // Dealer card 2
+			];
+
+			const gameAny = testGame as unknown as {
+				deck: { deal: () => { rank: string; suit: string } };
+			};
+			const originalDeal = gameAny.deck.deal.bind(gameAny.deck);
+			gameAny.deck.deal = () => {
+				if (dealCount < mockCards.length) {
+					return mockCards[dealCount++];
+				}
+				return originalDeal();
+			};
+
+			// Use an odd bet to force a potential half-chip payout under 3:2 rules
+			testGame.placeBet(11);
+			testGame.deal();
+			const stateAfterDeal = testGame.getState();
+			expect(stateAfterDeal.phase).toBe('complete');
+
+			const outcomes = testGame.settleRound();
+			expect(outcomes[0].result).toBe('blackjack');
+			expect(Number.isInteger(outcomes[0].payout)).toBe(true);
+			expect(Number.isInteger(testGame.getBalance())).toBe(true);
+			// Balance should not contain any fractional part
+			expect(testGame.getBalance() % 1).toBe(0);
+		});
 	});
 
 	describe('getAvailableActions', () => {

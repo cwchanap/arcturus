@@ -1,12 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 test.describe('Leaderboard Page', () => {
-	test.beforeEach(async ({ page }) => {
-		// Ensure user is logged in before each test
-		await ensureLoggedIn(page);
-	});
-
 	test('displays leaderboard with rankings', async ({ page }) => {
 		await page.goto('/games/leaderboard');
 

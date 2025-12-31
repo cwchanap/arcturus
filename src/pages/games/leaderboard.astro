@@ -33,8 +33,8 @@ try {
 	errorMessage = 'Failed to load leaderboard. Please try again.';
 }
 
-// Format chip balance for display
-function formatChips(amount: number): string {
+// Format numbers for display (chips, counts, etc.)
+function formatNumber(amount: number): string {
 	return new Intl.NumberFormat('en-US').format(amount);
 }
 ---
@@ -79,7 +79,7 @@ function formatChips(amount: number): string {
 								#{leaderboardData.currentUserRank}
 							</p>
 							<p class="text-xs text-slate-400 mt-1">
-								of {formatChips(leaderboardData.totalPlayers)} players
+								of {formatNumber(leaderboardData.totalPlayers)} players
 							</p>
 						</div>
 					)
@@ -169,7 +169,7 @@ function formatChips(amount: number): string {
 															entry.isCurrentUser ? 'text-yellow-400' : 'text-white',
 														]}
 													>
-														{formatChips(entry.chipBalance)}
+														{formatNumber(entry.chipBalance)}
 													</span>
 													<span class="text-slate-400 text-sm ml-1">chips</span>
 												</td>

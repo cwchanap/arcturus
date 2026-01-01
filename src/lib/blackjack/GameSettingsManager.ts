@@ -15,36 +15,43 @@ function validateSettings(settings: Partial<BlackjackSettings>): Partial<Blackja
 	const validated: Partial<BlackjackSettings> = { ...settings };
 
 	// Validate numeric ranges
-	if (
-		validated.minBet !== undefined &&
-		(typeof validated.minBet !== 'number' || validated.minBet <= 0)
-	) {
-		validated.minBet = DEFAULT_SETTINGS.minBet;
+	if (validated.minBet !== undefined) {
+		if (typeof validated.minBet !== 'number' || !Number.isFinite(validated.minBet)) {
+			validated.minBet = DEFAULT_SETTINGS.minBet;
+		} else {
+			validated.minBet = Math.trunc(validated.minBet);
+			// Re-validate after truncation to ensure it's still > 0
+			if (validated.minBet <= 0) {
+				validated.minBet = DEFAULT_SETTINGS.minBet;
+			}
+		}
 	}
-	if (validated.minBet !== undefined && Number.isFinite(validated.minBet)) {
-		validated.minBet = Math.trunc(validated.minBet);
-	}
-	if (
-		validated.maxBet !== undefined &&
-		(typeof validated.maxBet !== 'number' || validated.maxBet <= 0)
-	) {
-		validated.maxBet = DEFAULT_SETTINGS.maxBet;
-	}
-	if (validated.maxBet !== undefined && Number.isFinite(validated.maxBet)) {
-		validated.maxBet = Math.trunc(validated.maxBet);
+	if (validated.maxBet !== undefined) {
+		if (typeof validated.maxBet !== 'number' || !Number.isFinite(validated.maxBet)) {
+			validated.maxBet = DEFAULT_SETTINGS.maxBet;
+		} else {
+			validated.maxBet = Math.trunc(validated.maxBet);
+			// Re-validate after truncation
+			if (validated.maxBet <= 0) {
+				validated.maxBet = DEFAULT_SETTINGS.maxBet;
+			}
+		}
 	}
 	// Enforce absolute max bet cap (aligns with server API payout limits)
 	if (validated.maxBet !== undefined && validated.maxBet > ABSOLUTE_MAX_BET) {
 		validated.maxBet = ABSOLUTE_MAX_BET;
 	}
-	if (
-		validated.startingChips !== undefined &&
-		(typeof validated.startingChips !== 'number' || validated.startingChips < 0)
-	) {
-		validated.startingChips = DEFAULT_SETTINGS.startingChips;
-	}
-	if (validated.startingChips !== undefined && Number.isFinite(validated.startingChips)) {
-		validated.startingChips = Math.trunc(validated.startingChips);
+
+	if (validated.startingChips !== undefined) {
+		if (typeof validated.startingChips !== 'number' || !Number.isFinite(validated.startingChips)) {
+			validated.startingChips = DEFAULT_SETTINGS.startingChips;
+		} else {
+			validated.startingChips = Math.trunc(validated.startingChips);
+			// startingChips can be 0, but not negative
+			if (validated.startingChips < 0) {
+				validated.startingChips = DEFAULT_SETTINGS.startingChips;
+			}
+		}
 	}
 
 	// Ensure minBet <= maxBet
@@ -92,9 +99,10 @@ export class GameSettingsManager {
 				const validSettings: Partial<BlackjackSettings> = {};
 
 				for (const key in parsed) {
-					const value = parsed[key as keyof BlackjackSettings];
+					const k = key as keyof BlackjackSettings;
+					const value = parsed[k];
 					if (value != null) {
-						validSettings[key as keyof BlackjackSettings] = value;
+						(validSettings as any)[k] = value;
 					}
 				}
 

@@ -102,7 +102,7 @@ export class GameSettingsManager {
 					const k = key as keyof BlackjackSettings;
 					const value = parsed[k];
 					if (value != null) {
-						(validSettings as any)[k] = value;
+						(validSettings as Record<string, unknown>)[k] = value;
 					}
 				}
 

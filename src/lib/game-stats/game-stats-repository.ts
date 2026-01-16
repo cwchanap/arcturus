@@ -114,22 +114,14 @@ export async function updateGameStats(
 	// Ensure stats record exists
 	await initializeGameStats(db, userId, gameType);
 
-	// Get current stats for biggestWin comparison
-	const current = await getGameStats(db, userId, gameType);
-	const currentBiggestWin = current?.biggestWin ?? 0;
-
-	// Calculate new biggest win (only if this was a win)
-	const newBiggestWin =
-		update.chipDelta > 0 ? Math.max(currentBiggestWin, update.chipDelta) : currentBiggestWin;
-
-	// Atomic update using SQL increments
+	// Atomic update using SQL increments - compute biggestWin atomically to avoid race conditions
 	await db
 		.update(gameStats)
 		.set({
 			totalWins: sql`${gameStats.totalWins} + ${update.winsIncrement}`,
 			totalLosses: sql`${gameStats.totalLosses} + ${update.lossesIncrement}`,
 			handsPlayed: sql`${gameStats.handsPlayed} + ${update.handsIncrement}`,
-			biggestWin: newBiggestWin,
+			biggestWin: sql`CASE WHEN ${update.chipDelta} > 0 THEN GREATEST(${gameStats.biggestWin}, ${update.chipDelta}) ELSE ${gameStats.biggestWin} END`,
 			netProfit: sql`${gameStats.netProfit} + ${update.chipDelta}`,
 			updatedAt: now,
 		})
@@ -224,7 +216,13 @@ export async function getUserGameRank(
 		case 'win_rate': {
 			// Calculate user's win rate
 			const totalGames = userStats.totalWins + userStats.totalLosses;
-			const userWinRate = totalGames > 0 ? userStats.totalWins / totalGames : 0;
+
+			// Users must meet minimum hands threshold to qualify for win rate ranking
+			if (totalGames < MIN_HANDS_FOR_WIN_RATE) {
+				return null;
+			}
+
+			const userWinRate = userStats.totalWins / totalGames;
 
 			// For win rate, we need a more complex comparison
 			// Users with higher win rate rank higher, tie-break by userId

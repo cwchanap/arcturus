@@ -31,6 +31,12 @@ import type { APIRoute } from 'astro';
 import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
 import { and, eq } from 'drizzle-orm';
+import {
+	recordGameRound,
+	type GameType,
+	type GameRoundOutcome,
+} from '../../../lib/game-stats/game-stats';
+import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
 
 // Game-specific betting limits
 // Different games have fundamentally different payout structures:
@@ -108,7 +114,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	}
 
 	// Parse request body with explicit error handling for malformed JSON
-	let body: { delta?: unknown; gameType?: unknown; previousBalance?: unknown; maxBet?: unknown };
+	let body: {
+		delta?: unknown;
+		gameType?: unknown;
+		previousBalance?: unknown;
+		maxBet?: unknown;
+		outcome?: unknown;
+		handCount?: unknown;
+	};
 	try {
 		body = await request.json();
 	} catch {
@@ -125,7 +138,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	const { delta, gameType, previousBalance: clientPreviousBalance } = body;
+	const { delta, gameType, previousBalance: clientPreviousBalance, outcome, handCount } = body;
 	// Note: body.maxBet is intentionally NOT used for validation.
 	// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
 	// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
@@ -168,6 +181,40 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				success: false,
 				error: 'INVALID_GAME_TYPE',
 				message: 'Invalid game type',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate outcome if provided (for game stats tracking)
+	const validOutcomes = ['win', 'loss', 'push'];
+	if (outcome !== undefined && (typeof outcome !== 'string' || !validOutcomes.includes(outcome))) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_OUTCOME',
+				message: 'outcome must be one of: win, loss, push',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate handCount if provided
+	if (
+		handCount !== undefined &&
+		(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1)
+	) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_HAND_COUNT',
+				message: 'handCount must be a positive integer',
 			}),
 			{
 				status: 400,
@@ -356,6 +403,47 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			);
 		}
 
+		// Track game stats and check achievements (async, non-blocking)
+		// This runs after the chip update succeeds but doesn't block the response
+		let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+
+		if (outcome && validOutcomes.includes(outcome as string)) {
+			try {
+				// Record game stats
+				await recordGameRound(db, userId, {
+					gameType: gameType as GameType,
+					outcome: outcome as GameRoundOutcome,
+					chipDelta: delta,
+					handCount: typeof handCount === 'number' ? handCount : 1,
+				});
+
+				// Check for newly earned achievements
+				const earnedAchievements = await checkAndGrantAchievements(db, userId, newBalance, {
+					recentWinAmount: delta > 0 ? delta : undefined,
+					gameType: gameType as GameType,
+				});
+
+				// Map to simple objects for response
+				newAchievements = earnedAchievements.map((a) => ({
+					id: a.id,
+					name: a.name,
+					icon: a.icon,
+				}));
+
+				if (newAchievements.length > 0) {
+					console.warn(
+						`[ACHIEVEMENT] User ${userId} earned: ${newAchievements.map((a) => a.name).join(', ')}`,
+					);
+				}
+			} catch (statsError) {
+				// Log but don't fail the chip update if stats tracking fails
+				console.error(
+					'[STATS_ERROR] Failed to record game stats or check achievements:',
+					statsError,
+				);
+			}
+		}
+
 		// Return success response with validated values only
 		return new Response(
 			JSON.stringify({
@@ -364,6 +452,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				previousBalance: serverBalance,
 				delta,
 				message: 'Chip balance updated successfully',
+				// Include newly earned achievements for client-side notifications
+				newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
 			}),
 			{
 				status: 200,

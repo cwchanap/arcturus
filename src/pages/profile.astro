@@ -2,6 +2,11 @@
 import CasinoLayout from '../layouts/casino.astro';
 import { createDb } from '../lib/db';
 import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
+import {
+	getAchievementsWithStatus,
+	getAchievementProgress,
+} from '../lib/achievements/achievements';
+import type { AchievementWithStatus } from '../lib/achievements/types';
 
 const session = Astro.locals.session;
 
@@ -24,6 +29,10 @@ let aiSettings = {
 	updatedAt: new Date(0),
 };
 
+// Achievements data
+let achievements: AchievementWithStatus[] = [];
+let achievementProgress = { total: 0, unlocked: 0, percentage: 0 };
+
 if (dbBinding) {
 	try {
 		const db = createDb(dbBinding);
@@ -35,8 +44,14 @@ if (dbBinding) {
 			geminiApiKey: result.geminiApiKey ?? null,
 			updatedAt: result.updatedAt,
 		};
+
+		// Fetch achievements
+		[achievements, achievementProgress] = await Promise.all([
+			getAchievementsWithStatus(db, user.id),
+			getAchievementProgress(db, user.id),
+		]);
 	} catch (error) {
-		console.error('Error loading AI rival settings:', error);
+		console.error('Error loading profile data:', error);
 	}
 }
 
@@ -361,6 +376,109 @@ const aiSettingsPayload = JSON.stringify({
 						</button>
 					</div>
 				</form>
+			</div>
+
+			<!-- Achievements Section -->
+			<div class="mt-8 rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+					<div>
+						<h2 class="text-lg font-semibold text-white">Achievements & Badges</h2>
+						<p class="text-sm text-slate-400">
+							Earn badges by reaching milestones and accomplishing feats across all casino games.
+						</p>
+					</div>
+					<div class="text-right">
+						<p class="text-2xl font-bold text-yellow-400">
+							{achievementProgress.unlocked}/{achievementProgress.total}
+						</p>
+						<p class="text-xs text-slate-400 uppercase tracking-widest">Unlocked</p>
+					</div>
+				</div>
+
+				<!-- Progress Bar -->
+				<div class="mt-4 h-2 w-full rounded-full bg-slate-800 overflow-hidden">
+					<div
+						class="h-full bg-gradient-to-r from-yellow-500 to-amber-500 transition-all duration-500"
+						style={`width: ${achievementProgress.percentage}%`}
+					>
+					</div>
+				</div>
+
+				<!-- Achievements Grid -->
+				<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+					{
+						achievements.map((achievement) => (
+							<div
+								class={`relative rounded-xl border p-4 transition-all ${
+									achievement.isUnlocked
+										? 'border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 to-amber-500/5'
+										: 'border-slate-700/50 bg-slate-900/50 opacity-60'
+								}`}
+								data-testid={`achievement-${achievement.id}`}
+							>
+								<div class="flex items-start gap-3">
+									<div
+										class={`flex h-12 w-12 items-center justify-center rounded-lg text-2xl ${
+											achievement.isUnlocked
+												? 'bg-gradient-to-br from-yellow-400/20 to-amber-500/20'
+												: 'bg-slate-800/50 grayscale'
+										}`}
+									>
+										{achievement.icon}
+									</div>
+									<div class="flex-1 min-w-0">
+										<h3
+											class={`font-semibold ${
+												achievement.isUnlocked ? 'text-white' : 'text-slate-400'
+											}`}
+										>
+											{achievement.name}
+										</h3>
+										<p class="text-xs text-slate-400 mt-0.5">{achievement.description}</p>
+										{achievement.isUnlocked && achievement.earnedAt && (
+											<p class="text-xs text-yellow-400/70 mt-1">
+												Earned{' '}
+												{new Date(achievement.earnedAt).toLocaleDateString('en-US', {
+													month: 'short',
+													day: 'numeric',
+													year: 'numeric',
+												})}
+											</p>
+										)}
+									</div>
+								</div>
+								{achievement.isUnlocked && (
+									<div class="absolute top-2 right-2">
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="text-yellow-400"
+										>
+											<polyline points="20 6 9 17 4 12" />
+										</svg>
+									</div>
+								)}
+							</div>
+						))
+					}
+				</div>
+
+				{
+					achievements.length === 0 && (
+						<div class="mt-6 text-center py-8">
+							<p class="text-slate-400">
+								No achievements available yet. Start playing to earn badges!
+							</p>
+						</div>
+					)
+				}
 			</div>
 		</div>
 	</section>

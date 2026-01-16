@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
 	id: text('id').primaryKey(),
@@ -76,3 +76,60 @@ export const llmSettings = sqliteTable('llm_settings', {
 	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 });
+
+/**
+ * Game statistics per user per game type.
+ * Tracks performance metrics for game-specific leaderboards.
+ */
+export const gameStats = sqliteTable(
+	'game_stats',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id),
+		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat'
+
+		// Core statistics
+		totalWins: integer('totalWins').notNull().default(0),
+		totalLosses: integer('totalLosses').notNull().default(0),
+		handsPlayed: integer('handsPlayed').notNull().default(0),
+		biggestWin: integer('biggestWin').notNull().default(0),
+
+		// Net profit for leaderboard ranking (sum of all deltas)
+		netProfit: integer('netProfit').notNull().default(0),
+
+		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.gameType] }),
+		// Indexes for leaderboard queries
+		gameTypeWinsIdx: index('game_stats_type_wins_idx').on(table.gameType, table.totalWins),
+		gameTypeProfitIdx: index('game_stats_type_profit_idx').on(table.gameType, table.netProfit),
+		gameTypeBiggestWinIdx: index('game_stats_type_biggest_win_idx').on(
+			table.gameType,
+			table.biggestWin,
+		),
+	}),
+);
+
+/**
+ * User achievements (badges) tracking.
+ * Records when users earn specific achievements.
+ */
+export const userAchievement = sqliteTable(
+	'user_achievement',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id),
+		achievementId: text('achievementId').notNull(), // 'rising_star', 'high_roller', etc.
+		earnedAt: integer('earnedAt', { mode: 'timestamp' }).notNull(),
+		// Game context when achievement was earned (null for global achievements)
+		gameType: text('gameType'),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.achievementId] }),
+		// Index for fetching user's achievements
+		userEarnedIdx: index('user_achievement_user_earned_idx').on(table.userId, table.earnedAt),
+	}),
+);

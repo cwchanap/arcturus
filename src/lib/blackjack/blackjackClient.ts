@@ -859,6 +859,11 @@ export function initBlackjackClient(): void {
 			// Delta is the net change from what the server knows about
 			const delta = newBalance - serverSyncedBalance;
 
+			// Determine outcome for stats tracking (map blackjack to win)
+			const overallResult = getOverallResult(outcomes);
+			const outcomeForStats =
+				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
+
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
 				const response = await fetch('/api/chips/update', {
@@ -869,6 +874,8 @@ export function initBlackjackClient(): void {
 						delta,
 						gameType: 'blackjack',
 						maxBet: settings.maxBet,
+						outcome: outcomeForStats,
+						handCount: outcomes.length,
 					}),
 				});
 
@@ -877,6 +884,21 @@ export function initBlackjackClient(): void {
 					serverSyncedBalance = newBalance;
 					if (retryCount > 0) {
 						setStatusIfNotRoundResult('Balance synced successfully.');
+					}
+
+					// Check for newly earned achievements
+					const data = await response.json().catch(() => ({}));
+					if (
+						data.newAchievements &&
+						Array.isArray(data.newAchievements) &&
+						data.newAchievements.length > 0
+					) {
+						// Dispatch custom event for UI to handle
+						window.dispatchEvent(
+							new CustomEvent('achievement-earned', {
+								detail: { achievements: data.newAchievements },
+							}),
+						);
 					}
 					return;
 				}

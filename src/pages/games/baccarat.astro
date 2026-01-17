@@ -774,11 +774,16 @@ const initialBalance = user.chipBalance ?? 1000;
 		const previousBalance = lastSyncedBalance;
 		const delta = currentBalance - previousBalance;
 
-		// Only sync if there's an actual change
-		if (delta === 0) return;
-
-		// Determine outcome from delta
-		const outcome = delta > 0 ? 'win' : 'loss';
+		// Determine outcome from delta (push when no change)
+		// Important: Even when delta === 0 (push), we need to sync to record stats
+		let outcome: 'win' | 'loss' | 'push';
+		if (delta > 0) {
+			outcome = 'win';
+		} else if (delta < 0) {
+			outcome = 'loss';
+		} else {
+			outcome = 'push';
+		}
 
 		const performChipUpdate = async (retryCount = 0) => {
 			const response = await fetch('/api/chips/update', {

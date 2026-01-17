@@ -115,13 +115,18 @@ export async function updateGameStats(
 	await initializeGameStats(db, userId, gameType);
 
 	// Atomic update using SQL increments - compute biggestWin atomically to avoid race conditions
+	// Note: SQLite doesn't support GREATEST(), so we use a CASE statement instead
 	await db
 		.update(gameStats)
 		.set({
 			totalWins: sql`${gameStats.totalWins} + ${update.winsIncrement}`,
 			totalLosses: sql`${gameStats.totalLosses} + ${update.lossesIncrement}`,
 			handsPlayed: sql`${gameStats.handsPlayed} + ${update.handsIncrement}`,
-			biggestWin: sql`CASE WHEN ${update.chipDelta} > 0 THEN GREATEST(${gameStats.biggestWin}, ${update.chipDelta}) ELSE ${gameStats.biggestWin} END`,
+			biggestWin: sql`CASE
+				WHEN ${update.chipDelta} > 0 AND ${update.chipDelta} > ${gameStats.biggestWin}
+				THEN ${update.chipDelta}
+				ELSE ${gameStats.biggestWin}
+			END`,
 			netProfit: sql`${gameStats.netProfit} + ${update.chipDelta}`,
 			updatedAt: now,
 		})
@@ -147,9 +152,7 @@ export async function getTopPlayersForGame(
 		case 'win_rate':
 			// Order by calculated win rate, but require minimum hands
 			orderByClause = desc(
-				sql`CASE WHEN (${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}
-					THEN CAST(${gameStats.totalWins} AS REAL) / (${gameStats.totalWins} + ${gameStats.totalLosses})
-					ELSE 0 END`,
+				sql`CAST(${gameStats.totalWins} AS REAL) / (${gameStats.totalWins} + ${gameStats.totalLosses})`,
 			);
 			break;
 		case 'biggest_win':
@@ -159,6 +162,15 @@ export async function getTopPlayersForGame(
 			orderByClause = desc(gameStats.netProfit);
 			break;
 	}
+
+	// Build where clause - filter out players with insufficient hands for win_rate
+	const whereClause =
+		rankingMetric === 'win_rate'
+			? and(
+					eq(gameStats.gameType, gameType),
+					sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
+				)
+			: eq(gameStats.gameType, gameType);
 
 	const results = await db
 		.select({
@@ -172,7 +184,7 @@ export async function getTopPlayersForGame(
 		})
 		.from(gameStats)
 		.innerJoin(user, eq(gameStats.userId, user.id))
-		.where(eq(gameStats.gameType, gameType))
+		.where(whereClause)
 		.orderBy(orderByClause, user.id) // Secondary sort by user ID for determinism
 		.limit(limit);
 

@@ -43,6 +43,8 @@ export interface GameRoundRecord {
 	outcome: GameRoundOutcome;
 	chipDelta: number;
 	handCount?: number; // For split hands in blackjack
+	winsIncrement?: number; // For split-hand accuracy: number of wins in this round
+	lossesIncrement?: number; // For split-hand accuracy: number of losses in this round
 }
 
 /**

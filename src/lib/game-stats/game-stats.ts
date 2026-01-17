@@ -46,16 +46,20 @@ export async function recordGameRound(
 	userId: string,
 	record: GameRoundRecord,
 ): Promise<void> {
-	const { gameType, outcome, chipDelta, handCount = 1 } = record;
+	const { gameType, outcome, chipDelta, handCount = 1, winsIncrement, lossesIncrement } = record;
 
 	// Convert outcome to stat increments
-	const winsIncrement = outcome === 'win' ? 1 : 0;
-	const lossesIncrement = outcome === 'loss' ? 1 : 0;
+	// Use provided winsIncrement/lossesIncrement for split-hand accuracy,
+	// otherwise derive from single outcome
+	const actualWinsIncrement =
+		winsIncrement !== undefined ? winsIncrement : outcome === 'win' ? 1 : 0;
+	const actualLossesIncrement =
+		lossesIncrement !== undefined ? lossesIncrement : outcome === 'loss' ? 1 : 0;
 	// 'push' doesn't count as win or loss
 
 	await updateGameStats(db, userId, gameType, {
-		winsIncrement,
-		lossesIncrement,
+		winsIncrement: actualWinsIncrement,
+		lossesIncrement: actualLossesIncrement,
 		handsIncrement: handCount,
 		chipDelta,
 	});

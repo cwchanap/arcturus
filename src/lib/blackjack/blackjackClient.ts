@@ -865,7 +865,8 @@ export function initBlackjackClient(): void {
 				(o) => o.result === 'win' || o.result === 'blackjack',
 			).length;
 			const lossesIncrement = outcomes.filter((o) => o.result === 'loss').length;
-			const pushesIncrement = outcomes.filter((o) => o.result === 'push').length;
+			// Pushes are tracked via handsIncrement, not sent to API separately
+			const _pushesIncrement = outcomes.filter((o) => o.result === 'push').length;
 
 			// Determine primary outcome for backward compatibility
 			// Use overall result for non-split rounds, or derive from net result for split rounds

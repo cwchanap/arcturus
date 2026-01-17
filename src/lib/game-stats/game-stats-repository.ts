@@ -168,7 +168,7 @@ export async function getTopPlayersForGame(
 		rankingMetric === 'win_rate'
 			? and(
 					eq(gameStats.gameType, gameType),
-					sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
+					sql`${gameStats.handsPlayed} >= ${MIN_HANDS_FOR_WIN_RATE}`,
 				)
 			: eq(gameStats.gameType, gameType);
 
@@ -226,15 +226,15 @@ export async function getUserGameRank(
 			);
 			break;
 		case 'win_rate': {
-			// Calculate user's win rate
-			const totalGames = userStats.totalWins + userStats.totalLosses;
-
 			// Users must meet minimum hands threshold to qualify for win rate ranking
-			if (totalGames < MIN_HANDS_FOR_WIN_RATE) {
+			if (userStats.handsPlayed < MIN_HANDS_FOR_WIN_RATE) {
 				return null;
 			}
 
-			const userWinRate = userStats.totalWins / totalGames;
+			const totalDecidedGames = userStats.totalWins + userStats.totalLosses;
+
+			// Win rate is calculated based on decided games (wins + losses)
+			const userWinRate = totalDecidedGames > 0 ? userStats.totalWins / totalDecidedGames : 0;
 
 			// For win rate, we need a more complex comparison
 			// Users with higher win rate rank higher, tie-break by userId
@@ -246,11 +246,11 @@ export async function getUserGameRank(
 				.where(
 					and(
 						eq(gameStats.gameType, gameType),
-						sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
+						sql`${gameStats.handsPlayed} >= ${MIN_HANDS_FOR_WIN_RATE}`,
 						or(
-							sql`CAST(${gameStats.totalWins} AS REAL) / (${gameStats.totalWins} + ${gameStats.totalLosses}) > ${userWinRate}`,
+							sql`CAST(${gameStats.totalWins} AS REAL) / CASE WHEN (${gameStats.totalWins} + ${gameStats.totalLosses}) > 0 THEN (${gameStats.totalWins} + ${gameStats.totalLosses}) ELSE 1 END > ${userWinRate}`,
 							and(
-								sql`CAST(${gameStats.totalWins} AS REAL) / (${gameStats.totalWins} + ${gameStats.totalLosses}) = ${userWinRate}`,
+								sql`CAST(${gameStats.totalWins} AS REAL) / CASE WHEN (${gameStats.totalWins} + ${gameStats.totalLosses}) > 0 THEN (${gameStats.totalWins} + ${gameStats.totalLosses}) ELSE 1 END = ${userWinRate}`,
 								lt(gameStats.userId, userId),
 							),
 						),

@@ -47,6 +47,30 @@ describe('calculateMetrics', () => {
 		expect(result.winRate).toBe(0);
 	});
 
+	test('includes pushes in handsPlayed for win-rate eligibility', () => {
+		// Player with 10 hands: 6 wins, 4 pushes
+		// handsPlayed = 10 (meets MIN_HANDS_FOR_WIN_RATE threshold)
+		// totalWins + totalLosses = 6
+		// win rate = 6/6 = 100%
+		const stats: GameStats = {
+			userId: 'user1',
+			gameType: 'blackjack',
+			totalWins: 6,
+			totalLosses: 0,
+			handsPlayed: 10,
+			biggestWin: 300,
+			netProfit: 300,
+			updatedAt: new Date(),
+		};
+
+		const result = calculateMetrics(stats);
+
+		// Win rate is calculated on decided hands (6/6 = 100%)
+		expect(result.winRate).toBe(100);
+		// handsPlayed includes all hands (wins + losses + pushes)
+		expect(result.handsPlayed).toBe(10);
+	});
+
 	test('calculates 100% win rate when all wins', () => {
 		const stats: GameStats = {
 			userId: 'user1',

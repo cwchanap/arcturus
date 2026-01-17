@@ -859,7 +859,16 @@ export function initBlackjackClient(): void {
 			// Delta is the net change from what the server knows about
 			const delta = newBalance - serverSyncedBalance;
 
-			// Determine outcome for stats tracking (map blackjack to win)
+			// Determine outcome for stats tracking
+			// For split hands, count actual wins/losses per hand instead of using overall result
+			const winsIncrement = outcomes.filter(
+				(o) => o.result === 'win' || o.result === 'blackjack',
+			).length;
+			const lossesIncrement = outcomes.filter((o) => o.result === 'loss').length;
+			const pushesIncrement = outcomes.filter((o) => o.result === 'push').length;
+
+			// Determine primary outcome for backward compatibility
+			// Use overall result for non-split rounds, or derive from net result for split rounds
 			const overallResult = getOverallResult(outcomes);
 			const outcomeForStats =
 				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
@@ -876,6 +885,9 @@ export function initBlackjackClient(): void {
 						maxBet: settings.maxBet,
 						outcome: outcomeForStats,
 						handCount: outcomes.length,
+						// Send per-hand counts for accurate split-hand tracking
+						winsIncrement,
+						lossesIncrement,
 					}),
 				});
 

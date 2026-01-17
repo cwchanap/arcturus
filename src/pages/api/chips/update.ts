@@ -121,6 +121,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		maxBet?: unknown;
 		outcome?: unknown;
 		handCount?: unknown;
+		winsIncrement?: unknown;
+		lossesIncrement?: unknown;
 	};
 	try {
 		body = await request.json();
@@ -138,7 +140,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
-	const { delta, gameType, previousBalance: clientPreviousBalance, outcome, handCount } = body;
+	const {
+		delta,
+		gameType,
+		previousBalance: clientPreviousBalance,
+		outcome,
+		handCount,
+		winsIncrement,
+		lossesIncrement,
+	} = body;
 	// Note: body.maxBet is intentionally NOT used for validation.
 	// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
 	// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
@@ -215,6 +225,44 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				success: false,
 				error: 'INVALID_HAND_COUNT',
 				message: 'handCount must be a positive integer',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate winsIncrement if provided (for split-hand tracking)
+	if (
+		winsIncrement !== undefined &&
+		(typeof winsIncrement !== 'number' || !Number.isInteger(winsIncrement) || winsIncrement < 0)
+	) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_WINS_INCREMENT',
+				message: 'winsIncrement must be a non-negative integer',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate lossesIncrement if provided (for split-hand tracking)
+	if (
+		lossesIncrement !== undefined &&
+		(typeof lossesIncrement !== 'number' ||
+			!Number.isInteger(lossesIncrement) ||
+			lossesIncrement < 0)
+	) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_LOSSES_INCREMENT',
+				message: 'lossesIncrement must be a non-negative integer',
 			}),
 			{
 				status: 400,
@@ -415,6 +463,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
 					outcome: outcome as GameRoundOutcome,
 					chipDelta: delta,
 					handCount: typeof handCount === 'number' ? handCount : 1,
+					// Use provided winsIncrement/lossesIncrement for split-hand accuracy
+					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
+					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
 				});
 
 				// Check for newly earned achievements

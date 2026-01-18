@@ -451,8 +451,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			);
 		}
 
-		// Track game stats and check achievements (async, non-blocking)
-		// This runs after the chip update succeeds but doesn't block the response
+		// Track game stats and check achievements (awaited - blocks response)
+		// This runs after the chip update succeeds and is awaited to return achievements in the response
 		let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
 
 		if (outcome && validOutcomes.includes(outcome as string)) {

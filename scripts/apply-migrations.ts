@@ -16,6 +16,70 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MIGRATIONS_DIR = join(__dirname, '..', 'drizzle');
 const SQL_FILE_PATTERN = /^\d+_[^.]+\.sql$/;
+const MIGRATIONS_TABLE = '_migrations';
+const DB_NAME = 'arcturus';
+
+/**
+ * Initialize the migrations tracking table
+ */
+async function initMigrationsTable(local: boolean): Promise<void> {
+	const createTableSql = `CREATE TABLE IF NOT EXISTS "${MIGRATIONS_TABLE}" (
+		"name" TEXT PRIMARY KEY NOT NULL,
+		"appliedAt" INTEGER NOT NULL
+	)`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${createTableSql}`];
+	await executeWrangler(args);
+}
+
+/**
+ * Get list of already applied migrations from the database
+ */
+async function getAppliedMigrations(local: boolean): Promise<Set<string>> {
+	const querySql = `SELECT name FROM "${MIGRATIONS_TABLE}" ORDER BY appliedAt ASC`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`];
+
+	try {
+		const output = await executeWrangler(args);
+		// Parse the output to extract migration names
+		// The output format is typically: name\n------\n0000_name.sql\n0001_name.sql
+		const lines = output.split('\n');
+		const applied = new Set<string>();
+		let inDataSection = false;
+
+		for (const line of lines) {
+			if (line.trim() === 'name') {
+				inDataSection = true;
+				continue;
+			}
+			if (line.startsWith('---')) {
+				continue;
+			}
+			if (inDataSection && line.trim()) {
+				applied.add(line.trim());
+			}
+		}
+		return applied;
+	} catch (error) {
+		// If table doesn't exist yet, return empty set
+		const errorMsg = (error as Error).message || '';
+		if (errorMsg.includes('no such table') || errorMsg.includes('SQL logic error')) {
+			return new Set<string>();
+		}
+		throw error;
+	}
+}
+
+/**
+ * Record a migration as applied in the tracking table
+ */
+async function recordMigrationApplied(migration: string, local: boolean): Promise<void> {
+	const insertSql = `INSERT INTO "${MIGRATIONS_TABLE}" (name, appliedAt) VALUES ('${migration}', ${Date.now()})`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${insertSql}`];
+	await executeWrangler(args);
+}
 
 /**
  * Get all SQL migration files sorted by number
@@ -72,12 +136,11 @@ async function executeWrangler(args: string[]): Promise<string> {
  */
 async function applyMigration(sqlFile: string, local: boolean): Promise<void> {
 	const filePath = join(MIGRATIONS_DIR, sqlFile);
-	const dbName = 'arcturus';
 	const localFlag = local ? '--local' : '--remote';
 
 	console.log(`Applying migration: ${sqlFile}`);
 
-	const args = ['d1', 'execute', dbName, localFlag, `--file=${filePath}`];
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--file=${filePath}`];
 	await executeWrangler(args);
 }
 
@@ -87,20 +150,38 @@ async function applyMigration(sqlFile: string, local: boolean): Promise<void> {
 async function migrate(local = true): Promise<void> {
 	console.log(`\n📦 Applying migrations to ${local ? 'LOCAL' : 'REMOTE'} database...\n`);
 
-	const migrations = await getSortedMigrations();
+	// Initialize migrations tracking table
+	await initMigrationsTable(local);
 
-	if (migrations.length === 0) {
+	// Get list of applied migrations
+	const appliedMigrations = await getAppliedMigrations(local);
+	console.log(`Applied migrations: ${appliedMigrations.size || 'none'}`);
+
+	const allMigrations = await getSortedMigrations();
+
+	if (allMigrations.length === 0) {
 		console.log('✅ No SQL migrations to apply.');
 		return;
 	}
 
+	// Filter out already applied migrations
+	const pendingMigrations = allMigrations.filter((m) => !appliedMigrations.has(m));
+
+	if (pendingMigrations.length === 0) {
+		console.log('✅ All migrations are already applied.');
+		return;
+	}
+
 	console.log(
-		`Found ${migrations.length} migration file(s):\n${migrations.map((m) => `  - ${m}`).join('\n')}\n`,
+		`Found ${pendingMigrations.length} pending migration(s) out of ${allMigrations.length} total:\n${pendingMigrations.map((m) => `  - ${m}`).join('\n')}\n`,
 	);
 
-	for (const migration of migrations) {
+	let appliedCount = 0;
+	for (const migration of pendingMigrations) {
 		try {
 			await applyMigration(migration, local);
+			await recordMigrationApplied(migration, local);
+			appliedCount++;
 		} catch (error) {
 			console.error(`❌ Failed to apply migration ${migration}:`, error);
 			process.exit(1);
@@ -108,7 +189,7 @@ async function migrate(local = true): Promise<void> {
 	}
 
 	console.log(
-		`\n✅ Successfully applied ${migrations.length} migration(s) to ${local ? 'local' : 'remote'} database.\n`,
+		`\n✅ Successfully applied ${appliedCount} migration(s) to ${local ? 'local' : 'remote'} database.\n`,
 	);
 }
 

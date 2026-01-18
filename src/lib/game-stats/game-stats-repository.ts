@@ -151,8 +151,9 @@ export async function getTopPlayersForGame(
 			break;
 		case 'win_rate':
 			// Order by calculated win rate, but require minimum hands
+			// Use NULLIF to prevent division by zero
 			orderByClause = desc(
-				sql`CAST(${gameStats.totalWins} AS REAL) / (${gameStats.totalWins} + ${gameStats.totalLosses})`,
+				sql`CAST(${gameStats.totalWins} AS REAL) / NULLIF(${gameStats.totalWins} + ${gameStats.totalLosses}, 0)`,
 			);
 			break;
 		case 'biggest_win':

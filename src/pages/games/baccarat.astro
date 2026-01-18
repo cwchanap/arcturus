@@ -287,6 +287,9 @@ const initialBalance = user.chipBalance ?? 1000;
 	<!-- Achievement Toast Notification -->
 	<div
 		id="achievement-toast"
+		role="status"
+		aria-live="polite"
+		aria-atomic="true"
 		class="fixed bottom-4 right-4 bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 		style="z-index: 9999;"
 	>

@@ -235,7 +235,8 @@ export async function getUserGameRank(
 			const totalDecidedGames = userStats.totalWins + userStats.totalLosses;
 
 			// Win rate is calculated based on decided games (wins + losses)
-			const userWinRate = totalDecidedGames > 0 ? userStats.totalWins / totalDecidedGames : 0;
+			// Use consistent NULLIF pattern with getTopPlayersForGame
+			const userWinRate = totalDecidedGames > 0 ? userStats.totalWins / totalDecidedGames : null;
 
 			// For win rate, we need a more complex comparison
 			// Users with higher win rate rank higher, tie-break by userId
@@ -249,9 +250,9 @@ export async function getUserGameRank(
 						eq(gameStats.gameType, gameType),
 						sql`${gameStats.handsPlayed} >= ${MIN_HANDS_FOR_WIN_RATE}`,
 						or(
-							sql`CAST(${gameStats.totalWins} AS REAL) / CASE WHEN (${gameStats.totalWins} + ${gameStats.totalLosses}) > 0 THEN (${gameStats.totalWins} + ${gameStats.totalLosses}) ELSE 1 END > ${userWinRate}`,
+							sql`CAST(${gameStats.totalWins} AS REAL) / NULLIF(${gameStats.totalWins} + ${gameStats.totalLosses}, 0) > ${userWinRate}`,
 							and(
-								sql`CAST(${gameStats.totalWins} AS REAL) / CASE WHEN (${gameStats.totalWins} + ${gameStats.totalLosses}) > 0 THEN (${gameStats.totalWins} + ${gameStats.totalLosses}) ELSE 1 END = ${userWinRate}`,
+								sql`CAST(${gameStats.totalWins} AS REAL) / NULLIF(${gameStats.totalWins} + ${gameStats.totalLosses}, 0) = ${userWinRate}`,
 								lt(gameStats.userId, userId),
 							),
 						),

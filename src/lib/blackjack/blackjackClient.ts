@@ -116,6 +116,15 @@ export function initBlackjackClient(): void {
 	// Used for optimistic locking to avoid BALANCE_MISMATCH errors.
 	let serverSyncedBalance = initialBalance;
 
+	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
+	// This prevents stats drift when multiple rounds are played before sync succeeds
+	let pendingStats = {
+		winsIncrement: 0,
+		lossesIncrement: 0,
+		handsIncrement: 0,
+	};
+	let syncPending = false;
+
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
 
@@ -876,6 +885,11 @@ export function initBlackjackClient(): void {
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
+				// Include any pending stats from previous delayed syncs to prevent drift
+				const finalWinsIncrement = winsIncrement + pendingStats.winsIncrement;
+				const finalLossesIncrement = lossesIncrement + pendingStats.lossesIncrement;
+				const finalHandCount = outcomes.length + pendingStats.handsIncrement;
+
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -885,14 +899,18 @@ export function initBlackjackClient(): void {
 						gameType: 'blackjack',
 						maxBet: settings.maxBet,
 						outcome: outcomeForStats,
-						handCount: outcomes.length,
-						// Send per-hand counts for accurate split-hand tracking
-						winsIncrement,
-						lossesIncrement,
+						handCount: finalHandCount,
+						// Send accumulated stats including pending ones
+						winsIncrement: finalWinsIncrement,
+						lossesIncrement: finalLossesIncrement,
 					}),
 				});
 
 				if (response.ok) {
+					// Clear pending stats on successful sync
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
+
 					// Update our server-synced balance tracker after successful sync
 					serverSyncedBalance = newBalance;
 					if (retryCount > 0) {
@@ -900,7 +918,9 @@ export function initBlackjackClient(): void {
 					}
 
 					// Check for newly earned achievements
-					const data = await response.json().catch(() => ({}));
+					const data = (await response.json().catch(() => ({}))) as {
+						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+					};
 					if (
 						data.newAchievements &&
 						Array.isArray(data.newAchievements) &&
@@ -930,6 +950,22 @@ export function initBlackjackClient(): void {
 					);
 					setStatusIfNotRoundResult('Syncing balance...');
 
+					// Track pending stats to prevent drift if another round is played before retry succeeds
+					if (!syncPending) {
+						// First pending round - initialize with current round's stats
+						pendingStats = {
+							winsIncrement,
+							lossesIncrement,
+							handsIncrement: outcomes.length,
+						};
+						syncPending = true;
+					} else {
+						// Accumulate if already pending from previous round(s)
+						pendingStats.winsIncrement += winsIncrement;
+						pendingStats.lossesIncrement += lossesIncrement;
+						pendingStats.handsIncrement += outcomes.length;
+					}
+
 					// Keep the current balance and retry after the rate limit window
 					setTimeout(() => {
 						performChipUpdate(retryCount + 1).catch((err) => {
@@ -947,10 +983,16 @@ export function initBlackjackClient(): void {
 					game.setBalance(serverBalance);
 					renderGame();
 					setStatusIfNotRoundResult(`Balance synced to ${serverBalance} chips.`);
+					// Clear pending stats since we're reverting to server state
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
 				} else if (errorData.error !== 'RATE_LIMITED') {
 					// Only revert for non-rate-limit errors when no server balance provided
 					game.setBalance(serverSyncedBalance);
 					renderGame();
+					// Clear pending stats for non-rate-limit errors
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
 				}
 
 				// Show appropriate error message to user
@@ -977,6 +1019,9 @@ export function initBlackjackClient(): void {
 			game.setBalance(serverSyncedBalance);
 			renderGame();
 			statusEl.textContent = 'Network error. Balance reverted.';
+			// Clear pending stats on network errors
+			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+			syncPending = false;
 		}
 
 		renderGame();

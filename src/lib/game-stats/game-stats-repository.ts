@@ -238,6 +238,11 @@ export async function getUserGameRank(
 			// Use consistent NULLIF pattern with getTopPlayersForGame
 			const userWinRate = totalDecidedGames > 0 ? userStats.totalWins / totalDecidedGames : null;
 
+			// If user has no decided games (all pushes), they cannot be ranked by win rate
+			if (totalDecidedGames === 0 || userWinRate === null) {
+				return null;
+			}
+
 			// For win rate, we need a more complex comparison
 			// Users with higher win rate rank higher, tie-break by userId
 			const [result] = await db

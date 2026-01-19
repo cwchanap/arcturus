@@ -271,6 +271,41 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		);
 	}
 
+	// Validate consistency between winsIncrement, lossesIncrement, and handCount
+	if (winsIncrement !== undefined || lossesIncrement !== undefined) {
+		if (handCount === undefined) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_SPLIT_HAND_CONSISTENCY',
+					message: 'handCount must be provided when winsIncrement or lossesIncrement is specified',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		const totalDecidedHands =
+			(typeof winsIncrement === 'number' ? winsIncrement : 0) +
+			(typeof lossesIncrement === 'number' ? lossesIncrement : 0);
+
+		if (totalDecidedHands > handCount) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_SPLIT_HAND_CONSISTENCY',
+					message: 'The sum of winsIncrement and lossesIncrement cannot exceed handCount',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+	}
+
 	// Determine limits based on game type
 	// Fallback to blackjack limits if somehow undefined (should be covered by validGameTypes check)
 	const limits = GAME_LIMITS[gameType as string] || GAME_LIMITS.blackjack;
@@ -424,8 +459,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			})
 			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
 
-		// Check if update affected any rows (D1 returns rowsAffected in meta)
-		const rowsAffected = result?.meta?.changes ?? result?.rowsAffected ?? 0;
+		// Check if update affected any rows (D1 returns changes in meta)
+		const rowsAffected = result?.meta?.changes ?? 0;
 		if (rowsAffected === 0) {
 			// Concurrent modification detected - balance changed between read and write
 			return new Response(

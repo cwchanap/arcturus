@@ -30,11 +30,12 @@ const user = session.user;
 const dbBinding = Astro.locals.runtime.env.DB;
 
 // Parse query parameters for tab and metric selection
-const selectedTab = Astro.url.searchParams.get('game') || 'all';
+const selectedTabRaw = Astro.url.searchParams.get('game') || 'all';
 const selectedMetric = Astro.url.searchParams.get('metric') || 'wins';
 
-// Validate parameters
-const isGameTab = selectedTab !== 'all' && isValidGameType(selectedTab);
+// Validate and normalize parameters
+const isGameTab = selectedTabRaw !== 'all' && isValidGameType(selectedTabRaw);
+const selectedTab = isGameTab ? selectedTabRaw : 'all';
 const validMetric = isValidRankingMetric(selectedMetric) ? selectedMetric : 'wins';
 
 // Fetch leaderboard data server-side

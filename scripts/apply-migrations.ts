@@ -33,31 +33,70 @@ async function initMigrationsTable(local: boolean): Promise<void> {
 }
 
 /**
+ * Get list of tables that exist in the database
+ */
+async function getExistingTables(local: boolean): Promise<Set<string>> {
+	const querySql = `SELECT name FROM sqlite_master WHERE type='table' AND name NOT GLOB '_*' ORDER BY name`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`, '--json'];
+
+	try {
+		const output = await executeWrangler(args);
+		const result = JSON.parse(output) as { results?: Array<{ name: string }>; success: boolean };
+		const tables = new Set<string>();
+		if (result.results) {
+			for (const row of result.results) {
+				tables.add(row.name);
+			}
+		}
+		return tables;
+	} catch (error) {
+		console.warn('Warning: Could not query existing tables:', (error as Error).message);
+		return new Set<string>();
+	}
+}
+
+/**
+ * Check if a migration's tables already exist in the database
+ * This is used for backfilling migration tracking on existing databases
+ */
+async function isMigrationApplied(
+	migrationFile: string,
+	existingTables: Set<string>,
+): Promise<boolean> {
+	// For migration 0000, check if core tables exist
+	if (migrationFile.startsWith('0000_')) {
+		const coreTables = ['user', 'account', 'session', 'verification', 'mission', 'llm_settings'];
+		return coreTables.every((table) => existingTables.has(table));
+	}
+
+	// For migration 0003, check if game_stats and user_achievement tables exist
+	if (migrationFile.startsWith('0003_')) {
+		return existingTables.has('game_stats') && existingTables.has('user_achievement');
+	}
+
+	// For future migrations, add similar checks
+	// This is a simplified approach - in production you might want to parse the SQL files
+	// to extract the CREATE TABLE statements
+	return false;
+}
+
+/**
  * Get list of already applied migrations from the database
  */
 async function getAppliedMigrations(local: boolean): Promise<Set<string>> {
 	const querySql = `SELECT name FROM "${MIGRATIONS_TABLE}" ORDER BY appliedAt ASC`;
 	const localFlag = local ? '--local' : '--remote';
-	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`];
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`, '--json'];
 
 	try {
 		const output = await executeWrangler(args);
-		// Parse the output to extract migration names
-		// The output format is typically: name\n------\n0000_name.sql\n0001_name.sql
-		const lines = output.split('\n');
+		// Parse JSON output from wrangler
+		const result = JSON.parse(output) as { results?: Array<{ name: string }>; success: boolean };
 		const applied = new Set<string>();
-		let inDataSection = false;
-
-		for (const line of lines) {
-			if (line.trim() === 'name') {
-				inDataSection = true;
-				continue;
-			}
-			if (line.startsWith('---')) {
-				continue;
-			}
-			if (inDataSection && line.trim()) {
-				applied.add(line.trim());
+		if (result.results) {
+			for (const row of result.results) {
+				applied.add(row.name);
 			}
 		}
 		return applied;
@@ -157,7 +196,34 @@ async function migrate(local = true): Promise<void> {
 	const appliedMigrations = await getAppliedMigrations(local);
 	console.log(`Applied migrations: ${appliedMigrations.size || 'none'}`);
 
+	// Get existing tables for backfill detection
+	const existingTables = await getExistingTables(local);
+
 	const allMigrations = await getSortedMigrations();
+
+	// Backfill: If _migrations table is empty but tables exist, mark relevant migrations as applied
+	// This handles the case where the database was migrated before this tracking system was added
+	if (appliedMigrations.size === 0 && existingTables.size > 0) {
+		console.log('🔍 Detected existing database - backfilling migration tracking...');
+		let backfillCount = 0;
+		for (const migration of allMigrations) {
+			if (await isMigrationApplied(migration, existingTables)) {
+				try {
+					await recordMigrationApplied(migration, local);
+					appliedMigrations.add(migration);
+					backfillCount++;
+					console.log(`  ✓ Backfilled migration: ${migration}`);
+				} catch (error) {
+					console.warn(`  ⚠ Failed to backfill ${migration}:`, (error as Error).message);
+				}
+			}
+		}
+		if (backfillCount > 0) {
+			console.log(`✅ Backfilled ${backfillCount} migration(s)\n`);
+		} else {
+			console.log('ℹ No migrations to backfill\n');
+		}
+	}
 
 	if (allMigrations.length === 0) {
 		console.log('✅ No SQL migrations to apply.');

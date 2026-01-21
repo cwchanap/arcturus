@@ -164,12 +164,13 @@ export async function getTopPlayersForGame(
 			break;
 	}
 
-	// Build where clause - filter out players with insufficient hands for win_rate
+	// Build where clause - filter out players with insufficient decided hands for win_rate
+	// Use totalWins + totalLosses (decided games) instead of handsPlayed to exclude push-heavy records
 	const whereClause =
 		rankingMetric === 'win_rate'
 			? and(
 					eq(gameStats.gameType, gameType),
-					sql`${gameStats.handsPlayed} >= ${MIN_HANDS_FOR_WIN_RATE}`,
+					sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
 				)
 			: eq(gameStats.gameType, gameType);
 
@@ -227,12 +228,12 @@ export async function getUserGameRank(
 			);
 			break;
 		case 'win_rate': {
-			// Users must meet minimum hands threshold to qualify for win rate ranking
-			if (userStats.handsPlayed < MIN_HANDS_FOR_WIN_RATE) {
+			// Users must meet minimum decided hands threshold to qualify for win rate ranking
+			// Use totalWins + totalLosses (decided games) instead of handsPlayed to exclude push-heavy records
+			const totalDecidedGames = userStats.totalWins + userStats.totalLosses;
+			if (totalDecidedGames < MIN_HANDS_FOR_WIN_RATE) {
 				return null;
 			}
-
-			const totalDecidedGames = userStats.totalWins + userStats.totalLosses;
 
 			// Win rate is calculated based on decided games (wins + losses)
 			// Use consistent NULLIF pattern with getTopPlayersForGame
@@ -253,7 +254,7 @@ export async function getUserGameRank(
 				.where(
 					and(
 						eq(gameStats.gameType, gameType),
-						sql`${gameStats.handsPlayed} >= ${MIN_HANDS_FOR_WIN_RATE}`,
+						sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
 						or(
 							sql`CAST(${gameStats.totalWins} AS REAL) / NULLIF(${gameStats.totalWins} + ${gameStats.totalLosses}, 0) > ${userWinRate}`,
 							and(

@@ -125,6 +125,9 @@ export function initBlackjackClient(): void {
 	};
 	let syncPending = false;
 
+	// Track pending retry timer to cancel stale retries before starting new sync
+	let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
 
@@ -885,6 +888,12 @@ export function initBlackjackClient(): void {
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
+				// Clear any pending retry timer from previous sync attempt to prevent stale deltas
+				if (pendingRetryTimer) {
+					clearTimeout(pendingRetryTimer);
+					pendingRetryTimer = null;
+				}
+
 				// Include any pending stats from previous delayed syncs to prevent drift
 				const finalWinsIncrement = winsIncrement + pendingStats.winsIncrement;
 				const finalLossesIncrement = lossesIncrement + pendingStats.lossesIncrement;
@@ -910,6 +919,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats on successful sync
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					pendingRetryTimer = null;
 
 					// Update our server-synced balance tracker after successful sync
 					serverSyncedBalance = newBalance;
@@ -967,7 +977,7 @@ export function initBlackjackClient(): void {
 					}
 
 					// Keep the current balance and retry after the rate limit window
-					setTimeout(() => {
+					pendingRetryTimer = setTimeout(() => {
 						performChipUpdate(retryCount + 1).catch((err) => {
 							console.error('Retry failed:', err);
 						});
@@ -986,6 +996,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats since we're reverting to server state
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					pendingRetryTimer = null;
 				} else if (errorData.error !== 'RATE_LIMITED') {
 					// Only revert for non-rate-limit errors when no server balance provided
 					game.setBalance(serverSyncedBalance);
@@ -993,6 +1004,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats for non-rate-limit errors
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					pendingRetryTimer = null;
 				}
 
 				// Show appropriate error message to user
@@ -1022,6 +1034,7 @@ export function initBlackjackClient(): void {
 			// Clear pending stats on network errors
 			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 			syncPending = false;
+			pendingRetryTimer = null;
 		}
 
 		renderGame();

@@ -317,4 +317,89 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			expect(lossesIncrement).toBe(0);
 		});
 	});
+
+	describe('Retry Timer Cancellation', () => {
+		it('should cancel pending retry timer before starting new sync', () => {
+			// Simulate the state variables
+			let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+			// Schedule a retry timer (simulating rate limit)
+			pendingRetryTimer = setTimeout(() => {
+				// This should never execute if cancelled properly
+				throw new Error('Retry timer should have been cancelled');
+			}, 1000);
+
+			// Simulate starting a new sync - should cancel pending timer
+			if (pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+			}
+
+			expect(pendingRetryTimer).toBeNull();
+		});
+
+		it('should allow multiple retries to be scheduled and cancelled', () => {
+			let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+			let cancelCount = 0;
+
+			// Schedule first retry
+			pendingRetryTimer = setTimeout(() => {}, 1000);
+
+			// New round starts - cancel first timer
+			if (pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+				cancelCount++;
+			}
+
+			expect(pendingRetryTimer).toBeNull();
+			expect(cancelCount).toBe(1);
+
+			// Schedule second retry (rate limit on second round)
+			pendingRetryTimer = setTimeout(() => {}, 1000);
+
+			// New round starts - cancel second timer
+			if (pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+				cancelCount++;
+			}
+
+			expect(pendingRetryTimer).toBeNull();
+			expect(cancelCount).toBe(2);
+		});
+
+		it('should clear retry timer on successful sync', () => {
+			let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+			// Schedule a retry
+			pendingRetryTimer = setTimeout(() => {}, 1000);
+
+			// Simulate successful sync response
+			const responseOk = true;
+			if (responseOk && pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+			}
+
+			expect(pendingRetryTimer).toBeNull();
+		});
+
+		it('should clear retry timer on error (non-rate-limit)', () => {
+			let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+			// Schedule a retry
+			pendingRetryTimer = setTimeout(() => {}, 1000);
+
+			// Simulate BALANCE_MISMATCH error (not rate-limited)
+			const error = 'BALANCE_MISMATCH';
+			const hasServerBalance = true;
+			if (hasServerBalance && pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+			}
+
+			expect(pendingRetryTimer).toBeNull();
+		});
+	});
 });

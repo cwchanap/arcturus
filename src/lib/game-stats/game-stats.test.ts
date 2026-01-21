@@ -47,11 +47,13 @@ describe('calculateMetrics', () => {
 		expect(result.winRate).toBe(0);
 	});
 
-	test('includes pushes in handsPlayed for win-rate eligibility', () => {
+	test('calculates win rate based on decided hands only', () => {
 		// Player with 10 hands: 6 wins, 4 pushes
-		// handsPlayed = 10 (meets MIN_HANDS_FOR_WIN_RATE threshold)
-		// totalWins + totalLosses = 6
+		// handsPlayed = 10 (total hands played)
+		// totalWins + totalLosses = 6 (decided games only)
 		// win rate = 6/6 = 100%
+		// Note: This player would NOT qualify for win-rate leaderboard under the new eligibility rules
+		// because totalWins + totalLosses (6) < MIN_HANDS_FOR_WIN_RATE (10)
 		const stats: GameStats = {
 			userId: 'user1',
 			gameType: 'blackjack',

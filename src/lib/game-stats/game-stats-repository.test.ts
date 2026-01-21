@@ -191,15 +191,15 @@ describe('getUserGameRank', () => {
 	});
 
 	test('calculates rank correctly for win_rate with decided games', async () => {
-		// User has 5 wins, 3 losses, 10 hands (meets threshold)
-		// Win rate = 5/8 = 62.5%, assume 1 user has higher win rate
+		// User has 5 wins, 5 losses, 12 hands (10 decided, meets threshold)
+		// Win rate = 5/10 = 50%, assume 1 user has higher win rate
 		const mockDb = createMockDb({
 			userStats: {
 				userId: 'user1',
 				gameType: 'blackjack',
 				totalWins: 5,
-				totalLosses: 3,
-				handsPlayed: 10,
+				totalLosses: 5,
+				handsPlayed: 12,
 				biggestWin: 500,
 				netProfit: 200,
 				updatedAt: new Date(),
@@ -262,14 +262,14 @@ describe('getUserGameRank - win_rate edge cases', () => {
 		expect(result).toBeNull();
 	});
 
-	test('normal case: 10 hands, 5 wins, 3 losses, 2 pushes', async () => {
+	test('normal case: 10 hands, 5 wins, 5 losses, 0 pushes', async () => {
 		// Normal scenario with decided games - should return a valid rank
 		const mockDb = createMockDb({
 			userStats: {
 				userId: 'user1',
 				gameType: 'blackjack',
 				totalWins: 5,
-				totalLosses: 3,
+				totalLosses: 5,
 				handsPlayed: 10,
 				biggestWin: 500,
 				netProfit: 200,
@@ -277,6 +277,54 @@ describe('getUserGameRank - win_rate edge cases', () => {
 			},
 			allStats: [],
 			defaultCount: 2, // Assume 2 users have higher win rate
+		});
+
+		const result = await getUserGameRank(mockDb, 'user1', 'blackjack' as GameType, 'win_rate');
+		expect(result).toBe(3); // Rank 3 (2 users ranked higher + 1)
+	});
+
+	test('edge case: 10 hands, 1 win, 0 losses, 9 pushes', async () => {
+		// Scenario: User plays 10 hands, but only 1 decided game (1 win, 0 losses)
+		// Expected: totalDecidedGames = 1, which is < MIN_HANDS_FOR_WIN_RATE (10)
+		// Result: rank = null (unrankable) - prevents push-heavy outliers
+		// This is the fix for the review comment issue
+
+		const mockDb = createMockDb({
+			userStats: {
+				userId: 'user1',
+				gameType: 'blackjack',
+				totalWins: 1,
+				totalLosses: 0,
+				handsPlayed: 10, // Would qualify under old logic
+				biggestWin: 100,
+				netProfit: 100,
+				updatedAt: new Date(),
+			},
+			allStats: [],
+			defaultCount: 0,
+		});
+
+		const result = await getUserGameRank(mockDb, 'user1', 'blackjack' as GameType, 'win_rate');
+		expect(result).toBeNull(); // Should be null due to insufficient decided games
+	});
+
+	test('edge case: exactly 10 decided hands, 10 wins, 0 pushes', async () => {
+		// Scenario: User plays exactly MIN_HANDS_FOR_WIN_RATE decided hands
+		// Expected: qualifies with 100% win rate (10 wins, 0 losses)
+
+		const mockDb = createMockDb({
+			userStats: {
+				userId: 'user1',
+				gameType: 'blackjack',
+				totalWins: 10,
+				totalLosses: 0,
+				handsPlayed: 10, // Exactly the threshold
+				biggestWin: 200,
+				netProfit: 1000,
+				updatedAt: new Date(),
+			},
+			allStats: [],
+			defaultCount: 2, // 2 users have higher win rate
 		});
 
 		const result = await getUserGameRank(mockDb, 'user1', 'blackjack' as GameType, 'win_rate');

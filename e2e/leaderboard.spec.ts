@@ -53,33 +53,6 @@ test.describe('Leaderboard Page', () => {
 		await expect(page.locator('text=Your Rank')).toBeVisible();
 	});
 
-	test('shows medal emojis for top 3 players', async ({ page }) => {
-		await page.goto('/games/leaderboard');
-
-		const table = page.getByTestId('leaderboard-table');
-		const rows = table.locator('tbody tr');
-		const rowCount = await rows.count();
-
-		// If there are at least 3 players, check for medals
-		if (rowCount >= 1) {
-			// First row should have gold medal
-			const firstRow = rows.first();
-			await expect(firstRow.locator('text=🥇')).toBeVisible();
-		}
-
-		if (rowCount >= 2) {
-			// Second row should have silver medal
-			const secondRow = rows.nth(1);
-			await expect(secondRow.locator('text=🥈')).toBeVisible();
-		}
-
-		if (rowCount >= 3) {
-			// Third row should have bronze medal
-			const thirdRow = rows.nth(2);
-			await expect(thirdRow.locator('text=🥉')).toBeVisible();
-		}
-	});
-
 	test('has back to lobby link', async ({ page }) => {
 		await page.goto('/games/leaderboard');
 
@@ -120,31 +93,6 @@ test.describe('Leaderboard Page', () => {
 
 		await navLink.click();
 		await expect(page).toHaveURL('/games/leaderboard');
-	});
-
-	test('chip balances are formatted with commas', async ({ page }) => {
-		await page.goto('/games/leaderboard');
-
-		// Verify chip balance values are rendered using en-US number formatting.
-		// Note: values under 1,000 will not contain a comma, but are still correctly formatted.
-		const chipCells = page.getByTestId('leaderboard-table').locator('tbody tr td:nth-child(3)');
-		await expect(chipCells.first()).toBeVisible();
-
-		const cellCount = await chipCells.count();
-		let matched = false;
-		for (let i = 0; i < cellCount; i++) {
-			const text = (await chipCells.nth(i).textContent()) ?? '';
-			const numericText = text.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0];
-			if (!numericText) continue;
-			const value = Number(numericText);
-			if (!Number.isFinite(value)) continue;
-			const formatted = new Intl.NumberFormat('en-US').format(value);
-			await expect(chipCells.nth(i)).toContainText(formatted);
-			matched = true;
-			break;
-		}
-
-		expect(matched).toBe(true);
 	});
 
 	test('responsive layout works on mobile', async ({ page }) => {

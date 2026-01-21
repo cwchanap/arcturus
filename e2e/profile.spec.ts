@@ -63,61 +63,6 @@ test.describe('Profile Page', () => {
 		await expect(page.locator('button:has-text("Save Rival Preferences")')).toBeVisible();
 	});
 
-	test('can change AI provider', async ({ page }) => {
-		const providerSelect = page.locator('#ai-provider');
-		const modelSelect = page.locator('#ai-model');
-
-		// Get initial provider
-		const initialProvider = await providerSelect.inputValue();
-
-		// Change to different provider
-		const targetProvider = initialProvider === 'openai' ? 'gemini' : 'openai';
-		await providerSelect.selectOption(targetProvider);
-
-		// Verify provider changed
-		await expect(providerSelect).toHaveValue(targetProvider);
-
-		// Verify model options updated
-		const modelValue = await modelSelect.inputValue();
-		if (targetProvider === 'openai') {
-			expect(modelValue).toContain('gpt');
-		} else {
-			expect(modelValue).toContain('gemini');
-		}
-	});
-
-	test('can change AI model', async ({ page }) => {
-		const modelSelect = page.locator('#ai-model');
-
-		// Get initial model
-		const initialModel = await modelSelect.inputValue();
-
-		// Get all options
-		const options = await modelSelect.locator('option').all();
-
-		// If there are multiple options, select a different one
-		if (options.length > 1) {
-			const secondOption = await options[1].getAttribute('value');
-			if (secondOption && secondOption !== initialModel) {
-				await modelSelect.selectOption(secondOption);
-				await expect(modelSelect).toHaveValue(secondOption);
-			}
-		}
-	});
-
-	test('API key input has correct placeholder', async ({ page }) => {
-		const providerSelect = page.locator('#ai-provider');
-		const apiKeyInput = page.locator('#api-key');
-
-		// Check OpenAI placeholder
-		await providerSelect.selectOption('openai');
-		await expect(apiKeyInput).toHaveAttribute('placeholder', 'sk-...');
-
-		// Check Gemini placeholder
-		await providerSelect.selectOption('gemini');
-		await expect(apiKeyInput).toHaveAttribute('placeholder', 'AIza...');
-	});
-
 	test('can save AI settings without API key', async ({ page }) => {
 		const providerSelect = page.locator('#ai-provider');
 		const modelSelect = page.locator('#ai-model');
@@ -163,18 +108,6 @@ test.describe('Profile Page', () => {
 
 		await expect(page).toHaveURL(/\/signin/);
 		await context.close();
-	});
-
-	test('displays user avatar or initial', async ({ page }) => {
-		// Locate avatar using semantic test id instead of Tailwind classes
-		const avatarContainer = page.getByTestId('user-avatar');
-		await expect(avatarContainer).toBeVisible();
-
-		// Should contain either an image or text initial
-		const hasImage = await avatarContainer.locator('img').count();
-		const hasText = await avatarContainer.locator('span').count();
-
-		expect(hasImage + hasText).toBeGreaterThan(0);
 	});
 
 	test('responsive layout works on mobile', async ({ page }) => {

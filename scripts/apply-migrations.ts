@@ -19,6 +19,19 @@ const SQL_FILE_PATTERN = /^\d+_[^.]+\.sql$/;
 const MIGRATIONS_TABLE = '_migrations';
 const DB_NAME = 'arcturus';
 
+function parseWranglerJson<T>(output: string): { results?: T[]; success?: boolean } {
+	const parsed = JSON.parse(output) as
+		| { results?: T[]; success?: boolean }
+		| Array<{
+				results?: T[];
+				success?: boolean;
+		  }>;
+	if (Array.isArray(parsed)) {
+		return parsed[0] ?? {};
+	}
+	return parsed;
+}
+
 /**
  * Initialize the migrations tracking table
  */
@@ -42,7 +55,7 @@ async function getExistingTables(local: boolean): Promise<Set<string>> {
 
 	try {
 		const output = await executeWrangler(args);
-		const result = JSON.parse(output) as { results?: Array<{ name: string }>; success: boolean };
+		const result = parseWranglerJson<{ name: string }>(output);
 		const tables = new Set<string>();
 		if (result.results) {
 			for (const row of result.results) {
@@ -92,7 +105,7 @@ async function getAppliedMigrations(local: boolean): Promise<Set<string>> {
 	try {
 		const output = await executeWrangler(args);
 		// Parse JSON output from wrangler
-		const result = JSON.parse(output) as { results?: Array<{ name: string }>; success: boolean };
+		const result = parseWranglerJson<{ name: string }>(output);
 		const applied = new Set<string>();
 		if (result.results) {
 			for (const row of result.results) {
@@ -179,8 +192,21 @@ async function applyMigration(sqlFile: string, local: boolean): Promise<void> {
 
 	console.log(`Applying migration: ${sqlFile}`);
 
-	const args = ['d1', 'execute', DB_NAME, localFlag, `--file=${filePath}`];
-	await executeWrangler(args);
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--file=${filePath}`, '--json'];
+	try {
+		await executeWrangler(args);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		if (
+			/duplicate column name|already exists|table .* already exists|index .* already exists/i.test(
+				message,
+			)
+		) {
+			console.warn(`⚠ Skipping already-applied migration ${sqlFile}: ${message}`);
+			return;
+		}
+		throw error;
+	}
 }
 
 /**
@@ -223,6 +249,7 @@ async function migrate(local = true): Promise<void> {
 		} else {
 			console.log('ℹ No migrations to backfill\n');
 		}
+		return;
 	}
 
 	if (allMigrations.length === 0) {
@@ -245,8 +272,30 @@ async function migrate(local = true): Promise<void> {
 	let appliedCount = 0;
 	for (const migration of pendingMigrations) {
 		try {
+			// Apply migration
 			await applyMigration(migration, local);
-			await recordMigrationApplied(migration, local);
+
+			// Record migration as applied
+			// Note: Cloudflare D1 via wrangler CLI doesn't support multi-statement transactions.
+			// If recording fails after a successful migration apply, the migration is in the database
+			// but not tracked. In this case, you'll need to manually add it to the _migrations table.
+			try {
+				await recordMigrationApplied(migration, local);
+			} catch (recordError) {
+				// Migration was applied but we couldn't record it
+				console.error('');
+				console.error('⚠️  WARNING: Migration was applied but tracking record failed!');
+				console.error(`⚠️  Migration: ${migration}`);
+				console.error(`⚠️  Error recording: ${(recordError as Error).message}`);
+				console.error('');
+				console.error('📋 MANUAL RECOVERY REQUIRED:');
+				console.error(`   Run this command to manually mark the migration as applied:`);
+				console.error(
+					`   wrangler d1 execute ${DB_NAME} ${local ? '--local' : '--remote'} --command="INSERT INTO "_migrations" (name, appliedAt) VALUES ('${migration}', ${Date.now()})"`,
+				);
+				console.error('');
+				process.exit(1);
+			}
 			appliedCount++;
 		} catch (error) {
 			console.error(`❌ Failed to apply migration ${migration}:`, error);

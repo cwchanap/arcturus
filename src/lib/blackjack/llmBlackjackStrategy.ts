@@ -212,7 +212,7 @@ function parseResponse(
 		}
 
 		const parsed = JSON.parse(jsonMatch[0]);
-		const action = parsed.action?.toLowerCase()?.replace('_', '-');
+		const action = parsed.action?.toLowerCase()?.replaceAll('_', '-');
 		const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
 
 		// Validate action is one of the available actions

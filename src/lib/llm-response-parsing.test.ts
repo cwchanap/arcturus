@@ -18,7 +18,7 @@ function parseLLMResponse(
 		}
 
 		const parsed = JSON.parse(jsonMatch[0]);
-		const action = parsed.action?.toLowerCase()?.replace('_', '-');
+		const action = parsed.action?.toLowerCase()?.replaceAll('_', '-');
 		const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
 
 		const validActions: BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
@@ -157,7 +157,7 @@ describe('LLM Response Parsing', () => {
 	});
 
 	describe('Available Actions Validation', () => {
-		test('returns null when recommended action is not available', () => {
+		test('returns object with null recommendedAction when recommended action is not available', () => {
 			const response = '{"action":"double-down","reasoning":"Double down"}';
 			const availableActions: BlackjackAction[] = ['hit', 'stand'];
 

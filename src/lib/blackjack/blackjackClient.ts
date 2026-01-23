@@ -886,6 +886,9 @@ export function initBlackjackClient(): void {
 			const outcomeForStats =
 				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
 
+			// Capture the game balance at sync time to recompute delta on retry
+			const balanceAtSyncTime = game.getBalance();
+
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
 				// Clear any pending retry timer from previous sync attempt to prevent stale deltas
@@ -893,6 +896,11 @@ export function initBlackjackClient(): void {
 					clearTimeout(pendingRetryTimer);
 					pendingRetryTimer = null;
 				}
+
+				// Recompute delta using current game balance (not stale cached delta)
+				// This prevents double-applying deltas when a later round syncs before an earlier retry
+				const currentGameBalance = game.getBalance();
+				const deltaForRequest = currentGameBalance - serverSyncedBalance;
 
 				// Include any pending stats from previous delayed syncs to prevent drift
 				const finalWinsIncrement = winsIncrement + pendingStats.winsIncrement;
@@ -904,7 +912,7 @@ export function initBlackjackClient(): void {
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						previousBalance: serverSyncedBalance,
-						delta,
+						delta: deltaForRequest,
 						gameType: 'blackjack',
 						maxBet: settings.maxBet,
 						outcome: outcomeForStats,
@@ -922,7 +930,8 @@ export function initBlackjackClient(): void {
 					pendingRetryTimer = null;
 
 					// Update our server-synced balance tracker after successful sync
-					serverSyncedBalance = newBalance;
+					// Use the same balance reference that was used for the delta calculation
+					serverSyncedBalance = currentGameBalance;
 					if (retryCount > 0) {
 						setStatusIfNotRoundResult('Balance synced successfully.');
 					}

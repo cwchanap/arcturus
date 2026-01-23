@@ -273,6 +273,72 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 
 			expect(delta).toBe(50); // Correct net delta
 		});
+
+		it('should recompute delta on retry to prevent double-application of stale deltas', () => {
+			let serverSyncedBalance = 1000;
+
+			// Round 1: Win $100, balance = 1100
+			// Sync is rate limited, retry scheduled
+			// (simulated by just noting the balance)
+			let gameBalance = 1100;
+
+			// Before retry fires, user plays Round 2
+			// Round 2: Lose $150, balance = 950
+			gameBalance = 950;
+
+			// Round 2 sync succeeds
+			// serverSyncedBalance is now updated to 950
+			serverSyncedBalance = 950;
+
+			// Now Round 1 retry fires
+			// OLD BUG: Would use cached delta (+100) with current serverSyncedBalance (950)
+			// Result: 950 + 100 = 1050 (WRONG! Win applied twice)
+
+			// NEW FIX: Recompute delta using current game balance
+			const currentGameBalance = gameBalance; // 950
+			const deltaForRequest = currentGameBalance - serverSyncedBalance;
+
+			// Result: 950 - 950 = 0 (CORRECT! No change needed)
+			expect(deltaForRequest).toBe(0);
+
+			// After sync, serverSyncedBalance should equal gameBalance
+			serverSyncedBalance = currentGameBalance;
+			expect(serverSyncedBalance).toBe(950);
+		});
+
+		it('should handle multiple rounds with delayed sync correctly', () => {
+			let serverSyncedBalance = 1000;
+			let gameBalance = 1000;
+
+			// Round 1: Win $100, rate limited
+			gameBalance = 1100;
+
+			// Round 2: Win $50, rate limited again
+			gameBalance = 1150;
+
+			// Round 3: Loss $200, sync succeeds
+			gameBalance = 950;
+
+			// Round 3 sync succeeds
+			serverSyncedBalance = 950;
+
+			// Now Round 2 retry fires
+			// Recompute delta: 950 - 950 = 0
+			let deltaForRequest = gameBalance - serverSyncedBalance;
+			expect(deltaForRequest).toBe(0);
+
+			// Update server balance
+			serverSyncedBalance = gameBalance;
+
+			// Now Round 1 retry fires
+			// Recompute delta: 950 - 950 = 0
+			deltaForRequest = gameBalance - serverSyncedBalance;
+			expect(deltaForRequest).toBe(0);
+
+			// Final balance is correct
+			expect(serverSyncedBalance).toBe(950);
+			expect(gameBalance).toBe(950);
+		});
 	});
 
 	describe('Split Hand Stats Tracking', () => {

@@ -50,7 +50,7 @@ wrangler d1 create arcturus
 bun run db:generate
 
 # Apply migrations locally
-bun run db:migrate
+bun run db:migrate:local
 ```
 
 3. Create `.env` file (copy from `.env.example`):

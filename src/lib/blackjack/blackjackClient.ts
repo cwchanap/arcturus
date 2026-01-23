@@ -869,7 +869,7 @@ export function initBlackjackClient(): void {
 				}
 			};
 			// Delta is the net change from what the server knows about
-			const delta = newBalance - serverSyncedBalance;
+			const _delta = newBalance - serverSyncedBalance;
 
 			// Determine outcome for stats tracking
 			// For split hands, count actual wins/losses per hand instead of using overall result
@@ -887,7 +887,7 @@ export function initBlackjackClient(): void {
 				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
 
 			// Capture the game balance at sync time to recompute delta on retry
-			const balanceAtSyncTime = game.getBalance();
+			const _balanceAtSyncTime = game.getBalance();
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {

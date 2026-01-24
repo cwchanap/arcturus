@@ -5,15 +5,9 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { validateBet } from './bet-validation';
 
 describe('Bet Validation Logic', () => {
-	const validateBet = (amount: number, minBet: number, maxBet: number): string | null => {
-		if (Number.isNaN(amount) || amount < minBet || amount > maxBet) {
-			return `Bet must be between $${minBet} and $${maxBet}`;
-		}
-		return null;
-	};
-
 	test('allows bets within min and max limits', () => {
 		expect(validateBet(50, 10, 1000)).toBeNull();
 		expect(validateBet(100, 10, 1000)).toBeNull();

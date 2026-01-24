@@ -854,7 +854,6 @@ export function initBlackjackClient(): void {
 
 		// Update balance in database
 		try {
-			const newBalance = game.getBalance();
 			// NOTE: During async balance sync, we try to avoid overwriting the round-result message.
 			// This is a heuristic based on matching the current status text; if the status is empty or
 			// contains unexpected copy, this can fail and allow intermediate sync messages to appear.
@@ -868,8 +867,6 @@ export function initBlackjackClient(): void {
 					statusEl.textContent = message;
 				}
 			};
-			// Delta is the net change from what the server knows about
-			const _delta = newBalance - serverSyncedBalance;
 
 			// Determine outcome for stats tracking
 			// For split hands, count actual wins/losses per hand instead of using overall result
@@ -885,9 +882,6 @@ export function initBlackjackClient(): void {
 			const overallResult = getOverallResult(outcomes);
 			const outcomeForStats =
 				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
-
-			// Capture the game balance at sync time to recompute delta on retry
-			const _balanceAtSyncTime = game.getBalance();
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {

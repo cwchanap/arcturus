@@ -417,8 +417,10 @@ const currentUserInTop = isGameTab
 			<!-- Empty State -->
 			{
 				!errorMessage &&
-					((isGameTab && (gameLeaderboardData == null || gameLeaderboardData.entries.length === 0)) ||
-						(!isGameTab && (overallLeaderboardData == null || overallLeaderboardData.entries.length === 0))) && (
+					((isGameTab &&
+						(gameLeaderboardData == null || gameLeaderboardData.entries.length === 0)) ||
+						(!isGameTab &&
+							(overallLeaderboardData == null || overallLeaderboardData.entries.length === 0))) && (
 						<div class="rounded-2xl border border-slate-700/50 bg-slate-900/50 p-12 text-center">
 							<div class="text-6xl mb-4">{isGameTab ? GAME_TYPE_ICONS[selectedTab] : '🏆'}</div>
 							<p class="text-slate-400 text-lg">No players found</p>
@@ -453,7 +455,8 @@ const currentUserInTop = isGameTab
 								<li class="flex items-start gap-2">
 									<span class="text-yellow-400">•</span>
 									<span>
-										Win Rate requires at least 10 decided games (wins or losses) to appear on the leaderboard
+										Win Rate requires at least 10 decided games (wins or losses) to appear on the
+										leaderboard
 									</span>
 								</li>
 							</>

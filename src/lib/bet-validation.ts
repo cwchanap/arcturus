@@ -14,8 +14,22 @@
  * @returns Error message if invalid, null if valid
  */
 export function validateBet(amount: number, minBet: number, maxBet: number): string | null {
+	// Validate minBet and maxBet are valid numbers
+	if (
+		Number.isNaN(minBet) ||
+		Number.isNaN(maxBet) ||
+		!Number.isFinite(minBet) ||
+		!Number.isFinite(maxBet)
+	) {
+		return 'Invalid bet limits';
+	}
+	// Validate minBet <= maxBet
+	if (minBet > maxBet) {
+		return 'Invalid bet range';
+	}
+	// Validate amount is within range
 	if (Number.isNaN(amount) || amount < minBet || amount > maxBet) {
-		return `Bet must be between $${minBet} and $${maxBet}`;
+		return 'Bet must be between $' + minBet + ' and $' + maxBet;
 	}
 	return null;
 }

@@ -853,6 +853,9 @@ export function initBlackjackClient(): void {
 		}
 
 		// Update balance in database
+		// Flag to track whether current round stats have been included in pendingStats
+		let statsIncluded = false;
+
 		try {
 			// NOTE: During async balance sync, we try to avoid overwriting the round-result message.
 			// This is a heuristic based on matching the current status text; if the status is empty or
@@ -897,9 +900,16 @@ export function initBlackjackClient(): void {
 				const deltaForRequest = currentGameBalance - serverSyncedBalance;
 
 				// Include any pending stats from previous delayed syncs to prevent drift
-				const finalWinsIncrement = winsIncrement + pendingStats.winsIncrement;
-				const finalLossesIncrement = lossesIncrement + pendingStats.lossesIncrement;
-				const finalHandCount = outcomes.length + pendingStats.handsIncrement;
+				// If current round's stats haven't been included yet, add them now
+				if (!statsIncluded) {
+					pendingStats.winsIncrement += winsIncrement;
+					pendingStats.lossesIncrement += lossesIncrement;
+					pendingStats.handsIncrement += outcomes.length;
+					statsIncluded = true;
+				}
+				const finalWinsIncrement = pendingStats.winsIncrement;
+				const finalLossesIncrement = pendingStats.lossesIncrement;
+				const finalHandCount = pendingStats.handsIncrement;
 
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
@@ -921,6 +931,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats on successful sync
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					statsIncluded = false;
 					pendingRetryTimer = null;
 
 					// Update our server-synced balance tracker after successful sync
@@ -963,20 +974,10 @@ export function initBlackjackClient(): void {
 					);
 					setStatusIfNotRoundResult('Syncing balance...');
 
-					// Track pending stats to prevent drift if another round is played before retry succeeds
+					// Set syncPending to true only when first encountering rate limit
+					// Stats are already added to pendingStats at the start of performChipUpdate
 					if (!syncPending) {
-						// First pending round - initialize with current round's stats
-						pendingStats = {
-							winsIncrement,
-							lossesIncrement,
-							handsIncrement: outcomes.length,
-						};
 						syncPending = true;
-					} else {
-						// Accumulate if already pending from previous round(s)
-						pendingStats.winsIncrement += winsIncrement;
-						pendingStats.lossesIncrement += lossesIncrement;
-						pendingStats.handsIncrement += outcomes.length;
 					}
 
 					// Keep the current balance and retry after the rate limit window
@@ -999,6 +1000,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats since we're reverting to server state
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					statsIncluded = false;
 					pendingRetryTimer = null;
 				} else if (errorData.error !== 'RATE_LIMITED') {
 					// Only revert for non-rate-limit errors when no server balance provided
@@ -1007,6 +1009,7 @@ export function initBlackjackClient(): void {
 					// Clear pending stats for non-rate-limit errors
 					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 					syncPending = false;
+					statsIncluded = false;
 					pendingRetryTimer = null;
 				}
 
@@ -1037,6 +1040,7 @@ export function initBlackjackClient(): void {
 			// Clear pending stats on network errors
 			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 			syncPending = false;
+			statsIncluded = false;
 			pendingRetryTimer = null;
 		}
 

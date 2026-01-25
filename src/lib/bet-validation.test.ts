@@ -31,6 +31,19 @@ describe('Bet Validation Logic', () => {
 		expect(validateBet(NaN, 10, 1000)).toBe('Bet must be between $10 and $1000');
 	});
 
+	test('rejects invalid bet limits (NaN or Infinity)', () => {
+		expect(validateBet(50, NaN, 1000)).toBe('Invalid bet limits');
+		expect(validateBet(50, 10, NaN)).toBe('Invalid bet limits');
+		expect(validateBet(50, Infinity, 1000)).toBe('Invalid bet limits');
+		expect(validateBet(50, 10, Infinity)).toBe('Invalid bet limits');
+		expect(validateBet(50, -Infinity, 1000)).toBe('Invalid bet limits');
+	});
+
+	test('rejects invalid bet range (min > max)', () => {
+		expect(validateBet(50, 1000, 10)).toBe('Invalid bet range');
+		expect(validateBet(50, 500, 100)).toBe('Invalid bet range');
+	});
+
 	test('handles edge cases with equal min and max', () => {
 		expect(validateBet(100, 100, 100)).toBeNull();
 		expect(validateBet(99, 100, 100)).toBe('Bet must be between $100 and $100');

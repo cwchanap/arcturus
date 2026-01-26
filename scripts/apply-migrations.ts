@@ -249,7 +249,6 @@ async function migrate(local = true): Promise<void> {
 		} else {
 			console.log('ℹ No migrations to backfill\n');
 		}
-		return;
 	}
 
 	if (allMigrations.length === 0) {
@@ -291,7 +290,7 @@ async function migrate(local = true): Promise<void> {
 				console.error('📋 MANUAL RECOVERY REQUIRED:');
 				console.error(`   Run this command to manually mark the migration as applied:`);
 				console.error(
-					`   wrangler d1 execute ${DB_NAME} ${local ? '--local' : '--remote'} --command="INSERT INTO "_migrations" (name, appliedAt) VALUES ('${migration}', ${Date.now()})"`,
+					`   wrangler d1 execute ${DB_NAME} ${local ? '--local' : '--remote'} --command="INSERT INTO ${MIGRATIONS_TABLE} (name, appliedAt) VALUES ('${migration}', ${Date.now()})"`,
 				);
 				console.error('');
 				process.exit(1);

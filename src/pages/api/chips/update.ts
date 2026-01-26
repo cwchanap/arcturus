@@ -38,6 +38,12 @@ import {
 } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
 
+type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
+
+export function getRowsAffected(result: RowsAffectedResult): number {
+	return result?.meta?.changes ?? result?.rowsAffected ?? 0;
+}
+
 // Game-specific betting limits
 // Different games have fundamentally different payout structures:
 // - Blackjack: ~1.5:1 (Natural) to 6:1 (Split+Double scenarios)
@@ -460,7 +466,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
 
 		// Check if update affected any rows (D1 returns changes in meta)
-		const rowsAffected = result?.meta?.changes ?? 0;
+		const rowsAffected = getRowsAffected(result);
 		if (rowsAffected === 0) {
 			// Concurrent modification detected - balance changed between read and write
 			return new Response(

@@ -9,7 +9,7 @@
  * rounds when sync is delayed.
  */
 
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 
 describe('Blackjack Balance Sync Stats Tracking', () => {
 	describe('Pending Stats Accumulation', () => {
@@ -172,7 +172,6 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			let syncPending = true;
 
 			// Simulate BALANCE_MISMATCH error
-			const error = 'BALANCE_MISMATCH';
 			const hasServerBalance = true;
 
 			if (hasServerBalance) {

@@ -46,7 +46,15 @@ export async function recordGameRound(
 	userId: string,
 	record: GameRoundRecord,
 ): Promise<void> {
-	const { gameType, outcome, chipDelta, handCount = 1, winsIncrement, lossesIncrement } = record;
+	const {
+		gameType,
+		outcome,
+		chipDelta,
+		handCount = 1,
+		winsIncrement,
+		lossesIncrement,
+		biggestWinCandidate,
+	} = record;
 
 	// Convert outcome to stat increments
 	// Use provided winsIncrement/lossesIncrement for split-hand accuracy,
@@ -62,6 +70,12 @@ export async function recordGameRound(
 		lossesIncrement: actualLossesIncrement,
 		handsIncrement: handCount,
 		chipDelta,
+		biggestWinCandidate:
+			biggestWinCandidate !== undefined
+				? biggestWinCandidate
+				: handCount > 1
+					? null
+					: chipDelta,
 	});
 }
 
@@ -147,7 +161,7 @@ export async function getGameLeaderboardData(
 		currentUserId
 			? getUserGameRank(db, currentUserId, gameType, rankingMetric)
 			: Promise.resolve(null),
-		getTotalPlayersForGame(db, gameType),
+		getTotalPlayersForGame(db, gameType, rankingMetric),
 	]);
 
 	// Transform raw data into leaderboard entries

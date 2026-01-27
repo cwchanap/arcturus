@@ -45,6 +45,7 @@ export interface GameRoundRecord {
 	handCount?: number; // For split hands in blackjack
 	winsIncrement?: number; // For split-hand accuracy: number of wins in this round
 	lossesIncrement?: number; // For split-hand accuracy: number of losses in this round
+	biggestWinCandidate?: number | null; // Optional per-round win amount for biggestWin updates
 }
 
 /**

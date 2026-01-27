@@ -498,20 +498,25 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 		if (outcome && validOutcomes.includes(outcome as string)) {
 			try {
+				const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
+				const isAggregatedSync = resolvedHandCount > 1;
+
 				// Record game stats
 				await recordGameRound(db, userId, {
 					gameType: gameType as GameType,
 					outcome: outcome as GameRoundOutcome,
 					chipDelta: delta,
-					handCount: typeof handCount === 'number' ? handCount : 1,
+					handCount: resolvedHandCount,
 					// Use provided winsIncrement/lossesIncrement for split-hand accuracy
 					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
 					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+					// Avoid inflating biggestWin when updates batch multiple rounds
+					biggestWinCandidate: isAggregatedSync ? null : delta,
 				});
 
 				// Check for newly earned achievements
 				const earnedAchievements = await checkAndGrantAchievements(db, userId, newBalance, {
-					recentWinAmount: delta > 0 ? delta : undefined,
+					recentWinAmount: !isAggregatedSync && delta > 0 ? delta : undefined,
 					gameType: gameType as GameType,
 				});
 

@@ -107,9 +107,20 @@ export async function updateGameStats(
 		lossesIncrement: number;
 		handsIncrement: number;
 		chipDelta: number;
+		biggestWinCandidate?: number | null;
 	},
 ): Promise<void> {
 	const now = new Date();
+	const biggestWinCandidate =
+		update.biggestWinCandidate === undefined ? update.chipDelta : update.biggestWinCandidate;
+	const biggestWinUpdate =
+		biggestWinCandidate === null
+			? sql`${gameStats.biggestWin}`
+			: sql`CASE
+				WHEN ${biggestWinCandidate} > 0 AND ${biggestWinCandidate} > ${gameStats.biggestWin}
+				THEN ${biggestWinCandidate}
+				ELSE ${gameStats.biggestWin}
+			END`;
 
 	// Ensure stats record exists
 	await initializeGameStats(db, userId, gameType);
@@ -122,11 +133,7 @@ export async function updateGameStats(
 			totalWins: sql`${gameStats.totalWins} + ${update.winsIncrement}`,
 			totalLosses: sql`${gameStats.totalLosses} + ${update.lossesIncrement}`,
 			handsPlayed: sql`${gameStats.handsPlayed} + ${update.handsIncrement}`,
-			biggestWin: sql`CASE
-				WHEN ${update.chipDelta} > 0 AND ${update.chipDelta} > ${gameStats.biggestWin}
-				THEN ${update.chipDelta}
-				ELSE ${gameStats.biggestWin}
-			END`,
+			biggestWin: biggestWinUpdate,
 			netProfit: sql`${gameStats.netProfit} + ${update.chipDelta}`,
 			updatedAt: now,
 		})
@@ -282,11 +289,23 @@ export async function getUserGameRank(
 /**
  * Get total number of players for a specific game
  */
-export async function getTotalPlayersForGame(db: Database, gameType: GameType): Promise<number> {
+export async function getTotalPlayersForGame(
+	db: Database,
+	gameType: GameType,
+	rankingMetric?: RankingMetric,
+): Promise<number> {
+	const whereClause =
+		rankingMetric === 'win_rate'
+			? and(
+					eq(gameStats.gameType, gameType),
+					sql`(${gameStats.totalWins} + ${gameStats.totalLosses}) >= ${MIN_HANDS_FOR_WIN_RATE}`,
+				)
+			: eq(gameStats.gameType, gameType);
+
 	const [result] = await db
 		.select({ count: sql<number>`count(*)`.as('count') })
 		.from(gameStats)
-		.where(eq(gameStats.gameType, gameType));
+		.where(whereClause);
 
 	return result?.count ?? 0;
 }

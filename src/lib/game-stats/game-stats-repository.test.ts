@@ -5,9 +5,14 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { getUserGameRank } from './game-stats-repository';
+import {
+	getUserGameRank,
+	getTotalPlayersForGame,
+	updateGameStats,
+} from './game-stats-repository';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
+import { MIN_HANDS_FOR_WIN_RATE } from './constants';
 
 /**
  * Mock database implementation that simulates Drizzle ORM query chains
@@ -16,10 +21,12 @@ function createMockDb({
 	userStats = null,
 	allStats = [],
 	defaultCount = 0,
+	countResolver,
 }: {
 	userStats: any;
 	allStats: any[];
 	defaultCount: number;
+	countResolver?: (condition: unknown) => number;
 }): Database {
 	return {
 		select: (columns?: any) => {
@@ -32,7 +39,8 @@ function createMockDb({
 						where: (condition: any) => {
 							if (isCountQuery) {
 								// Count query: return a promise that resolves to an array with count
-								return Promise.resolve([{ count: defaultCount }]);
+								const count = countResolver ? countResolver(condition) : defaultCount;
+								return Promise.resolve([{ count }]);
 							}
 
 							// getGameStats query pattern: return { limit() }
@@ -328,5 +336,78 @@ describe('getUserGameRank - win_rate edge cases', () => {
 
 		const result = await getUserGameRank(mockDb, 'user1', 'blackjack' as GameType, 'win_rate');
 		expect(result).toBe(3); // Rank 3 (2 users ranked higher + 1)
+	});
+});
+
+function extractSqlText(value: unknown): string {
+	if (value && typeof value === 'object' && 'queryChunks' in value) {
+		return (value as { queryChunks: unknown[] }).queryChunks.map((chunk) => String(chunk)).join('');
+	}
+
+	const serialized = JSON.stringify(value);
+	if (serialized && serialized !== '{}') {
+		return serialized;
+	}
+
+	return String(value ?? '');
+}
+
+describe('getTotalPlayersForGame', () => {
+	test('returns total players for win-rate queries', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			countResolver: (condition) => {
+				void condition;
+				return 7;
+			},
+		});
+
+		const total = await getTotalPlayersForGame(mockDb, 'blackjack' as GameType, 'win_rate');
+		expect(total).toBe(7);
+	});
+});
+
+describe('updateGameStats', () => {
+	test('uses different biggestWin updates for aggregated vs single-round', async () => {
+		let captured: Record<string, unknown> | null = null;
+
+		const mockDb = {
+			insert: () => ({
+				values: () => ({
+					onConflictDoNothing: () => Promise.resolve(),
+				}),
+			}),
+			update: () => ({
+				set: (values: Record<string, unknown>) => {
+					captured = values;
+					return {
+						where: () => Promise.resolve(),
+					};
+				},
+			}),
+		} as unknown as Database;
+
+		await updateGameStats(mockDb, 'user1', 'blackjack' as GameType, {
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			handsIncrement: 2,
+			chipDelta: 100,
+			biggestWinCandidate: null,
+		});
+
+		const aggregatedText = extractSqlText(captured?.biggestWin);
+
+		await updateGameStats(mockDb, 'user1', 'blackjack' as GameType, {
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			handsIncrement: 1,
+			chipDelta: 20,
+			biggestWinCandidate: 200,
+		});
+
+		const singleRoundText = extractSqlText(captured?.biggestWin);
+		expect(aggregatedText).not.toBe(singleRoundText);
 	});
 });

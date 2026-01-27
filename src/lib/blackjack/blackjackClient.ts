@@ -886,6 +886,26 @@ export function initBlackjackClient(): void {
 			const outcomeForStats =
 				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
 
+			// Calculate biggest win for split-hand rounds
+			// For split hands, we need to track maximum win per individual hand,
+			// not total delta, to avoid conflating "split hands" with "aggregated multi-round sync"
+			// The API uses handCount > 1 as a proxy for "aggregated sync", so we explicitly provide
+			// biggestWinCandidate to override this for split-hand rounds
+			let biggestWinCandidate: number | undefined;
+			if (outcomes.length > 1) {
+				// Split hand: calculate maximum win per hand
+				// We need the original bets from state before settleRound mutated them
+				const maxWin = Math.max(
+					...outcomes.map((o) => {
+						// Find the corresponding hand in the captured state to get the original bet
+						const originalHand = state.playerHands[o.handIndex];
+						// Profit = payout - original bet
+						return o.payout - originalHand.bet;
+					}),
+				);
+				biggestWinCandidate = maxWin > 0 ? maxWin : undefined;
+			}
+
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
 				// Clear any pending retry timer from previous sync attempt to prevent stale deltas
@@ -924,6 +944,8 @@ export function initBlackjackClient(): void {
 						// Send accumulated stats including pending ones
 						winsIncrement: finalWinsIncrement,
 						lossesIncrement: finalLossesIncrement,
+						// For split hands, send maximum per-hand win to avoid conflating with aggregated sync
+						biggestWinCandidate,
 					}),
 				});
 

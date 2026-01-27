@@ -442,6 +442,18 @@ const initialBalance = user.chipBalance ?? 1000;
 	// State
 	let selectedChipAmount = 50;
 
+	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
+	// This prevents stats drift when multiple rounds are played before sync succeeds
+	let pendingStats = {
+		winsIncrement: 0,
+		lossesIncrement: 0,
+		handsIncrement: 0,
+	};
+	let syncPending = false;
+
+	// Track pending retry timer to cancel stale retries before starting new sync
+	let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// DOM Elements
 	const balanceEl = document.getElementById('chip-balance');
 	if (!balanceEl) throw new Error('Baccarat UI elements not found');
@@ -773,6 +785,12 @@ const initialBalance = user.chipBalance ?? 1000;
 	let lastSyncedBalance = initialBalance;
 
 	async function syncBalance() {
+		// Clear any pending retry timer from previous sync attempt to prevent stale deltas
+		if (pendingRetryTimer) {
+			clearTimeout(pendingRetryTimer);
+			pendingRetryTimer = null;
+		}
+
 		const currentBalance = game.getBalance();
 		const previousBalance = lastSyncedBalance;
 		const delta = currentBalance - previousBalance;
@@ -788,21 +806,63 @@ const initialBalance = user.chipBalance ?? 1000;
 			outcome = 'push';
 		}
 
+		// Track stats for this round
+		const winsIncrement = outcome === 'win' ? 1 : 0;
+		const lossesIncrement = outcome === 'loss' ? 1 : 0;
+		const handsIncrement = 1; // Baccarat is always 1 hand per round
+
+		// Flag to track whether current round stats have been included in pendingStats
+		let statsIncluded = false;
+
 		const performChipUpdate = async (retryCount = 0) => {
+			// Clear any pending retry timer from previous retry attempt
+			if (pendingRetryTimer) {
+				clearTimeout(pendingRetryTimer);
+				pendingRetryTimer = null;
+			}
+
+			// Recompute delta using current game balance (not stale cached delta)
+			// This prevents double-applying deltas when a later round syncs before an earlier retry
+			const currentGameBalance = game.getBalance();
+			const deltaForRequest = currentGameBalance - lastSyncedBalance;
+
+			// Include any pending stats from previous delayed syncs to prevent drift
+			// If current round's stats haven't been included yet, add them now
+			if (!statsIncluded) {
+				pendingStats.winsIncrement += winsIncrement;
+				pendingStats.lossesIncrement += lossesIncrement;
+				pendingStats.handsIncrement += handsIncrement;
+				statsIncluded = true;
+			}
+			const finalWinsIncrement = pendingStats.winsIncrement;
+			const finalLossesIncrement = pendingStats.lossesIncrement;
+			const finalHandCount = pendingStats.handsIncrement;
+
 			const response = await fetch('/api/chips/update', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					delta,
+					delta: deltaForRequest,
 					gameType: 'baccarat',
-					previousBalance,
+					previousBalance: lastSyncedBalance,
 					outcome,
-					handCount: 1,
+					handCount: finalHandCount,
+					// Send accumulated stats including pending ones
+					winsIncrement: finalWinsIncrement,
+					lossesIncrement: finalLossesIncrement,
 				}),
 			});
 
 			if (response.ok) {
-				lastSyncedBalance = currentBalance;
+				// Clear pending stats on successful sync
+				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				syncPending = false;
+				statsIncluded = false;
+				pendingRetryTimer = null;
+
+				// Update our server-synced balance tracker after successful sync
+				// Use the same balance reference that was used for the delta calculation
+				lastSyncedBalance = currentGameBalance;
 				if (retryCount > 0) {
 					showStatus('Balance synced successfully.');
 				}
@@ -830,6 +890,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				currentBalance?: number;
 			};
 
+			// Special handling for RATE_LIMITED: retry after delay instead of reverting
 			if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
 				const retryAfterHeader = response.headers.get('Retry-After');
 				const retryAfterSeconds = parseInt(retryAfterHeader || '2', 10);
@@ -838,7 +899,15 @@ const initialBalance = user.chipBalance ?? 1000;
 					`Chip update rate limited, retrying in ${retryAfterMs}ms (attempt ${retryCount + 1})`,
 				);
 				showStatus('Syncing balance...');
-				setTimeout(() => {
+
+				// Set syncPending to true only when first encountering rate limit
+				// Stats are already added to pendingStats at the start of performChipUpdate
+				if (!syncPending) {
+					syncPending = true;
+				}
+
+				// Keep the current balance and retry after the rate limit window
+				pendingRetryTimer = setTimeout(() => {
 					void (async () => {
 						try {
 							await performChipUpdate(retryCount + 1);
@@ -851,22 +920,34 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
+			// For other errors, handle by reverting to server state
 			if (errorData.currentBalance !== undefined) {
 				const serverBalance = Number(errorData.currentBalance);
 				if (!Number.isNaN(serverBalance)) {
 					lastSyncedBalance = serverBalance;
 					game.applyServerBalance(serverBalance);
 					updateUI();
+					// Clear pending stats since we're reverting to server state
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
+					statsIncluded = false;
+					pendingRetryTimer = null;
 					showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
 				}
 			} else if (errorData.error !== 'RATE_LIMITED') {
 				// Keep local balance; server sync is best-effort.
+				// Clear pending stats for non-rate-limit errors
+				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				syncPending = false;
+				statsIncluded = false;
+				pendingRetryTimer = null;
 			}
 
 			if (errorData.error === 'BALANCE_MISMATCH') {
 				console.warn('Balance mismatch detected, synced to server balance if provided.');
 				showStatus('Balance corrected (server sync).');
 			} else if (errorData.error === 'RATE_LIMITED') {
+				// Max retries exceeded
 				console.error('Chip update rate limited, max retries exceeded');
 				showStatus('Sync delayed. Balance will update on next round.');
 			} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
@@ -885,6 +966,10 @@ const initialBalance = user.chipBalance ?? 1000;
 		} catch (error) {
 			console.error('Balance sync error:', error);
 			showStatus('Network error. Balance sync failed.');
+			// Clear pending stats on network errors
+			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+			syncPending = false;
+			pendingRetryTimer = null;
 		}
 	}
 

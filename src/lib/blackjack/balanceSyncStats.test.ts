@@ -91,13 +91,9 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				lossesIncrement: 0,
 				handsIncrement: 0,
 			};
-			let syncPending = false;
 
 			// Round 1: Loss
-			if (!syncPending) {
-				pendingStats = { winsIncrement: 0, lossesIncrement: 1, handsIncrement: 1 };
-				syncPending = true;
-			}
+			pendingStats = { winsIncrement: 0, lossesIncrement: 1, handsIncrement: 1 };
 
 			// Round 2: Win
 			pendingStats.winsIncrement += 1;
@@ -121,11 +117,9 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				lossesIncrement: 0,
 				handsIncrement: 0,
 			};
-			let syncPending = false;
 
 			// Simulate pending stats from previous round
 			pendingStats = { winsIncrement: 1, lossesIncrement: 0, handsIncrement: 1 };
-			syncPending = true;
 
 			// Current round stats
 			const currentWins = 1;

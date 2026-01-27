@@ -8,7 +8,6 @@ import { describe, expect, test } from 'bun:test';
 import { getUserGameRank } from './game-stats-repository';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
-import { gameStats } from '../../db/schema';
 
 /**
  * Mock database implementation that simulates Drizzle ORM query chains

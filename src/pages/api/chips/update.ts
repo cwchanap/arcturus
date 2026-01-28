@@ -129,6 +129,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		handCount?: unknown;
 		winsIncrement?: unknown;
 		lossesIncrement?: unknown;
+		biggestWinCandidate?: unknown;
 	};
 	try {
 		body = await request.json();
@@ -154,6 +155,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		handCount,
 		winsIncrement,
 		lossesIncrement,
+		biggestWinCandidate,
 	} = body;
 	// Note: body.maxBet is intentionally NOT used for validation.
 	// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
@@ -269,6 +271,26 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				success: false,
 				error: 'INVALID_LOSSES_INCREMENT',
 				message: 'lossesIncrement must be a non-negative integer',
+			}),
+			{
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
+
+	// Validate biggestWinCandidate if provided (for split-hand stats tracking)
+	if (
+		biggestWinCandidate !== undefined &&
+		(typeof biggestWinCandidate !== 'number' ||
+			!Number.isInteger(biggestWinCandidate) ||
+			biggestWinCandidate < 0)
+	) {
+		return new Response(
+			JSON.stringify({
+				success: false,
+				error: 'INVALID_BIGGEST_WIN_CANDIDATE',
+				message: 'biggestWinCandidate must be a non-negative integer',
 			}),
 			{
 				status: 400,
@@ -501,6 +523,41 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
 				const isAggregatedSync = resolvedHandCount > 1;
 
+				// Determine biggestWinCandidate for stats tracking
+				// For split-hand rounds (e.g., blackjack splits), client sends biggestWinCandidate
+				// to specify maximum per-hand win. We should use this value instead of null.
+				// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
+				// - No explicit biggestWinCandidate provided, OR
+				// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
+				let actualBiggestWinCandidate: number | null | undefined;
+				if (
+					delta > 0 &&
+					typeof biggestWinCandidate === 'number' &&
+					typeof winsIncrement === 'number' &&
+					winsIncrement === 1 &&
+					typeof lossesIncrement === 'number' &&
+					lossesIncrement === 0 &&
+					resolvedHandCount > 1
+				) {
+					// Split-hand round with exactly one winning hand - use client-provided biggestWinCandidate
+					// The client calculates this as max(payout - originalBet) across all hands
+					actualBiggestWinCandidate = biggestWinCandidate;
+				} else if (
+					delta > 0 &&
+					resolvedHandCount === 1 &&
+					winsIncrement === undefined &&
+					lossesIncrement === undefined
+				) {
+					// Single-hand win (traditional case) - use delta directly
+					actualBiggestWinCandidate = delta;
+				} else if (isAggregatedSync) {
+					// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
+					actualBiggestWinCandidate = null;
+				} else {
+					// Loss/push (delta <= 0) or other edge cases
+					actualBiggestWinCandidate = null;
+				}
+
 				// Record game stats
 				await recordGameRound(db, userId, {
 					gameType: gameType as GameType,
@@ -510,13 +567,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
 					// Use provided winsIncrement/lossesIncrement for split-hand accuracy
 					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
 					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
-					// Avoid inflating biggestWin when updates batch multiple rounds
-					biggestWinCandidate: isAggregatedSync ? null : delta,
+					// Use calculated biggestWinCandidate based on round type
+					biggestWinCandidate: actualBiggestWinCandidate,
 				});
 
 				// Check for newly earned achievements
+				// For split-hand wins, use actualBiggestWinCandidate instead of total delta
 				const earnedAchievements = await checkAndGrantAchievements(db, userId, newBalance, {
-					recentWinAmount: !isAggregatedSync && delta > 0 ? delta : undefined,
+					recentWinAmount:
+						typeof actualBiggestWinCandidate === 'number' && actualBiggestWinCandidate > 0
+							? actualBiggestWinCandidate
+							: undefined,
 					gameType: gameType as GameType,
 				});
 

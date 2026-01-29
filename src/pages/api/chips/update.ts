@@ -44,6 +44,49 @@ export function getRowsAffected(result: RowsAffectedResult): number {
 	return result?.meta?.changes ?? result?.rowsAffected ?? 0;
 }
 
+export function determineBiggestWinCandidate({
+	delta,
+	biggestWinCandidate,
+	winsIncrement,
+	lossesIncrement,
+	handCount,
+}: {
+	delta: number;
+	biggestWinCandidate: number | undefined;
+	winsIncrement: number | undefined;
+	lossesIncrement: number | undefined;
+	handCount: number;
+}): number | null | undefined {
+	const isAggregatedSync = handCount > 1;
+
+	if (
+		delta > 0 &&
+		typeof biggestWinCandidate === 'number' &&
+		typeof winsIncrement === 'number' &&
+		winsIncrement === 1 &&
+		typeof lossesIncrement === 'number' &&
+		lossesIncrement === 0 &&
+		handCount > 1
+	) {
+		// Split-hand round with exactly one winning hand - use client-provided biggestWinCandidate
+		return biggestWinCandidate;
+	} else if (
+		delta > 0 &&
+		handCount === 1 &&
+		winsIncrement === undefined &&
+		lossesIncrement === undefined
+	) {
+		// Single-hand win (traditional case) - use delta directly
+		return delta;
+	} else if (isAggregatedSync) {
+		// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
+		return null;
+	} else {
+		// Loss/push (delta <= 0) or other edge cases
+		return null;
+	}
+}
+
 // Game-specific betting limits
 // Different games have fundamentally different payout structures:
 // - Blackjack: ~1.5:1 (Natural) to 6:1 (Split+Double scenarios)
@@ -521,7 +564,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		if (outcome && validOutcomes.includes(outcome as string)) {
 			try {
 				const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
-				const isAggregatedSync = resolvedHandCount > 1;
 
 				// Determine biggestWinCandidate for stats tracking
 				// For split-hand rounds (e.g., blackjack splits), client sends biggestWinCandidate
@@ -529,34 +571,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
 				// - No explicit biggestWinCandidate provided, OR
 				// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
-				let actualBiggestWinCandidate: number | null | undefined;
-				if (
-					delta > 0 &&
-					typeof biggestWinCandidate === 'number' &&
-					typeof winsIncrement === 'number' &&
-					winsIncrement === 1 &&
-					typeof lossesIncrement === 'number' &&
-					lossesIncrement === 0 &&
-					resolvedHandCount > 1
-				) {
-					// Split-hand round with exactly one winning hand - use client-provided biggestWinCandidate
-					// The client calculates this as max(payout - originalBet) across all hands
-					actualBiggestWinCandidate = biggestWinCandidate;
-				} else if (
-					delta > 0 &&
-					resolvedHandCount === 1 &&
-					winsIncrement === undefined &&
-					lossesIncrement === undefined
-				) {
-					// Single-hand win (traditional case) - use delta directly
-					actualBiggestWinCandidate = delta;
-				} else if (isAggregatedSync) {
-					// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
-					actualBiggestWinCandidate = null;
-				} else {
-					// Loss/push (delta <= 0) or other edge cases
-					actualBiggestWinCandidate = null;
-				}
+				const actualBiggestWinCandidate = determineBiggestWinCandidate({
+					delta,
+					biggestWinCandidate,
+					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
+					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+					handCount: resolvedHandCount,
+				});
 
 				// Record game stats
 				await recordGameRound(db, userId, {

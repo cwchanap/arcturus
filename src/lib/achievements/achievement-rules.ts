@@ -132,6 +132,10 @@ function checkComeback(context: AchievementCheckContext): AchievementCheckResult
 		return { achievementId: 'comeback', shouldGrant: false };
 	}
 
+	if (currentChipBalance === null || currentChipBalance === undefined) {
+		return { achievementId: 'comeback', shouldGrant: false };
+	}
+
 	// Check if user was below 1000 chips before this win
 	// and just won something
 	const wasLow = recentWinAmount !== undefined && currentChipBalance - recentWinAmount < 1000;

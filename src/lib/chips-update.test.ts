@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { getRowsAffected } from '../pages/api/chips/update';
+import { getRowsAffected, determineBiggestWinCandidate } from '../pages/api/chips/update';
 
 describe('getRowsAffected', () => {
 	it('prefers meta changes when present', () => {
@@ -25,49 +25,8 @@ describe('getRowsAffected', () => {
  * biggestWinCandidate for stats tracking in split-hand scenarios.
  */
 describe('Biggest Win Candidate Logic', () => {
-	/**
-	 * Helper function that replicates the biggestWinCandidate determination logic
-	 * from src/pages/api/chips/update.ts lines 526-559
-	 */
-	function determineBiggestWinCandidate(
-		delta: number,
-		biggestWinCandidate: number | undefined,
-		winsIncrement: number | undefined,
-		lossesIncrement: number | undefined,
-		handCount: number,
-	): number | null | undefined {
-		const isAggregatedSync = handCount > 1;
-
-		if (
-			delta > 0 &&
-			typeof biggestWinCandidate === 'number' &&
-			typeof winsIncrement === 'number' &&
-			winsIncrement === 1 &&
-			typeof lossesIncrement === 'number' &&
-			lossesIncrement === 0 &&
-			handCount > 1
-		) {
-			// Split-hand round with exactly one winning hand - use client-provided biggestWinCandidate
-			return biggestWinCandidate;
-		} else if (
-			delta > 0 &&
-			handCount === 1 &&
-			winsIncrement === undefined &&
-			lossesIncrement === undefined
-		) {
-			// Single-hand win (traditional case) - use delta directly
-			return delta;
-		} else if (isAggregatedSync) {
-			// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
-			return null;
-		} else {
-			// Loss/push (delta <= 0) or other edge cases
-			return null;
-		}
-	}
-
 	describe('Split-hand rounds', () => {
-		it('should use client-provided biggestWinCandidate for single winning hand', () => {
+		it('should return null for mixed outcomes and not use biggestWinCandidate (wins=1, losses=1)', () => {
 			// Scenario: Blackjack split, hand 1 wins $150, hand 2 loses $100
 			// Total delta = +$50, but biggest single hand win = $150
 			const delta = 50;
@@ -77,13 +36,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const lossesIncrement = 1;
 
 			// Wait, this is mixed outcome - should NOT use biggestWinCandidate
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Mixed outcome (wins=1, losses=1) -> should return null
 			expect(result).toBeNull();
@@ -98,13 +57,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 1;
 			const lossesIncrement = 0;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Clean single-hand win in split round -> should use biggestWinCandidate
 			expect(result).toBe(150);
@@ -119,13 +78,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 2;
 			const lossesIncrement = 0;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Multiple wins (winsIncrement=2) -> should return null to avoid inflation
 			expect(result).toBeNull();
@@ -139,13 +98,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 0;
 			const lossesIncrement = 2;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// No wins -> should return null
 			expect(result).toBeNull();
@@ -161,13 +120,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = undefined;
 			const lossesIncrement = undefined;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Single-hand win -> should use delta
 			expect(result).toBe(100);
@@ -181,13 +140,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = undefined;
 			const lossesIncrement = undefined;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Loss -> should return null
 			expect(result).toBeNull();
@@ -201,13 +160,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = undefined;
 			const lossesIncrement = undefined;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Push -> should return null
 			expect(result).toBeNull();
@@ -224,13 +183,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 3;
 			const lossesIncrement = 2;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Aggregated sync -> should return null to avoid inflation
 			expect(result).toBeNull();
@@ -246,13 +205,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 1;
 			const lossesIncrement = 0;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// No biggestWinCandidate provided -> should return null
 			expect(result).toBeNull();
@@ -266,13 +225,13 @@ describe('Biggest Win Candidate Logic', () => {
 			const winsIncrement = 1;
 			const lossesIncrement = 1;
 
-			const result = determineBiggestWinCandidate(
+			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
 				winsIncrement,
 				lossesIncrement,
 				handCount,
-			);
+			});
 
 			// Delta <= 0 -> should return null regardless of biggestWinCandidate
 			expect(result).toBeNull();

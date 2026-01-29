@@ -126,8 +126,15 @@ async function getAppliedMigrations(local: boolean): Promise<Set<string>> {
 /**
  * Record a migration as applied in the tracking table
  */
-async function recordMigrationApplied(migration: string, local: boolean): Promise<void> {
-	const insertSql = `INSERT INTO "${MIGRATIONS_TABLE}" (name, appliedAt) VALUES ('${migration}', ${Date.now()})`;
+async function recordMigrationApplied(
+	migration: string,
+	local: boolean,
+	appliedAt: number = Date.now(),
+): Promise<void> {
+	if (!SQL_FILE_PATTERN.test(migration)) {
+		throw new Error(`Invalid migration name: ${migration}`);
+	}
+	const insertSql = `INSERT INTO "${MIGRATIONS_TABLE}" (name, appliedAt) VALUES ('${migration}', ${appliedAt})`;
 	const localFlag = local ? '--local' : '--remote';
 	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${insertSql}`];
 	await executeWrangler(args);
@@ -271,6 +278,7 @@ async function migrate(local = true): Promise<void> {
 	let appliedCount = 0;
 	for (const migration of pendingMigrations) {
 		try {
+			const appliedAt = Date.now();
 			// Apply migration
 			await applyMigration(migration, local);
 
@@ -279,7 +287,7 @@ async function migrate(local = true): Promise<void> {
 			// If recording fails after a successful migration apply, the migration is in the database
 			// but not tracked. In this case, you'll need to manually add it to the _migrations table.
 			try {
-				await recordMigrationApplied(migration, local);
+				await recordMigrationApplied(migration, local, appliedAt);
 			} catch (recordError) {
 				// Migration was applied but we couldn't record it
 				console.error('');
@@ -290,7 +298,7 @@ async function migrate(local = true): Promise<void> {
 				console.error('📋 MANUAL RECOVERY REQUIRED:');
 				console.error(`   Run this command to manually mark the migration as applied:`);
 				console.error(
-					`   wrangler d1 execute ${DB_NAME} ${local ? '--local' : '--remote'} --command="INSERT INTO ${MIGRATIONS_TABLE} (name, appliedAt) VALUES ('${migration}', ${Date.now()})"`,
+					`   wrangler d1 execute ${DB_NAME} ${local ? '--local' : '--remote'} --command="INSERT INTO ${MIGRATIONS_TABLE} (name, appliedAt) VALUES ('${migration}', ${appliedAt})"`,
 				);
 				console.error('');
 				process.exit(1);

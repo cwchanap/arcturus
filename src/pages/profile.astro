@@ -34,8 +34,8 @@ let achievements: AchievementWithStatus[] = [];
 let achievementProgress = { total: 0, unlocked: 0, percentage: 0 };
 
 if (dbBinding) {
+	const db = createDb(dbBinding);
 	try {
-		const db = createDb(dbBinding);
 		const result = await getLlmSettings(db, user.id);
 		aiSettings = {
 			provider: result.provider,
@@ -44,14 +44,18 @@ if (dbBinding) {
 			geminiApiKey: result.geminiApiKey ?? null,
 			updatedAt: result.updatedAt,
 		};
+	} catch (error) {
+		console.error('Error loading AI settings:', error);
+	}
 
+	try {
 		// Fetch achievements
 		[achievements, achievementProgress] = await Promise.all([
 			getAchievementsWithStatus(db, user.id),
 			getAchievementProgress(db, user.id),
 		]);
 	} catch (error) {
-		console.error('Error loading profile data:', error);
+		console.error('Error loading achievements:', error);
 	}
 }
 

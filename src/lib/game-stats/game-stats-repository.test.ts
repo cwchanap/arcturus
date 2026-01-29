@@ -177,7 +177,7 @@ describe('getUserGameRank', () => {
 	});
 
 	test('returns null for win_rate when user has insufficient hands', async () => {
-		// User has 5 wins, 3 losses, but only 7 hands (below MIN_HANDS_FOR_WIN_RATE = 10)
+		// User has 5 wins, 3 losses, but only 8 hands (below MIN_HANDS_FOR_WIN_RATE = 10)
 		const mockDb = createMockDb({
 			userStats: {
 				userId: 'user1',

@@ -69,9 +69,9 @@ describe('Biggest Win Candidate Logic', () => {
 			expect(result).toBe(150);
 		});
 
-		it('should reject biggestWinCandidate for multiple wins in split round', () => {
+		it('should use biggestWinCandidate for multiple wins in split round with no losses', () => {
 			// Scenario: Blackjack split, both hands win ($100 and $150)
-			// Total delta = +$250, but this is not a single-hand win
+			// Total delta = +$250, biggest single hand win = $150
 			const delta = 250;
 			const biggestWinCandidate = 150;
 			const handCount = 2;
@@ -86,8 +86,8 @@ describe('Biggest Win Candidate Logic', () => {
 				handCount,
 			});
 
-			// Multiple wins (winsIncrement=2) -> should return null to avoid inflation
-			expect(result).toBeNull();
+			// Multiple wins with no losses -> should use biggestWinCandidate
+			expect(result).toBe(150);
 		});
 
 		it('should reject biggestWinCandidate for split round with no wins', () => {

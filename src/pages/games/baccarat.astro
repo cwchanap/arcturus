@@ -536,15 +536,20 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		showStatus('Dealing...');
 
+		const balanceBeforeRound = game.getBalance();
+
 		// Deal and animate
 		const outcome = game.deal();
 		if (outcome) {
+			const balanceAfterRound = game.getBalance();
+			const roundNetDelta = balanceAfterRound - balanceBeforeRound;
+
 			// Update balance/total immediately so tests don't read stale values while animations/network run
 			updateUI();
 
 			await animateRound(outcome);
 			showResult(outcome);
-			await syncBalance();
+			await syncBalance(roundNetDelta);
 
 			// Check insufficient chips
 			if (game.hasInsufficientChips()) {
@@ -784,23 +789,19 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	let lastSyncedBalance = initialBalance;
 
-	async function syncBalance() {
+	async function syncBalance(roundNetDelta: number) {
 		// Clear any pending retry timer from previous sync attempt to prevent stale deltas
 		if (pendingRetryTimer) {
 			clearTimeout(pendingRetryTimer);
 			pendingRetryTimer = null;
 		}
 
-		const currentBalance = game.getBalance();
-		const previousBalance = lastSyncedBalance;
-		const delta = currentBalance - previousBalance;
-
-		// Determine outcome from delta (push when no change)
-		// Important: Even when delta === 0 (push), we need to sync to record stats
+		// Determine outcome from per-round net delta (not aggregated sync delta)
+		// Important: Even when roundNetDelta === 0 (push), we need to sync to record stats
 		let outcome: 'win' | 'loss' | 'push';
-		if (delta > 0) {
+		if (roundNetDelta > 0) {
 			outcome = 'win';
-		} else if (delta < 0) {
+		} else if (roundNetDelta < 0) {
 			outcome = 'loss';
 		} else {
 			outcome = 'push';

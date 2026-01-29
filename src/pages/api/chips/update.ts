@@ -63,12 +63,12 @@ export function determineBiggestWinCandidate({
 		delta > 0 &&
 		typeof biggestWinCandidate === 'number' &&
 		typeof winsIncrement === 'number' &&
-		winsIncrement === 1 &&
+		winsIncrement >= 1 &&
 		typeof lossesIncrement === 'number' &&
 		lossesIncrement === 0 &&
 		handCount > 1
 	) {
-		// Split-hand round with exactly one winning hand - use client-provided biggestWinCandidate
+		// Split-hand round with wins only - use client-provided biggestWinCandidate
 		return biggestWinCandidate;
 	} else if (
 		delta > 0 &&

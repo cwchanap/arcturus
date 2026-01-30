@@ -5,6 +5,11 @@
 import type { GameType } from '../game-stats/types';
 
 /**
+ * Valid achievement identifiers (union type for type safety)
+ */
+export type AchievementId = 'rising_star' | 'high_roller' | 'champion' | 'consistent' | 'comeback';
+
+/**
  * Achievement category for organization
  */
 export type AchievementCategory = 'leaderboard' | 'gameplay' | 'milestone';
@@ -13,7 +18,7 @@ export type AchievementCategory = 'leaderboard' | 'gameplay' | 'milestone';
  * Achievement definition (static configuration)
  */
 export interface AchievementDefinition {
-	id: string;
+	id: AchievementId;
 	name: string;
 	description: string;
 	category: AchievementCategory;
@@ -24,7 +29,7 @@ export interface AchievementDefinition {
  * User's earned achievement record
  */
 export interface UserAchievementRecord {
-	achievementId: string;
+	achievementId: AchievementId;
 	earnedAt: Date;
 	gameType: GameType | null;
 }
@@ -60,14 +65,14 @@ export interface AchievementCheckContext {
 	gameType?: GameType;
 
 	// Already earned achievements (to prevent re-granting)
-	existingAchievementIds: string[];
+	existingAchievementIds: AchievementId[];
 }
 
 /**
  * Result of checking an achievement
  */
 export interface AchievementCheckResult {
-	achievementId: string;
+	achievementId: AchievementId;
 	shouldGrant: boolean;
 	gameType?: GameType;
 }

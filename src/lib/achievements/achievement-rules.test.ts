@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	ACHIEVEMENTS,
 	ACHIEVEMENT_CHECKS,
+	ACHIEVEMENT_THRESHOLDS,
 	getAchievementById,
 	getAchievementsByCategory,
 } from './achievement-rules';
@@ -60,7 +61,7 @@ describe('getAchievementById', () => {
 	});
 
 	test('returns undefined when not found', () => {
-		const achievement = getAchievementById('nonexistent');
+		const achievement = getAchievementById('nonexistent' as any);
 		expect(achievement).toBeUndefined();
 	});
 });
@@ -92,8 +93,8 @@ describe('getAchievementsByCategory', () => {
 
 describe('Achievement check functions', () => {
 	describe('rising_star', () => {
-		test('grants when user reaches top 50', () => {
-			const context = createContext({ overallRank: 50 });
+		test('grants when user reaches top threshold', () => {
+			const context = createContext({ overallRank: ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK });
 			const result = ACHIEVEMENT_CHECKS.rising_star(context);
 			expect(result.shouldGrant).toBe(true);
 		});
@@ -104,8 +105,10 @@ describe('Achievement check functions', () => {
 			expect(result.shouldGrant).toBe(true);
 		});
 
-		test('does not grant when rank is above 50', () => {
-			const context = createContext({ overallRank: 51 });
+		test('does not grant when rank is above threshold', () => {
+			const context = createContext({
+				overallRank: ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK + 1,
+			});
 			const result = ACHIEVEMENT_CHECKS.rising_star(context);
 			expect(result.shouldGrant).toBe(false);
 		});
@@ -127,14 +130,16 @@ describe('Achievement check functions', () => {
 	});
 
 	describe('high_roller', () => {
-		test('grants when user reaches top 10', () => {
-			const context = createContext({ overallRank: 10 });
+		test('grants when user reaches top threshold', () => {
+			const context = createContext({ overallRank: ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK });
 			const result = ACHIEVEMENT_CHECKS.high_roller(context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
-		test('does not grant when rank is above 10', () => {
-			const context = createContext({ overallRank: 11 });
+		test('does not grant when rank is above threshold', () => {
+			const context = createContext({
+				overallRank: ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK + 1,
+			});
 			const result = ACHIEVEMENT_CHECKS.high_roller(context);
 			expect(result.shouldGrant).toBe(false);
 		});
@@ -173,14 +178,14 @@ describe('Achievement check functions', () => {
 	});
 
 	describe('consistent', () => {
-		test('grants when user has 100+ wins', () => {
-			const context = createContext({ totalWins: 100 });
+		test('grants when user reaches win threshold', () => {
+			const context = createContext({ totalWins: ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS });
 			const result = ACHIEVEMENT_CHECKS.consistent(context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
-		test('does not grant when wins below 100', () => {
-			const context = createContext({ totalWins: 99 });
+		test('does not grant when wins below threshold', () => {
+			const context = createContext({ totalWins: ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS - 1 });
 			const result = ACHIEVEMENT_CHECKS.consistent(context);
 			expect(result.shouldGrant).toBe(false);
 		});
@@ -197,33 +202,39 @@ describe('Achievement check functions', () => {
 
 	describe('comeback', () => {
 		test('grants when recovering from low balance with a win', () => {
-			// User was at 500 chips, won 1500, now at 2000
-			// 2000 - 1500 = 500 < 1000, so was low before win
+			// User was below threshold, won and recovered
+			const balanceBelowThreshold = ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE - 500; // 500 chips
+			const winAmount = 1500;
+			const newBalance = balanceBelowThreshold + winAmount;
 			const context = createContext({
-				currentChipBalance: 2000,
-				recentWinAmount: 1500,
+				currentChipBalance: newBalance,
+				recentWinAmount: winAmount,
 			});
 			const result = ACHIEVEMENT_CHECKS.comeback(context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
-		test('grants when barely below 1000 threshold', () => {
-			// User was at 999 chips, won 100, now at 1099
-			// 1099 - 100 = 999 < 1000
+		test('grants when barely below threshold', () => {
+			// User was at threshold - 1, won something
+			const balanceBelowThreshold = ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE - 1;
+			const winAmount = 100;
+			const newBalance = balanceBelowThreshold + winAmount;
 			const context = createContext({
-				currentChipBalance: 1099,
-				recentWinAmount: 100,
+				currentChipBalance: newBalance,
+				recentWinAmount: winAmount,
 			});
 			const result = ACHIEVEMENT_CHECKS.comeback(context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
-		test('does not grant when was not below 1000 before win', () => {
-			// User was at 4000 chips, won 1000, now at 5000
-			// 5000 - 1000 = 4000 >= 1000, not low before win
+		test('does not grant when was not below threshold before win', () => {
+			// User was above threshold before win
+			const balanceAboveThreshold = ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE + 3000;
+			const winAmount = 1000;
+			const newBalance = balanceAboveThreshold + winAmount;
 			const context = createContext({
-				currentChipBalance: 5000,
-				recentWinAmount: 1000,
+				currentChipBalance: newBalance,
+				recentWinAmount: winAmount,
 			});
 			const result = ACHIEVEMENT_CHECKS.comeback(context);
 			expect(result.shouldGrant).toBe(false);

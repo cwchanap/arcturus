@@ -560,6 +560,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		// Track game stats and check achievements (awaited - blocks response)
 		// This runs after the chip update succeeds and is awaited to return achievements in the response
 		let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+		const warnings: string[] = [];
 
 		if (outcome && validOutcomes.includes(outcome as string)) {
 			try {
@@ -616,10 +617,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				}
 			} catch (statsError) {
 				// Log but don't fail the chip update if stats tracking fails
+				const errorMessage =
+					statsError instanceof Error ? statsError.message : 'Unknown stats tracking error';
 				console.error(
 					'[STATS_ERROR] Failed to record game stats or check achievements:',
 					statsError,
 				);
+				warnings.push(`Stats tracking failed: ${errorMessage}`);
 			}
 		}
 
@@ -633,6 +637,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				message: 'Chip balance updated successfully',
 				// Include newly earned achievements for client-side notifications
 				newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+				// Include warnings for non-fatal errors (e.g., stats tracking failures)
+				warnings: warnings.length > 0 ? warnings : undefined,
 			}),
 			{
 				status: 200,

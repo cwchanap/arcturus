@@ -963,9 +963,10 @@ export function initBlackjackClient(): void {
 						setStatusIfNotRoundResult('Balance synced successfully.');
 					}
 
-					// Check for newly earned achievements
+					// Check for newly earned achievements and warnings
 					const data = (await response.json().catch(() => ({}))) as {
 						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+						warnings?: string[];
 					};
 					if (
 						data.newAchievements &&
@@ -978,6 +979,10 @@ export function initBlackjackClient(): void {
 								detail: { achievements: data.newAchievements },
 							}),
 						);
+					}
+					// Log warnings from server for debugging (stats tracking failures, etc.)
+					if (data.warnings && Array.isArray(data.warnings) && data.warnings.length > 0) {
+						console.warn('[BALANCE_SYNC] Server warnings:', data.warnings);
 					}
 					return;
 				}

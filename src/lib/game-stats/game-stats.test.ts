@@ -1,5 +1,4 @@
-import { describe, expect, test } from 'bun:test';
-import { calculateMetrics } from './game-stats';
+import { describe, expect, mock, test } from 'bun:test';
 import type { GameStats } from './types';
 import {
 	GAME_TYPES,
@@ -9,6 +8,96 @@ import {
 	GAME_TYPE_LABELS,
 	RANKING_METRIC_LABELS,
 } from './constants';
+
+const mockUpdateGameStats = Object.assign(
+	async (_db: unknown, _userId: string, _gameType: string, update: any) => {
+		mockUpdateGameStats.calls.push(update);
+	},
+	{ calls: [] as any[] },
+);
+
+const defaultPlayers = [
+	{
+		userId: 'user1',
+		playerName: 'Alice',
+		totalWins: 10,
+		totalLosses: 5,
+		handsPlayed: 20,
+		biggestWin: 500,
+		netProfit: 200,
+	},
+	{
+		userId: 'user2',
+		playerName: 'Bob',
+		totalWins: 8,
+		totalLosses: 7,
+		handsPlayed: 20,
+		biggestWin: 300,
+		netProfit: 100,
+	},
+];
+
+const mockGetTopPlayersForGame = Object.assign(async () => defaultPlayers, {
+	calls: [] as any[],
+	impl: async () => defaultPlayers,
+});
+
+const mockGetUserGameRank = Object.assign(async () => 2, { calls: [] as any[], impl: async () => 2 });
+const mockGetTotalPlayersForGame = Object.assign(async () => 10, {
+	calls: [] as any[],
+	impl: async () => 10,
+});
+const mockGetAllUserGameStats = Object.assign(async () => [], {
+	calls: [] as any[],
+	impl: async () => [],
+});
+
+mock.module('./game-stats-repository', () => ({
+	getAllUserGameStats: async (...args: unknown[]) => {
+		mockGetAllUserGameStats.calls.push(args);
+		return mockGetAllUserGameStats.impl();
+	},
+	updateGameStats: async (
+		db: unknown,
+		userId: string,
+		gameType: string,
+		update: unknown,
+	) => {
+		return mockUpdateGameStats(db, userId, gameType, update);
+	},
+	getTopPlayersForGame: async (...args: unknown[]) => {
+		mockGetTopPlayersForGame.calls.push(args);
+		return mockGetTopPlayersForGame.impl();
+	},
+	getUserGameRank: async (...args: unknown[]) => {
+		mockGetUserGameRank.calls.push(args);
+		return mockGetUserGameRank.impl();
+	},
+	getTotalPlayersForGame: async (...args: unknown[]) => {
+		mockGetTotalPlayersForGame.calls.push(args);
+		return mockGetTotalPlayersForGame.impl();
+	},
+}));
+
+const gameStatsModule = await import('./game-stats');
+const {
+	calculateMetrics,
+	recordGameRound,
+	getGameLeaderboardData,
+	getUserStatsAllGames,
+} = gameStatsModule;
+
+function resetGameStatsMocks() {
+	mockUpdateGameStats.calls = [];
+	mockGetTopPlayersForGame.calls = [];
+	mockGetUserGameRank.calls = [];
+	mockGetTotalPlayersForGame.calls = [];
+	mockGetAllUserGameStats.calls = [];
+	mockGetTopPlayersForGame.impl = async () => defaultPlayers;
+	mockGetUserGameRank.impl = async () => 2;
+	mockGetTotalPlayersForGame.impl = async () => 10;
+	mockGetAllUserGameStats.impl = async () => [];
+}
 
 describe('calculateMetrics', () => {
 	test('calculates win rate correctly for player with wins and losses', () => {
@@ -109,6 +198,96 @@ describe('calculateMetrics', () => {
 		expect(result.handsPlayed).toBe(35);
 		expect(result.biggestWin).toBe(2500);
 		expect(result.netProfit).toBe(-1500);
+	});
+});
+
+describe('recordGameRound', () => {
+	test('derives win/loss increments from outcome', async () => {
+		resetGameStatsMocks();
+		await recordGameRound({} as any, 'user1', {
+			gameType: 'blackjack',
+			outcome: 'win',
+			chipDelta: 50,
+		});
+
+		expect(mockUpdateGameStats.calls.length).toBe(1);
+		expect(mockUpdateGameStats.calls[0]).toMatchObject({
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			handsIncrement: 1,
+			chipDelta: 50,
+		});
+	});
+
+	test('uses provided split-hand increments and biggest win candidate', async () => {
+		resetGameStatsMocks();
+		await recordGameRound({} as any, 'user1', {
+			gameType: 'blackjack',
+			outcome: 'loss',
+			chipDelta: -20,
+			handCount: 2,
+			winsIncrement: 1,
+			lossesIncrement: 1,
+			biggestWinCandidate: 150,
+		});
+
+		expect(mockUpdateGameStats.calls[0]).toMatchObject({
+			winsIncrement: 1,
+			lossesIncrement: 1,
+			handsIncrement: 2,
+			chipDelta: -20,
+			biggestWinCandidate: 150,
+		});
+	});
+});
+
+describe('getGameLeaderboardData', () => {
+	test('returns leaderboard data with current user rank', async () => {
+		resetGameStatsMocks();
+		const result = await getGameLeaderboardData({} as any, {
+			gameType: 'blackjack',
+			rankingMetric: 'wins',
+			currentUserId: 'user1',
+			limit: 2,
+		});
+
+		expect(result.entries.length).toBe(2);
+		expect(result.currentUserRank).toBe(2);
+		expect(result.currentUserInTop).toBe(true);
+		expect(result.totalPlayers).toBe(10);
+	});
+
+	test('handles null current user', async () => {
+		resetGameStatsMocks();
+		const result = await getGameLeaderboardData({} as any, {
+			gameType: 'blackjack',
+			rankingMetric: 'net_profit',
+			currentUserId: null,
+		});
+
+		expect(result.currentUserRank).toBeNull();
+		expect(result.currentUserInTop).toBe(false);
+	});
+});
+
+describe('getUserStatsAllGames', () => {
+	test('calculates metrics for all stats', async () => {
+		resetGameStatsMocks();
+		mockGetAllUserGameStats.impl = async () => [
+			{
+				userId: 'user1',
+				gameType: 'blackjack',
+				totalWins: 2,
+				totalLosses: 2,
+				handsPlayed: 4,
+				biggestWin: 100,
+				netProfit: 10,
+				updatedAt: new Date(),
+			},
+		];
+
+		const stats = await getUserStatsAllGames({} as any, 'user1');
+		expect(stats[0].winRate).toBe(50);
 	});
 });
 

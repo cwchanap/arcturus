@@ -9,6 +9,10 @@ import {
 	getUserGameRank,
 	getTotalPlayersForGame,
 	updateGameStats,
+	getGameStats,
+	initializeGameStats,
+	getTopPlayersForGame,
+	getAggregateUserStats,
 } from './game-stats-repository';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
@@ -22,11 +26,15 @@ function createMockDb({
 	allStats = [],
 	defaultCount = 0,
 	countResolver,
+	capturedInsert,
+	capturedOrder,
 }: {
 	userStats: any;
 	allStats: any[];
 	defaultCount: number;
 	countResolver?: (condition: unknown) => number;
+	capturedInsert?: { values?: any };
+	capturedOrder?: { orderBy?: unknown };
 }): Database {
 	return {
 		select: (columns?: any) => {
@@ -35,7 +43,7 @@ function createMockDb({
 
 			return {
 				from: (table: any) => {
-					return {
+					const chain = {
 						where: (condition: any) => {
 							if (isCountQuery) {
 								// Count query: return a promise that resolves to an array with count
@@ -44,32 +52,50 @@ function createMockDb({
 							}
 
 							// getGameStats query pattern: return { limit() }
-							return {
+							const whereChain = {
 								limit: (limit: number) => {
 									return Promise.resolve(userStats ? [userStats] : []);
 								},
+								then: (onFulfilled: (value: any) => any, onRejected?: (reason: any) => any) =>
+									Promise.resolve(allStats).then(onFulfilled, onRejected),
 							};
+							return whereChain;
 						},
-						orderBy: () => ({
+						orderBy: (orderByClause?: unknown) => ({
 							limit: () => {
+								if (capturedOrder) {
+									capturedOrder.orderBy = orderByClause;
+								}
 								return Promise.resolve([]);
 							},
 						}),
 					};
-				},
-				innerJoin: () => {
-					return {
+					(chain as typeof chain & { innerJoin?: unknown }).innerJoin = () => ({
 						where: () => ({
-							orderBy: () => ({
+							orderBy: (orderByClause?: unknown) => ({
 								limit: () => {
+									if (capturedOrder) {
+										capturedOrder.orderBy = orderByClause;
+									}
 									return Promise.resolve(allStats);
 								},
 							}),
 						}),
-					};
+					});
+					return chain;
 				},
 			};
 		},
+		insert: () => ({
+			values: (values: any) => {
+				if (capturedInsert) {
+					capturedInsert.values = values;
+				}
+				return {
+					onConflictDoNothing: () => Promise.resolve(),
+				};
+			},
+		}),
 	} as unknown as Database;
 }
 
@@ -367,6 +393,17 @@ describe('getTotalPlayersForGame', () => {
 		const total = await getTotalPlayersForGame(mockDb, 'blackjack' as GameType, 'win_rate');
 		expect(total).toBe(7);
 	});
+
+	test('returns total players without ranking metric', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 4,
+		});
+
+		const total = await getTotalPlayersForGame(mockDb, 'poker' as GameType);
+		expect(total).toBe(4);
+	});
 });
 
 describe('updateGameStats', () => {
@@ -409,5 +446,108 @@ describe('updateGameStats', () => {
 
 		const singleRoundText = extractSqlText(captured?.biggestWin);
 		expect(aggregatedText).not.toBe(singleRoundText);
+	});
+});
+
+describe('getGameStats', () => {
+	test('returns null when no stats exist', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+		});
+
+		const result = await getGameStats(mockDb, 'user1', 'blackjack' as GameType);
+		expect(result).toBeNull();
+	});
+
+	test('returns mapped stats when present', async () => {
+		const mockDb = createMockDb({
+			userStats: {
+				userId: 'user1',
+				gameType: 'blackjack',
+				totalWins: 2,
+				totalLosses: 3,
+				handsPlayed: 5,
+				biggestWin: 100,
+				netProfit: 10,
+				updatedAt: new Date('2024-01-01'),
+			},
+			allStats: [],
+			defaultCount: 0,
+		});
+
+		const result = await getGameStats(mockDb, 'user1', 'blackjack' as GameType);
+		expect(result?.totalWins).toBe(2);
+		expect(result?.netProfit).toBe(10);
+	});
+});
+
+describe('initializeGameStats', () => {
+	test('inserts default stats with zeros', async () => {
+		const captured: { values?: any } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedInsert: captured,
+		});
+
+		await initializeGameStats(mockDb, 'user1', 'baccarat' as GameType);
+		expect(captured.values?.totalWins).toBe(0);
+		expect(captured.values?.totalLosses).toBe(0);
+		expect(captured.values?.handsPlayed).toBe(0);
+	});
+});
+
+describe('getTopPlayersForGame', () => {
+	test('orders by biggest win metric', async () => {
+		const capturedOrder: { orderBy?: unknown } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedOrder,
+		});
+
+		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'biggest_win', 5);
+		expect(capturedOrder.orderBy).toBeDefined();
+	});
+});
+
+describe('getAggregateUserStats', () => {
+	test('aggregates stats across games', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [
+				{
+					userId: 'user1',
+					gameType: 'blackjack',
+					totalWins: 2,
+					totalLosses: 1,
+					handsPlayed: 3,
+					biggestWin: 200,
+					netProfit: 50,
+					updatedAt: new Date(),
+				},
+				{
+					userId: 'user1',
+					gameType: 'poker',
+					totalWins: 5,
+					totalLosses: 5,
+					handsPlayed: 10,
+					biggestWin: 500,
+					netProfit: -20,
+					updatedAt: new Date(),
+				},
+			],
+			defaultCount: 0,
+		});
+
+		const result = await getAggregateUserStats(mockDb, 'user1');
+		expect(result.totalWins).toBe(7);
+		expect(result.totalHandsPlayed).toBe(13);
+		expect(result.biggestWin).toBe(500);
+		expect(result.totalNetProfit).toBe(30);
 	});
 });

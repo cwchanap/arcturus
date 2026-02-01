@@ -1,11 +1,14 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
-import type { AchievementDefinition } from './types';
+import type { AchievementDefinition, AchievementId, UserAchievementRecord } from './types';
 
-const mockGetEarnedAchievementIds = Object.assign(async () => ['rising_star'] as const, {
+const mockGetEarnedAchievementIds = Object.assign(
+	async () => ['rising_star'] as AchievementId[],
+	{
 	calls: [] as Array<{ userId: string }>,
-});
+	},
+);
 const mockGetAggregateUserStats = Object.assign(
 	async () => ({
 		totalWins: 120,
@@ -27,9 +30,14 @@ const mockGrantAchievement = Object.assign(
 	{ calls: [] as Array<{ achievementId: string; gameType?: GameType }> },
 );
 const mockGetUserAchievements = Object.assign(
-	async () => [
-		{ achievementId: 'rising_star', earnedAt: new Date('2025-01-01'), gameType: null },
-	],
+	async () =>
+		[
+			{
+				achievementId: 'rising_star',
+				earnedAt: new Date('2025-01-01'),
+				gameType: null,
+			},
+		] as UserAchievementRecord[],
 	{ calls: [] as Array<{ userId: string }> },
 );
 
@@ -41,7 +49,15 @@ function resetMocks() {
 	mockGetUserAchievements.calls = [];
 }
 
-mock.module('./achievement-repository', () => ({
+const achievementsModule = await import('./achievements');
+const { createAchievementService, ACHIEVEMENTS } = achievementsModule;
+
+const {
+	checkAndGrantAchievements,
+	getAchievementsWithStatus,
+	getUnlockedAchievements,
+	getAchievementProgress,
+} = createAchievementService({
 	getEarnedAchievementIds: async (_db: Database, userId: string) => {
 		mockGetEarnedAchievementIds.calls.push({ userId });
 		return mockGetEarnedAchievementIds();
@@ -60,30 +76,15 @@ mock.module('./achievement-repository', () => ({
 		mockGetUserAchievements.calls.push({ userId });
 		return mockGetUserAchievements();
 	},
-}));
-
-mock.module('../game-stats/game-stats-repository', () => ({
 	getAggregateUserStats: async (_db: Database, userId: string) => {
 		mockGetAggregateUserStats.calls.push({ userId });
 		return mockGetAggregateUserStats();
 	},
-}));
-
-mock.module('../leaderboard/leaderboard-repository', () => ({
 	getUserRank: async (_db: Database, userId: string) => {
 		mockGetUserRank.calls.push({ userId });
 		return mockGetUserRank();
 	},
-}));
-
-const achievementsModule = await import('./achievements');
-const {
-	checkAndGrantAchievements,
-	getAchievementsWithStatus,
-	getUnlockedAchievements,
-	getAchievementProgress,
-	ACHIEVEMENTS,
-} = achievementsModule;
+});
 
 function createMockDb(): Database {
 	return {} as Database;

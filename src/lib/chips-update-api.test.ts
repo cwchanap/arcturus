@@ -1,5 +1,7 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { Database } from '../lib/db';
+import type { AchievementDefinition } from '../lib/achievements/types';
+import { createPostHandler } from '../pages/api/chips/update';
 
 const mockCreateDb = Object.assign(
 	(dbBinding: unknown) => {
@@ -23,6 +25,14 @@ const mockRecordGameRound = Object.assign(
 	},
 );
 
+const mockAchievement: AchievementDefinition = {
+	id: 'rising_star',
+	name: 'Rising Star',
+	description: 'Test achievement',
+	category: 'milestone',
+	icon: '🌟',
+};
+
 const mockCheckAndGrantAchievements = Object.assign(
 	async () => {
 		mockCheckAndGrantAchievements.calls.push({});
@@ -30,30 +40,36 @@ const mockCheckAndGrantAchievements = Object.assign(
 	},
 	{
 		calls: [] as Array<Record<string, never>>,
-		impl: async () => [{ id: 'rising_star', name: 'Rising Star', icon: '🌟' }],
+		impl: async () => [mockAchievement],
 	},
 );
 
-mock.module('../../../lib/db', () => ({
-	createDb: (dbBinding: unknown) => mockCreateDb(dbBinding),
-}));
-
-mock.module('../../../lib/game-stats/game-stats', () => ({
-	recordGameRound: async (..._args: unknown[]) => mockRecordGameRound(),
-}));
-
-mock.module('../../../lib/achievements/achievements', () => ({
-	checkAndGrantAchievements: async (..._args: unknown[]) => mockCheckAndGrantAchievements(),
-}));
+function createHandler() {
+	return createPostHandler({
+		createDb: (dbBinding: unknown) => mockCreateDb(dbBinding),
+		recordGameRound: async (_db, _userId, _record) => {
+			void _db;
+			void _userId;
+			void _record;
+			return mockRecordGameRound();
+		},
+		checkAndGrantAchievements: async (_db, _userId, _currentChipBalance, _options) => {
+			void _db;
+			void _userId;
+			void _currentChipBalance;
+			void _options;
+			return mockCheckAndGrantAchievements();
+		},
+		lastUpdateByUser: new Map(),
+	});
+}
 
 function resetMocks() {
 	mockCreateDb.calls = [];
 	mockRecordGameRound.calls = [];
 	mockRecordGameRound.impl = async () => {};
 	mockCheckAndGrantAchievements.calls = [];
-	mockCheckAndGrantAchievements.impl = async () => [
-		{ id: 'rising_star', name: 'Rising Star', icon: '🌟' },
-	];
+	mockCheckAndGrantAchievements.impl = async () => [mockAchievement];
 }
 
 function createMockDb({
@@ -115,8 +131,7 @@ async function readJson(response: Response) {
 describe('chips update API', () => {
 	test('rejects unauthenticated requests', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
@@ -130,8 +145,7 @@ describe('chips update API', () => {
 
 	test('rejects invalid JSON body', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: '{notjson',
@@ -149,8 +163,7 @@ describe('chips update API', () => {
 
 	test('rejects invalid delta', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 1.5, gameType: 'blackjack' }),
@@ -167,8 +180,7 @@ describe('chips update API', () => {
 
 	test('rejects non-finite delta values', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -186,8 +198,7 @@ describe('chips update API', () => {
 
 	test('rejects invalid game type', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 10, gameType: 'slots' }),
@@ -204,8 +215,7 @@ describe('chips update API', () => {
 
 	test('rejects invalid outcome values', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 10, gameType: 'blackjack', outcome: 'draw' }),
@@ -222,8 +232,7 @@ describe('chips update API', () => {
 
 	test('rejects invalid split-hand consistency', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({
@@ -246,8 +255,7 @@ describe('chips update API', () => {
 
 	test('rejects decided hands exceeding handCount', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({
@@ -270,8 +278,7 @@ describe('chips update API', () => {
 
 	test('rejects win exceeding game limit', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 60001, gameType: 'blackjack' }),
@@ -288,8 +295,7 @@ describe('chips update API', () => {
 
 	test('rejects loss exceeding game limit', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: -100001, gameType: 'baccarat' }),
@@ -306,8 +312,7 @@ describe('chips update API', () => {
 
 	test('rejects non-integer previousBalance', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -329,8 +334,7 @@ describe('chips update API', () => {
 
 	test('rejects when balance goes negative', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 100 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -348,8 +352,7 @@ describe('chips update API', () => {
 
 	test('returns database error on DB failure', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ selectThrows: true });
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -367,8 +370,7 @@ describe('chips update API', () => {
 
 	test('rejects missing DB binding', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
@@ -385,8 +387,7 @@ describe('chips update API', () => {
 
 	test('returns balance mismatch when optimistic lock fails', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ updateChanges: 0 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -404,8 +405,7 @@ describe('chips update API', () => {
 
 	test('updates balance and returns achievements for valid request', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -432,8 +432,7 @@ describe('chips update API', () => {
 
 	test('repairs fractional stored balances', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		const mockDb = createMockDb({ chipBalance: 1000, readChipBalance: 1000.75 });
 		mockCreateDb.db = mockDb;
 		const request = new Request('http://test.local', {
@@ -453,8 +452,7 @@ describe('chips update API', () => {
 
 	test('returns warning when stats tracking fails', async () => {
 		resetMocks();
-		const updateModule = await import('../pages/api/chips/update');
-		const { POST } = updateModule;
+		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
 		mockRecordGameRound.impl = async () => {
 			throw new Error('stats fail');

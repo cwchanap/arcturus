@@ -123,7 +123,22 @@ const MIN_UPDATE_INTERVAL_MS = 2000; // 2 seconds between updates
 // Note: This resets on worker restart; for production, use KV or D1
 const lastUpdateByUser = new Map<string, number>();
 
-export const POST: APIRoute = async ({ request, locals }) => {
+type PostHandlerDeps = {
+	createDb: typeof createDb;
+	recordGameRound: typeof recordGameRound;
+	checkAndGrantAchievements: typeof checkAndGrantAchievements;
+	lastUpdateByUser: Map<string, number>;
+};
+
+export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
+	const {
+		createDb: createDbImpl = createDb,
+		recordGameRound: recordGameRoundImpl = recordGameRound,
+		checkAndGrantAchievements: checkAndGrantAchievementsImpl = checkAndGrantAchievements,
+		lastUpdateByUser: lastUpdateByUserImpl = lastUpdateByUser,
+	} = overrides;
+
+	return async ({ request, locals }: Parameters<APIRoute>[0]) => {
 	// Validate authentication
 	if (!locals.user) {
 		return new Response(
@@ -143,7 +158,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const now = Date.now();
 
 	// Rate limiting check
-	const lastUpdate = lastUpdateByUser.get(userId) ?? 0;
+	const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
 	if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
 		const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
 		return new Response(
@@ -452,7 +467,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	// Database operations wrapped in try-catch
 	try {
-		const db = createDb(dbBinding);
+		const db = createDbImpl(dbBinding);
 
 		// Load authoritative server balance from DB. This also lets us repair any historical
 		// fractional balances caused by older payout logic.
@@ -548,7 +563,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		}
 
 		// Update rate limit timestamp on successful update
-		lastUpdateByUser.set(userId, Date.now());
+		lastUpdateByUserImpl.set(userId, Date.now());
 
 		// Audit log for wins (positive deltas) to help detect exploitation patterns
 		if (delta > 0) {
@@ -581,7 +596,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				});
 
 				// Record game stats
-				await recordGameRound(db, userId, {
+				await recordGameRoundImpl(db, userId, {
 					gameType: gameType as GameType,
 					outcome: outcome as GameRoundOutcome,
 					chipDelta: delta,
@@ -595,7 +610,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 				// Check for newly earned achievements
 				// For split-hand wins, use actualBiggestWinCandidate instead of total delta
-				const earnedAchievements = await checkAndGrantAchievements(db, userId, newBalance, {
+				const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
 					recentWinAmount:
 						typeof actualBiggestWinCandidate === 'number' && actualBiggestWinCandidate > 0
 							? actualBiggestWinCandidate
@@ -659,4 +674,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			},
 		);
 	}
-};
+	};
+}
+
+export const POST: APIRoute = createPostHandler();

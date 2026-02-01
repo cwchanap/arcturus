@@ -56,9 +56,7 @@ describe('achievement-repository', () => {
 	test('getUserAchievements maps results with types', async () => {
 		const now = new Date();
 		const mockDb = createMockDb({
-			selectResult: [
-				{ achievementId: 'rising_star', earnedAt: now, gameType: 'blackjack' },
-			],
+			selectResult: [{ achievementId: 'rising_star', earnedAt: now, gameType: 'blackjack' }],
 		});
 
 		const results = await getUserAchievements(mockDb, 'user1');

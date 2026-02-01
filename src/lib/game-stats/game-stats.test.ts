@@ -42,7 +42,10 @@ const mockGetTopPlayersForGame = Object.assign(async () => defaultPlayers, {
 	impl: async () => defaultPlayers,
 });
 
-const mockGetUserGameRank = Object.assign(async () => 2, { calls: [] as any[], impl: async () => 2 });
+const mockGetUserGameRank = Object.assign(async () => 2, {
+	calls: [] as any[],
+	impl: async () => 2,
+});
 const mockGetTotalPlayersForGame = Object.assign(async () => 10, {
 	calls: [] as any[],
 	impl: async () => 10,
@@ -57,12 +60,7 @@ mock.module('./game-stats-repository', () => ({
 		mockGetAllUserGameStats.calls.push(args);
 		return mockGetAllUserGameStats.impl();
 	},
-	updateGameStats: async (
-		db: unknown,
-		userId: string,
-		gameType: string,
-		update: unknown,
-	) => {
+	updateGameStats: async (db: unknown, userId: string, gameType: string, update: unknown) => {
 		return mockUpdateGameStats(db, userId, gameType, update);
 	},
 	getTopPlayersForGame: async (...args: unknown[]) => {
@@ -80,12 +78,8 @@ mock.module('./game-stats-repository', () => ({
 }));
 
 const gameStatsModule = await import('./game-stats');
-const {
-	calculateMetrics,
-	recordGameRound,
-	getGameLeaderboardData,
-	getUserStatsAllGames,
-} = gameStatsModule;
+const { calculateMetrics, recordGameRound, getGameLeaderboardData, getUserStatsAllGames } =
+	gameStatsModule;
 
 function resetGameStatsMocks() {
 	mockUpdateGameStats.calls = [];

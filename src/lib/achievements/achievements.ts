@@ -92,18 +92,11 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			const result = checkFn(context);
 
 			if (result.shouldGrant) {
-				const granted = await deps.grantAchievement(
-					db,
-					userId,
-					achievement.id,
-					result.gameType,
-				);
+				const granted = await deps.grantAchievement(db, userId, achievement.id, result.gameType);
 
 				if (granted) {
 					newlyGranted.push(achievement);
-					console.warn(
-						`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`,
-					);
+					console.warn(`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`);
 				}
 			}
 		}

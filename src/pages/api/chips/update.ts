@@ -139,232 +139,64 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 	} = overrides;
 
 	return async ({ request, locals }: Parameters<APIRoute>[0]) => {
-	// Validate authentication
-	if (!locals.user) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'UNAUTHORIZED',
-				message: 'Authentication required',
-			}),
-			{
-				status: 401,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	const userId = locals.user.id;
-	const now = Date.now();
-
-	// Rate limiting check
-	const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
-	if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
-		const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'RATE_LIMITED',
-				message: `Please wait ${waitTime} second(s) before updating chips again`,
-			}),
-			{
-				status: 429,
-				headers: {
-					'Content-Type': 'application/json',
-					'Retry-After': String(waitTime),
-				},
-			},
-		);
-	}
-
-	// Parse request body with explicit error handling for malformed JSON
-	let body: {
-		delta?: unknown;
-		gameType?: unknown;
-		previousBalance?: unknown;
-		maxBet?: unknown;
-		outcome?: unknown;
-		handCount?: unknown;
-		winsIncrement?: unknown;
-		lossesIncrement?: unknown;
-		biggestWinCandidate?: unknown;
-	};
-	try {
-		body = await request.json();
-	} catch {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_REQUEST_BODY',
-				message: 'Request body must be valid JSON',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	const {
-		delta,
-		gameType,
-		previousBalance: clientPreviousBalance,
-		outcome,
-		handCount,
-		winsIncrement,
-		lossesIncrement,
-		biggestWinCandidate,
-	} = body;
-	// Note: body.maxBet is intentionally NOT used for validation.
-	// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
-	// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
-	// that apply uniformly regardless of what the client claims.
-
-	// Validate delta is a finite integer
-	if (typeof delta !== 'number' || !Number.isFinite(delta) || !Number.isInteger(delta)) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_DELTA',
-				message: 'Delta must be a finite integer',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate gameType is a string
-	if (typeof gameType !== 'string') {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_REQUEST_BODY',
-				message: 'gameType must be a string',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	const validGameTypes = ['blackjack', 'baccarat', 'poker'];
-	if (!validGameTypes.includes(gameType)) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_GAME_TYPE',
-				message: 'Invalid game type',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate outcome if provided (for game stats tracking)
-	const validOutcomes = ['win', 'loss', 'push'];
-	if (outcome !== undefined && (typeof outcome !== 'string' || !validOutcomes.includes(outcome))) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_OUTCOME',
-				message: 'outcome must be one of: win, loss, push',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate handCount if provided
-	if (
-		handCount !== undefined &&
-		(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1)
-	) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_HAND_COUNT',
-				message: 'handCount must be a positive integer',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate winsIncrement if provided (for split-hand tracking)
-	if (
-		winsIncrement !== undefined &&
-		(typeof winsIncrement !== 'number' || !Number.isInteger(winsIncrement) || winsIncrement < 0)
-	) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_WINS_INCREMENT',
-				message: 'winsIncrement must be a non-negative integer',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate lossesIncrement if provided (for split-hand tracking)
-	if (
-		lossesIncrement !== undefined &&
-		(typeof lossesIncrement !== 'number' ||
-			!Number.isInteger(lossesIncrement) ||
-			lossesIncrement < 0)
-	) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_LOSSES_INCREMENT',
-				message: 'lossesIncrement must be a non-negative integer',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate biggestWinCandidate if provided (for split-hand stats tracking)
-	if (
-		biggestWinCandidate !== undefined &&
-		(typeof biggestWinCandidate !== 'number' ||
-			!Number.isInteger(biggestWinCandidate) ||
-			biggestWinCandidate < 0)
-	) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_BIGGEST_WIN_CANDIDATE',
-				message: 'biggestWinCandidate must be a non-negative integer',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate consistency between winsIncrement, lossesIncrement, and handCount
-	if (winsIncrement !== undefined || lossesIncrement !== undefined) {
-		if (handCount === undefined) {
+		// Validate authentication
+		if (!locals.user) {
 			return new Response(
 				JSON.stringify({
 					success: false,
-					error: 'INVALID_SPLIT_HAND_CONSISTENCY',
-					message: 'handCount must be provided when winsIncrement or lossesIncrement is specified',
+					error: 'UNAUTHORIZED',
+					message: 'Authentication required',
+				}),
+				{
+					status: 401,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		const userId = locals.user.id;
+		const now = Date.now();
+
+		// Rate limiting check
+		const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
+		if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+			const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'RATE_LIMITED',
+					message: `Please wait ${waitTime} second(s) before updating chips again`,
+				}),
+				{
+					status: 429,
+					headers: {
+						'Content-Type': 'application/json',
+						'Retry-After': String(waitTime),
+					},
+				},
+			);
+		}
+
+		// Parse request body with explicit error handling for malformed JSON
+		let body: {
+			delta?: unknown;
+			gameType?: unknown;
+			previousBalance?: unknown;
+			maxBet?: unknown;
+			outcome?: unknown;
+			handCount?: unknown;
+			winsIncrement?: unknown;
+			lossesIncrement?: unknown;
+			biggestWinCandidate?: unknown;
+		};
+		try {
+			body = await request.json();
+		} catch {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_REQUEST_BODY',
+					message: 'Request body must be valid JSON',
 				}),
 				{
 					status: 400,
@@ -373,16 +205,28 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		const totalDecidedHands =
-			(typeof winsIncrement === 'number' ? winsIncrement : 0) +
-			(typeof lossesIncrement === 'number' ? lossesIncrement : 0);
+		const {
+			delta,
+			gameType,
+			previousBalance: clientPreviousBalance,
+			outcome,
+			handCount,
+			winsIncrement,
+			lossesIncrement,
+			biggestWinCandidate,
+		} = body;
+		// Note: body.maxBet is intentionally NOT used for validation.
+		// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
+		// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
+		// that apply uniformly regardless of what the client claims.
 
-		if (totalDecidedHands > handCount) {
+		// Validate delta is a finite integer
+		if (typeof delta !== 'number' || !Number.isFinite(delta) || !Number.isInteger(delta)) {
 			return new Response(
 				JSON.stringify({
 					success: false,
-					error: 'INVALID_SPLIT_HAND_CONSISTENCY',
-					message: 'The sum of winsIncrement and lossesIncrement cannot exceed handCount',
+					error: 'INVALID_DELTA',
+					message: 'Delta must be a finite integer',
 				}),
 				{
 					status: 400,
@@ -390,109 +234,141 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				},
 			);
 		}
-	}
 
-	// Determine limits based on game type
-	// Fallback to blackjack limits if somehow undefined (should be covered by validGameTypes check)
-	const limits = GAME_LIMITS[gameType as string] || GAME_LIMITS.blackjack;
-	const { maxWin, maxLoss } = limits;
-
-	// Asymmetric delta validation:
-	// - Losses (negative delta) allowed up to maxLoss
-	// - Wins (positive delta) capped at maxWin
-	if (delta > 0 && delta > maxWin) {
-		console.warn(
-			`[CHIP_AUDIT] User ${userId} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
-		);
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Win amount exceeds maximum allowed for ${gameType} (${maxWin})`,
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	if (delta < 0 && Math.abs(delta) > maxLoss) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DELTA_EXCEEDS_LIMIT',
-				message: `Loss amount exceeds maximum allowed for ${gameType} (${maxLoss})`,
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Validate previousBalance if provided (for optimistic locking)
-	if (
-		clientPreviousBalance !== undefined &&
-		(typeof clientPreviousBalance !== 'number' || !Number.isFinite(clientPreviousBalance))
-	) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'INVALID_REQUEST_BODY',
-				message: 'previousBalance must be a finite number if provided',
-			}),
-			{
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Check DB binding exists (may be undefined in local dev without Cloudflare bindings)
-	const dbBinding = locals.runtime?.env?.DB ?? null;
-	if (!dbBinding) {
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DATABASE_UNAVAILABLE',
-				message: 'Database is not configured',
-			}),
-			{
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
-
-	// Database operations wrapped in try-catch
-	try {
-		const db = createDbImpl(dbBinding);
-
-		// Load authoritative server balance from DB. This also lets us repair any historical
-		// fractional balances caused by older payout logic.
-		const [currentRow] = await db
-			.select({ chipBalance: user.chipBalance })
-			.from(user)
-			.where(eq(user.id, locals.user.id))
-			.limit(1);
-
-		const rawServerBalance = currentRow?.chipBalance ?? locals.user.chipBalance ?? 0;
-		const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
-
-		// Repair stored balance if it wasn't already an integer.
-		if (rawServerBalance !== serverBalance) {
-			await db.update(user).set({ chipBalance: serverBalance }).where(eq(user.id, locals.user.id));
+		// Validate gameType is a string
+		if (typeof gameType !== 'string') {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_REQUEST_BODY',
+					message: 'gameType must be a string',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
 		}
 
-		// Optimistic locking: reject if client's previousBalance doesn't match server
-		if (clientPreviousBalance !== undefined) {
-			if (!Number.isInteger(clientPreviousBalance)) {
+		const validGameTypes = ['blackjack', 'baccarat', 'poker'];
+		if (!validGameTypes.includes(gameType)) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_GAME_TYPE',
+					message: 'Invalid game type',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate outcome if provided (for game stats tracking)
+		const validOutcomes = ['win', 'loss', 'push'];
+		if (
+			outcome !== undefined &&
+			(typeof outcome !== 'string' || !validOutcomes.includes(outcome))
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_OUTCOME',
+					message: 'outcome must be one of: win, loss, push',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate handCount if provided
+		if (
+			handCount !== undefined &&
+			(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1)
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_HAND_COUNT',
+					message: 'handCount must be a positive integer',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate winsIncrement if provided (for split-hand tracking)
+		if (
+			winsIncrement !== undefined &&
+			(typeof winsIncrement !== 'number' || !Number.isInteger(winsIncrement) || winsIncrement < 0)
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_WINS_INCREMENT',
+					message: 'winsIncrement must be a non-negative integer',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate lossesIncrement if provided (for split-hand tracking)
+		if (
+			lossesIncrement !== undefined &&
+			(typeof lossesIncrement !== 'number' ||
+				!Number.isInteger(lossesIncrement) ||
+				lossesIncrement < 0)
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_LOSSES_INCREMENT',
+					message: 'lossesIncrement must be a non-negative integer',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate biggestWinCandidate if provided (for split-hand stats tracking)
+		if (
+			biggestWinCandidate !== undefined &&
+			(typeof biggestWinCandidate !== 'number' ||
+				!Number.isInteger(biggestWinCandidate) ||
+				biggestWinCandidate < 0)
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_BIGGEST_WIN_CANDIDATE',
+					message: 'biggestWinCandidate must be a non-negative integer',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		// Validate consistency between winsIncrement, lossesIncrement, and handCount
+		if (winsIncrement !== undefined || lossesIncrement !== undefined) {
+			if (handCount === undefined) {
 				return new Response(
 					JSON.stringify({
 						success: false,
-						error: 'INVALID_REQUEST_BODY',
-						message: 'previousBalance must be an integer if provided',
+						error: 'INVALID_SPLIT_HAND_CONSISTENCY',
+						message:
+							'handCount must be provided when winsIncrement or lossesIncrement is specified',
 					}),
 					{
 						status: 400,
@@ -501,33 +377,42 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				);
 			}
 
-			if (clientPreviousBalance !== serverBalance) {
+			const totalDecidedHands =
+				(typeof winsIncrement === 'number' ? winsIncrement : 0) +
+				(typeof lossesIncrement === 'number' ? lossesIncrement : 0);
+
+			if (totalDecidedHands > handCount) {
 				return new Response(
 					JSON.stringify({
 						success: false,
-						error: 'BALANCE_MISMATCH',
-						message: 'Balance has changed. Please refresh and try again.',
-						currentBalance: serverBalance,
+						error: 'INVALID_SPLIT_HAND_CONSISTENCY',
+						message: 'The sum of winsIncrement and lossesIncrement cannot exceed handCount',
 					}),
 					{
-						status: 409,
+						status: 400,
 						headers: { 'Content-Type': 'application/json' },
 					},
 				);
 			}
 		}
 
-		// Compute new balance server-side
-		const newBalance = serverBalance + delta;
+		// Determine limits based on game type
+		// Fallback to blackjack limits if somehow undefined (should be covered by validGameTypes check)
+		const limits = GAME_LIMITS[gameType as string] || GAME_LIMITS.blackjack;
+		const { maxWin, maxLoss } = limits;
 
-		// Validate computed balance is non-negative
-		if (newBalance < 0) {
+		// Asymmetric delta validation:
+		// - Losses (negative delta) allowed up to maxLoss
+		// - Wins (positive delta) capped at maxWin
+		if (delta > 0 && delta > maxWin) {
+			console.warn(
+				`[CHIP_AUDIT] User ${userId} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
+			);
 			return new Response(
 				JSON.stringify({
 					success: false,
-					error: 'INSUFFICIENT_BALANCE',
-					message: 'Insufficient chip balance for this operation',
-					currentBalance: serverBalance,
+					error: 'DELTA_EXCEEDS_LIMIT',
+					message: `Win amount exceeds maximum allowed for ${gameType} (${maxWin})`,
 				}),
 				{
 					status: 400,
@@ -536,144 +421,266 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		// Atomic update with optimistic locking via WHERE condition
-		// This prevents TOCTOU race by ensuring balance hasn't changed since we read it
-		const result = await db
-			.update(user)
-			.set({
-				chipBalance: newBalance,
-			})
-			.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
-
-		// Check if update affected any rows (D1 returns changes in meta)
-		const rowsAffected = getRowsAffected(result);
-		if (rowsAffected === 0) {
-			// Concurrent modification detected - balance changed between read and write
+		if (delta < 0 && Math.abs(delta) > maxLoss) {
 			return new Response(
 				JSON.stringify({
 					success: false,
-					error: 'BALANCE_MISMATCH',
-					message: 'Balance was modified concurrently. Please refresh and try again.',
+					error: 'DELTA_EXCEEDS_LIMIT',
+					message: `Loss amount exceeds maximum allowed for ${gameType} (${maxLoss})`,
 				}),
 				{
-					status: 409,
+					status: 400,
 					headers: { 'Content-Type': 'application/json' },
 				},
 			);
 		}
 
-		// Update rate limit timestamp on successful update
-		lastUpdateByUserImpl.set(userId, Date.now());
-
-		// Audit log for wins (positive deltas) to help detect exploitation patterns
-		if (delta > 0) {
-			console.warn(
-				`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${serverBalance} -> ${newBalance}`,
+		// Validate previousBalance if provided (for optimistic locking)
+		if (
+			clientPreviousBalance !== undefined &&
+			(typeof clientPreviousBalance !== 'number' || !Number.isFinite(clientPreviousBalance))
+		) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_REQUEST_BODY',
+					message: 'previousBalance must be a finite number if provided',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
 			);
 		}
 
-		// Track game stats and check achievements (awaited - blocks response)
-		// This runs after the chip update succeeds and is awaited to return achievements in the response
-		let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
-		const warnings: string[] = [];
-
-		if (outcome && validOutcomes.includes(outcome as string)) {
-			try {
-				const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
-
-				// Determine biggestWinCandidate for stats tracking
-				// For split-hand rounds (e.g., blackjack splits), client sends biggestWinCandidate
-				// to specify maximum per-hand win. We should use this value instead of null.
-				// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
-				// - No explicit biggestWinCandidate provided, OR
-				// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
-				const actualBiggestWinCandidate = determineBiggestWinCandidate({
-					delta,
-					biggestWinCandidate,
-					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
-					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
-					handCount: resolvedHandCount,
-				});
-
-				// Record game stats
-				await recordGameRoundImpl(db, userId, {
-					gameType: gameType as GameType,
-					outcome: outcome as GameRoundOutcome,
-					chipDelta: delta,
-					handCount: resolvedHandCount,
-					// Use provided winsIncrement/lossesIncrement for split-hand accuracy
-					winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
-					lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
-					// Use calculated biggestWinCandidate based on round type
-					biggestWinCandidate: actualBiggestWinCandidate,
-				});
-
-				// Check for newly earned achievements
-				// For split-hand wins, use actualBiggestWinCandidate instead of total delta
-				const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-					recentWinAmount:
-						typeof actualBiggestWinCandidate === 'number' && actualBiggestWinCandidate > 0
-							? actualBiggestWinCandidate
-							: undefined,
-					gameType: gameType as GameType,
-				});
-
-				// Map to simple objects for response
-				newAchievements = earnedAchievements.map((a) => ({
-					id: a.id,
-					name: a.name,
-					icon: a.icon,
-				}));
-
-				if (newAchievements.length > 0) {
-					console.warn(
-						`[ACHIEVEMENT] User ${userId} earned: ${newAchievements.map((a) => a.name).join(', ')}`,
-					);
-				}
-			} catch (statsError) {
-				// Log but don't fail the chip update if stats tracking fails
-				const errorMessage =
-					statsError instanceof Error ? statsError.message : 'Unknown stats tracking error';
-				console.error(
-					'[STATS_ERROR] Failed to record game stats or check achievements:',
-					statsError,
-				);
-				warnings.push(`Stats tracking failed: ${errorMessage}`);
-			}
+		// Check DB binding exists (may be undefined in local dev without Cloudflare bindings)
+		const dbBinding = locals.runtime?.env?.DB ?? null;
+		if (!dbBinding) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'DATABASE_UNAVAILABLE',
+					message: 'Database is not configured',
+				}),
+				{
+					status: 500,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
 		}
 
-		// Return success response with validated values only
-		return new Response(
-			JSON.stringify({
-				success: true,
-				balance: newBalance,
-				previousBalance: serverBalance,
-				delta,
-				message: 'Chip balance updated successfully',
-				// Include newly earned achievements for client-side notifications
-				newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
-				// Include warnings for non-fatal errors (e.g., stats tracking failures)
-				warnings: warnings.length > 0 ? warnings : undefined,
-			}),
-			{
-				status: 200,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	} catch (error) {
-		console.error('Chip balance update error:', error);
-		return new Response(
-			JSON.stringify({
-				success: false,
-				error: 'DATABASE_ERROR',
-				message: 'Failed to update chip balance. Please try again.',
-			}),
-			{
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			},
-		);
-	}
+		// Database operations wrapped in try-catch
+		try {
+			const db = createDbImpl(dbBinding);
+
+			// Load authoritative server balance from DB. This also lets us repair any historical
+			// fractional balances caused by older payout logic.
+			const [currentRow] = await db
+				.select({ chipBalance: user.chipBalance })
+				.from(user)
+				.where(eq(user.id, locals.user.id))
+				.limit(1);
+
+			const rawServerBalance = currentRow?.chipBalance ?? locals.user.chipBalance ?? 0;
+			const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
+
+			// Repair stored balance if it wasn't already an integer.
+			if (rawServerBalance !== serverBalance) {
+				await db
+					.update(user)
+					.set({ chipBalance: serverBalance })
+					.where(eq(user.id, locals.user.id));
+			}
+
+			// Optimistic locking: reject if client's previousBalance doesn't match server
+			if (clientPreviousBalance !== undefined) {
+				if (!Number.isInteger(clientPreviousBalance)) {
+					return new Response(
+						JSON.stringify({
+							success: false,
+							error: 'INVALID_REQUEST_BODY',
+							message: 'previousBalance must be an integer if provided',
+						}),
+						{
+							status: 400,
+							headers: { 'Content-Type': 'application/json' },
+						},
+					);
+				}
+
+				if (clientPreviousBalance !== serverBalance) {
+					return new Response(
+						JSON.stringify({
+							success: false,
+							error: 'BALANCE_MISMATCH',
+							message: 'Balance has changed. Please refresh and try again.',
+							currentBalance: serverBalance,
+						}),
+						{
+							status: 409,
+							headers: { 'Content-Type': 'application/json' },
+						},
+					);
+				}
+			}
+
+			// Compute new balance server-side
+			const newBalance = serverBalance + delta;
+
+			// Validate computed balance is non-negative
+			if (newBalance < 0) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'INSUFFICIENT_BALANCE',
+						message: 'Insufficient chip balance for this operation',
+						currentBalance: serverBalance,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
+			// Atomic update with optimistic locking via WHERE condition
+			// This prevents TOCTOU race by ensuring balance hasn't changed since we read it
+			const result = await db
+				.update(user)
+				.set({
+					chipBalance: newBalance,
+				})
+				.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
+
+			// Check if update affected any rows (D1 returns changes in meta)
+			const rowsAffected = getRowsAffected(result);
+			if (rowsAffected === 0) {
+				// Concurrent modification detected - balance changed between read and write
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'BALANCE_MISMATCH',
+						message: 'Balance was modified concurrently. Please refresh and try again.',
+					}),
+					{
+						status: 409,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
+			// Update rate limit timestamp on successful update
+			lastUpdateByUserImpl.set(userId, Date.now());
+
+			// Audit log for wins (positive deltas) to help detect exploitation patterns
+			if (delta > 0) {
+				console.warn(
+					`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${serverBalance} -> ${newBalance}`,
+				);
+			}
+
+			// Track game stats and check achievements (awaited - blocks response)
+			// This runs after the chip update succeeds and is awaited to return achievements in the response
+			let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+			const warnings: string[] = [];
+
+			if (outcome && validOutcomes.includes(outcome as string)) {
+				try {
+					const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
+
+					// Determine biggestWinCandidate for stats tracking
+					// For split-hand rounds (e.g., blackjack splits), client sends biggestWinCandidate
+					// to specify maximum per-hand win. We should use this value instead of null.
+					// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
+					// - No explicit biggestWinCandidate provided, OR
+					// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
+					const actualBiggestWinCandidate = determineBiggestWinCandidate({
+						delta,
+						biggestWinCandidate,
+						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
+						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+						handCount: resolvedHandCount,
+					});
+
+					// Record game stats
+					await recordGameRoundImpl(db, userId, {
+						gameType: gameType as GameType,
+						outcome: outcome as GameRoundOutcome,
+						chipDelta: delta,
+						handCount: resolvedHandCount,
+						// Use provided winsIncrement/lossesIncrement for split-hand accuracy
+						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
+						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+						// Use calculated biggestWinCandidate based on round type
+						biggestWinCandidate: actualBiggestWinCandidate,
+					});
+
+					// Check for newly earned achievements
+					// For split-hand wins, use actualBiggestWinCandidate instead of total delta
+					const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
+						recentWinAmount:
+							typeof actualBiggestWinCandidate === 'number' && actualBiggestWinCandidate > 0
+								? actualBiggestWinCandidate
+								: undefined,
+						gameType: gameType as GameType,
+					});
+
+					// Map to simple objects for response
+					newAchievements = earnedAchievements.map((a) => ({
+						id: a.id,
+						name: a.name,
+						icon: a.icon,
+					}));
+
+					if (newAchievements.length > 0) {
+						console.warn(
+							`[ACHIEVEMENT] User ${userId} earned: ${newAchievements.map((a) => a.name).join(', ')}`,
+						);
+					}
+				} catch (statsError) {
+					// Log but don't fail the chip update if stats tracking fails
+					const errorMessage =
+						statsError instanceof Error ? statsError.message : 'Unknown stats tracking error';
+					console.error(
+						'[STATS_ERROR] Failed to record game stats or check achievements:',
+						statsError,
+					);
+					warnings.push(`Stats tracking failed: ${errorMessage}`);
+				}
+			}
+
+			// Return success response with validated values only
+			return new Response(
+				JSON.stringify({
+					success: true,
+					balance: newBalance,
+					previousBalance: serverBalance,
+					delta,
+					message: 'Chip balance updated successfully',
+					// Include newly earned achievements for client-side notifications
+					newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+					// Include warnings for non-fatal errors (e.g., stats tracking failures)
+					warnings: warnings.length > 0 ? warnings : undefined,
+				}),
+				{
+					status: 200,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		} catch (error) {
+			console.error('Chip balance update error:', error);
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'DATABASE_ERROR',
+					message: 'Failed to update chip balance. Please try again.',
+				}),
+				{
+					status: 500,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
 	};
 }
 

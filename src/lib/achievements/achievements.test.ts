@@ -3,12 +3,9 @@ import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
 import type { AchievementDefinition, AchievementId, UserAchievementRecord } from './types';
 
-const mockGetEarnedAchievementIds = Object.assign(
-	async () => ['rising_star'] as AchievementId[],
-	{
+const mockGetEarnedAchievementIds = Object.assign(async () => ['rising_star'] as AchievementId[], {
 	calls: [] as Array<{ userId: string }>,
-	},
-);
+});
 const mockGetAggregateUserStats = Object.assign(
 	async () => ({
 		totalWins: 120,

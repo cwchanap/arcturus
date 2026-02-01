@@ -71,11 +71,7 @@ export async function recordGameRound(
 		handsIncrement: handCount,
 		chipDelta,
 		biggestWinCandidate:
-			biggestWinCandidate !== undefined
-				? biggestWinCandidate
-				: handCount > 1
-					? null
-					: chipDelta,
+			biggestWinCandidate !== undefined ? biggestWinCandidate : handCount > 1 ? null : chipDelta,
 	});
 }
 

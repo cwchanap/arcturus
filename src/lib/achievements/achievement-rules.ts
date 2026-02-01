@@ -168,10 +168,7 @@ function checkComeback(context: AchievementCheckContext): AchievementCheckResult
 /**
  * Map of achievement IDs to their check functions
  */
-export const ACHIEVEMENT_CHECKS: Record<
-	import('./types').AchievementId,
-	AchievementCheckFn
-> = {
+export const ACHIEVEMENT_CHECKS: Record<import('./types').AchievementId, AchievementCheckFn> = {
 	rising_star: checkRisingStar,
 	high_roller: checkHighRoller,
 	champion: checkChampion,

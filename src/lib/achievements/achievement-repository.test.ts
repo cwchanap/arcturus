@@ -101,12 +101,15 @@ describe('achievement-repository', () => {
 
 		const mockDb = createMockDb({ insertThrows: true });
 
-		await expect(
-			grantAchievement(mockDb, 'user1', 'champion', 'baccarat' as GameType),
-		).rejects.toThrow('insert failed');
+		try {
+			await expect(
+				grantAchievement(mockDb, 'user1', 'champion', 'baccarat' as GameType),
+			).rejects.toThrow('insert failed');
 
-		expect(messages.some((msg) => msg.includes('[ACHIEVEMENT_GRANT_ERROR]'))).toBe(true);
-		console.error = consoleSpy;
+			expect(messages.some((msg) => msg.includes('[ACHIEVEMENT_GRANT_ERROR]'))).toBe(true);
+		} finally {
+			console.error = consoleSpy;
+		}
 	});
 
 	test('hasAchievement checks earned list', async () => {

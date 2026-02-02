@@ -52,12 +52,13 @@ function createMockDb({
 							}
 
 							// getGameStats query pattern: return { limit() }
-							const whereChain = {
-								limit: (limit: number) => {
-									return Promise.resolve(userStats ? [userStats] : []);
-								},
-								then: (onFulfilled: (value: any) => any, onRejected?: (reason: any) => any) =>
-									Promise.resolve(allStats).then(onFulfilled, onRejected),
+							const whereChain = new Promise<any[]>((resolve) => {
+								resolve(allStats);
+							}) as Promise<any[]> & {
+								limit: (limit: number) => Promise<any[]>;
+							};
+							whereChain.limit = (limit: number) => {
+								return Promise.resolve(userStats ? [userStats] : []);
 							};
 							return whereChain;
 						},

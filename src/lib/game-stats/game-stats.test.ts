@@ -50,9 +50,9 @@ const mockGetTotalPlayersForGame = Object.assign(async () => 10, {
 	calls: [] as any[],
 	impl: async () => 10,
 });
-const mockGetAllUserGameStats = Object.assign(async () => [], {
+const mockGetAllUserGameStats = Object.assign(async (): Promise<GameStats[]> => [], {
 	calls: [] as any[],
-	impl: async () => [],
+	impl: async (): Promise<GameStats[]> => [],
 });
 
 mock.module('./game-stats-repository', () => ({
@@ -261,6 +261,20 @@ describe('getGameLeaderboardData', () => {
 
 		expect(result.currentUserRank).toBeNull();
 		expect(result.currentUserInTop).toBe(false);
+	});
+
+	test('calculates win_rate metric values for leaderboard entries', async () => {
+		resetGameStatsMocks();
+		const result = await getGameLeaderboardData({} as any, {
+			gameType: 'blackjack',
+			rankingMetric: 'win_rate',
+			currentUserId: 'user1',
+			limit: 2,
+		});
+
+		expect(result.entries.length).toBe(2);
+		expect(result.entries[0].metricValue).toBeCloseTo(66.666, 2);
+		expect(result.entries[1].metricValue).toBeCloseTo(53.333, 2);
 	});
 });
 

@@ -257,6 +257,15 @@ describe('Achievement check functions', () => {
 			expect(result.shouldGrant).toBe(false);
 		});
 
+		test('does not grant when current balance is missing', () => {
+			const context = createContext({
+				currentChipBalance: null as unknown as number,
+				recentWinAmount: 200,
+			});
+			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			expect(result.shouldGrant).toBe(false);
+		});
+
 		test('does not grant when already earned', () => {
 			const context = createContext({
 				currentChipBalance: 2000,

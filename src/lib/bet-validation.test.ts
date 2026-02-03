@@ -16,19 +16,19 @@ describe('Bet Validation Logic', () => {
 	});
 
 	test('rejects bets below minimum', () => {
-		expect(validateBet(5, 10, 1000)).toBe('Bet must be between $10 and $1000');
-		expect(validateBet(9, 10, 1000)).toBe('Bet must be between $10 and $1000');
-		expect(validateBet(0, 10, 1000)).toBe('Bet must be between $10 and $1000');
+		expect(validateBet(5, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
+		expect(validateBet(9, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
+		expect(validateBet(0, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
 	});
 
 	test('rejects bets above maximum', () => {
-		expect(validateBet(1001, 10, 1000)).toBe('Bet must be between $10 and $1000');
-		expect(validateBet(2000, 10, 1000)).toBe('Bet must be between $10 and $1000');
-		expect(validateBet(5000, 10, 1000)).toBe('Bet must be between $10 and $1000');
+		expect(validateBet(1001, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
+		expect(validateBet(2000, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
+		expect(validateBet(5000, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
 	});
 
 	test('rejects NaN bet amounts', () => {
-		expect(validateBet(NaN, 10, 1000)).toBe('Bet must be between $10 and $1000');
+		expect(validateBet(NaN, 10, 1000)).toBe('Bet must be between 10 and 1000 chips');
 	});
 
 	test('rejects invalid bet limits (NaN or Infinity)', () => {
@@ -46,13 +46,13 @@ describe('Bet Validation Logic', () => {
 
 	test('handles edge cases with equal min and max', () => {
 		expect(validateBet(100, 100, 100)).toBeNull();
-		expect(validateBet(99, 100, 100)).toBe('Bet must be between $100 and $100');
-		expect(validateBet(101, 100, 100)).toBe('Bet must be between $100 and $100');
+		expect(validateBet(99, 100, 100)).toBe('Bet must be between 100 and 100 chips');
+		expect(validateBet(101, 100, 100)).toBe('Bet must be between 100 and 100 chips');
 	});
 
 	test('validates with different min/max ranges', () => {
 		expect(validateBet(25, 20, 200)).toBeNull();
-		expect(validateBet(19, 20, 200)).toBe('Bet must be between $20 and $200');
-		expect(validateBet(201, 20, 200)).toBe('Bet must be between $20 and $200');
+		expect(validateBet(19, 20, 200)).toBe('Bet must be between 20 and 200 chips');
+		expect(validateBet(201, 20, 200)).toBe('Bet must be between 20 and 200 chips');
 	});
 });

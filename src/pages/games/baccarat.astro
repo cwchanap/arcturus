@@ -91,7 +91,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					<!-- Round Result Overlay -->
 					<div
 						id="round-result"
-						class="hidden absolute inset-0 bg-slate-900/95 backdrop-blur-sm rounded-3xl flex items-center justify-center z-20"
+						class="absolute inset-0 bg-slate-900/95 backdrop-blur-sm rounded-3xl items-center justify-center z-20 hidden"
 					>
 						<div class="text-center p-8">
 							<div class="result-winner text-4xl font-bold text-yellow-400 mb-4"></div>
@@ -271,7 +271,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- Insufficient Chips Overlay -->
 		<div
 			id="insufficient-chips-overlay"
-			class="hidden fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center"
+			class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 items-center justify-center hidden"
 		>
 			<div class="bg-slate-800 rounded-xl p-8 border border-red-500/50 max-w-md text-center">
 				<div class="text-5xl mb-4">💸</div>
@@ -417,6 +417,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		createBetChip,
 		createBetResult,
 	} from '../../lib/dom-utils';
+	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
 
 	// Get initial data
@@ -529,6 +530,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		bettingAreaEl.classList.add('betting-disabled');
 		dealButton.disabled = true;
 		roundResultEl.classList.add('hidden');
+		roundResultEl.classList.remove('flex');
 
 		// Clear hand displays
 		renderHand(playerHandEl, { cards: [] }, 'PLAYER', 'blue');
@@ -554,6 +556,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			// Check insufficient chips
 			if (game.hasInsufficientChips()) {
 				insufficientOverlay.classList.remove('hidden');
+				insufficientOverlay.classList.add('flex');
 			}
 		}
 
@@ -564,6 +567,7 @@ const initialBalance = user.chipBalance ?? 1000;
 	newRoundButton.addEventListener('click', () => {
 		game.newRound();
 		roundResultEl.classList.add('hidden');
+		roundResultEl.classList.remove('flex');
 		bettingAreaEl.classList.remove('betting-disabled');
 		renderHand(playerHandEl, { cards: [] }, 'PLAYER', 'blue');
 		renderHand(bankerHandEl, { cards: [] }, 'BANKER', 'red');
@@ -692,6 +696,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			});
 		}
 		roundResultEl.classList.remove('hidden');
+		roundResultEl.classList.add('flex');
 
 		// Update rendered hands with final values
 		renderHand(playerHandEl, outcome.playerHand, 'PLAYER', 'blue');
@@ -981,48 +986,17 @@ const initialBalance = user.chipBalance ?? 1000;
 	const achievementToast = document.getElementById('achievement-toast');
 	const achievementIconEl = document.getElementById('achievement-icon');
 	const achievementNameEl = document.getElementById('achievement-name');
-
-	const toastQueue: Array<{ id: string; name: string; icon: string }> = [];
-	let isShowingToast = false;
-
-	function showNextToast() {
-		if (isShowingToast || toastQueue.length === 0) return;
-
-		isShowingToast = true;
-		const achievement = toastQueue.shift()!;
-
-		if (achievementIconEl) achievementIconEl.textContent = achievement.icon;
-		if (achievementNameEl) achievementNameEl.textContent = achievement.name;
-
-		// Show toast
-		if (achievementToast) {
-			achievementToast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
-			achievementToast.classList.add('opacity-100', 'translate-y-0');
-		}
-
-		// Hide after 4 seconds
-		setTimeout(() => {
-			if (achievementToast) {
-				achievementToast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
-				achievementToast.classList.remove('opacity-100', 'translate-y-0');
-			}
-
-			// Wait for animation to complete, then show next
-			setTimeout(() => {
-				isShowingToast = false;
-				showNextToast();
-			}, 300);
-		}, 4000);
-	}
+	const { enqueue } = initAchievementToast(() => ({
+		toast: achievementToast,
+		icon: achievementIconEl,
+		name: achievementNameEl,
+	}));
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{
 			achievements: Array<{ id: string; name: string; icon: string }>;
 		}>;
 		const { achievements } = customEvent.detail;
-
-		// Add to queue and show
-		toastQueue.push(...achievements);
-		showNextToast();
+		enqueue(achievements);
 	});
 </script>

@@ -336,10 +336,10 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 
 	describe('Split Hand Stats Tracking', () => {
 		it('should track multiple wins from split hand', () => {
-			const outcomes = [
-				{ result: 'win' as const },
-				{ result: 'win' as const },
-				{ result: 'loss' as const },
+			const outcomes: Array<{ result: 'win' | 'loss' | 'blackjack' | 'push' }> = [
+				{ result: 'win' },
+				{ result: 'win' },
+				{ result: 'loss' },
 			];
 
 			const winsIncrement = outcomes.filter(
@@ -352,7 +352,9 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should track blackjack as win', () => {
-			const outcomes = [{ result: 'blackjack' as const }];
+			const outcomes: Array<{ result: 'win' | 'loss' | 'blackjack' | 'push' }> = [
+				{ result: 'blackjack' },
+			];
 
 			const winsIncrement = outcomes.filter(
 				(o) => o.result === 'win' || o.result === 'blackjack',
@@ -362,7 +364,10 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should track pushes correctly in hands count', () => {
-			const outcomes = [{ result: 'push' as const }, { result: 'push' as const }];
+			const outcomes: Array<{ result: 'win' | 'loss' | 'blackjack' | 'push' }> = [
+				{ result: 'push' },
+				{ result: 'push' },
+			];
 
 			const handCount = outcomes.length;
 			// Pushes are not counted as wins or losses
@@ -451,7 +456,6 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			pendingRetryTimer = setTimeout(() => {}, 1000);
 
 			// Simulate BALANCE_MISMATCH error (not rate-limited)
-			const error = 'BALANCE_MISMATCH';
 			const hasServerBalance = true;
 			if (hasServerBalance && pendingRetryTimer) {
 				clearTimeout(pendingRetryTimer);

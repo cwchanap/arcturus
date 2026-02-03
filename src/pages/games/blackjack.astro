@@ -394,7 +394,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- LLM Configuration Overlay -->
 		<div
 			id="llm-config-overlay"
-			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center"
+			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 items-center justify-center"
 		>
 			<div class="bg-slate-900 rounded-2xl p-8 max-w-md mx-4 border border-slate-700 shadow-2xl">
 				<div class="text-center mb-6">
@@ -673,6 +673,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 <script>
 	import { initBlackjackClient } from '../../lib/blackjack/blackjackClient';
+	import { initAchievementToast } from '../../lib/achievement-toast';
 
 	initBlackjackClient();
 
@@ -680,48 +681,17 @@ const initialBalance = user.chipBalance ?? 1000;
 	const achievementToast = document.getElementById('achievement-toast');
 	const achievementIcon = document.getElementById('achievement-icon');
 	const achievementName = document.getElementById('achievement-name');
-
-	const toastQueue: Array<{ id: string; name: string; icon: string }> = [];
-	let isShowingToast = false;
-
-	function showNextToast() {
-		if (isShowingToast || toastQueue.length === 0) return;
-
-		isShowingToast = true;
-		const achievement = toastQueue.shift()!;
-
-		if (achievementIcon) achievementIcon.textContent = achievement.icon;
-		if (achievementName) achievementName.textContent = achievement.name;
-
-		// Show toast
-		if (achievementToast) {
-			achievementToast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
-			achievementToast.classList.add('opacity-100', 'translate-y-0');
-		}
-
-		// Hide after 4 seconds
-		setTimeout(() => {
-			if (achievementToast) {
-				achievementToast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
-				achievementToast.classList.remove('opacity-100', 'translate-y-0');
-			}
-
-			// Wait for animation to complete, then show next
-			setTimeout(() => {
-				isShowingToast = false;
-				showNextToast();
-			}, 300);
-		}, 4000);
-	}
+	const { enqueue } = initAchievementToast(() => ({
+		toast: achievementToast,
+		icon: achievementIcon,
+		name: achievementName,
+	}));
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{
 			achievements: Array<{ id: string; name: string; icon: string }>;
 		}>;
 		const { achievements } = customEvent.detail;
-
-		// Add to queue and show
-		toastQueue.push(...achievements);
-		showNextToast();
+		enqueue(achievements);
 	});
 </script>

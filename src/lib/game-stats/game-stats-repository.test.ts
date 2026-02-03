@@ -16,7 +16,6 @@ import {
 } from './game-stats-repository';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
-import { MIN_HANDS_FOR_WIN_RATE } from './constants';
 
 /**
  * Mock database implementation that simulates Drizzle ORM query chains
@@ -435,7 +434,7 @@ describe('updateGameStats', () => {
 			biggestWinCandidate: null,
 		});
 
-		const aggregatedText = extractSqlText(captured?.biggestWin);
+		const aggregatedText = extractSqlText(captured?.['biggestWin']);
 
 		await updateGameStats(mockDb, 'user1', 'blackjack' as GameType, {
 			winsIncrement: 1,
@@ -445,7 +444,7 @@ describe('updateGameStats', () => {
 			biggestWinCandidate: 200,
 		});
 
-		const singleRoundText = extractSqlText(captured?.biggestWin);
+		const singleRoundText = extractSqlText(captured?.['biggestWin']);
 		expect(aggregatedText).not.toBe(singleRoundText);
 	});
 });

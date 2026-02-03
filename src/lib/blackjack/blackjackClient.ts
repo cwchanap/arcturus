@@ -190,6 +190,7 @@ export function initBlackjackClient(): void {
 				llmSettings = null;
 				llmConfigured = false;
 				llmConfigOverlay.classList.add('hidden');
+				llmConfigOverlay.classList.remove('flex');
 				updateAiRivalButtonState();
 				return;
 			}
@@ -226,6 +227,7 @@ export function initBlackjackClient(): void {
 		}
 
 		if (llmConfigured) {
+			llmConfigOverlay.classList.remove('flex');
 			llmConfigOverlay.classList.add('hidden');
 		}
 		updateAiRivalButtonState();
@@ -366,6 +368,7 @@ export function initBlackjackClient(): void {
 
 			if (!newUseLlm) {
 				llmConfigOverlay.classList.add('hidden');
+				llmConfigOverlay.classList.remove('flex');
 			}
 			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
 		});
@@ -561,6 +564,7 @@ export function initBlackjackClient(): void {
 		if (!llmUserEnabled) {
 			statusEl.textContent = 'AI Rival is disabled in game settings.';
 			llmConfigOverlay.classList.add('hidden');
+			llmConfigOverlay.classList.remove('flex');
 			return;
 		}
 
@@ -596,6 +600,7 @@ export function initBlackjackClient(): void {
 
 		if (!llmConfigured) {
 			llmConfigOverlay.classList.remove('hidden');
+			llmConfigOverlay.classList.add('flex');
 			return;
 		}
 
@@ -647,6 +652,7 @@ export function initBlackjackClient(): void {
 	// Close overlay button
 	btnCloseOverlay.addEventListener('click', () => {
 		llmConfigOverlay.classList.add('hidden');
+		llmConfigOverlay.classList.remove('flex');
 	});
 
 	// Highlight recommended action button

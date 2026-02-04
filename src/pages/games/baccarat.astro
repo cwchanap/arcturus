@@ -417,6 +417,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		createBetChip,
 		createBetResult,
 	} from '../../lib/dom-utils';
+	import { resolveBaccaratSyncState } from '../../lib/baccarat/balance-sync-state';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
 
@@ -926,26 +927,32 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			// For other errors, handle by reverting to server state
-			if (errorData.currentBalance !== undefined) {
+			const hasServerBalance =
+				errorData.currentBalance !== undefined &&
+				!Number.isNaN(Number(errorData.currentBalance));
+
+			// For other errors, handle by reverting to server state when possible
+			if (hasServerBalance) {
 				const serverBalance = Number(errorData.currentBalance);
-				if (!Number.isNaN(serverBalance)) {
-					lastSyncedBalance = serverBalance;
-					game.applyServerBalance(serverBalance);
-					updateUI();
-					// Clear pending stats since we're reverting to server state
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-					syncPending = false;
-					statsIncluded = false;
-					pendingRetryTimer = null;
-					showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
-				}
-			} else if (errorData.error !== 'RATE_LIMITED') {
-				// Keep local balance; server sync is best-effort.
-				// Clear pending stats for non-rate-limit errors
+				lastSyncedBalance = serverBalance;
+				game.applyServerBalance(serverBalance);
+				updateUI();
+				// Clear pending stats since we're reverting to server state
 				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 				syncPending = false;
 				statsIncluded = false;
+				pendingRetryTimer = null;
+				showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
+			} else {
+				const resolution = resolveBaccaratSyncState({
+					error: errorData.error,
+					hasServerBalance,
+				});
+				if (resolution.clearPendingStats) {
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					statsIncluded = false;
+				}
+				syncPending = resolution.syncPending;
 				pendingRetryTimer = null;
 			}
 
@@ -972,9 +979,12 @@ const initialBalance = user.chipBalance ?? 1000;
 		} catch (error) {
 			console.error('Balance sync error:', error);
 			showStatus('Network error. Balance sync failed.');
-			// Clear pending stats on network errors
-			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-			syncPending = false;
+			const resolution = resolveBaccaratSyncState({ error: undefined, hasServerBalance: false });
+			if (resolution.clearPendingStats) {
+				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				statsIncluded = false;
+			}
+			syncPending = resolution.syncPending;
 			pendingRetryTimer = null;
 		}
 	}

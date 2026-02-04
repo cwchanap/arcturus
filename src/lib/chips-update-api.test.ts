@@ -585,6 +585,37 @@ describe('chips update API', () => {
 		expect(achievementOptions?.recentWinAmount).toBe(150);
 	});
 
+	test('uses delta for single-hand wins even when increments are provided', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 120,
+				gameType: 'blackjack',
+				outcome: 'win',
+				handCount: 1,
+				winsIncrement: 1,
+				lossesIncrement: 0,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-single', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(1120);
+		const record = mockRecordGameRound.calls[0]?.[2] as { biggestWinCandidate?: number };
+		expect(record?.biggestWinCandidate).toBe(120);
+		const achievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
+			recentWinAmount?: number;
+		};
+		expect(achievementOptions?.recentWinAmount).toBe(120);
+	});
+
 	test('repairs fractional stored balances', async () => {
 		resetMocks();
 		const POST = createHandler();

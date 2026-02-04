@@ -72,12 +72,10 @@ export function determineBiggestWinCandidate({
 		return biggestWinCandidate;
 	} else if (
 		delta > 0 &&
-		handCount === 1 &&
-		winsIncrement === undefined &&
-		lossesIncrement === undefined
+		handCount === 1
 	) {
-		// Single-hand win (traditional case) - use delta directly
-		return delta;
+		// Single-hand win - use provided biggestWinCandidate if available, fallback to delta
+		return typeof biggestWinCandidate === 'number' ? biggestWinCandidate : delta;
 	} else if (isAggregatedSync) {
 		// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
 		return null;

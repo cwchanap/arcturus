@@ -26,16 +26,16 @@ describe('getRowsAffected', () => {
  */
 describe('Biggest Win Candidate Logic', () => {
 	describe('Split-hand rounds', () => {
-		it('should return null for mixed outcomes and not use biggestWinCandidate (wins=1, losses=1)', () => {
+		it('should use biggestWinCandidate for mixed outcomes in split round (wins=1, losses=1)', () => {
 			// Scenario: Blackjack split, hand 1 wins $150, hand 2 loses $100
 			// Total delta = +$50, but biggest single hand win = $150
+			// Even with mixed outcomes, the biggest win should count for achievements
 			const delta = 50;
 			const biggestWinCandidate = 150;
 			const handCount = 2;
 			const winsIncrement = 1;
 			const lossesIncrement = 1;
 
-			// Wait, this is mixed outcome - should NOT use biggestWinCandidate
 			const result = determineBiggestWinCandidate({
 				delta,
 				biggestWinCandidate,
@@ -44,8 +44,8 @@ describe('Biggest Win Candidate Logic', () => {
 				handCount,
 			});
 
-			// Mixed outcome (wins=1, losses=1) -> should return null
-			expect(result).toBeNull();
+			// Mixed outcome with at least one win -> should still use biggestWinCandidate
+			expect(result).toBe(150);
 		});
 
 		it('should use client-provided biggestWinCandidate for exactly one win, no losses', () => {

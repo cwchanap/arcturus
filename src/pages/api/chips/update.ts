@@ -48,7 +48,7 @@ export function determineBiggestWinCandidate({
 	delta,
 	biggestWinCandidate,
 	winsIncrement,
-	lossesIncrement,
+	lossesIncrement: _lossesIncrement,
 	handCount,
 }: {
 	delta: number;
@@ -57,32 +57,29 @@ export function determineBiggestWinCandidate({
 	lossesIncrement: number | undefined;
 	handCount: number;
 }): number | null | undefined {
-	const isAggregatedSync = handCount > 1;
+	// Maximum realistic split hands in a single round (e.g., blackjack: split aces can resplit)
+	const MAX_SPLIT_HANDS = 4;
 
+	// Split-hand round with wins - use client-provided biggestWinCandidate
+	// Heuristic: handCount <= MAX_SPLIT_HANDS indicates a split round, not aggregated sync
 	if (
 		delta > 0 &&
 		typeof biggestWinCandidate === 'number' &&
 		typeof winsIncrement === 'number' &&
 		winsIncrement >= 1 &&
-		typeof lossesIncrement === 'number' &&
-		lossesIncrement === 0 &&
-		handCount > 1
+		handCount > 1 &&
+		handCount <= MAX_SPLIT_HANDS
 	) {
-		// Split-hand round with wins only - use client-provided biggestWinCandidate
 		return biggestWinCandidate;
-	} else if (
-		delta > 0 &&
-		handCount === 1
-	) {
-		// Single-hand win - use provided biggestWinCandidate if available, fallback to delta
-		return typeof biggestWinCandidate === 'number' ? biggestWinCandidate : delta;
-	} else if (isAggregatedSync) {
-		// Aggregated multi-round sync or mixed outcome - avoid inflating biggestWin
-		return null;
-	} else {
-		// Loss/push (delta <= 0) or other edge cases
-		return null;
 	}
+
+	// Single-hand win - use provided biggestWinCandidate if available, fallback to delta
+	if (delta > 0 && handCount === 1) {
+		return typeof biggestWinCandidate === 'number' ? biggestWinCandidate : delta;
+	}
+
+	// Aggregated multi-round sync (handCount > MAX_SPLIT_HANDS) or loss/push
+	return null;
 }
 
 // Game-specific betting limits

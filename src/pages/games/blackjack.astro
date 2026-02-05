@@ -394,7 +394,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- LLM Configuration Overlay -->
 		<div
 			id="llm-config-overlay"
-			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 items-center justify-center"
+			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center"
 		>
 			<div class="bg-slate-900 rounded-2xl p-8 max-w-md mx-4 border border-slate-700 shadow-2xl">
 				<div class="text-center mb-6">
@@ -681,6 +681,9 @@ const initialBalance = user.chipBalance ?? 1000;
 	const achievementToast = document.getElementById('achievement-toast');
 	const achievementIcon = document.getElementById('achievement-icon');
 	const achievementName = document.getElementById('achievement-name');
+	if (!achievementToast || !achievementIcon || !achievementName) {
+		throw new Error('Achievement toast elements missing from DOM.');
+	}
 	const { enqueue } = initAchievementToast(() => ({
 		toast: achievementToast,
 		icon: achievementIcon,

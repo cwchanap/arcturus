@@ -4,18 +4,14 @@ export type BaccaratPendingStatsResolution = {
 };
 
 export function resolveBaccaratSyncState({
-	error,
+	_error,
 	hasServerBalance,
 }: {
-	error?: string;
+	_error?: string;
 	hasServerBalance: boolean;
 }): BaccaratPendingStatsResolution {
 	if (hasServerBalance) {
 		return { clearPendingStats: true, syncPending: false };
-	}
-
-	if (error === 'RATE_LIMITED') {
-		return { clearPendingStats: false, syncPending: true };
 	}
 
 	return { clearPendingStats: false, syncPending: true };

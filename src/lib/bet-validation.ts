@@ -28,8 +28,8 @@ export function validateBet(amount: number, minBet: number, maxBet: number): str
 		return 'Invalid bet range';
 	}
 	// Validate amount is within range
-	if (Number.isNaN(amount) || amount < minBet || amount > maxBet) {
-		return 'Bet must be between ' + minBet + ' and ' + maxBet + ' chips';
+	if (!Number.isFinite(amount) || Number.isNaN(amount) || amount < minBet || amount > maxBet) {
+		return `Bet must be between ${minBet} and ${maxBet} chips`;
 	}
 	return null;
 }

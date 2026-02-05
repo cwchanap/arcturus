@@ -12,14 +12,31 @@ function parseLLMResponse(
 	availableActions: BlackjackAction[],
 ): { recommendedAction: BlackjackAction | null; reasoning: string; confidence: number } | null {
 	try {
-		const jsonMatch = response.match(/\{[\s\S]*\}/);
-		if (!jsonMatch) {
+		// Use greedy pattern to capture nested JSON objects
+		const jsonMatches = response.match(/\{[\s\S]*\}/g);
+		if (!jsonMatches || jsonMatches.length === 0) {
 			return null;
 		}
 
-		const parsed = JSON.parse(jsonMatch[0]);
-		const action = parsed.action?.toLowerCase()?.replaceAll('_', '-');
-		const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
+		// Try parsing each match until one succeeds
+		let parsed: unknown = null;
+		for (const match of jsonMatches) {
+			try {
+				parsed = JSON.parse(match);
+				break; // Success, exit the loop
+			} catch {
+				// Continue to try the next match
+				continue;
+			}
+		}
+
+		if (!parsed || typeof parsed !== 'object') {
+			return null;
+		}
+
+		const parsedObj = parsed as Record<string, unknown>;
+		const action = String(parsedObj.action ?? '').toLowerCase().replaceAll('_', '-');
+		const reasoning = typeof parsedObj.reasoning === 'string' ? parsedObj.reasoning : '';
 
 		const validActions: BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 		if (!action || !validActions.includes(action as BlackjackAction)) {

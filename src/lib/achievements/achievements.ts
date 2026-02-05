@@ -77,27 +77,41 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			recentWinAmount?: number;
 			gameType?: GameType;
 		} = {},
+		achievementsList: AchievementDefinition[] = ACHIEVEMENTS,
 	): Promise<AchievementDefinition[]> {
 		const context = await buildAchievementContext(db, userId, currentChipBalance, options);
 
 		const newlyGranted: AchievementDefinition[] = [];
 
-		for (const achievement of ACHIEVEMENTS) {
+		for (const achievement of achievementsList) {
 			const checkFn = ACHIEVEMENT_CHECKS[achievement.id];
 			if (!checkFn) {
 				console.warn(`No check function for achievement: ${achievement.id}`);
 				continue;
 			}
 
-			const result = checkFn(context);
+			try {
+				const result = checkFn(context);
 
-			if (result.shouldGrant) {
-				const granted = await deps.grantAchievement(db, userId, achievement.id, result.gameType);
+				if (result?.shouldGrant) {
+					const granted = await deps.grantAchievement(
+						db,
+						userId,
+						achievement.id,
+						result.gameType,
+					);
 
-				if (granted) {
-					newlyGranted.push(achievement);
-					console.warn(`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`);
+					if (granted) {
+						newlyGranted.push(achievement);
+						console.warn(
+							`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`,
+						);
+					}
 				}
+			} catch (error) {
+				console.error(
+					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${userId}: ${(error as Error).message}`,
+				);
 			}
 		}
 

@@ -113,7 +113,7 @@ function transformToGameLeaderboardEntries(
 				metricValue = player.netProfit;
 				break;
 			default:
-				metricValue = player.totalWins;
+				throw new Error(`Unsupported ranking metric: ${rankingMetric}`);
 		}
 
 		return {

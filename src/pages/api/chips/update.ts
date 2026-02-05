@@ -431,15 +431,18 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		// Validate previousBalance if provided (for optimistic locking)
+		// Consolidated validation: must be defined, a number, finite, and integer
 		if (
 			clientPreviousBalance !== undefined &&
-			(typeof clientPreviousBalance !== 'number' || !Number.isFinite(clientPreviousBalance))
+			(typeof clientPreviousBalance !== 'number' ||
+				!Number.isFinite(clientPreviousBalance) ||
+				!Number.isInteger(clientPreviousBalance))
 		) {
 			return new Response(
 				JSON.stringify({
 					success: false,
 					error: 'INVALID_REQUEST_BODY',
-					message: 'previousBalance must be a finite number if provided',
+					message: 'previousBalance must be a finite integer if provided',
 				}),
 				{
 					status: 400,
@@ -489,20 +492,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 			// Optimistic locking: reject if client's previousBalance doesn't match server
 			if (clientPreviousBalance !== undefined) {
-				if (!Number.isInteger(clientPreviousBalance)) {
-					return new Response(
-						JSON.stringify({
-							success: false,
-							error: 'INVALID_REQUEST_BODY',
-							message: 'previousBalance must be an integer if provided',
-						}),
-						{
-							status: 400,
-							headers: { 'Content-Type': 'application/json' },
-						},
-					);
-				}
-
 				if (clientPreviousBalance !== serverBalance) {
 					return new Response(
 						JSON.stringify({

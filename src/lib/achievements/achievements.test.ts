@@ -110,15 +110,16 @@ describe('achievements orchestration', () => {
 	test('checkAndGrantAchievements skips missing check functions', async () => {
 		resetMocks();
 		const db = createMockDb();
-
-		const originalLength = ACHIEVEMENTS.length;
-		(ACHIEVEMENTS as AchievementDefinition[]).push({
-			id: 'missing_check' as AchievementDefinition['id'],
-			name: 'Missing',
-			description: 'missing',
-			category: 'leaderboard',
-			icon: '⭐',
-		});
+		const customAchievements: AchievementDefinition[] = [
+			...ACHIEVEMENTS,
+			{
+				id: 'missing_check' as AchievementDefinition['id'],
+				name: 'Missing',
+				description: 'missing',
+				category: 'leaderboard',
+				icon: '⭐',
+			},
+		];
 
 		const warnSpy = console.warn;
 		const warnings: string[] = [];
@@ -127,11 +128,16 @@ describe('achievements orchestration', () => {
 		};
 
 		try {
-			const results = await checkAndGrantAchievements(db, 'user1', 5000);
+			const results = await checkAndGrantAchievements(
+				db,
+				'user1',
+				5000,
+				{},
+				customAchievements,
+			);
 			expect(results.length).toBeGreaterThan(0);
 		} finally {
 			console.warn = warnSpy;
-			(ACHIEVEMENTS as AchievementDefinition[]).splice(originalLength, 1);
 		}
 
 		expect(

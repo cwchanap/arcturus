@@ -15,48 +15,101 @@ export type AchievementToastOptions = {
 	transitionDurationMs?: number;
 };
 
+export type AchievementToastController = {
+	enqueue: (achievements: AchievementToastEntry[]) => void;
+	dispose: () => void;
+};
+
 export function initAchievementToast(
 	getElements: () => AchievementToastElements,
 	options: AchievementToastOptions = {},
-): { enqueue: (achievements: AchievementToastEntry[]) => void } {
+): AchievementToastController {
 	const { showDurationMs = 4000, transitionDurationMs = 300 } = options;
-	const { toast, icon, name } = getElements();
-
 	const queue: AchievementToastEntry[] = [];
 	let isShowing = false;
+	let isDisposed = false;
+	const timeoutIds: number[] = [];
+
+	const clearPendingTimeouts = () => {
+		timeoutIds.forEach((id) => clearTimeout(id));
+		timeoutIds.length = 0;
+	};
+
+	const safeGetElements = (): AchievementToastElements | null => {
+		const elements = getElements();
+		if (!elements.toast?.isConnected || !elements.icon?.isConnected || !elements.name?.isConnected) {
+			return null;
+		}
+		return elements;
+	};
 
 	const showNextToast = () => {
-		if (isShowing || queue.length === 0) return;
+		if (isDisposed || isShowing || queue.length === 0) return;
 
-		isShowing = true;
-		const achievement = queue.shift();
-		if (!achievement) return;
-
-		if (icon) icon.textContent = achievement.icon;
-		if (name) name.textContent = achievement.name;
-
-		if (toast) {
-			toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
-			toast.classList.add('opacity-100', 'translate-y-0');
+		const elements = safeGetElements();
+		if (!elements) {
+			queue.length = 0;
+			isShowing = false;
+			return;
 		}
 
-		setTimeout(() => {
-			if (toast) {
-				toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
-				toast.classList.remove('opacity-100', 'translate-y-0');
+		const { toast, icon, name } = elements;
+		const achievement = queue.shift();
+		if (!achievement) return;
+		isShowing = true;
+
+		icon.textContent = achievement.icon;
+		name.textContent = achievement.name;
+
+		toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+		toast.classList.add('opacity-100', 'translate-y-0');
+
+		const hideTimeoutId = setTimeout(() => {
+			if (isDisposed) return;
+
+			const currentElements = safeGetElements();
+			if (!currentElements) {
+				isShowing = false;
+				queue.length = 0;
+				return;
 			}
 
-			setTimeout(() => {
+			const { toast: currentToast, icon: _currentIcon, name: _currentName } = currentElements;
+
+			currentToast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+			currentToast.classList.remove('opacity-100', 'translate-y-0');
+
+			const nextTimeoutId = setTimeout(() => {
+				if (isDisposed) return;
+
 				isShowing = false;
+				if (queue.length === 0) {
+					const finalElements = safeGetElements();
+					if (finalElements) {
+						finalElements.icon.textContent = '';
+						finalElements.name.textContent = '';
+						finalElements.toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+						finalElements.toast.classList.remove('opacity-100', 'translate-y-0');
+					}
+				}
 				showNextToast();
 			}, transitionDurationMs);
+			timeoutIds.push(nextTimeoutId);
 		}, showDurationMs);
+		timeoutIds.push(hideTimeoutId);
 	};
 
 	return {
 		enqueue: (achievements: AchievementToastEntry[]) => {
+			if (isDisposed) return;
 			queue.push(...achievements);
 			showNextToast();
+		},
+		dispose: () => {
+			isDisposed = true;
+			clearPendingTimeouts();
+			queue.length = 0;
+			isShowing = false;
 		},
 	};
 }

@@ -3,6 +3,7 @@ import { initAchievementToast } from './achievement-toast';
 
 type MockElement = {
 	textContent: string;
+	isConnected: boolean;
 	classList: {
 		add: (...classes: string[]) => void;
 		remove: (...classes: string[]) => void;
@@ -14,6 +15,7 @@ const createMockElement = (): MockElement => {
 	const classes = new Set<string>();
 	return {
 		textContent: '',
+		isConnected: true,
 		classList: {
 			add: (...newClasses: string[]) => {
 				for (const cls of newClasses) classes.add(cls);
@@ -78,12 +80,27 @@ describe('initAchievementToast', () => {
 
 			enqueue([{ id: 'winner', name: 'High Roller', icon: '🏆' }]);
 
-			const [hideToast, finishToast] = timers;
-			hideToast?.();
+			let hideToast: (() => void) | undefined;
+			for (const timer of timers) {
+				const hadHidden = toast.classList.has('opacity-0');
+				timer();
+				if (!hadHidden && toast.classList.has('opacity-0')) {
+					hideToast = timer;
+					break;
+				}
+			}
+
+			expect(hideToast).toBeDefined();
 			expect(toast.classList.has('opacity-0')).toBe(true);
 			expect(toast.classList.has('translate-y-4')).toBe(true);
 
+			const finishToast = timers.find((timer) => timer !== hideToast);
 			finishToast?.();
+
+			expect(icon.textContent).toBe('');
+			expect(name.textContent).toBe('');
+			expect(toast.classList.has('opacity-100')).toBe(false);
+			expect(toast.classList.has('translate-y-0')).toBe(false);
 		} finally {
 			global.setTimeout = originalSetTimeout;
 		}

@@ -217,8 +217,9 @@ describe('Biggest Win Candidate Logic', () => {
 			expect(result).toBeNull();
 		});
 
-		it('should handle negative delta with biggestWinCandidate', () => {
-			// Client might incorrectly send biggestWinCandidate for net loss
+		it('should use biggestWinCandidate even when net delta is negative (win offset by larger loss)', () => {
+			// Scenario: Split hand where one hand wins $100 but another loses $150
+			// Net delta = -50, but the $100 win should still count for achievements
 			const delta = -50;
 			const biggestWinCandidate = 100;
 			const handCount = 2;
@@ -233,8 +234,8 @@ describe('Biggest Win Candidate Logic', () => {
 				handCount,
 			});
 
-			// Delta <= 0 -> should return null regardless of biggestWinCandidate
-			expect(result).toBeNull();
+			// Even with negative net delta, the winning hand should count
+			expect(result).toBe(100);
 		});
 	});
 });

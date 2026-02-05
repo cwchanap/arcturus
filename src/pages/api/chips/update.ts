@@ -62,8 +62,8 @@ export function determineBiggestWinCandidate({
 
 	// Split-hand round with wins - use client-provided biggestWinCandidate
 	// Heuristic: handCount <= MAX_SPLIT_HANDS indicates a split round, not aggregated sync
+	// Note: We use winsIncrement, not delta, to detect wins - a hand can win even if net delta <= 0
 	if (
-		delta > 0 &&
 		typeof biggestWinCandidate === 'number' &&
 		typeof winsIncrement === 'number' &&
 		winsIncrement >= 1 &&

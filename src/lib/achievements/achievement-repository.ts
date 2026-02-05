@@ -4,7 +4,7 @@
  * Database operations for user achievements.
  */
 
-import { eq } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { userAchievement } from '../../db/schema';
 import type { Database } from '../db';
 import type { UserAchievementRecord } from './types';
@@ -92,14 +92,23 @@ export async function hasAchievement(
 	userId: string,
 	achievementId: import('./types').AchievementId,
 ): Promise<boolean> {
-	const earnedIds = await getEarnedAchievementIds(db, userId);
-	return earnedIds.includes(achievementId);
+	const [result] = await db
+		.select({ achievementId: userAchievement.achievementId })
+		.from(userAchievement)
+		.where(and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)))
+		.limit(1);
+
+	return !!result;
 }
 
 /**
  * Get count of achievements earned by user
  */
 export async function getAchievementCount(db: Database, userId: string): Promise<number> {
-	const achievements = await getUserAchievements(db, userId);
-	return achievements.length;
+	const [result] = await db
+		.select({ count: sql<number>`count(*)`.as('count') })
+		.from(userAchievement)
+		.where(eq(userAchievement.userId, userId));
+
+	return result?.count ?? 0;
 }

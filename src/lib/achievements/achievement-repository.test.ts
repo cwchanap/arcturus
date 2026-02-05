@@ -22,20 +22,45 @@ function createMockDb({
 		from: () => ({
 			where: () => ({
 				orderBy: () => Promise.resolve(selectResult),
+				limit: () => Promise.resolve(selectResult.slice(0, 1)),
 			}),
 		}),
 	};
 
-	const selectProjectedChain = {
-		from: () => ({
-			where: () => Promise.resolve(selectResult),
-		}),
+	// Create a thenable that supports both await and .limit() chaining
+	const createWhereThenable = (fullResult: any[], limitedResult: any[]) => {
+		const promise = Promise.resolve(fullResult);
+		// Return an object that is both a thenable (for await) and has .limit() (for chaining)
+		const thenable = {
+			then: (onFulfilled: any, onRejected: any) => promise.then(onFulfilled, onRejected),
+			catch: (onRejected: any) => promise.catch(onRejected),
+			finally: (onFinally: any) => promise.finally(onFinally),
+			[Symbol.toStringTag]: 'Promise',
+			// Allow chaining .limit() for hasAchievement
+			limit: () => Promise.resolve(limitedResult),
+		};
+		return thenable;
 	};
 
 	return {
 		select: (columns?: any) => {
 			if (columns?.achievementId) {
-				return selectProjectedChain;
+				// For getEarnedAchievementIds and hasAchievement
+				// Chain: select().from().where() -> returns thenable
+				//        select().from().where().limit() -> thenable.limit()
+				return {
+					from: () => ({
+						where: () => createWhereThenable(selectResult, selectResult.slice(0, 1)),
+					}),
+				};
+			}
+			if (columns?.count) {
+				// For COUNT(*) queries in getAchievementCount
+				return {
+					from: () => ({
+						where: () => Promise.resolve([{ count: selectResult.length }]),
+					}),
+				};
 			}
 			return selectChain;
 		},

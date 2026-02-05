@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MIGRATIONS_DIR = join(__dirname, '..', 'drizzle');
-const SQL_FILE_PATTERN = /^\d+_[^.]+\.sql$/;
+const SQL_FILE_PATTERN = /^\d+_[a-z0-9_-]+\.sql$/i;
 const MIGRATIONS_TABLE = '_migrations';
 const DB_NAME = 'arcturus';
 
@@ -134,7 +134,8 @@ async function recordMigrationApplied(
 	if (!SQL_FILE_PATTERN.test(migration)) {
 		throw new Error(`Invalid migration name: ${migration}`);
 	}
-	const insertSql = `INSERT INTO "${MIGRATIONS_TABLE}" (name, appliedAt) VALUES ('${migration}', ${appliedAt})`;
+	const escapedMigration = migration.replaceAll("'", "''");
+	const insertSql = `INSERT INTO "${MIGRATIONS_TABLE}" (name, appliedAt) VALUES ('${escapedMigration}', ${appliedAt})`;
 	const localFlag = local ? '--local' : '--remote';
 	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${insertSql}`];
 	await executeWrangler(args);

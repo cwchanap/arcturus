@@ -996,11 +996,20 @@ const initialBalance = user.chipBalance ?? 1000;
 	const achievementToast = document.getElementById('achievement-toast');
 	const achievementIconEl = document.getElementById('achievement-icon');
 	const achievementNameEl = document.getElementById('achievement-name');
-	const { enqueue } = initAchievementToast(() => ({
-		toast: achievementToast,
-		icon: achievementIconEl,
-		name: achievementNameEl,
-	}));
+
+	let enqueue: (achievements: Array<{ id: string; name: string; icon: string }>) => void;
+
+	if (achievementToast && achievementIconEl && achievementNameEl) {
+		const controller = initAchievementToast(() => ({
+			toast: achievementToast,
+			icon: achievementIconEl,
+			name: achievementNameEl,
+		}));
+		enqueue = controller.enqueue;
+	} else {
+		// No-op if elements are missing
+		enqueue = () => {};
+	}
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{

@@ -9,6 +9,12 @@ import {
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
+import {
+	clearPendingStats,
+	createPendingStats,
+	ensureRoundStatsIncluded,
+	markSyncPendingOnRateLimit,
+} from './balance-sync-stats';
 
 /**
  * Format outcome message for display, handling split hands.
@@ -118,11 +124,7 @@ export function initBlackjackClient(): void {
 
 	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
 	// This prevents stats drift when multiple rounds are played before sync succeeds
-	let pendingStats = {
-		winsIncrement: 0,
-		lossesIncrement: 0,
-		handsIncrement: 0,
-	};
+	let pendingStats = createPendingStats();
 	let syncPending = false;
 
 	// Track pending retry timer to cancel stale retries before starting new sync
@@ -927,12 +929,16 @@ export function initBlackjackClient(): void {
 
 				// Include any pending stats from previous delayed syncs to prevent drift
 				// If current round's stats haven't been included yet, add them now
-				if (!statsIncluded) {
-					pendingStats.winsIncrement += winsIncrement;
-					pendingStats.lossesIncrement += lossesIncrement;
-					pendingStats.handsIncrement += outcomes.length;
-					statsIncluded = true;
-				}
+				const roundStats = {
+					winsIncrement,
+					lossesIncrement,
+					handsIncrement: outcomes.length,
+				};
+				({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
+					pendingStats,
+					roundStats,
+					statsIncluded,
+				));
 				const finalWinsIncrement = pendingStats.winsIncrement;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
@@ -957,7 +963,7 @@ export function initBlackjackClient(): void {
 
 				if (response.ok) {
 					// Clear pending stats on successful sync
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					pendingStats = clearPendingStats();
 					syncPending = false;
 					statsIncluded = false;
 					pendingRetryTimer = null;
@@ -1009,9 +1015,7 @@ export function initBlackjackClient(): void {
 
 					// Set syncPending to true only when first encountering rate limit
 					// Stats are already added to pendingStats at the start of performChipUpdate
-					if (!syncPending) {
-						syncPending = true;
-					}
+					syncPending = markSyncPendingOnRateLimit(syncPending);
 
 					// Keep the current balance and retry after the rate limit window
 					pendingRetryTimer = setTimeout(() => {
@@ -1031,7 +1035,7 @@ export function initBlackjackClient(): void {
 					renderGame();
 					setStatusIfNotRoundResult(`Balance synced to ${serverBalance} chips.`);
 					// Clear pending stats since we're reverting to server state
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					pendingStats = clearPendingStats();
 					syncPending = false;
 					statsIncluded = false;
 					pendingRetryTimer = null;
@@ -1040,7 +1044,7 @@ export function initBlackjackClient(): void {
 					game.setBalance(serverSyncedBalance);
 					renderGame();
 					// Clear pending stats for non-rate-limit errors
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					pendingStats = clearPendingStats();
 					syncPending = false;
 					statsIncluded = false;
 					pendingRetryTimer = null;
@@ -1071,7 +1075,7 @@ export function initBlackjackClient(): void {
 			renderGame();
 			statusEl.textContent = 'Network error. Balance reverted.';
 			// Clear pending stats on network errors
-			pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+			pendingStats = clearPendingStats();
 			syncPending = false;
 			statsIncluded = false;
 			pendingRetryTimer = null;

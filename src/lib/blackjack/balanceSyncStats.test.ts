@@ -10,17 +10,19 @@
  */
 
 import { describe, it, expect } from 'bun:test';
+import {
+	addPendingStats,
+	clearPendingStats,
+	createPendingStats,
+	ensureRoundStatsIncluded,
+	markSyncPendingOnRateLimit,
+} from './balance-sync-stats';
 
 describe('Blackjack Balance Sync Stats Tracking', () => {
 	describe('Pending Stats Accumulation', () => {
 		it('should track initial pending stats correctly', () => {
-			// Simulate the state initialization
-			let pendingStats = {
-				winsIncrement: 0,
-				lossesIncrement: 0,
-				handsIncrement: 0,
-			};
-			let syncPending = false;
+			let pendingStats = createPendingStats();
+			let statsIncluded = false;
 
 			// Round 1: 1 loss, 1 hand
 			const round1Wins = 0;
@@ -28,29 +30,24 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			const round1Hands = 1;
 
 			// First pending round - initialize with current round's stats
-			if (!syncPending) {
-				pendingStats = {
+			({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
+				pendingStats,
+				{
 					winsIncrement: round1Wins,
 					lossesIncrement: round1Losses,
 					handsIncrement: round1Hands,
-				};
-				syncPending = true;
-			}
+				},
+				statsIncluded,
+			));
 
 			expect(pendingStats.winsIncrement).toBe(0);
 			expect(pendingStats.lossesIncrement).toBe(1);
 			expect(pendingStats.handsIncrement).toBe(1);
-			expect(syncPending).toBe(true);
+			expect(statsIncluded).toBe(true);
 		});
 
 		it('should accumulate pending stats across multiple rounds', () => {
-			// Simulate the state initialization
-			let pendingStats = {
-				winsIncrement: 0,
-				lossesIncrement: 0,
-				handsIncrement: 0,
-			};
-			let syncPending = false;
+			let pendingStats = createPendingStats();
 
 			// Round 1: 1 loss
 			const round1Wins = 0;
@@ -58,14 +55,11 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			const round1Hands = 1;
 
 			// First pending round
-			if (!syncPending) {
-				pendingStats = {
-					winsIncrement: round1Wins,
-					lossesIncrement: round1Losses,
-					handsIncrement: round1Hands,
-				};
-				syncPending = true;
-			}
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: round1Wins,
+				lossesIncrement: round1Losses,
+				handsIncrement: round1Hands,
+			});
 
 			// Round 2: 1 win (played before retry succeeds)
 			const round2Wins = 1;
@@ -73,11 +67,11 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			const round2Hands = 1;
 
 			// Second pending round - accumulate
-			if (syncPending) {
-				pendingStats.winsIncrement += round2Wins;
-				pendingStats.lossesIncrement += round2Losses;
-				pendingStats.handsIncrement += round2Hands;
-			}
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: round2Wins,
+				lossesIncrement: round2Losses,
+				handsIncrement: round2Hands,
+			});
 
 			// Expect accumulated stats: 1 win, 1 loss, 2 hands
 			expect(pendingStats.winsIncrement).toBe(1);
@@ -86,24 +80,28 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should accumulate across three rounds', () => {
-			let pendingStats = {
-				winsIncrement: 0,
-				lossesIncrement: 0,
-				handsIncrement: 0,
-			};
+			let pendingStats = createPendingStats();
 
 			// Round 1: Loss
-			pendingStats = { winsIncrement: 0, lossesIncrement: 1, handsIncrement: 1 };
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: 0,
+				lossesIncrement: 1,
+				handsIncrement: 1,
+			});
 
 			// Round 2: Win
-			pendingStats.winsIncrement += 1;
-			pendingStats.lossesIncrement += 0;
-			pendingStats.handsIncrement += 1;
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: 1,
+				lossesIncrement: 0,
+				handsIncrement: 1,
+			});
 
 			// Round 3: Win (split hand = 2 wins)
-			pendingStats.winsIncrement += 2;
-			pendingStats.lossesIncrement += 0;
-			pendingStats.handsIncrement += 2;
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: 2,
+				lossesIncrement: 0,
+				handsIncrement: 2,
+			});
 
 			// Total: 3 wins, 1 loss, 4 hands
 			expect(pendingStats.winsIncrement).toBe(3);
@@ -112,14 +110,14 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should include current round stats when sending request', () => {
-			let pendingStats = {
-				winsIncrement: 0,
-				lossesIncrement: 0,
-				handsIncrement: 0,
-			};
+			let pendingStats = createPendingStats();
 
 			// Simulate pending stats from previous round
-			pendingStats = { winsIncrement: 1, lossesIncrement: 0, handsIncrement: 1 };
+			pendingStats = addPendingStats(pendingStats, {
+				winsIncrement: 1,
+				lossesIncrement: 0,
+				handsIncrement: 1,
+			});
 
 			// Current round stats
 			const currentWins = 1;
@@ -137,17 +135,17 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should clear pending stats on successful sync', () => {
-			let pendingStats = {
+			let pendingStats = addPendingStats(createPendingStats(), {
 				winsIncrement: 1,
 				lossesIncrement: 1,
 				handsIncrement: 2,
-			};
+			});
 			let syncPending = true;
 
 			// Simulate successful response
 			const responseOk = true;
 			if (responseOk) {
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				pendingStats = clearPendingStats();
 				syncPending = false;
 			}
 
@@ -158,11 +156,11 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should clear pending stats on non-rate-limit errors', () => {
-			let pendingStats = {
+			let pendingStats = addPendingStats(createPendingStats(), {
 				winsIncrement: 1,
 				lossesIncrement: 0,
 				handsIncrement: 1,
-			};
+			});
 			let syncPending = true;
 
 			// Simulate BALANCE_MISMATCH error
@@ -170,7 +168,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 
 			if (hasServerBalance) {
 				// Server provided its current balance
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				pendingStats = clearPendingStats();
 				syncPending = false;
 			}
 
@@ -181,12 +179,12 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 		});
 
 		it('should keep pending stats on rate limit with retries remaining', () => {
-			let pendingStats = {
+			let pendingStats = addPendingStats(createPendingStats(), {
 				winsIncrement: 0,
 				lossesIncrement: 1,
 				handsIncrement: 1,
-			};
-			let syncPending = false;
+			});
+			let syncPending = true;
 
 			const currentWins = 0;
 			const currentLosses = 1;
@@ -198,33 +196,27 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			const maxRetries = 3;
 
 			if (isRateLimited && retryCount < maxRetries) {
-				if (!syncPending) {
-					pendingStats = {
-						winsIncrement: currentWins,
-						lossesIncrement: currentLosses,
-						handsIncrement: currentHands,
-					};
-					syncPending = true;
-				} else {
-					pendingStats.winsIncrement += currentWins;
-					pendingStats.lossesIncrement += currentLosses;
-					pendingStats.handsIncrement += currentHands;
-				}
+				syncPending = markSyncPendingOnRateLimit(syncPending);
+				pendingStats = addPendingStats(pendingStats, {
+					winsIncrement: currentWins,
+					lossesIncrement: currentLosses,
+					handsIncrement: currentHands,
+				});
 			}
 
 			// Pending stats should be set but not cleared
 			expect(pendingStats.winsIncrement).toBe(0);
-			expect(pendingStats.lossesIncrement).toBe(1);
-			expect(pendingStats.handsIncrement).toBe(1);
+			expect(pendingStats.lossesIncrement).toBe(2);
+			expect(pendingStats.handsIncrement).toBe(2);
 			expect(syncPending).toBe(true);
 		});
 
 		it('should keep pending stats on rate limit max retries exceeded', () => {
-			const pendingStats = {
+			const pendingStats = addPendingStats(createPendingStats(), {
 				winsIncrement: 2,
 				lossesIncrement: 0,
 				handsIncrement: 1,
-			};
+			});
 			const syncPending = true;
 
 			// Rate limited, max retries exceeded - keep pending for next round

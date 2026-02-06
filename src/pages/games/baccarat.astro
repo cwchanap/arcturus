@@ -456,6 +456,9 @@ const initialBalance = user.chipBalance ?? 1000;
 	// Track pending retry timer to cancel stale retries before starting new sync
 	let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Concurrency guard: prevents overlapping performChipUpdate executions
+	let isSyncInProgress = false;
+
 	// DOM Elements
 	const balanceEl = document.getElementById('chip-balance');
 	if (!balanceEl) throw new Error('Baccarat UI elements not found');
@@ -822,6 +825,21 @@ const initialBalance = user.chipBalance ?? 1000;
 		let statsIncluded = false;
 
 		const performChipUpdate = async (retryCount = 0) => {
+			// Concurrency guard: skip if another performChipUpdate is already in-flight
+			if (isSyncInProgress) {
+				// Ensure current round stats are still queued for the next sync
+				if (!statsIncluded) {
+					pendingStats.winsIncrement += winsIncrement;
+					pendingStats.lossesIncrement += lossesIncrement;
+					pendingStats.handsIncrement += handsIncrement;
+					statsIncluded = true;
+					syncPending = true;
+				}
+				return;
+			}
+			isSyncInProgress = true;
+
+			try {
 			// Clear any pending retry timer from previous retry attempt
 			if (pendingRetryTimer) {
 				clearTimeout(pendingRetryTimer);
@@ -971,6 +989,9 @@ const initialBalance = user.chipBalance ?? 1000;
 			} else {
 				console.error('Chip update failed:', errorData.error, errorData.message);
 				showStatus('Balance sync failed. Will retry next round.');
+			}
+			} finally {
+				isSyncInProgress = false;
 			}
 		};
 

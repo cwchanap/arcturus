@@ -156,14 +156,32 @@ async function getSortedMigrations(): Promise<string[]> {
 	});
 }
 
+const WRANGLER_TIMEOUT_MS = Number(process.env.WRANGLER_TIMEOUT_MS) || 60_000;
+
 /**
  * Execute wrangler command and return output
  */
-async function executeWrangler(args: string[]): Promise<string> {
+async function executeWrangler(
+	args: string[],
+	timeoutMs: number = WRANGLER_TIMEOUT_MS,
+): Promise<string> {
 	return new Promise((resolve, reject) => {
+		let settled = false;
 		const wrangler = spawn('wrangler', args, { stdio: 'pipe' });
 		let stdout = '';
 		let stderr = '';
+
+		const timer = setTimeout(() => {
+			if (!settled) {
+				settled = true;
+				wrangler.kill();
+				reject(
+					new Error(
+						`Wrangler timed out after ${timeoutMs}ms. Args: ${args.join(' ')}`,
+					),
+				);
+			}
+		}, timeoutMs);
 
 		wrangler.stdout.on('data', (data) => {
 			const chunk = data.toString();
@@ -178,6 +196,9 @@ async function executeWrangler(args: string[]): Promise<string> {
 		});
 
 		wrangler.on('close', (code) => {
+			clearTimeout(timer);
+			if (settled) return;
+			settled = true;
 			if (code === 0) {
 				resolve(stdout);
 			} else {
@@ -186,6 +207,9 @@ async function executeWrangler(args: string[]): Promise<string> {
 		});
 
 		wrangler.on('error', (err) => {
+			clearTimeout(timer);
+			if (settled) return;
+			settled = true;
 			reject(new Error(`Failed to spawn wrangler: ${err.message}`));
 		});
 	});

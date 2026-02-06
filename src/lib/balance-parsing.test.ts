@@ -5,14 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-
-function parseBalance(text: string): number {
-	const normalized = text.replace(/,/g, '');
-	// Match optional minus sign, optional $, then digits and optional decimals
-	const match = normalized.match(/-?\$?\d+(?:\.\d+)?/);
-	if (!match) return 0;
-	return Number(match[0].replace('$', ''));
-}
+import { parseBalance } from './balance-parsing';
 
 describe('Balance Parsing Logic', () => {
 	test('parses simple numbers without formatting', () => {
@@ -53,10 +46,10 @@ describe('Balance Parsing Logic', () => {
 	});
 
 	test('handles invalid input gracefully', () => {
-		expect(parseBalance('')).toBe(0);
-		expect(parseBalance('abc')).toBe(0);
-		expect(parseBalance('$')).toBe(0);
-		expect(parseBalance(',')).toBe(0);
+		expect(parseBalance('')).toBeNull();
+		expect(parseBalance('abc')).toBeNull();
+		expect(parseBalance('$')).toBeNull();
+		expect(parseBalance(',')).toBeNull();
 	});
 
 	test('extracts first number from text', () => {

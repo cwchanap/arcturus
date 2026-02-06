@@ -95,7 +95,8 @@ describe('initAchievementToast', () => {
 			expect(toast.classList.has('translate-y-4')).toBe(true);
 
 			const finishToast = timers.find((timer) => timer !== hideToast);
-			finishToast?.();
+			expect(finishToast).toBeDefined();
+			finishToast!();
 
 			expect(icon.textContent).toBe('');
 			expect(name.textContent).toBe('');

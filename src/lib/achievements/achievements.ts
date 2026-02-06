@@ -48,20 +48,30 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			gameType?: GameType;
 		} = {},
 	): Promise<AchievementCheckContext> {
+		const defaultStats = {
+			totalWins: 0,
+			totalLosses: 0,
+			totalHandsPlayed: 0,
+			biggestWin: 0,
+			totalNetProfit: 0,
+		};
+
 		const [existingAchievementIds, aggregateStats, overallRank] = await Promise.all([
 			deps.getEarnedAchievementIds(db, userId),
 			deps.getAggregateUserStats(db, userId),
 			deps.getUserRank(db, userId),
 		]);
 
+		const stats = aggregateStats ?? defaultStats;
+
 		return {
 			userId,
 			overallRank,
-			totalWins: aggregateStats.totalWins,
-			totalLosses: aggregateStats.totalLosses,
-			totalHandsPlayed: aggregateStats.totalHandsPlayed,
-			biggestWin: aggregateStats.biggestWin,
-			totalNetProfit: aggregateStats.totalNetProfit,
+			totalWins: stats.totalWins,
+			totalLosses: stats.totalLosses,
+			totalHandsPlayed: stats.totalHandsPlayed,
+			biggestWin: stats.biggestWin,
+			totalNetProfit: stats.totalNetProfit,
 			currentChipBalance,
 			recentWinAmount: options.recentWinAmount,
 			gameType: options.gameType,

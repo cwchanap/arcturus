@@ -83,6 +83,16 @@ async function isMigrationApplied(
 		return coreTables.every((table) => existingTables.has(table));
 	}
 
+	// For migration 0001, check if mission table exists and user has chipBalance column
+	if (migrationFile.startsWith('0001_')) {
+		return existingTables.has('mission');
+	}
+
+	// For migration 0002, check if llm_settings table exists
+	if (migrationFile.startsWith('0002_')) {
+		return existingTables.has('llm_settings');
+	}
+
 	// For migration 0003, check if game_stats and user_achievement tables exist
 	if (migrationFile.startsWith('0003_')) {
 		return existingTables.has('game_stats') && existingTables.has('user_achievement');

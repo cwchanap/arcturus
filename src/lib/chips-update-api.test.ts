@@ -183,8 +183,8 @@ describe('chips update API', () => {
 		const POST = createHandler();
 
 		// JSON.stringify({ delta: Infinity }) serializes Infinity to null,
-		// so we send a raw JSON string with a non-finite numeric representation
-		// to exercise the non-finite validation path.
+		// so we test with the string "NaN" which exercises type validation
+		// (rejecting a string value for the numeric delta field).
 		const requestNaN = new Request('http://test.local', {
 			method: 'POST',
 			body: '{"delta":"NaN","gameType":"blackjack"}',

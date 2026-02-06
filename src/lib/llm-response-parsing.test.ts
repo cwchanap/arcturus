@@ -11,18 +11,39 @@ function extractBalancedJsonObjects(input: string): string[] {
 	const results: string[] = [];
 	let braceCount = 0;
 	let start = -1;
+	let inString = false;
+	let escapeNext = false;
 
 	for (let i = 0; i < input.length; i++) {
-		if (input[i] === '{') {
-			if (braceCount === 0) {
-				start = i;
-			}
-			braceCount++;
-		} else if (input[i] === '}') {
-			braceCount--;
-			if (braceCount === 0 && start !== -1) {
-				results.push(input.substring(start, i + 1));
-				start = -1;
+		const char = input[i];
+
+		if (escapeNext) {
+			escapeNext = false;
+			continue;
+		}
+
+		if (char === '\\') {
+			escapeNext = true;
+			continue;
+		}
+
+		if (char === '"') {
+			inString = !inString;
+			continue;
+		}
+
+		if (!inString) {
+			if (char === '{') {
+				if (braceCount === 0) {
+					start = i;
+				}
+				braceCount++;
+			} else if (char === '}') {
+				braceCount--;
+				if (braceCount === 0 && start !== -1) {
+					results.push(input.substring(start, i + 1));
+					start = -1;
+				}
 			}
 		}
 	}

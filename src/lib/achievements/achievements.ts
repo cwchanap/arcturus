@@ -113,7 +113,8 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 
 					if (granted) {
 						newlyGranted.push(achievement);
-						console.warn(
+						// eslint-disable-next-line no-console
+						console.info(
 							`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`,
 						);
 					}

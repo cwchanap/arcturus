@@ -7,14 +7,37 @@
 import { describe, expect, test } from 'bun:test';
 import type { BlackjackAction } from './blackjack/types';
 
+function extractBalancedJsonObjects(input: string): string[] {
+	const results: string[] = [];
+	let braceCount = 0;
+	let start = -1;
+
+	for (let i = 0; i < input.length; i++) {
+		if (input[i] === '{') {
+			if (braceCount === 0) {
+				start = i;
+			}
+			braceCount++;
+		} else if (input[i] === '}') {
+			braceCount--;
+			if (braceCount === 0 && start !== -1) {
+				results.push(input.substring(start, i + 1));
+				start = -1;
+			}
+		}
+	}
+
+	return results;
+}
+
 function parseLLMResponse(
 	response: string,
 	availableActions: BlackjackAction[],
 ): { recommendedAction: BlackjackAction | null; reasoning: string; confidence: number } | null {
 	try {
-		// Use greedy pattern to capture nested JSON objects
-		const jsonMatches = response.match(/\{[\s\S]*\}/g);
-		if (!jsonMatches || jsonMatches.length === 0) {
+		// Use balanced-brace extraction to correctly handle nested JSON
+		const jsonMatches = extractBalancedJsonObjects(response);
+		if (jsonMatches.length === 0) {
 			return null;
 		}
 

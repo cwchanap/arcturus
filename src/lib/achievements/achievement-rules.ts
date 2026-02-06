@@ -66,7 +66,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 	{
 		id: 'comeback',
 		name: 'Comeback King',
-		description: `Win after dropping below ${ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE.toLocaleString()} chips`,
+		description: `Win after dropping below ${new Intl.NumberFormat('en-US').format(ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE)} chips`,
 		category: 'gameplay',
 		icon: '🔥',
 	},

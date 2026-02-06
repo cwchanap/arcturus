@@ -182,18 +182,37 @@ describe('chips update API', () => {
 		resetMocks();
 		const POST = createHandler();
 
-		const request = new Request('http://test.local', {
+		// JSON.stringify({ delta: Infinity }) serializes Infinity to null,
+		// so we send a raw JSON string with a non-finite numeric representation
+		// to exercise the non-finite validation path.
+		const requestNaN = new Request('http://test.local', {
 			method: 'POST',
-			body: JSON.stringify({ delta: Infinity, gameType: 'blackjack' }),
+			body: '{"delta":"NaN","gameType":"blackjack"}',
+			headers: { 'Content-Type': 'application/json' },
 		});
 
-		const response = await POST({
-			request,
+		const responseNaN = await POST({
+			request: requestNaN,
+			locals: createLocals({ user: { id: 'user-nan' } }),
+		} as any);
+		const bodyNaN = await readJson(responseNaN);
+		expect(responseNaN.status).toBe(400);
+		expect(bodyNaN.error).toBe('INVALID_DELTA');
+
+		// Also verify that Infinity serialized as null is rejected
+		const requestNull = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: Infinity, gameType: 'blackjack' }),
+			headers: { 'Content-Type': 'application/json' },
+		});
+
+		const responseNull = await POST({
+			request: requestNull,
 			locals: createLocals({ user: { id: 'user-infinity' } }),
 		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_DELTA');
+		const bodyNull = await readJson(responseNull);
+		expect(responseNull.status).toBe(400);
+		expect(bodyNull.error).toBe('INVALID_DELTA');
 	});
 
 	test('rejects invalid game type', async () => {
@@ -632,8 +651,10 @@ describe('chips update API', () => {
 		} as any);
 		const body = await readJson(response);
 		expect(response.status).toBe(200);
+		// Balance is truncated (1000) + delta (10) = 1010
 		expect(body.balance).toBe(1010);
-		expect(mockDb.updateCalls).toBeGreaterThan(1);
+		// Repair is now folded into the single atomic update (no separate repair call)
+		expect(mockDb.updateCalls).toBe(1);
 	});
 
 	test('returns warning when stats tracking fails', async () => {

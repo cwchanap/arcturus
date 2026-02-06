@@ -481,14 +481,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 			const rawServerBalance = currentRow?.chipBalance ?? locals.user.chipBalance ?? 0;
 			const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
-
-			// Repair stored balance if it wasn't already an integer.
-			if (rawServerBalance !== serverBalance) {
-				await db
-					.update(user)
-					.set({ chipBalance: serverBalance })
-					.where(eq(user.id, locals.user.id));
-			}
+			const needsRepair = rawServerBalance !== serverBalance;
 
 			// Optimistic locking: reject if client's previousBalance doesn't match server
 			if (clientPreviousBalance !== undefined) {
@@ -528,13 +521,20 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			}
 
 			// Atomic update with optimistic locking via WHERE condition
-			// This prevents TOCTOU race by ensuring balance hasn't changed since we read it
+			// This prevents TOCTOU race by ensuring balance hasn't changed since we read it.
+			// When the stored balance is fractional (needsRepair), we match against rawServerBalance
+			// so the repair and the delta update happen in a single atomic write.
 			const result = await db
 				.update(user)
 				.set({
 					chipBalance: newBalance,
 				})
-				.where(and(eq(user.id, locals.user.id), eq(user.chipBalance, serverBalance)));
+				.where(
+					and(
+						eq(user.id, locals.user.id),
+						eq(user.chipBalance, needsRepair ? rawServerBalance : serverBalance),
+					),
+				);
 
 			// Check if update affected any rows (D1 returns changes in meta)
 			const rowsAffected = getRowsAffected(result);

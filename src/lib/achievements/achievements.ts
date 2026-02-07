@@ -120,8 +120,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 					}
 				}
 			} catch (error) {
+				const errorMessage = error instanceof Error ? error.message : String(error);
 				console.error(
-					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${userId}: ${(error as Error).message}`,
+					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${userId}: ${errorMessage}`,
 				);
 			}
 		}

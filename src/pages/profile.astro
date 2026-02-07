@@ -32,6 +32,7 @@ let aiSettings = {
 // Achievements data
 let achievements: AchievementWithStatus[] = [];
 let achievementProgress = { total: 0, unlocked: 0, percentage: 0 };
+let achievementsFetchError = false;
 const clampedPercentage = () => Math.round(Math.min(100, Math.max(0, achievementProgress.percentage)));
 
 if (dbBinding) {
@@ -55,8 +56,10 @@ if (dbBinding) {
 			getAchievementsWithStatus(db, user.id),
 			getAchievementProgress(db, user.id),
 		]);
+		achievementsFetchError = false;
 	} catch (error) {
 		console.error('Error loading achievements:', error);
+		achievementsFetchError = true;
 	}
 }
 
@@ -484,13 +487,19 @@ const aiSettingsPayload = JSON.stringify({
 				</div>
 
 				{
-					achievements.length === 0 && (
+					achievementsFetchError ? (
+						<div class="mt-6 text-center py-8">
+							<p class="text-rose-400">
+								Unable to load achievements — try again
+							</p>
+						</div>
+					) : achievements.length === 0 ? (
 						<div class="mt-6 text-center py-8">
 							<p class="text-slate-400">
 								No achievements available yet. Start playing to earn badges!
 							</p>
 						</div>
-					)
+					) : null
 				}
 			</div>
 		</div>

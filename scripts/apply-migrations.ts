@@ -185,11 +185,7 @@ async function executeWrangler(
 			if (!settled) {
 				settled = true;
 				wrangler.kill();
-				reject(
-					new Error(
-						`Wrangler timed out after ${timeoutMs}ms. Args: ${args.join(' ')}`,
-					),
-				);
+				reject(new Error(`Wrangler timed out after ${timeoutMs}ms. Args: ${args.join(' ')}`));
 			}
 		}, timeoutMs);
 

@@ -82,7 +82,9 @@ function parseLLMResponse(
 		}
 
 		const parsedObj = parsed as Record<string, unknown>;
-		const action = String(parsedObj.action ?? '').toLowerCase().replaceAll('_', '-');
+		const action = String(parsedObj.action ?? '')
+			.toLowerCase()
+			.replaceAll('_', '-');
 		const reasoning = typeof parsedObj.reasoning === 'string' ? parsedObj.reasoning : '';
 
 		const validActions: BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];

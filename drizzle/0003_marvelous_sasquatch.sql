@@ -8,7 +8,7 @@ CREATE TABLE `game_stats` (
 	`netProfit` integer DEFAULT 0 NOT NULL,
 	`updatedAt` integer NOT NULL,
 	PRIMARY KEY(`userId`, `gameType`),
-	FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE CASCADE
 );
 --> statement-breakpoint
 CREATE INDEX `game_stats_type_wins_idx` ON `game_stats` (`gameType`,`totalWins`);--> statement-breakpoint
@@ -20,7 +20,7 @@ CREATE TABLE `user_achievement` (
 	`earnedAt` integer NOT NULL,
 	`gameType` text,
 	PRIMARY KEY(`userId`, `achievementId`),
-	FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE no action
+	FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE CASCADE
 );
 --> statement-breakpoint
 CREATE INDEX `user_achievement_user_earned_idx` ON `user_achievement` (`userId`,`earnedAt`);

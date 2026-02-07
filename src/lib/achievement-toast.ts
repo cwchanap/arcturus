@@ -37,7 +37,11 @@ export function initAchievementToast(
 
 	const safeGetElements = (): AchievementToastElements | null => {
 		const elements = getElements();
-		if (!elements.toast?.isConnected || !elements.icon?.isConnected || !elements.name?.isConnected) {
+		if (
+			!elements.toast?.isConnected ||
+			!elements.icon?.isConnected ||
+			!elements.name?.isConnected
+		) {
 			return null;
 		}
 		return elements;

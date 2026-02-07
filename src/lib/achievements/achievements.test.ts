@@ -128,13 +128,7 @@ describe('achievements orchestration', () => {
 		};
 
 		try {
-			const results = await checkAndGrantAchievements(
-				db,
-				'user1',
-				5000,
-				{},
-				customAchievements,
-			);
+			const results = await checkAndGrantAchievements(db, 'user1', 5000, {}, customAchievements);
 			expect(results.length).toBeGreaterThan(0);
 		} finally {
 			console.warn = warnSpy;

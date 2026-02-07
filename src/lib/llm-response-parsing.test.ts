@@ -4,10 +4,11 @@
  * Tests for parsing JSON responses from LLM APIs.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
 import type { BlackjackAction } from './blackjack/types';
 
-function extractBalancedJsonObjects(input: string): string[] {
+// Exported for testing/mocking purposes
+export function extractBalancedJsonObjects(input: string): string[] {
 	const results: string[] = [];
 	let braceCount = 0;
 	let start = -1;
@@ -22,7 +23,7 @@ function extractBalancedJsonObjects(input: string): string[] {
 			continue;
 		}
 
-		if (char === '\\') {
+		if (char === '\\' && inString) {
 			escapeNext = true;
 			continue;
 		}
@@ -54,10 +55,12 @@ function extractBalancedJsonObjects(input: string): string[] {
 function parseLLMResponse(
 	response: string,
 	availableActions: BlackjackAction[],
+	deps: { extractJson?: typeof extractBalancedJsonObjects } = {},
 ): { recommendedAction: BlackjackAction | null; reasoning: string; confidence: number } | null {
 	try {
 		// Use balanced-brace extraction to correctly handle nested JSON
-		const jsonMatches = extractBalancedJsonObjects(response);
+		const extractor = deps.extractJson ?? extractBalancedJsonObjects;
+		const jsonMatches = extractor(response);
 		if (jsonMatches.length === 0) {
 			return null;
 		}
@@ -207,11 +210,24 @@ describe('LLM Response Parsing', () => {
 			expect(result).toBeNull();
 		});
 
-		test('returns null for non-object response', () => {
+		test('returns null when no JSON object found', () => {
 			const response = '["array","instead","of","object"]';
 			const availableActions: BlackjackAction[] = ['hit', 'stand'];
 
 			const result = parseLLMResponse(response, availableActions);
+
+			expect(result).toBeNull();
+		});
+
+		test('returns null when parsed value is not an object', () => {
+			// Mock extractBalancedJsonObjects to return a JSON string that parses to a non-object
+			const mockResponse = '{"action":"hit"}';
+			const availableActions: BlackjackAction[] = ['hit', 'stand'];
+
+			// Inject a mock that returns a JSON number string
+			const result = parseLLMResponse(mockResponse, availableActions, {
+				extractJson: () => ['123'],
+			});
 
 			expect(result).toBeNull();
 		});

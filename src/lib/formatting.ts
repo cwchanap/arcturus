@@ -13,6 +13,8 @@ export function formatChipBalance(value: number): string {
 	return new Intl.NumberFormat('en-US').format(value);
 }
 
+const MAX_FRACTION_DIGITS = 100;
+
 /**
  * Formats a number with decimal places
  * @param value - The number to format
@@ -25,16 +27,15 @@ export function formatChipBalanceWithDecimals(
 	minimumFractionDigits = 2,
 	maximumFractionDigits = 2,
 ): string {
-	// Defensive validation: ensure values are non-negative integers
-	const minDigits = Math.max(0, Math.floor(minimumFractionDigits));
-	const maxDigits = Math.max(0, Math.floor(maximumFractionDigits));
+	// Clamp values to valid range [0, MAX_FRACTION_DIGITS]
+	const minDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(minimumFractionDigits)));
+	const maxDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(maximumFractionDigits)));
 
 	// Ensure minimumFractionDigits <= maximumFractionDigits
-	const finalMinDigits = minDigits > maxDigits ? maxDigits : minDigits;
-	const finalMaxDigits = maxDigits;
+	const finalMinDigits = Math.min(minDigits, maxDigits);
 
 	return new Intl.NumberFormat('en-US', {
 		minimumFractionDigits: finalMinDigits,
-		maximumFractionDigits: finalMaxDigits,
+		maximumFractionDigits: maxDigits,
 	}).format(value);
 }

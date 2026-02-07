@@ -408,21 +408,16 @@ describe('getTotalPlayersForGame', () => {
 
 describe('updateGameStats', () => {
 	test('uses different biggestWin updates for aggregated vs single-round', async () => {
-		let captured: Record<string, unknown> | null = null;
+		let capturedSet: Record<string, unknown> | null = null;
 
 		const mockDb = {
 			insert: () => ({
 				values: () => ({
-					onConflictDoNothing: () => Promise.resolve(),
+					onConflictDoUpdate: (conflictUpdate: { set: Record<string, unknown> }) => {
+						capturedSet = conflictUpdate.set;
+						return Promise.resolve();
+					},
 				}),
-			}),
-			update: () => ({
-				set: (values: Record<string, unknown>) => {
-					captured = values;
-					return {
-						where: () => Promise.resolve(),
-					};
-				},
 			}),
 		} as unknown as Database;
 
@@ -434,7 +429,7 @@ describe('updateGameStats', () => {
 			biggestWinCandidate: null,
 		});
 
-		const aggregatedText = extractSqlText(captured?.['biggestWin']);
+		const aggregatedText = extractSqlText(capturedSet?.['biggestWin']);
 
 		await updateGameStats(mockDb, 'user1', 'blackjack' as GameType, {
 			winsIncrement: 1,
@@ -444,7 +439,7 @@ describe('updateGameStats', () => {
 			biggestWinCandidate: 200,
 		});
 
-		const singleRoundText = extractSqlText(captured?.['biggestWin']);
+		const singleRoundText = extractSqlText(capturedSet?.['biggestWin']);
 		expect(aggregatedText).not.toBe(singleRoundText);
 	});
 });

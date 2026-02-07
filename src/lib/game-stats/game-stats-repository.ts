@@ -122,22 +122,30 @@ export async function updateGameStats(
 				ELSE ${gameStats.biggestWin}
 			END`;
 
-	// Ensure stats record exists
-	await initializeGameStats(db, userId, gameType);
-
-	// Atomic update using SQL increments - compute biggestWin atomically to avoid race conditions
-	// Note: SQLite doesn't support GREATEST(), so we use a CASE statement instead
+	// Atomic upsert: insert or update in one operation to avoid race conditions
 	await db
-		.update(gameStats)
-		.set({
-			totalWins: sql`${gameStats.totalWins} + ${update.winsIncrement}`,
-			totalLosses: sql`${gameStats.totalLosses} + ${update.lossesIncrement}`,
-			handsPlayed: sql`${gameStats.handsPlayed} + ${update.handsIncrement}`,
-			biggestWin: biggestWinUpdate,
-			netProfit: sql`${gameStats.netProfit} + ${update.chipDelta}`,
+		.insert(gameStats)
+		.values({
+			userId,
+			gameType,
+			totalWins: update.winsIncrement,
+			totalLosses: update.lossesIncrement,
+			handsPlayed: update.handsIncrement,
+			biggestWin: biggestWinCandidate ?? 0,
+			netProfit: update.chipDelta,
 			updatedAt: now,
 		})
-		.where(and(eq(gameStats.userId, userId), eq(gameStats.gameType, gameType)));
+		.onConflictDoUpdate({
+			target: [gameStats.userId, gameStats.gameType],
+			set: {
+				totalWins: sql`${gameStats.totalWins} + ${update.winsIncrement}`,
+				totalLosses: sql`${gameStats.totalLosses} + ${update.lossesIncrement}`,
+				handsPlayed: sql`${gameStats.handsPlayed} + ${update.handsIncrement}`,
+				biggestWin: biggestWinUpdate,
+				netProfit: sql`${gameStats.netProfit} + ${update.chipDelta}`,
+				updatedAt: now,
+			},
+		});
 }
 
 /**

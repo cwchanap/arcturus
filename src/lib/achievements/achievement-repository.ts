@@ -78,7 +78,7 @@ export async function grantAchievement(
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.error(
-			`[ACHIEVEMENT_GRANT_ERROR] Failed to grant achievement ${achievementId} for user: ${errorMessage}`,
+			`[ACHIEVEMENT_GRANT_ERROR] Failed to grant achievement ${achievementId} to user ${userId}: ${errorMessage}`,
 		);
 		throw error;
 	}

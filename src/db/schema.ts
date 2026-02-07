@@ -86,7 +86,7 @@ export const gameStats = sqliteTable(
 	{
 		userId: text('userId')
 			.notNull()
-			.references(() => user.id),
+			.references(() => user.id, { onDelete: 'cascade' }),
 		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat'
 
 		// Core statistics
@@ -121,7 +121,7 @@ export const userAchievement = sqliteTable(
 	{
 		userId: text('userId')
 			.notNull()
-			.references(() => user.id),
+			.references(() => user.id, { onDelete: 'cascade' }),
 		achievementId: text('achievementId').notNull(), // 'rising_star', 'high_roller', etc.
 		earnedAt: integer('earnedAt', { mode: 'timestamp' }).notNull(),
 		// Game context when achievement was earned (null for global achievements)

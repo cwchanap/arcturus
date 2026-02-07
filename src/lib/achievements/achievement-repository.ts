@@ -11,6 +11,15 @@ import type { UserAchievementRecord } from './types';
 import type { GameType } from '../game-stats/types';
 
 /**
+ * Redact user ID for logging to avoid PII exposure
+ * Returns a truncated version of the userId (first 4 chars + '***')
+ */
+function redactUserId(userId: string): string {
+	if (!userId || userId.length < 4) return '***';
+	return `${userId.slice(0, 4)}***`;
+}
+
+/**
  * Get all achievements earned by a user
  */
 export async function getUserAchievements(
@@ -78,7 +87,7 @@ export async function grantAchievement(
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);
 		console.error(
-			`[ACHIEVEMENT_GRANT_ERROR] Failed to grant achievement ${achievementId} to user ${userId}: ${errorMessage}`,
+			`[ACHIEVEMENT_GRANT_ERROR] Failed to grant achievement ${achievementId} to user ${redactUserId(userId)}: ${errorMessage}`,
 		);
 		throw error;
 	}
@@ -95,7 +104,9 @@ export async function hasAchievement(
 	const [result] = await db
 		.select({ achievementId: userAchievement.achievementId })
 		.from(userAchievement)
-		.where(and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)))
+		.where(
+			and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)),
+		)
 		.limit(1);
 
 	return !!result;

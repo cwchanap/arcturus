@@ -131,7 +131,7 @@ export async function updateGameStats(
 			totalWins: update.winsIncrement,
 			totalLosses: update.lossesIncrement,
 			handsPlayed: update.handsIncrement,
-			biggestWin: biggestWinCandidate ?? 0,
+			biggestWin: Math.max(biggestWinCandidate ?? 0, 0),
 			netProfit: update.chipDelta,
 			updatedAt: now,
 		})

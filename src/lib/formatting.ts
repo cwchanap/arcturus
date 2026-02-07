@@ -27,9 +27,13 @@ export function formatChipBalanceWithDecimals(
 	minimumFractionDigits = 2,
 	maximumFractionDigits = 2,
 ): string {
+	// Sanitize inputs to handle NaN values
+	const sanitizedMin = Number.isNaN(minimumFractionDigits) ? 0 : minimumFractionDigits;
+	const sanitizedMax = Number.isNaN(maximumFractionDigits) ? 0 : maximumFractionDigits;
+
 	// Clamp values to valid range [0, MAX_FRACTION_DIGITS]
-	const minDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(minimumFractionDigits)));
-	const maxDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(maximumFractionDigits)));
+	const minDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(sanitizedMin)));
+	const maxDigits = Math.min(MAX_FRACTION_DIGITS, Math.max(0, Math.floor(sanitizedMax)));
 
 	// Ensure minimumFractionDigits <= maximumFractionDigits
 	const finalMinDigits = Math.min(minDigits, maxDigits);

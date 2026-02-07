@@ -840,156 +840,155 @@ const initialBalance = user.chipBalance ?? 1000;
 			isSyncInProgress = true;
 
 			try {
-			// Clear any pending retry timer from previous retry attempt
-			if (pendingRetryTimer) {
-				clearTimeout(pendingRetryTimer);
-				pendingRetryTimer = null;
-			}
-
-			// Recompute delta using current game balance (not stale cached delta)
-			// This prevents double-applying deltas when a later round syncs before an earlier retry
-			const currentGameBalance = game.getBalance();
-			const deltaForRequest = currentGameBalance - lastSyncedBalance;
-
-			// Include any pending stats from previous delayed syncs to prevent drift
-			// If current round's stats haven't been included yet, add them now
-			if (!statsIncluded) {
-				pendingStats.winsIncrement += winsIncrement;
-				pendingStats.lossesIncrement += lossesIncrement;
-				pendingStats.handsIncrement += handsIncrement;
-				statsIncluded = true;
-			}
-			const finalWinsIncrement = pendingStats.winsIncrement;
-			const finalLossesIncrement = pendingStats.lossesIncrement;
-			const finalHandCount = pendingStats.handsIncrement;
-
-			const response = await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					delta: deltaForRequest,
-					gameType: 'baccarat',
-					previousBalance: lastSyncedBalance,
-					outcome,
-					handCount: finalHandCount,
-					// Send accumulated stats including pending ones
-					winsIncrement: finalWinsIncrement,
-					lossesIncrement: finalLossesIncrement,
-				}),
-			});
-
-			if (response.ok) {
-				// Clear pending stats on successful sync
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-				syncPending = false;
-				statsIncluded = false;
-				pendingRetryTimer = null;
-
-				// Update our server-synced balance tracker after successful sync
-				// Use the same balance reference that was used for the delta calculation
-				lastSyncedBalance = currentGameBalance;
-				if (retryCount > 0) {
-					showStatus('Balance synced successfully.');
+				// Clear any pending retry timer from previous retry attempt
+				if (pendingRetryTimer) {
+					clearTimeout(pendingRetryTimer);
+					pendingRetryTimer = null;
 				}
 
-				// Check for newly earned achievements
-				const data = await response.json().catch(() => ({}));
-				if (
-					data.newAchievements &&
-					Array.isArray(data.newAchievements) &&
-					data.newAchievements.length > 0
-				) {
-					// Dispatch custom event for UI to handle
-					window.dispatchEvent(
-						new CustomEvent('achievement-earned', {
-							detail: { achievements: data.newAchievements },
-						}),
-					);
+				// Recompute delta using current game balance (not stale cached delta)
+				// This prevents double-applying deltas when a later round syncs before an earlier retry
+				const currentGameBalance = game.getBalance();
+				const deltaForRequest = currentGameBalance - lastSyncedBalance;
+
+				// Include any pending stats from previous delayed syncs to prevent drift
+				// If current round's stats haven't been included yet, add them now
+				if (!statsIncluded) {
+					pendingStats.winsIncrement += winsIncrement;
+					pendingStats.lossesIncrement += lossesIncrement;
+					pendingStats.handsIncrement += handsIncrement;
+					statsIncluded = true;
 				}
-				return;
-			}
+				const finalWinsIncrement = pendingStats.winsIncrement;
+				const finalLossesIncrement = pendingStats.lossesIncrement;
+				const finalHandCount = pendingStats.handsIncrement;
 
-			const errorData = (await response.json().catch(() => ({}))) as {
-				error?: string;
-				message?: string;
-				currentBalance?: number;
-			};
-
-			// Special handling for RATE_LIMITED: retry after delay instead of reverting
-			if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
-				const retryAfterHeader = response.headers.get('Retry-After');
-				const retryAfterSeconds = parseInt(retryAfterHeader || '2', 10);
-				const retryAfterMs = (Number.isNaN(retryAfterSeconds) ? 2 : retryAfterSeconds) * 1000;
-				console.warn(
-					`Chip update rate limited, retrying in ${retryAfterMs}ms (attempt ${retryCount + 1})`,
-				);
-				showStatus('Syncing balance...');
-
-				// Set syncPending to true only when first encountering rate limit
-				// Stats are already added to pendingStats at the start of performChipUpdate
-				if (!syncPending) {
-					syncPending = true;
-				}
-
-				// Keep the current balance and retry after the rate limit window
-				pendingRetryTimer = setTimeout(() => {
-					void (async () => {
-						try {
-							await performChipUpdate(retryCount + 1);
-						} catch (error) {
-							console.error('Balance sync retry error:', error);
-							showStatus('Network error. Balance sync failed.');
-						}
-					})();
-				}, retryAfterMs + 100);
-				return;
-			}
-
-			const hasServerBalance =
-				errorData.currentBalance !== undefined &&
-				!Number.isNaN(Number(errorData.currentBalance));
-
-			// For other errors, handle by reverting to server state when possible
-			if (hasServerBalance) {
-				const serverBalance = Number(errorData.currentBalance);
-				lastSyncedBalance = serverBalance;
-				game.applyServerBalance(serverBalance);
-				updateUI();
-				// Clear pending stats since we're reverting to server state
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-				syncPending = false;
-				statsIncluded = false;
-				pendingRetryTimer = null;
-				showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
-			} else {
-				const resolution = resolveBaccaratSyncState({
-					error: errorData.error,
-					hasServerBalance,
+				const response = await fetch('/api/chips/update', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						delta: deltaForRequest,
+						gameType: 'baccarat',
+						previousBalance: lastSyncedBalance,
+						outcome,
+						handCount: finalHandCount,
+						// Send accumulated stats including pending ones
+						winsIncrement: finalWinsIncrement,
+						lossesIncrement: finalLossesIncrement,
+					}),
 				});
-				if (resolution.clearPendingStats) {
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-					statsIncluded = false;
-				}
-				syncPending = resolution.syncPending;
-				pendingRetryTimer = null;
-			}
 
-			if (errorData.error === 'BALANCE_MISMATCH') {
-				console.warn('Balance mismatch detected, synced to server balance if provided.');
-				showStatus('Balance corrected (server sync).');
-			} else if (errorData.error === 'RATE_LIMITED') {
-				// Max retries exceeded
-				console.error('Chip update rate limited, max retries exceeded');
-				showStatus('Sync delayed. Balance will update on next round.');
-			} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
-				console.error('Delta exceeded server limit:', errorData.message);
-				showStatus('Payout exceeded limit. Please try a smaller bet.');
-			} else if (errorData.error === 'INSUFFICIENT_BALANCE') {
-				showStatus(errorData.message || 'Insufficient balance on server.');
-			} else {
-				console.error('Chip update failed:', errorData.error, errorData.message);
-				showStatus('Balance sync failed. Will retry next round.');
-			}
+				if (response.ok) {
+					// Clear pending stats on successful sync
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
+					statsIncluded = false;
+					pendingRetryTimer = null;
+
+					// Update our server-synced balance tracker after successful sync
+					// Use the same balance reference that was used for the delta calculation
+					lastSyncedBalance = currentGameBalance;
+					if (retryCount > 0) {
+						showStatus('Balance synced successfully.');
+					}
+
+					// Check for newly earned achievements
+					const data = await response.json().catch(() => ({}));
+					if (
+						data.newAchievements &&
+						Array.isArray(data.newAchievements) &&
+						data.newAchievements.length > 0
+					) {
+						// Dispatch custom event for UI to handle
+						window.dispatchEvent(
+							new CustomEvent('achievement-earned', {
+								detail: { achievements: data.newAchievements },
+							}),
+						);
+					}
+					return;
+				}
+
+				const errorData = (await response.json().catch(() => ({}))) as {
+					error?: string;
+					message?: string;
+					currentBalance?: number;
+				};
+
+				// Special handling for RATE_LIMITED: retry after delay instead of reverting
+				if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
+					const retryAfterHeader = response.headers.get('Retry-After');
+					const retryAfterSeconds = parseInt(retryAfterHeader || '2', 10);
+					const retryAfterMs = (Number.isNaN(retryAfterSeconds) ? 2 : retryAfterSeconds) * 1000;
+					console.warn(
+						`Chip update rate limited, retrying in ${retryAfterMs}ms (attempt ${retryCount + 1})`,
+					);
+					showStatus('Syncing balance...');
+
+					// Set syncPending to true only when first encountering rate limit
+					// Stats are already added to pendingStats at the start of performChipUpdate
+					if (!syncPending) {
+						syncPending = true;
+					}
+
+					// Keep the current balance and retry after the rate limit window
+					pendingRetryTimer = setTimeout(() => {
+						void (async () => {
+							try {
+								await performChipUpdate(retryCount + 1);
+							} catch (error) {
+								console.error('Balance sync retry error:', error);
+								showStatus('Network error. Balance sync failed.');
+							}
+						})();
+					}, retryAfterMs + 100);
+					return;
+				}
+
+				const hasServerBalance =
+					errorData.currentBalance !== undefined && !Number.isNaN(Number(errorData.currentBalance));
+
+				// For other errors, handle by reverting to server state when possible
+				if (hasServerBalance) {
+					const serverBalance = Number(errorData.currentBalance);
+					lastSyncedBalance = serverBalance;
+					game.applyServerBalance(serverBalance);
+					updateUI();
+					// Clear pending stats since we're reverting to server state
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					syncPending = false;
+					statsIncluded = false;
+					pendingRetryTimer = null;
+					showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
+				} else {
+					const resolution = resolveBaccaratSyncState({
+						error: errorData.error,
+						hasServerBalance,
+					});
+					if (resolution.clearPendingStats) {
+						pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+						statsIncluded = false;
+					}
+					syncPending = resolution.syncPending;
+					pendingRetryTimer = null;
+				}
+
+				if (errorData.error === 'BALANCE_MISMATCH') {
+					console.warn('Balance mismatch detected, synced to server balance if provided.');
+					showStatus('Balance corrected (server sync).');
+				} else if (errorData.error === 'RATE_LIMITED') {
+					// Max retries exceeded
+					console.error('Chip update rate limited, max retries exceeded');
+					showStatus('Sync delayed. Balance will update on next round.');
+				} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
+					console.error('Delta exceeded server limit:', errorData.message);
+					showStatus('Payout exceeded limit. Please try a smaller bet.');
+				} else if (errorData.error === 'INSUFFICIENT_BALANCE') {
+					showStatus(errorData.message || 'Insufficient balance on server.');
+				} else {
+					console.error('Chip update failed:', errorData.error, errorData.message);
+					showStatus('Balance sync failed. Will retry next round.');
+				}
 			} finally {
 				isSyncInProgress = false;
 			}

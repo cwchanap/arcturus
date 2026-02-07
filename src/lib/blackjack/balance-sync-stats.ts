@@ -8,10 +8,7 @@ export function createPendingStats(): PendingStats {
 	return { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
 }
 
-export function addPendingStats(
-	pendingStats: PendingStats,
-	increment: PendingStats,
-): PendingStats {
+export function addPendingStats(pendingStats: PendingStats, increment: PendingStats): PendingStats {
 	return {
 		winsIncrement: pendingStats.winsIncrement + increment.winsIncrement,
 		lossesIncrement: pendingStats.lossesIncrement + increment.lossesIncrement,

@@ -622,14 +622,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						);
 					}
 				} catch (statsError) {
-					// Log but don't fail the chip update if stats tracking fails
-					const errorMessage =
-						statsError instanceof Error ? statsError.message : 'Unknown stats tracking error';
+					// Log detailed error server-side but send generic message to client
 					console.error(
 						'[STATS_ERROR] Failed to record game stats or check achievements:',
 						statsError,
 					);
-					warnings.push(`Stats tracking failed: ${errorMessage}`);
+					warnings.push('Stats tracking failed');
 				}
 			}
 

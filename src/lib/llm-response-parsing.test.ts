@@ -40,9 +40,14 @@ export function extractBalancedJsonObjects(input: string): string[] {
 				}
 				braceCount++;
 			} else if (char === '}') {
-				braceCount--;
-				if (braceCount === 0 && start !== -1) {
-					results.push(input.substring(start, i + 1));
+				if (braceCount > 0) {
+					braceCount--;
+					if (braceCount === 0 && start !== -1) {
+						results.push(input.substring(start, i + 1));
+						start = -1;
+					}
+				} else {
+					// Unmatched closing brace - reset start to maintain consistent state
 					start = -1;
 				}
 			}

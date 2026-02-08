@@ -80,23 +80,23 @@ describe('initAchievementToast', () => {
 
 			enqueue([{ id: 'winner', name: 'High Roller', icon: '🏆' }]);
 
-			let hideToast: (() => void) | undefined;
-			for (const timer of timers) {
+			let hideToastIndex = -1;
+			for (let i = 0; i < timers.length; i++) {
 				const hadHidden = toast.classList.has('opacity-0');
-				timer();
+				timers[i]();
 				if (!hadHidden && toast.classList.has('opacity-0')) {
-					hideToast = timer;
+					hideToastIndex = i;
 					break;
 				}
 			}
 
-			expect(hideToast).toBeDefined();
+			expect(hideToastIndex).not.toBe(-1);
 			expect(toast.classList.has('opacity-0')).toBe(true);
 			expect(toast.classList.has('translate-y-4')).toBe(true);
 
 			expect(timers.length).toBe(2);
-			const hideToastIndex = timers.indexOf(hideToast!);
-			const finishToast = timers[hideToastIndex === 0 ? 1 : 0];
+			const finishToastIndex = hideToastIndex === 0 ? 1 : 0;
+			const finishToast = timers[finishToastIndex];
 			expect(finishToast).toBeDefined();
 			finishToast();
 

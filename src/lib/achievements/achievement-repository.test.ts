@@ -29,17 +29,10 @@ function createMockDb({
 
 	// Create a thenable that supports both await and .limit() chaining
 	const createWhereThenable = (fullResult: any[], limitedResult: any[]) => {
-		const promise = Promise.resolve(fullResult);
-		// Return an object that is both a thenable (for await) and has .limit() (for chaining)
-		const thenable = {
-			then: (onFulfilled: any, onRejected: any) => promise.then(onFulfilled, onRejected),
-			catch: (onRejected: any) => promise.catch(onRejected),
-			finally: (onFinally: any) => promise.finally(onFinally),
-			[Symbol.toStringTag]: 'Promise',
-			// Allow chaining .limit() for hasAchievement
-			limit: () => Promise.resolve(limitedResult),
-		};
-		return thenable;
+		// Create a real Promise and attach the limit method to it
+		const promise = Promise.resolve(fullResult) as Promise<any[]> & { limit: () => Promise<any[]> };
+		promise.limit = () => Promise.resolve(limitedResult);
+		return promise;
 	};
 
 	return {

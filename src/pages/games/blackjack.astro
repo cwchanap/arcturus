@@ -701,6 +701,9 @@ const initialBalance = user.chipBalance ?? 1000;
 			achievements: Array<{ id: string; name: string; icon: string }>;
 		}>;
 		const { achievements } = customEvent.detail;
-		enqueue(achievements);
+		// Validate achievements is an array before calling enqueue
+		if (Array.isArray(achievements)) {
+			enqueue(achievements);
+		}
 	});
 </script>

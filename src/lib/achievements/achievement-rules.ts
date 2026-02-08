@@ -130,7 +130,7 @@ function checkChampion(context: AchievementCheckContext): AchievementCheckResult
  * Consistent Winner: Win 100 hands across all games
  */
 function checkConsistent(context: AchievementCheckContext): AchievementCheckResult {
-	const { totalWins, existingAchievementIds, gameType } = context;
+	const { totalWins, existingAchievementIds } = context;
 
 	if (existingAchievementIds.includes('consistent')) {
 		return { achievementId: 'consistent', shouldGrant: false };
@@ -138,7 +138,8 @@ function checkConsistent(context: AchievementCheckContext): AchievementCheckResu
 
 	const shouldGrant = totalWins >= ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS;
 
-	return { achievementId: 'consistent', shouldGrant, gameType };
+	// Global achievement - not tied to a specific game type
+	return { achievementId: 'consistent', shouldGrant };
 }
 
 /**

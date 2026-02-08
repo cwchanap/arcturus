@@ -572,7 +572,7 @@ describe('chips update API', () => {
 		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 	});
 
-	test('uses biggestWinCandidate for split-hand win stats', async () => {
+	test('uses delta for recentWinAmount to fix comeback achievement calculation', async () => {
 		resetMocks();
 		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
@@ -601,7 +601,9 @@ describe('chips update API', () => {
 		const achievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
 			recentWinAmount?: number;
 		};
-		expect(achievementOptions?.recentWinAmount).toBe(150);
+		// recentWinAmount uses delta (net balance change), not biggestWinCandidate
+		// This ensures the comeback achievement calculates pre-win balance correctly
+		expect(achievementOptions?.recentWinAmount).toBe(200);
 	});
 
 	test('uses delta for single-hand wins even when increments are provided', async () => {

@@ -280,15 +280,16 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		// Validate handCount if provided
+		const MAX_HAND_COUNT = 100;
 		if (
 			handCount !== undefined &&
-			(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1)
+			(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1 || handCount > MAX_HAND_COUNT)
 		) {
 			return new Response(
 				JSON.stringify({
 					success: false,
 					error: 'INVALID_HAND_COUNT',
-					message: 'handCount must be a positive integer',
+					message: `handCount must be an integer between 1 and ${MAX_HAND_COUNT}`,
 				}),
 				{
 					status: 400,
@@ -600,12 +601,9 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					});
 
 					// Check for newly earned achievements
-					// For split-hand wins, use actualBiggestWinCandidate instead of total delta
+					// Use the net delta for comeback achievement (pre-win balance = current - delta)
 					const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-						recentWinAmount:
-							typeof actualBiggestWinCandidate === 'number' && actualBiggestWinCandidate > 0
-								? actualBiggestWinCandidate
-								: undefined,
+						recentWinAmount: delta > 0 ? delta : undefined,
 						gameType: gameType as GameType,
 					});
 

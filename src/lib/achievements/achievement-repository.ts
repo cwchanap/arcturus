@@ -14,7 +14,7 @@ import type { GameType } from '../game-stats/types';
  * Redact user ID for logging to avoid PII exposure
  * Returns a truncated version of the userId (first 4 chars + '***')
  */
-function redactUserId(userId: string): string {
+export function redactUserId(userId: string): string {
 	if (!userId || userId.length < 4) return '***';
 	return `${userId.slice(0, 4)}***`;
 }
@@ -81,7 +81,8 @@ export async function grantAchievement(
 			.onConflictDoNothing();
 
 		// Check if insert was successful (not a conflict)
-		const rowsAffected = result?.meta?.changes ?? result?.rowsAffected ?? 0;
+		const rowsAffected =
+			result?.meta?.changes ?? (result as { rowsAffected?: number })?.rowsAffected ?? 0;
 		return rowsAffected > 0;
 	} catch (error) {
 		// Database errors other than conflict (connection issues, etc.)

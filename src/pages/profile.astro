@@ -4,7 +4,6 @@ import { createDb } from '../lib/db';
 import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
 import {
 	getAchievementsWithStatus,
-	getAchievementProgress,
 } from '../lib/achievements/achievements';
 import type { AchievementWithStatus } from '../lib/achievements/types';
 
@@ -53,10 +52,15 @@ if (dbBinding) {
 
 	try {
 		// Fetch achievements
-		[achievements, achievementProgress] = await Promise.all([
-			getAchievementsWithStatus(db, user.id),
-			getAchievementProgress(db, user.id),
-		]);
+		achievements = await getAchievementsWithStatus(db, user.id);
+		// Calculate progress from the already-fetched achievements (avoids duplicate DB query)
+		const unlocked = achievements.filter((a) => a.isUnlocked).length;
+		const total = achievements.length;
+		achievementProgress = {
+			total,
+			unlocked,
+			percentage: total > 0 ? (unlocked / total) * 100 : 0,
+		};
 		achievementsFetchError = false;
 	} catch (error) {
 		console.error('Error loading achievements:', error);

@@ -17,6 +17,7 @@ import {
 	getUserAchievements,
 	getEarnedAchievementIds,
 	grantAchievement,
+	redactUserId,
 } from './achievement-repository';
 import { getAggregateUserStats } from '../game-stats/game-stats-repository';
 import { getUserRank } from '../leaderboard/leaderboard-repository';
@@ -109,13 +110,13 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 					if (granted) {
 						newlyGranted.push(achievement);
 						// eslint-disable-next-line no-console
-						console.info(`[ACHIEVEMENT] Achievement unlocked for ${userId}: ${achievement.name}`);
+						console.info(`[ACHIEVEMENT] Achievement unlocked for ${redactUserId(userId)}: ${achievement.name}`);
 					}
 				}
 			} catch (error) {
 				const errorMessage = error instanceof Error ? error.message : String(error);
 				console.error(
-					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${userId}: ${errorMessage}`,
+					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${redactUserId(userId)}: ${errorMessage}`,
 				);
 			}
 		}

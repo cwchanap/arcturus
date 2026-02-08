@@ -5,6 +5,7 @@
 
 import type { Card, Suit, BlackjackAction, Hand } from './types';
 import { calculateHandValue } from './handEvaluator';
+import { parseLLMResponse } from './llmResponseParsing';
 
 export interface LLMSettings {
 	provider: 'openai' | 'gemini';

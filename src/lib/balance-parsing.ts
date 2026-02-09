@@ -10,7 +10,7 @@ export function parseBalance(text: string): number | null {
 	const isAccountingNegative = trimmed.startsWith('(') && trimmed.endsWith(')');
 	// Strip parentheses if present for further processing
 	const normalized = isAccountingNegative
-		? trimmed.slice(1, -1).trim()
+		? trimmed.slice(1, -1).replace(/,/g, '').trim()
 		: trimmed.replace(/,/g, '');
 	// Match optional minus sign, optional $, then digits and optional decimals
 	const match = normalized.match(/-?\$?\d+(?:\.\d+)?/);

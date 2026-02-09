@@ -943,6 +943,9 @@ export function initBlackjackClient(): void {
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
 
+				// Snapshot the stats we're about to send to avoid losing concurrent updates
+				const snapshotPending = { ...pendingStats };
+
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -962,9 +965,15 @@ export function initBlackjackClient(): void {
 				});
 
 				if (response.ok) {
-					// Clear pending stats on successful sync
-					pendingStats = clearPendingStats();
-					syncPending = false;
+					// Subtract only the snapshot values we just synced (preserve concurrent updates)
+					pendingStats.winsIncrement -= snapshotPending.winsIncrement;
+					pendingStats.lossesIncrement -= snapshotPending.lossesIncrement;
+					pendingStats.handsIncrement -= snapshotPending.handsIncrement;
+					// If any pending stats remain, keep syncPending true for follow-up
+					syncPending =
+						pendingStats.winsIncrement > 0 ||
+						pendingStats.lossesIncrement > 0 ||
+						pendingStats.handsIncrement > 0;
 					statsIncluded = false;
 					pendingRetryTimer = null;
 

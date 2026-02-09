@@ -45,6 +45,13 @@ describe('Balance Parsing Logic', () => {
 		expect(parseBalance('-$500')).toBe(-500);
 	});
 
+	test('parses accounting-style negative numbers with parentheses', () => {
+		expect(parseBalance('($100)')).toBe(-100);
+		expect(parseBalance('($1,000)')).toBe(-1000);
+		expect(parseBalance('($12,345.67)')).toBe(-12345.67);
+		expect(parseBalance('(100)')).toBe(-100);
+	});
+
 	test('handles invalid input gracefully', () => {
 		expect(parseBalance('')).toBeNull();
 		expect(parseBalance('abc')).toBeNull();

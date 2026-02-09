@@ -579,9 +579,16 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
 					// - No explicit biggestWinCandidate provided, OR
 					// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
+					// Clamp biggestWinCandidate to server-validated payout bounds
+					// Prevents inflating leaderboard stats with an arbitrarily large value
+					const clampedBiggestWinCandidate =
+						typeof biggestWinCandidate === 'number'
+							? Math.min(biggestWinCandidate, maxWin)
+							: undefined;
+
 					const actualBiggestWinCandidate = determineBiggestWinCandidate({
 						delta,
-						biggestWinCandidate,
+						biggestWinCandidate: clampedBiggestWinCandidate,
 						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
 						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
 						handCount: resolvedHandCount,

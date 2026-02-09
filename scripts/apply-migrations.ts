@@ -240,8 +240,11 @@ async function applyMigration(sqlFile: string, local: boolean): Promise<void> {
 				message,
 			)
 		) {
-			console.warn(`⚠ Skipping already-applied migration ${sqlFile}: ${message}`);
-			return;
+			console.warn(
+				`⚠ Migration ${sqlFile} hit "already exists" error: ${message}\n` +
+					`  This may indicate a partially-applied migration. Review the schema manually.`,
+			);
+			throw error;
 		}
 		throw error;
 	}

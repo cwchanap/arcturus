@@ -450,6 +450,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		winsIncrement: 0,
 		lossesIncrement: 0,
 		handsIncrement: 0,
+		biggestWinCandidate: undefined as number | undefined,
 	};
 	let syncPending = false;
 
@@ -832,6 +833,13 @@ const initialBalance = user.chipBalance ?? 1000;
 					pendingStats.winsIncrement += winsIncrement;
 					pendingStats.lossesIncrement += lossesIncrement;
 					pendingStats.handsIncrement += handsIncrement;
+					// Track biggest win for this round (positive delta only)
+					if (roundNetDelta > 0) {
+						pendingStats.biggestWinCandidate = Math.max(
+							pendingStats.biggestWinCandidate ?? 0,
+							roundNetDelta,
+						);
+					}
 					statsIncluded = true;
 					syncPending = true;
 				}
@@ -857,11 +865,31 @@ const initialBalance = user.chipBalance ?? 1000;
 					pendingStats.winsIncrement += winsIncrement;
 					pendingStats.lossesIncrement += lossesIncrement;
 					pendingStats.handsIncrement += handsIncrement;
+					// Track biggest win for this round (positive delta only)
+					if (roundNetDelta > 0) {
+						pendingStats.biggestWinCandidate = Math.max(
+							pendingStats.biggestWinCandidate ?? 0,
+							roundNetDelta,
+						);
+					}
 					statsIncluded = true;
 				}
 				const finalWinsIncrement = pendingStats.winsIncrement;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
+				const finalBiggestWinCandidate = pendingStats.biggestWinCandidate;
+
+				// Recompute outcome based on deltaForRequest for retries
+				// When retrying after rate-limiting, deltaForRequest may include multiple rounds,
+				// so we need to recompute the outcome to match the aggregated delta
+				const outcomeForRequest: 'win' | 'loss' | 'push' =
+					retryCount > 0
+						? deltaForRequest > 0
+							? 'win'
+							: deltaForRequest < 0
+								? 'loss'
+								: 'push'
+						: outcome;
 
 				// Snapshot the stats we're about to send to avoid losing concurrent updates
 				const snapshotPending = { ...pendingStats };
@@ -873,11 +901,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						delta: deltaForRequest,
 						gameType: 'baccarat',
 						previousBalance: lastSyncedBalance,
-						outcome,
+						outcome: outcomeForRequest,
 						handCount: finalHandCount,
 						// Send accumulated stats including pending ones
 						winsIncrement: finalWinsIncrement,
 						lossesIncrement: finalLossesIncrement,
+						// Send biggest win candidate for stats tracking
+						biggestWinCandidate: finalBiggestWinCandidate,
 					}),
 				});
 
@@ -886,6 +916,8 @@ const initialBalance = user.chipBalance ?? 1000;
 					pendingStats.winsIncrement -= snapshotPending.winsIncrement;
 					pendingStats.lossesIncrement -= snapshotPending.lossesIncrement;
 					pendingStats.handsIncrement -= snapshotPending.handsIncrement;
+					// Reset biggestWinCandidate after sending to server (will be re-accumulated if there are concurrent wins)
+					pendingStats.biggestWinCandidate = undefined;
 					// If any pending stats remain, keep syncPending true for follow-up
 					syncPending = pendingStats.winsIncrement > 0 || pendingStats.lossesIncrement > 0 || pendingStats.handsIncrement > 0;
 					statsIncluded = false;
@@ -964,7 +996,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					game.applyServerBalance(serverBalance);
 					updateUI();
 					// Clear pending stats since we're reverting to server state
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
 					syncPending = false;
 					statsIncluded = false;
 					pendingRetryTimer = null;
@@ -975,7 +1007,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						hasServerBalance,
 					});
 					if (resolution.clearPendingStats) {
-						pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+						pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
 						statsIncluded = false;
 					}
 					syncPending = resolution.syncPending;
@@ -1003,6 +1035,11 @@ const initialBalance = user.chipBalance ?? 1000;
 				// When retry is scheduled, the retry's finally block handles cleanup
 				if (!pendingRetryTimer) {
 					isSyncInProgress = false;
+					// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
+					// This handles the case where new rounds completed during a retry and queued their stats
+					if (syncPending) {
+						void performChipUpdate();
+					}
 				}
 			}
 		};
@@ -1014,7 +1051,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			showStatus('Network error. Balance sync failed.');
 			const resolution = resolveBaccaratSyncState({ error: undefined, hasServerBalance: false });
 			if (resolution.clearPendingStats) {
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
 				statsIncluded = false;
 			}
 			syncPending = resolution.syncPending;

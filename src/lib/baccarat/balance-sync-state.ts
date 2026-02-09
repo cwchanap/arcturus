@@ -39,10 +39,10 @@ export function addPendingStats(
 }
 
 export function resolveBaccaratSyncState({
-	_error,
+	error: _error,
 	hasServerBalance,
 }: {
-	_error?: string;
+	error?: string;
 	hasServerBalance: boolean;
 }): BaccaratPendingStatsResolution {
 	if (hasServerBalance) {

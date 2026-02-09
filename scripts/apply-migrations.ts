@@ -83,7 +83,7 @@ async function isMigrationApplied(
 		return coreTables.every((table) => existingTables.has(table));
 	}
 
-	// For migration 0001, check if mission table exists and user has chipBalance column
+	// For migration 0001, check if mission table exists
 	if (migrationFile.startsWith('0001_')) {
 		return existingTables.has('mission');
 	}

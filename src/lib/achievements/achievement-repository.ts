@@ -70,7 +70,7 @@ export async function grantAchievement(
 	const now = new Date();
 
 	try {
-		const result = await db
+		await db
 			.insert(userAchievement)
 			.values({
 				userId,
@@ -80,10 +80,20 @@ export async function grantAchievement(
 			})
 			.onConflictDoNothing();
 
-		// Check if insert was successful (not a conflict)
-		const rowsAffected =
-			result?.meta?.changes ?? (result as { rowsAffected?: number })?.rowsAffected ?? 0;
-		return rowsAffected > 0;
+		// Deterministically verify insert success by checking if row exists with our timestamp
+		const [existing] = await db
+			.select({ earnedAt: userAchievement.earnedAt })
+			.from(userAchievement)
+			.where(
+				and(
+					eq(userAchievement.userId, userId),
+					eq(userAchievement.achievementId, achievementId),
+				),
+			)
+			.limit(1);
+
+		// Row exists with our timestamp -> we just inserted it
+		return existing?.earnedAt?.getTime() === now.getTime();
 	} catch (error) {
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);

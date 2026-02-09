@@ -63,7 +63,9 @@ export function parseLLMResponse(
 			recommendedAction: isAvailable ? recommendedAction : null,
 			reasoning: isAvailable
 				? reasoning
-				: `${reasoning} (Note: ${recommendedAction} is not available, consider alternatives)`,
+				: reasoning
+					? `${reasoning} (Note: ${recommendedAction} is not available, consider alternatives)`
+					: `(Note: ${recommendedAction} is not available, consider alternatives)`,
 			confidence: isAvailable ? 0.85 : 0.5,
 		};
 	} catch (_error) {

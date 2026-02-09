@@ -863,6 +863,9 @@ const initialBalance = user.chipBalance ?? 1000;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
 
+				// Snapshot the stats we're about to send to avoid losing concurrent updates
+				const snapshotPending = { ...pendingStats };
+
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -879,9 +882,12 @@ const initialBalance = user.chipBalance ?? 1000;
 				});
 
 				if (response.ok) {
-					// Clear pending stats on successful sync
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
-					syncPending = false;
+					// Subtract only the snapshot values we just synced (preserve concurrent updates)
+					pendingStats.winsIncrement -= snapshotPending.winsIncrement;
+					pendingStats.lossesIncrement -= snapshotPending.lossesIncrement;
+					pendingStats.handsIncrement -= snapshotPending.handsIncrement;
+					// If any pending stats remain, keep syncPending true for follow-up
+					syncPending = pendingStats.winsIncrement > 0 || pendingStats.lossesIncrement > 0 || pendingStats.handsIncrement > 0;
 					statsIncluded = false;
 					pendingRetryTimer = null;
 
@@ -939,6 +945,9 @@ const initialBalance = user.chipBalance ?? 1000;
 							} catch (error) {
 								console.error('Balance sync retry error:', error);
 								showStatus('Network error. Balance sync failed.');
+							} finally {
+								// Clear isSyncInProgress only after retry completes
+								isSyncInProgress = false;
 							}
 						})();
 					}, retryAfterMs + 100);
@@ -990,7 +999,11 @@ const initialBalance = user.chipBalance ?? 1000;
 					showStatus('Balance sync failed. Will retry next round.');
 				}
 			} finally {
-				isSyncInProgress = false;
+				// Only clear isSyncInProgress if no retry is pending
+				// When retry is scheduled, the retry's finally block handles cleanup
+				if (!pendingRetryTimer) {
+					isSyncInProgress = false;
+				}
 			}
 		};
 

@@ -13,10 +13,12 @@ function createMockDb({
 	selectResult = [],
 	insertResult = { meta: { changes: 1 } },
 	insertThrows = false,
+	postInsertSelectResult = null as null | { earnedAt: Date },
 }: {
 	selectResult?: any[];
 	insertResult?: any;
 	insertThrows?: boolean;
+	postInsertSelectResult?: null | { earnedAt: Date };
 }): Database {
 	const selectChain = {
 		from: () => ({
@@ -35,8 +37,21 @@ function createMockDb({
 		return promise;
 	};
 
+	let selectCallCount = 0;
+
 	return {
 		select: (columns?: any) => {
+			selectCallCount++;
+			// After-insert check for grantAchievement (3rd select call pattern)
+			if (columns?.earnedAt && postInsertSelectResult) {
+				return {
+					from: () => ({
+						where: () => ({
+							limit: () => Promise.resolve([postInsertSelectResult]),
+						}),
+					}),
+				};
+			}
 			if (columns?.achievementId) {
 				// For getEarnedAchievementIds and hasAchievement
 				// Chain: select().from().where() -> returns thenable
@@ -96,18 +111,49 @@ describe('achievement-repository', () => {
 		expect(results).toEqual(['champion', 'comeback']);
 	});
 
-	test('grantAchievement returns true when insert succeeds', async () => {
-		const mockDb = createMockDb({ insertResult: { meta: { changes: 1 } } });
+	test('grantAchievement returns true when insert succeeds (row exists with matching timestamp)', async () => {
+		const now = new Date('2024-01-15T10:30:00.000Z');
+		const originalDate = Date;
+		// Mock Date to return our fixed timestamp
+		global.Date = class extends Date {
+			constructor() {
+				super(now);
+			}
+		} as typeof Date;
 
-		const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
-		expect(granted).toBe(true);
+		try {
+			const mockDb = createMockDb({
+				postInsertSelectResult: { earnedAt: now },
+			});
+
+			const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
+			expect(granted).toBe(true);
+		} finally {
+			global.Date = originalDate;
+		}
 	});
 
-	test('grantAchievement returns false when insert is skipped', async () => {
-		const mockDb = createMockDb({ insertResult: { meta: { changes: 0 } } });
+	test('grantAchievement returns false when row already existed (timestamp mismatch)', async () => {
+		const now = new Date('2024-01-15T10:30:00.000Z');
+		const earlier = new Date(now.getTime() - 1000);
+		const originalDate = Date;
+		// Mock Date to return our fixed timestamp
+		global.Date = class extends Date {
+			constructor() {
+				super(now);
+			}
+		} as typeof Date;
 
-		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
-		expect(granted).toBe(false);
+		try {
+			const mockDb = createMockDb({
+				postInsertSelectResult: { earnedAt: earlier }, // Different timestamp = conflict
+			});
+
+			const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+			expect(granted).toBe(false);
+		} finally {
+			global.Date = originalDate;
+		}
 	});
 
 	test('grantAchievement logs and rethrows on error', async () => {

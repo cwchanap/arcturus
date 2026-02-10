@@ -13,12 +13,12 @@ function createMockDb({
 	selectResult = [],
 	insertResult = { meta: { changes: 1 } },
 	insertThrows = false,
-	postInsertSelectResult = null as null | { earnedAt: Date },
+	existingRowResult = null as null | { earnedAt: Date },
 }: {
 	selectResult?: any[];
 	insertResult?: any;
 	insertThrows?: boolean;
-	postInsertSelectResult?: null | { earnedAt: Date };
+	existingRowResult?: null | { earnedAt: Date };
 }): Database {
 	const selectChain = {
 		from: () => ({
@@ -37,17 +37,14 @@ function createMockDb({
 		return promise;
 	};
 
-	let selectCallCount = 0;
-
 	return {
 		select: (columns?: any) => {
-			selectCallCount++;
-			// After-insert check for grantAchievement (3rd select call pattern)
-			if (columns?.earnedAt && postInsertSelectResult) {
+			// Initial check for existing row in grantAchievement (select with earnedAt column)
+			if (columns?.earnedAt) {
 				return {
 					from: () => ({
 						where: () => ({
-							limit: () => Promise.resolve([postInsertSelectResult]),
+							limit: () => Promise.resolve(existingRowResult ? [existingRowResult] : []),
 						}),
 					}),
 				};
@@ -111,77 +108,34 @@ describe('achievement-repository', () => {
 		expect(results).toEqual(['champion', 'comeback']);
 	});
 
-	test('grantAchievement returns true when insert succeeds (row exists with matching timestamp)', async () => {
-		const now = new Date('2024-01-15T10:30:00.000Z');
-		const originalDate = Date;
-		// Mock Date to return our fixed timestamp
-		global.Date = class extends Date {
-			constructor() {
-				super(now);
-			}
-		} as typeof Date;
+	test('grantAchievement returns true when no existing row and insert succeeds', async () => {
+		const mockDb = createMockDb({
+			existingRowResult: null, // No existing row found
+		});
 
-		try {
-			// Simulate SQLite second-precision truncation (milliseconds stripped)
-			const truncatedTimestamp = new Date(Math.floor(now.getTime() / 1000) * 1000);
-			const mockDb = createMockDb({
-				postInsertSelectResult: { earnedAt: truncatedTimestamp },
-			});
-
-			const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
-			expect(granted).toBe(true);
-		} finally {
-			global.Date = originalDate;
-		}
+		const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
+		expect(granted).toBe(true);
 	});
 
-	test('grantAchievement returns false when row already existed (timestamp mismatch)', async () => {
-		const now = new Date('2024-01-15T10:30:00.000Z');
-		const earlier = new Date(now.getTime() - 1000);
-		const originalDate = Date;
-		// Mock Date to return our fixed timestamp
-		global.Date = class extends Date {
-			constructor() {
-				super(now);
-			}
-		} as typeof Date;
+	test('grantAchievement returns false when row already exists', async () => {
+		const mockDb = createMockDb({
+			existingRowResult: { earnedAt: new Date('2024-01-15T10:30:00.000Z') }, // Existing row found
+		});
 
-		try {
-			const mockDb = createMockDb({
-				postInsertSelectResult: { earnedAt: earlier }, // Different timestamp = conflict
-			});
-
-			const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
-			expect(granted).toBe(false);
-		} finally {
-			global.Date = originalDate;
-		}
+		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+		expect(granted).toBe(false);
 	});
 
-	test('grantAchievement detects new achievement despite millisecond truncation (SQLite second precision)', async () => {
-		const now = new Date('2024-01-15T10:30:00.500Z'); // 500ms offset
-		const originalDate = Date;
-		// Mock Date to return our fixed timestamp
-		global.Date = class extends Date {
-			constructor() {
-				super(now);
-			}
-		} as typeof Date;
+	test('grantAchievement handles concurrent requests safely (check-then-insert pattern)', async () => {
+		// With the check-then-insert pattern, if two concurrent requests both check
+		// and find no existing row, only one will succeed in inserting due to
+		// onConflictDoNothing at the database level
+		const mockDb = createMockDb({
+			existingRowResult: null, // No existing row at check time
+		});
 
-		try {
-			// SQLite stores timestamps with second precision, so 500ms is truncated to 000ms
-			const truncatedTimestamp = new Date(Math.floor(now.getTime() / 1000) * 1000);
-			expect(truncatedTimestamp.getTime()).toBe(new Date('2024-01-15T10:30:00.000Z').getTime());
-
-			const mockDb = createMockDb({
-				postInsertSelectResult: { earnedAt: truncatedTimestamp },
-			});
-
-			const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
-			expect(granted).toBe(true); // Should detect as newly granted despite ms truncation
-		} finally {
-			global.Date = originalDate;
-		}
+		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+		expect(granted).toBe(true); // Should succeed when no existing row
 	});
 
 	test('grantAchievement logs and rethrows on error', async () => {

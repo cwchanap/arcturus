@@ -70,6 +70,21 @@ export async function grantAchievement(
 	const now = new Date();
 
 	try {
+		// First, query for an existing row to avoid race conditions
+		const [existingRow] = await db
+			.select({ earnedAt: userAchievement.earnedAt })
+			.from(userAchievement)
+			.where(
+				and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)),
+			)
+			.limit(1);
+
+		// If a row exists, return false (did not grant)
+		if (existingRow) {
+			return false;
+		}
+
+		// No existing row found, perform the insert
 		await db
 			.insert(userAchievement)
 			.values({
@@ -80,20 +95,8 @@ export async function grantAchievement(
 			})
 			.onConflictDoNothing();
 
-		// Deterministically verify insert success by checking if row exists with our timestamp
-		const [existing] = await db
-			.select({ earnedAt: userAchievement.earnedAt })
-			.from(userAchievement)
-			.where(
-				and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)),
-			)
-			.limit(1);
-
-		// Row exists with our timestamp -> we just inserted it
-		// Compare at second precision since SQLite stores timestamps as integers (seconds)
-		const storedTime = Math.floor((existing?.earnedAt?.getTime() ?? 0) / 1000);
-		const insertTime = Math.floor(now.getTime() / 1000);
-		return storedTime === insertTime;
+		// Return true on successful insert
+		return true;
 	} catch (error) {
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);

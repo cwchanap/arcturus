@@ -2,9 +2,7 @@
 import CasinoLayout from '../layouts/casino.astro';
 import { createDb } from '../lib/db';
 import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
-import {
-	getAchievementsWithStatus,
-} from '../lib/achievements/achievements';
+import { getAchievementsWithStatus } from '../lib/achievements/achievements';
 import type { AchievementWithStatus } from '../lib/achievements/types';
 
 const session = Astro.locals.session;

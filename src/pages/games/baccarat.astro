@@ -913,13 +913,26 @@ const initialBalance = user.chipBalance ?? 1000;
 
 				if (response.ok) {
 					// Subtract only the snapshot values we just synced (preserve concurrent updates)
-					pendingStats.winsIncrement -= snapshotPending.winsIncrement;
-					pendingStats.lossesIncrement -= snapshotPending.lossesIncrement;
-					pendingStats.handsIncrement -= snapshotPending.handsIncrement;
+					// Clamp to zero to prevent negative values from concurrent round race conditions
+					pendingStats.winsIncrement = Math.max(
+						0,
+						pendingStats.winsIncrement - snapshotPending.winsIncrement,
+					);
+					pendingStats.lossesIncrement = Math.max(
+						0,
+						pendingStats.lossesIncrement - snapshotPending.lossesIncrement,
+					);
+					pendingStats.handsIncrement = Math.max(
+						0,
+						pendingStats.handsIncrement - snapshotPending.handsIncrement,
+					);
 					// Reset biggestWinCandidate after sending to server (will be re-accumulated if there are concurrent wins)
 					pendingStats.biggestWinCandidate = undefined;
 					// If any pending stats remain, keep syncPending true for follow-up
-					syncPending = pendingStats.winsIncrement > 0 || pendingStats.lossesIncrement > 0 || pendingStats.handsIncrement > 0;
+					syncPending =
+						pendingStats.winsIncrement > 0 ||
+						pendingStats.lossesIncrement > 0 ||
+						pendingStats.handsIncrement > 0;
 					statsIncluded = false;
 					pendingRetryTimer = null;
 
@@ -970,19 +983,19 @@ const initialBalance = user.chipBalance ?? 1000;
 					}
 
 					// Keep the current balance and retry after the rate limit window
-				// Release the sync lock BEFORE scheduling the retry so the retry can acquire it
-				isSyncInProgress = false;
-				pendingRetryTimer = setTimeout(() => {
-					void (async () => {
-						try {
-							await performChipUpdate(retryCount + 1);
-						} catch (error) {
-							console.error('Balance sync retry error:', error);
-							showStatus('Network error. Balance sync failed.');
-						}
-					})();
-				}, retryAfterMs + 100);
-				return;
+					// Release the sync lock BEFORE scheduling the retry so the retry can acquire it
+					isSyncInProgress = false;
+					pendingRetryTimer = setTimeout(() => {
+						void (async () => {
+							try {
+								await performChipUpdate(retryCount + 1);
+							} catch (error) {
+								console.error('Balance sync retry error:', error);
+								showStatus('Network error. Balance sync failed.');
+							}
+						})();
+					}, retryAfterMs + 100);
+					return;
 				}
 
 				const hasServerBalance =
@@ -995,7 +1008,12 @@ const initialBalance = user.chipBalance ?? 1000;
 					game.applyServerBalance(serverBalance);
 					updateUI();
 					// Clear pending stats since we're reverting to server state
-					pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
+					pendingStats = {
+						winsIncrement: 0,
+						lossesIncrement: 0,
+						handsIncrement: 0,
+						biggestWinCandidate: undefined,
+					};
 					syncPending = false;
 					statsIncluded = false;
 					pendingRetryTimer = null;
@@ -1006,7 +1024,12 @@ const initialBalance = user.chipBalance ?? 1000;
 						hasServerBalance,
 					});
 					if (resolution.clearPendingStats) {
-						pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
+						pendingStats = {
+							winsIncrement: 0,
+							lossesIncrement: 0,
+							handsIncrement: 0,
+							biggestWinCandidate: undefined,
+						};
 						statsIncluded = false;
 					}
 					syncPending = resolution.syncPending;
@@ -1050,7 +1073,12 @@ const initialBalance = user.chipBalance ?? 1000;
 			showStatus('Network error. Balance sync failed.');
 			const resolution = resolveBaccaratSyncState({ error: undefined, hasServerBalance: false });
 			if (resolution.clearPendingStats) {
-				pendingStats = { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWinCandidate: undefined };
+				pendingStats = {
+					winsIncrement: 0,
+					lossesIncrement: 0,
+					handsIncrement: 0,
+					biggestWinCandidate: undefined,
+				};
 				statsIncluded = false;
 			}
 			syncPending = resolution.syncPending;

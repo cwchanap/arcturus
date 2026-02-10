@@ -907,6 +907,11 @@ export function initBlackjackClient(): void {
 					...outcomes.map((o) => {
 						// Find the corresponding hand in the captured state to get the original bet
 						const originalHand = state.playerHands[o.handIndex];
+						// Defensive: skip if hand index is out of bounds (should not happen)
+						if (!originalHand) {
+							console.error(`Invalid hand index ${o.handIndex}, skipping biggestWin calculation`);
+							return 0;
+						}
 						// Profit = payout - original bet
 						return o.payout - originalHand.bet;
 					}),
@@ -966,9 +971,19 @@ export function initBlackjackClient(): void {
 
 				if (response.ok) {
 					// Subtract only the snapshot values we just synced (preserve concurrent updates)
-					pendingStats.winsIncrement -= snapshotPending.winsIncrement;
-					pendingStats.lossesIncrement -= snapshotPending.lossesIncrement;
-					pendingStats.handsIncrement -= snapshotPending.handsIncrement;
+					// Clamp to zero to prevent negative values from concurrent round race conditions
+					pendingStats.winsIncrement = Math.max(
+						0,
+						pendingStats.winsIncrement - snapshotPending.winsIncrement,
+					);
+					pendingStats.lossesIncrement = Math.max(
+						0,
+						pendingStats.lossesIncrement - snapshotPending.lossesIncrement,
+					);
+					pendingStats.handsIncrement = Math.max(
+						0,
+						pendingStats.handsIncrement - snapshotPending.handsIncrement,
+					);
 					// If any pending stats remain, keep syncPending true for follow-up
 					syncPending =
 						pendingStats.winsIncrement > 0 ||

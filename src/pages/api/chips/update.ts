@@ -283,7 +283,10 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		const MAX_HAND_COUNT = 100;
 		if (
 			handCount !== undefined &&
-			(typeof handCount !== 'number' || !Number.isInteger(handCount) || handCount < 1 || handCount > MAX_HAND_COUNT)
+			(typeof handCount !== 'number' ||
+				!Number.isInteger(handCount) ||
+				handCount < 1 ||
+				handCount > MAX_HAND_COUNT)
 		) {
 			return new Response(
 				JSON.stringify({

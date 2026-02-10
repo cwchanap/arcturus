@@ -6,7 +6,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { BlackjackAction } from './blackjack/types';
-import { extractBalancedJsonObjects } from './llm-response-parsing';
 import { parseLLMResponse } from './blackjack/llmResponseParsing';
 
 describe('LLM Response Parsing', () => {

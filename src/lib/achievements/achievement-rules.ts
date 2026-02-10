@@ -157,10 +157,12 @@ function checkComeback(context: AchievementCheckContext): AchievementCheckResult
 	}
 
 	// Check if user was below threshold before this win and just won something
+	// Use consistent null/undefined guard so recentWinAmount=null is treated as absent
+	const hasRecentWin = recentWinAmount !== null && recentWinAmount !== undefined;
 	const wasLow =
-		recentWinAmount !== undefined &&
+		hasRecentWin &&
 		currentChipBalance - recentWinAmount < ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE;
-	const justWon = recentWinAmount !== undefined && recentWinAmount > 0;
+	const justWon = hasRecentWin && recentWinAmount > 0;
 	const shouldGrant = wasLow && justWon;
 
 	return { achievementId: 'comeback', shouldGrant, gameType };

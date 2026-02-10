@@ -903,19 +903,15 @@ export function initBlackjackClient(): void {
 			if (outcomes.length > 1) {
 				// Split hand: calculate maximum win per hand
 				// We need the original bets from state before settleRound mutated them
-				const maxWin = Math.max(
-					...outcomes.map((o) => {
-						// Find the corresponding hand in the captured state to get the original bet
+				// First filter outcomes by valid state.playerHands[o.handIndex] before computing Math.max
+				const validProfits = outcomes
+					.filter((o) => state.playerHands[o.handIndex])
+					.map((o) => {
 						const originalHand = state.playerHands[o.handIndex];
-						// Defensive: skip if hand index is out of bounds (should not happen)
-						if (!originalHand) {
-							console.error(`Invalid hand index ${o.handIndex}, skipping biggestWin calculation`);
-							return 0;
-						}
 						// Profit = payout - original bet
 						return o.payout - originalHand.bet;
-					}),
-				);
+					});
+				const maxWin = validProfits.length > 0 ? Math.max(...validProfits) : 0;
 				biggestWinCandidate = maxWin > 0 ? maxWin : undefined;
 			}
 

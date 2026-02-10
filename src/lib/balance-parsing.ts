@@ -15,7 +15,14 @@ export function parseBalance(text: string): number | null {
 	// Match optional minus sign, optional $, then digits and optional decimals
 	const match = normalized.match(/-?\$?\d+(?:\.\d+)?/);
 	if (!match) return null;
-	const numericValue = Number(match[0].replace('$', ''));
+	// Normalize the captured string: strip parentheses, dollar sign and commas
+	let cleaned = match[0].replace('$', '').replace(/,/g, '');
+	// If accounting negative, remove any leading '-' from the cleaned string
+	// (so "-$100" inside parentheses becomes "100", then we apply the negative)
+	if (isAccountingNegative) {
+		cleaned = cleaned.replace(/^-/, '');
+	}
+	const numericValue = Number(cleaned);
 	// Apply negative sign for accounting-style parentheses
 	return isAccountingNegative ? -numericValue : numericValue;
 }

@@ -122,8 +122,10 @@ describe('achievement-repository', () => {
 		} as typeof Date;
 
 		try {
+			// Simulate SQLite second-precision truncation (milliseconds stripped)
+			const truncatedTimestamp = new Date(Math.floor(now.getTime() / 1000) * 1000);
 			const mockDb = createMockDb({
-				postInsertSelectResult: { earnedAt: now },
+				postInsertSelectResult: { earnedAt: truncatedTimestamp },
 			});
 
 			const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
@@ -151,6 +153,32 @@ describe('achievement-repository', () => {
 
 			const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
 			expect(granted).toBe(false);
+		} finally {
+			global.Date = originalDate;
+		}
+	});
+
+	test('grantAchievement detects new achievement despite millisecond truncation (SQLite second precision)', async () => {
+		const now = new Date('2024-01-15T10:30:00.500Z'); // 500ms offset
+		const originalDate = Date;
+		// Mock Date to return our fixed timestamp
+		global.Date = class extends Date {
+			constructor() {
+				super(now);
+			}
+		} as typeof Date;
+
+		try {
+			// SQLite stores timestamps with second precision, so 500ms is truncated to 000ms
+			const truncatedTimestamp = new Date(Math.floor(now.getTime() / 1000) * 1000);
+			expect(truncatedTimestamp.getTime()).toBe(new Date('2024-01-15T10:30:00.000Z').getTime());
+
+			const mockDb = createMockDb({
+				postInsertSelectResult: { earnedAt: truncatedTimestamp },
+			});
+
+			const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+			expect(granted).toBe(true); // Should detect as newly granted despite ms truncation
 		} finally {
 			global.Date = originalDate;
 		}

@@ -49,4 +49,52 @@ describe('resolveBaccaratSyncState', () => {
 			syncPending: true,
 		});
 	});
+
+	test('does not retry on DELTA_EXCEEDS_LIMIT error', () => {
+		const resolution = resolveBaccaratSyncState({
+			error: 'DELTA_EXCEEDS_LIMIT',
+			hasServerBalance: false,
+		});
+
+		expect(resolution).toEqual({
+			clearPendingStats: false,
+			syncPending: false,
+		});
+	});
+
+	test('does not retry on INSUFFICIENT_BALANCE error', () => {
+		const resolution = resolveBaccaratSyncState({
+			error: 'INSUFFICIENT_BALANCE',
+			hasServerBalance: false,
+		});
+
+		expect(resolution).toEqual({
+			clearPendingStats: false,
+			syncPending: false,
+		});
+	});
+
+	test('does not retry on INVALID_REQUEST error', () => {
+		const resolution = resolveBaccaratSyncState({
+			error: 'INVALID_REQUEST',
+			hasServerBalance: false,
+		});
+
+		expect(resolution).toEqual({
+			clearPendingStats: false,
+			syncPending: false,
+		});
+	});
+
+	test('does not retry on BALANCE_MISMATCH without server balance', () => {
+		const resolution = resolveBaccaratSyncState({
+			error: 'BALANCE_MISMATCH',
+			hasServerBalance: false,
+		});
+
+		expect(resolution).toEqual({
+			clearPendingStats: false,
+			syncPending: false,
+		});
+	});
 });

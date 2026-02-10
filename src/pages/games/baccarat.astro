@@ -933,7 +933,11 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingStats.winsIncrement > 0 ||
 						pendingStats.lossesIncrement > 0 ||
 						pendingStats.handsIncrement > 0;
-					statsIncluded = false;
+					// Only reset statsIncluded if no follow-up sync pending
+					// This prevents re-adding the current round's stats on follow-up sync
+					if (!syncPending) {
+						statsIncluded = false;
+					}
 					pendingRetryTimer = null;
 
 					// Update our server-synced balance tracker after successful sync

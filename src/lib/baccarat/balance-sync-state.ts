@@ -38,8 +38,15 @@ export function addPendingStats(
 	};
 }
 
+const NON_RETRIABLE_ERRORS = [
+	'DELTA_EXCEEDS_LIMIT',
+	'INSUFFICIENT_BALANCE',
+	'BALANCE_MISMATCH',
+	'INVALID_REQUEST',
+];
+
 export function resolveBaccaratSyncState({
-	error: _error,
+	error,
 	hasServerBalance,
 }: {
 	error?: string;
@@ -47,6 +54,11 @@ export function resolveBaccaratSyncState({
 }): BaccaratPendingStatsResolution {
 	if (hasServerBalance) {
 		return { clearPendingStats: true, syncPending: false };
+	}
+
+	// Terminal errors should not trigger auto-retry
+	if (error && NON_RETRIABLE_ERRORS.includes(error)) {
+		return { clearPendingStats: false, syncPending: false };
 	}
 
 	return { clearPendingStats: false, syncPending: true };

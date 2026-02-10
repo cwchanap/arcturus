@@ -970,20 +970,19 @@ const initialBalance = user.chipBalance ?? 1000;
 					}
 
 					// Keep the current balance and retry after the rate limit window
-					pendingRetryTimer = setTimeout(() => {
-						void (async () => {
-							try {
-								await performChipUpdate(retryCount + 1);
-							} catch (error) {
-								console.error('Balance sync retry error:', error);
-								showStatus('Network error. Balance sync failed.');
-							} finally {
-								// Clear isSyncInProgress only after retry completes
-								isSyncInProgress = false;
-							}
-						})();
-					}, retryAfterMs + 100);
-					return;
+				// Release the sync lock BEFORE scheduling the retry so the retry can acquire it
+				isSyncInProgress = false;
+				pendingRetryTimer = setTimeout(() => {
+					void (async () => {
+						try {
+							await performChipUpdate(retryCount + 1);
+						} catch (error) {
+							console.error('Balance sync retry error:', error);
+							showStatus('Network error. Balance sync failed.');
+						}
+					})();
+				}, retryAfterMs + 100);
+				return;
 				}
 
 				const hasServerBalance =

@@ -85,15 +85,15 @@ export async function grantAchievement(
 			.select({ earnedAt: userAchievement.earnedAt })
 			.from(userAchievement)
 			.where(
-				and(
-					eq(userAchievement.userId, userId),
-					eq(userAchievement.achievementId, achievementId),
-				),
+				and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)),
 			)
 			.limit(1);
 
 		// Row exists with our timestamp -> we just inserted it
-		return existing?.earnedAt?.getTime() === now.getTime();
+		// Compare at second precision since SQLite stores timestamps as integers (seconds)
+		const storedTime = Math.floor((existing?.earnedAt?.getTime() ?? 0) / 1000);
+		const insertTime = Math.floor(now.getTime() / 1000);
+		return storedTime === insertTime;
 	} catch (error) {
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);

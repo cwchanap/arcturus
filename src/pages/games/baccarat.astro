@@ -1064,7 +1064,9 @@ const initialBalance = user.chipBalance ?? 1000;
 					// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
 					// This handles the case where new rounds completed during a retry and queued their stats
 					if (syncPending) {
-						void performChipUpdate();
+						void performChipUpdate().catch((error) => {
+							console.error('Follow-up sync error:', error);
+						});
 					}
 				}
 			}

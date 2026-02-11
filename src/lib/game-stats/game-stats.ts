@@ -65,13 +65,23 @@ export async function recordGameRound(
 		lossesIncrement !== undefined ? lossesIncrement : outcome === 'loss' ? 1 : 0;
 	// 'push' doesn't count as win or loss
 
+	// Only use chipDelta as biggestWinCandidate for single-hand wins (positive chipDelta)
+	// For losses or pushes, set to null since there's no "win" to record
+	const computedBiggestWinCandidate =
+		biggestWinCandidate !== undefined
+			? biggestWinCandidate
+			: handCount > 1
+				? null
+				: outcome === 'win' && chipDelta > 0
+					? chipDelta
+					: null;
+
 	await updateGameStats(db, userId, gameType, {
 		winsIncrement: actualWinsIncrement,
 		lossesIncrement: actualLossesIncrement,
 		handsIncrement: handCount,
 		chipDelta,
-		biggestWinCandidate:
-			biggestWinCandidate !== undefined ? biggestWinCandidate : handCount > 1 ? null : chipDelta,
+		biggestWinCandidate: computedBiggestWinCandidate,
 	});
 }
 

@@ -991,8 +991,7 @@ export function initBlackjackClient(): void {
 					syncPending =
 						pendingStats.winsIncrement > 0 ||
 						pendingStats.lossesIncrement > 0 ||
-						pendingStats.handsIncrement > 0 ||
-						pendingStats.biggestWin > 0;
+						pendingStats.handsIncrement > 0;
 					statsIncluded = false;
 					pendingRetryTimer = null;
 

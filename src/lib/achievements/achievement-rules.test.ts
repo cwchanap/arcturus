@@ -152,6 +152,12 @@ describe('Achievement check functions', () => {
 			const result = ACHIEVEMENT_CHECKS.high_roller(context);
 			expect(result.shouldGrant).toBe(false);
 		});
+
+		test('does not grant when no rank', () => {
+			const context = createContext({ overallRank: null });
+			const result = ACHIEVEMENT_CHECKS.high_roller(context);
+			expect(result.shouldGrant).toBe(false);
+		});
 	});
 
 	describe('champion', () => {
@@ -172,6 +178,12 @@ describe('Achievement check functions', () => {
 				overallRank: 1,
 				existingAchievementIds: ['champion'],
 			});
+			const result = ACHIEVEMENT_CHECKS.champion(context);
+			expect(result.shouldGrant).toBe(false);
+		});
+
+		test('does not grant when no rank', () => {
+			const context = createContext({ overallRank: null });
 			const result = ACHIEVEMENT_CHECKS.champion(context);
 			expect(result.shouldGrant).toBe(false);
 		});

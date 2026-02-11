@@ -181,13 +181,6 @@ describe('balance-sync-stats', () => {
 
 	describe('clearPendingStats', () => {
 		test('resets all stats to zero', () => {
-			const pending: PendingStats = {
-				winsIncrement: 10,
-				lossesIncrement: 5,
-				handsIncrement: 15,
-				biggestWin: 500,
-			};
-
 			const cleared = clearPendingStats();
 
 			expect(cleared).toEqual({

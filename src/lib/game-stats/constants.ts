@@ -24,19 +24,19 @@ export const RANKING_METRIC_LABELS: Record<string, string> = {
 };
 
 /**
- * Display names for game types
+ * Display names for game types (mirrors GAME_TYPES)
+ * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
 export const GAME_TYPE_LABELS: Record<string, string> = {
-	poker: 'Poker',
 	blackjack: 'Blackjack',
 	baccarat: 'Baccarat',
 };
 
 /**
- * Emoji icons for game types
+ * Emoji icons for game types (mirrors GAME_TYPES)
+ * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
 export const GAME_TYPE_ICONS: Record<string, string> = {
-	poker: '♠️',
 	blackjack: '🃏',
 	baccarat: '🎴',
 };

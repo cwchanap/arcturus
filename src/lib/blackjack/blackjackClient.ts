@@ -130,6 +130,9 @@ export function initBlackjackClient(): void {
 	// Track pending retry timer to cancel stale retries before starting new sync
 	let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// Concurrency guard: prevents overlapping performChipUpdate executions
+	let isSyncInProgress = false;
+
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
 
@@ -917,6 +920,24 @@ export function initBlackjackClient(): void {
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
+				// Concurrency guard: skip if another performChipUpdate is already in-flight
+				if (isSyncInProgress) {
+					return;
+				}
+				isSyncInProgress = true;
+
+				try {
+					await doPerformChipUpdate(retryCount);
+				} finally {
+					// Only clear isSyncInProgress if no retry is pending
+					// When retry is scheduled, the retry's finally block handles cleanup
+					if (!pendingRetryTimer) {
+						isSyncInProgress = false;
+					}
+				}
+			};
+
+			const doPerformChipUpdate = async (retryCount = 0): Promise<void> => {
 				// Clear any pending retry timer from previous sync attempt to prevent stale deltas
 				if (pendingRetryTimer) {
 					clearTimeout(pendingRetryTimer);
@@ -1045,6 +1066,8 @@ export function initBlackjackClient(): void {
 					syncPending = markSyncPendingOnRateLimit(syncPending);
 
 					// Keep the current balance and retry after the rate limit window
+					// Release the sync lock BEFORE scheduling the retry so the retry can acquire it
+					isSyncInProgress = false;
 					pendingRetryTimer = setTimeout(() => {
 						performChipUpdate(retryCount + 1).catch((err) => {
 							console.error('Retry failed:', err);

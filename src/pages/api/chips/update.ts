@@ -37,6 +37,7 @@ import {
 	type GameRoundOutcome,
 } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
+import { redactUserId } from '../../../lib/achievements/achievement-repository';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
@@ -626,7 +627,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 					if (newAchievements.length > 0) {
 						console.warn(
-							`[ACHIEVEMENT] User ${userId} earned: ${newAchievements.map((a) => a.name).join(', ')}`,
+							`[ACHIEVEMENT] User ${redactUserId(userId)} earned: ${newAchievements.map((a) => a.name).join(', ')}`,
 						);
 					}
 				} catch (statsError) {

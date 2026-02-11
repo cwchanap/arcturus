@@ -287,16 +287,17 @@ const initialBalance = user.chipBalance ?? 1000;
 	<!-- Achievement Toast Notification -->
 	<div
 		id="achievement-toast"
+		data-testid="achievement-toast"
 		role="status"
 		aria-live="polite"
 		aria-atomic="true"
 		class="fixed bottom-4 right-4 bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 		style="z-index: 9999;"
 	>
-		<span id="achievement-icon" class="text-3xl">🏆</span>
+		<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
 		<div>
 			<p class="text-xs font-semibold uppercase tracking-wider opacity-80">Achievement Unlocked</p>
-			<p id="achievement-name" class="font-bold text-lg">Achievement Name</p>
+			<p id="achievement-name" data-testid="achievement-name" class="font-bold text-lg">Achievement Name</p>
 		</div>
 	</div>
 </CasinoLayout>
@@ -1064,6 +1065,9 @@ const initialBalance = user.chipBalance ?? 1000;
 					// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
 					// This handles the case where new rounds completed during a retry and queued their stats
 					if (syncPending) {
+						// Ensure statsIncluded stays true for follow-up so the original round stats
+						// are not re-merged into pendingStats
+						statsIncluded = true;
 						void performChipUpdate().catch((error) => {
 							console.error('Follow-up sync error:', error);
 						});

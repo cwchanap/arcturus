@@ -159,7 +159,7 @@ describe('calculateMetrics', () => {
 	test('calculates 100% win rate when all wins', () => {
 		const stats: GameStats = {
 			userId: 'user1',
-			gameType: 'poker',
+			gameType: 'blackjack',
 			totalWins: 50,
 			totalLosses: 0,
 			handsPlayed: 50,
@@ -303,8 +303,8 @@ describe('constants', () => {
 	test('GAME_TYPES contains expected values', () => {
 		expect(GAME_TYPES).toContain('blackjack');
 		expect(GAME_TYPES).toContain('baccarat');
-		expect(GAME_TYPES).toContain('poker');
-		expect(GAME_TYPES.length).toBe(3);
+		// Note: poker is excluded until round-stat payloads are wired for poker rounds
+		expect(GAME_TYPES.length).toBe(2);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {
@@ -318,7 +318,8 @@ describe('constants', () => {
 	test('isValidGameType validates correctly', () => {
 		expect(isValidGameType('blackjack')).toBe(true);
 		expect(isValidGameType('baccarat')).toBe(true);
-		expect(isValidGameType('poker')).toBe(true);
+		// Note: poker is currently excluded from GAME_TYPES until round-stat payloads are wired
+		expect(isValidGameType('poker')).toBe(false);
 		expect(isValidGameType('roulette')).toBe(false);
 		expect(isValidGameType('')).toBe(false);
 		expect(isValidGameType(null as unknown as string)).toBe(false);

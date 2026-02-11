@@ -19,7 +19,7 @@ function createMockDb({
 	insertResult?: any;
 	insertThrows?: boolean;
 	existingRowResult?: null | { earnedAt: Date };
-}): Database {
+} = {}): Database {
 	const selectChain = {
 		from: () => ({
 			where: () => ({
@@ -126,16 +126,39 @@ describe('achievement-repository', () => {
 		expect(granted).toBe(false);
 	});
 
-	test('grantAchievement handles concurrent requests safely (check-then-insert pattern)', async () => {
-		// With the check-then-insert pattern, if two concurrent requests both check
-		// and find no existing row, only one will succeed in inserting due to
-		// onConflictDoNothing at the database level
+	test('grantAchievement returns false when insert is skipped due to conflict (concurrent race)', async () => {
+		// Simulates the race condition where two requests check simultaneously and both
+		// find no existing row, but only one insert succeeds. The second should return false
+		// because meta.changes will be 0 (no row actually inserted).
 		const mockDb = createMockDb({
 			existingRowResult: null, // No existing row at check time
+			insertResult: { meta: { changes: 0 } }, // Insert skipped due to conflict
 		});
 
 		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
-		expect(granted).toBe(true); // Should succeed when no existing row
+		expect(granted).toBe(false); // Should return false when no row was inserted
+	});
+
+	test('grantAchievement returns true when rowsAffected indicates success (fallback)', async () => {
+		// Tests fallback to rowsAffected when meta.changes is not available
+		const mockDb = createMockDb({
+			existingRowResult: null,
+			insertResult: { rowsAffected: 1 }, // Using rowsAffected instead of meta.changes
+		});
+
+		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+		expect(granted).toBe(true);
+	});
+
+	test('grantAchievement returns false when rowsAffected is 0 (fallback)', async () => {
+		// Tests fallback to rowsAffected when insert is skipped
+		const mockDb = createMockDb({
+			existingRowResult: null,
+			insertResult: { rowsAffected: 0 }, // No rows affected
+		});
+
+		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
+		expect(granted).toBe(false);
 	});
 
 	test('grantAchievement logs and rethrows on error', async () => {

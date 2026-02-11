@@ -85,7 +85,7 @@ export async function grantAchievement(
 		}
 
 		// No existing row found, perform the insert
-		await db
+		const insertResult = await db
 			.insert(userAchievement)
 			.values({
 				userId,
@@ -95,8 +95,13 @@ export async function grantAchievement(
 			})
 			.onConflictDoNothing();
 
-		// Return true on successful insert
-		return true;
+		// Return true only if a row was actually inserted (not skipped due to conflict)
+		// Check meta.changes for D1, fallback to rowsAffected for other databases
+		const changes =
+			(insertResult as { meta?: { changes?: number } })?.meta?.changes ??
+			(insertResult as { rowsAffected?: number })?.rowsAffected ??
+			0;
+		return changes > 0;
 	} catch (error) {
 		// Database errors other than conflict (connection issues, etc.)
 		const errorMessage = error instanceof Error ? error.message : String(error);

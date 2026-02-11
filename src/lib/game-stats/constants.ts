@@ -4,8 +4,9 @@
 
 /**
  * Valid game type identifiers (must match database values and chip update validation)
+ * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
-export const GAME_TYPES = ['poker', 'blackjack', 'baccarat'] as const;
+export const GAME_TYPES = ['blackjack', 'baccarat'] as const;
 
 /**
  * Valid ranking metrics for game leaderboards

@@ -930,10 +930,13 @@ export function initBlackjackClient(): void {
 
 				// Include any pending stats from previous delayed syncs to prevent drift
 				// If current round's stats haven't been included yet, add them now
+				// Track the max per-hand win from this round for aggregated biggestWin tracking
+				const roundBiggestWin = biggestWinCandidate ?? 0;
 				const roundStats = {
 					winsIncrement,
 					lossesIncrement,
 					handsIncrement: outcomes.length,
+					biggestWin: roundBiggestWin,
 				};
 				({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
 					pendingStats,
@@ -943,6 +946,8 @@ export function initBlackjackClient(): void {
 				const finalWinsIncrement = pendingStats.winsIncrement;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
+				// Use the max of all pending rounds' biggest wins for the aggregated sync
+				const finalBiggestWin = pendingStats.biggestWin > 0 ? pendingStats.biggestWin : undefined;
 
 				// Snapshot the stats we're about to send to avoid losing concurrent updates
 				const snapshotPending = { ...pendingStats };
@@ -960,8 +965,8 @@ export function initBlackjackClient(): void {
 						// Send accumulated stats including pending ones
 						winsIncrement: finalWinsIncrement,
 						lossesIncrement: finalLossesIncrement,
-						// For split hands, send maximum per-hand win to avoid conflating with aggregated sync
-						biggestWinCandidate,
+						// Send aggregated max biggest win across all pending rounds
+						biggestWinCandidate: finalBiggestWin,
 					}),
 				});
 
@@ -980,11 +985,14 @@ export function initBlackjackClient(): void {
 						0,
 						pendingStats.handsIncrement - snapshotPending.handsIncrement,
 					);
+					// Reset biggestWin to 0 when synced (it's a max value, not additive)
+					pendingStats.biggestWin = 0;
 					// If any pending stats remain, keep syncPending true for follow-up
 					syncPending =
 						pendingStats.winsIncrement > 0 ||
 						pendingStats.lossesIncrement > 0 ||
-						pendingStats.handsIncrement > 0;
+						pendingStats.handsIncrement > 0 ||
+						pendingStats.biggestWin > 0;
 					statsIncluded = false;
 					pendingRetryTimer = null;
 

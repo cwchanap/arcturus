@@ -2,10 +2,11 @@ export type PendingStats = {
 	winsIncrement: number;
 	lossesIncrement: number;
 	handsIncrement: number;
+	biggestWin: number;
 };
 
 export function createPendingStats(): PendingStats {
-	return { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0 };
+	return { winsIncrement: 0, lossesIncrement: 0, handsIncrement: 0, biggestWin: 0 };
 }
 
 export function addPendingStats(pendingStats: PendingStats, increment: PendingStats): PendingStats {
@@ -13,6 +14,7 @@ export function addPendingStats(pendingStats: PendingStats, increment: PendingSt
 		winsIncrement: pendingStats.winsIncrement + increment.winsIncrement,
 		lossesIncrement: pendingStats.lossesIncrement + increment.lossesIncrement,
 		handsIncrement: pendingStats.handsIncrement + increment.handsIncrement,
+		biggestWin: Math.max(pendingStats.biggestWin, increment.biggestWin),
 	};
 }
 

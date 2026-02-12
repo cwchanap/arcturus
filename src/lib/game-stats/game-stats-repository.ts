@@ -111,8 +111,8 @@ export async function updateGameStats(
 	},
 ): Promise<void> {
 	const now = new Date();
-	// Fallback to chipDelta if biggestWinCandidate is undefined
-	// (recordGameRound always provides a defined value, but this handles direct callers)
+	// Fallback to chipDelta if biggestWinCandidate is undefined (handles direct callers).
+	// null means "skip biggestWin update" (e.g., aggregated syncs); undefined means "use delta".
 	const biggestWinCandidate =
 		update.biggestWinCandidate === undefined ? update.chipDelta : update.biggestWinCandidate;
 	const biggestWinUpdate =

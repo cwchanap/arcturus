@@ -25,6 +25,7 @@ let aiSettings = {
 	geminiApiKey: null as string | null,
 	updatedAt: new Date(0),
 };
+let aiSettingsFetchError = false;
 
 // Achievements data
 let achievements: AchievementWithStatus[] = [];
@@ -46,6 +47,7 @@ if (dbBinding) {
 		};
 	} catch (error) {
 		console.error('Error loading AI settings:', error);
+		aiSettingsFetchError = true;
 	}
 
 	try {
@@ -205,6 +207,15 @@ const aiSettingsPayload = JSON.stringify({
 						}
 					</p>
 				</div>
+
+				{
+					aiSettingsFetchError && (
+						<div class="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+							Failed to load AI settings. Submitting this form may overwrite your saved
+							configuration.
+						</div>
+					)
+				}
 
 				<form
 					id="ai-settings-form"
@@ -457,7 +468,7 @@ const aiSettingsPayload = JSON.stringify({
 										{achievement.isUnlocked && achievement.earnedAt && (
 											<p class="text-xs text-yellow-400/70 mt-1">
 												Earned{' '}
-												{new Date(achievement.earnedAt).toLocaleDateString('en-US', {
+												{new Date(achievement.earnedAt).toLocaleDateString(undefined, {
 													month: 'short',
 													day: 'numeric',
 													year: 'numeric',

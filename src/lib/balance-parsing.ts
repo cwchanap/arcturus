@@ -12,8 +12,10 @@ export function parseBalance(text: string): number | null {
 	const normalized = isAccountingNegative
 		? trimmed.slice(1, -1).replace(/,/g, '').trim()
 		: trimmed.replace(/,/g, '');
-	// Match optional minus sign, optional $, then digits and optional decimals
-	const match = normalized.match(/-?\$?\d+(?:\.\d+)?/);
+	// Match optional minus sign, optional $, then either:
+	// - digits with optional decimal (e.g., "123", "123.45")
+	// - leading-dot decimal (e.g., ".50")
+	const match = normalized.match(/-?\$?(?:\d+\.?\d*|\.\d+)/);
 	if (!match) return null;
 	// Normalize the captured string: strip parentheses, dollar sign and commas
 	let cleaned = match[0].replace('$', '').replace(/,/g, '');

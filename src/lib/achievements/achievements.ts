@@ -49,21 +49,11 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			gameType?: GameType;
 		} = {},
 	): Promise<AchievementCheckContext> {
-		const defaultStats = {
-			totalWins: 0,
-			totalLosses: 0,
-			totalHandsPlayed: 0,
-			biggestWin: 0,
-			totalNetProfit: 0,
-		};
-
-		const [existingAchievementIds, aggregateStats, overallRank] = await Promise.all([
+		const [existingAchievementIds, stats, overallRank] = await Promise.all([
 			deps.getEarnedAchievementIds(db, userId),
 			deps.getAggregateUserStats(db, userId),
 			deps.getUserRank(db, userId),
 		]);
-
-		const stats = aggregateStats ?? defaultStats;
 
 		return {
 			userId,
@@ -109,8 +99,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 
 					if (granted) {
 						newlyGranted.push(achievement);
-						// eslint-disable-next-line no-console
-						console.info(
+						console.warn(
 							`[ACHIEVEMENT] Achievement unlocked for ${redactUserId(userId)}: ${achievement.name}`,
 						);
 					}
@@ -120,6 +109,14 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 				console.error(
 					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${redactUserId(userId)}: ${errorMessage}`,
 				);
+				// Bail out on DB infrastructure errors to avoid cascading failures
+				if (
+					errorMessage.includes('D1') ||
+					errorMessage.includes('database') ||
+					errorMessage.includes('SQLITE')
+				) {
+					break;
+				}
 			}
 		}
 

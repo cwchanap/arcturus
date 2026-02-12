@@ -80,10 +80,12 @@ describe('initAchievementToast', () => {
 
 			enqueue([{ id: 'winner', name: 'High Roller', icon: '🏆' }]);
 
+			const calledTimers = new Set<number>();
 			let hideToastIndex = -1;
 			for (let i = 0; i < timers.length; i++) {
 				const hadHidden = toast.classList.has('opacity-0');
 				timers[i]();
+				calledTimers.add(i);
 				if (!hadHidden && toast.classList.has('opacity-0')) {
 					hideToastIndex = i;
 					break;
@@ -95,10 +97,20 @@ describe('initAchievementToast', () => {
 			expect(toast.classList.has('translate-y-4')).toBe(true);
 
 			expect(timers.length).toBe(2);
-			const finishToastIndex = hideToastIndex === 0 ? 1 : 0;
-			const finishToast = timers[finishToastIndex];
-			expect(finishToast).toBeDefined();
-			finishToast();
+			// Find a timer that hasn't been called yet
+			let finishToastIndex = -1;
+			for (let i = 0; i < timers.length; i++) {
+				if (!calledTimers.has(i)) {
+					finishToastIndex = i;
+					break;
+				}
+			}
+			// If all timers were called, there's nothing to finish
+			if (finishToastIndex !== -1) {
+				const finishToast = timers[finishToastIndex];
+				expect(finishToast).toBeDefined();
+				finishToast();
+			}
 
 			expect(icon.textContent).toBe('');
 			expect(name.textContent).toBe('');

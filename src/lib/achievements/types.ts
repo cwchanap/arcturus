@@ -5,9 +5,16 @@
 import type { GameType } from '../game-stats/types';
 
 /**
- * Valid achievement identifiers (union type for type safety)
+ * Valid achievement identifiers (derived from const array for single source of truth)
  */
-export type AchievementId = 'rising_star' | 'high_roller' | 'champion' | 'consistent' | 'comeback';
+export const ACHIEVEMENT_IDS = [
+	'rising_star',
+	'high_roller',
+	'champion',
+	'consistent',
+	'comeback',
+] as const;
+export type AchievementId = (typeof ACHIEVEMENT_IDS)[number];
 
 /**
  * Achievement category for organization
@@ -65,7 +72,7 @@ export interface AchievementCheckContext {
 	gameType?: GameType;
 
 	// Already earned achievements (to prevent re-granting)
-	existingAchievementIds: AchievementId[];
+	existingAchievementIds: readonly AchievementId[];
 }
 
 /**

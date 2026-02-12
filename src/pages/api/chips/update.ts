@@ -13,8 +13,8 @@
  * - This is acceptable for a demo but NOT for real-money gambling
  *
  * MITIGATIONS IMPLEMENTED:
- * 1. Wins severely capped (1000 chips max) - makes exploitation tedious
- * 2. Rate limiting (2s between updates) - limits abuse to ~1800 chips/hour
+ * 1. Wins capped per-game (60k–500k depending on game) - makes exploitation tedious
+ * 2. Rate limiting (2s between updates) - limits abuse speed
  * 3. Audit logging - all wins are logged for detection
  * 4. Optimistic locking - prevents race conditions
  * 5. Authentication required - abuse is tied to user accounts
@@ -38,6 +38,7 @@ import {
 } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
 import { redactUserId } from '../../../lib/achievements/achievement-repository';
+import { isValidGameType } from '../../../lib/game-stats/constants';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
@@ -213,7 +214,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		} = body;
 		// Note: body.maxBet is intentionally NOT used for validation.
 		// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
-		// Instead, we enforce server-side caps (MAX_WIN_PER_REQUEST, MAX_LOSS_PER_REQUEST)
+		// Instead, we enforce server-side per-game caps (GAME_LIMITS[gameType].maxWin/maxLoss)
 		// that apply uniformly regardless of what the client claims.
 
 		// Validate delta is a finite integer
@@ -397,8 +398,21 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		// Determine limits based on game type
-		// Fallback to blackjack limits if somehow undefined (should be covered by validGameTypes check)
-		const limits = GAME_LIMITS[gameType as string] || GAME_LIMITS.blackjack;
+		// validGameTypes check above guarantees gameType is a key of GAME_LIMITS
+		const limits = GAME_LIMITS[gameType as string];
+		if (!limits) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_GAME_TYPE',
+					message: `No limits configured for game type: ${gameType}`,
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
 		const { maxWin, maxLoss } = limits;
 
 		// Asymmetric delta validation:
@@ -406,7 +420,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		// - Wins (positive delta) capped at maxWin
 		if (delta > 0 && delta > maxWin) {
 			console.warn(
-				`[CHIP_AUDIT] User ${userId} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
+				`[CHIP_AUDIT] User ${redactUserId(userId)} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
 			);
 			return new Response(
 				JSON.stringify({
@@ -484,7 +498,26 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				.where(eq(user.id, locals.user.id))
 				.limit(1);
 
-			const rawServerBalance = currentRow?.chipBalance ?? locals.user.chipBalance ?? 0;
+			// Explicitly detect missing row - this indicates a data integrity issue
+			// that should not be silently ignored
+			if (currentRow === undefined) {
+				console.error(
+					`[CHIPS UPDATE] No database row found for user ${locals.user.id} - data integrity issue`,
+				);
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'USER_NOT_FOUND',
+						message: 'User record not found in database',
+					}),
+					{
+						status: 500,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
+			const rawServerBalance = currentRow.chipBalance;
 			const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
 			const needsRepair = rawServerBalance !== serverBalance;
 
@@ -564,7 +597,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			// Audit log for wins (positive deltas) to help detect exploitation patterns
 			if (delta > 0) {
 				console.warn(
-					`[CHIP_AUDIT] User ${userId} won ${delta} chips: ${serverBalance} -> ${newBalance}`,
+					`[CHIP_AUDIT] User ${redactUserId(userId)} won ${delta} chips: ${serverBalance} -> ${newBalance}`,
 				);
 			}
 
@@ -598,25 +631,32 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						handCount: resolvedHandCount,
 					});
 
-					// Record game stats
-					await recordGameRoundImpl(db, userId, {
-						gameType: gameType as GameType,
-						outcome: outcome as GameRoundOutcome,
-						chipDelta: delta,
-						handCount: resolvedHandCount,
-						// Use provided winsIncrement/lossesIncrement for split-hand accuracy
-						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
-						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
-						// Use calculated biggestWinCandidate based on round type
-						biggestWinCandidate: actualBiggestWinCandidate,
-					});
+					// Record game stats (only for games with stats tracking enabled)
+					// Poker is accepted for chip updates but excluded from stats until
+					// round-stat payloads are wired for poker rounds
+					if (isValidGameType(gameType)) {
+						await recordGameRoundImpl(db, userId, {
+							gameType: gameType as GameType,
+							outcome: outcome as GameRoundOutcome,
+							chipDelta: delta,
+							handCount: resolvedHandCount,
+							// Use provided winsIncrement/lossesIncrement for split-hand accuracy
+							winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
+							lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+							// Use calculated biggestWinCandidate based on round type
+							biggestWinCandidate: actualBiggestWinCandidate,
+						});
+					}
 
 					// Check for newly earned achievements
-					// Use the net delta for comeback achievement (pre-win balance = current - delta)
-					const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-						recentWinAmount: delta > 0 ? delta : undefined,
-						gameType: gameType as GameType,
-					});
+					// Pass post-update balance (newBalance) and delta; the comeback achievement
+					// calculates pre-win balance internally as (currentChipBalance - recentWinAmount)
+					const earnedAchievements = isValidGameType(gameType)
+						? await checkAndGrantAchievementsImpl(db, userId, newBalance, {
+								recentWinAmount: delta > 0 ? delta : undefined,
+								gameType: gameType as GameType,
+							})
+						: [];
 
 					// Map to simple objects for response
 					newAchievements = earnedAchievements.map((a) => ({

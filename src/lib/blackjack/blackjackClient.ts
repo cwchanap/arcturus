@@ -920,7 +920,23 @@ export function initBlackjackClient(): void {
 
 			// Helper to perform the chip update request
 			const performChipUpdate = async (retryCount = 0): Promise<void> => {
+				// Merge round stats into pendingStats BEFORE the concurrency guard
+				// This ensures stats are preserved even if we return early due to sync in progress
+				const roundBiggestWin = biggestWinCandidate ?? 0;
+				const roundStats = {
+					winsIncrement,
+					lossesIncrement,
+					handsIncrement: outcomes.length,
+					biggestWin: roundBiggestWin,
+				};
+				({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
+					pendingStats,
+					roundStats,
+					statsIncluded,
+				));
+
 				// Concurrency guard: skip if another performChipUpdate is already in-flight
+				// Stats are already merged above, so they won't be lost
 				if (isSyncInProgress) {
 					return;
 				}
@@ -949,21 +965,8 @@ export function initBlackjackClient(): void {
 				const currentGameBalance = game.getBalance();
 				const deltaForRequest = currentGameBalance - serverSyncedBalance;
 
-				// Include any pending stats from previous delayed syncs to prevent drift
-				// If current round's stats haven't been included yet, add them now
-				// Track the max per-hand win from this round for aggregated biggestWin tracking
-				const roundBiggestWin = biggestWinCandidate ?? 0;
-				const roundStats = {
-					winsIncrement,
-					lossesIncrement,
-					handsIncrement: outcomes.length,
-					biggestWin: roundBiggestWin,
-				};
-				({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
-					pendingStats,
-					roundStats,
-					statsIncluded,
-				));
+				// Stats were already merged in performChipUpdate before the concurrency guard
+				// No need to call ensureRoundStatsIncluded again here
 				const finalWinsIncrement = pendingStats.winsIncrement;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
@@ -1024,7 +1027,10 @@ export function initBlackjackClient(): void {
 					}
 
 					// Check for newly earned achievements and warnings
-					const data = (await response.json().catch(() => ({}))) as {
+					const data = (await response.json().catch((err: unknown) => {
+						console.warn('[BALANCE_SYNC] Failed to parse success response JSON:', err);
+						return {};
+					})) as {
 						newAchievements?: Array<{ id: string; name: string; icon: string }>;
 						warnings?: string[];
 					};

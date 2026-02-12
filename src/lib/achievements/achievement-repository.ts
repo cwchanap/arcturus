@@ -7,7 +7,8 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { userAchievement } from '../../db/schema';
 import type { Database } from '../db';
-import type { UserAchievementRecord } from './types';
+import type { UserAchievementRecord, AchievementId } from './types';
+import { ACHIEVEMENT_IDS } from './types';
 import type { GameType } from '../game-stats/types';
 
 /**
@@ -17,6 +18,13 @@ import type { GameType } from '../game-stats/types';
 export function redactUserId(userId: string): string {
 	if (!userId || userId.length < 4) return '***';
 	return `${userId.slice(0, 4)}***`;
+}
+
+/**
+ * Type guard to check if a string is a valid achievement ID
+ */
+function isValidAchievementId(value: string): value is AchievementId {
+	return (ACHIEVEMENT_IDS as readonly string[]).includes(value);
 }
 
 /**
@@ -32,11 +40,13 @@ export async function getUserAchievements(
 		.where(eq(userAchievement.userId, userId))
 		.orderBy(userAchievement.earnedAt);
 
-	return results.map((r) => ({
-		achievementId: r.achievementId as import('./types').AchievementId,
-		earnedAt: r.earnedAt,
-		gameType: r.gameType as GameType | null,
-	}));
+	return results
+		.filter((r) => isValidAchievementId(r.achievementId))
+		.map((r) => ({
+			achievementId: r.achievementId as AchievementId,
+			earnedAt: r.earnedAt,
+			gameType: r.gameType as GameType | null,
+		}));
 }
 
 /**
@@ -45,18 +55,18 @@ export async function getUserAchievements(
 export async function getEarnedAchievementIds(
 	db: Database,
 	userId: string,
-): Promise<import('./types').AchievementId[]> {
+): Promise<AchievementId[]> {
 	const results = await db
 		.select({ achievementId: userAchievement.achievementId })
 		.from(userAchievement)
 		.where(eq(userAchievement.userId, userId));
 
-	return results.map((r) => r.achievementId as import('./types').AchievementId);
+	return results.map((r) => r.achievementId).filter(isValidAchievementId);
 }
 
 /**
  * Grant an achievement to a user
- * Uses onConflictDoNothing to handle race conditions (idempotent)
+ * Uses check-then-insert with onConflictDoNothing to handle race conditions (idempotent)
  *
  * @returns true if achievement was newly granted, false if already existed
  * @throws Error if database operation fails for reasons other than conflict
@@ -64,7 +74,7 @@ export async function getEarnedAchievementIds(
 export async function grantAchievement(
 	db: Database,
 	userId: string,
-	achievementId: import('./types').AchievementId,
+	achievementId: AchievementId,
 	gameType?: GameType,
 ): Promise<boolean> {
 	const now = new Date();
@@ -118,7 +128,7 @@ export async function grantAchievement(
 export async function hasAchievement(
 	db: Database,
 	userId: string,
-	achievementId: import('./types').AchievementId,
+	achievementId: AchievementId,
 ): Promise<boolean> {
 	const [result] = await db
 		.select({ achievementId: userAchievement.achievementId })

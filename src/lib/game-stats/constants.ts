@@ -16,7 +16,7 @@ export const RANKING_METRICS = ['wins', 'win_rate', 'biggest_win', 'net_profit']
 /**
  * Display names for ranking metrics
  */
-export const RANKING_METRIC_LABELS: Record<string, string> = {
+export const RANKING_METRIC_LABELS: Record<(typeof RANKING_METRICS)[number], string> = {
 	wins: 'Total Wins',
 	win_rate: 'Win Rate',
 	biggest_win: 'Biggest Win',
@@ -27,7 +27,7 @@ export const RANKING_METRIC_LABELS: Record<string, string> = {
  * Display names for game types (mirrors GAME_TYPES)
  * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
-export const GAME_TYPE_LABELS: Record<string, string> = {
+export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: 'Blackjack',
 	baccarat: 'Baccarat',
 };
@@ -36,7 +36,7 @@ export const GAME_TYPE_LABELS: Record<string, string> = {
  * Emoji icons for game types (mirrors GAME_TYPES)
  * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
-export const GAME_TYPE_ICONS: Record<string, string> = {
+export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: '🃏',
 	baccarat: '🎴',
 };
@@ -47,8 +47,8 @@ export const GAME_TYPE_ICONS: Record<string, string> = {
 export const DEFAULT_GAME_LEADERBOARD_LIMIT = 50;
 
 /**
- * Minimum hands played to appear on win rate leaderboard
- * (prevents 1/1 = 100% win rate from dominating)
+ * Minimum decided games (wins + losses) to appear on win rate leaderboard
+ * (prevents 1/1 = 100% win rate from dominating; pushes are excluded)
  */
 export const MIN_HANDS_FOR_WIN_RATE = 10;
 

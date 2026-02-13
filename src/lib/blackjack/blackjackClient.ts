@@ -14,6 +14,7 @@ import {
 	createPendingStats,
 	ensureRoundStatsIncluded,
 	markSyncPendingOnRateLimit,
+	reconcilePendingBiggestWin,
 } from './balance-sync-stats';
 
 /**
@@ -985,7 +986,6 @@ export function initBlackjackClient(): void {
 
 				// Snapshot the stats we're about to send to avoid losing concurrent updates
 				const snapshotPending = { ...pendingStats };
-				pendingStats.biggestWin = 0;
 
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
@@ -1019,6 +1019,10 @@ export function initBlackjackClient(): void {
 					pendingStats.handsIncrement = Math.max(
 						0,
 						pendingStats.handsIncrement - snapshotPending.handsIncrement,
+					);
+					pendingStats.biggestWin = reconcilePendingBiggestWin(
+						pendingStats.biggestWin,
+						snapshotPending.biggestWin,
 					);
 					// If any pending stats remain, keep syncPending true for follow-up
 					// Include biggestWin in the check to ensure it's sent in follow-up sync

@@ -22,6 +22,20 @@ import {
 import { getAggregateUserStats } from '../game-stats/game-stats-repository';
 import { getUserRank } from '../leaderboard/leaderboard-repository';
 
+export class DatabaseError extends Error {
+	cause: unknown;
+
+	constructor(message: string, cause: unknown) {
+		super(message);
+		this.name = 'DatabaseError';
+		this.cause = cause;
+	}
+}
+
+function isDatabaseError(error: unknown): boolean {
+	return error instanceof DatabaseError || (error instanceof Error && error.name === 'DatabaseError');
+}
+
 type AchievementDeps = {
 	getUserAchievements: typeof getUserAchievements;
 	getEarnedAchievementIds: typeof getEarnedAchievementIds;
@@ -40,6 +54,17 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		...overrides,
 	};
 
+	async function runDatabaseOperation<T>(operation: string, run: () => Promise<T>): Promise<T> {
+		try {
+			return await run();
+		} catch (error) {
+			if (isDatabaseError(error)) {
+				throw error;
+			}
+			throw new DatabaseError(`Achievement DB operation failed: ${operation}`, error);
+		}
+	}
+
 	async function buildAchievementContext(
 		db: Database,
 		userId: string,
@@ -50,9 +75,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		} = {},
 	): Promise<AchievementCheckContext> {
 		const [existingAchievementIds, stats, overallRank] = await Promise.all([
-			deps.getEarnedAchievementIds(db, userId),
-			deps.getAggregateUserStats(db, userId),
-			deps.getUserRank(db, userId),
+			runDatabaseOperation('getEarnedAchievementIds', () => deps.getEarnedAchievementIds(db, userId)),
+			runDatabaseOperation('getAggregateUserStats', () => deps.getAggregateUserStats(db, userId)),
+			runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
 		]);
 
 		return {
@@ -95,7 +120,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 				const result = checkFn(context);
 
 				if (result?.shouldGrant) {
-					const granted = await deps.grantAchievement(db, userId, achievement.id, result.gameType);
+					const granted = await runDatabaseOperation(`grantAchievement:${achievement.id}`, () =>
+						deps.grantAchievement(db, userId, achievement.id, result.gameType),
+					);
 
 					if (granted) {
 						newlyGranted.push(achievement);
@@ -110,11 +137,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${redactUserId(userId)}: ${errorMessage}`,
 				);
 				// Bail out on DB infrastructure errors to avoid cascading failures
-				if (
-					errorMessage.includes('D1') ||
-					errorMessage.includes('database') ||
-					errorMessage.includes('SQLITE')
-				) {
+				if (isDatabaseError(error)) {
 					break;
 				}
 			}

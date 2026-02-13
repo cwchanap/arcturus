@@ -981,10 +981,11 @@ export function initBlackjackClient(): void {
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
 				// Use the max of all pending rounds' biggest wins for the aggregated sync
-				const finalBiggestWin = pendingStats.biggestWin > 0 ? pendingStats.biggestWin : undefined;
+				const sentBiggestWin = pendingStats.biggestWin > 0 ? pendingStats.biggestWin : undefined;
 
 				// Snapshot the stats we're about to send to avoid losing concurrent updates
 				const snapshotPending = { ...pendingStats };
+				pendingStats.biggestWin = 0;
 
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
@@ -1000,7 +1001,7 @@ export function initBlackjackClient(): void {
 						winsIncrement: finalWinsIncrement,
 						lossesIncrement: finalLossesIncrement,
 						// Send aggregated max biggest win across all pending rounds
-						biggestWinCandidate: finalBiggestWin,
+						biggestWinCandidate: sentBiggestWin,
 					}),
 				});
 
@@ -1026,10 +1027,7 @@ export function initBlackjackClient(): void {
 						pendingStats.lossesIncrement > 0 ||
 						pendingStats.handsIncrement > 0 ||
 						pendingStats.biggestWin > 0;
-					// Only clear biggestWin if no follow-up sync is needed
-					// This preserves concurrent rounds' biggest win values for the follow-up sync
 					if (!syncPending) {
-						pendingStats.biggestWin = 0;
 						statsIncluded = false;
 					}
 					pendingRetryTimer = null;

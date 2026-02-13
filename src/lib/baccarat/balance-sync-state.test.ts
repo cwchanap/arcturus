@@ -1,5 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveBaccaratSyncState } from './balance-sync-state';
+import {
+	reconcilePendingBiggestWinCandidate,
+	resolveBaccaratSyncState,
+} from './balance-sync-state';
+
+describe('reconcilePendingBiggestWinCandidate', () => {
+	test('clears biggest win candidate when sync already covered it', () => {
+		const reconciled = reconcilePendingBiggestWinCandidate(90, 90);
+
+		expect(reconciled).toBeUndefined();
+	});
+
+	test('preserves bigger concurrent candidate for follow-up sync', () => {
+		const reconciled = reconcilePendingBiggestWinCandidate(130, 90);
+
+		expect(reconciled).toBe(130);
+	});
+});
 
 describe('resolveBaccaratSyncState', () => {
 	test('clears pending stats when server balance is available', () => {

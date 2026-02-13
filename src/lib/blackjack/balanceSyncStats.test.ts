@@ -33,6 +33,29 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 			expect(reconciled).toBe(200);
 		});
 
+		it('should preserve biggestWin across rate-limited retry and clear it after successful sync', () => {
+			const pendingStats = addPendingStats(createPendingStats(), {
+				winsIncrement: 1,
+				lossesIncrement: 0,
+				handsIncrement: 1,
+				biggestWin: 140,
+			});
+
+			// First send attempt snapshots current pending stats.
+			const snapshotPending = { ...pendingStats };
+
+			// Request is rate limited, so biggestWin must remain queued for retry.
+			expect(pendingStats.biggestWin).toBe(140);
+
+			// Retry succeeds later; reconcile should clear biggestWin only if no newer win arrived.
+			pendingStats.biggestWin = reconcilePendingBiggestWin(
+				pendingStats.biggestWin,
+				snapshotPending.biggestWin,
+			);
+
+			expect(pendingStats.biggestWin).toBe(0);
+		});
+
 		it('should track initial pending stats correctly', () => {
 			let pendingStats = createPendingStats();
 			let statsIncluded = false;

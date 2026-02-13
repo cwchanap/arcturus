@@ -949,6 +949,16 @@ export function initBlackjackClient(): void {
 					// When retry is scheduled, the retry's finally block handles cleanup
 					if (!pendingRetryTimer) {
 						isSyncInProgress = false;
+						// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
+						// This handles the case where new rounds completed during the sync and queued their stats
+						if (syncPending) {
+							// Ensure statsIncluded stays true for follow-up so the original round stats
+							// are not re-merged into pendingStats
+							statsIncluded = true;
+							void performChipUpdate().catch((error) => {
+								console.error('[BALANCE_SYNC] Follow-up sync error:', error);
+							});
+						}
 					}
 				}
 			};
@@ -1009,14 +1019,19 @@ export function initBlackjackClient(): void {
 						0,
 						pendingStats.handsIncrement - snapshotPending.handsIncrement,
 					);
-					// Reset biggestWin to 0 when synced (it's a max value, not additive)
-					pendingStats.biggestWin = 0;
 					// If any pending stats remain, keep syncPending true for follow-up
+					// Include biggestWin in the check to ensure it's sent in follow-up sync
 					syncPending =
 						pendingStats.winsIncrement > 0 ||
 						pendingStats.lossesIncrement > 0 ||
-						pendingStats.handsIncrement > 0;
-					statsIncluded = false;
+						pendingStats.handsIncrement > 0 ||
+						pendingStats.biggestWin > 0;
+					// Only clear biggestWin if no follow-up sync is needed
+					// This preserves concurrent rounds' biggest win values for the follow-up sync
+					if (!syncPending) {
+						pendingStats.biggestWin = 0;
+						statsIncluded = false;
+					}
 					pendingRetryTimer = null;
 
 					// Update our server-synced balance tracker after successful sync

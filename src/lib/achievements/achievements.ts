@@ -33,7 +33,9 @@ export class DatabaseError extends Error {
 }
 
 function isDatabaseError(error: unknown): boolean {
-	return error instanceof DatabaseError || (error instanceof Error && error.name === 'DatabaseError');
+	return (
+		error instanceof DatabaseError || (error instanceof Error && error.name === 'DatabaseError')
+	);
 }
 
 type AchievementDeps = {
@@ -75,7 +77,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		} = {},
 	): Promise<AchievementCheckContext> {
 		const [existingAchievementIds, stats, overallRank] = await Promise.all([
-			runDatabaseOperation('getEarnedAchievementIds', () => deps.getEarnedAchievementIds(db, userId)),
+			runDatabaseOperation('getEarnedAchievementIds', () =>
+				deps.getEarnedAchievementIds(db, userId),
+			),
 			runDatabaseOperation('getAggregateUserStats', () => deps.getAggregateUserStats(db, userId)),
 			runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
 		]);

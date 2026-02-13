@@ -247,8 +247,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		const validGameTypes = ['blackjack', 'baccarat', 'poker'];
-		if (!validGameTypes.includes(gameType)) {
+		if (!isValidGameType(gameType)) {
 			return new Response(
 				JSON.stringify({
 					success: false,

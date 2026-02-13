@@ -37,6 +37,10 @@ export function clearPendingStats(): PendingStats {
 	return createPendingStats();
 }
 
+export function reconcilePendingBiggestWin(currentBiggestWin: number, snapshotBiggestWin: number): number {
+	return currentBiggestWin > snapshotBiggestWin ? currentBiggestWin : 0;
+}
+
 export function markSyncPendingOnRateLimit(_syncPending: boolean): boolean {
 	// Always mark sync as pending when rate limit is hit
 	return true;

@@ -38,6 +38,15 @@ export function addPendingStats(
 	};
 }
 
+export function reconcilePendingBiggestWinCandidate(
+	currentBiggestWinCandidate: number | undefined,
+	snapshotBiggestWinCandidate: number | undefined,
+): number | undefined {
+	const current = currentBiggestWinCandidate ?? 0;
+	const snapshot = snapshotBiggestWinCandidate ?? 0;
+	return current > snapshot ? current : undefined;
+}
+
 const NON_RETRIABLE_ERRORS = [
 	'DELTA_EXCEEDS_LIMIT',
 	'INSUFFICIENT_BALANCE',

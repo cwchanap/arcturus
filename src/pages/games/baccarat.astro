@@ -420,7 +420,9 @@ const initialBalance = user.chipBalance ?? 1000;
 		createBetChip,
 		createBetResult,
 	} from '../../lib/dom-utils';
-	import { resolveBaccaratSyncState } from '../../lib/baccarat/balance-sync-state';
+	import {
+		resolveBaccaratSyncState,
+	} from '../../lib/baccarat/balance-sync-state';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
 
@@ -936,11 +938,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingStats.lossesIncrement > 0 ||
 						pendingStats.handsIncrement > 0 ||
 						(pendingStats.biggestWinCandidate ?? 0) > 0;
-					// Only clear biggestWinCandidate if no follow-up sync is needed
-					// This preserves concurrent rounds' biggest win values for the follow-up sync
-					if (!syncPending) {
-						pendingStats.biggestWinCandidate = undefined;
-					}
+					pendingStats.biggestWinCandidate = undefined;
 					// Only reset statsIncluded if no follow-up sync pending
 					// This prevents re-adding the current round's stats on follow-up sync
 					if (!syncPending) {

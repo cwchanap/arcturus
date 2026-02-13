@@ -16,10 +16,23 @@ import {
 	createPendingStats,
 	ensureRoundStatsIncluded,
 	markSyncPendingOnRateLimit,
+	reconcilePendingBiggestWin,
 } from './balance-sync-stats';
 
 describe('Blackjack Balance Sync Stats Tracking', () => {
 	describe('Pending Stats Accumulation', () => {
+		it('should clear biggestWin when successful sync did not get a newer win', () => {
+			const reconciled = reconcilePendingBiggestWin(120, 120);
+
+			expect(reconciled).toBe(0);
+		});
+
+		it('should preserve bigger concurrent biggestWin for follow-up sync', () => {
+			const reconciled = reconcilePendingBiggestWin(200, 120);
+
+			expect(reconciled).toBe(200);
+		});
+
 		it('should track initial pending stats correctly', () => {
 			let pendingStats = createPendingStats();
 			let statsIncluded = false;
@@ -36,6 +49,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 					winsIncrement: round1Wins,
 					lossesIncrement: round1Losses,
 					handsIncrement: round1Hands,
+					biggestWin: 0,
 				},
 				statsIncluded,
 			));
@@ -59,6 +73,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: round1Wins,
 				lossesIncrement: round1Losses,
 				handsIncrement: round1Hands,
+				biggestWin: 0,
 			});
 
 			// Round 2: 1 win (played before retry succeeds)
@@ -71,6 +86,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: round2Wins,
 				lossesIncrement: round2Losses,
 				handsIncrement: round2Hands,
+				biggestWin: 0,
 			});
 
 			// Expect accumulated stats: 1 win, 1 loss, 2 hands
@@ -87,6 +103,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 0,
 				lossesIncrement: 1,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 
 			// Round 2: Win
@@ -94,6 +111,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 1,
 				lossesIncrement: 0,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 
 			// Round 3: Win (split hand = 2 wins)
@@ -101,6 +119,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 2,
 				lossesIncrement: 0,
 				handsIncrement: 2,
+				biggestWin: 0,
 			});
 
 			// Total: 3 wins, 1 loss, 4 hands
@@ -117,6 +136,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 1,
 				lossesIncrement: 0,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 
 			// Current round stats
@@ -139,6 +159,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 1,
 				lossesIncrement: 1,
 				handsIncrement: 2,
+				biggestWin: 0,
 			});
 			let syncPending = true;
 
@@ -160,6 +181,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 1,
 				lossesIncrement: 0,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 			let syncPending = true;
 
@@ -183,6 +205,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 0,
 				lossesIncrement: 1,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 			let syncPending = true;
 
@@ -201,6 +224,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 					winsIncrement: currentWins,
 					lossesIncrement: currentLosses,
 					handsIncrement: currentHands,
+					biggestWin: 0,
 				});
 			}
 
@@ -216,6 +240,7 @@ describe('Blackjack Balance Sync Stats Tracking', () => {
 				winsIncrement: 2,
 				lossesIncrement: 0,
 				handsIncrement: 1,
+				biggestWin: 0,
 			});
 			const syncPending = true;
 

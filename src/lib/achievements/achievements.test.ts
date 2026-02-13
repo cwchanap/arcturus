@@ -47,7 +47,8 @@ function resetMocks() {
 }
 
 const achievementsModule = await import('./achievements');
-const { createAchievementService, ACHIEVEMENTS } = achievementsModule;
+const { createAchievementService, ACHIEVEMENTS, DatabaseError } = achievementsModule;
+const { ACHIEVEMENT_CHECKS } = await import('./achievement-rules');
 
 const {
 	checkAndGrantAchievements,
@@ -167,5 +168,90 @@ describe('achievements orchestration', () => {
 		expect(progress.total).toBe(ACHIEVEMENTS.length);
 		expect(progress.unlocked).toBe(1);
 		expect(progress.percentage).toBeCloseTo((1 / ACHIEVEMENTS.length) * 100);
+	});
+
+	test('wraps repository failures as DatabaseError', async () => {
+		const db = createMockDb();
+		const service = createAchievementService({
+			getEarnedAchievementIds: async () => {
+				throw new Error('d1 unavailable');
+			},
+		});
+
+		await expect(service.checkAndGrantAchievements(db, 'user1', 1000)).rejects.toMatchObject({
+			name: 'DatabaseError',
+		});
+	});
+
+	test('continues evaluating achievements when check function throws non-database error', async () => {
+		const db = createMockDb();
+		const originalConsistentCheck = ACHIEVEMENT_CHECKS.consistent;
+		ACHIEVEMENT_CHECKS.consistent = () => {
+			throw new Error('rule failure');
+		};
+
+		const warnSpy = console.warn;
+		const warnings: string[] = [];
+		console.warn = (...args: unknown[]) => {
+			warnings.push(String(args[0] ?? ''));
+		};
+
+		const customAchievements: AchievementDefinition[] = [
+			...ACHIEVEMENTS.filter((achievement) => achievement.id === 'consistent'),
+			{
+				id: 'missing_check' as AchievementDefinition['id'],
+				name: 'Missing',
+				description: 'missing',
+				category: 'leaderboard',
+				icon: '⭐',
+			},
+		];
+
+		try {
+			await checkAndGrantAchievements(db, 'user1', 5000, {}, customAchievements);
+		} finally {
+			ACHIEVEMENT_CHECKS.consistent = originalConsistentCheck;
+			console.warn = warnSpy;
+		}
+
+		expect(
+			warnings.some((msg) => msg.includes('No check function for achievement: missing_check')),
+		).toBe(true);
+	});
+
+	test('bails out of achievement loop when check function throws DatabaseError', async () => {
+		const db = createMockDb();
+		const originalConsistentCheck = ACHIEVEMENT_CHECKS.consistent;
+		ACHIEVEMENT_CHECKS.consistent = () => {
+			throw new DatabaseError('db operation failed', new Error('inner'));
+		};
+
+		const warnSpy = console.warn;
+		const warnings: string[] = [];
+		console.warn = (...args: unknown[]) => {
+			warnings.push(String(args[0] ?? ''));
+		};
+
+		const customAchievements: AchievementDefinition[] = [
+			...ACHIEVEMENTS.filter((achievement) => achievement.id === 'consistent'),
+			{
+				id: 'missing_check' as AchievementDefinition['id'],
+				name: 'Missing',
+				description: 'missing',
+				category: 'leaderboard',
+				icon: '⭐',
+			},
+		];
+
+		try {
+			await checkAndGrantAchievements(db, 'user1', 5000, {}, customAchievements);
+		} finally {
+			ACHIEVEMENT_CHECKS.consistent = originalConsistentCheck;
+			console.warn = warnSpy;
+		}
+
+		expect(
+			warnings.some((msg) => msg.includes('No check function for achievement: missing_check')),
+		).toBe(false);
 	});
 });

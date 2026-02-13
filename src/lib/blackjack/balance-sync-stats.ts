@@ -37,7 +37,10 @@ export function clearPendingStats(): PendingStats {
 	return createPendingStats();
 }
 
-export function reconcilePendingBiggestWin(currentBiggestWin: number, snapshotBiggestWin: number): number {
+export function reconcilePendingBiggestWin(
+	currentBiggestWin: number,
+	snapshotBiggestWin: number,
+): number {
 	return currentBiggestWin > snapshotBiggestWin ? currentBiggestWin : 0;
 }
 

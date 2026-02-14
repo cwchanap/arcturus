@@ -37,27 +37,24 @@ function createMockDb({
 }): Database {
 	return {
 		select: (columns?: any) => {
-			// If selecting count, this is a count query
-			const isCountQuery = columns?.count !== undefined;
+			const hasCountColumn = columns && typeof columns === 'object' && 'count' in columns;
 
 			return {
 				from: (table: any) => {
 					const chain = {
 						where: (condition: any) => {
-							if (isCountQuery) {
-								// Count query: return a promise that resolves to an array with count
+							if (hasCountColumn) {
 								const count = countResolver ? countResolver(condition) : defaultCount;
 								return Promise.resolve([{ count }]);
 							}
 
-							// getGameStats query pattern: return { limit() }
-							const whereChain = new Promise<any[]>((resolve) => {
-								resolve(allStats);
-							}) as Promise<any[]> & {
-								limit: (limit: number) => Promise<any[]>;
-							};
-							whereChain.limit = (limit: number) => {
-								return Promise.resolve(userStats ? [userStats] : []);
+							const whereChain = {
+								then: <T>(onfulfilled: (value: any[]) => T, onrejected?: (reason: any) => T) => {
+									return Promise.resolve(allStats).then(onfulfilled, onrejected);
+								},
+								limit: (limit: number) => {
+									return Promise.resolve(userStats ? [userStats] : []);
+								},
 							};
 							return whereChain;
 						},
@@ -66,7 +63,7 @@ function createMockDb({
 								if (capturedOrder) {
 									capturedOrder.orderBy = orderByClause;
 								}
-								return Promise.resolve([]);
+								return Promise.resolve(allStats);
 							},
 						}),
 					};
@@ -93,6 +90,12 @@ function createMockDb({
 				}
 				return {
 					onConflictDoNothing: () => Promise.resolve(),
+					onConflictDoUpdate: (conflictUpdate: { set: Record<string, unknown> }) => {
+						if (capturedInsert) {
+							capturedInsert.values = conflictUpdate.set;
+						}
+						return Promise.resolve();
+					},
 				};
 			},
 		}),

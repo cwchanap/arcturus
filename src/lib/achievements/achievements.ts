@@ -10,9 +10,11 @@ import type {
 	AchievementDefinition,
 	AchievementWithStatus,
 	AchievementCheckContext,
+	AchievementId,
 } from './types';
 import type { GameType } from '../game-stats/types';
 import { ACHIEVEMENTS, ACHIEVEMENT_CHECKS } from './achievement-rules';
+import type { AchievementCheckFn } from './achievement-rules';
 import {
 	getUserAchievements,
 	getEarnedAchievementIds,
@@ -44,6 +46,7 @@ type AchievementDeps = {
 	grantAchievement: typeof grantAchievement;
 	getAggregateUserStats: typeof getAggregateUserStats;
 	getUserRank: typeof getUserRank;
+	achievementChecks: Record<AchievementId, AchievementCheckFn>;
 };
 
 export function createAchievementService(overrides: Partial<AchievementDeps> = {}) {
@@ -53,6 +56,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		grantAchievement,
 		getAggregateUserStats,
 		getUserRank,
+		achievementChecks: ACHIEVEMENT_CHECKS,
 		...overrides,
 	};
 
@@ -114,7 +118,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		const newlyGranted: AchievementDefinition[] = [];
 
 		for (const achievement of achievementsList) {
-			const checkFn = ACHIEVEMENT_CHECKS[achievement.id];
+			const checkFn = deps.achievementChecks[achievement.id];
 			if (!checkFn) {
 				console.warn(`No check function for achievement: ${achievement.id}`);
 				continue;
@@ -154,7 +158,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		db: Database,
 		userId: string,
 	): Promise<AchievementWithStatus[]> {
-		const userAchievements = await deps.getUserAchievements(db, userId);
+		const userAchievements = await runDatabaseOperation('getUserAchievements', () =>
+			deps.getUserAchievements(db, userId),
+		);
 		const earnedMap = new Map(userAchievements.map((ua) => [ua.achievementId, ua]));
 
 		return ACHIEVEMENTS.map((achievement) => {

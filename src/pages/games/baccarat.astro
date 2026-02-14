@@ -936,7 +936,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingStats.lossesIncrement > 0 ||
 						pendingStats.handsIncrement > 0 ||
 						(pendingStats.biggestWinCandidate ?? 0) > 0;
-					pendingStats.biggestWinCandidate = undefined;
+					// Only clear biggestWinCandidate if it equals the snapshot value that was sent.
+					// If a concurrent round set a larger value, preserve it for the follow-up sync.
+					const currentBiggestWin = pendingStats.biggestWinCandidate ?? 0;
+					const sentBiggestWin = snapshotPending.biggestWinCandidate ?? 0;
+					if (currentBiggestWin <= sentBiggestWin) {
+						pendingStats.biggestWinCandidate = undefined;
+					}
 					// Only reset statsIncluded if no follow-up sync pending
 					// This prevents re-adding the current round's stats on follow-up sync
 					if (!syncPending) {

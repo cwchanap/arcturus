@@ -134,6 +134,10 @@ export function initBlackjackClient(): void {
 	// Concurrency guard: prevents overlapping performChipUpdate executions
 	let isSyncInProgress = false;
 
+	// Track follow-up sync attempts to prevent infinite retry loops
+	let followUpSyncAttempts = 0;
+	const MAX_FOLLOW_UP_ATTEMPTS = 3;
+
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
 
@@ -953,12 +957,30 @@ export function initBlackjackClient(): void {
 						// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
 						// This handles the case where new rounds completed during the sync and queued their stats
 						if (syncPending) {
-							// Ensure statsIncluded stays true for follow-up so the original round stats
-							// are not re-merged into pendingStats
-							statsIncluded = true;
-							void performChipUpdate().catch((error) => {
-								console.error('[BALANCE_SYNC] Follow-up sync error:', error);
-							});
+							// Check if we've exceeded max follow-up attempts
+							if (followUpSyncAttempts >= MAX_FOLLOW_UP_ATTEMPTS) {
+								console.error('[BALANCE_SYNC] Max follow-up attempts reached, abandoning sync');
+								// Clear pending state to prevent infinite loop
+								syncPending = false;
+								statsIncluded = false;
+								pendingStats = clearPendingStats();
+								followUpSyncAttempts = 0;
+							} else {
+								// Increment attempt counter and use exponential backoff
+								followUpSyncAttempts++;
+								const backoffDelay = Math.min(1000 * Math.pow(2, followUpSyncAttempts - 1), 8000);
+								// Ensure statsIncluded stays true for follow-up so the original round stats
+								// are not re-merged into pendingStats
+								statsIncluded = true;
+								pendingRetryTimer = setTimeout(() => {
+									void performChipUpdate().catch((error) => {
+										console.error('[BALANCE_SYNC] Follow-up sync error:', error);
+									});
+								}, backoffDelay);
+							}
+						} else {
+							// Reset follow-up attempts when sync completes successfully
+							followUpSyncAttempts = 0;
 						}
 					}
 				}
@@ -1033,6 +1055,8 @@ export function initBlackjackClient(): void {
 						pendingStats.biggestWin > 0;
 					if (!syncPending) {
 						statsIncluded = false;
+						// Reset follow-up attempts on successful sync completion
+						followUpSyncAttempts = 0;
 					}
 					pendingRetryTimer = null;
 

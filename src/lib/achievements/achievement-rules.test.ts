@@ -215,7 +215,7 @@ describe('Achievement check functions', () => {
 	describe('comeback', () => {
 		test('grants when recovering from low balance with a win', () => {
 			// User was below threshold, won and recovered
-			const balanceBelowThreshold = ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE - 500; // 500 chips
+			const balanceBelowThreshold = ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE - 500; // threshold minus 500 chips
 			const winAmount = 1500;
 			const newBalance = balanceBelowThreshold + winAmount;
 			const context = createContext({

@@ -7,7 +7,7 @@
  * to the specified D1 database (local or remote).
  */
 
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -70,38 +70,149 @@ async function getExistingTables(local: boolean): Promise<Set<string>> {
 }
 
 /**
- * Check if a migration's tables already exist in the database
+ * Parse SQL file to extract database objects it creates
+ * Returns sets of table names, indexes, and columns that would be created
+ */
+function parseMigrationSql(sqlContent: string): {
+	tables: Set<string>;
+	indexes: Set<string>;
+	columns: Array<{ table: string; column: string }>;
+} {
+	const tables = new Set<string>();
+	const indexes = new Set<string>();
+	const columns: Array<{ table: string; column: string }> = [];
+
+	// Match CREATE TABLE statements (handles both "table" and `table` quoting styles)
+	const createTableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
+	let match;
+	while ((match = createTableRegex.exec(sqlContent)) !== null) {
+		tables.add(match[1]);
+	}
+
+	// Match CREATE INDEX statements
+	const createIndexRegex =
+		/CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
+	while ((match = createIndexRegex.exec(sqlContent)) !== null) {
+		indexes.add(match[1]);
+	}
+
+	// Match ALTER TABLE ADD COLUMN statements
+	const alterColumnRegex =
+		/ALTER\s+TABLE\s+["`]?(\w+)["`]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
+	while ((match = alterColumnRegex.exec(sqlContent)) !== null) {
+		columns.push({ table: match[1], column: match[2] });
+	}
+
+	return { tables, indexes, columns };
+}
+
+/**
+ * Get list of columns that exist in a specific table
+ */
+async function getTableColumns(local: boolean, tableName: string): Promise<Set<string>> {
+	const querySql = `PRAGMA table_info("${tableName}")`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`, '--json'];
+
+	try {
+		const output = await executeWrangler(args);
+		const result = parseWranglerJson<{ name: string }>(output);
+		const columns = new Set<string>();
+		if (result.results) {
+			for (const row of result.results) {
+				columns.add(row.name);
+			}
+		}
+		return columns;
+	} catch (error) {
+		console.warn(
+			`Warning: Could not query columns for table ${tableName}:`,
+			(error as Error).message,
+		);
+		return new Set<string>();
+	}
+}
+
+/**
+ * Get list of indexes that exist in the database
+ */
+async function getExistingIndexes(local: boolean): Promise<Set<string>> {
+	const querySql = `SELECT name FROM sqlite_master WHERE type='index' AND name NOT GLOB '_*' ORDER BY name`;
+	const localFlag = local ? '--local' : '--remote';
+	const args = ['d1', 'execute', DB_NAME, localFlag, `--command=${querySql}`, '--json'];
+
+	try {
+		const output = await executeWrangler(args);
+		const result = parseWranglerJson<{ name: string }>(output);
+		const indexes = new Set<string>();
+		if (result.results) {
+			for (const row of result.results) {
+				indexes.add(row.name);
+			}
+		}
+		return indexes;
+	} catch (error) {
+		console.warn('Warning: Could not query existing indexes:', (error as Error).message);
+		return new Set<string>();
+	}
+}
+
+/**
+ * Check if a migration's database objects already exist
  * This is used for backfilling migration tracking on existing databases
+ * Parses the actual SQL file to determine what objects it creates
  */
 async function isMigrationApplied(
 	migrationFile: string,
 	existingTables: Set<string>,
+	local: boolean,
 ): Promise<boolean> {
-	// For migration 0000, check if core tables exist
-	if (migrationFile.startsWith('0000_')) {
-		const coreTables = ['user', 'account', 'session', 'verification', 'mission', 'llm_settings'];
-		return coreTables.every((table) => existingTables.has(table));
+	// Read and parse the SQL file to determine what it creates
+	const filePath = join(MIGRATIONS_DIR, migrationFile);
+	let sqlContent: string;
+	try {
+		sqlContent = await readFile(filePath, 'utf-8');
+	} catch {
+		// If file doesn't exist or can't be read, assume not applied
+		console.warn(`Warning: Could not read migration file ${migrationFile}`);
+		return false;
 	}
 
-	// For migration 0001, check if mission table exists
-	if (migrationFile.startsWith('0001_')) {
-		return existingTables.has('mission');
+	const { tables, indexes, columns } = parseMigrationSql(sqlContent);
+
+	// If migration creates no tables, indexes, or columns, we can't determine status
+	// In this case, rely on the _migrations table tracking
+	if (tables.size === 0 && indexes.size === 0 && columns.length === 0) {
+		return false;
 	}
 
-	// For migration 0002, check if llm_settings table exists
-	if (migrationFile.startsWith('0002_')) {
-		return existingTables.has('llm_settings');
+	// Check if all tables created by this migration exist
+	for (const table of tables) {
+		if (!existingTables.has(table)) {
+			return false;
+		}
 	}
 
-	// For migration 0003, check if game_stats and user_achievement tables exist
-	if (migrationFile.startsWith('0003_')) {
-		return existingTables.has('game_stats') && existingTables.has('user_achievement');
+	// Check if all indexes created by this migration exist
+	if (indexes.size > 0) {
+		const existingIndexes = await getExistingIndexes(local);
+		for (const index of indexes) {
+			if (!existingIndexes.has(index)) {
+				return false;
+			}
+		}
 	}
 
-	// For future migrations, add similar checks
-	// This is a simplified approach - in production you might want to parse the SQL files
-	// to extract the CREATE TABLE statements
-	return false;
+	// Check if all columns added by this migration exist
+	for (const { table, column } of columns) {
+		const tableColumns = await getTableColumns(local, table);
+		if (!tableColumns.has(column)) {
+			return false;
+		}
+	}
+
+	// All objects exist, migration is applied
+	return true;
 }
 
 /**
@@ -274,7 +385,7 @@ async function migrate(local = true): Promise<void> {
 		console.log('🔍 Detected existing database - backfilling migration tracking...');
 		let backfillCount = 0;
 		for (const migration of allMigrations) {
-			if (await isMigrationApplied(migration, existingTables)) {
+			if (await isMigrationApplied(migration, existingTables, local)) {
 				try {
 					await recordMigrationApplied(migration, local);
 					appliedMigrations.add(migration);

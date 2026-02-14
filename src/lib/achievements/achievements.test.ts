@@ -235,13 +235,14 @@ describe('achievements orchestration', () => {
 		).toBe(true);
 	});
 
-	test('bails out of achievement loop when check function throws DatabaseError', async () => {
+	test('rethrows when achievement evaluation encounters DatabaseError', async () => {
 		const db = createMockDb();
+		const dbError = new DatabaseError('db operation failed', new Error('inner'));
 
 		const customAchievementChecks = {
 			...ACHIEVEMENT_CHECKS,
 			consistent: () => {
-				throw new DatabaseError('db operation failed', new Error('inner'));
+				throw dbError;
 			},
 		};
 
@@ -277,7 +278,9 @@ describe('achievements orchestration', () => {
 		];
 
 		try {
-			await checkWithCustomChecks(db, 'user1', 5000, {}, customAchievements);
+			await expect(checkWithCustomChecks(db, 'user1', 5000, {}, customAchievements)).rejects.toBe(
+				dbError,
+			);
 		} finally {
 			console.warn = warnSpy;
 		}

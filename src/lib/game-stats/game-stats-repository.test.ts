@@ -357,11 +357,11 @@ describe('getUserGameRank - win_rate edge cases', () => {
 				updatedAt: new Date(),
 			},
 			allStats: [],
-			defaultCount: 2, // 2 users have higher win rate
+			defaultCount: 0, // No users have higher win rate (100% is the maximum)
 		});
 
 		const result = await getUserGameRank(mockDb, 'user1', 'blackjack' as GameType, 'win_rate');
-		expect(result).toBe(3); // Rank 3 (2 users ranked higher + 1)
+		expect(result).toBe(1); // Rank 1 (tied for first place with perfect win rate)
 	});
 });
 

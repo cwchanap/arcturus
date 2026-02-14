@@ -75,7 +75,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 /**
  * Check function type
  */
-type AchievementCheckFn = (context: AchievementCheckContext) => AchievementCheckResult;
+export type AchievementCheckFn = (context: AchievementCheckContext) => AchievementCheckResult;
 
 /**
  * Rising Star: Enter top 50 leaderboard

@@ -185,10 +185,27 @@ describe('achievements orchestration', () => {
 
 	test('continues evaluating achievements when check function throws non-database error', async () => {
 		const db = createMockDb();
-		const originalConsistentCheck = ACHIEVEMENT_CHECKS.consistent;
-		ACHIEVEMENT_CHECKS.consistent = () => {
-			throw new Error('rule failure');
+
+		const customAchievementChecks = {
+			...ACHIEVEMENT_CHECKS,
+			consistent: () => {
+				throw new Error('rule failure');
+			},
 		};
+
+		const { checkAndGrantAchievements: checkWithCustomChecks } = createAchievementService({
+			getEarnedAchievementIds: async () => [],
+			grantAchievement: async () => true,
+			getAggregateUserStats: async () => ({
+				totalWins: 0,
+				totalLosses: 0,
+				totalHandsPlayed: 0,
+				biggestWin: 0,
+				totalNetProfit: 0,
+			}),
+			getUserRank: async () => null,
+			achievementChecks: customAchievementChecks,
+		});
 
 		const warnSpy = console.warn;
 		const warnings: string[] = [];
@@ -208,9 +225,8 @@ describe('achievements orchestration', () => {
 		];
 
 		try {
-			await checkAndGrantAchievements(db, 'user1', 5000, {}, customAchievements);
+			await checkWithCustomChecks(db, 'user1', 5000, {}, customAchievements);
 		} finally {
-			ACHIEVEMENT_CHECKS.consistent = originalConsistentCheck;
 			console.warn = warnSpy;
 		}
 
@@ -221,10 +237,27 @@ describe('achievements orchestration', () => {
 
 	test('bails out of achievement loop when check function throws DatabaseError', async () => {
 		const db = createMockDb();
-		const originalConsistentCheck = ACHIEVEMENT_CHECKS.consistent;
-		ACHIEVEMENT_CHECKS.consistent = () => {
-			throw new DatabaseError('db operation failed', new Error('inner'));
+
+		const customAchievementChecks = {
+			...ACHIEVEMENT_CHECKS,
+			consistent: () => {
+				throw new DatabaseError('db operation failed', new Error('inner'));
+			},
 		};
+
+		const { checkAndGrantAchievements: checkWithCustomChecks } = createAchievementService({
+			getEarnedAchievementIds: async () => [],
+			grantAchievement: async () => true,
+			getAggregateUserStats: async () => ({
+				totalWins: 0,
+				totalLosses: 0,
+				totalHandsPlayed: 0,
+				biggestWin: 0,
+				totalNetProfit: 0,
+			}),
+			getUserRank: async () => null,
+			achievementChecks: customAchievementChecks,
+		});
 
 		const warnSpy = console.warn;
 		const warnings: string[] = [];
@@ -244,9 +277,8 @@ describe('achievements orchestration', () => {
 		];
 
 		try {
-			await checkAndGrantAchievements(db, 'user1', 5000, {}, customAchievements);
+			await checkWithCustomChecks(db, 'user1', 5000, {}, customAchievements);
 		} finally {
-			ACHIEVEMENT_CHECKS.consistent = originalConsistentCheck;
 			console.warn = warnSpy;
 		}
 

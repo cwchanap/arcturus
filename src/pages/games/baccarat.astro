@@ -420,7 +420,13 @@ const initialBalance = user.chipBalance ?? 1000;
 		createBetChip,
 		createBetResult,
 	} from '../../lib/dom-utils';
-	import { resolveBaccaratSyncState } from '../../lib/baccarat/balance-sync-state';
+	import {
+		addPendingStats,
+		createPendingStats,
+		getFollowUpBackoffDelayMs,
+		resolveBaccaratSyncState,
+		shouldAbandonFollowUpSync,
+	} from '../../lib/baccarat/balance-sync-state';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
 
@@ -449,12 +455,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
 	// This prevents stats drift when multiple rounds are played before sync succeeds
-	let pendingStats = {
-		winsIncrement: 0,
-		lossesIncrement: 0,
-		handsIncrement: 0,
-		biggestWinCandidate: undefined as number | undefined,
-	};
+	let pendingStats = createPendingStats();
 	let syncPending = false;
 
 	// Track pending retry timer to cancel stale retries before starting new sync
@@ -463,37 +464,40 @@ const initialBalance = user.chipBalance ?? 1000;
 	// Concurrency guard: prevents overlapping performChipUpdate executions
 	let isSyncInProgress = false;
 
+	// Track follow-up sync attempts to prevent infinite retry loops
+	let followUpSyncAttempts = 0;
+
+	function getRequiredElement(id: string): HTMLElement {
+		const element = document.getElementById(id);
+		if (!(element instanceof HTMLElement)) {
+			throw new Error('Baccarat UI elements not found');
+		}
+		return element;
+	}
+
+	function getRequiredButton(id: string): HTMLButtonElement {
+		const element = document.getElementById(id);
+		if (!(element instanceof HTMLButtonElement)) {
+			throw new Error('Baccarat UI elements not found');
+		}
+		return element;
+	}
+
 	// DOM Elements
-	const balanceEl = document.getElementById('chip-balance');
-	if (!balanceEl) throw new Error('Baccarat UI elements not found');
-	const shoeCountEl = document.getElementById('shoe-count');
-	if (!shoeCountEl) throw new Error('Baccarat UI elements not found');
-	const totalBetEl = document.getElementById('total-bet');
-	if (!totalBetEl) throw new Error('Baccarat UI elements not found');
-	const dealButtonEl = document.getElementById('deal-button');
-	if (!(dealButtonEl instanceof HTMLButtonElement))
-		throw new Error('Baccarat UI elements not found');
-	const dealButton = dealButtonEl;
-	const clearBetsButton = document.getElementById('clear-bets-button');
-	if (!clearBetsButton) throw new Error('Baccarat UI elements not found');
-	const newRoundButton = document.getElementById('new-round-button');
-	if (!newRoundButton) throw new Error('Baccarat UI elements not found');
-	const playerHandEl = document.getElementById('player-hand');
-	if (!playerHandEl) throw new Error('Baccarat UI elements not found');
-	const bankerHandEl = document.getElementById('banker-hand');
-	if (!bankerHandEl) throw new Error('Baccarat UI elements not found');
-	const roundResultEl = document.getElementById('round-result');
-	if (!roundResultEl) throw new Error('Baccarat UI elements not found');
-	const bettingAreaEl = document.getElementById('betting-area');
-	if (!bettingAreaEl) throw new Error('Baccarat UI elements not found');
-	const activeBetsEl = document.getElementById('active-bets');
-	if (!activeBetsEl) throw new Error('Baccarat UI elements not found');
-	const scoreboardEl = document.getElementById('scoreboard');
-	if (!scoreboardEl) throw new Error('Baccarat UI elements not found');
-	const insufficientOverlay = document.getElementById('insufficient-chips-overlay');
-	if (!insufficientOverlay) throw new Error('Baccarat UI elements not found');
-	const statusEl = document.getElementById('game-status');
-	if (!statusEl) throw new Error('Baccarat UI elements not found');
+	const balanceEl = getRequiredElement('chip-balance');
+	const shoeCountEl = getRequiredElement('shoe-count');
+	const totalBetEl = getRequiredElement('total-bet');
+	const dealButton = getRequiredButton('deal-button');
+	const clearBetsButton = getRequiredElement('clear-bets-button');
+	const newRoundButton = getRequiredElement('new-round-button');
+	const playerHandEl = getRequiredElement('player-hand');
+	const bankerHandEl = getRequiredElement('banker-hand');
+	const roundResultEl = getRequiredElement('round-result');
+	const bettingAreaEl = getRequiredElement('betting-area');
+	const activeBetsEl = getRequiredElement('active-bets');
+	const scoreboardEl = getRequiredElement('scoreboard');
+	const insufficientOverlay = getRequiredElement('insufficient-chips-overlay');
+	const statusEl = getRequiredElement('game-status');
 
 	// Chip selection
 	document.querySelectorAll('.chip-select').forEach((btn) => {
@@ -829,23 +833,22 @@ const initialBalance = user.chipBalance ?? 1000;
 		let statsIncluded = false;
 
 		const performChipUpdate = async (retryCount = 0) => {
+			// Merge current round stats into pendingStats BEFORE the concurrency guard.
+			// This guarantees stats are queued even if another sync is currently in-flight.
+			if (!statsIncluded) {
+				pendingStats = addPendingStats(
+					pendingStats,
+					winsIncrement,
+					lossesIncrement,
+					handsIncrement,
+					roundNetDelta,
+				);
+				statsIncluded = true;
+			}
+
 			// Concurrency guard: skip if another performChipUpdate is already in-flight
 			if (isSyncInProgress) {
-				// Ensure current round stats are still queued for the next sync
-				if (!statsIncluded) {
-					pendingStats.winsIncrement += winsIncrement;
-					pendingStats.lossesIncrement += lossesIncrement;
-					pendingStats.handsIncrement += handsIncrement;
-					// Track biggest win for this round (positive delta only)
-					if (roundNetDelta > 0) {
-						pendingStats.biggestWinCandidate = Math.max(
-							pendingStats.biggestWinCandidate ?? 0,
-							roundNetDelta,
-						);
-					}
-					statsIncluded = true;
-					syncPending = true;
-				}
+				syncPending = true;
 				return;
 			}
 			isSyncInProgress = true;
@@ -865,16 +868,13 @@ const initialBalance = user.chipBalance ?? 1000;
 				// Include any pending stats from previous delayed syncs to prevent drift
 				// If current round's stats haven't been included yet, add them now
 				if (!statsIncluded) {
-					pendingStats.winsIncrement += winsIncrement;
-					pendingStats.lossesIncrement += lossesIncrement;
-					pendingStats.handsIncrement += handsIncrement;
-					// Track biggest win for this round (positive delta only)
-					if (roundNetDelta > 0) {
-						pendingStats.biggestWinCandidate = Math.max(
-							pendingStats.biggestWinCandidate ?? 0,
-							roundNetDelta,
-						);
-					}
+					pendingStats = addPendingStats(
+						pendingStats,
+						winsIncrement,
+						lossesIncrement,
+						handsIncrement,
+						roundNetDelta,
+					);
 					statsIncluded = true;
 				}
 				const finalWinsIncrement = pendingStats.winsIncrement;
@@ -947,6 +947,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					// This prevents re-adding the current round's stats on follow-up sync
 					if (!syncPending) {
 						statsIncluded = false;
+						followUpSyncAttempts = 0;
 					}
 					pendingRetryTimer = null;
 
@@ -958,10 +959,12 @@ const initialBalance = user.chipBalance ?? 1000;
 					}
 
 					// Check for newly earned achievements
-					const data = await response.json().catch((err: unknown) => {
+					const data = (await response.json().catch((err: unknown) => {
 						console.warn('[BALANCE_SYNC] Failed to parse success response JSON:', err);
 						return {};
-					});
+					})) as {
+						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+					};
 					if (
 						data.newAchievements &&
 						Array.isArray(data.newAchievements) &&
@@ -1044,13 +1047,9 @@ const initialBalance = user.chipBalance ?? 1000;
 						hasServerBalance,
 					});
 					if (resolution.clearPendingStats) {
-						pendingStats = {
-							winsIncrement: 0,
-							lossesIncrement: 0,
-							handsIncrement: 0,
-							biggestWinCandidate: undefined,
-						};
+						pendingStats = createPendingStats();
 						statsIncluded = false;
+						followUpSyncAttempts = 0;
 					}
 					syncPending = resolution.syncPending;
 					pendingRetryTimer = null;
@@ -1080,12 +1079,26 @@ const initialBalance = user.chipBalance ?? 1000;
 					// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
 					// This handles the case where new rounds completed during a retry and queued their stats
 					if (syncPending) {
-						// Ensure statsIncluded stays true for follow-up so the original round stats
-						// are not re-merged into pendingStats
-						statsIncluded = true;
-						void performChipUpdate().catch((error) => {
-							console.error('Follow-up sync error:', error);
-						});
+						if (shouldAbandonFollowUpSync(followUpSyncAttempts)) {
+							console.error('[BALANCE_SYNC] Max follow-up attempts reached, abandoning sync');
+							syncPending = false;
+							statsIncluded = false;
+							pendingStats = createPendingStats();
+							followUpSyncAttempts = 0;
+						} else {
+							followUpSyncAttempts++;
+							const backoffDelay = getFollowUpBackoffDelayMs(followUpSyncAttempts);
+							// Ensure statsIncluded stays true for follow-up so the original round stats
+							// are not re-merged into pendingStats
+							statsIncluded = true;
+							pendingRetryTimer = setTimeout(() => {
+								void performChipUpdate().catch((error) => {
+									console.error('Follow-up sync error:', error);
+								});
+							}, backoffDelay);
+						}
+					} else {
+						followUpSyncAttempts = 0;
 					}
 				}
 			}
@@ -1098,13 +1111,9 @@ const initialBalance = user.chipBalance ?? 1000;
 			showStatus('Network error. Balance sync failed.');
 			const resolution = resolveBaccaratSyncState({ error: undefined, hasServerBalance: false });
 			if (resolution.clearPendingStats) {
-				pendingStats = {
-					winsIncrement: 0,
-					lossesIncrement: 0,
-					handsIncrement: 0,
-					biggestWinCandidate: undefined,
-				};
+				pendingStats = createPendingStats();
 				statsIncluded = false;
+				followUpSyncAttempts = 0;
 			}
 			syncPending = resolution.syncPending;
 			pendingRetryTimer = null;

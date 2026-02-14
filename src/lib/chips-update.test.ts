@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import { getRowsAffected, determineBiggestWinCandidate } from '../pages/api/chips/update';
+import {
+	getRowsAffected,
+	determineBiggestWinCandidate,
+	resolveRecentWinAmountForAchievements,
+} from '../pages/api/chips/update';
 
 describe('getRowsAffected', () => {
 	it('prefers meta changes when present', () => {
@@ -15,6 +19,24 @@ describe('getRowsAffected', () => {
 	it('returns 0 for nullish results', () => {
 		expect(getRowsAffected(null)).toBe(0);
 		expect(getRowsAffected(undefined)).toBe(0);
+	});
+});
+
+describe('resolveRecentWinAmountForAchievements', () => {
+	it('prefers per-hand biggest win candidate when available', () => {
+		const result = resolveRecentWinAmountForAchievements(120, -30);
+		expect(result).toBe(120);
+	});
+
+	it('falls back to positive delta when biggest win candidate is not provided', () => {
+		const result = resolveRecentWinAmountForAchievements(undefined, 75);
+		expect(result).toBe(75);
+	});
+
+	it('returns undefined when there is no winning signal', () => {
+		expect(resolveRecentWinAmountForAchievements(undefined, -50)).toBeUndefined();
+		expect(resolveRecentWinAmountForAchievements(null, 0)).toBeUndefined();
+		expect(resolveRecentWinAmountForAchievements(0, 0)).toBeUndefined();
 	});
 });
 

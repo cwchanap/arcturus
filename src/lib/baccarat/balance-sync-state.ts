@@ -10,6 +10,9 @@ export type BaccaratPendingStatsResolution = {
 	syncPending: boolean;
 };
 
+export const MAX_FOLLOW_UP_ATTEMPTS = 3;
+const MAX_FOLLOW_UP_BACKOFF_MS = 8000;
+
 export function createPendingStats(): BaccaratPendingStats {
 	return {
 		winsIncrement: 0,
@@ -17,6 +20,20 @@ export function createPendingStats(): BaccaratPendingStats {
 		handsIncrement: 0,
 		biggestWinCandidate: undefined,
 	};
+}
+
+export function shouldAbandonFollowUpSync(
+	followUpSyncAttempts: number,
+	maxFollowUpAttempts: number = MAX_FOLLOW_UP_ATTEMPTS,
+): boolean {
+	return followUpSyncAttempts >= maxFollowUpAttempts;
+}
+
+export function getFollowUpBackoffDelayMs(followUpAttemptNumber: number): number {
+	if (!Number.isFinite(followUpAttemptNumber) || followUpAttemptNumber <= 0) {
+		return 1000;
+	}
+	return Math.min(1000 * Math.pow(2, followUpAttemptNumber - 1), MAX_FOLLOW_UP_BACKOFF_MS);
 }
 
 export function addPendingStats(

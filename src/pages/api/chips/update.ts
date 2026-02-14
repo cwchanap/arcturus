@@ -516,7 +516,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			// that should not be silently ignored
 			if (currentRow === undefined) {
 				console.error(
-					`[CHIPS UPDATE] No database row found for user ${locals.user.id} - data integrity issue`,
+					`[CHIPS UPDATE] No database row found for user ${redactUserId(userId)} - data integrity issue`,
 				);
 				return new Response(
 					JSON.stringify({

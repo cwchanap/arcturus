@@ -144,9 +144,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 				console.error(
 					`[ACHIEVEMENT] Failed to evaluate ${achievement.id} for ${redactUserId(userId)}: ${errorMessage}`,
 				);
-				// Bail out on DB infrastructure errors to avoid cascading failures
+				// Surface DB infrastructure errors so callers can detect aborted evaluation.
 				if (isDatabaseError(error)) {
-					break;
+					throw error;
 				}
 			}
 		}

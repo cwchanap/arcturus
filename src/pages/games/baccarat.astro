@@ -498,6 +498,9 @@ const initialBalance = user.chipBalance ?? 1000;
 	const scoreboardEl = getRequiredElement('scoreboard');
 	const insufficientOverlay = getRequiredElement('insufficient-chips-overlay');
 	const statusEl = getRequiredElement('game-status');
+	const statPlayerEl = getRequiredElement('stat-player');
+	const statTieEl = getRequiredElement('stat-tie');
+	const statBankerEl = getRequiredElement('stat-banker');
 
 	// Chip selection
 	document.querySelectorAll('.chip-select').forEach((btn) => {
@@ -780,19 +783,9 @@ const initialBalance = user.chipBalance ?? 1000;
 		const getPercent = (count: number) =>
 			totalRounds > 0 ? Math.round((count / totalRounds) * 100) : 0;
 
-		const statPlayerEl = document.getElementById('stat-player');
-		const statTieEl = document.getElementById('stat-tie');
-		const statBankerEl = document.getElementById('stat-banker');
-
-		if (statPlayerEl) {
-			statPlayerEl.textContent = `${getPercent(stats.player)}%`;
-		}
-		if (statTieEl) {
-			statTieEl.textContent = `${getPercent(stats.tie)}%`;
-		}
-		if (statBankerEl) {
-			statBankerEl.textContent = `${getPercent(stats.banker)}%`;
-		}
+		statPlayerEl.textContent = `${getPercent(stats.player)}%`;
+		statTieEl.textContent = `${getPercent(stats.tie)}%`;
+		statBankerEl.textContent = `${getPercent(stats.banker)}%`;
 	}
 
 	function showStatus(message: string) {
@@ -866,17 +859,6 @@ const initialBalance = user.chipBalance ?? 1000;
 				const deltaForRequest = currentGameBalance - lastSyncedBalance;
 
 				// Include any pending stats from previous delayed syncs to prevent drift
-				// If current round's stats haven't been included yet, add them now
-				if (!statsIncluded) {
-					pendingStats = addPendingStats(
-						pendingStats,
-						winsIncrement,
-						lossesIncrement,
-						handsIncrement,
-						roundNetDelta,
-					);
-					statsIncluded = true;
-				}
 				const finalWinsIncrement = pendingStats.winsIncrement;
 				const finalLossesIncrement = pendingStats.lossesIncrement;
 				const finalHandCount = pendingStats.handsIncrement;
@@ -1039,6 +1021,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					};
 					syncPending = false;
 					statsIncluded = false;
+					followUpSyncAttempts = 0;
 					pendingRetryTimer = null;
 					showStatus(`Balance sync corrected (server balance: ${serverBalance}).`);
 				} else {

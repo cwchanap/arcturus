@@ -510,6 +510,51 @@ describe('chips update API', () => {
 		expect(body.error).toBe('DATABASE_ERROR');
 	});
 
+	test('returns USER_NOT_FOUND and logs redacted user id when user row is missing', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = {
+			select: () => ({
+				from: () => ({
+					where: () => ({
+						limit: () => Promise.resolve([]),
+					}),
+				}),
+			}),
+			update: () => ({
+				set: () => ({
+					where: () => Promise.resolve({ meta: { changes: 0 } }),
+				}),
+			}),
+		} as unknown as Database;
+
+		const errorSpy = console.error;
+		const errors: string[] = [];
+		console.error = (...args: unknown[]) => {
+			errors.push(String(args[0] ?? ''));
+		};
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
+		});
+
+		try {
+			const response = await POST({
+				request,
+				locals: createLocals({ user: { id: 'abcd1234' } }),
+			} as any);
+			const body = await readJson(response);
+			expect(response.status).toBe(500);
+			expect(body.error).toBe('USER_NOT_FOUND');
+		} finally {
+			console.error = errorSpy;
+		}
+
+		expect(errors.some((message) => message.includes('user abcd***'))).toBe(true);
+		expect(errors.some((message) => message.includes('abcd1234'))).toBe(false);
+	});
+
 	test('rejects missing DB binding', async () => {
 		resetMocks();
 		const POST = createHandler();

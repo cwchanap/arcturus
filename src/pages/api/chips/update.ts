@@ -84,6 +84,21 @@ export function determineBiggestWinCandidate({
 	return null;
 }
 
+export function resolveRecentWinAmountForAchievements(
+	actualBiggestWinCandidate: number | null | undefined,
+	delta: number,
+): number | undefined {
+	if (
+		typeof actualBiggestWinCandidate === 'number' &&
+		Number.isFinite(actualBiggestWinCandidate) &&
+		actualBiggestWinCandidate > 0
+	) {
+		return actualBiggestWinCandidate;
+	}
+
+	return delta > 0 ? delta : undefined;
+}
+
 // Game-specific betting limits
 // Different games have fundamentally different payout structures:
 // - Blackjack: ~1.5:1 (Natural) to 6:1 (Split+Double scenarios)
@@ -652,7 +667,10 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					// calculates pre-win balance internally as (currentChipBalance - recentWinAmount)
 					const earnedAchievements = isValidGameType(gameType)
 						? await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-								recentWinAmount: delta > 0 ? delta : undefined,
+								recentWinAmount: resolveRecentWinAmountForAchievements(
+									actualBiggestWinCandidate,
+									delta,
+								),
 								gameType: gameType as GameType,
 							})
 						: [];

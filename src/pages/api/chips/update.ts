@@ -262,7 +262,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		if (!isValidGameType(gameType)) {
+		if (!(gameType in GAME_LIMITS)) {
 			return new Response(
 				JSON.stringify({
 					success: false,
@@ -412,7 +412,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		// Determine limits based on game type
-		// validGameTypes check above guarantees gameType is a key of GAME_LIMITS
+		// GAME_LIMITS membership check above guarantees gameType is a supported key.
 		const limits = GAME_LIMITS[gameType as string];
 		if (!limits) {
 			return new Response(

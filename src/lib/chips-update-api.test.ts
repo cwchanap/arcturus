@@ -232,6 +232,32 @@ describe('chips update API', () => {
 		expect(body.error).toBe('INVALID_GAME_TYPE');
 	});
 
+	test('accepts poker updates but skips stats and achievements', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 25,
+				gameType: 'poker',
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-poker', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.success).toBe(true);
+		expect(body.balance).toBe(1025);
+		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(0);
+	});
+
 	test('rejects non-string game type', async () => {
 		resetMocks();
 		const POST = createHandler();

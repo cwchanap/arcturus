@@ -66,7 +66,8 @@ export async function getEarnedAchievementIds(
 
 /**
  * Grant an achievement to a user
- * Uses check-then-insert with onConflictDoNothing to handle race conditions (idempotent)
+ * Uses atomic insert with onConflictDoNothing for idempotency.
+ * The (userId, achievementId) composite primary key ensures uniqueness.
  *
  * @returns true if achievement was newly granted, false if already existed
  * @throws Error if database operation fails for reasons other than conflict
@@ -80,21 +81,9 @@ export async function grantAchievement(
 	const now = new Date();
 
 	try {
-		// First, query for an existing row to avoid race conditions
-		const [existingRow] = await db
-			.select({ earnedAt: userAchievement.earnedAt })
-			.from(userAchievement)
-			.where(
-				and(eq(userAchievement.userId, userId), eq(userAchievement.achievementId, achievementId)),
-			)
-			.limit(1);
-
-		// If a row exists, return false (did not grant)
-		if (existingRow) {
-			return false;
-		}
-
-		// No existing row found, perform the insert
+		// Atomic insert - relies on composite primary key constraint for idempotency.
+		// If a concurrent request inserts first, onConflictDoNothing prevents errors
+		// and changes will be 0, correctly indicating no new grant occurred.
 		const insertResult = await db
 			.insert(userAchievement)
 			.values({

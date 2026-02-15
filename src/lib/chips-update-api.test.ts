@@ -232,6 +232,23 @@ describe('chips update API', () => {
 		expect(body.error).toBe('INVALID_GAME_TYPE');
 	});
 
+	test('rejects inherited object keys as invalid game type', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: '__proto__' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-proto-key' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_GAME_TYPE');
+	});
+
 	test('accepts poker updates but skips stats and achievements', async () => {
 		resetMocks();
 		const POST = createHandler();

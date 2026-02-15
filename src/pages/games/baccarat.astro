@@ -1034,6 +1034,12 @@ const initialBalance = user.chipBalance ?? 1000;
 						statsIncluded = false;
 						followUpSyncAttempts = 0;
 					}
+					if (!resolution.syncPending) {
+						// No authoritative server balance was returned, so fall back to the
+						// last known synced value to keep client/server delta calculations aligned.
+						game.applyServerBalance(lastSyncedBalance);
+						updateUI();
+					}
 					syncPending = resolution.syncPending;
 					pendingRetryTimer = null;
 				}

@@ -102,7 +102,7 @@ describe('resolveBaccaratSyncState', () => {
 		});
 
 		expect(resolution).toEqual({
-			clearPendingStats: false,
+			clearPendingStats: true,
 			syncPending: false,
 		});
 	});
@@ -114,7 +114,7 @@ describe('resolveBaccaratSyncState', () => {
 		});
 
 		expect(resolution).toEqual({
-			clearPendingStats: false,
+			clearPendingStats: true,
 			syncPending: false,
 		});
 	});
@@ -126,7 +126,7 @@ describe('resolveBaccaratSyncState', () => {
 		});
 
 		expect(resolution).toEqual({
-			clearPendingStats: false,
+			clearPendingStats: true,
 			syncPending: false,
 		});
 	});
@@ -138,7 +138,7 @@ describe('resolveBaccaratSyncState', () => {
 		});
 
 		expect(resolution).toEqual({
-			clearPendingStats: false,
+			clearPendingStats: true,
 			syncPending: false,
 		});
 	});

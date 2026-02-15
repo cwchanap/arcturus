@@ -84,7 +84,7 @@ export function resolveBaccaratSyncState({
 
 	// Terminal errors should not trigger auto-retry
 	if (error && NON_RETRIABLE_ERRORS.includes(error)) {
-		return { clearPendingStats: false, syncPending: false };
+		return { clearPendingStats: true, syncPending: false };
 	}
 
 	return { clearPendingStats: false, syncPending: true };

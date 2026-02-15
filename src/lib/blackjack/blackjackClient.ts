@@ -972,6 +972,8 @@ export function initBlackjackClient(): void {
 								// Ensure statsIncluded stays true for follow-up so the original round stats
 								// are not re-merged into pendingStats
 								statsIncluded = true;
+								// Release the sync lock BEFORE scheduling the follow-up retry so it can acquire it
+								isSyncInProgress = false;
 								pendingRetryTimer = setTimeout(() => {
 									void performChipUpdate().catch((error) => {
 										console.error('[BALANCE_SYNC] Follow-up sync error:', error);

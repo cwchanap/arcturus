@@ -13,12 +13,10 @@ function createMockDb({
 	selectResult = [],
 	insertResult = { meta: { changes: 1 } },
 	insertThrows = false,
-	existingRowResult = null as null | { earnedAt: Date },
 }: {
 	selectResult?: any[];
 	insertResult?: any;
 	insertThrows?: boolean;
-	existingRowResult?: null | { earnedAt: Date };
 } = {}): Database {
 	const selectChain = {
 		from: () => ({
@@ -39,16 +37,6 @@ function createMockDb({
 
 	return {
 		select: (columns?: any) => {
-			// Initial check for existing row in grantAchievement (select with earnedAt column)
-			if (columns?.earnedAt) {
-				return {
-					from: () => ({
-						where: () => ({
-							limit: () => Promise.resolve(existingRowResult ? [existingRowResult] : []),
-						}),
-					}),
-				};
-			}
 			if (columns?.achievementId) {
 				// For getEarnedAchievementIds and hasAchievement
 				// Chain: select().from().where() -> returns thenable
@@ -108,30 +96,19 @@ describe('achievement-repository', () => {
 		expect(results).toEqual(['champion', 'comeback']);
 	});
 
-	test('grantAchievement returns true when no existing row and insert succeeds', async () => {
+	test('grantAchievement returns true when insert succeeds (new grant)', async () => {
 		const mockDb = createMockDb({
-			existingRowResult: null, // No existing row found
+			insertResult: { meta: { changes: 1 } }, // Row was inserted
 		});
 
 		const granted = await grantAchievement(mockDb, 'user1', 'high_roller', 'poker' as GameType);
 		expect(granted).toBe(true);
 	});
 
-	test('grantAchievement returns false when row already exists', async () => {
+	test('grantAchievement returns false when insert is skipped due to conflict (already exists)', async () => {
+		// Simulates the case where the achievement already exists.
+		// onConflictDoNothing prevents the error, but meta.changes will be 0.
 		const mockDb = createMockDb({
-			existingRowResult: { earnedAt: new Date('2024-01-15T10:30:00.000Z') }, // Existing row found
-		});
-
-		const granted = await grantAchievement(mockDb, 'user1', 'high_roller');
-		expect(granted).toBe(false);
-	});
-
-	test('grantAchievement returns false when insert is skipped due to conflict (concurrent race)', async () => {
-		// Simulates the race condition where two requests check simultaneously and both
-		// find no existing row, but only one insert succeeds. The second should return false
-		// because meta.changes will be 0 (no row actually inserted).
-		const mockDb = createMockDb({
-			existingRowResult: null, // No existing row at check time
 			insertResult: { meta: { changes: 0 } }, // Insert skipped due to conflict
 		});
 
@@ -142,7 +119,6 @@ describe('achievement-repository', () => {
 	test('grantAchievement returns true when rowsAffected indicates success (fallback)', async () => {
 		// Tests fallback to rowsAffected when meta.changes is not available
 		const mockDb = createMockDb({
-			existingRowResult: null,
 			insertResult: { rowsAffected: 1 }, // Using rowsAffected instead of meta.changes
 		});
 
@@ -153,7 +129,6 @@ describe('achievement-repository', () => {
 	test('grantAchievement returns false when rowsAffected is 0 (fallback)', async () => {
 		// Tests fallback to rowsAffected when insert is skipped
 		const mockDb = createMockDb({
-			existingRowResult: null,
 			insertResult: { rowsAffected: 0 }, // No rows affected
 		});
 

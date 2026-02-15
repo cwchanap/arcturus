@@ -111,8 +111,13 @@ describe('achievements orchestration', () => {
 	test('checkAndGrantAchievements skips missing check functions', async () => {
 		resetMocks();
 		const db = createMockDb();
+		// Explicitly construct array with 'consistent' first to ensure deterministic order
+		// This ensures the DatabaseError from 'consistent' is thrown before 'missing_check' is evaluated
+		const consistentAchievement = ACHIEVEMENTS.find(
+			(achievement) => achievement.id === 'consistent',
+		);
 		const customAchievements: AchievementDefinition[] = [
-			...ACHIEVEMENTS,
+			consistentAchievement!,
 			{
 				id: 'missing_check' as AchievementDefinition['id'],
 				name: 'Missing',

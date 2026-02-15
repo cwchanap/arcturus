@@ -73,7 +73,7 @@ async function getExistingTables(local: boolean): Promise<Set<string>> {
  * Parse SQL file to extract database objects it creates
  * Returns sets of table names, indexes, and columns that would be created
  */
-function parseMigrationSql(sqlContent: string): {
+export function parseMigrationSql(sqlContent: string): {
 	tables: Set<string>;
 	indexes: Set<string>;
 	columns: Array<{ table: string; column: string }>;
@@ -82,11 +82,30 @@ function parseMigrationSql(sqlContent: string): {
 	const indexes = new Set<string>();
 	const columns: Array<{ table: string; column: string }> = [];
 
+	// Transient table patterns to ignore (SQLite migration temp tables)
+	const isTransientTable = (name: string): boolean => {
+		return name.startsWith('__new_') || name.startsWith('__old_') || name.startsWith('sqlite_');
+	};
+
 	// Match CREATE TABLE statements (handles both "table" and `table` quoting styles)
 	const createTableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
 	let match;
 	while ((match = createTableRegex.exec(sqlContent)) !== null) {
-		tables.add(match[1]);
+		const tableName = match[1];
+		// Skip transient tables created during SQLite migrations
+		if (!isTransientTable(tableName)) {
+			tables.add(tableName);
+		}
+	}
+
+	// Match ALTER TABLE ... RENAME TO ... statements (captures final table name)
+	const renameTableRegex = /ALTER\s+TABLE\s+["`]?\w+["`]?\s+RENAME\s+TO\s+["`]?(\w+)["`]?/gi;
+	while ((match = renameTableRegex.exec(sqlContent)) !== null) {
+		const tableName = match[1];
+		// Only add if it's not a transient table
+		if (!isTransientTable(tableName)) {
+			tables.add(tableName);
+		}
 	}
 
 	// Match CREATE INDEX statements

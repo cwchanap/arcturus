@@ -4,18 +4,33 @@
  * Tests for database operations in game-stats-repository.ts
  */
 
-import { describe, expect, test } from 'bun:test';
-import {
-	getUserGameRank,
-	getTotalPlayersForGame,
-	updateGameStats,
-	getGameStats,
-	initializeGameStats,
-	getTopPlayersForGame,
-	getAggregateUserStats,
-} from './game-stats-repository';
+import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
+
+type GameStatsRepositoryModule = typeof import('./game-stats-repository');
+
+let getUserGameRank!: GameStatsRepositoryModule['getUserGameRank'];
+let getTotalPlayersForGame!: GameStatsRepositoryModule['getTotalPlayersForGame'];
+let updateGameStats!: GameStatsRepositoryModule['updateGameStats'];
+let getGameStats!: GameStatsRepositoryModule['getGameStats'];
+let initializeGameStats!: GameStatsRepositoryModule['initializeGameStats'];
+let getTopPlayersForGame!: GameStatsRepositoryModule['getTopPlayersForGame'];
+let getAggregateUserStats!: GameStatsRepositoryModule['getAggregateUserStats'];
+
+beforeAll(async () => {
+	// Ensure this file always tests the real repository implementation, even when
+	// other test files use mock.module('./game-stats-repository') concurrently.
+	mock.restore();
+	const repository = await import(`./game-stats-repository.ts?repository-test=${Date.now()}`);
+	getUserGameRank = repository.getUserGameRank;
+	getTotalPlayersForGame = repository.getTotalPlayersForGame;
+	updateGameStats = repository.updateGameStats;
+	getGameStats = repository.getGameStats;
+	initializeGameStats = repository.initializeGameStats;
+	getTopPlayersForGame = repository.getTopPlayersForGame;
+	getAggregateUserStats = repository.getAggregateUserStats;
+});
 
 /**
  * Mock database implementation that simulates Drizzle ORM query chains

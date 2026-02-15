@@ -1,4 +1,4 @@
-import { describe, expect, mock, test, beforeAll, beforeEach } from 'bun:test';
+import { describe, expect, mock, test, beforeAll, beforeEach, afterAll } from 'bun:test';
 import type { GameStats } from './types';
 import {
 	GAME_TYPES,
@@ -92,6 +92,15 @@ beforeAll(async () => {
 	recordGameRound = gameStatsModule.recordGameRound;
 	getGameLeaderboardData = gameStatsModule.getGameLeaderboardData;
 	getUserStatsAllGames = gameStatsModule.getUserStatsAllGames;
+});
+
+afterAll(async () => {
+	// Bun's mock.restore() does not reset module overrides from mock.module().
+	// Rebind the mocked module back to its real implementation so later test files
+	// (especially game-stats-repository.test.ts) are not affected.
+	const actualRepository = await import(`./game-stats-repository.ts?restore=${Date.now()}`);
+	mock.module('./game-stats-repository', () => actualRepository);
+	mock.restore();
 });
 
 function resetGameStatsMocks() {

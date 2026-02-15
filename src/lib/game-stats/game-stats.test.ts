@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { describe, expect, mock, test, beforeAll, beforeEach } from 'bun:test';
 import type { GameStats } from './types';
 import {
 	GAME_TYPES,
@@ -55,31 +55,44 @@ const mockGetAllUserGameStats = Object.assign(async (): Promise<GameStats[]> => 
 	impl: async (): Promise<GameStats[]> => [],
 });
 
-mock.module('./game-stats-repository', () => ({
-	getAllUserGameStats: async (...args: unknown[]) => {
-		mockGetAllUserGameStats.calls.push(args);
-		return mockGetAllUserGameStats.impl();
-	},
-	updateGameStats: async (db: unknown, userId: string, gameType: string, update: unknown) => {
-		return mockUpdateGameStats(db, userId, gameType, update);
-	},
-	getTopPlayersForGame: async (...args: unknown[]) => {
-		mockGetTopPlayersForGame.calls.push(args);
-		return mockGetTopPlayersForGame.impl();
-	},
-	getUserGameRank: async (...args: unknown[]) => {
-		mockGetUserGameRank.calls.push(args);
-		return mockGetUserGameRank.impl();
-	},
-	getTotalPlayersForGame: async (...args: unknown[]) => {
-		mockGetTotalPlayersForGame.calls.push(args);
-		return mockGetTotalPlayersForGame.impl();
-	},
-}));
+// Use beforeAll to ensure mock is set up before importing the module under test
+let gameStatsModule: typeof import('./game-stats');
+let calculateMetrics: typeof import('./game-stats').calculateMetrics;
+let recordGameRound: typeof import('./game-stats').recordGameRound;
+let getGameLeaderboardData: typeof import('./game-stats').getGameLeaderboardData;
+let getUserStatsAllGames: typeof import('./game-stats').getUserStatsAllGames;
 
-const gameStatsModule = await import('./game-stats');
-const { calculateMetrics, recordGameRound, getGameLeaderboardData, getUserStatsAllGames } =
-	gameStatsModule;
+beforeAll(() => {
+	mock.module('./game-stats-repository', () => ({
+		getAllUserGameStats: async (...args: unknown[]) => {
+			mockGetAllUserGameStats.calls.push(args);
+			return mockGetAllUserGameStats.impl();
+		},
+		updateGameStats: async (db: unknown, userId: string, gameType: string, update: unknown) => {
+			return mockUpdateGameStats(db, userId, gameType, update);
+		},
+		getTopPlayersForGame: async (...args: unknown[]) => {
+			mockGetTopPlayersForGame.calls.push(args);
+			return mockGetTopPlayersForGame.impl();
+		},
+		getUserGameRank: async (...args: unknown[]) => {
+			mockGetUserGameRank.calls.push(args);
+			return mockGetUserGameRank.impl();
+		},
+		getTotalPlayersForGame: async (...args: unknown[]) => {
+			mockGetTotalPlayersForGame.calls.push(args);
+			return mockGetTotalPlayersForGame.impl();
+		},
+	}));
+});
+
+beforeAll(async () => {
+	gameStatsModule = await import('./game-stats');
+	calculateMetrics = gameStatsModule.calculateMetrics;
+	recordGameRound = gameStatsModule.recordGameRound;
+	getGameLeaderboardData = gameStatsModule.getGameLeaderboardData;
+	getUserStatsAllGames = gameStatsModule.getUserStatsAllGames;
+});
 
 function resetGameStatsMocks() {
 	mockUpdateGameStats.calls = [];
@@ -92,6 +105,8 @@ function resetGameStatsMocks() {
 	mockGetTotalPlayersForGame.impl = async () => 10;
 	mockGetAllUserGameStats.impl = async () => [];
 }
+
+beforeEach(() => {});
 
 describe('calculateMetrics', () => {
 	test('calculates win rate correctly for player with wins and losses', () => {

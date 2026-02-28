@@ -3,6 +3,10 @@ main = "dist/_worker.js/index.js"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
 # D1 Database Binding
 # After creating your D1 database with: wrangler d1 create arcturus
 # Replace 'YOUR_DATABASE_ID_HERE' with the actual database ID from the output

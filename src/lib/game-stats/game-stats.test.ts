@@ -327,8 +327,9 @@ describe('constants', () => {
 	test('GAME_TYPES contains expected values', () => {
 		expect(GAME_TYPES).toContain('blackjack');
 		expect(GAME_TYPES).toContain('baccarat');
+		expect(GAME_TYPES).toContain('craps');
 		// Note: poker is excluded until round-stat payloads are wired for poker rounds
-		expect(GAME_TYPES.length).toBe(2);
+		expect(GAME_TYPES.length).toBe(3);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {

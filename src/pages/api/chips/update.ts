@@ -125,6 +125,12 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		maxWin: 500000,
 		maxLoss: 500000,
 	},
+	craps: {
+		// Boxcars/Aces (30:1) on max bet ($500) = $15,000 profit per prop.
+		// Multiple simultaneous bets across table. Safety buffer -> 50k.
+		maxWin: 50000,
+		maxLoss: 20000, // total table coverage at $500 max bet
+	},
 };
 
 // Minimum milliseconds between chip updates (rate limiting)

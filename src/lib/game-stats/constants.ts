@@ -6,7 +6,7 @@
  * Valid game type identifiers (must match database values and chip update validation)
  * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
-export const GAME_TYPES = ['blackjack', 'baccarat'] as const;
+export const GAME_TYPES = ['blackjack', 'baccarat', 'craps'] as const;
 
 /**
  * Valid ranking metrics for game leaderboards
@@ -30,6 +30,7 @@ export const RANKING_METRIC_LABELS: Record<(typeof RANKING_METRICS)[number], str
 export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: 'Blackjack',
 	baccarat: 'Baccarat',
+	craps: 'Craps',
 };
 
 /**
@@ -39,6 +40,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: '🃏',
 	baccarat: '🎴',
+	craps: '🎲',
 };
 
 /**

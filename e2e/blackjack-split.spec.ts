@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ensureLoggedIn } from './auth-helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -11,7 +12,13 @@ async function refreshBlackjack(page: Page) {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		await gotoBlackjack(page);
 		if (page.url().includes('/signin')) {
-			await page.waitForTimeout(100);
+			try {
+				await ensureLoggedIn(page);
+			} catch (error) {
+				throw new Error(
+					`Auth state expired: unable to recover redirected blackjack session (${error instanceof Error ? error.message : 'unknown error'})`,
+				);
+			}
 			continue;
 		}
 		await page.locator('#player-balance').waitFor({ state: 'visible', timeout: 10000 });

@@ -82,18 +82,30 @@ test.describe('Profile Page', () => {
 		await expect(page).toHaveURL('/profile');
 	});
 
-	test('sign out button works', async ({ page }) => {
-		const signoutBtn = page.locator('#signout-btn');
+	test('sign out button works', async ({ browser, baseURL }) => {
+		// Use an isolated context so signing out does not invalidate the shared
+		// storageState session used by other E2E tests.
+		const appUrl = baseURL ?? 'http://localhost:2000';
+		const context = await browser.newContext({ storageState: undefined });
+		const page = await context.newPage();
 
-		// Click sign out
-		await signoutBtn.click();
+		await page.goto(`${appUrl}/signin`);
+		await page.fill('input[name="email"]', TEST_USER.email);
+		await page.fill('input[name="password"]', TEST_USER.password);
+		await page.click('button[type="submit"]');
+		await page.waitForURL(`${appUrl}/`, { timeout: 15000 });
+
+		await page.goto(`${appUrl}/profile`);
+		await page.locator('#signout-btn').click();
 
 		// Wait for redirect to signin page
-		await page.waitForURL('/signin', { timeout: 10000 });
+		await page.waitForURL(`${appUrl}/signin`, { timeout: 10000 });
 
 		// Verify we're on signin page
-		await expect(page).toHaveURL('/signin');
+		await expect(page).toHaveURL(`${appUrl}/signin`);
 		await expect(page.locator('text=Sign in to continue')).toBeVisible();
+
+		await context.close();
 	});
 
 	test('profile page is protected (requires auth)', async ({ browser }) => {

@@ -654,7 +654,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		const pointBadge = el('point-badge');
 		const oddsRow = el('odds-row');
 		const rollTotalEl = el('roll-total');
-		const rollHistoryEl = el('roll-history');
+		const rollHistoryEl = el<HTMLElement>('roll-history');
 		const activeBetsEl = el('active-bets');
 		const insufOverlay = el('insufficient-overlay');
 		const llmAdviceEl = el('llm-advice');
@@ -938,11 +938,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		// ─── Roll history ─────────────────────────────────────────────────────────────
 
-		function addRollToHistory(
-			total: number,
-			phase: 'come-out' | 'point',
-			prevPhase: 'come-out' | 'point',
-		) {
+		function addRollToHistory(total: number, prevPhase: 'come-out' | 'point') {
 			// Remove "no rolls" placeholder
 			const placeholder = rollHistoryEl.querySelector('span');
 			if (placeholder) placeholder.remove();
@@ -960,7 +956,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				else badge.className += ' roll-normal';
 			}
 
-			rollHistoryEl.prepend(badge);
+			rollHistoryEl.insertBefore(badge, rollHistoryEl.firstChild);
 
 			// Keep last 15 badges
 			const badges = rollHistoryEl.querySelectorAll('.roll-badge');
@@ -1077,7 +1073,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			rollTotalEl.textContent = String(result.roll.total);
 
 			showRollResult(result);
-			addRollToHistory(result.roll.total, result.phase, prevPhase);
+			addRollToHistory(result.roll.total, prevPhase);
 			updateUI();
 
 			// Track stats
@@ -1086,7 +1082,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			pendingHands++;
 
 			// Sync balance after roll
-			await syncBalance(result.netDelta);
+			await syncBalance();
 
 			if (game.hasInsufficientChips()) {
 				insufOverlay.classList.remove('hidden');
@@ -1140,20 +1136,34 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		// ─── Balance sync ─────────────────────────────────────────────────────────────
 
-		async function syncBalance(netDelta: number) {
-			const outcome: 'win' | 'loss' | 'push' =
-				netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
-
+		async function syncBalance() {
 			if (isSyncInProgress) {
 				syncPending = true;
 				return;
 			}
+
+			const currentBalance = game.getBalance();
+			const delta = currentBalance - lastSyncedBalance;
+			const hasPendingStats = pendingHands > 0 || pendingWins > 0 || pendingLosses > 0;
+			if (delta === 0 && !hasPendingStats) {
+				syncPending = false;
+				return;
+			}
+
+			const outcome: 'win' | 'loss' | 'push' =
+				delta > 0
+					? 'win'
+					: delta < 0
+						? 'loss'
+						: pendingWins > 0 && pendingLosses === 0
+							? 'win'
+							: pendingLosses > 0 && pendingWins === 0
+								? 'loss'
+								: 'push';
+
 			isSyncInProgress = true;
 
 			try {
-				const currentBalance = game.getBalance();
-				const delta = currentBalance - lastSyncedBalance;
-
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
@@ -1162,7 +1172,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						gameType: 'craps',
 						previousBalance: lastSyncedBalance,
 						outcome,
-						handCount: pendingHands || 1,
+						handCount: pendingHands > 0 ? pendingHands : 1,
 						winsIncrement: pendingWins,
 						lossesIncrement: pendingLosses,
 					}),
@@ -1196,7 +1206,7 @@ const initialBalance = user.chipBalance ?? 1000;
 							pendingRetryScheduled = true;
 							setTimeout(() => {
 								pendingRetryScheduled = false;
-								void syncBalance(0);
+								void syncBalance();
 							}, 2500);
 						}
 					} else if (typeof err.currentBalance === 'number') {
@@ -1213,7 +1223,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				// (RATE_LIMITED retries are handled by their own scheduled callback)
 				if (syncPending && !pendingRetryScheduled) {
 					setTimeout(() => {
-						void syncBalance(0);
+						void syncBalance();
 					}, 100);
 				}
 			}

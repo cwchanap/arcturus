@@ -112,10 +112,12 @@ describe('CrapsGame — pass line odds', () => {
 
 	test('rejects odds without a pass line bet', () => {
 		const g = makeGame();
-		setRoll(3, 3);
-		g.roll(); // no pass line bet, just rolls
+		g.placeBet('dontPass', 100);
+		setRoll(3, 3); // establish point while keeping no Pass Line bet active
+		g.roll();
 		const r = g.placeBet('passLineOdds', 100);
 		expect(r.success).toBe(false);
+		expect(r.error).toMatch(/No Pass Line/i);
 	});
 });
 

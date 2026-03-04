@@ -321,10 +321,8 @@ export class CrapsGame {
 		currentPoint: PointNumber | null,
 	): { phase: GamePhase; point: PointNumber | null; message: string } {
 		if (phase === 'come-out') {
-			if (total === 7)
-				return { phase: 'come-out', point: null, message: 'Natural 7! Pass Line wins!' };
-			if (total === 11)
-				return { phase: 'come-out', point: null, message: 'Yo-Eleven! Pass Line wins!' };
+			if (total === 7) return { phase: 'come-out', point: null, message: 'Natural 7!' };
+			if (total === 11) return { phase: 'come-out', point: null, message: 'Yo-Eleven!' };
 			if (total === 2) return { phase: 'come-out', point: null, message: 'Snake Eyes! Craps!' };
 			if (total === 3) return { phase: 'come-out', point: null, message: 'Ace Deuce! Craps!' };
 			if (total === 12)
@@ -359,11 +357,11 @@ export class CrapsGame {
 				return {
 					phase: 'come-out',
 					point: null,
-					message: `${names[total ?? 0]}! Point made! Pass Line wins!`,
+					message: `${names[total ?? 0]}! Point made!`,
 				};
 			}
 			if (total === 7) {
-				return { phase: 'come-out', point: null, message: 'Seven out! Pass Line loses.' };
+				return { phase: 'come-out', point: null, message: 'Seven out!' };
 			}
 			return {
 				phase: 'point',

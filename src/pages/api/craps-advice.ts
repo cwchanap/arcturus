@@ -3,6 +3,64 @@ import { createDb } from '../../lib/db';
 import { getLlmSettings } from '../../lib/llm-settings';
 import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
 import type { CrapsAdviceContext, GamePhase } from '../../lib/craps/types';
+import { BET_LABELS, MAX_ROLL_HISTORY } from '../../lib/craps/constants';
+
+const MAX_ACTIVE_BETS = 64;
+const MAX_QUERY_LENGTH = 500;
+
+function isValidActiveBet(value: unknown): value is CrapsAdviceContext['activeBets'][number] {
+	if (!value || typeof value !== 'object') return false;
+	const bet = value as {
+		type?: unknown;
+		amount?: unknown;
+		point?: unknown;
+		odds?: unknown;
+	};
+
+	if (typeof bet.type !== 'string' || !Object.hasOwn(BET_LABELS, bet.type)) return false;
+	if (typeof bet.amount !== 'number' || !Number.isFinite(bet.amount) || bet.amount < 0)
+		return false;
+	if (
+		bet.point !== null &&
+		bet.point !== undefined &&
+		(!Number.isInteger(bet.point) || ![4, 5, 6, 8, 9, 10].includes(bet.point as number))
+	) {
+		return false;
+	}
+	if (
+		bet.odds !== undefined &&
+		(typeof bet.odds !== 'number' || !Number.isFinite(bet.odds) || bet.odds < 0)
+	) {
+		return false;
+	}
+
+	return true;
+}
+
+function isValidRollHistoryEntry(
+	value: unknown,
+): value is CrapsAdviceContext['rollHistory'][number] {
+	if (!value || typeof value !== 'object') return false;
+	const roll = value as { die1?: unknown; die2?: unknown; total?: unknown };
+	if (
+		typeof roll.die1 !== 'number' ||
+		typeof roll.die2 !== 'number' ||
+		typeof roll.total !== 'number'
+	) {
+		return false;
+	}
+	if (
+		!Number.isInteger(roll.die1) ||
+		!Number.isInteger(roll.die2) ||
+		!Number.isInteger(roll.total)
+	) {
+		return false;
+	}
+	if (roll.die1 < 1 || roll.die1 > 6 || roll.die2 < 1 || roll.die2 > 6) return false;
+	if (roll.total < 2 || roll.total > 12 || roll.total !== roll.die1 + roll.die2) return false;
+
+	return true;
+}
 
 function jsonResponse(body: Record<string, unknown>, init?: ResponseInit) {
 	return new Response(JSON.stringify(body), {
@@ -27,6 +85,12 @@ function parseContext(payload: unknown): CrapsAdviceContext | null {
 	}
 	if (typeof p.chipBalance !== 'number' || !Number.isFinite(p.chipBalance)) return null;
 	if (!Array.isArray(p.activeBets) || !Array.isArray(p.rollHistory)) return null;
+	if (p.activeBets.length > MAX_ACTIVE_BETS || p.rollHistory.length > MAX_ROLL_HISTORY) return null;
+	if (!p.activeBets.every(isValidActiveBet) || !p.rollHistory.every(isValidRollHistoryEntry)) {
+		return null;
+	}
+
+	const query = typeof p.query === 'string' ? p.query.slice(0, MAX_QUERY_LENGTH) : undefined;
 
 	return {
 		phase: p.phase,
@@ -34,7 +98,7 @@ function parseContext(payload: unknown): CrapsAdviceContext | null {
 		chipBalance: p.chipBalance,
 		activeBets: p.activeBets,
 		rollHistory: p.rollHistory,
-		query: typeof p.query === 'string' ? p.query : undefined,
+		query,
 	};
 }
 

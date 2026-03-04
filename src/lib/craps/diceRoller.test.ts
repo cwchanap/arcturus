@@ -1,5 +1,22 @@
-import { describe, test, expect } from 'bun:test';
-import { rollDie, rollDice, createRoll, rollCombinations } from './diceRoller';
+import { beforeAll, describe, expect, mock, test } from 'bun:test';
+
+type DiceRollerModule = typeof import('./diceRoller');
+
+let rollDie!: DiceRollerModule['rollDie'];
+let rollDice!: DiceRollerModule['rollDice'];
+let createRoll!: DiceRollerModule['createRoll'];
+let rollCombinations!: DiceRollerModule['rollCombinations'];
+
+beforeAll(async () => {
+	// Ensure this file always imports the real diceRoller module, even when
+	// other test files have active mock.module('./diceRoller') overrides.
+	mock.restore();
+	const diceRoller = await import(`./diceRoller.ts?dice-roller-test=${Date.now()}`);
+	rollDie = diceRoller.rollDie;
+	rollDice = diceRoller.rollDice;
+	createRoll = diceRoller.createRoll;
+	rollCombinations = diceRoller.rollCombinations;
+});
 
 describe('rollDie', () => {
 	test('always returns a value between 1 and 6', () => {

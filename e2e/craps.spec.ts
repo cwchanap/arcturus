@@ -5,6 +5,60 @@ async function gotoCraps(page: Page) {
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
 }
 
+function parseBalance(text: string): number {
+	const normalized = text.replace(/,/g, '');
+	const match = normalized.match(/-?\d+(?:\.\d+)?/);
+	return Number(match?.[0] ?? '0');
+}
+
+async function ensureMinimumBalance(page: Page, minimumBalance: number): Promise<void> {
+	const maxAttempts = 5;
+
+	for (let attempt = 0; attempt < maxAttempts; attempt++) {
+		await gotoCraps(page);
+		const balanceText = await page
+			.locator('#chip-balance')
+			.innerText()
+			.catch(() => '');
+		const balance = parseBalance(balanceText);
+		if (balance >= minimumBalance) return;
+
+		const delta = minimumBalance - balance;
+		const result = await page.evaluate(
+			async ({ delta, previousBalance }) => {
+				const response = await fetch('/api/chips/update', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						delta,
+						gameType: 'craps',
+						previousBalance,
+					}),
+				});
+
+				return {
+					ok: response.ok,
+					status: response.status,
+					retryAfter: response.headers.get('Retry-After'),
+				};
+			},
+			{ delta, previousBalance: balance },
+		);
+
+		if (result.ok || result.status === 409) continue;
+		if (result.status === 429) {
+			const retryAfter = Number(result.retryAfter ?? '2');
+			const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
+			await page.waitForTimeout(sleepMs);
+			continue;
+		}
+
+		throw new Error(`Failed to top up craps balance for test (status ${result.status})`);
+	}
+
+	throw new Error(`Failed to reach minimum craps balance ${minimumBalance} after retries`);
+}
+
 test.describe('Craps — Initial State', () => {
 	test('loads page with correct initial state', async ({ page }) => {
 		await gotoCraps(page);
@@ -137,18 +191,15 @@ test.describe('Craps — Active Bets Panel', () => {
 	});
 
 	test('balance decreases when bet is placed', async ({ page }) => {
-		await gotoCraps(page);
+		await ensureMinimumBalance(page, 100);
 
-		const balanceBefore = parseInt(
-			(await page.locator('#chip-balance').textContent())?.replace(/[$,]/g, '') ?? '0',
-		);
+		const balanceBefore = parseBalance(await page.locator('#chip-balance').innerText());
 
 		await page.getByTestId('chip-100').click();
 		await page.click('[data-bet-type="passLine"]');
+		await expect(page.getByTestId('total-bet')).toContainText('$100');
 
-		const balanceAfter = parseInt(
-			(await page.locator('#chip-balance').textContent())?.replace(/[$,]/g, '') ?? '0',
-		);
+		const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
 
 		expect(balanceAfter).toBe(balanceBefore - 100);
 	});

@@ -64,18 +64,58 @@ export interface CrapsGameConfig {
 	settings?: Partial<CrapsSettings>;
 }
 
+function sanitizeSettings(input?: Partial<CrapsSettings>): CrapsSettings {
+	const merged = { ...DEFAULT_SETTINGS, ...input };
+
+	let minBet = Number.isFinite(merged.minBet) ? merged.minBet : DEFAULT_SETTINGS.minBet;
+	let maxBet = Number.isFinite(merged.maxBet) ? merged.maxBet : DEFAULT_SETTINGS.maxBet;
+	let maxOddsMultiplier = Number.isFinite(merged.maxOddsMultiplier)
+		? merged.maxOddsMultiplier
+		: DEFAULT_SETTINGS.maxOddsMultiplier;
+
+	minBet = Math.max(1, minBet);
+	maxBet = Math.max(1, maxBet);
+	maxOddsMultiplier = Math.max(1, maxOddsMultiplier);
+
+	if (minBet > maxBet) {
+		minBet = maxBet;
+	}
+
+	return {
+		minBet,
+		maxBet,
+		maxOddsMultiplier,
+		animationSpeed:
+			merged.animationSpeed === 'slow' ||
+			merged.animationSpeed === 'normal' ||
+			merged.animationSpeed === 'fast'
+				? merged.animationSpeed
+				: DEFAULT_SETTINGS.animationSpeed,
+		llmEnabled:
+			typeof merged.llmEnabled === 'boolean' ? merged.llmEnabled : DEFAULT_SETTINGS.llmEnabled,
+		soundEnabled:
+			typeof merged.soundEnabled === 'boolean'
+				? merged.soundEnabled
+				: DEFAULT_SETTINGS.soundEnabled,
+	};
+}
+
 export class CrapsGame {
 	private state: CrapsGameState;
 
 	constructor(config: CrapsGameConfig) {
-		const settings: CrapsSettings = { ...DEFAULT_SETTINGS, ...config.settings };
+		const settings = sanitizeSettings(config.settings);
+		const initialBalance =
+			Number.isFinite(config.initialBalance) && config.initialBalance >= 0
+				? config.initialBalance
+				: 0;
 		this.state = {
 			phase: 'come-out',
 			point: null,
 			lastRoll: null,
 			rollHistory: [],
 			activeBets: [],
-			chipBalance: config.initialBalance,
+			chipBalance: initialBalance,
 			rollCount: 0,
 			settings,
 		};
@@ -106,6 +146,15 @@ export class CrapsGame {
 
 	public canPlaceBet(type: BetType, amount: number): { ok: boolean; error?: string } {
 		const { phase, settings, chipBalance, activeBets } = this.state;
+		if (
+			!Number.isFinite(amount) ||
+			!Number.isFinite(settings.minBet) ||
+			!Number.isFinite(settings.maxBet) ||
+			!Number.isFinite(settings.maxOddsMultiplier) ||
+			!Number.isFinite(chipBalance)
+		) {
+			return { ok: false, error: 'Invalid bet amount' };
+		}
 
 		if (COME_OUT_ONLY_BETS.has(type) && phase !== 'come-out') {
 			return { ok: false, error: `${type} can only be placed during come-out` };
@@ -132,8 +181,12 @@ export class CrapsGame {
 			const lineBetType = type === 'passLineOdds' ? 'passLine' : 'dontPass';
 			const lineBet = activeBets.find((b) => b.type === lineBetType);
 			if (lineBet) {
-				const maxOdds = lineBet.amount * settings.maxOddsMultiplier;
+				const lineAmount = lineBet.amount;
 				const currentOdds = lineBet.odds ?? 0;
+				if (!Number.isFinite(lineAmount) || !Number.isFinite(currentOdds)) {
+					return { ok: false, error: 'Invalid bet amount' };
+				}
+				const maxOdds = lineAmount * settings.maxOddsMultiplier;
 				if (currentOdds + amount > maxOdds) {
 					return {
 						ok: false,
@@ -191,11 +244,22 @@ export class CrapsGame {
 		if (!bet.point) {
 			return { success: false, error: "Can't add odds before come point is established" };
 		}
+		if (
+			!Number.isFinite(amount) ||
+			!Number.isFinite(this.state.chipBalance) ||
+			!Number.isFinite(this.state.settings.maxOddsMultiplier)
+		) {
+			return { success: false, error: 'Invalid bet amount' };
+		}
 		if (amount < 1) return { success: false, error: 'Odds amount must be positive' };
 		if (amount > this.state.chipBalance) return { success: false, error: 'Insufficient chips' };
 
-		const maxOdds = bet.amount * this.state.settings.maxOddsMultiplier;
 		const currentOdds = bet.odds ?? 0;
+		if (!Number.isFinite(bet.amount) || !Number.isFinite(currentOdds)) {
+			return { success: false, error: 'Invalid bet amount' };
+		}
+
+		const maxOdds = bet.amount * this.state.settings.maxOddsMultiplier;
 		if (currentOdds + amount > maxOdds) {
 			return {
 				success: false,
@@ -392,6 +456,6 @@ export class CrapsGame {
 	// ─── settings ─────────────────────────────────────────────────────────────
 
 	public updateSettings(updates: Partial<CrapsSettings>): void {
-		this.state.settings = { ...this.state.settings, ...updates };
+		this.state.settings = sanitizeSettings({ ...this.state.settings, ...updates });
 	}
 }

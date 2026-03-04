@@ -18,12 +18,19 @@ export class GameSettingsManager {
 		const s: CrapsSettings = { ...DEFAULT_SETTINGS };
 		if (!raw || typeof raw !== 'object') return s;
 		const p = raw as Partial<CrapsSettings>;
+		const minBet = p.minBet;
+		const maxBet = p.maxBet;
+		const maxOddsMultiplier = p.maxOddsMultiplier;
 
-		if (typeof p.minBet === 'number' && p.minBet >= 1) s.minBet = p.minBet;
-		if (typeof p.maxBet === 'number' && p.maxBet >= 1) s.maxBet = p.maxBet;
+		if (typeof minBet === 'number' && Number.isFinite(minBet) && minBet >= 1) s.minBet = minBet;
+		if (typeof maxBet === 'number' && Number.isFinite(maxBet) && maxBet >= 1) s.maxBet = maxBet;
 		if (s.minBet > s.maxBet) s.minBet = s.maxBet;
-		if (typeof p.maxOddsMultiplier === 'number' && p.maxOddsMultiplier >= 1)
-			s.maxOddsMultiplier = p.maxOddsMultiplier;
+		if (
+			typeof maxOddsMultiplier === 'number' &&
+			Number.isFinite(maxOddsMultiplier) &&
+			maxOddsMultiplier >= 1
+		)
+			s.maxOddsMultiplier = maxOddsMultiplier;
 		if (p.animationSpeed === 'slow' || p.animationSpeed === 'normal' || p.animationSpeed === 'fast')
 			s.animationSpeed = p.animationSpeed;
 		if (typeof p.llmEnabled === 'boolean') s.llmEnabled = p.llmEnabled;

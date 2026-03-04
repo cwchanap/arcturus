@@ -115,9 +115,42 @@ describe('CrapsGame — pass line odds', () => {
 		g.placeBet('dontPass', 100);
 		setRoll(3, 3); // establish point while keeping no Pass Line bet active
 		g.roll();
+		expect(g.getState().phase).toBe('point');
 		const r = g.placeBet('passLineOdds', 100);
 		expect(r.success).toBe(false);
 		expect(r.error).toMatch(/No Pass Line/i);
+	});
+});
+
+describe('CrapsGame — numeric guardrails', () => {
+	test('rejects non-finite bet amounts', () => {
+		const g = makeGame();
+
+		expect(g.placeBet('passLine', Number.NaN).success).toBe(false);
+		expect(g.placeBet('passLine', Number.POSITIVE_INFINITY).success).toBe(false);
+		expect(g.placeBet('passLine', Number.NEGATIVE_INFINITY).success).toBe(false);
+	});
+
+	test('sanitizes invalid settings in constructor and updates', () => {
+		const g = new CrapsGame({
+			initialBalance: 1000,
+			settings: {
+				minBet: Number.NaN,
+				maxBet: Number.POSITIVE_INFINITY,
+				maxOddsMultiplier: 0,
+			},
+		});
+
+		const initial = g.getState().settings;
+		expect(initial.minBet).toBe(5);
+		expect(initial.maxBet).toBe(500);
+		expect(initial.maxOddsMultiplier).toBe(1);
+
+		g.updateSettings({ minBet: 700, maxBet: 100, maxOddsMultiplier: Number.NaN });
+		const updated = g.getState().settings;
+		expect(updated.minBet).toBe(100);
+		expect(updated.maxBet).toBe(100);
+		expect(updated.maxOddsMultiplier).toBe(2);
 	});
 });
 

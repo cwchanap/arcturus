@@ -1142,22 +1142,26 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			const currentBalance = game.getBalance();
-			const delta = currentBalance - lastSyncedBalance;
-			const hasPendingStats = pendingHands > 0 || pendingWins > 0 || pendingLosses > 0;
-			if (delta === 0 && !hasPendingStats) {
+			const ackWins = pendingWins;
+			const ackLosses = pendingLosses;
+			const ackHands = pendingHands;
+			const ackPreviousBalance = lastSyncedBalance;
+			const ackCurrentBalance = game.getBalance();
+			const ackDelta = ackCurrentBalance - ackPreviousBalance;
+			const hasPendingStats = ackHands > 0 || ackWins > 0 || ackLosses > 0;
+			if (ackDelta === 0 && !hasPendingStats) {
 				syncPending = false;
 				return;
 			}
 
 			const outcome: 'win' | 'loss' | 'push' =
-				delta > 0
+				ackDelta > 0
 					? 'win'
-					: delta < 0
+					: ackDelta < 0
 						? 'loss'
-						: pendingWins > 0 && pendingLosses === 0
+						: ackWins > 0 && ackLosses === 0
 							? 'win'
-							: pendingLosses > 0 && pendingWins === 0
+							: ackLosses > 0 && ackWins === 0
 								? 'loss'
 								: 'push';
 
@@ -1168,22 +1172,22 @@ const initialBalance = user.chipBalance ?? 1000;
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
-						delta,
+						delta: ackDelta,
 						gameType: 'craps',
-						previousBalance: lastSyncedBalance,
+						previousBalance: ackPreviousBalance,
 						outcome,
-						handCount: pendingHands > 0 ? pendingHands : 1,
-						winsIncrement: pendingWins,
-						lossesIncrement: pendingLosses,
+						handCount: ackHands > 0 ? ackHands : 1,
+						winsIncrement: ackWins,
+						lossesIncrement: ackLosses,
 					}),
 				});
 
 				if (response.ok) {
-					lastSyncedBalance = currentBalance;
-					pendingWins = 0;
-					pendingLosses = 0;
-					pendingHands = 0;
-					syncPending = false;
+					lastSyncedBalance = ackPreviousBalance + ackDelta;
+					pendingWins = Math.max(0, pendingWins - ackWins);
+					pendingLosses = Math.max(0, pendingLosses - ackLosses);
+					pendingHands = Math.max(0, pendingHands - ackHands);
+					syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 
 					const data = (await response.json().catch(() => ({}))) as {
 						newAchievements?: Array<{ id: string; name: string; icon: string }>;
@@ -1219,9 +1223,10 @@ const initialBalance = user.chipBalance ?? 1000;
 				// Network error — will retry next roll
 			} finally {
 				isSyncInProgress = false;
+				const hasRemainingPendingStats = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 				// Trigger follow-up sync if new rolls completed while this sync was in-flight
 				// (RATE_LIMITED retries are handled by their own scheduled callback)
-				if (syncPending && !pendingRetryScheduled) {
+				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {
 					setTimeout(() => {
 						void syncBalance();
 					}, 100);

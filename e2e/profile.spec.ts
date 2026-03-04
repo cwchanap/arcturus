@@ -1,11 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 import { TEST_USER } from './auth.setup';
 
 test.describe('Profile Page', () => {
 	test.beforeEach(async ({ page }) => {
-		// Ensure user is logged in before each test
-		await ensureLoggedIn(page);
 		await page.goto('/profile');
 	});
 

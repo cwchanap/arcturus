@@ -33,9 +33,6 @@ function win(bet: CrapsBet, profit: number): BetEvaluation {
 function lose(bet: CrapsBet): BetEvaluation {
 	return { bet, outcome: 'lose', payout: 0 };
 }
-function push(bet: CrapsBet): BetEvaluation {
-	return { bet, outcome: 'push', payout: 0 };
-}
 function cont(bet: CrapsBet, updatedBet?: CrapsBet): BetEvaluation {
 	return { bet, outcome: 'continue', payout: 0, updatedBet };
 }
@@ -89,7 +86,7 @@ function evalDontPass(
 	if (phase === 'come-out') {
 		if (total === 7 || total === 11) return lose(bet);
 		if (total === 2 || total === 3) return win(bet, bet.amount);
-		if (total === 12) return push(bet); // bar 12
+		if (total === 12) return cont(bet); // bar 12 (no action)
 		return cont(bet); // point established; bet stays active
 	}
 	if (total === 7) {
@@ -146,7 +143,7 @@ function evalDontCome(bet: CrapsBet, total: number): BetEvaluation {
 	if (!bet.point) {
 		if (total === 7 || total === 11) return lose(bet);
 		if (total === 2 || total === 3) return win(bet, bet.amount);
-		if (total === 12) return push(bet);
+		if (total === 12) return cont(bet);
 		const newPoint = total as PointNumber;
 		return cont(bet, { ...bet, point: newPoint });
 	}
@@ -235,7 +232,8 @@ function evaluateBet(
 	phase: GamePhase,
 	gamePoint: PointNumber | null,
 ): BetEvaluation {
-	const { total, isHard } = roll;
+	const { total } = roll;
+	const isHard = roll.die1 === roll.die2;
 
 	// Bets that are off (don't resolve) during come-out
 	if (phase === 'come-out' && OFF_DURING_COME_OUT.has(bet.type)) {

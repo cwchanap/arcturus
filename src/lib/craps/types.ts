@@ -3,13 +3,13 @@
  */
 
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
+export type DiceTotal = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 export type PointNumber = 4 | 5 | 6 | 8 | 9 | 10;
 
 export interface DiceRoll {
 	die1: DieFace;
 	die2: DieFace;
-	total: number;
-	isHard: boolean; // die1 === die2
+	total: DiceTotal;
 }
 
 export type GamePhase = 'come-out' | 'point';
@@ -80,6 +80,7 @@ export interface BetEvaluation {
 	outcome: BetOutcome;
 	payout: number; // Profit earned on win (positive), 0 for lose/push/continue
 	updatedBet?: CrapsBet; // For come/dontCome when establishing a point
+	persistent?: boolean; // Optional hint that this bet should remain active after resolution
 }
 
 export interface RollResult {

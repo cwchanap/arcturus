@@ -1,11 +1,9 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 test.describe.configure({ mode: 'serial' });
 
 async function gotoBlackjack(page: Page) {
-	await ensureLoggedIn(page);
 	await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 }
 
@@ -13,7 +11,7 @@ async function refreshBlackjack(page: Page) {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		await gotoBlackjack(page);
 		if (page.url().includes('/signin')) {
-			await ensureLoggedIn(page);
+			await page.waitForTimeout(100);
 			continue;
 		}
 		await page.locator('#player-balance').waitFor({ state: 'visible', timeout: 10000 });

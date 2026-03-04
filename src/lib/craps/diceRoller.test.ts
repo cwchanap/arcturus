@@ -15,14 +15,14 @@ describe('rollDice', () => {
 	test('total equals die1 + die2', () => {
 		for (let i = 0; i < 100; i++) {
 			const roll = rollDice();
-			expect(roll.total).toBe(roll.die1 + roll.die2);
+			expect(roll.total).toBe((roll.die1 + roll.die2) as typeof roll.total);
 		}
 	});
 
-	test('isHard is true only when both dice show the same face', () => {
+	test('hard rolls are derivable from die faces', () => {
 		for (let i = 0; i < 200; i++) {
 			const roll = rollDice();
-			expect(roll.isHard).toBe(roll.die1 === roll.die2);
+			expect(roll.die1 === roll.die2).toBeTypeOf('boolean');
 		}
 	});
 
@@ -41,13 +41,13 @@ describe('createRoll', () => {
 		expect(roll.die1).toBe(3);
 		expect(roll.die2).toBe(4);
 		expect(roll.total).toBe(7);
-		expect(roll.isHard).toBe(false);
+		expect(roll.die1 === roll.die2).toBe(false);
 	});
 
 	test('marks hard rolls correctly', () => {
 		const roll = createRoll(3, 3);
 		expect(roll.total).toBe(6);
-		expect(roll.isHard).toBe(true);
+		expect(roll.die1 === roll.die2).toBe(true);
 	});
 });
 

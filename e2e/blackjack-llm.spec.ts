@@ -1,11 +1,9 @@
 import { test, expect } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 async function gotoBlackjack(page: Page) {
-	await ensureLoggedIn(page);
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
 
 	// Ensure LLM-powered rival is enabled in game settings for these tests

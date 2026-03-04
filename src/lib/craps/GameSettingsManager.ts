@@ -56,10 +56,11 @@ export class GameSettingsManager {
 	}
 
 	public updateSettings(updates: Partial<CrapsSettings>): CrapsSettings {
-		this.settings = { ...this.settings, ...updates };
-		if (this.settings.minBet > this.settings.maxBet) {
-			this.settings.maxBet = this.settings.minBet;
+		const tempMerged: CrapsSettings = { ...this.settings, ...updates };
+		if (tempMerged.minBet > tempMerged.maxBet) {
+			tempMerged.maxBet = tempMerged.minBet;
 		}
+		this.settings = this.validate(tempMerged);
 		this.save();
 		return this.getSettings();
 	}

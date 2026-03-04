@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 async function gotoBlackjack(page: Page) {
-	await ensureLoggedIn(page);
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
 }
 

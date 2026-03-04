@@ -1,10 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 test.describe('Poker turn flow smoke test', () => {
 	test('deal, human action, AI acts, next phase continues', async ({ page }) => {
-		// Ensure authentication and navigate to poker game
-		await ensureLoggedIn(page);
 		await page.goto('/games/poker', { waitUntil: 'networkidle' });
 
 		const dealButton = page.getByRole('button', { name: 'DEAL NEW HAND' });

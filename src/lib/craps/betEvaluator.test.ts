@@ -74,9 +74,9 @@ describe("Don't Pass", () => {
 		expect(ev.outcome).toBe('win');
 	});
 
-	test('pushes on 12 during come-out', () => {
+	test('continues on 12 during come-out (bar 12 no action)', () => {
 		const [ev] = evaluateBets([bet('dontPass', 50)], createRoll(6, 6), 'come-out', null);
-		expect(ev.outcome).toBe('push');
+		expect(ev.outcome).toBe('continue');
 	});
 
 	test('wins on 7 during point phase', () => {
@@ -151,6 +151,14 @@ describe('Come bet (no point)', () => {
 		const [ev] = evaluateBets([bet('come', 50)], createRoll(4, 5), 'point', 8);
 		expect(ev.outcome).toBe('continue');
 		expect(ev.updatedBet?.point).toBe(9);
+	});
+});
+
+describe("Don't Come bet (no point)", () => {
+	test('continues on 12 (bar 12 no action)', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(6, 6), 'point', 8);
+		expect(ev.outcome).toBe('continue');
+		expect(ev.updatedBet).toBeUndefined();
 	});
 });
 
@@ -422,7 +430,7 @@ describe('computeNetDelta', () => {
 		expect(computeNetDelta(evs)).toBe(-10);
 	});
 
-	test('push contributes 0', () => {
+	test('bar-12 no-action contributes 0', () => {
 		const evs = evaluateBets([bet('dontPass', 50)], createRoll(6, 6), 'come-out', null);
 		expect(computeNetDelta(evs)).toBe(0);
 	});

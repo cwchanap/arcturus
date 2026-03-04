@@ -83,6 +83,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					<div>
 						<button
 							id="roll-button"
+							data-testid="roll-button"
 							disabled
 							class="btn-gold px-6 py-3 rounded-xl font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed min-w-[110px]"
 						>
@@ -116,7 +117,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					</div>
 
 					<!-- Pass Odds / Don't Pass Odds (shown only in point phase) -->
-					<div id="odds-row" class="hidden grid grid-cols-2 gap-3">
+					<div id="odds-row" class="hidden grid-cols-2 gap-3">
 						<div
 							data-bet-type="passLineOdds"
 							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
@@ -297,6 +298,7 @@ const initialBalance = user.chipBalance ?? 1000;
 									<button
 										class="chip-select hover:scale-110 transition-transform"
 										data-amount={c.amount}
+										data-testid={`chip-${c.amount}`}
 									>
 										<PokerChip
 											value={c.amount}
@@ -309,10 +311,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						<div class="flex items-center gap-3">
 							<div>
 								<span class="text-slate-400 text-sm">Total Bet:</span>
-								<span id="total-bet" class="text-yellow-400 font-bold ml-1">$0</span>
+								<span id="total-bet" data-testid="total-bet" class="text-yellow-400 font-bold ml-1"
+									>$0</span
+								>
 							</div>
 							<button
 								id="clear-bets-button"
+								data-testid="clear-bets-button"
 								class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
 							>
 								Clear Bets
@@ -329,7 +334,11 @@ const initialBalance = user.chipBalance ?? 1000;
 					<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
 						Roll History
 					</h3>
-					<div id="roll-history" class="flex flex-wrap gap-1.5 min-h-[40px]">
+					<div
+						id="roll-history"
+						data-testid="roll-history"
+						class="flex flex-wrap gap-1.5 min-h-[40px]"
+					>
 						<span class="text-neutral-500 text-xs">No rolls yet</span>
 					</div>
 				</div>
@@ -339,7 +348,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
 						Active Bets
 					</h3>
-					<div id="active-bets" class="space-y-1.5 min-h-[40px]">
+					<div id="active-bets" data-testid="active-bets" class="space-y-1.5 min-h-[40px]">
 						<span class="text-neutral-500 text-xs">No bets placed</span>
 					</div>
 				</div>
@@ -347,12 +356,13 @@ const initialBalance = user.chipBalance ?? 1000;
 				<!-- Come Bet Odds -->
 				<div
 					id="come-odds-panel"
+					data-testid="come-odds-panel"
 					class="hidden bg-slate-900 rounded-xl p-4 border border-blue-500/20"
 				>
 					<h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3">
 						Come Bet Odds
 					</h3>
-					<div id="come-odds-list" class="space-y-2"></div>
+					<div id="come-odds-list" data-testid="come-odds-list" class="space-y-2"></div>
 					<p class="text-slate-500 text-xs mt-2">Click to add 2× odds (0% edge)</p>
 				</div>
 
@@ -402,6 +412,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Advisor</h3>
 						<button
 							id="llm-advice-btn"
+							data-testid="llm-advice-btn"
 							class="px-3 py-1 bg-yellow-600/20 hover:bg-yellow-600/40 text-yellow-400 rounded text-xs transition-colors border border-yellow-500/30"
 						>
 							Ask
@@ -417,7 +428,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- Insufficient Chips Overlay -->
 		<div
 			id="insufficient-overlay"
-			class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center hidden"
+			class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 items-center justify-center hidden"
 		>
 			<div class="bg-slate-800 rounded-xl p-8 border border-red-500/50 max-w-md text-center">
 				<div class="text-5xl mb-4">💸</div>
@@ -468,6 +479,10 @@ const initialBalance = user.chipBalance ?? 1000;
 		border-color: rgba(234, 179, 8, 0.5);
 		background: rgba(234, 179, 8, 0.05);
 		transform: translateY(-1px);
+	}
+	.bet-zone:focus-visible {
+		outline: 2px solid rgba(234, 179, 8, 0.9);
+		outline-offset: 2px;
 	}
 	.bet-zone-active {
 		border-color: rgba(234, 179, 8, 0.8) !important;
@@ -597,586 +612,637 @@ const initialBalance = user.chipBalance ?? 1000;
 
 <script>
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
-	import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet } from '../../lib/craps/types';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 
 	// ─── Initialisation ─────────────────────────────────────────────────────────
+	if (typeof window !== 'undefined') {
+		const root = document.getElementById('craps-root');
+		if (!root) throw new Error('craps-root not found');
+		const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 
-	const root = document.getElementById('craps-root');
-	if (!root) throw new Error('craps-root not found');
-	const initialBalance = Number(root.dataset.initialBalance ?? 1000);
-
-	const game = new CrapsGame({
-		initialBalance,
-		settings: { minBet: 5, maxBet: 500, maxOddsMultiplier: 2 },
-	});
-
-	let selectedChipAmount = 25;
-	let lastSyncedBalance = initialBalance;
-	let isSyncInProgress = false;
-	let syncPending = false;
-	let pendingRetryScheduled = false;
-	let pendingWins = 0;
-	let pendingLosses = 0;
-	let pendingHands = 0;
-
-	// ─── DOM helpers ─────────────────────────────────────────────────────────────
-
-	function el<T extends HTMLElement>(id: string): T {
-		const e = document.getElementById(id);
-		if (!e) throw new Error(`#${id} not found`);
-		return e as T;
-	}
-
-	const balanceEl = el('chip-balance');
-	const totalBetEl = el('total-bet');
-	const rollButton = el<HTMLButtonElement>('roll-button');
-	const clearBetsBtn = el('clear-bets-button');
-	const gameMessageEl = el('game-message');
-	const phaseBadge = el('phase-badge');
-	const pointBadge = el('point-badge');
-	const oddsRow = el('odds-row');
-	const rollTotalEl = el('roll-total');
-	const rollHistoryEl = el('roll-history');
-	const activeBetsEl = el('active-bets');
-	const insufOverlay = el('insufficient-overlay');
-	const llmAdviceEl = el('llm-advice');
-	const llmAdviceBtn = el<HTMLButtonElement>('llm-advice-btn');
-	const comeOddsPanel = el('come-odds-panel');
-	const comeOddsListEl = el('come-odds-list');
-
-	// ─── Die face SVG dots ────────────────────────────────────────────────────────
-
-	// cx,cy pairs for dot positions on a 60×60 die
-	const DOT_POSITIONS: Record<number, [number, number][]> = {
-		1: [[30, 30]],
-		2: [
-			[18, 18],
-			[42, 42],
-		],
-		3: [
-			[18, 18],
-			[30, 30],
-			[42, 42],
-		],
-		4: [
-			[18, 18],
-			[42, 18],
-			[18, 42],
-			[42, 42],
-		],
-		5: [
-			[18, 18],
-			[42, 18],
-			[30, 30],
-			[18, 42],
-			[42, 42],
-		],
-		6: [
-			[18, 15],
-			[42, 15],
-			[18, 30],
-			[42, 30],
-			[18, 45],
-			[42, 45],
-		],
-	};
-
-	function renderDie(dotsEl: Element, value: number) {
-		dotsEl.innerHTML = '';
-		const positions = DOT_POSITIONS[value] ?? [];
-		for (const [cx, cy] of positions) {
-			const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-			circle.setAttribute('cx', String(cx));
-			circle.setAttribute('cy', String(cy));
-			circle.setAttribute('r', '5');
-			circle.setAttribute('class', 'die-dot');
-			dotsEl.appendChild(circle);
-		}
-	}
-
-	function animateDice(die1: number, die2: number) {
-		const d1 = document.getElementById('die1');
-		const d2 = document.getElementById('die2');
-		[d1, d2].forEach((d) => d?.classList.add('die-rolling'));
-		setTimeout(() => {
-			[d1, d2].forEach((d) => d?.classList.remove('die-rolling'));
-			const d1Dots = document.getElementById('die1-dots');
-			const d2Dots = document.getElementById('die2-dots');
-			if (d1Dots) renderDie(d1Dots, die1);
-			if (d2Dots) renderDie(d2Dots, die2);
-			rollTotalEl.textContent = String(die1 + die2);
-		}, 420);
-	}
-
-	// ─── UI update ───────────────────────────────────────────────────────────────
-
-	function updateUI() {
-		const state = game.getState();
-
-		// Balance
-		balanceEl.textContent = `$${state.chipBalance.toLocaleString()}`;
-
-		// Total bet
-		const total = game.getTotalAtRisk();
-		totalBetEl.textContent = `$${total}`;
-
-		// Roll button
-		rollButton.disabled = !game.canRoll();
-
-		// Phase badge
-		if (state.phase === 'come-out') {
-			phaseBadge.textContent = 'Come-Out';
-			phaseBadge.className =
-				'px-2 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 uppercase tracking-wider';
-			pointBadge.classList.add('hidden');
-			oddsRow.classList.add('hidden');
-		} else {
-			phaseBadge.textContent = 'Point Phase';
-			phaseBadge.className =
-				'px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 uppercase tracking-wider';
-			pointBadge.textContent = `Point: ${state.point}`;
-			pointBadge.classList.remove('hidden');
-			oddsRow.classList.remove('hidden');
-			oddsRow.style.display = 'grid';
-		}
-
-		// Highlight the point number box
-		document.querySelectorAll('.number-box').forEach((box) => {
-			const n = Number((box as HTMLElement).dataset.number);
-			box.classList.toggle('number-box-point', state.phase === 'point' && n === state.point);
+		const game = new CrapsGame({
+			initialBalance,
+			settings: { minBet: 5, maxBet: 500, maxOddsMultiplier: 2 },
 		});
 
-		// Bet zone amounts
-		document.querySelectorAll('[data-bet-type]').forEach((zone) => {
-			const type = (zone as HTMLElement).dataset.betType as BetType;
-			const amountEl = zone.querySelector('.bet-amount');
-			if (!amountEl) return;
+		let selectedChipAmount = 25;
+		let lastSyncedBalance = initialBalance;
+		let isSyncInProgress = false;
+		let syncPending = false;
+		let pendingRetryScheduled = false;
+		let pendingWins = 0;
+		let pendingLosses = 0;
+		let pendingHands = 0;
+		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-			// For passLineOdds/dontPassOdds, show the odds on the line bet
-			if (type === 'passLineOdds') {
-				const lineBet = state.activeBets.find((b) => b.type === 'passLine');
-				const odds = lineBet?.odds ?? 0;
-				amountEl.textContent = odds > 0 ? `$${odds}` : '';
-			} else if (type === 'dontPassOdds') {
-				const lineBet = state.activeBets.find((b) => b.type === 'dontPass');
-				const odds = lineBet?.odds ?? 0;
-				amountEl.textContent = odds > 0 ? `$${odds}` : '';
+		// ─── DOM helpers ─────────────────────────────────────────────────────────────
+
+		function el<T extends HTMLElement>(id: string): T {
+			const e = document.getElementById(id);
+			if (!e) throw new Error(`#${id} not found`);
+			return e as T;
+		}
+
+		const balanceEl = el('chip-balance');
+		const totalBetEl = el('total-bet');
+		const rollButton = el<HTMLButtonElement>('roll-button');
+		const clearBetsBtn = el('clear-bets-button');
+		const gameMessageEl = el('game-message');
+		const phaseBadge = el('phase-badge');
+		const pointBadge = el('point-badge');
+		const oddsRow = el('odds-row');
+		const rollTotalEl = el('roll-total');
+		const rollHistoryEl = el('roll-history');
+		const activeBetsEl = el('active-bets');
+		const insufOverlay = el('insufficient-overlay');
+		const llmAdviceEl = el('llm-advice');
+		const llmAdviceBtn = el<HTMLButtonElement>('llm-advice-btn');
+		const comeOddsPanel = el('come-odds-panel');
+		const comeOddsListEl = el('come-odds-list');
+
+		function initializeInteractiveBetZones() {
+			document.querySelectorAll<HTMLElement>('.bet-zone[data-bet-type]').forEach((zone) => {
+				const type = zone.dataset.betType as BetType | undefined;
+				if (!type) return;
+				zone.dataset.testid = `bet-${type}`;
+				zone.setAttribute('role', 'button');
+				zone.tabIndex = 0;
+				zone.setAttribute('aria-label', `Place ${BET_LABELS[type] ?? type} bet`);
+			});
+
+			document.querySelectorAll<HTMLElement>('.number-box').forEach((box) => {
+				const n = box.dataset.number;
+				if (n) box.setAttribute('aria-label', `Number ${n} betting box`);
+			});
+
+			[4, 5, 6, 8, 9, 10].forEach((n) => {
+				const comeDisplay = document.getElementById(`come-${n}`);
+				if (comeDisplay) comeDisplay.setAttribute('aria-label', `Come bets on ${n}`);
+			});
+		}
+
+		// ─── Die face SVG dots ────────────────────────────────────────────────────────
+
+		// cx,cy pairs for dot positions on a 60×60 die
+		const DOT_POSITIONS: Record<number, [number, number][]> = {
+			1: [[30, 30]],
+			2: [
+				[18, 18],
+				[42, 42],
+			],
+			3: [
+				[18, 18],
+				[30, 30],
+				[42, 42],
+			],
+			4: [
+				[18, 18],
+				[42, 18],
+				[18, 42],
+				[42, 42],
+			],
+			5: [
+				[18, 18],
+				[42, 18],
+				[30, 30],
+				[18, 42],
+				[42, 42],
+			],
+			6: [
+				[18, 15],
+				[42, 15],
+				[18, 30],
+				[42, 30],
+				[18, 45],
+				[42, 45],
+			],
+		};
+
+		function renderDie(dotsEl: Element, value: number) {
+			dotsEl.innerHTML = '';
+			const positions = DOT_POSITIONS[value] ?? [];
+			for (const [cx, cy] of positions) {
+				const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+				circle.setAttribute('cx', String(cx));
+				circle.setAttribute('cy', String(cy));
+				circle.setAttribute('r', '5');
+				circle.setAttribute('class', 'die-dot');
+				dotsEl.appendChild(circle);
+			}
+		}
+
+		function animateDice(die1: number, die2: number) {
+			const d1 = document.getElementById('die1');
+			const d2 = document.getElementById('die2');
+			[d1, d2].forEach((d) => d?.classList.add('die-rolling'));
+			if (diceAnimationTimeoutId) {
+				clearTimeout(diceAnimationTimeoutId);
+			}
+			diceAnimationTimeoutId = setTimeout(() => {
+				[d1, d2].forEach((d) => d?.classList.remove('die-rolling'));
+				const d1Dots = document.getElementById('die1-dots');
+				const d2Dots = document.getElementById('die2-dots');
+				if (d1Dots) renderDie(d1Dots, die1);
+				if (d2Dots) renderDie(d2Dots, die2);
+				rollTotalEl.textContent = String(die1 + die2);
+				diceAnimationTimeoutId = null;
+			}, 420);
+		}
+
+		// ─── UI update ───────────────────────────────────────────────────────────────
+
+		function updateUI() {
+			const state = game.getState();
+
+			// Balance
+			balanceEl.textContent = `$${state.chipBalance.toLocaleString()}`;
+
+			// Total bet
+			const total = game.getTotalAtRisk();
+			totalBetEl.textContent = `$${total}`;
+
+			// Roll button
+			rollButton.disabled = !game.canRoll();
+
+			// Phase badge
+			if (state.phase === 'come-out') {
+				phaseBadge.textContent = 'Come-Out';
+				phaseBadge.className =
+					'px-2 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 uppercase tracking-wider';
+				pointBadge.classList.add('hidden');
+				oddsRow.classList.add('hidden');
+				oddsRow.style.removeProperty('display');
 			} else {
-				const bet = state.activeBets.find((b) => b.type === type && !b.point);
-				amountEl.textContent = bet ? `$${bet.amount}` : '';
+				phaseBadge.textContent = 'Point Phase';
+				phaseBadge.className =
+					'px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 uppercase tracking-wider';
+				pointBadge.textContent = `Point: ${state.point}`;
+				pointBadge.classList.remove('hidden');
+				oddsRow.classList.remove('hidden');
+				oddsRow.style.display = 'grid';
 			}
 
-			// Active glow
-			const hasBet =
-				type === 'passLineOdds'
-					? (state.activeBets.find((b) => b.type === 'passLine')?.odds ?? 0) > 0
-					: type === 'dontPassOdds'
-						? (state.activeBets.find((b) => b.type === 'dontPass')?.odds ?? 0) > 0
-						: state.activeBets.some((b) => b.type === type && !b.point);
-			zone.classList.toggle('bet-zone-active', hasBet);
-		});
+			// Highlight the point number box
+			document.querySelectorAll('.number-box').forEach((box) => {
+				const n = Number((box as HTMLElement).dataset.number);
+				box.classList.toggle('number-box-point', state.phase === 'point' && n === state.point);
+			});
 
-		// Phase-based bet zone restrictions
-		applyPhaseRestrictions(state.phase);
+			// Bet zone amounts
+			document.querySelectorAll('[data-bet-type]').forEach((zone) => {
+				const type = (zone as HTMLElement).dataset.betType as BetType;
+				const amountEl = zone.querySelector('.bet-amount');
+				if (!amountEl) return;
 
-		// Come bets on number boxes
-		[4, 5, 6, 8, 9, 10].forEach((n) => {
-			const container = document.getElementById(`come-${n}`);
-			if (!container) return;
-			const comeBets = state.activeBets.filter(
-				(b) => (b.type === 'come' || b.type === 'dontCome') && b.point === n,
+				// For passLineOdds/dontPassOdds, show the odds on the line bet
+				if (type === 'passLineOdds') {
+					const lineBet = state.activeBets.find((b) => b.type === 'passLine');
+					const odds = lineBet?.odds ?? 0;
+					amountEl.textContent = odds > 0 ? `$${odds}` : '';
+				} else if (type === 'dontPassOdds') {
+					const lineBet = state.activeBets.find((b) => b.type === 'dontPass');
+					const odds = lineBet?.odds ?? 0;
+					amountEl.textContent = odds > 0 ? `$${odds}` : '';
+				} else {
+					const bet = state.activeBets.find((b) => b.type === type && !b.point);
+					amountEl.textContent = bet ? `$${bet.amount}` : '';
+				}
+
+				// Active glow
+				const hasBet =
+					type === 'passLineOdds'
+						? (state.activeBets.find((b) => b.type === 'passLine')?.odds ?? 0) > 0
+						: type === 'dontPassOdds'
+							? (state.activeBets.find((b) => b.type === 'dontPass')?.odds ?? 0) > 0
+							: state.activeBets.some((b) => b.type === type && !b.point);
+				zone.classList.toggle('bet-zone-active', hasBet);
+			});
+
+			// Phase-based bet zone restrictions
+			applyPhaseRestrictions(state.phase);
+			document.querySelectorAll<HTMLElement>('.bet-zone').forEach((zone) => {
+				const disabled =
+					zone.classList.contains('bet-zone-disabled') ||
+					zone.classList.contains('bet-zone-locked');
+				zone.setAttribute('aria-disabled', String(disabled));
+			});
+
+			// Come bets on number boxes
+			[4, 5, 6, 8, 9, 10].forEach((n) => {
+				const container = document.getElementById(`come-${n}`);
+				if (!container) return;
+				const comeBets = state.activeBets.filter(
+					(b) => (b.type === 'come' || b.type === 'dontCome') && b.point === n,
+				);
+				if (comeBets.length > 0) {
+					container.classList.remove('hidden');
+					const totalAmount = comeBets.reduce((s, b) => s + b.amount + (b.odds ?? 0), 0);
+					const amtEl = container.querySelector('.come-display-amount');
+					if (amtEl) amtEl.textContent = `$${totalAmount}`;
+				} else {
+					container.classList.add('hidden');
+				}
+			});
+
+			// Come odds panel
+			const establishedComeBets = state.activeBets.filter(
+				(b) => (b.type === 'come' || b.type === 'dontCome') && b.point,
 			);
-			if (comeBets.length > 0) {
-				container.classList.remove('hidden');
-				const totalAmount = comeBets.reduce((s, b) => s + b.amount + (b.odds ?? 0), 0);
-				const amtEl = container.querySelector('.come-display-amount');
-				if (amtEl) amtEl.textContent = `$${totalAmount}`;
+			if (establishedComeBets.length > 0 && state.phase === 'point') {
+				comeOddsPanel.classList.remove('hidden');
+				renderComeOddsButtons(establishedComeBets);
 			} else {
-				container.classList.add('hidden');
+				comeOddsPanel.classList.add('hidden');
 			}
-		});
 
-		// Come odds panel
-		const establishedComeBets = state.activeBets.filter(
-			(b) => (b.type === 'come' || b.type === 'dontCome') && b.point,
-		);
-		if (establishedComeBets.length > 0 && state.phase === 'point') {
-			comeOddsPanel.classList.remove('hidden');
-			renderComeOddsButtons(establishedComeBets);
-		} else {
-			comeOddsPanel.classList.add('hidden');
+			// Active bets list
+			renderActiveBets(state.activeBets);
 		}
 
-		// Active bets list
-		renderActiveBets(state.activeBets);
-	}
-
-	function applyPhaseRestrictions(phase: 'come-out' | 'point') {
-		// Come/DontCome only during point phase
-		['come', 'dontCome'].forEach((t) => {
-			document
-				.querySelector(`[data-bet-type="${t}"]`)
-				?.classList.toggle('bet-zone-disabled', phase !== 'point');
-		});
-		// PassLine/DontPass only during come-out
-		['passLine', 'dontPass'].forEach((t) => {
-			const alreadyBet = game.getState().activeBets.some((b) => b.type === t);
-			const zone = document.querySelector(`[data-bet-type="${t}"]`);
-			if (!zone) return;
-			if (alreadyBet && phase === 'point') {
-				zone.classList.add('bet-zone-locked');
-				zone.classList.remove('bet-zone-disabled');
-			} else if (phase === 'point' && !alreadyBet) {
-				zone.classList.add('bet-zone-disabled');
-			} else {
-				zone.classList.remove('bet-zone-locked', 'bet-zone-disabled');
-			}
-		});
-	}
-
-	function renderActiveBets(bets: CrapsBet[]) {
-		if (bets.length === 0) {
-			activeBetsEl.innerHTML = '<span class="text-neutral-500 text-xs">No bets placed</span>';
-			return;
+		function applyPhaseRestrictions(phase: 'come-out' | 'point') {
+			// Come/DontCome only during point phase
+			['come', 'dontCome'].forEach((t) => {
+				document
+					.querySelector(`[data-bet-type="${t}"]`)
+					?.classList.toggle('bet-zone-disabled', phase !== 'point');
+			});
+			// PassLine/DontPass only during come-out
+			['passLine', 'dontPass'].forEach((t) => {
+				const alreadyBet = game.getState().activeBets.some((b) => b.type === t);
+				const zone = document.querySelector(`[data-bet-type="${t}"]`);
+				if (!zone) return;
+				if (alreadyBet && phase === 'point') {
+					zone.classList.add('bet-zone-locked');
+					zone.classList.remove('bet-zone-disabled');
+				} else if (phase === 'point' && !alreadyBet) {
+					zone.classList.add('bet-zone-disabled');
+				} else {
+					zone.classList.remove('bet-zone-locked', 'bet-zone-disabled');
+				}
+			});
 		}
-		activeBetsEl.innerHTML = '';
-		for (const bet of bets) {
-			const label = BET_LABELS[bet.type] ?? bet.type;
-			const pointStr = bet.point ? ` @${bet.point}` : '';
-			const oddsStr = bet.odds ? ` +odds:$${bet.odds}` : '';
 
-			const row = document.createElement('div');
-			row.className = 'flex items-center justify-between text-xs';
-			row.innerHTML = `
+		function renderActiveBets(bets: CrapsBet[]) {
+			if (bets.length === 0) {
+				activeBetsEl.innerHTML = '<span class="text-neutral-500 text-xs">No bets placed</span>';
+				return;
+			}
+			activeBetsEl.innerHTML = '';
+			for (const bet of bets) {
+				const label = BET_LABELS[bet.type] ?? bet.type;
+				const pointStr = bet.point ? ` @${bet.point}` : '';
+				const oddsStr = bet.odds ? ` +odds:$${bet.odds}` : '';
+
+				const row = document.createElement('div');
+				row.className = 'flex items-center justify-between text-xs';
+				row.innerHTML = `
 				<span class="text-slate-300">${label}${pointStr}</span>
 				<span class="text-yellow-400 font-bold">$${bet.amount}${oddsStr}</span>
 			`;
-			activeBetsEl.appendChild(row);
+				activeBetsEl.appendChild(row);
+			}
 		}
-	}
 
-	function renderComeOddsButtons(bets: CrapsBet[]) {
-		comeOddsListEl.innerHTML = '';
-		for (const bet of bets) {
-			const label = `${bet.type === 'come' ? 'Come' : "Don't Come"} @${bet.point}`;
-			const maxOdds = bet.amount * 2;
-			const currentOdds = bet.odds ?? 0;
-			const remaining = maxOdds - currentOdds;
-			if (remaining <= 0) continue;
+		function renderComeOddsButtons(bets: CrapsBet[]) {
+			comeOddsListEl.innerHTML = '';
+			for (const bet of bets) {
+				const label = `${bet.type === 'come' ? 'Come' : "Don't Come"} @${bet.point}`;
+				const maxOdds = bet.amount * 2;
+				const currentOdds = bet.odds ?? 0;
+				const remaining = maxOdds - currentOdds;
+				if (remaining <= 0) continue;
 
-			const row = document.createElement('div');
-			row.className = 'flex items-center justify-between gap-2';
-			row.innerHTML = `
+				const row = document.createElement('div');
+				row.className = 'flex items-center justify-between gap-2';
+				row.innerHTML = `
 				<span class="text-slate-300 text-xs flex-1">${label} ($${currentOdds}/$${maxOdds})</span>
 				<button class="add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded" data-bet-id="${bet.id}" data-amount="${Math.min(selectedChipAmount, remaining)}">
 					+$${Math.min(selectedChipAmount, remaining)}
 				</button>
 			`;
-			comeOddsListEl.appendChild(row);
+				comeOddsListEl.appendChild(row);
+			}
+
+			comeOddsListEl.querySelectorAll('.add-come-odds').forEach((btn) => {
+				btn.addEventListener('click', () => {
+					const betId = (btn as HTMLElement).dataset.betId!;
+					const amount = Number((btn as HTMLElement).dataset.amount);
+					const r = game.addComeBetOdds(betId, amount);
+					if (!r.success) showMessage(r.error ?? 'Cannot add odds', 'error');
+					updateUI();
+				});
+			});
 		}
 
-		comeOddsListEl.querySelectorAll('.add-come-odds').forEach((btn) => {
+		// ─── Roll history ─────────────────────────────────────────────────────────────
+
+		function addRollToHistory(
+			total: number,
+			phase: 'come-out' | 'point',
+			prevPhase: 'come-out' | 'point',
+		) {
+			// Remove "no rolls" placeholder
+			const placeholder = rollHistoryEl.querySelector('span');
+			if (placeholder) placeholder.remove();
+
+			const badge = document.createElement('span');
+			badge.className = 'roll-badge';
+			badge.textContent = String(total);
+
+			if (prevPhase === 'come-out') {
+				if (total === 7 || total === 11) badge.className += ' roll-natural';
+				else if (total === 2 || total === 3 || total === 12) badge.className += ' roll-craps';
+				else badge.className += ' roll-point';
+			} else {
+				if (total === 7) badge.className += ' roll-seven';
+				else badge.className += ' roll-normal';
+			}
+
+			rollHistoryEl.prepend(badge);
+
+			// Keep last 15 badges
+			const badges = rollHistoryEl.querySelectorAll('.roll-badge');
+			if (badges.length > 15) badges[badges.length - 1].remove();
+		}
+
+		// ─── Roll result display ─────────────────────────────────────────────────────
+
+		function showRollResult(result: RollResult) {
+			// Show outcome in message area
+			let msgClass = 'text-slate-300';
+			if (
+				result.message.includes('wins') ||
+				result.message.includes('made') ||
+				result.message.includes('Natural') ||
+				result.message.includes('Yo-Eleven')
+			) {
+				msgClass = 'text-green-400';
+			} else if (
+				result.message.includes('loses') ||
+				result.message.includes('out') ||
+				result.message.includes('Craps')
+			) {
+				msgClass = 'text-red-400';
+			}
+			gameMessageEl.className = `text-sm font-semibold ${msgClass}`;
+			gameMessageEl.textContent = result.message;
+
+			// Show net delta
+			if (result.netDelta !== 0) {
+				const sign = result.netDelta > 0 ? '+' : '';
+				const deltaEl = document.createElement('span');
+				deltaEl.className = `ml-2 text-xs ${result.netDelta > 0 ? 'text-green-400' : 'text-red-400'}`;
+				deltaEl.textContent = `(${sign}$${result.netDelta})`;
+				gameMessageEl.appendChild(deltaEl);
+			}
+		}
+
+		function showMessage(msg: string, type: 'info' | 'error' = 'info') {
+			gameMessageEl.className = `text-sm ${type === 'error' ? 'text-red-400' : 'text-slate-300'}`;
+			gameMessageEl.textContent = msg;
+		}
+
+		// ─── Event listeners ─────────────────────────────────────────────────────────
+
+		// Chip selection
+		document.querySelectorAll('.chip-select').forEach((btn) => {
 			btn.addEventListener('click', () => {
-				const betId = (btn as HTMLElement).dataset.betId!;
-				const amount = Number((btn as HTMLElement).dataset.amount);
-				const r = game.addComeBetOdds(betId, amount);
-				if (!r.success) showMessage(r.error ?? 'Cannot add odds', 'error');
-				updateUI();
+				document.querySelectorAll('.chip-select').forEach((b) => b.classList.remove('selected'));
+				btn.classList.add('selected');
+				selectedChipAmount = Number((btn as HTMLElement).dataset.amount);
 			});
 		});
-	}
+		document.querySelector('.chip-select[data-amount="25"]')?.classList.add('selected');
 
-	// ─── Roll history ─────────────────────────────────────────────────────────────
-
-	function addRollToHistory(
-		total: number,
-		phase: 'come-out' | 'point',
-		prevPhase: 'come-out' | 'point',
-	) {
-		// Remove "no rolls" placeholder
-		const placeholder = rollHistoryEl.querySelector('span');
-		if (placeholder) placeholder.remove();
-
-		const badge = document.createElement('span');
-		badge.className = 'roll-badge';
-		badge.textContent = String(total);
-
-		if (prevPhase === 'come-out') {
-			if (total === 7 || total === 11) badge.className += ' roll-natural';
-			else if (total === 2 || total === 3 || total === 12) badge.className += ' roll-craps';
-			else badge.className += ' roll-point';
-		} else {
-			if (total === 7) badge.className += ' roll-seven';
-			else badge.className += ' roll-normal';
-		}
-
-		rollHistoryEl.prepend(badge);
-
-		// Keep last 15 badges
-		const badges = rollHistoryEl.querySelectorAll('.roll-badge');
-		if (badges.length > 15) badges[badges.length - 1].remove();
-	}
-
-	// ─── Roll result display ─────────────────────────────────────────────────────
-
-	function showRollResult(result: RollResult) {
-		// Show outcome in message area
-		let msgClass = 'text-slate-300';
-		if (
-			result.message.includes('wins') ||
-			result.message.includes('made') ||
-			result.message.includes('Natural') ||
-			result.message.includes('Yo-Eleven')
-		) {
-			msgClass = 'text-green-400';
-		} else if (
-			result.message.includes('loses') ||
-			result.message.includes('out') ||
-			result.message.includes('Craps')
-		) {
-			msgClass = 'text-red-400';
-		}
-		gameMessageEl.className = `text-sm font-semibold ${msgClass}`;
-		gameMessageEl.textContent = result.message;
-
-		// Show net delta
-		if (result.netDelta !== 0) {
-			const sign = result.netDelta > 0 ? '+' : '';
-			const deltaEl = document.createElement('span');
-			deltaEl.className = `ml-2 text-xs ${result.netDelta > 0 ? 'text-green-400' : 'text-red-400'}`;
-			deltaEl.textContent = `(${sign}$${result.netDelta})`;
-			gameMessageEl.appendChild(deltaEl);
-		}
-	}
-
-	function showMessage(msg: string, type: 'info' | 'error' = 'info') {
-		gameMessageEl.className = `text-sm ${type === 'error' ? 'text-red-400' : 'text-slate-300'}`;
-		gameMessageEl.textContent = msg;
-	}
-
-	// ─── Event listeners ─────────────────────────────────────────────────────────
-
-	// Chip selection
-	document.querySelectorAll('.chip-select').forEach((btn) => {
-		btn.addEventListener('click', () => {
-			document.querySelectorAll('.chip-select').forEach((b) => b.classList.remove('selected'));
-			btn.classList.add('selected');
-			selectedChipAmount = Number((btn as HTMLElement).dataset.amount);
-		});
-	});
-	document.querySelector('.chip-select[data-amount="25"]')?.classList.add('selected');
-
-	// Bet zone clicks
-	document.querySelectorAll('[data-bet-type]').forEach((zone) => {
-		zone.addEventListener('click', () => {
-			const type = (zone as HTMLElement).dataset.betType as BetType;
+		function placeBetFromZone(zone: HTMLElement) {
+			if (
+				zone.classList.contains('bet-zone-disabled') ||
+				zone.classList.contains('bet-zone-locked')
+			) {
+				return;
+			}
+			const type = zone.dataset.betType as BetType;
 			const r = game.placeBet(type, selectedChipAmount);
 			if (r.success) {
 				updateUI();
 			} else {
 				showMessage(r.error ?? 'Cannot place bet', 'error');
 			}
+		}
+
+		// Bet zone clicks + keyboard activation
+		document.querySelectorAll<HTMLElement>('[data-bet-type]').forEach((zone) => {
+			zone.addEventListener('click', () => {
+				placeBetFromZone(zone);
+			});
+			zone.addEventListener('keydown', (event) => {
+				if (event.key === 'Enter' || event.key === ' ') {
+					event.preventDefault();
+					placeBetFromZone(zone);
+				}
+			});
 		});
-	});
 
-	// Roll button
-	rollButton.addEventListener('click', async () => {
-		rollButton.disabled = true;
-		const prevPhase = game.getState().phase;
+		// Roll button
+		rollButton.addEventListener('click', async () => {
+			rollButton.disabled = true;
+			const prevPhase = game.getState().phase;
 
-		// Animate dice first
-		const tempDie1 = Math.ceil(Math.random() * 6);
-		const tempDie2 = Math.ceil(Math.random() * 6);
-		animateDice(tempDie1, tempDie2);
+			// Animate dice first
+			const tempDie1 = Math.ceil(Math.random() * 6);
+			const tempDie2 = Math.ceil(Math.random() * 6);
+			animateDice(tempDie1, tempDie2);
 
-		await new Promise((r) => setTimeout(r, 200));
+			await new Promise((r) => setTimeout(r, 200));
 
-		const result = game.roll();
-		if (!result) {
-			rollButton.disabled = false;
-			return;
-		}
-
-		// Update dice display with real values
-		const d1Dots = document.getElementById('die1-dots');
-		const d2Dots = document.getElementById('die2-dots');
-		if (d1Dots) renderDie(d1Dots, result.roll.die1);
-		if (d2Dots) renderDie(d2Dots, result.roll.die2);
-		rollTotalEl.textContent = String(result.roll.total);
-
-		showRollResult(result);
-		addRollToHistory(result.roll.total, result.phase, prevPhase);
-		updateUI();
-
-		// Track stats
-		if (result.netDelta > 0) pendingWins++;
-		else if (result.netDelta < 0) pendingLosses++;
-		pendingHands++;
-
-		// Sync balance after roll
-		await syncBalance(result.netDelta);
-
-		if (game.hasInsufficientChips()) {
-			insufOverlay.classList.remove('hidden');
-			insufOverlay.classList.add('flex');
-		}
-	});
-
-	// Clear bets
-	clearBetsBtn.addEventListener('click', () => {
-		game.clearBets();
-		updateUI();
-	});
-
-	// LLM Advisor
-	llmAdviceBtn.addEventListener('click', async () => {
-		llmAdviceBtn.disabled = true;
-		llmAdviceBtn.textContent = '...';
-		llmAdviceEl.textContent = 'Thinking...';
-
-		try {
-			const settingsRes = await fetch('/api/profile/llm-settings');
-			if (!settingsRes.ok) throw new Error('Could not load AI settings');
-			const llmSettings = (await settingsRes.json()) as {
-				provider: 'openai' | 'gemini';
-				model: string;
-				openaiApiKey?: string | null;
-				geminiApiKey?: string | null;
-			};
-
-			const apiKey =
-				llmSettings.provider === 'openai' ? llmSettings.openaiApiKey : llmSettings.geminiApiKey;
-
-			if (!apiKey) {
-				llmAdviceEl.textContent = 'No API key configured. Visit Profile to set up AI.';
+			const result = game.roll();
+			if (!result) {
+				rollButton.disabled = false;
 				return;
 			}
 
-			const state = game.getState();
-			const advice = await getCrapsAdvice(
-				{
-					phase: state.phase,
-					point: state.point,
-					activeBets: state.activeBets,
-					rollHistory: state.rollHistory,
-					chipBalance: state.chipBalance,
-				},
-				{ provider: llmSettings.provider, model: llmSettings.model, apiKey },
-			);
-			llmAdviceEl.textContent = advice.advice;
-		} catch (e) {
-			llmAdviceEl.textContent = `Error: ${e instanceof Error ? e.message : 'Unknown error'}`;
-		} finally {
-			llmAdviceBtn.disabled = false;
-			llmAdviceBtn.textContent = 'Ask';
-		}
-	});
-
-	// ─── Balance sync ─────────────────────────────────────────────────────────────
-
-	async function syncBalance(netDelta: number) {
-		const outcome: 'win' | 'loss' | 'push' = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
-
-		if (isSyncInProgress) {
-			syncPending = true;
-			return;
-		}
-		isSyncInProgress = true;
-
-		try {
-			const currentBalance = game.getBalance();
-			const delta = currentBalance - lastSyncedBalance;
-
-			const response = await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					delta,
-					gameType: 'craps',
-					previousBalance: lastSyncedBalance,
-					outcome,
-					handCount: pendingHands || 1,
-					winsIncrement: pendingWins,
-					lossesIncrement: pendingLosses,
-				}),
-			});
-
-			if (response.ok) {
-				lastSyncedBalance = currentBalance;
-				pendingWins = 0;
-				pendingLosses = 0;
-				pendingHands = 0;
-				syncPending = false;
-
-				const data = (await response.json().catch(() => ({}))) as {
-					newAchievements?: Array<{ id: string; name: string; icon: string }>;
-				};
-				if (data.newAchievements?.length) {
-					window.dispatchEvent(
-						new CustomEvent('achievement-earned', {
-							detail: { achievements: data.newAchievements },
-						}),
-					);
-				}
-			} else {
-				const err = (await response.json().catch(() => ({}))) as {
-					error?: string;
-					currentBalance?: number;
-				};
-				if (err.error === 'RATE_LIMITED') {
-					syncPending = true;
-					if (!pendingRetryScheduled) {
-						pendingRetryScheduled = true;
-						setTimeout(() => {
-							pendingRetryScheduled = false;
-							void syncBalance(0);
-						}, 2500);
-					}
-				} else if (typeof err.currentBalance === 'number') {
-					game.applyServerBalance(err.currentBalance);
-					lastSyncedBalance = err.currentBalance;
-					updateUI();
-				}
+			// Update dice display with real values
+			if (diceAnimationTimeoutId) {
+				clearTimeout(diceAnimationTimeoutId);
+				diceAnimationTimeoutId = null;
 			}
-		} catch {
-			// Network error — will retry next roll
-		} finally {
-			isSyncInProgress = false;
-			// Trigger follow-up sync if new rolls completed while this sync was in-flight
-			// (RATE_LIMITED retries are handled by their own scheduled callback)
-			if (syncPending && !pendingRetryScheduled) {
-				setTimeout(() => {
-					void syncBalance(0);
-				}, 100);
+			document.getElementById('die1')?.classList.remove('die-rolling');
+			document.getElementById('die2')?.classList.remove('die-rolling');
+			const d1Dots = document.getElementById('die1-dots');
+			const d2Dots = document.getElementById('die2-dots');
+			if (d1Dots) renderDie(d1Dots, result.roll.die1);
+			if (d2Dots) renderDie(d2Dots, result.roll.die2);
+			rollTotalEl.textContent = String(result.roll.total);
+
+			showRollResult(result);
+			addRollToHistory(result.roll.total, result.phase, prevPhase);
+			updateUI();
+
+			// Track stats
+			if (result.netDelta > 0) pendingWins++;
+			else if (result.netDelta < 0) pendingLosses++;
+			pendingHands++;
+
+			// Sync balance after roll
+			await syncBalance(result.netDelta);
+
+			if (game.hasInsufficientChips()) {
+				insufOverlay.classList.remove('hidden');
+				insufOverlay.classList.add('flex');
 			}
-		}
-	}
-
-	// ─── Achievement toast ───────────────────────────────────────────────────────
-
-	const achievementToast = document.getElementById('achievement-toast');
-	const achievementIconEl = document.getElementById('achievement-icon');
-	const achievementNameEl = document.getElementById('achievement-name');
-
-	if (achievementToast && achievementIconEl && achievementNameEl) {
-		const { enqueue } = initAchievementToast(() => ({
-			toast: achievementToast,
-			icon: achievementIconEl,
-			name: achievementNameEl,
-		}));
-
-		window.addEventListener('achievement-earned', (event: Event) => {
-			const { achievements } = (
-				event as CustomEvent<{ achievements: Array<{ id: string; name: string; icon: string }> }>
-			).detail;
-			enqueue(achievements);
 		});
+
+		// Clear bets
+		clearBetsBtn.addEventListener('click', () => {
+			game.clearBets();
+			updateUI();
+		});
+
+		// LLM Advisor
+		llmAdviceBtn.addEventListener('click', async () => {
+			llmAdviceBtn.disabled = true;
+			llmAdviceBtn.textContent = '...';
+			llmAdviceEl.textContent = 'Thinking...';
+
+			try {
+				const state = game.getState();
+				const adviceRes = await fetch('/api/craps-advice', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						phase: state.phase,
+						point: state.point,
+						activeBets: state.activeBets,
+						rollHistory: state.rollHistory,
+						chipBalance: state.chipBalance,
+					}),
+				});
+
+				const data = (await adviceRes.json().catch(() => ({}))) as {
+					advice?: string;
+					error?: string;
+				};
+
+				if (!adviceRes.ok) {
+					throw new Error(data.error ?? 'Failed to load advice');
+				}
+
+				llmAdviceEl.textContent = data.advice ?? 'No advice returned.';
+			} catch (e) {
+				llmAdviceEl.textContent = `Error: ${e instanceof Error ? e.message : 'Unknown error'}`;
+			} finally {
+				llmAdviceBtn.disabled = false;
+				llmAdviceBtn.textContent = 'Ask';
+			}
+		});
+
+		// ─── Balance sync ─────────────────────────────────────────────────────────────
+
+		async function syncBalance(netDelta: number) {
+			const outcome: 'win' | 'loss' | 'push' =
+				netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
+
+			if (isSyncInProgress) {
+				syncPending = true;
+				return;
+			}
+			isSyncInProgress = true;
+
+			try {
+				const currentBalance = game.getBalance();
+				const delta = currentBalance - lastSyncedBalance;
+
+				const response = await fetch('/api/chips/update', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						delta,
+						gameType: 'craps',
+						previousBalance: lastSyncedBalance,
+						outcome,
+						handCount: pendingHands || 1,
+						winsIncrement: pendingWins,
+						lossesIncrement: pendingLosses,
+					}),
+				});
+
+				if (response.ok) {
+					lastSyncedBalance = currentBalance;
+					pendingWins = 0;
+					pendingLosses = 0;
+					pendingHands = 0;
+					syncPending = false;
+
+					const data = (await response.json().catch(() => ({}))) as {
+						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+					};
+					if (data.newAchievements?.length) {
+						window.dispatchEvent(
+							new CustomEvent('achievement-earned', {
+								detail: { achievements: data.newAchievements },
+							}),
+						);
+					}
+				} else {
+					const err = (await response.json().catch(() => ({}))) as {
+						error?: string;
+						currentBalance?: number;
+					};
+					if (err.error === 'RATE_LIMITED') {
+						syncPending = true;
+						if (!pendingRetryScheduled) {
+							pendingRetryScheduled = true;
+							setTimeout(() => {
+								pendingRetryScheduled = false;
+								void syncBalance(0);
+							}, 2500);
+						}
+					} else if (typeof err.currentBalance === 'number') {
+						game.applyServerBalance(err.currentBalance);
+						lastSyncedBalance = err.currentBalance;
+						updateUI();
+					}
+				}
+			} catch {
+				// Network error — will retry next roll
+			} finally {
+				isSyncInProgress = false;
+				// Trigger follow-up sync if new rolls completed while this sync was in-flight
+				// (RATE_LIMITED retries are handled by their own scheduled callback)
+				if (syncPending && !pendingRetryScheduled) {
+					setTimeout(() => {
+						void syncBalance(0);
+					}, 100);
+				}
+			}
+		}
+
+		// ─── Achievement toast ───────────────────────────────────────────────────────
+
+		const achievementToast = document.getElementById('achievement-toast');
+		const achievementIconEl = document.getElementById('achievement-icon');
+		const achievementNameEl = document.getElementById('achievement-name');
+
+		if (achievementToast && achievementIconEl && achievementNameEl) {
+			const { enqueue } = initAchievementToast(() => ({
+				toast: achievementToast,
+				icon: achievementIconEl,
+				name: achievementNameEl,
+			}));
+
+			window.addEventListener('achievement-earned', (event: Event) => {
+				const { achievements } = (
+					event as CustomEvent<{ achievements: Array<{ id: string; name: string; icon: string }> }>
+				).detail;
+				enqueue(achievements);
+			});
+		}
+
+		// ─── Initial render ───────────────────────────────────────────────────────────
+
+		initializeInteractiveBetZones();
+		updateUI();
 	}
-
-	// ─── Initial render ───────────────────────────────────────────────────────────
-
-	updateUI();
 </script>

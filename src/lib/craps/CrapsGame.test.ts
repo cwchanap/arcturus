@@ -1,23 +1,24 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
-import { CrapsGame } from './CrapsGame';
+import { describe, test, expect, mock, beforeAll, beforeEach } from 'bun:test';
 
 // Mock rollDice so we control the outcome
-import * as diceRollerModule from './diceRoller';
 import type { DiceRoll } from './types';
 
 let mockRoll: DiceRoll | null = null;
+let CrapsGame: typeof import('./CrapsGame').CrapsGame;
 
 mock.module('./diceRoller', () => ({
 	rollDie: () => 1,
-	rollDice: () => mockRoll ?? { die1: 3, die2: 4, total: 7, isHard: false },
+	rollDice: () => mockRoll ?? { die1: 3, die2: 4, total: 7 },
 	createRoll: (d1: number, d2: number) => ({
-		die1: d1,
-		die2: d2,
-		total: d1 + d2,
-		isHard: d1 === d2,
+		die1: d1 as DiceRoll['die1'],
+		die2: d2 as DiceRoll['die2'],
+		total: (d1 + d2) as DiceRoll['total'],
 	}),
-	rollCombinations: diceRollerModule.rollCombinations,
 }));
+
+beforeAll(async () => {
+	({ CrapsGame } = await import('./CrapsGame'));
+});
 
 beforeEach(() => {
 	mockRoll = null;
@@ -28,7 +29,11 @@ function makeGame(balance = 1000) {
 }
 
 function setRoll(die1: number, die2: number) {
-	mockRoll = { die1: die1 as 1, die2: die2 as 1, total: die1 + die2, isHard: die1 === die2 };
+	mockRoll = {
+		die1: die1 as DiceRoll['die1'],
+		die2: die2 as DiceRoll['die2'],
+		total: (die1 + die2) as DiceRoll['total'],
+	};
 }
 
 describe('CrapsGame — bet placement', () => {
@@ -118,6 +123,21 @@ describe('CrapsGame — rolling and phase transitions', () => {
 	test('cannot roll without any bets', () => {
 		const g = makeGame();
 		expect(g.roll()).toBeNull();
+	});
+
+	test('winning place bet remains active for future rolls', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // establish point 6
+		g.roll();
+
+		g.placeBet('place8', 60);
+		setRoll(4, 4); // place8 wins
+		g.roll();
+
+		const state = g.getState();
+		expect(state.activeBets.some((b) => b.type === 'place8')).toBe(true);
+		expect(g.getBalance()).toBe(1020);
 	});
 
 	test('natural 7 on come-out keeps come-out phase and wins pass line', () => {
@@ -227,5 +247,32 @@ describe('CrapsGame — applyServerBalance', () => {
 		const g = makeGame(1000);
 		g.applyServerBalance(800);
 		expect(g.getBalance()).toBe(800);
+	});
+});
+
+describe('CrapsGame — state immutability', () => {
+	test('getState returns defensive copies of nested state', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3);
+		g.roll();
+
+		const snapshot = g.getState() as unknown as {
+			activeBets: Array<{ amount: number }>;
+			rollHistory: Array<{ total: number }>;
+			lastRoll: { total: number } | null;
+			settings: { minBet: number };
+		};
+
+		snapshot.activeBets[0].amount = 999;
+		snapshot.rollHistory[0].total = 12;
+		if (snapshot.lastRoll) snapshot.lastRoll.total = 12;
+		snapshot.settings.minBet = 999;
+
+		const fresh = g.getState();
+		expect(fresh.activeBets[0]?.amount).toBe(50);
+		expect(fresh.rollHistory[0]?.total).toBe(6);
+		expect(fresh.lastRoll?.total).toBe(6);
+		expect(fresh.settings.minBet).toBe(5);
 	});
 });

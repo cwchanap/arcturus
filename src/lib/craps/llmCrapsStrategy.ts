@@ -17,7 +17,7 @@ function formatRollHistory(history: DiceRoll[]): string {
 	if (history.length === 0) return 'No rolls yet';
 	return history
 		.slice(0, 8)
-		.map((r) => `${r.total}(${r.die1}+${r.die2})${r.isHard ? '*' : ''}`)
+		.map((r) => `${r.total}(${r.die1}+${r.die2})${r.die1 === r.die2 ? '*' : ''}`)
 		.join(', ');
 }
 

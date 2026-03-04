@@ -32,6 +32,33 @@ function newId(): string {
 	return `bet-${++_idCounter}-${Date.now()}`;
 }
 
+const PERSISTENT_WIN_BET_TYPES = new Set<BetType>([
+	'place4',
+	'place5',
+	'place6',
+	'place8',
+	'place9',
+	'place10',
+	'buy4',
+	'buy5',
+	'buy6',
+	'buy8',
+	'buy9',
+	'buy10',
+	'lay4',
+	'lay5',
+	'lay6',
+	'lay8',
+	'lay9',
+	'lay10',
+	'hard4',
+	'hard6',
+	'hard8',
+	'hard10',
+	'big6',
+	'big8',
+]);
+
 export interface CrapsGameConfig {
 	initialBalance: number;
 	settings?: Partial<CrapsSettings>;
@@ -57,7 +84,13 @@ export class CrapsGame {
 	// ─── state ────────────────────────────────────────────────────────────────
 
 	public getState(): Readonly<CrapsGameState> {
-		return { ...this.state };
+		return {
+			...this.state,
+			lastRoll: this.state.lastRoll ? { ...this.state.lastRoll } : null,
+			rollHistory: this.state.rollHistory.map((roll) => ({ ...roll })),
+			activeBets: this.state.activeBets.map((bet) => ({ ...bet })),
+			settings: { ...this.state.settings },
+		};
 	}
 
 	public getBalance(): number {
@@ -251,6 +284,9 @@ export class CrapsGame {
 			switch (ev.outcome) {
 				case 'win':
 					this.state.chipBalance += ev.bet.amount + (ev.bet.odds ?? 0) + ev.payout;
+					if (ev.persistent || PERSISTENT_WIN_BET_TYPES.has(ev.bet.type)) {
+						nextBets.push(ev.updatedBet ?? ev.bet);
+					}
 					break;
 				case 'push':
 					this.state.chipBalance += ev.bet.amount + (ev.bet.odds ?? 0);

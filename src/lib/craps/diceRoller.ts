@@ -2,7 +2,7 @@
  * Dice roller for Craps — simulates two standard six-sided dice
  */
 
-import type { DieFace, DiceRoll } from './types';
+import type { DieFace, DiceRoll, DiceTotal } from './types';
 
 export function rollDie(): DieFace {
 	return (Math.floor(Math.random() * 6) + 1) as DieFace;
@@ -11,17 +11,17 @@ export function rollDie(): DieFace {
 export function rollDice(): DiceRoll {
 	const die1 = rollDie();
 	const die2 = rollDie();
+	const total = (die1 + die2) as DiceTotal;
 	return {
 		die1,
 		die2,
-		total: die1 + die2,
-		isHard: die1 === die2,
+		total,
 	};
 }
 
 /** Create a specific roll for testing */
 export function createRoll(die1: DieFace, die2: DieFace): DiceRoll {
-	return { die1, die2, total: die1 + die2, isHard: die1 === die2 };
+	return { die1, die2, total: (die1 + die2) as DiceTotal };
 }
 
 /** Number of combinations that produce a given total (out of 36) */

@@ -1,9 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { ensureLoggedIn } from './auth-helpers';
 
 async function gotoCraps(page: Page) {
-	await ensureLoggedIn(page);
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
 }
 
@@ -14,7 +12,7 @@ test.describe('Craps — Initial State', () => {
 		await expect(page.getByRole('heading', { name: 'Craps', exact: true })).toBeVisible();
 		await expect(page.locator('#chip-balance')).toBeVisible();
 		await expect(page.locator('#phase-badge')).toContainText('Come-Out');
-		await expect(page.locator('#roll-button')).toBeDisabled();
+		await expect(page.getByTestId('roll-button')).toBeDisabled();
 		await expect(page.locator('[data-bet-type="passLine"]')).toBeVisible();
 		await expect(page.locator('[data-bet-type="dontPass"]')).toBeVisible();
 		await expect(page.locator('[data-bet-type="field"]')).toBeVisible();
@@ -31,32 +29,32 @@ test.describe('Craps — Bet Placement', () => {
 		await gotoCraps(page);
 
 		// Select $25 chip
-		await page.click('.chip-select[data-amount="25"]');
+		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
 
-		await expect(page.locator('#total-bet')).toContainText('$25');
-		await expect(page.locator('#roll-button')).toBeEnabled();
+		await expect(page.getByTestId('total-bet')).toContainText('$25');
+		await expect(page.getByTestId('roll-button')).toBeEnabled();
 	});
 
 	test('places multiple bet types', async ({ page }) => {
 		await gotoCraps(page);
 
-		await page.click('.chip-select[data-amount="5"]');
+		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
 		await page.click('[data-bet-type="field"]');
 
-		await expect(page.locator('#total-bet')).toContainText('$10');
+		await expect(page.getByTestId('total-bet')).toContainText('$10');
 	});
 
 	test('Clear Bets removes all bets and resets total', async ({ page }) => {
 		await gotoCraps(page);
 
-		await page.click('.chip-select[data-amount="25"]');
+		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
-		await page.click('#clear-bets-button');
+		await page.getByTestId('clear-bets-button').click();
 
-		await expect(page.locator('#total-bet')).toContainText('$0');
-		await expect(page.locator('#roll-button')).toBeDisabled();
+		await expect(page.getByTestId('total-bet')).toContainText('$0');
+		await expect(page.getByTestId('roll-button')).toBeDisabled();
 	});
 });
 
@@ -64,9 +62,9 @@ test.describe('Craps — Game Flow', () => {
 	test('rolling dice shows total and updates message', async ({ page }) => {
 		await gotoCraps(page);
 
-		await page.click('.chip-select[data-amount="25"]');
+		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
-		await page.click('#roll-button');
+		await page.getByTestId('roll-button').click();
 
 		// Wait for roll to complete (animation ~420ms + processing)
 		await page.waitForTimeout(800);
@@ -87,12 +85,12 @@ test.describe('Craps — Game Flow', () => {
 		await gotoCraps(page);
 
 		// Keep rolling until a point is established
-		await page.click('.chip-select[data-amount="5"]');
+		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
 
 		let pointEstablished = false;
 		for (let attempt = 0; attempt < 15; attempt++) {
-			await page.click('#roll-button');
+			await page.getByTestId('roll-button').click();
 			await page.waitForTimeout(700);
 
 			const phase = await page.locator('#phase-badge').textContent();
@@ -101,7 +99,7 @@ test.describe('Craps — Game Flow', () => {
 				break;
 			}
 			// If natural or craps, place a new pass line bet and try again
-			const rollBtn = await page.locator('#roll-button');
+			const rollBtn = page.getByTestId('roll-button');
 			const disabled = await rollBtn.isDisabled();
 			if (disabled) {
 				await page.click('[data-bet-type="passLine"]');
@@ -116,13 +114,13 @@ test.describe('Craps — Game Flow', () => {
 	test('roll history is populated after rolls', async ({ page }) => {
 		await gotoCraps(page);
 
-		await page.click('.chip-select[data-amount="5"]');
+		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
 		await page.click('[data-bet-type="field"]');
-		await page.click('#roll-button');
+		await page.getByTestId('roll-button').click();
 		await page.waitForTimeout(700);
 
-		const badges = page.locator('#roll-history .roll-badge');
+		const badges = page.getByTestId('roll-history').locator('.roll-badge');
 		await expect(badges).toHaveCount(1);
 	});
 });
@@ -131,11 +129,11 @@ test.describe('Craps — Active Bets Panel', () => {
 	test('active bets shows placed bet', async ({ page }) => {
 		await gotoCraps(page);
 
-		await page.click('.chip-select[data-amount="50"]');
+		await page.getByTestId('chip-50').click();
 		await page.click('[data-bet-type="passLine"]');
 
-		await expect(page.locator('#active-bets')).toContainText('Pass Line');
-		await expect(page.locator('#active-bets')).toContainText('$50');
+		await expect(page.getByTestId('active-bets')).toContainText('Pass Line');
+		await expect(page.getByTestId('active-bets')).toContainText('$50');
 	});
 
 	test('balance decreases when bet is placed', async ({ page }) => {
@@ -145,7 +143,7 @@ test.describe('Craps — Active Bets Panel', () => {
 			(await page.locator('#chip-balance').textContent())?.replace(/[$,]/g, '') ?? '0',
 		);
 
-		await page.click('.chip-select[data-amount="100"]');
+		await page.getByTestId('chip-100').click();
 		await page.click('[data-bet-type="passLine"]');
 
 		const balanceAfter = parseInt(

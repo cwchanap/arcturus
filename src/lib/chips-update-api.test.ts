@@ -232,6 +232,37 @@ describe('chips update API', () => {
 		expect(body.error).toBe('INVALID_GAME_TYPE');
 	});
 
+	test('returns INVALID_GAME_TYPE when limits are unexpectedly missing', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const originalHasOwn = Object.hasOwn;
+
+		Object.hasOwn = ((target: object, key: PropertyKey) => {
+			if (target && typeof target === 'object' && key === 'slots') {
+				return true;
+			}
+			return originalHasOwn(target, key);
+		}) as typeof Object.hasOwn;
+
+		try {
+			const request = new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify({ delta: 10, gameType: 'slots' }),
+			});
+
+			const response = await POST({
+				request,
+				locals: createLocals({ user: { id: 'user-missing-limits' } }),
+			} as any);
+			const body = await readJson(response);
+			expect(response.status).toBe(400);
+			expect(body.error).toBe('INVALID_GAME_TYPE');
+			expect(body.message).toContain('No limits configured');
+		} finally {
+			Object.hasOwn = originalHasOwn;
+		}
+	});
+
 	test('rejects inherited object keys as invalid game type', async () => {
 		resetMocks();
 		const POST = createHandler();
@@ -631,6 +662,29 @@ describe('chips update API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(409);
 		expect(body.error).toBe('BALANCE_MISMATCH');
+	});
+
+	test('returns balance mismatch when provided previousBalance differs from server balance', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 10,
+				gameType: 'blackjack',
+				previousBalance: 900,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-prev-mismatch', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('BALANCE_MISMATCH');
+		expect(body.currentBalance).toBe(1000);
 	});
 
 	test('updates balance and returns achievements for valid request', async () => {

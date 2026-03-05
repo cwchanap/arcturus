@@ -88,6 +88,11 @@ describe("Don't Pass", () => {
 		const [ev] = evaluateBets([bet('dontPass', 50)], createRoll(4, 4), 'point', 8);
 		expect(ev.outcome).toBe('lose');
 	});
+
+	test('continues on non-7 and non-point during point phase', () => {
+		const [ev] = evaluateBets([bet('dontPass', 50)], createRoll(2, 3), 'point', 8);
+		expect(ev.outcome).toBe('continue');
+	});
 });
 
 // ─── Pass Line Odds ───────────────────────────────────────────────────────────
@@ -118,6 +123,34 @@ describe('Pass Line Odds', () => {
 
 	test('continues during come-out', () => {
 		const [ev] = evaluateBets([bet('passLineOdds', 100)], createRoll(3, 4), 'come-out', null);
+		expect(ev.outcome).toBe('continue');
+	});
+
+	test('continues on non-7 and non-point in point phase', () => {
+		const [ev] = evaluateBets([bet('passLineOdds', 100)], createRoll(2, 3), 'point', 6);
+		expect(ev.outcome).toBe('continue');
+	});
+});
+
+describe('Dont Pass Odds', () => {
+	test('wins with true odds when 7 is rolled', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(3, 4), 'point', 4);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50); // floor(100 * 1/2)
+	});
+
+	test('loses when point is rolled', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(2, 2), 'point', 4);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('continues on non-7 and non-point', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(2, 3), 'point', 4);
+		expect(ev.outcome).toBe('continue');
+	});
+
+	test('continues outside point phase', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(3, 4), 'come-out', null);
 		expect(ev.outcome).toBe('continue');
 	});
 });
@@ -159,6 +192,35 @@ describe("Don't Come bet (no point)", () => {
 		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(6, 6), 'point', 8);
 		expect(ev.outcome).toBe('continue');
 		expect(ev.updatedBet).toBeUndefined();
+	});
+
+	test('establishes dont-come point on 4', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(1, 3), 'point', 8);
+		expect(ev.outcome).toBe('continue');
+		expect(ev.updatedBet?.point).toBe(4);
+	});
+});
+
+describe("Don't Come bet (with established point)", () => {
+	test('wins on 7 with odds', () => {
+		const [ev] = evaluateBets(
+			[bet('dontCome', 50, { point: 4, odds: 100 })],
+			createRoll(3, 4),
+			'point',
+			8,
+		);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(100); // 50 flat + floor(100 * 1/2)
+	});
+
+	test('loses when dont-come point is rolled', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50, { point: 4 })], createRoll(2, 2), 'point', 8);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('continues on unrelated roll', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50, { point: 4 })], createRoll(2, 3), 'point', 8);
+		expect(ev.outcome).toBe('continue');
 	});
 });
 
@@ -225,6 +287,29 @@ describe('Place bets', () => {
 
 	test('Place bet is OFF during come-out', () => {
 		const [ev] = evaluateBets([bet('place6', 60)], createRoll(3, 3), 'come-out', null);
+		expect(ev.outcome).toBe('continue');
+	});
+
+	test('Place bet continues on unrelated point-phase roll', () => {
+		const [ev] = evaluateBets([bet('place6', 60)], createRoll(2, 3), 'point', 8);
+		expect(ev.outcome).toBe('continue');
+	});
+});
+
+describe('Big 6/8 bets', () => {
+	test('Big 6 wins on 6', () => {
+		const [ev] = evaluateBets([bet('big6', 25)], createRoll(3, 3), 'point', 8);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(25);
+	});
+
+	test('Big 8 loses on 7', () => {
+		const [ev] = evaluateBets([bet('big8', 25)], createRoll(3, 4), 'point', 8);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('Big 8 continues on unrelated roll', () => {
+		const [ev] = evaluateBets([bet('big8', 25)], createRoll(2, 3), 'point', 8);
 		expect(ev.outcome).toBe('continue');
 	});
 });
@@ -390,6 +475,16 @@ describe('Buy bets', () => {
 		const [ev] = evaluateBets([bet('buy4', 100)], createRoll(2, 2), 'come-out', null);
 		expect(ev.outcome).toBe('continue');
 	});
+
+	test('Buy bet loses on 7', () => {
+		const [ev] = evaluateBets([bet('buy4', 100)], createRoll(3, 4), 'point', 6);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('Buy bet continues on unrelated roll', () => {
+		const [ev] = evaluateBets([bet('buy4', 100)], createRoll(2, 3), 'point', 6);
+		expect(ev.outcome).toBe('continue');
+	});
 });
 
 describe('Lay bets', () => {
@@ -413,6 +508,11 @@ describe('Lay bets', () => {
 
 	test('Lay bet is OFF during come-out', () => {
 		const [ev] = evaluateBets([bet('lay4', 100)], createRoll(3, 4), 'come-out', null);
+		expect(ev.outcome).toBe('continue');
+	});
+
+	test('Lay bet continues on unrelated roll', () => {
+		const [ev] = evaluateBets([bet('lay4', 100)], createRoll(2, 3), 'point', 6);
 		expect(ev.outcome).toBe('continue');
 	});
 });

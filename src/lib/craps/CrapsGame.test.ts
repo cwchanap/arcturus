@@ -88,6 +88,81 @@ describe('CrapsGame — bet placement', () => {
 	});
 });
 
+describe('CrapsGame — come bet odds', () => {
+	test('can add odds to an established come bet', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // point = 6
+		g.roll();
+
+		const come = g.placeBet('come', 50);
+		setRoll(2, 2); // establish come point = 4
+		g.roll();
+
+		const result = g.addComeBetOdds(come.bet!.id, 100);
+		expect(result.success).toBe(true);
+		expect(g.getTotalAtRisk()).toBe(200); // pass 50 + come 50 + odds 100
+		expect(g.getBalance()).toBe(800);
+	});
+
+	test('rejects adding odds when bet id is missing', () => {
+		const g = makeGame();
+		expect(g.addComeBetOdds('missing-id', 50).success).toBe(false);
+	});
+
+	test('rejects adding odds to non-come bet', () => {
+		const g = makeGame();
+		const line = g.placeBet('passLine', 50);
+		expect(g.addComeBetOdds(line.bet!.id, 50).success).toBe(false);
+	});
+
+	test('rejects adding odds before come point is established', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // point = 6
+		g.roll();
+
+		const come = g.placeBet('come', 50);
+		const result = g.addComeBetOdds(come.bet!.id, 50);
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/before come point/i);
+	});
+
+	test('rejects non-finite and over-limit come odds amounts', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // point = 6
+		g.roll();
+
+		const come = g.placeBet('come', 50);
+		setRoll(2, 2); // establish come point = 4
+		g.roll();
+
+		expect(g.addComeBetOdds(come.bet!.id, Number.NaN).success).toBe(false);
+		expect(g.addComeBetOdds(come.bet!.id, 0).success).toBe(false);
+		expect(g.addComeBetOdds(come.bet!.id, 101).success).toBe(false); // max is 2x line amount
+	});
+
+	test('rejects odds when chip balance or existing bet values are invalid', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // point = 6
+		g.roll();
+
+		const come = g.placeBet('come', 50);
+		setRoll(2, 2); // establish come point = 4
+		g.roll();
+
+		(g as any).state.chipBalance = Number.NaN;
+		expect(g.addComeBetOdds(come.bet!.id, 10).success).toBe(false);
+
+		(g as any).state.chipBalance = 1000;
+		const idx = (g as any).state.activeBets.findIndex((b: { id: string }) => b.id === come.bet!.id);
+		(g as any).state.activeBets[idx].amount = Number.NaN;
+		expect(g.addComeBetOdds(come.bet!.id, 10).success).toBe(false);
+	});
+});
+
 describe('CrapsGame — pass line odds', () => {
 	test('can add pass line odds during point phase', () => {
 		const g = makeGame();
@@ -279,11 +354,46 @@ describe('CrapsGame — removing bets', () => {
 	});
 });
 
+describe('CrapsGame — clear bets', () => {
+	test('clearBets keeps locked bets and refunds removable bets', () => {
+		const g = makeGame();
+
+		g.placeBet('passLine', 100);
+		setRoll(3, 3); // point = 6
+		g.roll();
+
+		const come = g.placeBet('come', 50);
+		setRoll(2, 2); // establish come point = 4
+		g.roll();
+		expect(come.success).toBe(true);
+
+		g.placeBet('place8', 60);
+		expect(g.getBalance()).toBe(790);
+
+		g.clearBets();
+
+		const state = g.getState();
+		expect(state.activeBets.some((b) => b.type === 'passLine')).toBe(true);
+		expect(state.activeBets.some((b) => b.type === 'come' && b.point === 4)).toBe(true);
+		expect(state.activeBets.some((b) => b.type === 'place8')).toBe(false);
+		expect(g.getBalance()).toBe(850);
+	});
+});
+
 describe('CrapsGame — applyServerBalance', () => {
 	test('updates chip balance', () => {
 		const g = makeGame(1000);
 		g.applyServerBalance(800);
 		expect(g.getBalance()).toBe(800);
+	});
+
+	test('setBalance updates on valid values and rejects invalid values', () => {
+		const g = makeGame(1000);
+		expect(g.setBalance(750)).toBe(true);
+		expect(g.getBalance()).toBe(750);
+		expect(g.setBalance(-1)).toBe(false);
+		expect(g.setBalance(Number.NaN)).toBe(false);
+		expect(g.getBalance()).toBe(750);
 	});
 });
 

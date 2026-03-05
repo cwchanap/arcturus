@@ -663,7 +663,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		const comeOddsListEl = el('come-odds-list');
 
 		function initializeInteractiveBetZones() {
-			document.querySelectorAll<HTMLElement>('.bet-zone[data-bet-type]').forEach((zone) => {
+			document.querySelectorAll('.bet-zone[data-bet-type]').forEach((el) => {
+				const zone = el as HTMLElement;
 				const type = zone.dataset.betType as BetType | undefined;
 				if (!type) return;
 				zone.dataset.testid = `bet-${type}`;
@@ -672,7 +673,8 @@ const initialBalance = user.chipBalance ?? 1000;
 				zone.setAttribute('aria-label', `Place ${BET_LABELS[type] ?? type} bet`);
 			});
 
-			document.querySelectorAll<HTMLElement>('.number-box').forEach((box) => {
+			document.querySelectorAll('.number-box').forEach((el) => {
+				const box = el as HTMLElement;
 				const n = box.dataset.number;
 				if (n) box.setAttribute('aria-label', `Number ${n} betting box`);
 			});
@@ -822,7 +824,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 			// Phase-based bet zone restrictions
 			applyPhaseRestrictions(state.phase);
-			document.querySelectorAll<HTMLElement>('.bet-zone').forEach((zone) => {
+			document.querySelectorAll('.bet-zone').forEach((el) => {
+				const zone = el as HTMLElement;
 				const disabled =
 					zone.classList.contains('bet-zone-disabled') ||
 					zone.classList.contains('bet-zone-locked');
@@ -1183,15 +1186,18 @@ const initialBalance = user.chipBalance ?? 1000;
 				});
 
 				if (response.ok) {
-					lastSyncedBalance = ackPreviousBalance + ackDelta;
+					const data = (await response.json().catch(() => ({}))) as {
+						balance?: number;
+						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+					};
+					// Use server-authoritative balance if provided, fallback to local calculation
+					lastSyncedBalance =
+						typeof data.balance === 'number' ? data.balance : ackPreviousBalance + ackDelta;
 					pendingWins = Math.max(0, pendingWins - ackWins);
 					pendingLosses = Math.max(0, pendingLosses - ackLosses);
 					pendingHands = Math.max(0, pendingHands - ackHands);
 					syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 
-					const data = (await response.json().catch(() => ({}))) as {
-						newAchievements?: Array<{ id: string; name: string; icon: string }>;
-					};
 					if (data.newAchievements?.length) {
 						window.dispatchEvent(
 							new CustomEvent('achievement-earned', {

@@ -172,7 +172,9 @@ describe('CrapsGame — rolling and phase transitions', () => {
 
 		const state = g.getState();
 		expect(state.activeBets.some((b) => b.type === 'place8')).toBe(true);
-		expect(g.getBalance()).toBe(1020);
+		// Persistent bets: payout only (stake stays on table)
+		// 1000 - 50 - 60 + 70 (payout) = 960
+		expect(g.getBalance()).toBe(960);
 	});
 
 	test('natural 7 on come-out keeps come-out phase and wins pass line', () => {

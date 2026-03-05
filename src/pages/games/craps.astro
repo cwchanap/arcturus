@@ -635,6 +635,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		let pendingWins = 0;
 		let pendingLosses = 0;
 		let pendingHands = 0;
+		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
 		// ─── DOM helpers ─────────────────────────────────────────────────────────────
@@ -1190,9 +1191,14 @@ const initialBalance = user.chipBalance ?? 1000;
 						balance?: number;
 						newAchievements?: Array<{ id: string; name: string; icon: string }>;
 					};
-					// Use server-authoritative balance if provided, fallback to local calculation
-					lastSyncedBalance =
-						typeof data.balance === 'number' ? data.balance : ackPreviousBalance + ackDelta;
+					// Apply server-authoritative balance to client game state and UI
+					if (typeof data.balance === 'number') {
+						game.setBalance(data.balance);
+						lastSyncedBalance = data.balance;
+						balanceEl.textContent = `$${data.balance.toLocaleString()}`;
+					} else {
+						lastSyncedBalance = ackPreviousBalance + ackDelta;
+					}
 					pendingWins = Math.max(0, pendingWins - ackWins);
 					pendingLosses = Math.max(0, pendingLosses - ackLosses);
 					pendingHands = Math.max(0, pendingHands - ackHands);
@@ -1226,16 +1232,26 @@ const initialBalance = user.chipBalance ?? 1000;
 					}
 				}
 			} catch {
-				// Network error — will retry next roll
+				// Network error — implement exponential backoff (max 30s)
+				retryDelayMs = Math.min(retryDelayMs * 2, 30000);
+				if (!pendingRetryScheduled) {
+					pendingRetryScheduled = true;
+					setTimeout(() => {
+						pendingRetryScheduled = false;
+						void syncBalance();
+					}, retryDelayMs);
+				}
 			} finally {
 				isSyncInProgress = false;
 				const hasRemainingPendingStats = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
-				// Trigger follow-up sync if new rolls completed while this sync was in-flight
-				// (RATE_LIMITED retries are handled by their own scheduled callback)
+				// Reset retry delay on successful sync and trigger follow-up if needed
+				if (syncPending || hasRemainingPendingStats) {
+					retryDelayMs = 100;
+				}
 				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {
 					setTimeout(() => {
 						void syncBalance();
-					}, 100);
+					}, retryDelayMs);
 				}
 			}
 		}

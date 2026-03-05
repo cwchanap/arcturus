@@ -346,12 +346,18 @@ export class CrapsGame {
 		const nextBets: CrapsBet[] = [];
 		for (const ev of evaluations) {
 			switch (ev.outcome) {
-				case 'win':
-					this.state.chipBalance += ev.bet.amount + (ev.bet.odds ?? 0) + ev.payout;
-					if (ev.persistent || PERSISTENT_WIN_BET_TYPES.has(ev.bet.type)) {
+				case 'win': {
+					const isPersistent = ev.persistent || PERSISTENT_WIN_BET_TYPES.has(ev.bet.type);
+					if (isPersistent) {
+						// Only credit payout + odds; stake stays on table
+						this.state.chipBalance += (ev.bet.odds ?? 0) + ev.payout;
 						nextBets.push(ev.updatedBet ?? ev.bet);
+					} else {
+						// Non-persistent bets: return stake + payout + odds
+						this.state.chipBalance += ev.bet.amount + (ev.bet.odds ?? 0) + ev.payout;
 					}
 					break;
+				}
 				case 'push':
 					this.state.chipBalance += ev.bet.amount + (ev.bet.odds ?? 0);
 					break;
@@ -440,13 +446,15 @@ export class CrapsGame {
 	// ─── balance ──────────────────────────────────────────────────────────────
 
 	public setBalance(balance: number): boolean {
-		if (balance < 0) return false;
+		if (!Number.isFinite(balance) || balance < 0) return false;
 		this.state.chipBalance = balance;
 		return true;
 	}
 
 	public applyServerBalance(balance: number): void {
-		if (balance >= 0) this.state.chipBalance = balance;
+		if (Number.isFinite(balance) && balance >= 0) {
+			this.state.chipBalance = balance;
+		}
 	}
 
 	public hasInsufficientChips(): boolean {

@@ -1187,7 +1187,10 @@ const initialBalance = user.chipBalance ?? 1000;
 				});
 
 				if (response.ok) {
-					const data = (await response.json().catch(() => ({}))) as {
+					const data = (await response.json().catch((parseErr: unknown) => {
+						console.error('[CRAPS_SYNC] Failed to parse response JSON:', parseErr);
+						return {} as Record<string, unknown>;
+					})) as {
 						balance?: number;
 						newAchievements?: Array<{ id: string; name: string; icon: string }>;
 					};
@@ -1197,7 +1200,10 @@ const initialBalance = user.chipBalance ?? 1000;
 						lastSyncedBalance = data.balance;
 						balanceEl.textContent = `$${data.balance.toLocaleString()}`;
 					} else {
-						lastSyncedBalance = ackPreviousBalance + ackDelta;
+						// Server returned 200 without a balance field — do not advance
+						// lastSyncedBalance to an unconfirmed local estimate.
+						console.error('[CRAPS_SYNC] 200 response missing balance field:', data);
+						syncPending = true;
 					}
 					pendingWins = Math.max(0, pendingWins - ackWins);
 					pendingLosses = Math.max(0, pendingLosses - ackLosses);
@@ -1212,10 +1218,10 @@ const initialBalance = user.chipBalance ?? 1000;
 						);
 					}
 				} else {
-					const err = (await response.json().catch(() => ({}))) as {
-						error?: string;
-						currentBalance?: number;
-					};
+					const err = (await response.json().catch((parseErr: unknown) => {
+						console.error('[CRAPS_SYNC] Failed to parse error response JSON:', parseErr);
+						return {} as Record<string, unknown>;
+					})) as { error?: string; currentBalance?: number };
 					if (err.error === 'RATE_LIMITED') {
 						syncPending = true;
 						if (!pendingRetryScheduled) {
@@ -1229,17 +1235,37 @@ const initialBalance = user.chipBalance ?? 1000;
 						game.applyServerBalance(err.currentBalance);
 						lastSyncedBalance = err.currentBalance;
 						updateUI();
+					} else {
+						// Unhandled error code — log and schedule a retry
+						console.error('[CRAPS_SYNC] Unhandled sync error:', err.error, response.status);
+						syncPending = true;
+						if (!pendingRetryScheduled) {
+							pendingRetryScheduled = true;
+							setTimeout(() => {
+								pendingRetryScheduled = false;
+								void syncBalance();
+							}, retryDelayMs);
+						}
 					}
 				}
-			} catch {
-				// Network error — implement exponential backoff (max 30s)
-				retryDelayMs = Math.min(retryDelayMs * 2, 30000);
-				if (!pendingRetryScheduled) {
-					pendingRetryScheduled = true;
-					setTimeout(() => {
-						pendingRetryScheduled = false;
-						void syncBalance();
-					}, retryDelayMs);
+			} catch (err) {
+				// Only network-type errors (fetch failures) should trigger exponential backoff.
+				// Programming errors are logged but do not retry.
+				const isNetworkError =
+					err instanceof TypeError &&
+					(err.message.includes('fetch') ||
+						err.message.includes('network') ||
+						err.message.includes('Failed to fetch'));
+				console.error('[CRAPS_SYNC] Balance sync failed:', err);
+				if (isNetworkError) {
+					retryDelayMs = Math.min(retryDelayMs * 2, 30000);
+					if (!pendingRetryScheduled) {
+						pendingRetryScheduled = true;
+						setTimeout(() => {
+							pendingRetryScheduled = false;
+							void syncBalance();
+						}, retryDelayMs);
+					}
 				}
 			} finally {
 				isSyncInProgress = false;

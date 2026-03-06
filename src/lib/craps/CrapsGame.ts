@@ -451,10 +451,13 @@ export class CrapsGame {
 		return true;
 	}
 
-	public applyServerBalance(balance: number): void {
+	public applyServerBalance(balance: number): boolean {
 		if (Number.isFinite(balance) && balance >= 0) {
 			this.state.chipBalance = balance;
+			return true;
 		}
+		console.error(`[CrapsGame] applyServerBalance received invalid value: ${balance}`);
+		return false;
 	}
 
 	public hasInsufficientChips(): boolean {

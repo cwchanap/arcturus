@@ -145,6 +145,7 @@ async function callGemini(
 function parseResponse(raw: string): CrapsAdvice {
 	const jsonMatch = raw.match(/\{[\s\S]*\}/);
 	if (!jsonMatch) {
+		console.error('[LLM_CRAPS] No JSON found in LLM response. Raw (truncated):', raw.slice(0, 200));
 		return { advice: raw.trim(), suggestedBets: ['passLine'], confidence: 'low', raw };
 	}
 	try {
@@ -161,7 +162,13 @@ function parseResponse(raw: string): CrapsAdvice {
 				: 'medium',
 			raw,
 		};
-	} catch {
+	} catch (parseErr) {
+		console.error(
+			'[LLM_CRAPS] Failed to parse LLM JSON response:',
+			parseErr,
+			'Raw (truncated):',
+			raw.slice(0, 200),
+		);
 		return { advice: raw.trim(), suggestedBets: ['passLine'], confidence: 'low', raw };
 	}
 }

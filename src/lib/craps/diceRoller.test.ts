@@ -36,11 +36,18 @@ describe('rollDice', () => {
 		}
 	});
 
-	test('hard rolls are derivable from die faces', () => {
-		for (let i = 0; i < 200; i++) {
-			const roll = rollDice();
-			expect(roll.die1 === roll.die2).toBeTypeOf('boolean');
-		}
+	test('hard roll flag is true when die faces match', () => {
+		// A hard roll occurs when both dice show the same face.
+		// Roll enough times to statistically guarantee at least one hard roll (p ≈ 1/6 per roll).
+		const rolls = Array.from({ length: 200 }, () => rollDice());
+		const hardRolls = rolls.filter((r) => r.die1 === r.die2);
+		const easyRolls = rolls.filter((r) => r.die1 !== r.die2);
+		// Both categories should appear in 200 rolls
+		expect(hardRolls.length).toBeGreaterThan(0);
+		expect(easyRolls.length).toBeGreaterThan(0);
+		// Every hard roll must have matching faces; every easy roll must not
+		expect(hardRolls.every((r) => r.die1 === r.die2)).toBe(true);
+		expect(easyRolls.every((r) => r.die1 !== r.die2)).toBe(true);
 	});
 
 	test('total is always between 2 and 12', () => {

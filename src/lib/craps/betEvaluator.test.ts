@@ -116,6 +116,24 @@ describe('Pass Line Odds', () => {
 		expect(ev.payout).toBe(150);
 	});
 
+	test('wins 6:5 when point 8 is rolled', () => {
+		const [ev] = evaluateBets([bet('passLineOdds', 50)], createRoll(4, 4), 'point', 8);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(60); // floor(50 * 6/5) = 60
+	});
+
+	test('wins 3:2 when point 9 is rolled', () => {
+		const [ev] = evaluateBets([bet('passLineOdds', 100)], createRoll(4, 5), 'point', 9);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(150);
+	});
+
+	test('wins 2:1 when point 10 is rolled', () => {
+		const [ev] = evaluateBets([bet('passLineOdds', 100)], createRoll(5, 5), 'point', 10);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(200);
+	});
+
 	test('loses on 7', () => {
 		const [ev] = evaluateBets([bet('passLineOdds', 100)], createRoll(3, 4), 'point', 6);
 		expect(ev.outcome).toBe('lose');
@@ -133,8 +151,38 @@ describe('Pass Line Odds', () => {
 });
 
 describe('Dont Pass Odds', () => {
-	test('wins with true odds when 7 is rolled', () => {
+	test('wins 1:2 when 7 is rolled with point 4', () => {
 		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(3, 4), 'point', 4);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50); // floor(100 * 1/2)
+	});
+
+	test('wins 2:3 when 7 is rolled with point 5', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 90)], createRoll(3, 4), 'point', 5);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(60); // floor(90 * 2/3) = 60
+	});
+
+	test('wins 5:6 when 7 is rolled with point 6', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 60)], createRoll(3, 4), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50); // floor(60 * 5/6) = 50
+	});
+
+	test('wins 5:6 when 7 is rolled with point 8', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 60)], createRoll(3, 4), 'point', 8);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50); // floor(60 * 5/6) = 50
+	});
+
+	test('wins 2:3 when 7 is rolled with point 9', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 90)], createRoll(3, 4), 'point', 9);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(60); // floor(90 * 2/3) = 60
+	});
+
+	test('wins 1:2 when 7 is rolled with point 10', () => {
+		const [ev] = evaluateBets([bet('dontPassOdds', 100)], createRoll(3, 4), 'point', 10);
 		expect(ev.outcome).toBe('win');
 		expect(ev.payout).toBe(50); // floor(100 * 1/2)
 	});
@@ -174,6 +222,16 @@ describe('Come bet (no point)', () => {
 		expect(ev.outcome).toBe('lose');
 	});
 
+	test('loses on 3', () => {
+		const [ev] = evaluateBets([bet('come', 50)], createRoll(1, 2), 'point', 8);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('loses on 12', () => {
+		const [ev] = evaluateBets([bet('come', 50)], createRoll(6, 6), 'point', 8);
+		expect(ev.outcome).toBe('lose');
+	});
+
 	test('establishes come point on 4', () => {
 		const [ev] = evaluateBets([bet('come', 50)], createRoll(1, 3), 'point', 8);
 		expect(ev.outcome).toBe('continue');
@@ -192,6 +250,28 @@ describe("Don't Come bet (no point)", () => {
 		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(6, 6), 'point', 8);
 		expect(ev.outcome).toBe('continue');
 		expect(ev.updatedBet).toBeUndefined();
+	});
+
+	test('wins on 2', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(1, 1), 'point', 8);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50);
+	});
+
+	test('wins on 3', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(1, 2), 'point', 8);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(50);
+	});
+
+	test('loses on 7', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(3, 4), 'point', 8);
+		expect(ev.outcome).toBe('lose');
+	});
+
+	test('loses on 11', () => {
+		const [ev] = evaluateBets([bet('dontCome', 50)], createRoll(5, 6), 'point', 8);
+		expect(ev.outcome).toBe('lose');
 	});
 
 	test('establishes dont-come point on 4', () => {
@@ -276,6 +356,18 @@ describe('Place bets', () => {
 
 	test('Place 4 wins 9:5 when 4 is rolled', () => {
 		const [ev] = evaluateBets([bet('place4', 50)], createRoll(2, 2), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(90); // floor(50 * 9/5) = 90
+	});
+
+	test('Place 9 wins 7:5 when 9 is rolled', () => {
+		const [ev] = evaluateBets([bet('place9', 50)], createRoll(4, 5), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(70); // floor(50 * 7/5) = 70
+	});
+
+	test('Place 10 wins 9:5 when 10 is rolled', () => {
+		const [ev] = evaluateBets([bet('place10', 50)], createRoll(5, 5), 'point', 6);
 		expect(ev.outcome).toBe('win');
 		expect(ev.payout).toBe(90); // floor(50 * 9/5) = 90
 	});
@@ -437,6 +529,17 @@ describe('Proposition bets', () => {
 		expect(ev.payout).toBe(150);
 	});
 
+	test('Ace Deuce (3) wins 15:1', () => {
+		const [ev] = evaluateBets([bet('aceDeuce', 10)], createRoll(1, 2), 'come-out', null);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(150);
+	});
+
+	test('Ace Deuce loses on non-3', () => {
+		const [ev] = evaluateBets([bet('aceDeuce', 10)], createRoll(3, 4), 'come-out', null);
+		expect(ev.outcome).toBe('lose');
+	});
+
 	test('C&E wins 3:1 on craps', () => {
 		const [ev] = evaluateBets([bet('ce', 10)], createRoll(1, 2), 'come-out', null);
 		expect(ev.outcome).toBe('win');
@@ -471,6 +574,18 @@ describe('Buy bets', () => {
 		expect(ev.payout).toBe(57);
 	});
 
+	test('Buy 5 pays correct odds minus vig', () => {
+		const [ev] = evaluateBets([bet('buy5', 40)], createRoll(2, 3), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(57); // floor(40 * 57/40) = 57
+	});
+
+	test('Buy 10 pays correct odds minus vig', () => {
+		const [ev] = evaluateBets([bet('buy10', 100)], createRoll(5, 5), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(190); // floor(100 * 19/10) = 190
+	});
+
 	test('Buy bet is OFF during come-out', () => {
 		const [ev] = evaluateBets([bet('buy4', 100)], createRoll(2, 2), 'come-out', null);
 		expect(ev.outcome).toBe('continue');
@@ -499,6 +614,18 @@ describe('Lay bets', () => {
 		expect(ev.outcome).toBe('win');
 		// floor(100 * 19/24) = floor(79.17) = 79
 		expect(ev.payout).toBe(79);
+	});
+
+	test('Lay 5 wins on 7', () => {
+		const [ev] = evaluateBets([bet('lay5', 30)], createRoll(3, 4), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(19); // floor(30 * 19/30) = 19
+	});
+
+	test('Lay 10 wins on 7', () => {
+		const [ev] = evaluateBets([bet('lay10', 100)], createRoll(3, 4), 'point', 6);
+		expect(ev.outcome).toBe('win');
+		expect(ev.payout).toBe(47); // floor(100 * 19/40) = 47
 	});
 
 	test('Lay 4 loses when 4 is rolled', () => {

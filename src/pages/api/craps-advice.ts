@@ -145,7 +145,23 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
 		return jsonResponse({ advice: advice.advice });
 	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
 		console.error('Failed to get craps advice:', error);
-		return jsonResponse({ error: 'Failed to get advice' }, { status: 500 });
+		if (message.includes('timed out')) {
+			return jsonResponse({ error: 'AI advisor timed out. Please try again.' }, { status: 504 });
+		}
+		if (message.includes('401') || message.toLowerCase().includes('api key')) {
+			return jsonResponse(
+				{ error: 'Invalid API key. Visit Profile to update your AI settings.' },
+				{ status: 400 },
+			);
+		}
+		if (message.includes('429')) {
+			return jsonResponse(
+				{ error: 'AI provider rate limit reached. Please wait a moment.' },
+				{ status: 429 },
+			);
+		}
+		return jsonResponse({ error: 'Failed to get advice. Please try again.' }, { status: 500 });
 	}
 };

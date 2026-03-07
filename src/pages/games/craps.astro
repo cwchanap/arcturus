@@ -1098,6 +1098,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		clearBetsBtn.addEventListener('click', () => {
 			game.clearBets();
 			updateUI();
+			syncBalance(); // Sync refunded chips to server
 		});
 
 		// LLM Advisor

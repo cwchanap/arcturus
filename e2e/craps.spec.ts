@@ -207,3 +207,29 @@ test.describe('Craps — Active Bets Panel', () => {
 		expect(balanceAfter).toBe(balanceBefore - 100);
 	});
 });
+
+test.describe('Craps — Clear Bets Sync', () => {
+	test('clearing bets syncs refunded chips to server', async ({ page }) => {
+		await ensureMinimumBalance(page, 200);
+
+		// Place some removable bets
+		await page.getByTestId('chip-25').click();
+		await page.click('[data-bet-type="passLine"]');
+		await page.click('[data-bet-type="field"]');
+		await page.click('[data-bet-type="field"]');
+
+		const balanceBeforeClear = parseBalance(await page.locator('#chip-balance').innerText());
+
+		// Clear bets
+		await page.getByTestId('clear-bets-button').click();
+
+		// Balance should be refunded locally
+		const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
+		expect(balanceAfterClear).toBe(balanceBeforeClear + 75); // passLine $25 + field $50
+
+		// Reload to verify sync worked
+		await page.reload({ waitUntil: 'networkidle' });
+		const balanceAfterReload = parseBalance(await page.locator('#chip-balance').innerText());
+		expect(balanceAfterReload).toBe(balanceAfterClear);
+	});
+});

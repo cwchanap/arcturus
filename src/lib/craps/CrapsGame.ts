@@ -170,6 +170,13 @@ export class CrapsGame {
 			const hasDontPass = activeBets.some((b) => b.type === 'dontPass');
 			if (!hasDontPass) return { ok: false, error: "No Don't Pass bet to put odds on" };
 		}
+		// Reject duplicate line bets - standard craps rules allow only one Pass/Don't Pass bet
+		if (type === 'passLine' && activeBets.some((b) => b.type === 'passLine')) {
+			return { ok: false, error: 'You can only have one Pass Line bet' };
+		}
+		if (type === 'dontPass' && activeBets.some((b) => b.type === 'dontPass')) {
+			return { ok: false, error: "You can only have one Don't Pass bet" };
+		}
 		if (amount < settings.minBet) {
 			return { ok: false, error: `Minimum bet is $${settings.minBet}` };
 		}

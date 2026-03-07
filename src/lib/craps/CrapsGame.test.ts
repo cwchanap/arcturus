@@ -86,6 +86,22 @@ describe('CrapsGame — bet placement', () => {
 		const r = g.placeBet('passLine', 50);
 		expect(r.success).toBe(false);
 	});
+
+	test('rejects duplicate Pass Line bets', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		const r = g.placeBet('passLine', 50);
+		expect(r.success).toBe(false);
+		expect(r.error).toMatch(/one Pass Line bet/i);
+	});
+
+	test("rejects duplicate Don't Pass bets", () => {
+		const g = makeGame();
+		g.placeBet('dontPass', 50);
+		const r = g.placeBet('dontPass', 50);
+		expect(r.success).toBe(false);
+		expect(r.error).toMatch(/one Don't Pass bet/i);
+	});
 });
 
 describe('CrapsGame — come bet odds', () => {

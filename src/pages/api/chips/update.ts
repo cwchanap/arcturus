@@ -129,7 +129,7 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		// Boxcars/Aces (30:1) on max bet ($500) = $15,000 profit per prop.
 		// Multiple simultaneous bets across table. Safety buffer -> 50k.
 		maxWin: 50000,
-		maxLoss: 20000, // total table coverage at $500 max bet
+		maxLoss: 100000, // accounts for stacking multiple bet types
 	},
 };
 

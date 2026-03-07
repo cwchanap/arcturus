@@ -146,6 +146,7 @@ type PostHandlerDeps = {
 	recordGameRound: typeof recordGameRound;
 	checkAndGrantAchievements: typeof checkAndGrantAchievements;
 	lastUpdateByUser: Map<string, number>;
+	hasOwn: (target: object, key: PropertyKey) => boolean;
 };
 
 export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
@@ -154,6 +155,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		recordGameRound: recordGameRoundImpl = recordGameRound,
 		checkAndGrantAchievements: checkAndGrantAchievementsImpl = checkAndGrantAchievements,
 		lastUpdateByUser: lastUpdateByUserImpl = lastUpdateByUser,
+		hasOwn: hasOwnImpl = Object.hasOwn,
 	} = overrides;
 
 	return async ({ request, locals }: Parameters<APIRoute>[0]) => {
@@ -268,7 +270,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		if (!Object.hasOwn(GAME_LIMITS, gameType)) {
+		if (!hasOwnImpl(GAME_LIMITS, gameType)) {
 			return new Response(
 				JSON.stringify({
 					success: false,

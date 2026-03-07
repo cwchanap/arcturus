@@ -635,6 +635,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		let pendingWins = 0;
 		let pendingLosses = 0;
 		let pendingHands = 0;
+		let pendingBiggestWin: number | undefined = undefined;
 		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 		const maxOddsMultiplier = game.getState().settings.maxOddsMultiplier;
@@ -1107,6 +1108,11 @@ const initialBalance = user.chipBalance ?? 1000;
 			else if (result.netDelta < 0) pendingLosses++;
 			pendingHands++;
 
+			// Track biggest win per sync batch (actual profit, not including returned stakes)
+			if (result.netDelta > 0) {
+				pendingBiggestWin = Math.max(pendingBiggestWin ?? 0, result.netDelta);
+			}
+
 			// Sync balance after roll
 			await syncBalance();
 
@@ -1206,6 +1212,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						handCount: ackHands > 0 ? ackHands : 1,
 						winsIncrement: ackWins,
 						lossesIncrement: ackLosses,
+						biggestWinCandidate: pendingBiggestWin,
 					}),
 				});
 
@@ -1225,6 +1232,10 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingWins = Math.max(0, pendingWins - ackWins);
 						pendingLosses = Math.max(0, pendingLosses - ackLosses);
 						pendingHands = Math.max(0, pendingHands - ackHands);
+						// Clear biggestWinCandidate if all pending stats were synced (no follow-up pending)
+						if (!syncPending) {
+							pendingBiggestWin = undefined;
+						}
 						syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 					} else {
 						// Server returned 200 without a balance field — do not advance
@@ -1261,6 +1272,18 @@ const initialBalance = user.chipBalance ?? 1000;
 								void syncBalance();
 							}, 2500);
 						}
+					} else if (err.error === 'BALANCE_MISMATCH') {
+						// Balance mismatch - resync with server balance and keep stats pending for retry
+						if (typeof err.currentBalance === 'number') {
+							game.applyServerBalance(err.currentBalance);
+							lastSyncedBalance = err.currentBalance;
+							updateUI();
+							// Keep pending counters and syncPending true to force retry after resync
+							syncPending = true;
+						} else {
+							console.error('[CRAPS_SYNC] BALANCE_MISMATCH without currentBalance:', err);
+							showMessage('Sync failed: Balance mismatch, please refresh', 'error');
+						}
 					} else if (isUnrecoverable4xx) {
 						// Unrecoverable client error - do not retry, show error to user
 						console.error('[CRAPS_SYNC] Unrecoverable 4xx error:', err.error, response.status);
@@ -1270,6 +1293,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingWins = 0;
 						pendingLosses = 0;
 						pendingHands = 0;
+						pendingBiggestWin = undefined;
 					} else if (typeof err.currentBalance === 'number') {
 						game.applyServerBalance(err.currentBalance);
 						lastSyncedBalance = err.currentBalance;

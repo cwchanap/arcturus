@@ -144,6 +144,13 @@ export class CrapsGame {
 
 	// ─── betting ──────────────────────────────────────────────────────────────
 
+	/** Calculate cumulative amount already bet on a specific bet type */
+	private getExistingBetAmount(type: BetType): number {
+		return this.state.activeBets
+			.filter((b) => b.type === type)
+			.reduce((sum, b) => sum + b.amount, 0);
+	}
+
 	public canPlaceBet(type: BetType, amount: number): { ok: boolean; error?: string } {
 		const { phase, settings, chipBalance, activeBets } = this.state;
 		if (
@@ -180,8 +187,18 @@ export class CrapsGame {
 		if (amount < settings.minBet) {
 			return { ok: false, error: `Minimum bet is $${settings.minBet}` };
 		}
-		if (amount > settings.maxBet) {
-			return { ok: false, error: `Maximum bet is $${settings.maxBet}` };
+
+		// Enforce cumulative max bet: check total existing + new amount against maxBet
+		// Pass Line/Don't Pass already enforced as single bets above
+		// Pass/Dont Pass odds are attached to line bet, handled separately below
+		const existingAmount = this.getExistingBetAmount(type);
+		const totalAmount = existingAmount + amount;
+		if (totalAmount > settings.maxBet) {
+			const remaining = settings.maxBet - existingAmount;
+			return {
+				ok: false,
+				error: `Maximum bet is $${settings.maxBet} ($${remaining} remaining on this bet type)`,
+			};
 		}
 		// Check odds limits
 		if (type === 'passLineOdds' || type === 'dontPassOdds') {

@@ -1199,16 +1199,17 @@ const initialBalance = user.chipBalance ?? 1000;
 						game.setBalance(data.balance);
 						lastSyncedBalance = data.balance;
 						balanceEl.textContent = `$${data.balance.toLocaleString()}`;
+						pendingWins = Math.max(0, pendingWins - ackWins);
+						pendingLosses = Math.max(0, pendingLosses - ackLosses);
+						pendingHands = Math.max(0, pendingHands - ackHands);
+						syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 					} else {
 						// Server returned 200 without a balance field — do not advance
 						// lastSyncedBalance to an unconfirmed local estimate.
+						// Keep sync pending to force retry even if counters are drained.
 						console.error('[CRAPS_SYNC] 200 response missing balance field:', data);
 						syncPending = true;
 					}
-					pendingWins = Math.max(0, pendingWins - ackWins);
-					pendingLosses = Math.max(0, pendingLosses - ackLosses);
-					pendingHands = Math.max(0, pendingHands - ackHands);
-					syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
 
 					if (data.newAchievements?.length) {
 						window.dispatchEvent(
@@ -1270,8 +1271,8 @@ const initialBalance = user.chipBalance ?? 1000;
 			} finally {
 				isSyncInProgress = false;
 				const hasRemainingPendingStats = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
-				// Reset retry delay on successful sync and trigger follow-up if needed
-				if (syncPending || hasRemainingPendingStats) {
+				// Reset retry delay only on successful sync (no pending state after response processing)
+				if (!syncPending && !hasRemainingPendingStats) {
 					retryDelayMs = 100;
 				}
 				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {

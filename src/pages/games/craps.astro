@@ -1246,7 +1246,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						console.error('[CRAPS_SYNC] Failed to parse error response JSON:', parseErr);
 						return {} as Record<string, unknown>;
 					})) as { error?: string; currentBalance?: number };
+
+					// Handle unrecoverable 4xx client errors - do not retry
+					const isUnrecoverable4xx =
+						response.status >= 400 && response.status < 500 && err.error !== 'RATE_LIMITED';
+
 					if (err.error === 'RATE_LIMITED') {
+						// Rate limit - retry with fixed delay
 						syncPending = true;
 						if (!pendingRetryScheduled) {
 							pendingRetryScheduled = true;
@@ -1255,13 +1261,22 @@ const initialBalance = user.chipBalance ?? 1000;
 								void syncBalance();
 							}, 2500);
 						}
+					} else if (isUnrecoverable4xx) {
+						// Unrecoverable client error - do not retry, show error to user
+						console.error('[CRAPS_SYNC] Unrecoverable 4xx error:', err.error, response.status);
+						showMessage(`Sync failed: ${err.error || 'Client error'}`, 'error');
+						// Do NOT set syncPending = true to prevent infinite retries
+						// Clear pending counters to stop retry loop
+						pendingWins = 0;
+						pendingLosses = 0;
+						pendingHands = 0;
 					} else if (typeof err.currentBalance === 'number') {
 						game.applyServerBalance(err.currentBalance);
 						lastSyncedBalance = err.currentBalance;
 						updateUI();
 					} else {
-						// Unhandled error code — log and schedule a retry
-						console.error('[CRAPS_SYNC] Unhandled sync error:', err.error, response.status);
+						// 5xx server errors - retry with exponential backoff
+						console.error('[CRAPS_SYNC] Server error - will retry:', err.error, response.status);
 						syncPending = true;
 						if (!pendingRetryScheduled) {
 							pendingRetryScheduled = true;

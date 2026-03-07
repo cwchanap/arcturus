@@ -102,6 +102,101 @@ describe('CrapsGame — bet placement', () => {
 		expect(r.success).toBe(false);
 		expect(r.error).toMatch(/one Don't Pass bet/i);
 	});
+
+	test('enforces cumulative max bet across multiple bets of same type', () => {
+		const g = makeGame();
+		// maxBet is 500, place 5 bets of $100 each = $500 total
+		for (let i = 0; i < 5; i++) {
+			const r = g.placeBet('field', 100);
+			expect(r.success).toBe(true);
+		}
+		// 6th bet of $100 would exceed maxBet
+		const r = g.placeBet('field', 100);
+		expect(r.success).toBe(false);
+		expect(r.error).toMatch(/Maximum bet is \$500/);
+		expect(r.error).toMatch(/\$0 remaining/);
+	});
+
+	test('allows partial bets up to cumulative max', () => {
+		const g = makeGame();
+		g.placeBet('any7', 300);
+		// Should allow $200 more (total $500)
+		const r1 = g.placeBet('any7', 200);
+		expect(r1.success).toBe(true);
+
+		// Should reject any more (minimum bet is $5)
+		const r2 = g.placeBet('any7', 5);
+		expect(r2.success).toBe(false);
+		expect(r2.error).toMatch(/\$0 remaining/);
+	});
+
+	test('cumulative max enforcement shows correct remaining amount', () => {
+		const g = makeGame();
+		g.placeBet('hard6', 200);
+		g.placeBet('hard6', 150);
+		// Total so far: $350, remaining: $150
+		const r1 = g.placeBet('hard6', 100);
+		expect(r1.success).toBe(true);
+
+		// Total so far: $450, remaining: $50
+		const r2 = g.placeBet('hard6', 60);
+		expect(r2.success).toBe(false);
+		expect(r2.error).toMatch(/\$50 remaining/);
+	});
+
+	test('cumulative max works for place bets', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		const setupRoll = mockRoll;
+		mockRoll = { die1: 3, die2: 3, total: 6 };
+		g.roll();
+
+		// Place multiple bets on place8
+		g.placeBet('place8', 200);
+		g.placeBet('place8', 200);
+		const r = g.placeBet('place8', 200);
+		expect(r.success).toBe(false);
+		expect(r.error).toMatch(/Maximum bet is \$500/);
+		expect(r.error).toMatch(/\$100 remaining/);
+
+		mockRoll = setupRoll;
+	});
+
+	test('different bet types have independent cumulative limits', () => {
+		const g = makeGame(2000); // Need higher balance for multiple max bets
+		// Max out field bets
+		g.placeBet('field', 500);
+		// Should still allow bets on different types
+		const r1 = g.placeBet('any7', 500);
+		expect(r1.success).toBe(true);
+		const r2 = g.placeBet('hard6', 500);
+		expect(r2.success).toBe(true);
+	});
+
+	test('come bets enforce cumulative max per bet', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		mockRoll = { die1: 3, die2: 3, total: 6 };
+		g.roll();
+
+		// First come bet
+		g.placeBet('come', 200);
+		mockRoll = { die1: 2, die2: 2, total: 4 };
+		g.roll();
+
+		// Second come bet (roll 8 to stay in point phase)
+		g.placeBet('come', 250);
+		mockRoll = { die1: 4, die2: 4, total: 8 };
+		g.roll();
+
+		// Total of all 'come' type bets = $450, can add $50 more
+		const r1 = g.placeBet('come', 50);
+		expect(r1.success).toBe(true);
+
+		// Would exceed max
+		const r2 = g.placeBet('come', 100);
+		expect(r2.success).toBe(false);
+	});
 });
 
 describe('CrapsGame — come bet odds', () => {

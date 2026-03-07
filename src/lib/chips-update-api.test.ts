@@ -44,7 +44,12 @@ const mockCheckAndGrantAchievements = Object.assign(
 	},
 );
 
-function createHandler(options: { lastUpdateByUser?: Map<string, number> } = {}) {
+function createHandler(
+	options: {
+		lastUpdateByUser?: Map<string, number>;
+		hasOwn?: (target: object, key: PropertyKey) => boolean;
+	} = {},
+) {
 	return createPostHandler({
 		createDb: (dbBinding: unknown) => mockCreateDb(dbBinding),
 		recordGameRound: async (_db, _userId, _record) => {
@@ -61,6 +66,7 @@ function createHandler(options: { lastUpdateByUser?: Map<string, number> } = {})
 			return mockCheckAndGrantAchievements(_db, _userId, _currentChipBalance, _options);
 		},
 		lastUpdateByUser: options.lastUpdateByUser ?? new Map(),
+		hasOwn: options.hasOwn ?? Object.hasOwn,
 	});
 }
 
@@ -234,33 +240,27 @@ describe('chips update API', () => {
 
 	test('returns INVALID_GAME_TYPE when limits are unexpectedly missing', async () => {
 		resetMocks();
-		const POST = createHandler();
-		const originalHasOwn = Object.hasOwn;
+		const POST = createHandler({
+			hasOwn: (target: object, key: PropertyKey) => {
+				if (target && typeof target === 'object' && key === 'slots') {
+					return true;
+				}
+				return Object.hasOwn(target, key);
+			},
+		});
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: 'slots' }),
+		});
 
-		Object.hasOwn = ((target: object, key: PropertyKey) => {
-			if (target && typeof target === 'object' && key === 'slots') {
-				return true;
-			}
-			return originalHasOwn(target, key);
-		}) as typeof Object.hasOwn;
-
-		try {
-			const request = new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify({ delta: 10, gameType: 'slots' }),
-			});
-
-			const response = await POST({
-				request,
-				locals: createLocals({ user: { id: 'user-missing-limits' } }),
-			} as any);
-			const body = await readJson(response);
-			expect(response.status).toBe(400);
-			expect(body.error).toBe('INVALID_GAME_TYPE');
-			expect(body.message).toContain('No limits configured');
-		} finally {
-			Object.hasOwn = originalHasOwn;
-		}
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-missing-limits' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_GAME_TYPE');
+		expect(body.message).toContain('No limits configured');
 	});
 
 	test('rejects inherited object keys as invalid game type', async () => {

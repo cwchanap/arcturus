@@ -33,7 +33,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
 				<div class="text-xs text-slate-400 mb-1">Your Balance</div>
 				<div class="text-2xl font-bold text-yellow-400" id="chip-balance">
-					${initialBalance.toLocaleString()}
+					{'$' + initialBalance.toLocaleString()}
 				</div>
 			</div>
 		</div>
@@ -339,7 +339,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						data-testid="roll-history"
 						class="flex flex-wrap gap-1.5 min-h-[40px]"
 					>
-						<span class="text-neutral-500 text-xs">No rolls yet</span>
+						<span class="roll-history-placeholder text-neutral-500 text-xs">No rolls yet</span>
 					</div>
 				</div>
 
@@ -637,6 +637,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		let pendingHands = 0;
 		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
+		const maxOddsMultiplier = game.getState().settings.maxOddsMultiplier;
+		const maxSyncHandsPerRequest = 100;
 
 		// ─── DOM helpers ─────────────────────────────────────────────────────────────
 
@@ -854,11 +856,12 @@ const initialBalance = user.chipBalance ?? 1000;
 			const establishedComeBets = state.activeBets.filter(
 				(b) => (b.type === 'come' || b.type === 'dontCome') && b.point,
 			);
-			if (establishedComeBets.length > 0 && state.phase === 'point') {
+			if (establishedComeBets.length > 0) {
 				comeOddsPanel.classList.remove('hidden');
 				renderComeOddsButtons(establishedComeBets);
 			} else {
 				comeOddsPanel.classList.add('hidden');
+				comeOddsListEl.innerHTML = '';
 			}
 
 			// Active bets list
@@ -909,21 +912,28 @@ const initialBalance = user.chipBalance ?? 1000;
 			}
 		}
 
+		function getComeOddsAmount(bet: CrapsBet): number {
+			const currentOdds = bet.odds ?? 0;
+			const remaining = bet.amount * maxOddsMultiplier - currentOdds;
+			return remaining > 0 ? Math.min(selectedChipAmount, remaining) : 0;
+		}
+
 		function renderComeOddsButtons(bets: CrapsBet[]) {
 			comeOddsListEl.innerHTML = '';
 			for (const bet of bets) {
 				const label = `${bet.type === 'come' ? 'Come' : "Don't Come"} @${bet.point}`;
-				const maxOdds = bet.amount * 2;
+				const maxOdds = bet.amount * maxOddsMultiplier;
 				const currentOdds = bet.odds ?? 0;
 				const remaining = maxOdds - currentOdds;
+				const oddsAmount = getComeOddsAmount(bet);
 				if (remaining <= 0) continue;
 
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between gap-2';
 				row.innerHTML = `
 				<span class="text-slate-300 text-xs flex-1">${label} ($${currentOdds}/$${maxOdds})</span>
-				<button class="add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded" data-bet-id="${bet.id}" data-amount="${Math.min(selectedChipAmount, remaining)}">
-					+$${Math.min(selectedChipAmount, remaining)}
+				<button class="add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded" data-bet-id="${bet.id}">
+					+$${oddsAmount}
 				</button>
 			`;
 				comeOddsListEl.appendChild(row);
@@ -932,7 +942,18 @@ const initialBalance = user.chipBalance ?? 1000;
 			comeOddsListEl.querySelectorAll('.add-come-odds').forEach((btn) => {
 				btn.addEventListener('click', () => {
 					const betId = (btn as HTMLElement).dataset.betId!;
-					const amount = Number((btn as HTMLElement).dataset.amount);
+					const currentBet = game.getState().activeBets.find((bet) => bet.id === betId);
+					if (!currentBet) {
+						showMessage('Bet not found', 'error');
+						updateUI();
+						return;
+					}
+					const amount = getComeOddsAmount(currentBet);
+					if (amount < 1) {
+						showMessage('Cannot add odds', 'error');
+						updateUI();
+						return;
+					}
 					const r = game.addComeBetOdds(betId, amount);
 					if (!r.success) showMessage(r.error ?? 'Cannot add odds', 'error');
 					updateUI();
@@ -944,7 +965,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		function addRollToHistory(total: number, prevPhase: 'come-out' | 'point') {
 			// Remove "no rolls" placeholder
-			const placeholder = rollHistoryEl.querySelector('span');
+			const placeholder = rollHistoryEl.querySelector('.roll-history-placeholder');
 			if (placeholder) placeholder.remove();
 
 			const badge = document.createElement('span');
@@ -1012,6 +1033,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				document.querySelectorAll('.chip-select').forEach((b) => b.classList.remove('selected'));
 				btn.classList.add('selected');
 				selectedChipAmount = Number((btn as HTMLElement).dataset.amount);
+				updateUI();
 			});
 		});
 		document.querySelector('.chip-select[data-amount="25"]')?.classList.add('selected');
@@ -1147,13 +1169,13 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			const ackWins = pendingWins;
-			const ackLosses = pendingLosses;
-			const ackHands = pendingHands;
+			const ackHands = Math.min(pendingHands, maxSyncHandsPerRequest);
+			const ackWins = Math.min(pendingWins, ackHands);
+			const ackLosses = Math.min(pendingLosses, Math.max(ackHands - ackWins, 0));
 			const ackPreviousBalance = lastSyncedBalance;
 			const ackCurrentBalance = game.getBalance();
 			const ackDelta = ackCurrentBalance - ackPreviousBalance;
-			const hasPendingStats = ackHands > 0 || ackWins > 0 || ackLosses > 0;
+			const hasPendingStats = pendingHands > 0 || pendingWins > 0 || pendingLosses > 0;
 			if (ackDelta === 0 && !hasPendingStats) {
 				syncPending = false;
 				return;

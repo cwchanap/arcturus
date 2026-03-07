@@ -183,9 +183,12 @@ test.describe('Craps — Active Bets Panel', () => {
 	test('active bets shows placed bet', async ({ page }) => {
 		await gotoCraps(page);
 
+		await ensureMinimumBalance(page, 50);
+
 		await page.getByTestId('chip-50').click();
 		await page.click('[data-bet-type="passLine"]');
 
+		await expect(page.getByTestId('total-bet')).toContainText('$50');
 		await expect(page.getByTestId('active-bets')).toContainText('Pass Line');
 		await expect(page.getByTestId('active-bets')).toContainText('$50');
 	});

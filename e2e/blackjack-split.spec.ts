@@ -174,7 +174,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		// Read current balance from DOM to compute delta
 		const currentBalanceText = await page.locator('#player-balance').innerText();
 		let currentBalance = parseBalance(currentBalanceText);
-		const targetBalance = 50;
+		const targetBalance = 100;
 		const maxAllowedDelta = 2000; // 4 * 500 (DEFAULT_MAX_BET)
 		const epsilon = 0.001;
 

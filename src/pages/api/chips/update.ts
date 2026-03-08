@@ -208,6 +208,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			winsIncrement?: unknown;
 			lossesIncrement?: unknown;
 			biggestWinCandidate?: unknown;
+			statsDelta?: unknown;
 		};
 		try {
 			body = await request.json();
@@ -234,6 +235,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			winsIncrement,
 			lossesIncrement,
 			biggestWinCandidate,
+			statsDelta,
 		} = body;
 		// Note: body.maxBet is intentionally NOT used for validation.
 		// Trusting client-provided maxBet would allow attackers to claim higher bet limits.
@@ -381,6 +383,30 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					headers: { 'Content-Type': 'application/json' },
 				},
 			);
+		}
+
+		// Validate statsDelta if provided (for games where balance delta differs from round result delta)
+		// Default to delta if not provided (backwards compatibility)
+		let validatedStatsDelta: number | undefined;
+		if (statsDelta !== undefined) {
+			if (
+				typeof statsDelta !== 'number' ||
+				!Number.isFinite(statsDelta) ||
+				!Number.isInteger(statsDelta)
+			) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'INVALID_STATS_DELTA',
+						message: 'statsDelta must be a finite integer',
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+			validatedStatsDelta = statsDelta;
 		}
 
 		// Validate consistency between winsIncrement, lossesIncrement, and handCount
@@ -645,8 +671,9 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							? Math.min(biggestWinCandidate, maxWin)
 							: undefined;
 
+					const statsDeltaForTracking = validatedStatsDelta ?? delta;
 					const actualBiggestWinCandidate = determineBiggestWinCandidate({
-						delta,
+						delta: statsDeltaForTracking,
 						biggestWinCandidate: clampedBiggestWinCandidate,
 						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
 						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
@@ -660,7 +687,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						await recordGameRoundImpl(db, userId, {
 							gameType: gameType as GameType,
 							outcome: outcome as GameRoundOutcome,
-							chipDelta: delta,
+							chipDelta: statsDeltaForTracking,
 							handCount: resolvedHandCount,
 							// Use provided winsIncrement/lossesIncrement for split-hand accuracy
 							winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
@@ -671,13 +698,13 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					}
 
 					// Check for newly earned achievements
-					// Pass post-update balance (newBalance) and delta; the comeback achievement
+					// Pass post-update balance (newBalance) and delta; comeback achievement
 					// calculates pre-win balance internally as (currentChipBalance - recentWinAmount)
 					const earnedAchievements = isValidGameType(gameType)
 						? await checkAndGrantAchievementsImpl(db, userId, newBalance, {
 								recentWinAmount: resolveRecentWinAmountForAchievements(
 									actualBiggestWinCandidate,
-									delta,
+									statsDeltaForTracking,
 								),
 								gameType: gameType as GameType,
 							})

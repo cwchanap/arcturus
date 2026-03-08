@@ -894,8 +894,9 @@ const initialBalance = user.chipBalance ?? 1000;
 					const odds = lineBet?.odds ?? 0;
 					amountEl.textContent = odds > 0 ? `$${odds}` : '';
 				} else {
-					const bet = state.activeBets.find((b) => b.type === type && !b.point);
-					amountEl.textContent = bet ? `$${bet.amount}` : '';
+					const bets = state.activeBets.filter((b) => b.type === type && !b.point);
+					const totalAmount = bets.reduce((sum, b) => sum + b.amount, 0);
+					amountEl.textContent = totalAmount > 0 ? `$${totalAmount}` : '';
 				}
 
 				// Active glow
@@ -1302,6 +1303,9 @@ const initialBalance = user.chipBalance ?? 1000;
 					payload.handCount = ackHands;
 					payload.winsIncrement = ackWins;
 					payload.lossesIncrement = ackLosses;
+					// Send statsDelta separately to track round results without including wager amounts
+					// This ensures leaderboards and stats reflect actual net profit/loss from rounds
+					payload.statsDelta = ackStatsDelta;
 					if (ackBiggestWin !== undefined) {
 						payload.biggestWinCandidate = ackBiggestWin;
 					}

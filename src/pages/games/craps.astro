@@ -618,6 +618,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	type PendingRollSync = {
 		netDelta: number;
+		winsCount: number;
+		lossesCount: number;
 	};
 
 	type PersistedCrapsSession = {
@@ -678,13 +680,26 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		function sanitizePendingRollSyncs(value: unknown): PendingRollSync[] {
 			if (!Array.isArray(value)) return [];
-			return value.filter((entry): entry is PendingRollSync => {
-				if (!entry || typeof entry !== 'object') return false;
-				const netDelta = (entry as { netDelta?: unknown }).netDelta;
-				return (
-					typeof netDelta === 'number' && Number.isFinite(netDelta) && Number.isInteger(netDelta)
-				);
-			});
+			return value
+				.filter((entry): entry is Record<string, unknown> => {
+					if (!entry || typeof entry !== 'object') return false;
+					const netDelta = (entry as { netDelta?: unknown }).netDelta;
+					return (
+						typeof netDelta === 'number' && Number.isFinite(netDelta) && Number.isInteger(netDelta)
+					);
+				})
+				.map((entry) => ({
+					netDelta: entry.netDelta as number,
+					// Default to 0 for backwards compatibility with older persisted sessions
+					winsCount:
+						typeof entry.winsCount === 'number' && Number.isInteger(entry.winsCount)
+							? entry.winsCount
+							: 0,
+					lossesCount:
+						typeof entry.lossesCount === 'number' && Number.isInteger(entry.lossesCount)
+							? entry.lossesCount
+							: 0,
+				}));
 		}
 
 		function hasPendingLocalChanges(): boolean {
@@ -1191,7 +1206,14 @@ const initialBalance = user.chipBalance ?? 1000;
 			addRollToHistory(result.roll.total, prevPhase);
 			updateUI();
 
-			pendingRollSyncs.push({ netDelta: result.netDelta });
+			// Count actual wins/losses from evaluations for accurate stats tracking
+			const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
+			const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
+			pendingRollSyncs.push({
+				netDelta: result.netDelta,
+				winsCount: rollWins,
+				lossesCount: rollLosses,
+			});
 			persistSession();
 
 			// Sync balance after roll
@@ -1258,8 +1280,9 @@ const initialBalance = user.chipBalance ?? 1000;
 
 			const ackRollSyncs = pendingRollSyncs.slice(0, maxSyncHandsPerRequest);
 			const ackHands = ackRollSyncs.length;
-			const ackWins = ackRollSyncs.filter((entry) => entry.netDelta > 0).length;
-			const ackLosses = ackRollSyncs.filter((entry) => entry.netDelta < 0).length;
+			// Use stored wins/losses counts from evaluations for accurate stats
+			const ackWins = ackRollSyncs.reduce((sum, entry) => sum + entry.winsCount, 0);
+			const ackLosses = ackRollSyncs.reduce((sum, entry) => sum + entry.lossesCount, 0);
 			const ackStatsDelta = ackRollSyncs.reduce((sum, entry) => sum + entry.netDelta, 0);
 			const ackBiggestWin = ackRollSyncs.reduce<number | undefined>((max, entry) => {
 				if (entry.netDelta <= 0) return max;

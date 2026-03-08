@@ -497,6 +497,38 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
+		// Enforce per-game caps on statsDelta to prevent stats inflation
+		// Without this, a client could send delta: 0, statsDelta: 500000 to inflate
+		// leaderboards/achievements without touching chip balance
+		if (validatedStatsDelta !== undefined) {
+			if (validatedStatsDelta > 0 && validatedStatsDelta > maxWin) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'STATS_DELTA_EXCEEDS_LIMIT',
+						message: `Stats delta exceeds maximum win allowed for ${gameType} (${maxWin})`,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+			if (validatedStatsDelta < 0 && Math.abs(validatedStatsDelta) > maxLoss) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'STATS_DELTA_EXCEEDS_LIMIT',
+						message: `Stats delta exceeds maximum loss allowed for ${gameType} (${maxLoss})`,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+		}
+
 		// Validate previousBalance if provided (for optimistic locking)
 		// Consolidated validation: must be defined, a number, finite, and integer
 		if (

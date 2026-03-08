@@ -437,21 +437,31 @@ export class CrapsGame {
 	}
 
 	public clearBets(): void {
-		// Only clears bets that are removable
-		const removable = this.state.activeBets.filter((b) => {
-			if ((b.type === 'passLine' || b.type === 'dontPass') && this.state.phase === 'point') {
-				return false;
+		// For locked bets (passLine/dontPass after point, come/dontCome with point):
+		// - The flat bet stays on the table (required bet)
+		// - Odds can be removed (free odds are optional)
+		// For all other bets: fully refund and remove
+		const stillActive: CrapsBet[] = [];
+
+		for (const bet of this.state.activeBets) {
+			const isLockedFlat =
+				((bet.type === 'passLine' || bet.type === 'dontPass') && this.state.phase === 'point') ||
+				((bet.type === 'come' || bet.type === 'dontCome') && bet.point);
+
+			if (isLockedFlat) {
+				// Locked flat bet: refund odds if present, keep flat bet
+				if (bet.odds) {
+					this.state.chipBalance += bet.odds;
+					bet.odds = undefined;
+				}
+				stillActive.push(bet);
+			} else {
+				// Non-locked bet: refund full amount and remove
+				this.state.chipBalance += bet.amount + (bet.odds ?? 0);
 			}
-			if ((b.type === 'come' || b.type === 'dontCome') && b.point) {
-				return false;
-			}
-			return true;
-		});
-		for (const bet of removable) {
-			this.state.chipBalance += bet.amount + (bet.odds ?? 0);
 		}
-		const removableIds = new Set(removable.map((b) => b.id));
-		this.state.activeBets = this.state.activeBets.filter((b) => !removableIds.has(b.id));
+
+		this.state.activeBets = stillActive;
 	}
 
 	public canRoll(): boolean {

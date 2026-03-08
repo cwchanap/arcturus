@@ -2,6 +2,7 @@ export type PendingRollSync = {
 	netDelta: number;
 	winsCount: number;
 	lossesCount: number;
+	pushesCount: number;
 };
 
 // Keep these limits aligned with GAME_LIMITS.craps in src/pages/api/chips/update.ts.
@@ -45,6 +46,7 @@ export function buildCrapsSyncBatch({
 	const ackRollSyncs: PendingRollSync[] = [];
 	let ackWins = 0;
 	let ackLosses = 0;
+	let ackPushes = 0;
 	let ackStatsDelta = 0;
 	let ackBiggestWin: number | undefined;
 
@@ -63,6 +65,7 @@ export function buildCrapsSyncBatch({
 		ackStatsDelta = nextStatsDelta;
 		ackWins += entry.winsCount;
 		ackLosses += entry.lossesCount;
+		ackPushes += entry.pushesCount;
 		if (entry.netDelta > 0) {
 			ackBiggestWin =
 				ackBiggestWin === undefined ? entry.netDelta : Math.max(ackBiggestWin, entry.netDelta);
@@ -71,7 +74,7 @@ export function buildCrapsSyncBatch({
 
 	return {
 		ackRollSyncs,
-		ackHands: ackRollSyncs.length,
+		ackHands: ackWins + ackLosses + ackPushes,
 		ackWins,
 		ackLosses,
 		ackStatsDelta,

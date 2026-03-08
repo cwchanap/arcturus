@@ -700,6 +700,10 @@ const initialBalance = user.chipBalance ?? 1000;
 						typeof entry.lossesCount === 'number' && Number.isInteger(entry.lossesCount)
 							? entry.lossesCount
 							: 0,
+					pushesCount:
+						typeof entry.pushesCount === 'number' && Number.isInteger(entry.pushesCount)
+							? entry.pushesCount
+							: 0,
 				}));
 		}
 
@@ -1208,13 +1212,15 @@ const initialBalance = user.chipBalance ?? 1000;
 			addRollToHistory(result.roll.total, prevPhase);
 			updateUI();
 
-			// Count actual wins/losses from evaluations for accurate stats tracking
+			// Count actual wins/losses/pushes from evaluations for accurate stats tracking
 			const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
 			const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
+			const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
 			pendingRollSyncs.push({
 				netDelta: result.netDelta,
 				winsCount: rollWins,
 				lossesCount: rollLosses,
+				pushesCount: rollPushes,
 			});
 			persistSession();
 

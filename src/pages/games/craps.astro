@@ -613,14 +613,27 @@ const initialBalance = user.chipBalance ?? 1000;
 <script>
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
 	import { BET_LABELS } from '../../lib/craps/constants';
-	import type { BetType, RollResult, CrapsBet } from '../../lib/craps/types';
+	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
 	import { initAchievementToast } from '../../lib/achievement-toast';
+
+	type PendingRollSync = {
+		netDelta: number;
+	};
+
+	type PersistedCrapsSession = {
+		gameState: Partial<CrapsGameState>;
+		lastSyncedBalance: number;
+		pendingRollSyncs: PendingRollSync[];
+		selectedChipAmount?: number;
+	};
 
 	// ─── Initialisation ─────────────────────────────────────────────────────────
 	if (typeof window !== 'undefined') {
 		const root = document.getElementById('craps-root');
 		if (!root) throw new Error('craps-root not found');
 		const initialBalance = Number(root.dataset.initialBalance ?? 1000);
+		const userId = root.dataset.userId ?? 'anonymous';
+		const persistedSessionKey = `craps-session:${userId}`;
 
 		const game = new CrapsGame({
 			initialBalance,
@@ -632,10 +645,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		let isSyncInProgress = false;
 		let syncPending = false;
 		let pendingRetryScheduled = false;
-		let pendingWins = 0;
-		let pendingLosses = 0;
-		let pendingHands = 0;
-		let pendingBiggestWin: number | undefined = undefined;
+		let pendingRollSyncs: PendingRollSync[] = [];
 		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 		const maxOddsMultiplier = game.getState().settings.maxOddsMultiplier;
@@ -665,6 +675,78 @@ const initialBalance = user.chipBalance ?? 1000;
 		const llmAdviceBtn = el<HTMLButtonElement>('llm-advice-btn');
 		const comeOddsPanel = el('come-odds-panel');
 		const comeOddsListEl = el('come-odds-list');
+
+		function sanitizePendingRollSyncs(value: unknown): PendingRollSync[] {
+			if (!Array.isArray(value)) return [];
+			return value.filter((entry): entry is PendingRollSync => {
+				if (!entry || typeof entry !== 'object') return false;
+				const netDelta = (entry as { netDelta?: unknown }).netDelta;
+				return (
+					typeof netDelta === 'number' && Number.isFinite(netDelta) && Number.isInteger(netDelta)
+				);
+			});
+		}
+
+		function hasPendingLocalChanges(): boolean {
+			return pendingRollSyncs.length > 0 || game.getBalance() !== lastSyncedBalance;
+		}
+
+		function persistSession() {
+			const state = game.getState();
+			if (
+				state.activeBets.length === 0 &&
+				pendingRollSyncs.length === 0 &&
+				state.phase === 'come-out' &&
+				state.point === null &&
+				game.getBalance() === lastSyncedBalance
+			) {
+				localStorage.removeItem(persistedSessionKey);
+				return;
+			}
+			const payload: PersistedCrapsSession = {
+				gameState: state,
+				lastSyncedBalance,
+				pendingRollSyncs,
+				selectedChipAmount,
+			};
+			localStorage.setItem(persistedSessionKey, JSON.stringify(payload));
+		}
+
+		function restoreSession() {
+			const raw = localStorage.getItem(persistedSessionKey);
+			if (!raw) return;
+			try {
+				const parsed = JSON.parse(raw) as Partial<PersistedCrapsSession>;
+				if (
+					typeof parsed.lastSyncedBalance !== 'number' ||
+					!Number.isFinite(parsed.lastSyncedBalance) ||
+					parsed.lastSyncedBalance < 0 ||
+					!parsed.gameState ||
+					!game.restoreState(parsed.gameState)
+				) {
+					localStorage.removeItem(persistedSessionKey);
+					return;
+				}
+				lastSyncedBalance = parsed.lastSyncedBalance;
+				pendingRollSyncs = sanitizePendingRollSyncs(parsed.pendingRollSyncs);
+				if (
+					typeof parsed.selectedChipAmount === 'number' &&
+					[5, 25, 50, 100, 500].includes(parsed.selectedChipAmount)
+				) {
+					selectedChipAmount = parsed.selectedChipAmount;
+				}
+			} catch {
+				localStorage.removeItem(persistedSessionKey);
+			}
+		}
+
+		function setSelectedChip(amount: number) {
+			selectedChipAmount = amount;
+			document.querySelectorAll('.chip-select').forEach((btn) => btn.classList.remove('selected'));
+			document.querySelector(`.chip-select[data-amount="${amount}"]`)?.classList.add('selected');
+		}
+
+		restoreSession();
 
 		function initializeInteractiveBetZones() {
 			document.querySelectorAll('.bet-zone[data-bet-type]').forEach((el) => {
@@ -867,6 +949,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 			// Active bets list
 			renderActiveBets(state.activeBets);
+			persistSession();
 		}
 
 		function applyPhaseRestrictions(phase: 'come-out' | 'point') {
@@ -956,8 +1039,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						return;
 					}
 					const r = game.addComeBetOdds(betId, amount);
-					if (!r.success) showMessage(r.error ?? 'Cannot add odds', 'error');
+					if (!r.success) {
+						showMessage(r.error ?? 'Cannot add odds', 'error');
+						updateUI();
+						return;
+					}
 					updateUI();
+					void syncBalance();
 				});
 			});
 		}
@@ -1031,13 +1119,11 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Chip selection
 		document.querySelectorAll('.chip-select').forEach((btn) => {
 			btn.addEventListener('click', () => {
-				document.querySelectorAll('.chip-select').forEach((b) => b.classList.remove('selected'));
-				btn.classList.add('selected');
-				selectedChipAmount = Number((btn as HTMLElement).dataset.amount);
+				setSelectedChip(Number((btn as HTMLElement).dataset.amount));
 				updateUI();
 			});
 		});
-		document.querySelector('.chip-select[data-amount="25"]')?.classList.add('selected');
+		setSelectedChip(selectedChipAmount);
 
 		function placeBetFromZone(zone: HTMLElement) {
 			if (
@@ -1050,6 +1136,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			const r = game.placeBet(type, selectedChipAmount);
 			if (r.success) {
 				updateUI();
+				void syncBalance();
 			} else {
 				showMessage(r.error ?? 'Cannot place bet', 'error');
 			}
@@ -1103,15 +1190,8 @@ const initialBalance = user.chipBalance ?? 1000;
 			addRollToHistory(result.roll.total, prevPhase);
 			updateUI();
 
-			// Track stats
-			if (result.netDelta > 0) pendingWins++;
-			else if (result.netDelta < 0) pendingLosses++;
-			pendingHands++;
-
-			// Track biggest win per sync batch (actual profit, not including returned stakes)
-			if (result.netDelta > 0) {
-				pendingBiggestWin = Math.max(pendingBiggestWin ?? 0, result.netDelta);
-			}
+			pendingRollSyncs.push({ netDelta: result.netDelta });
+			persistSession();
 
 			// Sync balance after roll
 			await syncBalance();
@@ -1126,7 +1206,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		clearBetsBtn.addEventListener('click', () => {
 			game.clearBets();
 			updateUI();
-			syncBalance(); // Sync refunded chips to server
+			void syncBalance(); // Sync refunded chips to server without recording a round
 		});
 
 		// LLM Advisor
@@ -1175,22 +1255,33 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			const ackHands = Math.min(pendingHands, maxSyncHandsPerRequest);
-			const ackWins = Math.min(pendingWins, ackHands);
-			const ackLosses = Math.min(pendingLosses, Math.max(ackHands - ackWins, 0));
+			const ackRollSyncs = pendingRollSyncs.slice(0, maxSyncHandsPerRequest);
+			const ackHands = ackRollSyncs.length;
+			const ackWins = ackRollSyncs.filter((entry) => entry.netDelta > 0).length;
+			const ackLosses = ackRollSyncs.filter((entry) => entry.netDelta < 0).length;
+			const ackStatsDelta = ackRollSyncs.reduce((sum, entry) => sum + entry.netDelta, 0);
+			const ackBiggestWin = ackRollSyncs.reduce<number | undefined>((max, entry) => {
+				if (entry.netDelta <= 0) return max;
+				return max === undefined ? entry.netDelta : Math.max(max, entry.netDelta);
+			}, undefined);
 			const ackPreviousBalance = lastSyncedBalance;
 			const ackCurrentBalance = game.getBalance();
-			const ackDelta = ackCurrentBalance - ackPreviousBalance;
-			const hasPendingStats = pendingHands > 0 || pendingWins > 0 || pendingLosses > 0;
+			const totalPendingRollDelta = pendingRollSyncs.reduce(
+				(sum, entry) => sum + entry.netDelta,
+				0,
+			);
+			const pendingWagerDelta = ackCurrentBalance - ackPreviousBalance - totalPendingRollDelta;
+			const ackDelta = pendingWagerDelta + ackStatsDelta;
+			const hasPendingStats = ackHands > 0;
 			if (ackDelta === 0 && !hasPendingStats) {
 				syncPending = false;
 				return;
 			}
 
 			const outcome: 'win' | 'loss' | 'push' =
-				ackDelta > 0
+				ackStatsDelta > 0
 					? 'win'
-					: ackDelta < 0
+					: ackStatsDelta < 0
 						? 'loss'
 						: ackWins > 0 && ackLosses === 0
 							? 'win'
@@ -1201,19 +1292,24 @@ const initialBalance = user.chipBalance ?? 1000;
 			isSyncInProgress = true;
 
 			try {
+				const payload: Record<string, unknown> = {
+					delta: ackDelta,
+					gameType: 'craps',
+					previousBalance: ackPreviousBalance,
+				};
+				if (hasPendingStats) {
+					payload.outcome = outcome;
+					payload.handCount = ackHands;
+					payload.winsIncrement = ackWins;
+					payload.lossesIncrement = ackLosses;
+					if (ackBiggestWin !== undefined) {
+						payload.biggestWinCandidate = ackBiggestWin;
+					}
+				}
 				const response = await fetch('/api/chips/update', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						delta: ackDelta,
-						gameType: 'craps',
-						previousBalance: ackPreviousBalance,
-						outcome,
-						handCount: ackHands > 0 ? ackHands : 1,
-						winsIncrement: ackWins,
-						lossesIncrement: ackLosses,
-						biggestWinCandidate: pendingBiggestWin,
-					}),
+					body: JSON.stringify(payload),
 				});
 
 				if (response.ok) {
@@ -1226,17 +1322,12 @@ const initialBalance = user.chipBalance ?? 1000;
 					};
 					// Apply server-authoritative balance to client game state and UI
 					if (typeof data.balance === 'number') {
-						game.setBalance(data.balance);
+						const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
+						game.setBalance(data.balance + pendingLocalDelta);
 						lastSyncedBalance = data.balance;
-						balanceEl.textContent = `$${data.balance.toLocaleString()}`;
-						pendingWins = Math.max(0, pendingWins - ackWins);
-						pendingLosses = Math.max(0, pendingLosses - ackLosses);
-						pendingHands = Math.max(0, pendingHands - ackHands);
-						// Clear biggestWinCandidate if all pending stats were synced (no follow-up pending)
-						if (!syncPending) {
-							pendingBiggestWin = undefined;
-						}
-						syncPending = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
+						pendingRollSyncs = pendingRollSyncs.slice(ackHands);
+						syncPending = hasPendingLocalChanges();
+						updateUI();
 					} else {
 						// Server returned 200 without a balance field — do not advance
 						// lastSyncedBalance to an unconfirmed local estimate.
@@ -1275,11 +1366,11 @@ const initialBalance = user.chipBalance ?? 1000;
 					} else if (err.error === 'BALANCE_MISMATCH') {
 						// Balance mismatch - resync with server balance and keep stats pending for retry
 						if (typeof err.currentBalance === 'number') {
-							game.applyServerBalance(err.currentBalance);
+							const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
+							game.applyServerBalance(err.currentBalance + pendingLocalDelta);
 							lastSyncedBalance = err.currentBalance;
 							updateUI();
-							// Keep pending counters and syncPending true to force retry after resync
-							syncPending = true;
+							syncPending = hasPendingLocalChanges();
 						} else {
 							console.error('[CRAPS_SYNC] BALANCE_MISMATCH without currentBalance:', err);
 							showMessage('Sync failed: Balance mismatch, please refresh', 'error');
@@ -1290,12 +1381,11 @@ const initialBalance = user.chipBalance ?? 1000;
 						showMessage(`Sync failed: ${err.error || 'Client error'}`, 'error');
 						// Do NOT set syncPending = true to prevent infinite retries
 						// Clear pending counters to stop retry loop
-						pendingWins = 0;
-						pendingLosses = 0;
-						pendingHands = 0;
-						pendingBiggestWin = undefined;
+						pendingRollSyncs = [];
+						persistSession();
 					} else if (typeof err.currentBalance === 'number') {
-						game.applyServerBalance(err.currentBalance);
+						const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
+						game.applyServerBalance(err.currentBalance + pendingLocalDelta);
 						lastSyncedBalance = err.currentBalance;
 						updateUI();
 					} else {
@@ -1332,7 +1422,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				}
 			} finally {
 				isSyncInProgress = false;
-				const hasRemainingPendingStats = pendingWins > 0 || pendingLosses > 0 || pendingHands > 0;
+				const hasRemainingPendingStats = pendingRollSyncs.length > 0;
 				// Reset retry delay only on successful sync (no pending state after response processing)
 				if (!syncPending && !hasRemainingPendingStats) {
 					retryDelayMs = 100;
@@ -1370,5 +1460,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		initializeInteractiveBetZones();
 		updateUI();
+		if (hasPendingLocalChanges()) {
+			void syncBalance();
+		}
 	}
 </script>

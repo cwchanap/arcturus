@@ -508,6 +508,52 @@ describe('CrapsGame — applyServerBalance', () => {
 	});
 });
 
+describe('CrapsGame — restoreState', () => {
+	test('restores persisted unresolved game state', () => {
+		const g = makeGame(1000);
+		const restored = g.restoreState({
+			phase: 'point',
+			point: 6,
+			chipBalance: 835,
+			rollCount: 3,
+			lastRoll: { die1: 2, die2: 3, total: 5 },
+			rollHistory: [
+				{ die1: 2, die2: 3, total: 5 },
+				{ die1: 3, die2: 3, total: 6 },
+			],
+			activeBets: [
+				{ id: 'bet-pass', type: 'passLine', amount: 50, odds: 50 },
+				{ id: 'bet-come', type: 'come', amount: 25, point: 4, odds: 25 },
+			],
+		});
+
+		expect(restored).toBe(true);
+		const state = g.getState();
+		expect(state.phase).toBe('point');
+		expect(state.point).toBe(6);
+		expect(state.chipBalance).toBe(835);
+		expect(state.rollCount).toBe(3);
+		expect(state.lastRoll?.total).toBe(5);
+		expect(state.rollHistory).toHaveLength(2);
+		expect(state.activeBets).toHaveLength(2);
+		expect(g.getTotalAtRisk()).toBe(150);
+	});
+
+	test('rejects invalid persisted state', () => {
+		const g = makeGame(1000);
+		const restored = g.restoreState({
+			phase: 'point',
+			point: 7 as any,
+			chipBalance: 900,
+			activeBets: [],
+		});
+
+		expect(restored).toBe(false);
+		expect(g.getState().phase).toBe('come-out');
+		expect(g.getBalance()).toBe(1000);
+	});
+});
+
 describe('CrapsGame — state immutability', () => {
 	test('getState returns defensive copies of nested state', () => {
 		const g = makeGame();

@@ -66,12 +66,24 @@ export interface CrapsGameConfig {
 	settings?: Partial<CrapsSettings>;
 }
 
+function isIntegerNumber(value: unknown): value is number {
+	return typeof value === 'number' && Number.isInteger(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+	return isIntegerNumber(value) && value >= 1;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+	return isIntegerNumber(value) && value >= 0;
+}
+
 function sanitizeSettings(input?: Partial<CrapsSettings>): CrapsSettings {
 	const merged = { ...DEFAULT_SETTINGS, ...input };
 
-	let minBet = Number.isFinite(merged.minBet) ? merged.minBet : DEFAULT_SETTINGS.minBet;
-	let maxBet = Number.isFinite(merged.maxBet) ? merged.maxBet : DEFAULT_SETTINGS.maxBet;
-	let maxOddsMultiplier = Number.isFinite(merged.maxOddsMultiplier)
+	let minBet = isPositiveInteger(merged.minBet) ? merged.minBet : DEFAULT_SETTINGS.minBet;
+	let maxBet = isPositiveInteger(merged.maxBet) ? merged.maxBet : DEFAULT_SETTINGS.maxBet;
+	let maxOddsMultiplier = isPositiveInteger(merged.maxOddsMultiplier)
 		? merged.maxOddsMultiplier
 		: DEFAULT_SETTINGS.maxOddsMultiplier;
 
@@ -137,11 +149,8 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	const candidate = bet as Partial<CrapsBet>;
 	if (typeof candidate.id !== 'string' || !candidate.id) return null;
 	if (typeof candidate.type !== 'string' || !Object.hasOwn(BET_LABELS, candidate.type)) return null;
-	if (
-		typeof candidate.amount !== 'number' ||
-		!Number.isFinite(candidate.amount) ||
-		candidate.amount < 1
-	) {
+	const amount = candidate.amount;
+	if (!isPositiveInteger(amount)) {
 		return null;
 	}
 	const point =
@@ -154,14 +163,14 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	const odds =
 		candidate.odds === undefined
 			? undefined
-			: typeof candidate.odds === 'number' && Number.isFinite(candidate.odds) && candidate.odds >= 0
+			: isNonNegativeInteger(candidate.odds)
 				? candidate.odds
 				: null;
 	if (odds === null) return null;
 	return {
 		id: candidate.id,
 		type: candidate.type as BetType,
-		amount: candidate.amount,
+		amount,
 		...(point !== undefined ? { point } : {}),
 		...(odds !== undefined ? { odds } : {}),
 	};
@@ -172,10 +181,7 @@ export class CrapsGame {
 
 	constructor(config: CrapsGameConfig) {
 		const settings = sanitizeSettings(config.settings);
-		const initialBalance =
-			Number.isFinite(config.initialBalance) && config.initialBalance >= 0
-				? config.initialBalance
-				: 0;
+		const initialBalance = isNonNegativeInteger(config.initialBalance) ? config.initialBalance : 0;
 		this.state = {
 			phase: 'come-out',
 			point: null,
@@ -222,7 +228,7 @@ export class CrapsGame {
 					: null;
 		if (snapshot.point !== undefined && snapshot.point !== null && point === null) return false;
 		const chipBalance = snapshot.chipBalance;
-		if (typeof chipBalance !== 'number' || !Number.isFinite(chipBalance) || chipBalance < 0) {
+		if (!isNonNegativeInteger(chipBalance)) {
 			return false;
 		}
 		const rollCount =
@@ -268,11 +274,11 @@ export class CrapsGame {
 	public canPlaceBet(type: BetType, amount: number): { ok: boolean; error?: string } {
 		const { phase, settings, chipBalance, activeBets } = this.state;
 		if (
-			!Number.isFinite(amount) ||
-			!Number.isFinite(settings.minBet) ||
-			!Number.isFinite(settings.maxBet) ||
-			!Number.isFinite(settings.maxOddsMultiplier) ||
-			!Number.isFinite(chipBalance)
+			!isPositiveInteger(amount) ||
+			!isPositiveInteger(settings.minBet) ||
+			!isPositiveInteger(settings.maxBet) ||
+			!isPositiveInteger(settings.maxOddsMultiplier) ||
+			!isNonNegativeInteger(chipBalance)
 		) {
 			return { ok: false, error: 'Invalid bet amount' };
 		}
@@ -321,7 +327,7 @@ export class CrapsGame {
 			if (lineBet) {
 				const lineAmount = lineBet.amount;
 				const currentOdds = lineBet.odds ?? 0;
-				if (!Number.isFinite(lineAmount) || !Number.isFinite(currentOdds)) {
+				if (!isPositiveInteger(lineAmount) || !isNonNegativeInteger(currentOdds)) {
 					return { ok: false, error: 'Invalid bet amount' };
 				}
 				const maxOdds = lineAmount * settings.maxOddsMultiplier;
@@ -383,17 +389,16 @@ export class CrapsGame {
 			return { success: false, error: "Can't add odds before come point is established" };
 		}
 		if (
-			!Number.isFinite(amount) ||
-			!Number.isFinite(this.state.chipBalance) ||
-			!Number.isFinite(this.state.settings.maxOddsMultiplier)
+			!isPositiveInteger(amount) ||
+			!isNonNegativeInteger(this.state.chipBalance) ||
+			!isPositiveInteger(this.state.settings.maxOddsMultiplier)
 		) {
 			return { success: false, error: 'Invalid bet amount' };
 		}
-		if (amount < 1) return { success: false, error: 'Odds amount must be positive' };
 		if (amount > this.state.chipBalance) return { success: false, error: 'Insufficient chips' };
 
 		const currentOdds = bet.odds ?? 0;
-		if (!Number.isFinite(bet.amount) || !Number.isFinite(currentOdds)) {
+		if (!isPositiveInteger(bet.amount) || !isNonNegativeInteger(currentOdds)) {
 			return { success: false, error: 'Invalid bet amount' };
 		}
 
@@ -594,13 +599,13 @@ export class CrapsGame {
 	// ─── balance ──────────────────────────────────────────────────────────────
 
 	public setBalance(balance: number): boolean {
-		if (!Number.isFinite(balance) || balance < 0) return false;
+		if (!isNonNegativeInteger(balance)) return false;
 		this.state.chipBalance = balance;
 		return true;
 	}
 
 	public applyServerBalance(balance: number): boolean {
-		if (Number.isFinite(balance) && balance >= 0) {
+		if (isNonNegativeInteger(balance)) {
 			this.state.chipBalance = balance;
 			return true;
 		}

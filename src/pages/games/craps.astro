@@ -611,16 +611,17 @@ const initialBalance = user.chipBalance ?? 1000;
 </style>
 
 <script>
+	import {
+		buildCrapsSyncBatch,
+		getBalanceAfterCrapsSyncFailure,
+		getBalanceAfterCrapsSyncSuccess,
+		MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
+		type PendingRollSync,
+	} from '../../lib/craps/balanceSync';
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
 	import { initAchievementToast } from '../../lib/achievement-toast';
-
-	type PendingRollSync = {
-		netDelta: number;
-		winsCount: number;
-		lossesCount: number;
-	};
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
@@ -651,7 +652,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 		const maxOddsMultiplier = game.getState().settings.maxOddsMultiplier;
-		const maxSyncHandsPerRequest = 100;
+		const maxSyncHandsPerRequest = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 		// ─── DOM helpers ─────────────────────────────────────────────────────────────
 
@@ -1159,7 +1160,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		}
 
 		// Bet zone clicks + keyboard activation
-		document.querySelectorAll<HTMLElement>('[data-bet-type]').forEach((zone) => {
+		const betZones = document.querySelectorAll('[data-bet-type]') as NodeListOf<HTMLElement>;
+		betZones.forEach((zone) => {
 			zone.addEventListener('click', () => {
 				placeBetFromZone(zone);
 			});
@@ -1278,24 +1280,23 @@ const initialBalance = user.chipBalance ?? 1000;
 				return;
 			}
 
-			const ackRollSyncs = pendingRollSyncs.slice(0, maxSyncHandsPerRequest);
-			const ackHands = ackRollSyncs.length;
-			// Use stored wins/losses counts from evaluations for accurate stats
-			const ackWins = ackRollSyncs.reduce((sum, entry) => sum + entry.winsCount, 0);
-			const ackLosses = ackRollSyncs.reduce((sum, entry) => sum + entry.lossesCount, 0);
-			const ackStatsDelta = ackRollSyncs.reduce((sum, entry) => sum + entry.netDelta, 0);
-			const ackBiggestWin = ackRollSyncs.reduce<number | undefined>((max, entry) => {
-				if (entry.netDelta <= 0) return max;
-				return max === undefined ? entry.netDelta : Math.max(max, entry.netDelta);
-			}, undefined);
 			const ackPreviousBalance = lastSyncedBalance;
 			const ackCurrentBalance = game.getBalance();
-			const totalPendingRollDelta = pendingRollSyncs.reduce(
-				(sum, entry) => sum + entry.netDelta,
-				0,
-			);
-			const pendingWagerDelta = ackCurrentBalance - ackPreviousBalance - totalPendingRollDelta;
-			const ackDelta = pendingWagerDelta + ackStatsDelta;
+			const {
+				ackHands,
+				ackWins,
+				ackLosses,
+				ackStatsDelta,
+				ackBiggestWin,
+				ackDelta,
+				pendingBalanceDelta,
+				remainingRollDelta,
+			} = buildCrapsSyncBatch({
+				pendingRollSyncs,
+				currentBalance: ackCurrentBalance,
+				previousBalance: ackPreviousBalance,
+				maxSyncHandsPerRequest,
+			});
 			const hasPendingStats = ackHands > 0;
 			if (ackDelta === 0 && !hasPendingStats) {
 				syncPending = false;
@@ -1349,8 +1350,13 @@ const initialBalance = user.chipBalance ?? 1000;
 					};
 					// Apply server-authoritative balance to client game state and UI
 					if (typeof data.balance === 'number') {
-						const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
-						game.setBalance(data.balance + pendingLocalDelta);
+						const reconciledBalance = getBalanceAfterCrapsSyncSuccess({
+							serverBalance: data.balance,
+							ackCurrentBalance,
+							currentBalance: game.getBalance(),
+							remainingRollDelta,
+						});
+						game.setBalance(reconciledBalance);
 						lastSyncedBalance = data.balance;
 						pendingRollSyncs = pendingRollSyncs.slice(ackHands);
 						syncPending = hasPendingLocalChanges();
@@ -1393,8 +1399,13 @@ const initialBalance = user.chipBalance ?? 1000;
 					} else if (err.error === 'BALANCE_MISMATCH') {
 						// Balance mismatch - resync with server balance and keep stats pending for retry
 						if (typeof err.currentBalance === 'number') {
-							const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
-							game.applyServerBalance(err.currentBalance + pendingLocalDelta);
+							const reconciledBalance = getBalanceAfterCrapsSyncFailure({
+								serverBalance: err.currentBalance,
+								ackCurrentBalance,
+								currentBalance: game.getBalance(),
+								pendingBalanceDelta,
+							});
+							game.applyServerBalance(reconciledBalance);
 							lastSyncedBalance = err.currentBalance;
 							updateUI();
 							syncPending = hasPendingLocalChanges();
@@ -1411,10 +1422,16 @@ const initialBalance = user.chipBalance ?? 1000;
 						pendingRollSyncs = [];
 						persistSession();
 					} else if (typeof err.currentBalance === 'number') {
-						const pendingLocalDelta = game.getBalance() - ackCurrentBalance;
-						game.applyServerBalance(err.currentBalance + pendingLocalDelta);
+						const reconciledBalance = getBalanceAfterCrapsSyncFailure({
+							serverBalance: err.currentBalance,
+							ackCurrentBalance,
+							currentBalance: game.getBalance(),
+							pendingBalanceDelta,
+						});
+						game.applyServerBalance(reconciledBalance);
 						lastSyncedBalance = err.currentBalance;
 						updateUI();
+						syncPending = hasPendingLocalChanges();
 					} else {
 						// 5xx server errors - retry with exponential backoff
 						console.error('[CRAPS_SYNC] Server error - will retry:', err.error, response.status);

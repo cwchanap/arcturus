@@ -714,6 +714,31 @@ describe('chips update API', () => {
 		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 	});
 
+	test('updates balance without recording stats when outcome is omitted', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -25,
+				gameType: 'craps',
+				previousBalance: 1000,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-balance-only', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.success).toBe(true);
+		expect(body.balance).toBe(975);
+		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(0);
+	});
+
 	test('uses split-round biggestWinCandidate for recentWinAmount when available', async () => {
 		resetMocks();
 		const POST = createHandler();

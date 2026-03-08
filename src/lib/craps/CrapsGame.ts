@@ -13,6 +13,7 @@ import type {
 	CrapsBet,
 	CrapsGameState,
 	CrapsSettings,
+	DiceRoll,
 	GamePhase,
 	PointNumber,
 	RollResult,
@@ -25,6 +26,7 @@ import {
 	MAX_ROLL_HISTORY,
 	COME_OUT_ONLY_BETS,
 	POINT_PHASE_ONLY_BETS,
+	BET_LABELS,
 } from './constants';
 
 let _idCounter = 0;
@@ -100,6 +102,71 @@ function sanitizeSettings(input?: Partial<CrapsSettings>): CrapsSettings {
 	};
 }
 
+function sanitizeRoll(roll: unknown): DiceRoll | null {
+	if (!roll || typeof roll !== 'object') return null;
+	const candidate = roll as Partial<DiceRoll>;
+	const die1 = candidate?.die1;
+	const die2 = candidate?.die2;
+	const total = candidate?.total;
+	if (
+		typeof die1 !== 'number' ||
+		typeof die2 !== 'number' ||
+		typeof total !== 'number' ||
+		!Number.isInteger(die1) ||
+		!Number.isInteger(die2) ||
+		!Number.isInteger(total) ||
+		die1 < 1 ||
+		die1 > 6 ||
+		die2 < 1 ||
+		die2 > 6 ||
+		total !== die1 + die2 ||
+		total < 2 ||
+		total > 12
+	) {
+		return null;
+	}
+	return {
+		die1: die1 as DiceRoll['die1'],
+		die2: die2 as DiceRoll['die2'],
+		total: total as DiceRoll['total'],
+	};
+}
+
+function sanitizeBet(bet: unknown): CrapsBet | null {
+	if (!bet || typeof bet !== 'object') return null;
+	const candidate = bet as Partial<CrapsBet>;
+	if (typeof candidate.id !== 'string' || !candidate.id) return null;
+	if (typeof candidate.type !== 'string' || !Object.hasOwn(BET_LABELS, candidate.type)) return null;
+	if (
+		typeof candidate.amount !== 'number' ||
+		!Number.isFinite(candidate.amount) ||
+		candidate.amount < 1
+	) {
+		return null;
+	}
+	const point =
+		candidate.point === undefined || candidate.point === null
+			? undefined
+			: isPointNumber(candidate.point)
+				? candidate.point
+				: null;
+	if (point === null) return null;
+	const odds =
+		candidate.odds === undefined
+			? undefined
+			: typeof candidate.odds === 'number' && Number.isFinite(candidate.odds) && candidate.odds >= 0
+				? candidate.odds
+				: null;
+	if (odds === null) return null;
+	return {
+		id: candidate.id,
+		type: candidate.type as BetType,
+		amount: candidate.amount,
+		...(point !== undefined ? { point } : {}),
+		...(odds !== undefined ? { odds } : {}),
+	};
+}
+
 export class CrapsGame {
 	private state: CrapsGameState;
 
@@ -140,6 +207,53 @@ export class CrapsGame {
 	/** Total chips currently at risk (sum of all active bet amounts + odds) */
 	public getTotalAtRisk(): number {
 		return this.state.activeBets.reduce((sum, b) => sum + b.amount + (b.odds ?? 0), 0);
+	}
+
+	public restoreState(snapshot: Partial<CrapsGameState>): boolean {
+		if (!snapshot || typeof snapshot !== 'object') return false;
+		const phase =
+			snapshot.phase === 'point' ? 'point' : snapshot.phase === 'come-out' ? 'come-out' : null;
+		if (!phase) return false;
+		const point =
+			snapshot.point === null || snapshot.point === undefined
+				? null
+				: isPointNumber(snapshot.point)
+					? snapshot.point
+					: null;
+		if (snapshot.point !== undefined && snapshot.point !== null && point === null) return false;
+		const chipBalance = snapshot.chipBalance;
+		if (typeof chipBalance !== 'number' || !Number.isFinite(chipBalance) || chipBalance < 0) {
+			return false;
+		}
+		const rollCount =
+			typeof snapshot.rollCount === 'number' &&
+			Number.isInteger(snapshot.rollCount) &&
+			snapshot.rollCount >= 0
+				? snapshot.rollCount
+				: 0;
+		const rollHistory = Array.isArray(snapshot.rollHistory)
+			? snapshot.rollHistory
+					.map((roll) => sanitizeRoll(roll))
+					.filter((roll): roll is NonNullable<typeof roll> => roll !== null)
+					.slice(0, MAX_ROLL_HISTORY)
+			: [];
+		const activeBets = Array.isArray(snapshot.activeBets)
+			? snapshot.activeBets
+					.map((bet) => sanitizeBet(bet))
+					.filter((bet): bet is CrapsBet => bet !== null)
+			: [];
+		const lastRoll = sanitizeRoll(snapshot.lastRoll);
+		this.state = {
+			phase,
+			point,
+			lastRoll,
+			rollHistory,
+			activeBets,
+			chipBalance,
+			rollCount,
+			settings: sanitizeSettings(snapshot.settings ?? this.state.settings),
+		};
+		return true;
 	}
 
 	// ─── betting ──────────────────────────────────────────────────────────────

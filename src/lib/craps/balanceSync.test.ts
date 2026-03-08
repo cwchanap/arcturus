@@ -9,9 +9,9 @@ describe('buildCrapsSyncBatch', () => {
 	test('limits batches by projected positive delta', () => {
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [
-				{ netDelta: 2000, winsCount: 1, lossesCount: 0 },
-				{ netDelta: 1500, winsCount: 1, lossesCount: 0 },
-				{ netDelta: 1000, winsCount: 1, lossesCount: 0 },
+				{ netDelta: 2000, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+				{ netDelta: 1500, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+				{ netDelta: 1000, winsCount: 1, lossesCount: 0, pushesCount: 0 },
 			],
 			currentBalance: 53100,
 			previousBalance: 50000,
@@ -29,7 +29,7 @@ describe('buildCrapsSyncBatch', () => {
 
 	test('sends a wager-only batch when the next roll would exceed the cap', () => {
 		const batch = buildCrapsSyncBatch({
-			pendingRollSyncs: [{ netDelta: 40, winsCount: 1, lossesCount: 0 }],
+			pendingRollSyncs: [{ netDelta: 40, winsCount: 1, lossesCount: 0, pushesCount: 0 }],
 			currentBalance: 50005,
 			previousBalance: 0,
 			maxWinDelta: 50000,
@@ -46,9 +46,9 @@ describe('buildCrapsSyncBatch', () => {
 	test('limits batches by hand count', () => {
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [
-				{ netDelta: 10, winsCount: 1, lossesCount: 0 },
-				{ netDelta: -5, winsCount: 0, lossesCount: 1 },
-				{ netDelta: 20, winsCount: 1, lossesCount: 0 },
+				{ netDelta: 10, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+				{ netDelta: -5, winsCount: 0, lossesCount: 1, pushesCount: 0 },
+				{ netDelta: 20, winsCount: 1, lossesCount: 0, pushesCount: 0 },
 			],
 			currentBalance: 1025,
 			previousBalance: 1000,
@@ -60,6 +60,39 @@ describe('buildCrapsSyncBatch', () => {
 		expect(batch.ackLosses).toBe(1);
 		expect(batch.ackStatsDelta).toBe(5);
 		expect(batch.remainingRollDelta).toBe(20);
+	});
+
+	test('correctly handles multiple bets per roll (the bug fix)', () => {
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [
+				{ netDelta: 300, winsCount: 2, lossesCount: 0, pushesCount: 0 }, // Single roll with 2 winning bets (e.g., pass line + field on 11)
+				{ netDelta: -100, winsCount: 0, lossesCount: 1, pushesCount: 0 },
+			],
+			currentBalance: 10200,
+			previousBalance: 10000,
+		});
+
+		// ackHands should count total bets resolved (3), not rolls (2)
+		expect(batch.ackHands).toBe(3);
+		expect(batch.ackWins).toBe(2);
+		expect(batch.ackLosses).toBe(1);
+		expect(batch.ackStatsDelta).toBe(200);
+	});
+
+	test('includes pushes in hand count', () => {
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [
+				{ netDelta: 0, winsCount: 0, lossesCount: 0, pushesCount: 1 }, // Bar 12 on Don't Pass
+				{ netDelta: 500, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+			],
+			currentBalance: 10500,
+			previousBalance: 10000,
+		});
+
+		expect(batch.ackHands).toBe(2); // 1 push + 1 win = 2 bets resolved
+		expect(batch.ackWins).toBe(1);
+		expect(batch.ackLosses).toBe(0);
+		expect(batch.ackStatsDelta).toBe(500);
 	});
 });
 

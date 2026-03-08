@@ -4,21 +4,31 @@ import { ensureLoggedIn } from './auth-helpers';
 
 test.describe.configure({ mode: 'serial' });
 
-async function gotoBlackjack(page: Page) {
+async function openBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+}
+
+async function gotoBlackjack(page: Page) {
+	await openBlackjack(page);
+	if (!page.url().includes('/signin')) {
+		return;
+	}
+
+	try {
+		await ensureLoggedIn(page);
+	} catch (error) {
+		throw new Error(
+			`Auth state expired: unable to recover redirected blackjack session (${error instanceof Error ? error.message : 'unknown error'})`,
+		);
+	}
+
+	await openBlackjack(page);
 }
 
 async function refreshBlackjack(page: Page) {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		await gotoBlackjack(page);
 		if (page.url().includes('/signin')) {
-			try {
-				await ensureLoggedIn(page);
-			} catch (error) {
-				throw new Error(
-					`Auth state expired: unable to recover redirected blackjack session (${error instanceof Error ? error.message : 'unknown error'})`,
-				);
-			}
 			continue;
 		}
 		await page.locator('#player-balance').waitFor({ state: 'visible', timeout: 10000 });

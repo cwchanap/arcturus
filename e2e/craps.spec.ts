@@ -1,8 +1,27 @@
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
 
 async function gotoCraps(page: Page) {
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
+}
+
+async function createIsolatedCrapsPage(browser: Browser) {
+	const context = await browser.newContext({ baseURL: 'http://localhost:2000' });
+	const page = await context.newPage();
+	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+	await page.goto('/signup', { waitUntil: 'domcontentloaded' });
+	await page.fill('input[name="name"]', `Craps Sync ${nonce}`);
+	await page.fill('input[name="email"]', `craps-sync-${nonce}@arcturus.local`);
+	await page.fill('input[name="password"]', 'PlaywrightTest123!');
+	await Promise.all([
+		page.waitForURL('/', { timeout: 15000 }),
+		page.click('button[type="submit"]'),
+	]);
+	await page.waitForLoadState('domcontentloaded');
+	await gotoCraps(page);
+
+	return { context, page };
 }
 
 function parseBalance(text: string): number {
@@ -209,27 +228,52 @@ test.describe('Craps — Active Bets Panel', () => {
 });
 
 test.describe('Craps — Clear Bets Sync', () => {
-	test('clearing bets syncs refunded chips to server', async ({ page }) => {
-		await ensureMinimumBalance(page, 200);
+	test('clearing bets syncs refunded chips to server', async ({ browser }) => {
+		const { context, page } = await createIsolatedCrapsPage(browser);
+		try {
+			await ensureMinimumBalance(page, 200);
 
-		// Place some removable bets
-		await page.getByTestId('chip-25').click();
-		await page.click('[data-bet-type="passLine"]');
-		await page.click('[data-bet-type="field"]');
-		await page.click('[data-bet-type="field"]');
+			// Place some removable bets
+			await page.getByTestId('chip-25').click();
+			await page.click('[data-bet-type="passLine"]');
+			await page.click('[data-bet-type="field"]');
+			await page.click('[data-bet-type="field"]');
 
-		const balanceBeforeClear = parseBalance(await page.locator('#chip-balance').innerText());
+			const balanceBeforeClear = parseBalance(await page.locator('#chip-balance').innerText());
 
-		// Clear bets
-		await page.getByTestId('clear-bets-button').click();
+			// Clear bets
+			await page.getByTestId('clear-bets-button').click();
 
-		// Balance should be refunded locally
-		const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
-		expect(balanceAfterClear).toBe(balanceBeforeClear + 75); // passLine $25 + field $50
+			// Balance should be refunded locally
+			const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
+			expect(balanceAfterClear).toBe(balanceBeforeClear + 75); // passLine $25 + field $50
 
-		// Reload to verify sync worked
-		await page.reload({ waitUntil: 'networkidle' });
-		const balanceAfterReload = parseBalance(await page.locator('#chip-balance').innerText());
-		expect(balanceAfterReload).toBe(balanceAfterClear);
+			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
+				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';
+				return `craps-session:${userId}`;
+			});
+
+			await expect
+				.poll(
+					async () =>
+						page.evaluate(
+							(sessionKey) => window.localStorage.getItem(sessionKey),
+							persistedSessionKey,
+						),
+					{ timeout: 15000 },
+				)
+				.toBeNull();
+			await page.evaluate(
+				(sessionKey) => window.localStorage.removeItem(sessionKey),
+				persistedSessionKey,
+			);
+
+			// Reload to verify the refunded balance persisted on the server.
+			await page.reload({ waitUntil: 'networkidle' });
+			const balanceAfterReload = parseBalance(await page.locator('#chip-balance').innerText());
+			expect(balanceAfterReload).toBe(balanceAfterClear);
+		} finally {
+			await context.close();
+		}
 	});
 });

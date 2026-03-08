@@ -250,6 +250,7 @@ describe('CrapsGame — come bet odds', () => {
 		g.roll();
 
 		expect(g.addComeBetOdds(come.bet!.id, Number.NaN).success).toBe(false);
+		expect(g.addComeBetOdds(come.bet!.id, 10.5).success).toBe(false);
 		expect(g.addComeBetOdds(come.bet!.id, 0).success).toBe(false);
 		expect(g.addComeBetOdds(come.bet!.id, 101).success).toBe(false); // max is 2x line amount
 	});
@@ -317,20 +318,37 @@ describe('CrapsGame — numeric guardrails', () => {
 		expect(g.placeBet('passLine', Number.NEGATIVE_INFINITY).success).toBe(false);
 	});
 
+	test('rejects fractional chip amounts and balances', () => {
+		const g = makeGame();
+
+		expect(g.placeBet('passLine', 10.5).success).toBe(false);
+		expect(g.setBalance(750.5)).toBe(false);
+		expect(g.applyServerBalance(800.5)).toBe(false);
+		expect(g.getBalance()).toBe(1000);
+
+		const restored = g.restoreState({
+			phase: 'come-out',
+			point: null,
+			chipBalance: 900.5,
+			activeBets: [],
+		});
+		expect(restored).toBe(false);
+	});
+
 	test('sanitizes invalid settings in constructor and updates', () => {
 		const g = new CrapsGame({
 			initialBalance: 1000,
 			settings: {
-				minBet: Number.NaN,
+				minBet: 5.5,
 				maxBet: Number.POSITIVE_INFINITY,
-				maxOddsMultiplier: 0,
+				maxOddsMultiplier: 1.5,
 			},
 		});
 
 		const initial = g.getState().settings;
 		expect(initial.minBet).toBe(5);
 		expect(initial.maxBet).toBe(500);
-		expect(initial.maxOddsMultiplier).toBe(1);
+		expect(initial.maxOddsMultiplier).toBe(2);
 
 		g.updateSettings({ minBet: 700, maxBet: 100, maxOddsMultiplier: Number.NaN });
 		const updated = g.getState().settings;

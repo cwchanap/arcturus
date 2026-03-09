@@ -1212,16 +1212,19 @@ const initialBalance = user.chipBalance ?? 1000;
 			addRollToHistory(result.roll.total, prevPhase);
 			updateUI();
 
-			// Count actual wins/losses/pushes from evaluations for accurate stats tracking
+			// Only queue rolls that resolved at least one wager.
 			const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
 			const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
 			const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
-			pendingRollSyncs.push({
-				netDelta: result.netDelta,
-				winsCount: rollWins,
-				lossesCount: rollLosses,
-				pushesCount: rollPushes,
-			});
+			const resolvedWagers = rollWins + rollLosses + rollPushes;
+			if (resolvedWagers > 0) {
+				pendingRollSyncs.push({
+					netDelta: result.netDelta,
+					winsCount: rollWins,
+					lossesCount: rollLosses,
+					pushesCount: rollPushes,
+				});
+			}
 			persistSession();
 
 			// Sync balance after roll
@@ -1289,6 +1292,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			const ackPreviousBalance = lastSyncedBalance;
 			const ackCurrentBalance = game.getBalance();
 			const {
+				ackRollSyncs,
 				ackHands,
 				ackWins,
 				ackLosses,
@@ -1364,7 +1368,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						});
 						game.setBalance(reconciledBalance);
 						lastSyncedBalance = data.balance;
-						pendingRollSyncs = pendingRollSyncs.slice(ackHands);
+						pendingRollSyncs = pendingRollSyncs.slice(ackRollSyncs.length);
 						syncPending = hasPendingLocalChanges();
 						updateUI();
 					} else {

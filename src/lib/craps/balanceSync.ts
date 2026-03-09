@@ -46,7 +46,6 @@ export function buildCrapsSyncBatch({
 	const ackRollSyncs: PendingRollSync[] = [];
 	let ackWins = 0;
 	let ackLosses = 0;
-	let ackPushes = 0;
 	let ackStatsDelta = 0;
 	let ackBiggestWin: number | undefined;
 
@@ -63,9 +62,11 @@ export function buildCrapsSyncBatch({
 
 		ackRollSyncs.push(entry);
 		ackStatsDelta = nextStatsDelta;
-		ackWins += entry.winsCount;
-		ackLosses += entry.lossesCount;
-		ackPushes += entry.pushesCount;
+		if (entry.netDelta > 0) {
+			ackWins += 1;
+		} else if (entry.netDelta < 0) {
+			ackLosses += 1;
+		}
 		if (entry.netDelta > 0) {
 			ackBiggestWin =
 				ackBiggestWin === undefined ? entry.netDelta : Math.max(ackBiggestWin, entry.netDelta);
@@ -74,7 +75,7 @@ export function buildCrapsSyncBatch({
 
 	return {
 		ackRollSyncs,
-		ackHands: ackWins + ackLosses + ackPushes,
+		ackHands: ackRollSyncs.length,
 		ackWins,
 		ackLosses,
 		ackStatsDelta,

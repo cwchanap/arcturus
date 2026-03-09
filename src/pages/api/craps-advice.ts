@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { createDb } from '../../lib/db';
 import { getLlmSettings } from '../../lib/llm-settings';
 import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
-import type { BetType, CrapsAdviceContext, CrapsBet, GamePhase } from '../../lib/craps/types';
+import type { CrapsAdviceContext, CrapsBet, GamePhase } from '../../lib/craps/types';
 import { BET_LABELS, MAX_ROLL_HISTORY } from '../../lib/craps/constants';
 
 const MAX_ACTIVE_BETS = 64;

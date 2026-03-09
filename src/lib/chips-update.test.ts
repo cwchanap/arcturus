@@ -196,8 +196,8 @@ describe('Biggest Win Candidate Logic', () => {
 	});
 
 	describe('Aggregated multi-round syncs', () => {
-		it('should reject biggestWinCandidate for aggregated syncs', () => {
-			// Scenario: Rate-limited sync of multiple rounds
+		it('should reject biggestWinCandidate for aggregated syncs in non-batched games', () => {
+			// Scenario: Rate-limited sync of multiple rounds for blackjack/baccarat
 			// handCount=5 means this batches 5 separate rounds together
 			const delta = 300; // Net win from multiple rounds
 			const biggestWinCandidate = 100; // Client might try to send this
@@ -211,10 +211,34 @@ describe('Biggest Win Candidate Logic', () => {
 				winsIncrement,
 				lossesIncrement,
 				handCount,
+				gameType: 'blackjack',
 			});
 
-			// Aggregated sync -> should return null to avoid inflation
+			// Aggregated sync for non-batched game -> should return null to avoid inflation
 			expect(result).toBeNull();
+		});
+
+		it('should use biggestWinCandidate for batched games (e.g., craps) with handCount > 4', () => {
+			// Scenario: Craps batches multiple rolls together due to rate limiting
+			// handCount=10 means 10 rolls were batched together
+			// Client correctly tracks the biggest win across all rolls
+			const delta = 500; // Net win from multiple rolls
+			const biggestWinCandidate = 150; // Biggest individual roll win
+			const handCount = 10;
+			const winsIncrement = 6;
+			const lossesIncrement = 4;
+
+			const result = determineBiggestWinCandidate({
+				delta,
+				biggestWinCandidate,
+				winsIncrement,
+				lossesIncrement,
+				handCount,
+				gameType: 'craps',
+			});
+
+			// Batched game with wins -> should trust client-provided biggestWinCandidate
+			expect(result).toBe(150);
 		});
 	});
 

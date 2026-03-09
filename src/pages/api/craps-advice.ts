@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { createDb } from '../../lib/db';
 import { getLlmSettings } from '../../lib/llm-settings';
 import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
-import type { CrapsAdviceContext, GamePhase } from '../../lib/craps/types';
+import type { BetType, CrapsAdviceContext, CrapsBet, GamePhase } from '../../lib/craps/types';
 import { BET_LABELS, MAX_ROLL_HISTORY } from '../../lib/craps/constants';
 
 const MAX_ACTIVE_BETS = 64;
@@ -75,6 +75,38 @@ function isValidPhase(value: unknown): value is GamePhase {
 	return value === 'come-out' || value === 'point';
 }
 
+/**
+ * Aggregate multiple bets of the same type/point into a single bet object
+ * to reduce payload size for the LLM API call.
+ * Each click creates a separate bet object in the game state, but for advice purposes,
+ * we only need to know the total amount for each bet type/point combination.
+ */
+function aggregateBets(
+	activeBets: CrapsAdviceContext['activeBets'],
+): CrapsAdviceContext['activeBets'] {
+	const aggregated = new Map<string, CrapsBet>();
+
+	for (const bet of activeBets) {
+		// Create a unique key based on type, point, and odds
+		const key = `${bet.type}-${bet.point ?? 'null'}-${bet.odds ?? 0}`;
+		const existing = aggregated.get(key);
+
+		if (existing) {
+			existing.amount += bet.amount;
+		} else {
+			aggregated.set(key, {
+				id: `aggregated-${bet.type}-${bet.point ?? 'null'}-${bet.odds ?? 0}`,
+				type: bet.type,
+				amount: bet.amount,
+				point: bet.point,
+				odds: bet.odds,
+			});
+		}
+	}
+
+	return Array.from(aggregated.values());
+}
+
 function parseContext(payload: unknown): CrapsAdviceContext | null {
 	if (!payload || typeof payload !== 'object') return null;
 	const p = payload as Partial<CrapsAdviceContext>;
@@ -85,10 +117,14 @@ function parseContext(payload: unknown): CrapsAdviceContext | null {
 	}
 	if (typeof p.chipBalance !== 'number' || !Number.isFinite(p.chipBalance)) return null;
 	if (!Array.isArray(p.activeBets) || !Array.isArray(p.rollHistory)) return null;
-	if (p.activeBets.length > MAX_ACTIVE_BETS || p.rollHistory.length > MAX_ROLL_HISTORY) return null;
 	if (!p.activeBets.every(isValidActiveBet) || !p.rollHistory.every(isValidRollHistoryEntry)) {
 		return null;
 	}
+	if (p.rollHistory.length > MAX_ROLL_HISTORY) return null;
+
+	// Aggregate bets before validating against MAX_ACTIVE_BETS
+	const aggregatedBets = aggregateBets(p.activeBets);
+	if (aggregatedBets.length > MAX_ACTIVE_BETS) return null;
 
 	const query = typeof p.query === 'string' ? p.query.slice(0, MAX_QUERY_LENGTH) : undefined;
 
@@ -96,7 +132,7 @@ function parseContext(payload: unknown): CrapsAdviceContext | null {
 		phase: p.phase,
 		point: p.point ?? null,
 		chipBalance: p.chipBalance,
-		activeBets: p.activeBets,
+		activeBets: aggregatedBets,
 		rollHistory: p.rollHistory,
 		query,
 	};

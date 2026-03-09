@@ -937,6 +937,8 @@ const initialBalance = user.chipBalance ?? 1000;
 					zone.classList.contains('bet-zone-disabled') ||
 					zone.classList.contains('bet-zone-locked');
 				zone.setAttribute('aria-disabled', String(disabled));
+				// Remove disabled/locked bet zones from tab order for accessibility
+				zone.tabIndex = disabled ? -1 : 0;
 			});
 
 			// Come bets on number boxes
@@ -1482,7 +1484,9 @@ const initialBalance = user.chipBalance ?? 1000;
 					retryDelayMs = 100;
 				}
 				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {
+					pendingRetryScheduled = true;
 					setTimeout(() => {
+						pendingRetryScheduled = false;
 						void syncBalance();
 					}, retryDelayMs);
 				}

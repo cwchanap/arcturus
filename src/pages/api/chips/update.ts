@@ -52,15 +52,22 @@ export function determineBiggestWinCandidate({
 	winsIncrement,
 	lossesIncrement: _lossesIncrement,
 	handCount,
+	gameType,
 }: {
 	delta: number;
 	biggestWinCandidate: number | undefined;
 	winsIncrement: number | undefined;
 	lossesIncrement: number | undefined;
 	handCount: number;
+	gameType?: string;
 }): number | null | undefined {
 	// Maximum realistic split hands in a single round (e.g., blackjack: split aces can resplit)
 	const MAX_SPLIT_HANDS = 4;
+
+	// Games that batch multiple rounds into a single sync (e.g., craps with rate limiting)
+	// For these games, we trust the client-provided biggestWinCandidate even with handCount > 4
+	const batchedGames = new Set(['craps']);
+	const isBatchedGame = gameType !== undefined && batchedGames.has(gameType);
 
 	// Split-hand round with wins - use client-provided biggestWinCandidate
 	// Heuristic: handCount <= MAX_SPLIT_HANDS indicates a split round, not aggregated sync
@@ -71,6 +78,18 @@ export function determineBiggestWinCandidate({
 		winsIncrement >= 1 &&
 		handCount > 1 &&
 		handCount <= MAX_SPLIT_HANDS
+	) {
+		return biggestWinCandidate;
+	}
+
+	// Batched game (e.g., craps) with wins - use client-provided biggestWinCandidate
+	// These games batch multiple rounds together due to rate limiting, so handCount > 4 is normal
+	// The client correctly tracks the biggest win across all rounds in the batch
+	if (
+		isBatchedGame &&
+		typeof biggestWinCandidate === 'number' &&
+		typeof winsIncrement === 'number' &&
+		winsIncrement >= 1
 	) {
 		return biggestWinCandidate;
 	}
@@ -710,6 +729,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
 						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
 						handCount: resolvedHandCount,
+						gameType,
 					});
 
 					// Record game stats (only for games with stats tracking enabled)

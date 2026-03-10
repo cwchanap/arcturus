@@ -78,6 +78,34 @@ describe('buildCrapsSyncBatch', () => {
 		expect(batch.ackStatsDelta).toBe(200);
 	});
 
+	test('records biggestWin from grossWinAmount on mixed-outcome rolls', () => {
+		// A roll where a small prop win ($100) is offset by a larger place-bet loss ($200).
+		// netDelta = -100, but grossWinAmount = 100 should still be tracked as a win candidate.
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [
+				{ netDelta: -100, winsCount: 1, lossesCount: 1, pushesCount: 0, grossWinAmount: 100 },
+				{ netDelta: 200, winsCount: 1, lossesCount: 0, pushesCount: 0, grossWinAmount: 200 },
+			],
+			currentBalance: 10100,
+			previousBalance: 10000,
+		});
+
+		expect(batch.ackBiggestWin).toBe(200);
+	});
+
+	test('falls back to netDelta for biggestWin when grossWinAmount is absent', () => {
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [
+				{ netDelta: 150, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+				{ netDelta: 50, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+			],
+			currentBalance: 10200,
+			previousBalance: 10000,
+		});
+
+		expect(batch.ackBiggestWin).toBe(150);
+	});
+
 	test('counts zero-net resolved rolls as hands and push outcomes', () => {
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [

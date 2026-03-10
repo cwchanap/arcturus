@@ -406,8 +406,29 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 		// Validate statsDelta if provided (for games where balance delta differs from round result delta)
 		// Default to delta if not provided (backwards compatibility)
+		//
+		// NOTE: statsDelta is only meaningful for games that batch multiple rounds into one sync
+		// (craps). For all other games the balance delta IS the round delta, so we reject any
+		// attempt to supply a separate statsDelta — this removes the attack vector where a caller
+		// sends delta:-5, statsDelta:50000 to inflate leaderboards at near-zero chip cost.
+		// (A full fix requires server-side game state; this is the best mitigation available
+		// for a client-authoritative, play-money platform.)
+		const GAMES_SUPPORTING_STATS_DELTA = new Set(['craps']);
 		let validatedStatsDelta: number | undefined;
 		if (statsDelta !== undefined) {
+			if (!GAMES_SUPPORTING_STATS_DELTA.has(gameType as string)) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'STATS_DELTA_NOT_ALLOWED',
+						message: `statsDelta is not supported for ${gameType}`,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
 			if (
 				typeof statsDelta !== 'number' ||
 				!Number.isFinite(statsDelta) ||
@@ -516,9 +537,9 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		// Enforce per-game caps on statsDelta to prevent stats inflation
-		// Without this, a client could send delta: 0, statsDelta: 500000 to inflate
-		// leaderboards/achievements without touching chip balance
+		// Enforce per-game caps on statsDelta to prevent stats inflation within craps.
+		// Non-craps games are already rejected above; these caps bound the craps residual
+		// risk where delta and statsDelta can legitimately differ due to unsettled wagers.
 		if (validatedStatsDelta !== undefined) {
 			if (validatedStatsDelta > 0 && validatedStatsDelta > maxWin) {
 				return new Response(

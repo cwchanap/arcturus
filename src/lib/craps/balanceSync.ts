@@ -3,6 +3,11 @@ export type PendingRollSync = {
 	winsCount: number;
 	lossesCount: number;
 	pushesCount: number;
+	// Gross winnings from all winning bets on this roll, before subtracting losses.
+	// Needed to record biggest-win stats correctly on mixed-outcome rolls where a
+	// legitimate winning wager is hidden by a larger loss on the same roll (e.g. a
+	// small prop win offset by a place-bet loss on a 7-out).
+	grossWinAmount?: number;
 };
 
 // Keep these limits aligned with GAME_LIMITS.craps in src/pages/api/chips/update.ts.
@@ -67,9 +72,17 @@ export function buildCrapsSyncBatch({
 		} else if (entry.netDelta < 0) {
 			ackLosses += 1;
 		}
-		if (entry.netDelta > 0) {
+		// Prefer grossWinAmount so that a legitimate win on a mixed-outcome roll
+		// (e.g. prop win offset by a larger place-bet loss) is still considered.
+		const rollWinAmount =
+			typeof entry.grossWinAmount === 'number' && entry.grossWinAmount > 0
+				? entry.grossWinAmount
+				: entry.netDelta > 0
+					? entry.netDelta
+					: 0;
+		if (rollWinAmount > 0) {
 			ackBiggestWin =
-				ackBiggestWin === undefined ? entry.netDelta : Math.max(ackBiggestWin, entry.netDelta);
+				ackBiggestWin === undefined ? rollWinAmount : Math.max(ackBiggestWin, rollWinAmount);
 		}
 	}
 

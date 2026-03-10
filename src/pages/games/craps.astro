@@ -704,6 +704,13 @@ const initialBalance = user.chipBalance ?? 1000;
 						typeof entry.pushesCount === 'number' && Number.isInteger(entry.pushesCount)
 							? entry.pushesCount
 							: 0,
+					grossWinAmount:
+						typeof entry.grossWinAmount === 'number' &&
+						Number.isFinite(entry.grossWinAmount) &&
+						Number.isInteger(entry.grossWinAmount) &&
+						entry.grossWinAmount > 0
+							? entry.grossWinAmount
+							: undefined,
 				}));
 		}
 
@@ -1220,11 +1227,15 @@ const initialBalance = user.chipBalance ?? 1000;
 			const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
 			const resolvedWagers = rollWins + rollLosses + rollPushes;
 			if (resolvedWagers > 0) {
+				const grossWinAmount = result.evaluations
+					.filter((e) => e.outcome === 'win')
+					.reduce((sum, e) => sum + e.payout, 0);
 				pendingRollSyncs.push({
 					netDelta: result.netDelta,
 					winsCount: rollWins,
 					lossesCount: rollLosses,
 					pushesCount: rollPushes,
+					grossWinAmount: grossWinAmount > 0 ? grossWinAmount : undefined,
 				});
 			}
 			persistSession();

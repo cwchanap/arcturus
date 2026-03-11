@@ -118,6 +118,7 @@ describe('buildCrapsSyncBatch', () => {
 		});
 
 		expect(batch.ackWins).toBe(1);
+		expect(batch.ackLosses).toBe(0);
 		expect(batch.ackBiggestWin).toBe(100);
 	});
 

@@ -100,6 +100,7 @@ test.describe('Craps — Initial State', () => {
 test.describe('Craps — Bet Placement', () => {
 	test('places a Pass Line bet and enables Roll button', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 25);
 
 		// Select $25 chip
 		await page.getByTestId('chip-25').click();
@@ -111,6 +112,7 @@ test.describe('Craps — Bet Placement', () => {
 
 	test('places multiple bet types', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 10);
 
 		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
@@ -121,6 +123,7 @@ test.describe('Craps — Bet Placement', () => {
 
 	test('Clear Bets removes all bets and resets total', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 25);
 
 		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
@@ -134,6 +137,7 @@ test.describe('Craps — Bet Placement', () => {
 test.describe('Craps — Game Flow', () => {
 	test('rolling dice shows total and updates message', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 25);
 
 		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
@@ -156,6 +160,7 @@ test.describe('Craps — Game Flow', () => {
 
 	test('rolling a point establishes point phase', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 100);
 
 		// Keep rolling until a point is established
 		await page.getByTestId('chip-5').click();
@@ -186,10 +191,12 @@ test.describe('Craps — Game Flow', () => {
 
 	test('roll history is populated after rolls', async ({ page }) => {
 		await gotoCraps(page);
+		await ensureMinimumBalance(page, 10);
 
 		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
 		await page.click('[data-bet-type="field"]');
+		await expect(page.getByTestId('total-bet')).toContainText('$10');
 		await page.getByTestId('roll-button').click();
 		await page.waitForTimeout(700);
 

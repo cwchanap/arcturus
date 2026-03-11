@@ -185,7 +185,7 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 		const currentBalanceText = await page.locator('#player-balance').innerText();
 		let currentBalance = parseBalance(currentBalanceText);
 		const targetBalance = 100;
-		const maxAllowedDelta = 2000; // 4 * 500 (DEFAULT_MAX_BET)
+		const maxAllowedDelta = 40000; // blackjack max per-request loss cap from chips update API
 		const epsilon = 0.001;
 
 		// Loop until we reach target balance (delta clamping may require multiple calls)

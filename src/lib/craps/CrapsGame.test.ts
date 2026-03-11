@@ -426,6 +426,38 @@ describe('CrapsGame — rolling and phase transitions', () => {
 		expect(g.roll()).toBeNull();
 	});
 
+	test('cannot roll during come-out when only off bets remain on the table', () => {
+		// Place bets survive when the point is made (persistent win keeps stake on table).
+		// During the subsequent come-out they are off, so the player has no active risk.
+		// Rolling should be blocked until a working bet is added.
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // establish point 6
+		g.roll();
+		g.placeBet('place8', 60);
+		setRoll(3, 3); // point 6 hit: pass line wins, place8 persists, phase → come-out
+		g.roll();
+
+		// Now in come-out phase with only place8 (off) remaining
+		expect(g.getState().phase).toBe('come-out');
+		expect(g.getState().activeBets.some((b) => b.type === 'place8')).toBe(true);
+		expect(g.canRoll()).toBe(false);
+	});
+
+	test('can roll during come-out when a working bet is present alongside off bets', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3); // establish point 6
+		g.roll();
+		g.placeBet('place8', 60);
+		setRoll(3, 3); // point 6 hit: place8 persists, phase → come-out
+		g.roll();
+
+		// Add a working bet (passLine counts as working during come-out)
+		g.placeBet('passLine', 50);
+		expect(g.canRoll()).toBe(true);
+	});
+
 	test('winning place bet remains active for future rolls', () => {
 		const g = makeGame();
 		g.placeBet('passLine', 50);

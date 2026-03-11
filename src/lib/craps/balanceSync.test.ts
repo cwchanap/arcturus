@@ -27,6 +27,25 @@ describe('buildCrapsSyncBatch', () => {
 		expect(batch.ackBiggestWin).toBe(2000);
 	});
 
+	test('forces an oversized single roll through even when it exceeds the cap alone', () => {
+		// If the roll itself is larger than the cap, no future sync will ever include it
+		// (pendingWagerDelta drops to 0 after the wager flush, projectedDelta == roll delta,
+		// still over cap → stuck forever).  The fix: include it anyway so it is at least
+		// attempted; the server is the final authority.
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [{ netDelta: 60000, winsCount: 1, lossesCount: 0, pushesCount: 0 }],
+			currentBalance: 60000,
+			previousBalance: 0,
+			maxWinDelta: 50000,
+			maxLossDelta: 100000,
+		});
+
+		expect(batch.ackHands).toBe(1);
+		expect(batch.ackStatsDelta).toBe(60000);
+		expect(batch.ackDelta).toBe(60000);
+		expect(batch.remainingRollDelta).toBe(0);
+	});
+
 	test('sends a wager-only batch when the next roll would exceed the cap', () => {
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [{ netDelta: 40, winsCount: 1, lossesCount: 0, pushesCount: 0 }],

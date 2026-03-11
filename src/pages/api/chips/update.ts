@@ -146,9 +146,11 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 	},
 	craps: {
 		// Boxcars/Aces (30:1) on max bet ($500) = $15,000 profit per prop.
-		// Multiple simultaneous bets across table. Safety buffer -> 50k.
-		maxWin: 50000,
-		maxLoss: 100000, // accounts for stacking multiple bet types
+		// Multiple established Come/Don't Come bets can all resolve in a single roll,
+		// so the effective ceiling is higher than per-prop analysis suggests.
+		// Keep aligned with MAX_CRAPS_SYNC_WIN/LOSS_DELTA in src/lib/craps/balanceSync.ts.
+		maxWin: 200000,
+		maxLoss: 200000,
 	},
 };
 

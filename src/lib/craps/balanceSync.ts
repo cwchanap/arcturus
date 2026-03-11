@@ -12,8 +12,8 @@ export type PendingRollSync = {
 
 // Keep these limits aligned with GAME_LIMITS.craps in src/pages/api/chips/update.ts.
 export const MAX_CRAPS_SYNC_HANDS_PER_REQUEST = 100;
-export const MAX_CRAPS_SYNC_WIN_DELTA = 50000;
-export const MAX_CRAPS_SYNC_LOSS_DELTA = 100000;
+export const MAX_CRAPS_SYNC_WIN_DELTA = 200000;
+export const MAX_CRAPS_SYNC_LOSS_DELTA = 200000;
 
 export type CrapsSyncBatch = {
 	ackRollSyncs: PendingRollSync[];
@@ -62,7 +62,18 @@ export function buildCrapsSyncBatch({
 		const nextStatsDelta = ackStatsDelta + entry.netDelta;
 		const projectedDelta = pendingWagerDelta + nextStatsDelta;
 		if (projectedDelta > maxWinDelta || projectedDelta < -maxLossDelta) {
-			break;
+			// If the roll itself fits within the cap it is safe to defer: after the wager-only
+			// delta is flushed the next sync will have pendingWagerDelta≈0, so the combined
+			// value will then be small enough to include.
+			//
+			// If however the roll alone already exceeds the cap, deferring it is useless — the
+			// next call will still fail the check and the roll will be permanently stranded.
+			// Force-include the first such entry so it is at least attempted; the server's own
+			// GAME_LIMITS check is the final authority on whether the value is acceptable.
+			const rollAloneExceedsCap = entry.netDelta > maxWinDelta || entry.netDelta < -maxLossDelta;
+			if (ackRollSyncs.length > 0 || !rollAloneExceedsCap) {
+				break;
+			}
 		}
 
 		ackRollSyncs.push(entry);

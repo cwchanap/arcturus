@@ -141,66 +141,82 @@ function parseContext(payload: unknown): CrapsAdviceContext | null {
 	};
 }
 
-export const POST: APIRoute = async ({ locals, request }) => {
-	const session = locals.session;
-	if (!session) {
-		return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
-	}
-
-	const dbBinding = locals.runtime?.env?.DB ?? null;
-	if (!dbBinding) {
-		return jsonResponse({ error: 'Database unavailable' }, { status: 500 });
-	}
-
-	let payload: unknown;
-	try {
-		payload = await request.json();
-	} catch {
-		return jsonResponse({ error: 'Invalid JSON payload' }, { status: 400 });
-	}
-
-	const context = parseContext(payload);
-	if (!context) {
-		return jsonResponse({ error: 'Invalid advice context' }, { status: 400 });
-	}
-
-	try {
-		const db = createDb(dbBinding);
-		const settings = await getLlmSettings(db, session.user.id);
-		const apiKey = settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-
-		if (!apiKey) {
-			return jsonResponse(
-				{ error: 'No API key configured. Visit Profile to set up AI.' },
-				{ status: 400 },
-			);
-		}
-
-		const advice = await getCrapsAdvice(context, {
-			provider: settings.provider,
-			model: settings.model,
-			apiKey,
-		});
-
-		return jsonResponse({ advice: advice.advice });
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error('Failed to get craps advice:', error);
-		if (message.includes('timed out')) {
-			return jsonResponse({ error: 'AI advisor timed out. Please try again.' }, { status: 504 });
-		}
-		if (message.includes('401') || message.toLowerCase().includes('api key')) {
-			return jsonResponse(
-				{ error: 'Invalid API key. Visit Profile to update your AI settings.' },
-				{ status: 400 },
-			);
-		}
-		if (message.includes('429')) {
-			return jsonResponse(
-				{ error: 'AI provider rate limit reached. Please wait a moment.' },
-				{ status: 429 },
-			);
-		}
-		return jsonResponse({ error: 'Failed to get advice. Please try again.' }, { status: 500 });
-	}
+type PostHandlerDeps = {
+	createDb: typeof createDb;
+	getLlmSettings: typeof getLlmSettings;
+	getCrapsAdvice: typeof getCrapsAdvice;
 };
+
+export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
+	const {
+		createDb: createDbImpl = createDb,
+		getLlmSettings: getLlmSettingsImpl = getLlmSettings,
+		getCrapsAdvice: getCrapsAdviceImpl = getCrapsAdvice,
+	} = overrides;
+
+	return async ({ locals, request }: Parameters<APIRoute>[0]) => {
+		const session = locals.session;
+		if (!session) {
+			return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		const dbBinding = locals.runtime?.env?.DB ?? null;
+		if (!dbBinding) {
+			return jsonResponse({ error: 'Database unavailable' }, { status: 500 });
+		}
+
+		let payload: unknown;
+		try {
+			payload = await request.json();
+		} catch {
+			return jsonResponse({ error: 'Invalid JSON payload' }, { status: 400 });
+		}
+
+		const context = parseContext(payload);
+		if (!context) {
+			return jsonResponse({ error: 'Invalid advice context' }, { status: 400 });
+		}
+
+		try {
+			const db = createDbImpl(dbBinding);
+			const settings = await getLlmSettingsImpl(db, session.user.id);
+			const apiKey = settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+
+			if (!apiKey) {
+				return jsonResponse(
+					{ error: 'No API key configured. Visit Profile to set up AI.' },
+					{ status: 400 },
+				);
+			}
+
+			const advice = await getCrapsAdviceImpl(context, {
+				provider: settings.provider,
+				model: settings.model,
+				apiKey,
+			});
+
+			return jsonResponse({ advice: advice.advice });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error('Failed to get craps advice:', error);
+			if (message.includes('timed out')) {
+				return jsonResponse({ error: 'AI advisor timed out. Please try again.' }, { status: 504 });
+			}
+			if (message.includes('401') || message.toLowerCase().includes('api key')) {
+				return jsonResponse(
+					{ error: 'Invalid API key. Visit Profile to update your AI settings.' },
+					{ status: 400 },
+				);
+			}
+			if (message.includes('429')) {
+				return jsonResponse(
+					{ error: 'AI provider rate limit reached. Please wait a moment.' },
+					{ status: 429 },
+				);
+			}
+			return jsonResponse({ error: 'Failed to get advice. Please try again.' }, { status: 500 });
+		}
+	};
+}
+
+export const POST: APIRoute = createPostHandler();

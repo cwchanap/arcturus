@@ -67,9 +67,12 @@ export function buildCrapsSyncBatch({
 
 		ackRollSyncs.push(entry);
 		ackStatsDelta = nextStatsDelta;
-		if (entry.netDelta > 0) {
+		const hasWin =
+			entry.netDelta > 0 || (typeof entry.grossWinAmount === 'number' && entry.grossWinAmount > 0);
+		if (hasWin) {
 			ackWins += 1;
-		} else if (entry.netDelta < 0) {
+		}
+		if (entry.netDelta < 0) {
 			ackLosses += 1;
 		}
 		// Prefer grossWinAmount so that a legitimate win on a mixed-outcome roll

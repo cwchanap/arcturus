@@ -1437,8 +1437,22 @@ const initialBalance = user.chipBalance ?? 1000;
 							updateUI();
 							syncPending = hasPendingLocalChanges();
 						} else {
-							console.error('[CRAPS_SYNC] BALANCE_MISMATCH without currentBalance:', err);
-							showMessage('Sync failed: Balance mismatch, please refresh', 'error');
+							// The server returned BALANCE_MISMATCH without a currentBalance (concurrent
+							// UPDATE affected 0 rows). We cannot reconcile the balance here, but the
+							// pending wager delta must not be silently dropped — schedule a retry so the
+							// next sync can either succeed or receive a currentBalance to reconcile with.
+							console.error(
+								'[CRAPS_SYNC] BALANCE_MISMATCH without currentBalance — retrying:',
+								err,
+							);
+							syncPending = true;
+							if (!pendingRetryScheduled) {
+								pendingRetryScheduled = true;
+								setTimeout(() => {
+									pendingRetryScheduled = false;
+									void syncBalance();
+								}, retryDelayMs);
+							}
 						}
 					} else if (isUnrecoverable4xx) {
 						// Unrecoverable client error - do not retry, show error to user

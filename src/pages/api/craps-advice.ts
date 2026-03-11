@@ -81,14 +81,16 @@ function isValidPhase(value: unknown): value is GamePhase {
  * Each click creates a separate bet object in the game state, but for advice purposes,
  * we only need to know the total amount for each bet type/point combination.
  */
-function aggregateBets(
+export function aggregateBets(
 	activeBets: CrapsAdviceContext['activeBets'],
 ): CrapsAdviceContext['activeBets'] {
 	const aggregated = new Map<string, CrapsBet>();
 
 	for (const bet of activeBets) {
-		// Create a unique key based on type, point, and odds
-		const key = `${bet.type}-${bet.point ?? 'null'}-${bet.odds ?? 0}`;
+		// Key by type and point only — odds are summed, not used to distinguish buckets.
+		// Multiple bets of the same type/point (e.g. Come at 6 with different odds increments)
+		// must collapse into one entry so the payload stays within MAX_ACTIVE_BETS.
+		const key = `${bet.type}-${bet.point ?? 'null'}`;
 		const existing = aggregated.get(key);
 
 		if (existing) {
@@ -96,7 +98,7 @@ function aggregateBets(
 			existing.odds = (existing.odds ?? 0) + (bet.odds ?? 0);
 		} else {
 			aggregated.set(key, {
-				id: `aggregated-${bet.type}-${bet.point ?? 'null'}-${bet.odds ?? 0}`,
+				id: `aggregated-${bet.type}-${bet.point ?? 'null'}`,
 				type: bet.type,
 				amount: bet.amount,
 				point: bet.point,

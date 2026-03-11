@@ -93,6 +93,7 @@ function aggregateBets(
 
 		if (existing) {
 			existing.amount += bet.amount;
+			existing.odds = (existing.odds ?? 0) + (bet.odds ?? 0);
 		} else {
 			aggregated.set(key, {
 				id: `aggregated-${bet.type}-${bet.point ?? 'null'}-${bet.odds ?? 0}`,

@@ -715,7 +715,11 @@ const initialBalance = user.chipBalance ?? 1000;
 		}
 
 		function hasPendingLocalChanges(): boolean {
-			return pendingRollSyncs.length > 0 || game.getBalance() !== lastSyncedBalance;
+			return (
+				pendingRollSyncs.length > 0 ||
+				game.getBalance() !== lastSyncedBalance ||
+				game.getState().activeBets.length > 0
+			);
 		}
 
 		function persistSession() {

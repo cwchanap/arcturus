@@ -450,6 +450,87 @@ describe('chips update API', () => {
 		expect(body.error).toBe('INVALID_BIGGEST_WIN_CANDIDATE');
 	});
 
+	test('rejects statsDelta for games that do not support it', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 10,
+				gameType: 'blackjack',
+				statsDelta: 10,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-not-allowed' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('STATS_DELTA_NOT_ALLOWED');
+	});
+
+	test('rejects invalid statsDelta values for supported games', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 10,
+				gameType: 'craps',
+				statsDelta: 1.5,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-invalid' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_STATS_DELTA');
+	});
+
+	test('rejects statsDelta that exceeds max win/loss limits', async () => {
+		resetMocks();
+		const POST = createHandler();
+
+		const winOverflowRequest = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 10,
+				gameType: 'craps',
+				statsDelta: 200001,
+			}),
+		});
+
+		const winOverflowResponse = await POST({
+			request: winOverflowRequest,
+			locals: createLocals({ user: { id: 'user-stats-overflow-win' } }),
+		} as any);
+		const winOverflowBody = await readJson(winOverflowResponse);
+		expect(winOverflowResponse.status).toBe(400);
+		expect(winOverflowBody.error).toBe('STATS_DELTA_EXCEEDS_LIMIT');
+
+		const lossOverflowRequest = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -10,
+				gameType: 'craps',
+				statsDelta: -200001,
+			}),
+		});
+
+		const lossOverflowResponse = await POST({
+			request: lossOverflowRequest,
+			locals: createLocals({ user: { id: 'user-stats-overflow-loss' } }),
+		} as any);
+		const lossOverflowBody = await readJson(lossOverflowResponse);
+		expect(lossOverflowResponse.status).toBe(400);
+		expect(lossOverflowBody.error).toBe('STATS_DELTA_EXCEEDS_LIMIT');
+	});
+
 	test('rejects decided hands exceeding handCount', async () => {
 		resetMocks();
 		const POST = createHandler();
@@ -771,6 +852,65 @@ describe('chips update API', () => {
 		// For split rounds, recentWinAmount prefers the per-hand biggest win
 		// so comeback checks still work even when round net delta is not representative.
 		expect(achievementOptions?.recentWinAmount).toBe(150);
+	});
+
+	test('uses statsDelta for stats tracking in craps', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -5,
+				statsDelta: 120,
+				gameType: 'craps',
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-delta', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(995);
+		const record = mockRecordGameRound.calls[0]?.[2] as { chipDelta?: number };
+		expect(record?.chipDelta).toBe(120);
+		const achievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
+			recentWinAmount?: number;
+		};
+		expect(achievementOptions?.recentWinAmount).toBe(120);
+	});
+
+	test('clamps biggestWinCandidate to maxWin for batched craps stats', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 20,
+				statsDelta: 500,
+				gameType: 'craps',
+				outcome: 'win',
+				handCount: 10,
+				winsIncrement: 3,
+				lossesIncrement: 2,
+				biggestWinCandidate: 300000,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-clamp', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(1020);
+		const record = mockRecordGameRound.calls[0]?.[2] as { biggestWinCandidate?: number };
+		expect(record?.biggestWinCandidate).toBe(200000);
 	});
 
 	test('uses delta for single-hand wins even when increments are provided', async () => {

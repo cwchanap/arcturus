@@ -26,6 +26,7 @@ import {
 	MAX_ROLL_HISTORY,
 	COME_OUT_ONLY_BETS,
 	POINT_PHASE_ONLY_BETS,
+	OFF_DURING_COME_OUT,
 	BET_LABELS,
 } from './constants';
 
@@ -479,7 +480,14 @@ export class CrapsGame {
 	}
 
 	public canRoll(): boolean {
-		return this.state.activeBets.length > 0;
+		if (this.state.activeBets.length === 0) return false;
+		// During come-out, place/buy/lay/hardway bets are off — they stay on the table but
+		// don't resolve.  Require at least one working bet so the player cannot free-roll
+		// the come-out phase with only off bets on the table.
+		if (this.state.phase === 'come-out') {
+			return this.state.activeBets.some((bet) => !OFF_DURING_COME_OUT.has(bet.type));
+		}
+		return true;
 	}
 
 	// ─── rolling ──────────────────────────────────────────────────────────────

@@ -228,6 +228,8 @@ export class CrapsGame {
 					? snapshot.point
 					: null;
 		if (snapshot.point !== undefined && snapshot.point !== null && point === null) return false;
+		if (phase === 'come-out' && point !== null) return false;
+		if (phase === 'point' && point === null) return false;
 		const chipBalance = snapshot.chipBalance;
 		if (!isNonNegativeInteger(chipBalance)) {
 			return false;

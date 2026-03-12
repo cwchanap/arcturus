@@ -83,9 +83,11 @@ export function buildCrapsSyncBatch({
 
 		ackRollSyncs.push(entry);
 		ackStatsDelta = nextStatsDelta;
-		// Classify roll outcome based on netDelta only (not grossWinAmount).
-		// Mixed-outcome rolls with netDelta <= 0 are correctly recorded as losses/pushes.
-		if (entry.netDelta > 0) {
+		// Classify roll outcome: count as win if either net positive OR had gross winnings.
+		// This ensures mixed-outcome rolls (e.g., prop win offset by larger loss) still
+		// record wins for biggest-win stats tracking.
+		const hasWin = entry.netDelta > 0 || (entry.grossWinAmount ?? 0) > 0;
+		if (hasWin) {
 			ackWins += 1;
 		} else if (entry.netDelta < 0) {
 			ackLosses += 1;

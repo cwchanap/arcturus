@@ -83,14 +83,11 @@ export function buildCrapsSyncBatch({
 
 		ackRollSyncs.push(entry);
 		ackStatsDelta = nextStatsDelta;
-		const hasWin =
-			entry.netDelta > 0 || (typeof entry.grossWinAmount === 'number' && entry.grossWinAmount > 0);
-		if (hasWin) {
+		// Classify roll outcome based on netDelta only (not grossWinAmount).
+		// Mixed-outcome rolls with netDelta <= 0 are correctly recorded as losses/pushes.
+		if (entry.netDelta > 0) {
 			ackWins += 1;
 		} else if (entry.netDelta < 0) {
-			// Only count as a loss when there is no winning wager on this roll.
-			// A mixed-outcome roll (e.g. prop win offset by a larger place-bet loss) is
-			// counted as a win above, so that ackWins + ackLosses never exceeds ackHands.
 			ackLosses += 1;
 		}
 		// Prefer grossWinAmount so that a legitimate win on a mixed-outcome roll

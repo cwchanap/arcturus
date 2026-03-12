@@ -781,6 +781,66 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		restoreSession();
 
+		// Rehydrate UI after restoring session: render dice and roll history
+		(function rehydrateUI() {
+			const state = game.getState();
+
+			// Render last roll dice if present
+			if (state.lastRoll) {
+				const d1Dots = document.getElementById('die1-dots');
+				const d2Dots = document.getElementById('die2-dots');
+				if (d1Dots) renderDie(d1Dots, state.lastRoll.die1);
+				if (d2Dots) renderDie(d2Dots, state.lastRoll.die2);
+				rollTotalEl.textContent = String(state.lastRoll.total);
+			}
+
+			// Rebuild roll history from stored history
+			if (state.rollHistory.length > 0) {
+				// Remove placeholder
+				const placeholder = rollHistoryEl.querySelector('.roll-history-placeholder');
+				if (placeholder) placeholder.remove();
+
+				// Determine phase for each roll to apply correct styling
+				// We need to replay through history to know which phase each roll was in
+				let currentPhase: 'come-out' | 'point' = 'come-out';
+				let currentPoint: number | null = null;
+
+				// Build history entries (oldest first for replay logic)
+				const historyEntries = [...state.rollHistory].reverse();
+
+				historyEntries.forEach((roll) => {
+					const total = roll.die1 + roll.die2;
+					const prevPhase = currentPhase;
+
+					// Replay the phase transition
+					if (currentPhase === 'come-out') {
+						if (total === 7 || total === 11) {
+							// Natural: stay in come-out
+						} else if (total === 2 || total === 3 || total === 12) {
+							// Craps: stay in come-out
+						} else {
+							// Point established
+							currentPhase = 'point';
+							currentPoint = total;
+						}
+					} else {
+						// Point phase
+						if (total === 7) {
+							// Seven-out: back to come-out
+							currentPhase = 'come-out';
+							currentPoint = null;
+						} else if (total === currentPoint) {
+							// Point hit: back to come-out
+							currentPhase = 'come-out';
+							currentPoint = null;
+						}
+					}
+
+					addRollToHistory(total, prevPhase);
+				});
+			}
+		})();
+
 		function initializeInteractiveBetZones() {
 			document.querySelectorAll('.bet-zone[data-bet-type]').forEach((el) => {
 				const zone = el as HTMLElement;

@@ -651,7 +651,9 @@ const initialBalance = user.chipBalance ?? 1000;
 		let pendingRollSyncs: PendingRollSync[] = [];
 		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
-		const maxOddsMultiplier = game.getState().settings.maxOddsMultiplier;
+		function getMaxOddsMultiplier(): number {
+			return game.getState().settings.maxOddsMultiplier;
+		}
 		const maxSyncHandsPerRequest = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 		// ─── DOM helpers ─────────────────────────────────────────────────────────────
@@ -1022,17 +1024,21 @@ const initialBalance = user.chipBalance ?? 1000;
 
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between text-xs';
-				row.innerHTML = `
-				<span class="text-slate-300">${label}${pointStr}</span>
-				<span class="text-yellow-400 font-bold">$${bet.amount}${oddsStr}</span>
-			`;
+				const labelSpan = document.createElement('span');
+				labelSpan.className = 'text-slate-300';
+				labelSpan.textContent = `${label}${pointStr}`;
+				const amountSpan = document.createElement('span');
+				amountSpan.className = 'text-yellow-400 font-bold';
+				amountSpan.textContent = `$${bet.amount}${oddsStr}`;
+				row.appendChild(labelSpan);
+				row.appendChild(amountSpan);
 				activeBetsEl.appendChild(row);
 			}
 		}
 
 		function getComeOddsAmount(bet: CrapsBet): number {
 			const currentOdds = bet.odds ?? 0;
-			const remaining = bet.amount * maxOddsMultiplier - currentOdds;
+			const remaining = bet.amount * getMaxOddsMultiplier() - currentOdds;
 			return remaining > 0 ? Math.min(selectedChipAmount, remaining) : 0;
 		}
 
@@ -1040,7 +1046,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			comeOddsListEl.innerHTML = '';
 			for (const bet of bets) {
 				const label = `${bet.type === 'come' ? 'Come' : "Don't Come"} @${bet.point}`;
-				const maxOdds = bet.amount * maxOddsMultiplier;
+				const maxOdds = bet.amount * getMaxOddsMultiplier();
 				const currentOdds = bet.odds ?? 0;
 				const remaining = maxOdds - currentOdds;
 				const oddsAmount = getComeOddsAmount(bet);
@@ -1048,12 +1054,16 @@ const initialBalance = user.chipBalance ?? 1000;
 
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between gap-2';
-				row.innerHTML = `
-				<span class="text-slate-300 text-xs flex-1">${label} ($${currentOdds}/$${maxOdds})</span>
-				<button class="add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded" data-bet-id="${bet.id}">
-					+$${oddsAmount}
-				</button>
-			`;
+				const labelSpan = document.createElement('span');
+				labelSpan.className = 'text-slate-300 text-xs flex-1';
+				labelSpan.textContent = `${label} ($${currentOdds}/$${maxOdds})`;
+				const button = document.createElement('button');
+				button.className =
+					'add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded';
+				button.dataset.betId = String(bet.id);
+				button.textContent = `+$${oddsAmount}`;
+				row.appendChild(labelSpan);
+				row.appendChild(button);
 				comeOddsListEl.appendChild(row);
 			}
 

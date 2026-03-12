@@ -1114,20 +1114,11 @@ const initialBalance = user.chipBalance ?? 1000;
 		// ─── Roll result display ─────────────────────────────────────────────────────
 
 		function showRollResult(result: RollResult) {
-			// Show outcome in message area
+			// Show outcome in message area based on player's actual result (netDelta)
 			let msgClass = 'text-slate-300';
-			if (
-				result.message.includes('wins') ||
-				result.message.includes('made') ||
-				result.message.includes('Natural') ||
-				result.message.includes('Yo-Eleven')
-			) {
+			if (result.netDelta > 0) {
 				msgClass = 'text-green-400';
-			} else if (
-				result.message.includes('loses') ||
-				result.message.includes('out') ||
-				result.message.includes('Craps')
-			) {
+			} else if (result.netDelta < 0) {
 				msgClass = 'text-red-400';
 			}
 			gameMessageEl.className = `text-sm font-semibold ${msgClass}`;

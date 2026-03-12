@@ -6,7 +6,10 @@ import {
 } from './balanceSync';
 
 describe('buildCrapsSyncBatch', () => {
-	test('limits batches by projected positive delta', () => {
+	test('limits batches when nextStatsDelta would exceed the cap', () => {
+		// pendingWagerDelta = (53100 - 50000) - (2000 + 1500 + 1000) = -1400
+		// Roll 1: nextStatsDelta = 2000 ≤ maxWinDelta 2500 → include
+		// Roll 2: nextStatsDelta = 3500 > maxWinDelta 2500 → deferred (independent statsDelta cap)
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [
 				{ netDelta: 2000, winsCount: 1, lossesCount: 0, pushesCount: 0 },
@@ -19,11 +22,11 @@ describe('buildCrapsSyncBatch', () => {
 			maxLossDelta: 100000,
 		});
 
-		expect(batch.ackHands).toBe(2);
-		expect(batch.ackStatsDelta).toBe(3500);
+		expect(batch.ackHands).toBe(1);
+		expect(batch.ackStatsDelta).toBe(2000);
 		expect(batch.pendingWagerDelta).toBe(-1400);
-		expect(batch.ackDelta).toBe(2100);
-		expect(batch.remainingRollDelta).toBe(1000);
+		expect(batch.ackDelta).toBe(600);
+		expect(batch.remainingRollDelta).toBe(2500);
 		expect(batch.ackBiggestWin).toBe(2000);
 	});
 
@@ -44,6 +47,30 @@ describe('buildCrapsSyncBatch', () => {
 		expect(batch.ackStatsDelta).toBe(60000);
 		expect(batch.ackDelta).toBe(60000);
 		expect(batch.remainingRollDelta).toBe(0);
+	});
+
+	test('caps statsDelta independently from delta when pendingWagerDelta is large and negative', () => {
+		// Regression: with pendingWagerDelta = -150,000 and two rolls summing to 210,000,
+		// projectedDelta = -150,000 + 210,000 = 60,000 stays within the cap,
+		// but nextStatsDelta = 210,000 exceeds maxWinDelta = 200,000.
+		// The second roll must be deferred so the API's statsDelta check doesn't reject the batch.
+		const batch = buildCrapsSyncBatch({
+			pendingRollSyncs: [
+				{ netDelta: 100000, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+				{ netDelta: 110000, winsCount: 1, lossesCount: 0, pushesCount: 0 },
+			],
+			// pendingWagerDelta = (560000 - 500000) - 210000 = -150000
+			currentBalance: 560000,
+			previousBalance: 500000,
+			maxWinDelta: 200000,
+			maxLossDelta: 200000,
+		});
+
+		expect(batch.ackHands).toBe(1);
+		expect(batch.ackStatsDelta).toBe(100000);
+		expect(batch.pendingWagerDelta).toBe(-150000);
+		expect(batch.ackDelta).toBe(-50000);
+		expect(batch.remainingRollDelta).toBe(110000);
 	});
 
 	test('sends a wager-only batch when the next roll would exceed the cap', () => {

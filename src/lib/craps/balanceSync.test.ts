@@ -152,10 +152,10 @@ describe('buildCrapsSyncBatch', () => {
 		expect(batch.ackBiggestWin).toBe(150);
 	});
 
-	test('counts mixed net-losing rolls as losses for stats (not wins)', () => {
-		// Mixed-outcome rolls with netDelta < 0 should be recorded as losses.
-		// Only netDelta determines win/loss/push classification for player stats.
-		// grossWinAmount is still tracked separately for biggest-win stats.
+	test('counts mixed net-losing rolls as wins when grossWinAmount > 0', () => {
+		// Mixed-outcome rolls with netDelta < 0 but grossWinAmount > 0 should be recorded
+		// as wins for stats tracking. This ensures biggest-win stats are preserved when
+		// a legitimate win is offset by a larger loss (e.g., prop win on a 7-out).
 		const batch = buildCrapsSyncBatch({
 			pendingRollSyncs: [
 				{ netDelta: -100, winsCount: 1, lossesCount: 1, pushesCount: 0, grossWinAmount: 100 },
@@ -164,9 +164,9 @@ describe('buildCrapsSyncBatch', () => {
 			previousBalance: 10000,
 		});
 
-		expect(batch.ackWins).toBe(0);
-		expect(batch.ackLosses).toBe(1);
-		expect(batch.ackBiggestWin).toBe(100); // Still tracks the gross win amount
+		expect(batch.ackWins).toBe(1); // Counts as win because grossWinAmount > 0
+		expect(batch.ackLosses).toBe(0); // Not a net loss for stats purposes
+		expect(batch.ackBiggestWin).toBe(100); // Tracks the gross win amount
 	});
 
 	test('counts zero-net resolved rolls as hands and push outcomes', () => {

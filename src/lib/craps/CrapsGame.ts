@@ -314,13 +314,13 @@ export class CrapsGame {
 		// Enforce cumulative max bet: check total existing + new amount against maxBet
 		// Pass Line/Don't Pass already enforced as single bets above
 		// Pass/Dont Pass odds are attached to line bet, handled separately below
-		// For Come/Don'tCome, only count bets on the Come line (no point established yet),
-		// not bets that have already travelled to a number
+		// For Come/Don'tCome, count ALL bets (both on-the-line and established) plus odds
+		// to prevent unbounded exposure that could exceed sync caps on a single roll
 		let existingAmount: number;
 		if (type === 'come' || type === 'dontCome') {
 			existingAmount = this.state.activeBets
-				.filter((b) => b.type === type && b.point === undefined)
-				.reduce((sum, b) => sum + b.amount, 0);
+				.filter((b) => b.type === type)
+				.reduce((sum, b) => sum + b.amount + (b.odds ?? 0), 0);
 		} else {
 			existingAmount = this.getExistingBetAmount(type);
 		}

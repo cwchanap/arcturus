@@ -173,7 +173,7 @@ describe('CrapsGame — bet placement', () => {
 		expect(r2.success).toBe(true);
 	});
 
-	test('come bets enforce cumulative max per bet (before point established)', () => {
+	test('come bets enforce cumulative max including established bets to cap exposure', () => {
 		const g = makeGame();
 		g.placeBet('passLine', 50);
 		mockRoll = { die1: 3, die2: 3, total: 6 };
@@ -191,35 +191,34 @@ describe('CrapsGame — bet placement', () => {
 
 		// After the second Come bet, we roll 8 which is the current point,
 		// so we stay in point phase. Now we can place more Come bets.
-		// The first two Come bets have travelled to points (4 and 8),
-		// so they don't count against the limit for new Come bets on the Come line.
-		// We should be able to place a new Come bet up to maxBet
-		const r1 = g.placeBet('come', 500);
+		// ALL Come bets (on-the-line AND established) count against the limit
+		// to prevent unbounded exposure that could exceed sync caps on a single roll.
+		// Total existing = 200 + 250 = 450, so only 50 more allowed
+		const r1 = g.placeBet('come', 50);
 		expect(r1.success).toBe(true);
 
-		// Try to place another Come bet - should fail (limit applies to bets on Come line only)
+		// Try to place another Come bet - should fail (limit includes established bets)
 		const r2 = g.placeBet('come', 100);
 		expect(r2.success).toBe(false);
 		expect(r2.error).toMatch(/Maximum bet/i);
 	});
 
-	test('multiple come bets on different points do not count against each other', () => {
+	test('multiple come bets on different points all count against cumulative max', () => {
 		// Need higher balance to place multiple max bets
 		const g = makeGame(2000);
 		g.placeBet('passLine', 50);
 		setRoll(3, 3); // point 6
 		g.roll();
 
-		// Place max bet Come bet
-		const r1 = g.placeBet('come', 500);
+		// Place first Come bet at half max
+		const r1 = g.placeBet('come', 250);
 		expect(r1.success).toBe(true);
 		setRoll(2, 2); // 4 — come point established
 		g.roll();
 
-		// Even though total of all 'come' bets is 500, we should still be able to place
-		// another Come bet because the first one travelled to a point (has point: 4)
-		// Only Come bets on the Come line (no point) should count against the limit
-		const r2 = g.placeBet('come', 500);
+		// Established Come bets count against the limit to cap total exposure.
+		// Total existing = 250, so we can place another up to 250.
+		const r2 = g.placeBet('come', 250);
 		expect(r2.success).toBe(true);
 		setRoll(4, 4); // 8 — come point established
 		g.roll();
@@ -230,34 +229,36 @@ describe('CrapsGame — bet placement', () => {
 		expect(comeBets).toHaveLength(2);
 		expect(comeBets.some((b) => b.point === 4)).toBe(true);
 		expect(comeBets.some((b) => b.point === 8)).toBe(true);
+
+		// Cannot place a third - would exceed maxBet limit
+		const r3 = g.placeBet('come', 100);
+		expect(r3.success).toBe(false);
+		expect(r3.error).toMatch(/Maximum bet/i);
 	});
 
-	test('come bet limit only applies to bets on the come line', () => {
+	test('come bet limit applies to all come bets including established ones', () => {
 		// Need higher balance to place multiple max bets
 		const g = makeGame(2000);
 		g.placeBet('passLine', 50);
 		setRoll(3, 3); // point 6
 		g.roll();
 
-		// Place two Come bets that travel to points (max bet each)
-		const r1 = g.placeBet('come', 500);
+		// Place two Come bets that travel to points (half max each so they both fit)
+		const r1 = g.placeBet('come', 250);
 		expect(r1.success).toBe(true);
 		setRoll(2, 2); // 4 — come point established
 		g.roll();
 
-		const r2 = g.placeBet('come', 500);
+		const r2 = g.placeBet('come', 250);
 		expect(r2.success).toBe(true);
 		setRoll(4, 4); // 8 — stay in point phase (point is 6)
 		g.roll();
 
-		// Now place a Come bet on the Come line
-		const r3 = g.placeBet('come', 500);
-		expect(r3.success).toBe(true);
-
-		// Try to place another Come bet on Come line - should fail (limit applies)
-		const r4 = g.placeBet('come', 50);
-		expect(r4.success).toBe(false);
-		expect(r4.error).toMatch(/Maximum bet/i);
+		// Total established Come bets = 250 + 250 = 500 (at maxBet limit)
+		// Cannot place another Come bet as it would exceed cumulative max
+		const r3 = g.placeBet('come', 100);
+		expect(r3.success).toBe(false);
+		expect(r3.error).toMatch(/Maximum bet/i);
 	});
 });
 

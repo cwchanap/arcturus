@@ -61,7 +61,12 @@ export function buildCrapsSyncBatch({
 
 		const nextStatsDelta = ackStatsDelta + entry.netDelta;
 		const projectedDelta = pendingWagerDelta + nextStatsDelta;
-		if (projectedDelta > maxWinDelta || projectedDelta < -maxLossDelta) {
+		if (
+			projectedDelta > maxWinDelta ||
+			projectedDelta < -maxLossDelta ||
+			nextStatsDelta > maxWinDelta ||
+			nextStatsDelta < -maxLossDelta
+		) {
 			// If the roll itself fits within the cap it is safe to defer: after the wager-only
 			// delta is flushed the next sync will have pendingWagerDelta≈0, so the combined
 			// value will then be small enough to include.

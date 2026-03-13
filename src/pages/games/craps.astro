@@ -625,8 +625,6 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
-		lastSyncedBalance: number;
-		pendingRollSyncs: PendingRollSync[];
 		selectedChipAmount?: number;
 	};
 
@@ -681,41 +679,6 @@ const initialBalance = user.chipBalance ?? 1000;
 		const comeOddsPanel = el('come-odds-panel');
 		const comeOddsListEl = el('come-odds-list');
 
-		function sanitizePendingRollSyncs(value: unknown): PendingRollSync[] {
-			if (!Array.isArray(value)) return [];
-			return value
-				.filter((entry): entry is Record<string, unknown> => {
-					if (!entry || typeof entry !== 'object') return false;
-					const netDelta = (entry as { netDelta?: unknown }).netDelta;
-					return (
-						typeof netDelta === 'number' && Number.isFinite(netDelta) && Number.isInteger(netDelta)
-					);
-				})
-				.map((entry) => ({
-					netDelta: entry.netDelta as number,
-					// Default to 0 for backwards compatibility with older persisted sessions
-					winsCount:
-						typeof entry.winsCount === 'number' && Number.isInteger(entry.winsCount)
-							? entry.winsCount
-							: 0,
-					lossesCount:
-						typeof entry.lossesCount === 'number' && Number.isInteger(entry.lossesCount)
-							? entry.lossesCount
-							: 0,
-					pushesCount:
-						typeof entry.pushesCount === 'number' && Number.isInteger(entry.pushesCount)
-							? entry.pushesCount
-							: 0,
-					grossWinAmount:
-						typeof entry.grossWinAmount === 'number' &&
-						Number.isFinite(entry.grossWinAmount) &&
-						Number.isInteger(entry.grossWinAmount) &&
-						entry.grossWinAmount > 0
-							? entry.grossWinAmount
-							: undefined,
-				}));
-		}
-
 		function hasPendingLocalChanges(): boolean {
 			return (
 				pendingRollSyncs.length > 0 ||
@@ -738,8 +701,6 @@ const initialBalance = user.chipBalance ?? 1000;
 			}
 			const payload: PersistedCrapsSession = {
 				gameState: state,
-				lastSyncedBalance,
-				pendingRollSyncs,
 				selectedChipAmount,
 			};
 			localStorage.setItem(persistedSessionKey, JSON.stringify(payload));
@@ -750,18 +711,15 @@ const initialBalance = user.chipBalance ?? 1000;
 			if (!raw) return;
 			try {
 				const parsed = JSON.parse(raw) as Partial<PersistedCrapsSession>;
-				if (
-					typeof parsed.lastSyncedBalance !== 'number' ||
-					!Number.isFinite(parsed.lastSyncedBalance) ||
-					parsed.lastSyncedBalance < 0 ||
-					!parsed.gameState ||
-					!game.restoreState(parsed.gameState)
-				) {
+				if (!parsed.gameState || !game.restoreState(parsed.gameState)) {
 					localStorage.removeItem(persistedSessionKey);
 					return;
 				}
-				lastSyncedBalance = parsed.lastSyncedBalance;
-				pendingRollSyncs = sanitizePendingRollSyncs(parsed.pendingRollSyncs);
+				// Always restore the balance from the server-authoritative initialBalance,
+				// never from localStorage, to prevent chip forgery via localStorage tampering.
+				game.setBalance(initialBalance);
+				// pendingRollSyncs are intentionally not restored — synthetic entries could
+				// forge stats (wins, biggest-win) without risking chips on reload.
 				if (
 					typeof parsed.selectedChipAmount === 'number' &&
 					[5, 25, 50, 100, 500].includes(parsed.selectedChipAmount)

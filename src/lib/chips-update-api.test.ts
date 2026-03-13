@@ -944,6 +944,83 @@ describe('chips update API', () => {
 		expect(achievementOptions?.recentWinAmount).toBe(120);
 	});
 
+	test('rejects statsDelta that implies wager exceeding previous balance', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 100 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 0,
+				statsDelta: 200000,
+				gameType: 'craps',
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-wager', chipBalance: 100 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('STATS_DELTA_WAGER_INCONSISTENCY');
+		expect(mockRecordGameRound.calls).toHaveLength(0);
+	});
+
+	test('allows statsDelta within the bound of previous balance', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -500,
+				statsDelta: 400,
+				gameType: 'craps',
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-ok', chipBalance: 1000 } }),
+		} as any);
+		expect(response.status).toBe(200);
+		const record = mockRecordGameRound.calls[0]?.[2] as { chipDelta?: number };
+		expect(record?.chipDelta).toBe(400);
+	});
+
+	test('rejects biggestWinCandidate exceeding net delta on pure-win craps batch', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -1,
+				statsDelta: -1,
+				gameType: 'craps',
+				outcome: 'loss',
+				handCount: 100,
+				winsIncrement: 1,
+				lossesIncrement: 0,
+				biggestWinCandidate: 200000,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-bwc-attack', chipBalance: 1000 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		const record = mockRecordGameRound.calls[0]?.[2] as { biggestWinCandidate?: number | null };
+		expect(record?.biggestWinCandidate).toBeNull();
+	});
+
 	test('repairs fractional stored balances', async () => {
 		resetMocks();
 		const POST = createHandler();

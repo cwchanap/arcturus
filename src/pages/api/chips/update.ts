@@ -91,6 +91,13 @@ export function determineBiggestWinCandidate({
 		typeof winsIncrement === 'number' &&
 		winsIncrement >= 1
 	) {
+		// When the batch contains losses, individual round wins can exceed the net delta
+		// (gross wins partially offset by losses), so biggestWinCandidate may legitimately
+		// exceed delta. When there are no losses, the biggest win cannot exceed the net delta.
+		const hasLosses = typeof _lossesIncrement === 'number' && _lossesIncrement >= 1;
+		if (!hasLosses) {
+			return delta > 0 ? Math.min(biggestWinCandidate, delta) : null;
+		}
 		return biggestWinCandidate;
 	}
 
@@ -659,6 +666,25 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						},
 					);
 				}
+			}
+
+			// Cross-validate statsDelta against the authoritative server balance.
+			// For craps, delta = pendingWagerDelta + statsDelta. A player cannot place more in
+			// wagers than their current balance, so pendingWagerDelta >= -serverBalance, which
+			// means statsDelta - delta <= serverBalance. Enforcing this prevents inflating
+			// leaderboard stats with a statsDelta that implies impossible wager placements.
+			if (validatedStatsDelta !== undefined && validatedStatsDelta - delta > serverBalance) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'STATS_DELTA_WAGER_INCONSISTENCY',
+						message: 'statsDelta implies wager amount exceeding previous balance',
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
 			}
 
 			// Compute new balance server-side

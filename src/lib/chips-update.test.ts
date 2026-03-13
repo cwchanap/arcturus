@@ -240,6 +240,35 @@ describe('Biggest Win Candidate Logic', () => {
 			// Batched game with wins -> should trust client-provided biggestWinCandidate
 			expect(result).toBe(150);
 		});
+
+		it('should cap biggestWinCandidate to delta for pure-win craps batch (no losses)', () => {
+			// Attack: net delta negative, no losses, but inflated biggestWinCandidate
+			// Without losses, biggest win can't exceed net delta
+			const result = determineBiggestWinCandidate({
+				delta: -1,
+				biggestWinCandidate: 200000,
+				winsIncrement: 1,
+				lossesIncrement: 0,
+				handCount: 100,
+				gameType: 'craps',
+			});
+
+			expect(result).toBeNull();
+		});
+
+		it('should cap biggestWinCandidate to delta for pure-win craps batch with positive delta', () => {
+			// Pure win batch: biggest win can't exceed total net delta
+			const result = determineBiggestWinCandidate({
+				delta: 200,
+				biggestWinCandidate: 500,
+				winsIncrement: 2,
+				lossesIncrement: 0,
+				handCount: 5,
+				gameType: 'craps',
+			});
+
+			expect(result).toBe(200);
+		});
 	});
 
 	describe('Edge cases', () => {

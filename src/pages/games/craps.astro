@@ -713,21 +713,37 @@ const initialBalance = user.chipBalance ?? 1000;
 				gameState: state,
 				selectedChipAmount,
 			};
-			localStorage.setItem(persistedSessionKey, JSON.stringify(payload));
+			try {
+				localStorage.setItem(persistedSessionKey, JSON.stringify(payload));
+			} catch (err) {
+				console.error('[CRAPS] Failed to persist session to localStorage:', err);
+			}
 		}
 
-		function persistDroppedRollSyncs(error: string | undefined, status: number) {
+		function persistDroppedRollSyncs(error: string | undefined, status: number): boolean {
 			const payload: PersistedDroppedRollSyncs = {
 				rolls: pendingRollSyncs.map((roll) => ({ ...roll })),
 				droppedDueTo4xx: true,
 				status,
 				...(error ? { error } : {}),
 			};
-			localStorage.setItem(droppedRollSyncsKey, JSON.stringify(payload));
+			try {
+				localStorage.setItem(droppedRollSyncsKey, JSON.stringify(payload));
+				return true;
+			} catch (err) {
+				console.error('[CRAPS] Failed to persist dropped roll syncs — data will be lost:', err);
+				return false;
+			}
 		}
 
 		function restoreSession() {
-			const raw = localStorage.getItem(persistedSessionKey);
+			let raw: string | null;
+			try {
+				raw = localStorage.getItem(persistedSessionKey);
+			} catch (err) {
+				console.error('[CRAPS] Failed to access localStorage for session restore:', err);
+				return;
+			}
 			if (!raw) return;
 			try {
 				const parsed = JSON.parse(raw) as Partial<PersistedCrapsSession>;
@@ -746,7 +762,8 @@ const initialBalance = user.chipBalance ?? 1000;
 				) {
 					selectedChipAmount = parsed.selectedChipAmount;
 				}
-			} catch {
+			} catch (err) {
+				console.error('[CRAPS] Failed to restore session, clearing corrupted data:', err);
 				localStorage.removeItem(persistedSessionKey);
 			}
 		}
@@ -1232,63 +1249,69 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Roll button
 		rollButton.addEventListener('click', async () => {
 			rollButton.disabled = true;
-			const prevPhase = game.getState().phase;
+			try {
+				const prevPhase = game.getState().phase;
 
-			// Animate dice first
-			const tempDie1 = Math.ceil(Math.random() * 6);
-			const tempDie2 = Math.ceil(Math.random() * 6);
-			animateDice(tempDie1, tempDie2);
+				// Animate dice first
+				const tempDie1 = Math.ceil(Math.random() * 6);
+				const tempDie2 = Math.ceil(Math.random() * 6);
+				animateDice(tempDie1, tempDie2);
 
-			await new Promise((r) => setTimeout(r, 200));
+				await new Promise((r) => setTimeout(r, 200));
 
-			const result = game.roll();
-			if (!result) {
-				rollButton.disabled = false;
-				return;
-			}
+				const result = game.roll();
+				if (!result) {
+					return;
+				}
 
-			// Update dice display with real values
-			if (diceAnimationTimeoutId) {
-				clearTimeout(diceAnimationTimeoutId);
-				diceAnimationTimeoutId = null;
-			}
-			document.getElementById('die1')?.classList.remove('die-rolling');
-			document.getElementById('die2')?.classList.remove('die-rolling');
-			const d1Dots = document.getElementById('die1-dots');
-			const d2Dots = document.getElementById('die2-dots');
-			if (d1Dots) renderDie(d1Dots, result.roll.die1);
-			if (d2Dots) renderDie(d2Dots, result.roll.die2);
-			rollTotalEl.textContent = String(result.roll.total);
+				// Update dice display with real values
+				if (diceAnimationTimeoutId) {
+					clearTimeout(diceAnimationTimeoutId);
+					diceAnimationTimeoutId = null;
+				}
+				document.getElementById('die1')?.classList.remove('die-rolling');
+				document.getElementById('die2')?.classList.remove('die-rolling');
+				const d1Dots = document.getElementById('die1-dots');
+				const d2Dots = document.getElementById('die2-dots');
+				if (d1Dots) renderDie(d1Dots, result.roll.die1);
+				if (d2Dots) renderDie(d2Dots, result.roll.die2);
+				rollTotalEl.textContent = String(result.roll.total);
 
-			showRollResult(result);
-			addRollToHistory(result.roll.total, prevPhase);
-			updateUI();
+				showRollResult(result);
+				addRollToHistory(result.roll.total, prevPhase);
+				updateUI();
 
-			// Only queue rolls that resolved at least one wager.
-			const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
-			const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
-			const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
-			const resolvedWagers = rollWins + rollLosses + rollPushes;
-			if (resolvedWagers > 0) {
-				const grossWinAmount = result.evaluations
-					.filter((e) => e.outcome === 'win')
-					.reduce((sum, e) => sum + e.payout, 0);
-				pendingRollSyncs.push({
-					netDelta: result.netDelta,
-					winsCount: rollWins,
-					lossesCount: rollLosses,
-					pushesCount: rollPushes,
-					grossWinAmount: grossWinAmount > 0 ? grossWinAmount : undefined,
-				});
-			}
-			persistSession();
+				// Only queue rolls that resolved at least one wager.
+				const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
+				const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
+				const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
+				const resolvedWagers = rollWins + rollLosses + rollPushes;
+				if (resolvedWagers > 0) {
+					const grossWinAmount = result.evaluations
+						.filter((e) => e.outcome === 'win')
+						.reduce((sum, e) => sum + e.payout, 0);
+					pendingRollSyncs.push({
+						netDelta: result.netDelta,
+						winsCount: rollWins,
+						lossesCount: rollLosses,
+						pushesCount: rollPushes,
+						grossWinAmount: grossWinAmount > 0 ? grossWinAmount : undefined,
+					});
+				}
+				persistSession();
 
-			// Sync balance after roll
-			await syncBalance();
+				// Sync balance after roll
+				await syncBalance();
 
-			if (game.hasInsufficientChips()) {
-				insufOverlay.classList.remove('hidden');
-				insufOverlay.classList.add('flex');
+				if (game.hasInsufficientChips()) {
+					insufOverlay.classList.remove('hidden');
+					insufOverlay.classList.add('flex');
+				}
+			} catch (err) {
+				console.error('[CRAPS] Unexpected error in roll handler:', err);
+				showMessage('An unexpected error occurred. Please try again.', 'error');
+			} finally {
+				rollButton.disabled = !game.canRoll();
 			}
 		});
 
@@ -1330,7 +1353,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 				llmAdviceEl.textContent = data.advice ?? 'No advice returned.';
 			} catch (e) {
-				llmAdviceEl.textContent = `Error: ${e instanceof Error ? e.message : 'Unknown error'}`;
+				console.error('[CRAPS] Failed to load LLM advice:', e);
+				llmAdviceEl.textContent = 'Could not load advice. Please try again.';
 			} finally {
 				llmAdviceBtn.disabled = false;
 				llmAdviceBtn.textContent = 'Ask';
@@ -1473,10 +1497,17 @@ const initialBalance = user.chipBalance ?? 1000;
 								currentBalance: game.getBalance(),
 								pendingBalanceDelta,
 							});
-							game.applyServerBalance(reconciledBalance);
-							lastSyncedBalance = err.currentBalance;
+							if (game.applyServerBalance(reconciledBalance)) {
+								lastSyncedBalance = err.currentBalance;
+								syncPending = hasPendingLocalChanges();
+							} else {
+								console.error(
+									'[CRAPS_SYNC] Failed to apply reconciled balance:',
+									reconciledBalance,
+								);
+								syncPending = true;
+							}
 							updateUI();
-							syncPending = hasPendingLocalChanges();
 						} else {
 							// The server returned BALANCE_MISMATCH without a currentBalance (concurrent
 							// UPDATE affected 0 rows). We cannot reconcile the balance here, but the
@@ -1500,14 +1531,14 @@ const initialBalance = user.chipBalance ?? 1000;
 						console.error('[CRAPS_SYNC] Unrecoverable 4xx error:', err.error, response.status);
 						// Do NOT set syncPending = true to prevent infinite retries
 						// Clear pending counters to stop retry loop
-						const savedPendingRollSyncs = pendingRollSyncs.length > 0;
-						if (savedPendingRollSyncs) {
-							persistDroppedRollSyncs(err.error, response.status);
-						}
+						const hasPendingRollSyncs = pendingRollSyncs.length > 0;
+						const persistedDropped = hasPendingRollSyncs
+							? persistDroppedRollSyncs(err.error, response.status)
+							: false;
 						pendingRollSyncs = [];
 						persistSession();
 						showMessage(
-							savedPendingRollSyncs
+							persistedDropped
 								? `Sync failed: ${err.error || 'Client error'}. Pending rolls were saved locally for manual reconciliation.`
 								: `Sync failed: ${err.error || 'Client error'}`,
 							'error',
@@ -1519,10 +1550,14 @@ const initialBalance = user.chipBalance ?? 1000;
 							currentBalance: game.getBalance(),
 							pendingBalanceDelta,
 						});
-						game.applyServerBalance(reconciledBalance);
-						lastSyncedBalance = err.currentBalance;
+						if (game.applyServerBalance(reconciledBalance)) {
+							lastSyncedBalance = err.currentBalance;
+							syncPending = hasPendingLocalChanges();
+						} else {
+							console.error('[CRAPS_SYNC] Failed to apply reconciled balance:', reconciledBalance);
+							syncPending = true;
+						}
 						updateUI();
-						syncPending = hasPendingLocalChanges();
 					} else {
 						// 5xx server errors - retry with exponential backoff
 						console.error('[CRAPS_SYNC] Server error - will retry:', err.error, response.status);
@@ -1554,6 +1589,9 @@ const initialBalance = user.chipBalance ?? 1000;
 							void syncBalance();
 						}, retryDelayMs);
 					}
+				} else {
+					// Programming error — retrying will not help, notify the user
+					showMessage('A sync error occurred. Please refresh if balance seems incorrect.', 'error');
 				}
 			} finally {
 				isSyncInProgress = false;

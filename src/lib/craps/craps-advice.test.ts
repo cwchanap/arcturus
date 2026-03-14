@@ -567,7 +567,7 @@ describe('llm craps strategy', () => {
 		expect(advice.suggestedBets).toEqual(['passLine']);
 	});
 
-	test('falls back when response has no JSON object', async () => {
+	test('throws when response has no JSON object', async () => {
 		setMockFetch(
 			async () =>
 				new Response(
@@ -580,14 +580,13 @@ describe('llm craps strategy', () => {
 				),
 		);
 
-		const advice = await getCrapsAdvice(baseContext, {
-			provider: 'openai',
-			model: 'gpt-4o',
-			apiKey: 'openai-key',
-		});
-		expect(advice.advice).toBe('Take a conservative line bet and watch the point.');
-		expect(advice.suggestedBets).toEqual(['passLine']);
-		expect(advice.confidence).toBe('low');
+		await expect(
+			getCrapsAdvice(baseContext, {
+				provider: 'openai',
+				model: 'gpt-4o',
+				apiKey: 'openai-key',
+			}),
+		).rejects.toThrow('[LLM_CRAPS] No JSON found in LLM response');
 	});
 
 	test('falls back to defaults for invalid parsed fields', async () => {
@@ -618,7 +617,7 @@ describe('llm craps strategy', () => {
 		expect(advice.confidence).toBe('medium');
 	});
 
-	test('falls back when JSON parsing fails', async () => {
+	test('throws when JSON parsing fails', async () => {
 		setMockFetch(
 			async () =>
 				new Response(
@@ -629,14 +628,13 @@ describe('llm craps strategy', () => {
 				),
 		);
 
-		const advice = await getCrapsAdvice(baseContext, {
-			provider: 'openai',
-			model: 'gpt-4o',
-			apiKey: 'openai-key',
-		});
-		expect(advice.advice).toBe('{"advice":"Broken JSON",invalid}');
-		expect(advice.suggestedBets).toEqual(['passLine']);
-		expect(advice.confidence).toBe('low');
+		await expect(
+			getCrapsAdvice(baseContext, {
+				provider: 'openai',
+				model: 'gpt-4o',
+				apiKey: 'openai-key',
+			}),
+		).rejects.toThrow('[LLM_CRAPS] Failed to parse LLM JSON response');
 	});
 
 	test('maps AbortError to timeout for OpenAI and Gemini', async () => {

@@ -198,7 +198,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			return jsonResponse({ advice: advice.advice });
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			console.error('Failed to get craps advice:', error);
+			console.error('[CRAPS_ADVICE] Failed to get craps advice:', error);
 			if (message.includes('timed out')) {
 				return jsonResponse({ error: 'AI advisor timed out. Please try again.' }, { status: 504 });
 			}

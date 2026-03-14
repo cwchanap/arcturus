@@ -1,0 +1,9 @@
+export const MAX_CRAPS_SYNC_HANDS_PER_REQUEST = 100;
+export const MAX_CRAPS_SYNC_WIN_DELTA = 200000;
+export const MAX_CRAPS_SYNC_LOSS_DELTA = 200000;
+
+export const CRAPS_SYNC_LIMITS = {
+	maxHandsPerRequest: MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
+	maxWinDelta: MAX_CRAPS_SYNC_WIN_DELTA,
+	maxLossDelta: MAX_CRAPS_SYNC_LOSS_DELTA,
+} as const;

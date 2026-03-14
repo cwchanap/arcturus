@@ -2,7 +2,7 @@
  * Craps game constants
  */
 
-import type { CrapsSettings, PointNumber } from './types';
+import type { BetType, CrapsSettings, PointNumber } from './types';
 
 export const DEFAULT_MIN_BET = 5;
 export const DEFAULT_MAX_BET = 500;
@@ -124,6 +124,14 @@ export const COME_OUT_ONLY_BETS = new Set(['passLine', 'dontPass']);
 
 // Bets only allowed during point phase
 export const POINT_PHASE_ONLY_BETS = new Set(['come', 'dontCome', 'passLineOdds', 'dontPassOdds']);
+
+// Persisted bets may only carry embedded odds on line and established come bets.
+export const ODDS_ELIGIBLE_BET_TYPES = new Set<BetType>([
+	'passLine',
+	'dontPass',
+	'come',
+	'dontCome',
+]);
 
 // Display labels for all bet types
 export const BET_LABELS: Record<string, string> = {

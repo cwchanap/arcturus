@@ -28,6 +28,7 @@ import {
 	POINT_PHASE_ONLY_BETS,
 	OFF_DURING_COME_OUT,
 	BET_LABELS,
+	ODDS_ELIGIBLE_BET_TYPES,
 } from './constants';
 
 let _idCounter = 0;
@@ -150,6 +151,7 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	const candidate = bet as Partial<CrapsBet>;
 	if (typeof candidate.id !== 'string' || !candidate.id) return null;
 	if (typeof candidate.type !== 'string' || !Object.hasOwn(BET_LABELS, candidate.type)) return null;
+	const type = candidate.type as BetType;
 	const amount = candidate.amount;
 	if (!isPositiveInteger(amount)) {
 		return null;
@@ -164,13 +166,13 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	const odds =
 		candidate.odds === undefined
 			? undefined
-			: isNonNegativeInteger(candidate.odds)
+			: ODDS_ELIGIBLE_BET_TYPES.has(type) && isNonNegativeInteger(candidate.odds)
 				? candidate.odds
 				: null;
 	if (odds === null) return null;
 	return {
 		id: candidate.id,
-		type: candidate.type as BetType,
+		type,
 		amount,
 		...(point !== undefined ? { point } : {}),
 		...(odds !== undefined ? { odds } : {}),

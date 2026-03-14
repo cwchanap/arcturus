@@ -628,6 +628,15 @@ const initialBalance = user.chipBalance ?? 1000;
 		selectedChipAmount?: number;
 	};
 
+	type PersistedDroppedRollSyncs = {
+		rolls: PendingRollSync[];
+		droppedDueTo4xx: true;
+		error?: string;
+		status: number;
+	};
+
+	const BASE_SYNC_RETRY_DELAY_MS = 100;
+
 	// ─── Initialisation ─────────────────────────────────────────────────────────
 	if (typeof window !== 'undefined') {
 		const root = document.getElementById('craps-root');
@@ -635,6 +644,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 		const userId = root.dataset.userId ?? 'anonymous';
 		const persistedSessionKey = `craps-session:${userId}`;
+		const droppedRollSyncsKey = `craps-dropped-roll-syncs:${userId}`;
 
 		const game = new CrapsGame({
 			initialBalance,
@@ -647,7 +657,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		let syncPending = false;
 		let pendingRetryScheduled = false;
 		let pendingRollSyncs: PendingRollSync[] = [];
-		let retryDelayMs = 100; // Base retry delay, doubles on network failure (max 30s)
+		let retryDelayMs = BASE_SYNC_RETRY_DELAY_MS; // Base retry delay, doubles on network failure (max 30s)
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 		function getMaxOddsMultiplier(): number {
 			return game.getState().settings.maxOddsMultiplier;
@@ -704,6 +714,16 @@ const initialBalance = user.chipBalance ?? 1000;
 				selectedChipAmount,
 			};
 			localStorage.setItem(persistedSessionKey, JSON.stringify(payload));
+		}
+
+		function persistDroppedRollSyncs(error: string | undefined, status: number) {
+			const payload: PersistedDroppedRollSyncs = {
+				rolls: pendingRollSyncs.map((roll) => ({ ...roll })),
+				droppedDueTo4xx: true,
+				status,
+				...(error ? { error } : {}),
+			};
+			localStorage.setItem(droppedRollSyncsKey, JSON.stringify(payload));
 		}
 
 		function restoreSession() {
@@ -1196,8 +1216,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		}
 
 		// Bet zone clicks + keyboard activation
-		const betZones = document.querySelectorAll('[data-bet-type]') as NodeListOf<HTMLElement>;
-		betZones.forEach((zone) => {
+		document.querySelectorAll('[data-bet-type]').forEach((zone) => {
+			if (!(zone instanceof HTMLElement)) return;
 			zone.addEventListener('click', () => {
 				placeBetFromZone(zone);
 			});
@@ -1346,6 +1366,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			const hasPendingStats = ackHands > 0;
 			if (ackDelta === 0 && !hasPendingStats) {
 				syncPending = false;
+				retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
 				return;
 			}
 
@@ -1406,6 +1427,7 @@ const initialBalance = user.chipBalance ?? 1000;
 						lastSyncedBalance = data.balance;
 						pendingRollSyncs = pendingRollSyncs.slice(ackRollSyncs.length);
 						syncPending = hasPendingLocalChanges();
+						retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
 						updateUI();
 					} else {
 						// Server returned 200 without a balance field — do not advance
@@ -1476,11 +1498,20 @@ const initialBalance = user.chipBalance ?? 1000;
 					} else if (isUnrecoverable4xx) {
 						// Unrecoverable client error - do not retry, show error to user
 						console.error('[CRAPS_SYNC] Unrecoverable 4xx error:', err.error, response.status);
-						showMessage(`Sync failed: ${err.error || 'Client error'}`, 'error');
 						// Do NOT set syncPending = true to prevent infinite retries
 						// Clear pending counters to stop retry loop
+						const savedPendingRollSyncs = pendingRollSyncs.length > 0;
+						if (savedPendingRollSyncs) {
+							persistDroppedRollSyncs(err.error, response.status);
+						}
 						pendingRollSyncs = [];
 						persistSession();
+						showMessage(
+							savedPendingRollSyncs
+								? `Sync failed: ${err.error || 'Client error'}. Pending rolls were saved locally for manual reconciliation.`
+								: `Sync failed: ${err.error || 'Client error'}`,
+							'error',
+						);
 					} else if (typeof err.currentBalance === 'number') {
 						const reconciledBalance = getBalanceAfterCrapsSyncFailure({
 							serverBalance: err.currentBalance,
@@ -1529,7 +1560,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				const hasRemainingPendingStats = pendingRollSyncs.length > 0;
 				// Reset retry delay only on successful sync (no pending state after response processing)
 				if (!syncPending && !hasRemainingPendingStats) {
-					retryDelayMs = 100;
+					retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
 				}
 				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {
 					pendingRetryScheduled = true;

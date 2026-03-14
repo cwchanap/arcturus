@@ -665,6 +665,21 @@ describe('CrapsGame — restoreState', () => {
 		expect(g.getState().phase).toBe('come-out');
 		expect(g.getBalance()).toBe(1000);
 	});
+
+	test('drops restored bets that carry odds on non-odds bet types', () => {
+		const g = makeGame(1000);
+		const restored = g.restoreState({
+			phase: 'come-out',
+			point: null,
+			chipBalance: 1000,
+			activeBets: [{ id: 'bet-place8', type: 'place8', amount: 25, odds: 50 }],
+		});
+
+		expect(restored).toBe(true);
+		expect(g.getState().activeBets).toHaveLength(0);
+		expect(g.getTotalAtRisk()).toBe(0);
+		expect(g.getBalance()).toBe(1000);
+	});
 });
 
 describe('CrapsGame — state immutability', () => {

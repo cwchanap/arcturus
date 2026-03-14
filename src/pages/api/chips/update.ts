@@ -39,8 +39,16 @@ import {
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
 import { redactUserId } from '../../../lib/achievements/achievement-repository';
 import { isValidGameType } from '../../../lib/game-stats/constants';
+import {
+	MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
+	MAX_CRAPS_SYNC_LOSS_DELTA,
+	MAX_CRAPS_SYNC_WIN_DELTA,
+} from '../../../lib/craps/syncLimits';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
+
+export const BATCHED_GAME_TYPES = new Set(['craps']);
+const MAX_HAND_COUNT = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 export function getRowsAffected(result: RowsAffectedResult): number {
 	return result?.meta?.changes ?? result?.rowsAffected ?? 0;
@@ -66,8 +74,7 @@ export function determineBiggestWinCandidate({
 
 	// Games that batch multiple rounds into a single sync (e.g., craps with rate limiting)
 	// For these games, we trust the client-provided biggestWinCandidate even with handCount > 4
-	const batchedGames = new Set(['craps']);
-	const isBatchedGame = gameType !== undefined && batchedGames.has(gameType);
+	const isBatchedGame = gameType !== undefined && BATCHED_GAME_TYPES.has(gameType);
 
 	// Split-hand round with wins - use client-provided biggestWinCandidate
 	// Heuristic: handCount <= MAX_SPLIT_HANDS indicates a split round, not aggregated sync
@@ -155,9 +162,8 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		// Boxcars/Aces (30:1) on max bet ($500) = $15,000 profit per prop.
 		// Multiple established Come/Don't Come bets can all resolve in a single roll,
 		// so the effective ceiling is higher than per-prop analysis suggests.
-		// Keep aligned with MAX_CRAPS_SYNC_WIN/LOSS_DELTA in src/lib/craps/balanceSync.ts.
-		maxWin: 200000,
-		maxLoss: 200000,
+		maxWin: MAX_CRAPS_SYNC_WIN_DELTA,
+		maxLoss: MAX_CRAPS_SYNC_LOSS_DELTA,
 	},
 };
 
@@ -334,7 +340,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		// Validate handCount if provided
-		const MAX_HAND_COUNT = 100;
 		if (
 			handCount !== undefined &&
 			(typeof handCount !== 'number' ||
@@ -422,10 +427,9 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		// sends delta:-5, statsDelta:50000 to inflate leaderboards at near-zero chip cost.
 		// (A full fix requires server-side game state; this is the best mitigation available
 		// for a client-authoritative, play-money platform.)
-		const GAMES_SUPPORTING_STATS_DELTA = new Set(['craps']);
 		let validatedStatsDelta: number | undefined;
 		if (statsDelta !== undefined) {
-			if (!GAMES_SUPPORTING_STATS_DELTA.has(gameType as string)) {
+			if (!BATCHED_GAME_TYPES.has(gameType)) {
 				return new Response(
 					JSON.stringify({
 						success: false,

@@ -1,3 +1,9 @@
+import {
+	MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
+	MAX_CRAPS_SYNC_LOSS_DELTA,
+	MAX_CRAPS_SYNC_WIN_DELTA,
+} from './syncLimits';
+
 export type PendingRollSync = {
 	netDelta: number;
 	winsCount: number;
@@ -10,10 +16,11 @@ export type PendingRollSync = {
 	grossWinAmount?: number;
 };
 
-// Keep these limits aligned with GAME_LIMITS.craps in src/pages/api/chips/update.ts.
-export const MAX_CRAPS_SYNC_HANDS_PER_REQUEST = 100;
-export const MAX_CRAPS_SYNC_WIN_DELTA = 200000;
-export const MAX_CRAPS_SYNC_LOSS_DELTA = 200000;
+export {
+	MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
+	MAX_CRAPS_SYNC_LOSS_DELTA,
+	MAX_CRAPS_SYNC_WIN_DELTA,
+} from './syncLimits';
 
 export type CrapsSyncBatch = {
 	ackRollSyncs: PendingRollSync[];

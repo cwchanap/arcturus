@@ -751,9 +751,21 @@ const initialBalance = user.chipBalance ?? 1000;
 					localStorage.removeItem(persistedSessionKey);
 					return;
 				}
-				// Always restore the balance from the server-authoritative initialBalance,
-				// never from localStorage, to prevent chip forgery via localStorage tampering.
-				game.setBalance(initialBalance);
+				// Reconcile restored bets against the server-authoritative initialBalance.
+				// Bets placed since the last synced roll are at risk but not yet deducted
+				// server-side, so subtract getTotalAtRisk() from the server balance to get the
+				// true available chip count. If the result is negative the session is invalid.
+				const totalAtRisk = game.getTotalAtRisk();
+				const reconciledBalance = initialBalance - totalAtRisk;
+				if (reconciledBalance < 0 || !Number.isFinite(reconciledBalance)) {
+					console.warn(
+						'[CRAPS] Restored session has more chips at risk than server balance allows; clearing.',
+					);
+					localStorage.removeItem(persistedSessionKey);
+					game.reset(initialBalance);
+					return;
+				}
+				game.setBalance(reconciledBalance);
 				// pendingRollSyncs are intentionally not restored — synthetic entries could
 				// forge stats (wins, biggest-win) without risking chips on reload.
 				if (

@@ -151,6 +151,9 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	const candidate = bet as Partial<CrapsBet>;
 	if (typeof candidate.id !== 'string' || !candidate.id) return null;
 	if (typeof candidate.type !== 'string' || !Object.hasOwn(BET_LABELS, candidate.type)) return null;
+	// passLineOdds/dontPassOdds are never standalone bets — odds live on the line bet's `odds` field.
+	// Restoring them as standalone records bypasses placeBet() rule checks.
+	if (candidate.type === 'passLineOdds' || candidate.type === 'dontPassOdds') return null;
 	const type = candidate.type as BetType;
 	const amount = candidate.amount;
 	if (!isPositiveInteger(amount)) {
@@ -216,6 +219,20 @@ export class CrapsGame {
 	/** Total chips currently at risk (sum of all active bet amounts + odds) */
 	public getTotalAtRisk(): number {
 		return this.state.activeBets.reduce((sum, b) => sum + b.amount + (b.odds ?? 0), 0);
+	}
+
+	/** Reset to a clean come-out state, preserving settings, with the given balance. */
+	public reset(balance: number): void {
+		this.state = {
+			phase: 'come-out',
+			point: null,
+			lastRoll: null,
+			rollHistory: [],
+			activeBets: [],
+			chipBalance: balance,
+			rollCount: 0,
+			settings: { ...this.state.settings },
+		};
 	}
 
 	public restoreState(snapshot: Partial<CrapsGameState>): boolean {

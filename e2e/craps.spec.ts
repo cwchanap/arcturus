@@ -5,8 +5,8 @@ async function gotoCraps(page: Page) {
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
 }
 
-async function createIsolatedCrapsPage(browser: Browser) {
-	const context = await browser.newContext({ baseURL: 'http://localhost:2000' });
+async function createIsolatedCrapsPage(browser: Browser, baseURL?: string) {
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
 	const page = await context.newPage();
 	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -235,8 +235,8 @@ test.describe('Craps — Active Bets Panel', () => {
 });
 
 test.describe('Craps — Clear Bets Sync', () => {
-	test('clearing bets syncs refunded chips to server', async ({ browser }) => {
-		const { context, page } = await createIsolatedCrapsPage(browser);
+	test('clearing bets syncs refunded chips to server', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedCrapsPage(browser, baseURL);
 		try {
 			await ensureMinimumBalance(page, 200);
 

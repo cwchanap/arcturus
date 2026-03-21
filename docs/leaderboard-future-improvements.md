@@ -9,7 +9,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 ### Features Implemented
 
 - Top 50 players ranked by chip balance (overall leaderboard)
-- Game-specific leaderboards for Blackjack, Baccarat, and Craps
+- Game-specific leaderboards for Blackjack, Baccarat, Craps, and Poker
 - Four ranking metrics per game: Wins, Win Rate, Biggest Win, Net Profit
 - Win rate eligibility gate (minimum 10 decided hands to prevent inflation)
 - Current user rank display (even if outside top 50)
@@ -26,7 +26,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 - Drizzle ORM with Cloudflare D1
 - Clean architecture (types → repository → business logic → API → UI)
 - `gameStats` table tracking wins, losses, hands played, biggest win, net profit
-- `userAchievement` table (schema ready; badge display on leaderboard not yet wired)
+- `userAchievement` table (schema ready and now in active use for leaderboard badges and achievement-award checks); notification UX remains future work
 - Unit tests (22 leaderboard + game-stats repository + game-stats logic) and E2E tests (11)
 
 ### Key Files
@@ -85,7 +85,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Impact:** Deeper engagement per game
 **Status:** ✅ Fully implemented
 
-The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `biggestWin`, and `netProfit` columns. Leaderboards exist for Blackjack, Baccarat, and Craps across four metrics. Poker is excluded pending round-stat payload support (see technical debt below).
+The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `biggestWin`, and `netProfit` columns. Leaderboards exist for Blackjack, Baccarat, Craps, and Poker across four metrics. Poker is both recognized by the shared game-stats constants and actively populated through the same `game_stats` leaderboard pipeline as the other supported games.
 
 ---
 
@@ -123,7 +123,7 @@ The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `b
 **Priority:** Low
 **Effort:** Medium
 **Impact:** Long-term engagement
-**Status:** ⚠️ Partially implemented — `userAchievement` table exists; badge display on leaderboard UI not wired
+**Status:** ⚠️ Partially implemented — `userAchievement` table (schema ready) is in active use, and both achievement awarding plus leaderboard badge UI are live; notification UX remains future work
 
 #### Requirements
 
@@ -143,10 +143,9 @@ The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `b
 
 #### Remaining Work
 
-1. Add achievement checking logic to leaderboard updates
-2. Display badges in leaderboard UI rows
-3. Add achievement notification system
-4. (`achievement` definition table + `userAchievement` join already in schema)
+1. Surface newly earned achievements to players with notification UX
+2. Add any supporting delivery/presentation work needed beyond the current API response
+3. (`achievement` definition table + `userAchievement` join already in schema)
 
 ---
 
@@ -180,7 +179,6 @@ The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `b
 - [ ] Extract `jsonResponse` helper to shared utility (`src/lib/api-utils.ts`) — currently duplicated across API endpoints
 - [ ] Extract `formatChips` / `Intl.NumberFormat` calls to shared utility (`src/lib/format-utils.ts`) — currently inline in `leaderboard.astro`
 - [ ] Add database index on `user.chipBalance` for performance on top-player queries
-- [ ] Wire Poker game stats into `recordGameRound()` (blocked on round-stat payload; see `src/lib/game-stats/constants.ts`)
 - [ ] Consider caching leaderboard data (1-5 minute TTL)
 
 ### Performance
@@ -239,13 +237,13 @@ GET /api/leaderboard/history
 
 ## Timeline Estimate
 
-| Phase                  | Effort    | Status          | Dependencies                 |
-| ---------------------- | --------- | --------------- | ---------------------------- |
-| Phase 1: Time-Based    | 2-3 weeks | ❌ Not started  | Cloudflare scheduled workers |
-| Phase 2: Game-Specific | 2 weeks   | ✅ Done         | —                            |
-| Phase 3: Social        | 4-5 weeks | ❌ Not started  | Friend system                |
-| Phase 4: Achievements  | 2 weeks   | ⚠️ Schema ready | Badge display + logic        |
-| Phase 5: Tournaments   | 6+ weeks  | ❌ Not started  | Tournament system            |
+| Phase                  | Effort    | Status                   | Dependencies                 |
+| ---------------------- | --------- | ------------------------ | ---------------------------- |
+| Phase 1: Time-Based    | 2-3 weeks | ❌ Not started           | Cloudflare scheduled workers |
+| Phase 2: Game-Specific | 2 weeks   | ✅ Done                  | —                            |
+| Phase 3: Social        | 4-5 weeks | ❌ Not started           | Friend system                |
+| Phase 4: Achievements  | 2 weeks   | ⚠️ Notifications pending | Notification UX              |
+| Phase 5: Tournaments   | 6+ weeks  | ❌ Not started           | Tournament system            |
 
 ---
 
@@ -255,7 +253,6 @@ GET /api/leaderboard/history
 2. What's the minimum player count before showing a game-specific leaderboard?
 3. Should anonymous/guest users see the leaderboard (read-only)?
 4. How to handle inactive users in rankings (exclude after X days)?
-5. When will Poker round-stat payloads be ready to enable Poker game-stats tracking?
 
 ---
 

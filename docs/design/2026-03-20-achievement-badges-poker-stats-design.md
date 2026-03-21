@@ -144,7 +144,7 @@ All three paths must trigger `syncChips()`.
 
 **Important — Opponents fold path guard:** The `activePlayers.length === 1` branch fires for _any_ sole remaining player, including AI players. The sync must only fire when `winner.id === 0` (i.e. the human is the last standing). When an AI wins by sole survivor, no sync is needed.
 
-**Fourth hook point — Showdown entry with one active player:** Inside the `showdown` phase block (~line 524) there is a second `activePlayers.length === 1` guard (a player may fold on the river just before cards are compared). This path also awards chips and must also trigger `syncChips()` with the same `winner.id === 0` guard. This covers the same logic as hook point 1 but reached via the showdown code path.
+**Fourth hook point — Showdown entry with one active player:** Inside the `showdown` phase block (~line 524) there is a second `activePlayers.length === 1` guard (a player may fold on the river just before cards are compared). This path awards chips and must trigger `syncChips()` with the same `winner.id === 0` guard. This covers the same logic as hook point 1 but reached via the showdown code path.
 
 ### Human Player Identification
 

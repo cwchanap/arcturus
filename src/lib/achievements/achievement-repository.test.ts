@@ -5,6 +5,7 @@ import {
 	grantAchievement,
 	hasAchievement,
 	getAchievementCount,
+	getBulkUserAchievements,
 } from './achievement-repository';
 import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
@@ -173,5 +174,57 @@ describe('achievement-repository', () => {
 
 		const count = await getAchievementCount(mockDb, 'user1');
 		expect(count).toBe(2);
+	});
+});
+
+describe('getBulkUserAchievements', () => {
+	function createBulkMockDb(rows: Array<{ userId: string; achievementId: string }>): Database {
+		return {
+			select: () => ({
+				from: () => ({
+					where: () => Promise.resolve(rows),
+				}),
+			}),
+		} as unknown as Database;
+	}
+
+	test('returns empty Map when userIds array is empty (no DB query)', async () => {
+		// createBulkMockDb is never called — function short-circuits before querying
+		const result = await getBulkUserAchievements({} as Database, []);
+		expect(result.size).toBe(0);
+	});
+
+	test('maps known achievementIds to their emoji icons', async () => {
+		const mockDb = createBulkMockDb([
+			{ userId: 'user1', achievementId: 'rising_star' },
+			{ userId: 'user1', achievementId: 'champion' },
+			{ userId: 'user2', achievementId: 'high_roller' },
+		]);
+
+		const result = await getBulkUserAchievements(mockDb, ['user1', 'user2']);
+
+		expect(result.get('user1')).toEqual(['🌟', '🏆']);
+		expect(result.get('user2')).toEqual(['💎']);
+	});
+
+	test('user with no achievements is absent from the map (empty array not stored)', async () => {
+		const mockDb = createBulkMockDb([{ userId: 'user1', achievementId: 'champion' }]);
+
+		const result = await getBulkUserAchievements(mockDb, ['user1', 'user2']);
+
+		expect(result.get('user1')).toEqual(['🏆']);
+		expect(result.get('user2')).toBeUndefined();
+	});
+
+	test('skips unknown achievementId values gracefully', async () => {
+		const mockDb = createBulkMockDb([
+			{ userId: 'user1', achievementId: 'nonexistent_badge' },
+			{ userId: 'user1', achievementId: 'champion' },
+		]);
+
+		const result = await getBulkUserAchievements(mockDb, ['user1']);
+
+		// nonexistent_badge is skipped; only champion icon appears
+		expect(result.get('user1')).toEqual(['🏆']);
 	});
 });

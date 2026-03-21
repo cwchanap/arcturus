@@ -2,25 +2,40 @@
 
 ## Overview
 
-This document outlines potential future enhancements for the Arcturus Casino Leaderboard System. The current implementation (v1.0) provides a solid foundation with top 50 rankings by chip balance.
+This document outlines potential future enhancements for the Arcturus Casino Leaderboard System. The current implementation (v2.0) provides overall chip-balance rankings plus game-specific leaderboards with multiple ranking metrics.
 
-## Current State (v1.0)
+## Current State (v2.0) — as of 2026-03-19
 
 ### Features Implemented
 
-- Top 50 players ranked by chip balance
+- Top 50 players ranked by chip balance (overall leaderboard)
+- Game-specific leaderboards for Blackjack, Baccarat, and Craps
+- Four ranking metrics per game: Wins, Win Rate, Biggest Win, Net Profit
+- Win rate eligibility gate (minimum 10 decided hands to prevent inflation)
 - Current user rank display (even if outside top 50)
 - Medal emojis for top 3 positions
+- Tab-based navigation (`/games/leaderboard?game=blackjack&metric=wins`)
+- Metric selector UI for game tabs
 - Responsive design with casino theme
-- Protected route with authentication
+- Protected route with authentication; API returns 401 if unauthenticated
 - API endpoint for programmatic access
 
 ### Technical Stack
 
 - Astro SSR page with server-side data fetching
 - Drizzle ORM with Cloudflare D1
-- Clean architecture (types → repository → business logic)
-- Unit tests (12) and E2E tests (11)
+- Clean architecture (types → repository → business logic → API → UI)
+- `gameStats` table tracking wins, losses, hands played, biggest win, net profit
+- `userAchievement` table (schema ready; badge display on leaderboard not yet wired)
+- Unit tests (22 leaderboard + game-stats repository + game-stats logic) and E2E tests (11)
+
+### Key Files
+
+- `src/lib/leaderboard/` — overall leaderboard logic and repository
+- `src/lib/game-stats/` — game-specific stats logic, repository, types, constants
+- `src/pages/games/leaderboard.astro` — UI with tabs and metric selector
+- `src/pages/api/leaderboard/index.ts` — REST endpoint
+- `e2e/leaderboard.spec.ts` — E2E test suite
 
 ---
 
@@ -31,6 +46,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Priority:** High
 **Effort:** Medium
 **Impact:** High engagement through competitive resets
+**Status:** ❌ Not implemented
 
 #### Requirements
 
@@ -51,7 +67,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
      createdAt INTEGER NOT NULL
    );
    ```
-2. Scheduled worker to capture snapshots at period boundaries
+2. Scheduled Cloudflare Worker to capture snapshots at period boundaries
 3. Calculate rankings based on balance delta within period
 4. Add tab UI for period selection
 
@@ -67,36 +83,9 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Priority:** Medium
 **Effort:** Medium
 **Impact:** Deeper engagement per game
+**Status:** ✅ Fully implemented
 
-#### Requirements
-
-- Separate leaderboards for Poker, Blackjack, Baccarat
-- Track game-specific statistics (hands won, biggest pot, etc.)
-- Show game-specific badges/achievements
-
-#### Technical Approach
-
-1. Create `game_stats` table:
-   ```sql
-   CREATE TABLE game_stats (
-     userId TEXT NOT NULL REFERENCES user(id),
-     gameType TEXT NOT NULL, -- 'poker', 'blackjack', 'baccarat'
-     totalWins INTEGER DEFAULT 0,
-     totalLosses INTEGER DEFAULT 0,
-     handsPlayed INTEGER DEFAULT 0,
-     biggestWin INTEGER DEFAULT 0,
-     updatedAt INTEGER NOT NULL,
-     PRIMARY KEY (userId, gameType)
-   );
-   ```
-2. Update chip sync endpoint to record game stats
-3. Add game filter to leaderboard page
-4. Create game-specific ranking queries
-
-#### Success Metrics
-
-- Increased time per game session
-- Higher variety in games played
+The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `biggestWin`, and `netProfit` columns. Leaderboards exist for Blackjack, Baccarat, and Craps across four metrics. Poker is excluded pending round-stat payload support (see technical debt below).
 
 ---
 
@@ -105,6 +94,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Priority:** Medium
 **Effort:** High
 **Impact:** Viral growth and retention
+**Status:** ❌ Not implemented
 
 #### Requirements
 
@@ -133,6 +123,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Priority:** Low
 **Effort:** Medium
 **Impact:** Long-term engagement
+**Status:** ⚠️ Partially implemented — `userAchievement` table exists; badge display on leaderboard UI not wired
 
 #### Requirements
 
@@ -150,12 +141,12 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 | Consistent  | Stay in top 50 for 7 days          |
 | Comeback    | Re-enter top 50 after dropping out |
 
-#### Technical Approach
+#### Remaining Work
 
-1. Create `achievement` and `user_achievement` tables
-2. Add achievement checking logic to leaderboard updates
-3. Display badges in leaderboard UI
-4. Add achievement notification system
+1. Add achievement checking logic to leaderboard updates
+2. Display badges in leaderboard UI rows
+3. Add achievement notification system
+4. (`achievement` definition table + `userAchievement` join already in schema)
 
 ---
 
@@ -164,6 +155,7 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 **Priority:** Low
 **Effort:** High
 **Impact:** Premium engagement feature
+**Status:** ❌ Not implemented
 
 #### Requirements
 
@@ -185,14 +177,15 @@ This document outlines potential future enhancements for the Arcturus Casino Lea
 
 ### Code Quality
 
-- [ ] Extract `jsonResponse` helper to shared utility (`src/lib/api-utils.ts`)
-- [ ] Extract `formatChips` to shared utility (`src/lib/format-utils.ts`)
-- [ ] Add database index on `user.chipBalance` for performance
+- [ ] Extract `jsonResponse` helper to shared utility (`src/lib/api-utils.ts`) — currently duplicated across API endpoints
+- [ ] Extract `formatChips` / `Intl.NumberFormat` calls to shared utility (`src/lib/format-utils.ts`) — currently inline in `leaderboard.astro`
+- [ ] Add database index on `user.chipBalance` for performance on top-player queries
+- [ ] Wire Poker game stats into `recordGameRound()` (blocked on round-stat payload; see `src/lib/game-stats/constants.ts`)
 - [ ] Consider caching leaderboard data (1-5 minute TTL)
 
 ### Performance
 
-- [ ] Implement pagination for viewing beyond top 50
+- [ ] Implement pagination (`offset` param) for viewing beyond top 50 — API currently supports `limit` only
 - [ ] Add infinite scroll option
 - [ ] Cache user rank calculation (invalidate on balance change)
 
@@ -218,10 +211,10 @@ GET /api/leaderboard
 ```
 GET /api/leaderboard
   ?limit=50
-  &offset=0           # Pagination
-  &period=all         # all, daily, weekly, monthly
-  &game=poker         # Filter by game type
-  &friends=true       # Friends-only view
+  &offset=0           # Pagination (not yet implemented)
+  &period=all         # all, daily, weekly, monthly (not yet implemented)
+  &game=poker         # Filter by game type (served by game-stats module)
+  &friends=true       # Friends-only view (not yet implemented)
 
 GET /api/leaderboard/user/:userId
   # Get specific user's rank and stats
@@ -246,13 +239,13 @@ GET /api/leaderboard/history
 
 ## Timeline Estimate
 
-| Phase                  | Effort    | Dependencies                 |
-| ---------------------- | --------- | ---------------------------- |
-| Phase 1: Time-Based    | 2-3 weeks | Cloudflare scheduled workers |
-| Phase 2: Game-Specific | 2 weeks   | Game stats tracking          |
-| Phase 3: Social        | 4-5 weeks | Friend system                |
-| Phase 4: Achievements  | 2 weeks   | Achievement system           |
-| Phase 5: Tournaments   | 6+ weeks  | Tournament system            |
+| Phase                  | Effort    | Status          | Dependencies                 |
+| ---------------------- | --------- | --------------- | ---------------------------- |
+| Phase 1: Time-Based    | 2-3 weeks | ❌ Not started  | Cloudflare scheduled workers |
+| Phase 2: Game-Specific | 2 weeks   | ✅ Done         | —                            |
+| Phase 3: Social        | 4-5 weeks | ❌ Not started  | Friend system                |
+| Phase 4: Achievements  | 2 weeks   | ⚠️ Schema ready | Badge display + logic        |
+| Phase 5: Tournaments   | 6+ weeks  | ❌ Not started  | Tournament system            |
 
 ---
 
@@ -262,12 +255,14 @@ GET /api/leaderboard/history
 2. What's the minimum player count before showing a game-specific leaderboard?
 3. Should anonymous/guest users see the leaderboard (read-only)?
 4. How to handle inactive users in rankings (exclude after X days)?
+5. When will Poker round-stat payloads be ready to enable Poker game-stats tracking?
 
 ---
 
 ## References
 
-- Current implementation: `src/lib/leaderboard/`
+- Current implementation: `src/lib/leaderboard/`, `src/lib/game-stats/`
 - Database schema: `src/db/schema.ts`
+- Migrations: `drizzle/0003_marvelous_sasquatch.sql`, `drizzle/0004_wide_vin_gonzales.sql`
 - E2E tests: `e2e/leaderboard.spec.ts`
 - CLAUDE.md guidelines for new features

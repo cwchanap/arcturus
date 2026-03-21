@@ -8,6 +8,8 @@ const user = Astro.locals.user;
 if (!user) {
 	return Astro.redirect('/signin');
 }
+
+const initialBalance = user.chipBalance ?? 1000;
 ---
 
 <CasinoLayout title="Texas Hold'em Poker - Arcturus Casino">
@@ -30,7 +32,9 @@ if (!user) {
 			<div class="flex items-center gap-4">
 				<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
 					<div class="text-xs text-slate-400 mb-1">Your Balance</div>
-					<div class="text-2xl font-bold text-yellow-400" id="player-balance">$1,000</div>
+					<div class="text-2xl font-bold text-yellow-400" id="player-balance">
+						{initialBalance.toLocaleString()}
+					</div>
 				</div>
 			</div>
 		</div>

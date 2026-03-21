@@ -229,6 +229,9 @@ const currentUserInTop = isGameTab
 											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
 												Player
 											</th>
+											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
+												Badges
+											</th>
 											<th class="px-6 py-4 text-right text-xs font-semibold text-yellow-400 uppercase tracking-wider">
 												Chip Balance
 											</th>
@@ -278,6 +281,11 @@ const currentUserInTop = isGameTab
 															)}
 														</div>
 													</td>
+													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
+														<span class="text-lg">
+															{entry.badges.length > 0 ? entry.badges.join(' ') : '—'}
+														</span>
+													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
 														<span
 															class:list={[
@@ -325,6 +333,9 @@ const currentUserInTop = isGameTab
 											</th>
 											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
 												Player
+											</th>
+											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
+												Badges
 											</th>
 											<th class="px-6 py-4 text-right text-xs font-semibold text-yellow-400 uppercase tracking-wider">
 												{RANKING_METRIC_LABELS[validMetric]}
@@ -377,6 +388,11 @@ const currentUserInTop = isGameTab
 																</span>
 															)}
 														</div>
+													</td>
+													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
+														<span class="text-lg">
+															{entry.badges.length > 0 ? entry.badges.join(' ') : '—'}
+														</span>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
 														<span

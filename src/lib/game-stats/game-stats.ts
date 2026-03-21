@@ -23,6 +23,7 @@ import {
 	getUserGameRank,
 	getTotalPlayersForGame,
 } from './game-stats-repository';
+import { getBulkUserAchievements } from '../achievements/achievement-repository';
 
 /**
  * Calculate derived metrics from raw stats
@@ -101,6 +102,7 @@ function transformToGameLeaderboardEntries(
 	gameType: GameType,
 	rankingMetric: string,
 	currentUserId: string | null,
+	badgeMap: Map<string, string[]> = new Map(),
 ): GameLeaderboardEntry[] {
 	return rawPlayers.map((player, index) => {
 		// Calculate win rate
@@ -136,6 +138,7 @@ function transformToGameLeaderboardEntries(
 			handsPlayed: player.handsPlayed,
 			winRate,
 			isCurrentUser: currentUserId ? player.userId === currentUserId : false,
+			badges: badgeMap.get(player.userId) ?? [],
 		};
 	});
 }
@@ -161,21 +164,26 @@ export async function getGameLeaderboardData(
 		currentUserId = null,
 	} = options;
 
-	// Fetch data in parallel for better performance
-	const [rawPlayers, currentUserRank, totalPlayers] = await Promise.all([
-		getTopPlayersForGame(db, gameType, rankingMetric, limit),
+	// Stage 1: fetch top players (userIds not known until this resolves)
+	const rawPlayers = await getTopPlayersForGame(db, gameType, rankingMetric, limit);
+	const userIds = rawPlayers.map((p) => p.userId);
+
+	// Stage 2: parallel queries that depend on stage 1
+	const [badgeMap, currentUserRank, totalPlayers] = await Promise.all([
+		getBulkUserAchievements(db, userIds),
 		currentUserId
 			? getUserGameRank(db, currentUserId, gameType, rankingMetric)
 			: Promise.resolve(null),
 		getTotalPlayersForGame(db, gameType, rankingMetric),
 	]);
 
-	// Transform raw data into leaderboard entries
+	// Transform raw data into leaderboard entries with badges
 	const entries = transformToGameLeaderboardEntries(
 		rawPlayers,
 		gameType,
 		rankingMetric,
 		currentUserId,
+		badgeMap,
 	);
 
 	// Check if current user is in the displayed entries

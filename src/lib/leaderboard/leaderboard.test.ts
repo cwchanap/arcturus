@@ -105,13 +105,21 @@ describe('Leaderboard Data Transformation', () => {
 	describe('Current User In Top Detection', () => {
 		test('detects when current user is in top list', () => {
 			const entries: LeaderboardEntry[] = [
-				{ rank: 1, userId: 'user1', playerName: 'Alice', chipBalance: 50000, isCurrentUser: false },
+				{
+					rank: 1,
+					userId: 'user1',
+					playerName: 'Alice',
+					chipBalance: 50000,
+					isCurrentUser: false,
+					badges: [],
+				},
 				{
 					rank: 2,
 					userId: 'current',
 					playerName: 'Me',
 					chipBalance: 30000,
 					isCurrentUser: true,
+					badges: [],
 				},
 			];
 
@@ -121,8 +129,22 @@ describe('Leaderboard Data Transformation', () => {
 
 		test('detects when current user is NOT in top list', () => {
 			const entries: LeaderboardEntry[] = [
-				{ rank: 1, userId: 'user1', playerName: 'Alice', chipBalance: 50000, isCurrentUser: false },
-				{ rank: 2, userId: 'user2', playerName: 'Bob', chipBalance: 30000, isCurrentUser: false },
+				{
+					rank: 1,
+					userId: 'user1',
+					playerName: 'Alice',
+					chipBalance: 50000,
+					isCurrentUser: false,
+					badges: [],
+				},
+				{
+					rank: 2,
+					userId: 'user2',
+					playerName: 'Bob',
+					chipBalance: 30000,
+					isCurrentUser: false,
+					badges: [],
+				},
 			];
 
 			const currentUserInTop = isCurrentUserInTop(entries);
@@ -237,7 +259,14 @@ describe('Leaderboard Data Transformation', () => {
 	describe('LeaderboardData Structure', () => {
 		test('creates complete leaderboard data object', () => {
 			const entries: LeaderboardEntry[] = [
-				{ rank: 1, userId: 'user1', playerName: 'Alice', chipBalance: 50000, isCurrentUser: false },
+				{
+					rank: 1,
+					userId: 'user1',
+					playerName: 'Alice',
+					chipBalance: 50000,
+					isCurrentUser: false,
+					badges: [],
+				},
 			];
 			const currentUserRank = 25;
 			const totalPlayers = 100;
@@ -266,6 +295,7 @@ describe('Type Definitions', () => {
 			playerName: 'Test Player',
 			chipBalance: 10000,
 			isCurrentUser: false,
+			badges: [],
 		};
 
 		expect(entry.rank).toBeDefined();
@@ -273,6 +303,7 @@ describe('Type Definitions', () => {
 		expect(entry.playerName).toBeDefined();
 		expect(entry.chipBalance).toBeDefined();
 		expect(entry.isCurrentUser).toBeDefined();
+		expect(entry.badges).toBeDefined();
 	});
 
 	test('RawPlayerData has all required fields', () => {

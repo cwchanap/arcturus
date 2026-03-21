@@ -9,6 +9,7 @@ import type { Database } from '../db';
 import type { LeaderboardData, LeaderboardEntry, LeaderboardOptions, RawPlayerData } from './types';
 import { DEFAULT_LEADERBOARD_LIMIT } from './types';
 import { getTopPlayers, getUserRank, getTotalPlayerCount } from './leaderboard-repository';
+import { getBulkUserAchievements } from '../achievements/achievement-repository';
 
 /**
  * Checks if the current user appears in the provided leaderboard entries.
@@ -31,6 +32,7 @@ export function isCurrentUserInTop(entries: LeaderboardEntry[]): boolean {
 export function transformToLeaderboardEntries(
 	rawPlayers: RawPlayerData[],
 	currentUserId: string | null = null,
+	badgeMap: Map<string, string[]> = new Map(),
 ): LeaderboardEntry[] {
 	return rawPlayers.map((player, index) => ({
 		rank: index + 1,
@@ -38,6 +40,7 @@ export function transformToLeaderboardEntries(
 		playerName: player.playerName,
 		chipBalance: player.chipBalance,
 		isCurrentUser: currentUserId ? player.userId === currentUserId : false,
+		badges: badgeMap.get(player.userId) ?? [],
 	}));
 }
 
@@ -57,15 +60,19 @@ export async function getLeaderboardData(
 ): Promise<LeaderboardData> {
 	const { limit = DEFAULT_LEADERBOARD_LIMIT, currentUserId = null } = options;
 
-	// Fetch data in parallel for better performance
-	const [rawPlayers, currentUserRank, totalPlayers] = await Promise.all([
-		getTopPlayers(db, limit),
+	// Stage 1: fetch top players (userIds not known until this resolves)
+	const rawPlayers = await getTopPlayers(db, limit);
+	const userIds = rawPlayers.map((p) => p.userId);
+
+	// Stage 2: parallel queries that depend on stage 1
+	const [badgeMap, currentUserRank, totalPlayers] = await Promise.all([
+		getBulkUserAchievements(db, userIds),
 		currentUserId ? getUserRank(db, currentUserId) : Promise.resolve(null),
 		getTotalPlayerCount(db),
 	]);
 
-	// Transform raw data into leaderboard entries with rank and current user flag
-	const entries = transformToLeaderboardEntries(rawPlayers, currentUserId);
+	// Transform raw data into leaderboard entries with rank, current user flag, and badges
+	const entries = transformToLeaderboardEntries(rawPlayers, currentUserId, badgeMap);
 
 	// Check if current user appears in the displayed entries
 	const currentUserInTop = isCurrentUserInTop(entries);

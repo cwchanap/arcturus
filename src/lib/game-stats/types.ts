@@ -68,6 +68,7 @@ export interface GameLeaderboardEntry {
 	handsPlayed: number;
 	winRate: number;
 	isCurrentUser: boolean;
+	badges: string[];
 }
 
 /**

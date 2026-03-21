@@ -13,6 +13,7 @@ export interface LeaderboardEntry {
 	playerName: string;
 	chipBalance: number;
 	isCurrentUser: boolean;
+	badges: string[];
 }
 
 /**

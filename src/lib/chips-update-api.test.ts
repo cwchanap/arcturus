@@ -280,7 +280,7 @@ describe('chips update API', () => {
 		expect(body.error).toBe('INVALID_GAME_TYPE');
 	});
 
-	test('accepts poker updates but skips stats and achievements', async () => {
+	test('accepts poker updates and records stats and achievements', async () => {
 		resetMocks();
 		const POST = createHandler();
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
@@ -302,8 +302,8 @@ describe('chips update API', () => {
 		expect(response.status).toBe(200);
 		expect(body.success).toBe(true);
 		expect(body.balance).toBe(1025);
-		expect(mockRecordGameRound.calls.length).toBe(0);
-		expect(mockCheckAndGrantAchievements.calls.length).toBe(0);
+		expect(mockRecordGameRound.calls.length).toBe(1);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 	});
 
 	test('rejects non-string game type', async () => {

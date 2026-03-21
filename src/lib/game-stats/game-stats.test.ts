@@ -63,6 +63,10 @@ let getGameLeaderboardData: typeof import('./game-stats').getGameLeaderboardData
 let getUserStatsAllGames: typeof import('./game-stats').getUserStatsAllGames;
 
 beforeAll(() => {
+	mock.module('../achievements/achievement-repository', () => ({
+		getBulkUserAchievements: async () => new Map(),
+	}));
+
 	mock.module('./game-stats-repository', () => ({
 		getAllUserGameStats: async (...args: unknown[]) => {
 			mockGetAllUserGameStats.calls.push(args);
@@ -328,8 +332,8 @@ describe('constants', () => {
 		expect(GAME_TYPES).toContain('blackjack');
 		expect(GAME_TYPES).toContain('baccarat');
 		expect(GAME_TYPES).toContain('craps');
-		// Note: poker is excluded until round-stat payloads are wired for poker rounds
-		expect(GAME_TYPES.length).toBe(3);
+		expect(GAME_TYPES).toContain('poker');
+		expect(GAME_TYPES.length).toBe(4);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {
@@ -343,8 +347,7 @@ describe('constants', () => {
 	test('isValidGameType validates correctly', () => {
 		expect(isValidGameType('blackjack')).toBe(true);
 		expect(isValidGameType('baccarat')).toBe(true);
-		// Note: poker is currently excluded from GAME_TYPES until round-stat payloads are wired
-		expect(isValidGameType('poker')).toBe(false);
+		expect(isValidGameType('poker')).toBe(true);
 		expect(isValidGameType('roulette')).toBe(false);
 		expect(isValidGameType('')).toBe(false);
 		expect(isValidGameType(null as unknown as string)).toBe(false);

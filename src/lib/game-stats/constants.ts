@@ -4,9 +4,8 @@
 
 /**
  * Valid game type identifiers (must match database values and chip update validation)
- * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
-export const GAME_TYPES = ['blackjack', 'baccarat', 'craps'] as const;
+export const GAME_TYPES = ['blackjack', 'baccarat', 'craps', 'poker'] as const;
 
 /**
  * Valid ranking metrics for game leaderboards
@@ -25,22 +24,22 @@ export const RANKING_METRIC_LABELS: Record<(typeof RANKING_METRICS)[number], str
 
 /**
  * Display names for game types (mirrors GAME_TYPES)
- * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
 export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: 'Blackjack',
 	baccarat: 'Baccarat',
 	craps: 'Craps',
+	poker: 'Poker',
 };
 
 /**
  * Emoji icons for game types (mirrors GAME_TYPES)
- * Note: poker is excluded until round-stat payloads are wired for poker rounds
  */
 export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: '🃏',
 	baccarat: '🎴',
 	craps: '🎲',
+	poker: '♠️',
 };
 
 /**

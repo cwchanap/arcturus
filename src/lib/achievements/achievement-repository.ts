@@ -4,12 +4,13 @@
  * Database operations for user achievements.
  */
 
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { userAchievement } from '../../db/schema';
 import type { Database } from '../db';
 import type { UserAchievementRecord, AchievementId } from './types';
 import { ACHIEVEMENT_IDS } from './types';
 import type { GameType } from '../game-stats/types';
+import { ACHIEVEMENTS } from './achievement-rules';
 
 /**
  * Redact user ID for logging to avoid PII exposure
@@ -128,6 +129,33 @@ export async function hasAchievement(
 		.limit(1);
 
 	return !!result;
+}
+
+/**
+ * Get achievement emoji icons for multiple users in a single query.
+ * Returns a Map of userId → string[] (emoji icons).
+ * Returns empty Map if userIds is empty (guard against inArray([]) D1 behavior).
+ */
+export async function getBulkUserAchievements(
+	db: Database,
+	userIds: string[],
+): Promise<Map<string, string[]>> {
+	if (userIds.length === 0) return new Map();
+
+	const results = await db
+		.select({ userId: userAchievement.userId, achievementId: userAchievement.achievementId })
+		.from(userAchievement)
+		.where(inArray(userAchievement.userId, userIds));
+
+	const map = new Map<string, string[]>();
+	for (const row of results) {
+		const achievement = ACHIEVEMENTS.find((a) => a.id === row.achievementId);
+		if (!achievement) continue;
+		const existing = map.get(row.userId) ?? [];
+		existing.push(achievement.icon);
+		map.set(row.userId, existing);
+	}
+	return map;
 }
 
 /**

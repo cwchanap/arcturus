@@ -144,49 +144,55 @@ All three paths must trigger `syncChips()`.
 
 **Important — Opponents fold path guard:** The `activePlayers.length === 1` branch fires for _any_ sole remaining player, including AI players. The sync must only fire when `winner.id === 0` (i.e. the human is the last standing). When an AI wins by sole survivor, no sync is needed.
 
+**Fourth hook point — Showdown entry with one active player:** Inside the `showdown` phase block (~line 524) there is a second `activePlayers.length === 1` guard (a player may fold on the river just before cards are compared). This path also awards chips and must also trigger `syncChips()` with the same `winner.id === 0` guard. This covers the same logic as hook point 1 but reached via the showdown code path.
+
 ### Human Player Identification
 
-The human player is always `this.players[0]` (created via `createPlayer(0, 'You', ...)` in the constructor — `id` is a numeric `0`, not the string `'human'`). `serverSyncedBalance` is added as a **private class property** on `PokerGame` (not a closure variable — unlike `blackjackClient.ts` which uses closure scope, `PokerGame` is a class).
-
-Delta is computed as:
+The human player is always `this.players[0]` (created via `createPlayer(0, 'You', ...)` in the constructor — `id` is a numeric `0`, not the string `'human'`). `serverSyncedBalance` is added as a **private class field** on `PokerGame`:
 
 ```typescript
-const humanChipsBefore = this.players[0].chips; // captured before betting resolves
-// ... round plays out ...
-const humanChipsAfter = this.players[0].chips;
-const delta = humanChipsAfter - humanChipsBefore;
+private serverSyncedBalance: number = 0; // set in constructor from DOM
 ```
 
-`humanChipsBefore` is captured at the start of each round, before blinds/antes are posted.
+**Delta calculation — unified approach:** For all outcomes, use `players[0].chips - humanChipsBefore` where `humanChipsBefore` is captured at the start of each hand (before blinds are posted). This works for win, loss, fold, and split cases without special-casing:
 
-**Human-fold delta:** When the human folds, the round has not resolved and `this.pot` reflects accumulated bets from all players — it must not be used as the loss amount. The delta for a fold loss is `-this.players[0].currentBet` (the chips the human committed this hand before folding). Capture this value immediately before calling `foldPlayer()`.
+- Win: positive (chips gained)
+- Loss/fold: negative (chips lost — all rounds' bets, not just current round; `player.totalBet` accumulates across all betting rounds)
+- Push: small positive or zero (chips returned from split pot minus chips committed)
+
+Do **not** use `currentBet` for fold delta — `currentBet` resets each betting round and only reflects the most recent round's bet. Do **not** use `totalBet` directly — use the balance diff.
 
 **Pot capture ordering:** For win cases, capture `const potWon = this.pot` before calling `awardChips()` (which zeroes `this.pot`), then use `potWon` as `biggestWinCandidate`.
 
 ### `serverSyncedBalance` Initialization
 
-Currently `poker.astro` renders `#player-balance` as a hardcoded `$1,000` string — not the real server chip balance. This must be fixed in two steps:
+Currently `poker.astro` renders `#player-balance` as a hardcoded `$1,000` string — not the real server chip balance. This must be fixed:
 
-1. **`poker.astro`**: inject `user.chipBalance` into `#player-balance` (same pattern as `blackjack.astro`):
+1. **`poker.astro`**: inject `user.chipBalance` as a locale-formatted number into `#player-balance` (identical pattern to `blackjack.astro`):
 
    ```astro
    ---
    const initialBalance = user.chipBalance ?? 1000;
    ---
 
-   <div id="player-balance">{initialBalance}</div>
+   <div id="player-balance">{initialBalance.toLocaleString()}</div>
    ```
 
-2. **`PokerGame.ts`**: read the DOM element at init time (same pattern as `blackjackClient.ts`):
+2. **`PokerGame.ts` constructor**: read and parse `#player-balance` text content, stripping commas (same parsing as `blackjackClient.ts`). `serverSyncedBalance` is a private class field:
 
    ```typescript
-   const balanceEl = document.getElementById('player-balance');
-   const parsedBalance = parseFloat((balanceEl?.textContent ?? '').replace(/[^0-9.-]/g, ''));
-   const initialBalance = Number.isFinite(parsedBalance) ? parsedBalance : settings.startingChips;
-   let serverSyncedBalance = initialBalance;
+   private serverSyncedBalance: number;
+
+   constructor(settings: GameSettings) {
+     const balanceEl = document.getElementById('player-balance');
+     const rawText = balanceEl?.textContent ?? '';
+     const parsed = Number(rawText.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0]);
+     this.serverSyncedBalance = Number.isFinite(parsed) ? parsed : settings.startingChips;
+     // ... rest of constructor
+   }
    ```
 
-3. On successful sync response, update `serverSyncedBalance` from the API response `balance` field (not from local delta calculation) to prevent stale-value 409 conflicts on rapid successive hands.
+3. On successful sync response, update `this.serverSyncedBalance` from the API response `balance` field (not local delta) to prevent 409 BALANCE_MISMATCH on rapid successive hands.
 
 ### Sync Payload
 
@@ -205,13 +211,15 @@ Currently `poker.astro` renders `#player-balance` as a hardcoded `$1,000` string
 
 ### Outcome Rules
 
-| Situation                   | outcome | winsIncrement | lossesIncrement | biggestWinCandidate |
-| --------------------------- | ------- | ------------- | --------------- | ------------------- |
-| Human wins (opponents fold) | `win`   | 1             | 0               | pot size            |
-| Human wins showdown         | `win`   | 1             | 0               | pot size            |
-| Human loses showdown        | `loss`  | 0             | 1               | 0                   |
-| Human folds                 | `loss`  | 0             | 1               | 0                   |
-| Tie / split pot             | `push`  | 0             | 0               | 0                   |
+`delta` is always `players[0].chips - humanChipsBefore` (balance diff from start of hand — not `currentBet` which resets each betting round).
+
+| Situation                   | outcome | winsIncrement | lossesIncrement | biggestWinCandidate            | delta            |
+| --------------------------- | ------- | ------------- | --------------- | ------------------------------ | ---------------- |
+| Human wins (opponents fold) | `win`   | 1             | 0               | `potWon` (before `awardChips`) | positive         |
+| Human wins showdown         | `win`   | 1             | 0               | `potWon` (before `awardChips`) | positive         |
+| Human loses showdown        | `loss`  | 0             | 1               | 0                              | negative         |
+| Human folds                 | `loss`  | 0             | 1               | 0                              | negative         |
+| Tie / split pot             | `push`  | 0             | 0               | 0                              | positive or zero |
 
 ### `GAME_TYPES` Constant Update
 
@@ -235,7 +243,7 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 };
 ```
 
-This also makes `isValidGameType('poker')` return `true`, which enables `recordGameRound()` to be called in `/api/chips/update`.
+This also makes `isValidGameType('poker')` return `true`, which enables `recordGameRound()` to be called in `/api/chips/update`. **Side effect:** achievement checking (`checkAndGrantAchievements`) also gates on `isValidGameType`, so poker wins will now trigger achievement evaluation. This is intentional — poker stats should count toward milestones like "High Roller".
 
 ### Constraints
 
@@ -290,7 +298,7 @@ This also makes `isValidGameType('poker')` return `true`, which enables `recordG
 
 - AI wins because all opponents fold (sole survivor is AI, `winner.id !== 0`) → no sync fires
 - Human wins because all opponents fold (`winner.id === 0`) → `outcome: 'win'`, `winsIncrement: 1`, `biggestWinCandidate = pot`
-- Human folds → `outcome: 'loss'`, `lossesIncrement: 1`, `delta = -currentBet`, `biggestWinCandidate: 0`
+- Human folds → `outcome: 'loss'`, `lossesIncrement: 1`, `delta = players[0].chips - humanChipsBefore` (negative), `biggestWinCandidate: 0`
 - Human wins at showdown → `outcome: 'win'`, `biggestWinCandidate = pot captured before awardChips()`
 - Human loses at showdown → `outcome: 'loss'`, `lossesIncrement: 1`
 - Tie / split pot → `outcome: 'push'`, `winsIncrement: 0`, `lossesIncrement: 0`, `biggestWinCandidate: 0`

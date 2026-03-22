@@ -100,6 +100,24 @@ describe('Leaderboard Data Transformation', () => {
 			expect(entries[3].rank).toBe(4);
 			expect(entries[4].rank).toBe(5);
 		});
+
+		test('applies badges from badgeMap and falls back to empty arrays', () => {
+			const rawPlayers: RawPlayerData[] = [
+				{ userId: 'user1', playerName: 'Alice', chipBalance: 50000 },
+				{ userId: 'user2', playerName: 'Bob', chipBalance: 30000 },
+			];
+			const badgeMap = new Map<string, string[]>([
+				['user1', ['🏆', '🔥']],
+				['missing', ['⭐']],
+			]);
+
+			const entries = transformToLeaderboardEntries(rawPlayers, null, badgeMap);
+
+			expect(Array.isArray(entries[0].badges)).toBe(true);
+			expect(entries[0].badges).toEqual(['🏆', '🔥']);
+			expect(Array.isArray(entries[1].badges)).toBe(true);
+			expect(entries[1].badges).toEqual([]);
+		});
 	});
 
 	describe('Current User In Top Detection', () => {
@@ -303,7 +321,8 @@ describe('Type Definitions', () => {
 		expect(entry.playerName).toBeDefined();
 		expect(entry.chipBalance).toBeDefined();
 		expect(entry.isCurrentUser).toBeDefined();
-		expect(entry.badges).toBeDefined();
+		expect(Array.isArray(entry.badges)).toBe(true);
+		expect(entry.badges).toEqual([]);
 	});
 
 	test('RawPlayerData has all required fields', () => {

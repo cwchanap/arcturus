@@ -294,7 +294,7 @@ This also makes `isValidGameType('poker')` return `true`, which enables `recordG
   - `achievementId` not in `ACHIEVEMENTS` list → skipped gracefully
 - `leaderboard.test.ts` / `game-stats.test.ts` — update existing tests for `transformToLeaderboardEntries` and `transformToGameLeaderboardEntries` to pass the new `badgeMap` parameter (passing an empty `new Map()` is sufficient for tests not focused on badges)
 
-**Feature 2 — 5 test scenarios covering the 3 `GameRoundOutcome` values (`win | loss | push`):**
+**Feature 2 — 6 test scenarios covering the 3 `GameRoundOutcome` values (`win | loss | push`):**
 
 - AI wins because all opponents fold (sole survivor is AI, `winner.id !== 0`) → no sync fires
 - Human wins because all opponents fold (`winner.id === 0`) → `outcome: 'win'`, `winsIncrement: 1`, `biggestWinCandidate = pot`

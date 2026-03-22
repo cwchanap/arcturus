@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, mock } from 'bun:test';
 import type { Card, Player } from './types';
 import {
 	createPlayer,
@@ -11,6 +11,7 @@ import {
 	placeBet,
 	foldPlayer,
 } from './index';
+import { PokerGame } from './PokerGame';
 
 // Mock DOM for PokerGame constructor
 function mockPokerGameDOM() {
@@ -18,7 +19,7 @@ function mockPokerGameDOM() {
 		addEventListener: () => void;
 		innerHTML?: string;
 		textContent?: string;
-		classList?: { add: () => void; remove: () => void };
+		classList?: { add: () => void; remove: () => void; toggle: () => void };
 		value?: string;
 	}
 
@@ -31,7 +32,7 @@ function mockPokerGameDOM() {
 					addEventListener: () => {},
 					innerHTML: '',
 					textContent: '',
-					classList: { add: () => {}, remove: () => {} },
+					classList: { add: () => {}, remove: () => {}, toggle: () => {} },
 					value: '0',
 				};
 			}
@@ -51,9 +52,41 @@ function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
 }
 
+async function flushAsyncWork() {
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe('PokerGame Core Logic', () => {
 	beforeEach(() => {
 		mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+				if (url === '/api/profile/llm-settings') {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => ({ settings: null }),
+					};
+				}
+
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ balance: 500 }),
+				};
+			},
+		) as unknown as typeof fetch;
 	});
 
 	describe('Player management', () => {
@@ -341,5 +374,149 @@ describe('Turn management', () => {
 		}
 
 		expect(currentIdx).toBe(2); // Skip folded Bob
+	});
+});
+
+describe('PokerGame syncChips', () => {
+	test('does not call chips API before a hand baseline exists', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 500 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+		};
+
+		game.syncChips('loss', 0);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock).toHaveBeenCalledWith('/api/profile/llm-settings');
+	});
+
+	test('updates serverSyncedBalance from successful sync responses', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 725 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 650 };
+		game.syncChips('win', 150);
+
+		await flushAsyncWork();
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/api/chips/update',
+			expect.objectContaining({ method: 'POST' }),
+		);
+		expect(game.serverSyncedBalance).toBe(725);
+	});
+
+	test('updates serverSyncedBalance from currentBalance on mismatch responses', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			return {
+				ok: false,
+				status: 409,
+				json: async () => ({ currentBalance: 840 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 450 };
+		game.syncChips('loss', 0);
+
+		await flushAsyncWork();
+
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/api/chips/update',
+			expect.objectContaining({ method: 'POST' }),
+		);
+		expect(game.serverSyncedBalance).toBe(840);
 	});
 });

@@ -165,16 +165,19 @@ export async function getGameLeaderboardData(
 	} = options;
 
 	// Stage 1: fetch top players (userIds not known until this resolves)
-	const rawPlayers = await getTopPlayersForGame(db, gameType, rankingMetric, limit);
+	const rawPlayersPromise = getTopPlayersForGame(db, gameType, rankingMetric, limit);
+	const currentUserRankPromise = currentUserId
+		? getUserGameRank(db, currentUserId, gameType, rankingMetric)
+		: Promise.resolve(null);
+	const totalPlayersPromise = getTotalPlayersForGame(db, gameType, rankingMetric);
+	const rawPlayers = await rawPlayersPromise;
 	const userIds = rawPlayers.map((p) => p.userId);
 
 	// Stage 2: parallel queries that depend on stage 1
 	const [badgeMap, currentUserRank, totalPlayers] = await Promise.all([
 		getBulkUserAchievements(db, userIds),
-		currentUserId
-			? getUserGameRank(db, currentUserId, gameType, rankingMetric)
-			: Promise.resolve(null),
-		getTotalPlayersForGame(db, gameType, rankingMetric),
+		currentUserRankPromise,
+		totalPlayersPromise,
 	]);
 
 	// Transform raw data into leaderboard entries with badges

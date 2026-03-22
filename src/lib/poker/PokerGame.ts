@@ -114,6 +114,10 @@ export class PokerGame {
 	 * This is intentional — poker does not implement a pending-stats accumulator.
 	 */
 	private syncChips(outcome: 'win' | 'loss' | 'push', potWon: number): void {
+		if (this.humanChipsBefore <= 0) {
+			return;
+		}
+
 		const delta = this.players[0].chips - this.humanChipsBefore;
 		const previousBalance = this.serverSyncedBalance;
 
@@ -131,11 +135,22 @@ export class PokerGame {
 				biggestWinCandidate: outcome === 'win' ? potWon : 0,
 			}),
 		})
-			.then((res) => res.json())
-			.then((data: unknown) => {
-				const balance = (data as { balance?: number })?.balance;
-				if (typeof balance === 'number') {
-					this.serverSyncedBalance = balance;
+			.then(async (res) => {
+				let data: { balance?: number; currentBalance?: number } | null = null;
+
+				try {
+					data = (await res.json()) as { balance?: number; currentBalance?: number };
+				} catch {
+					return;
+				}
+
+				if (typeof data?.balance === 'number') {
+					this.serverSyncedBalance = data.balance;
+					return;
+				}
+
+				if (!res.ok && typeof data?.currentBalance === 'number') {
+					this.serverSyncedBalance = data.currentBalance;
 				}
 			})
 			.catch(() => {

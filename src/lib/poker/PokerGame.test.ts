@@ -20,6 +20,8 @@ function mockPokerGameDOM() {
 		innerHTML?: string;
 		textContent?: string;
 		classList?: { add: () => void; remove: () => void; toggle: () => void };
+		querySelector?: () => MockElement | null;
+		querySelectorAll?: () => MockElement[];
 		value?: string;
 	}
 
@@ -33,6 +35,8 @@ function mockPokerGameDOM() {
 					innerHTML: '',
 					textContent: '',
 					classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+					querySelector: () => null,
+					querySelectorAll: () => [],
 					value: '0',
 				};
 			}
@@ -409,16 +413,16 @@ describe('PokerGame syncChips', () => {
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
 
 		const game = new PokerGame() as unknown as {
-			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
 		};
 
-		game.syncChips('loss', 0);
+		game.syncChips('loss');
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock).toHaveBeenCalledWith('/api/profile/llm-settings');
 	});
 
-	test('updates serverSyncedBalance from successful sync responses', async () => {
+	test('records biggest win candidate as net profit instead of total pot', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -428,7 +432,8 @@ describe('PokerGame syncChips', () => {
 			value: '0',
 		};
 
-		const fetchMock = mock(async (input: string | URL | Request) => {
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
@@ -437,13 +442,134 @@ describe('PokerGame syncChips', () => {
 					ok: true,
 					status: 200,
 					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 650 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			pot: number;
+			humanChipsBefore: number;
+			nextPhase: () => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.pot = 300;
+		game.players[0] = { ...game.players[0], chips: 350, folded: false };
+		game.players[1] = { ...game.players[1], folded: true };
+		game.players[2] = { ...game.players[2], folded: true };
+		game.nextPhase();
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].delta).toBe(150);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
+	});
+
+	test('persists the abandoned hand delta before resetting a new hand baseline', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 450 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			processAITurn: () => Promise<void>;
+			dealNewHand: () => Promise<void>;
+		};
+
+		game.processAITurn = async () => {};
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 450 };
+
+		await game.dealNewHand();
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].delta).toBe(-50);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(game.humanChipsBefore).toBe(450);
+		expect(game.players[0].chips).toBe(440);
+	});
+
+	test('serializes queued syncs and uses the updated balance for later hands', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const deferred = { resolveFirstRequest: null as null | (() => void) };
+		const firstRequest = new Promise((resolve) => {
+			deferred.resolveFirstRequest = () => resolve(undefined);
+		});
+
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			if (chipUpdateBodies.length === 1) {
+				await firstRequest;
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ balance: 550 }),
 				};
 			}
 
 			return {
 				ok: true,
 				status: 200,
-				json: async () => ({ balance: 725 }),
+				json: async () => ({ balance: 500 }),
 			};
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
@@ -451,25 +577,37 @@ describe('PokerGame syncChips', () => {
 		const game = new PokerGame() as unknown as {
 			players: Player[];
 			humanChipsBefore: number;
-			serverSyncedBalance: number;
-			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
 		};
 
 		game.humanChipsBefore = 500;
-		game.players[0] = { ...game.players[0], chips: 650 };
-		game.syncChips('win', 150);
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.syncChips('win');
 
 		await flushAsyncWork();
 
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/chips/update',
-			expect.objectContaining({ method: 'POST' }),
-		);
-		expect(game.serverSyncedBalance).toBe(725);
+		game.humanChipsBefore = 550;
+		game.players[0] = { ...game.players[0], chips: 500 };
+		game.syncChips('loss');
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].delta).toBe(50);
+
+		if (deferred.resolveFirstRequest) {
+			deferred.resolveFirstRequest();
+		}
+		await flushAsyncWork();
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(2);
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].delta).toBe(-50);
 	});
 
-	test('updates serverSyncedBalance from currentBalance on mismatch responses', async () => {
+	test('retries a queued hand after BALANCE_MISMATCH with the refreshed balance', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -479,7 +617,8 @@ describe('PokerGame syncChips', () => {
 			value: '0',
 		};
 
-		const fetchMock = mock(async (input: string | URL | Request) => {
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
@@ -491,10 +630,19 @@ describe('PokerGame syncChips', () => {
 				};
 			}
 
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			if (chipUpdateBodies.length === 1) {
+				return {
+					ok: false,
+					status: 409,
+					json: async () => ({ error: 'BALANCE_MISMATCH', currentBalance: 550 }),
+				};
+			}
+
 			return {
-				ok: false,
-				status: 409,
-				json: async () => ({ currentBalance: 840 }),
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 500 }),
 			};
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
@@ -503,20 +651,20 @@ describe('PokerGame syncChips', () => {
 			players: Player[];
 			humanChipsBefore: number;
 			serverSyncedBalance: number;
-			syncChips: (outcome: 'win' | 'loss' | 'push', potWon: number) => void;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
 		};
 
-		game.humanChipsBefore = 500;
-		game.players[0] = { ...game.players[0], chips: 450 };
-		game.syncChips('loss', 0);
+		game.humanChipsBefore = 600;
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.syncChips('loss');
 
 		await flushAsyncWork();
+		await flushAsyncWork();
 
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/chips/update',
-			expect.objectContaining({ method: 'POST' }),
-		);
-		expect(game.serverSyncedBalance).toBe(840);
+		expect(chipUpdateBodies).toHaveLength(2);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].delta).toBe(-50);
+		expect(game.serverSyncedBalance).toBe(500);
 	});
 });

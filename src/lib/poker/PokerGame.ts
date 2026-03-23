@@ -33,6 +33,14 @@ import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
+type ChipSyncOutcome = 'win' | 'loss' | 'push';
+
+type PendingChipSync = {
+	delta: number;
+	outcome: ChipSyncOutcome;
+	biggestWinCandidate: number;
+};
+
 export class PokerGame {
 	// Helper classes
 	private deck: DeckManager;
@@ -57,6 +65,8 @@ export class PokerGame {
 	private pendingChipReset = false; // Flag to reset chips on next deal
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
+	private pendingChipSyncs: PendingChipSync[] = [];
+	private isChipSyncInFlight = false;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -113,49 +123,117 @@ export class PokerGame {
 	 * 429 responses are silently dropped (stats for that hand are lost).
 	 * This is intentional — poker does not implement a pending-stats accumulator.
 	 */
-	private syncChips(outcome: 'win' | 'loss' | 'push', potWon: number): void {
+	private syncChips(outcome: ChipSyncOutcome): void {
 		if (this.humanChipsBefore <= 0) {
 			return;
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		const previousBalance = this.serverSyncedBalance;
+		this.pendingChipSyncs.push({
+			delta,
+			outcome,
+			biggestWinCandidate: outcome === 'win' && delta > 0 ? delta : 0,
+		});
+		this.humanChipsBefore = 0;
+		void this.flushChipSyncQueue();
+	}
 
-		fetch('/api/chips/update', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				previousBalance,
-				delta,
-				gameType: 'poker',
-				outcome,
-				handCount: 1,
-				winsIncrement: outcome === 'win' ? 1 : 0,
-				lossesIncrement: outcome === 'loss' ? 1 : 0,
-				biggestWinCandidate: outcome === 'win' ? potWon : 0,
-			}),
-		})
-			.then(async (res) => {
-				let data: { balance?: number; currentBalance?: number } | null = null;
+	private finalizeActiveHandBeforeDeal(): void {
+		if (this.humanChipsBefore <= 0) {
+			return;
+		}
 
-				try {
-					data = (await res.json()) as { balance?: number; currentBalance?: number };
-				} catch {
-					return;
+		const delta = this.players[0].chips - this.humanChipsBefore;
+		if (delta === 0) {
+			this.humanChipsBefore = 0;
+			return;
+		}
+
+		this.syncChips(delta > 0 ? 'win' : 'loss');
+	}
+
+	private async flushChipSyncQueue(): Promise<void> {
+		if (this.isChipSyncInFlight || this.pendingChipSyncs.length === 0) {
+			return;
+		}
+
+		this.isChipSyncInFlight = true;
+
+		try {
+			while (this.pendingChipSyncs.length > 0) {
+				const result = await this.sendChipSync(this.pendingChipSyncs[0]);
+
+				if (result === 'synced') {
+					this.pendingChipSyncs.shift();
+					continue;
 				}
 
-				if (typeof data?.balance === 'number') {
-					this.serverSyncedBalance = data.balance;
-					return;
+				if (result === 'retry') {
+					continue;
 				}
 
-				if (!res.ok && typeof data?.currentBalance === 'number') {
-					this.serverSyncedBalance = data.currentBalance;
-				}
-			})
-			.catch(() => {
-				// Best-effort sync — silently ignore network errors
+				break;
+			}
+		} finally {
+			this.isChipSyncInFlight = false;
+		}
+	}
+
+	private async sendChipSync(sync: PendingChipSync): Promise<'synced' | 'retry' | 'pending'> {
+		try {
+			const response = await fetch('/api/chips/update', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					previousBalance: this.serverSyncedBalance,
+					delta: sync.delta,
+					gameType: 'poker',
+					outcome: sync.outcome,
+					handCount: 1,
+					winsIncrement: sync.outcome === 'win' ? 1 : 0,
+					lossesIncrement: sync.outcome === 'loss' ? 1 : 0,
+					biggestWinCandidate: sync.biggestWinCandidate,
+				}),
 			});
+
+			let data: { balance?: number; currentBalance?: number; error?: string } | null = null;
+
+			try {
+				data = (await response.json()) as {
+					balance?: number;
+					currentBalance?: number;
+					error?: string;
+				};
+			} catch {
+				if (response.ok) {
+					this.serverSyncedBalance += sync.delta;
+					return 'synced';
+				}
+
+				return 'pending';
+			}
+
+			if (typeof data?.balance === 'number') {
+				this.serverSyncedBalance = data.balance;
+				return 'synced';
+			}
+
+			if (response.ok) {
+				this.serverSyncedBalance += sync.delta;
+				return 'synced';
+			}
+
+			if (typeof data?.currentBalance === 'number') {
+				this.serverSyncedBalance = data.currentBalance;
+				if (data.error === 'BALANCE_MISMATCH') {
+					return 'retry';
+				}
+			}
+
+			return 'pending';
+		} catch {
+			return 'pending';
+		}
 	}
 
 	private initPlayers() {
@@ -239,6 +317,8 @@ export class PokerGame {
 				return;
 			}
 		}
+
+		this.finalizeActiveHandBeforeDeal();
 
 		// Check for eliminated players (0 chips)
 		const settings = this.settingsManager.getSettings();
@@ -553,7 +633,6 @@ export class PokerGame {
 		const activePlayers = getActivePlayers(this.players);
 		if (activePlayers.length === 1) {
 			const winner = activePlayers[0];
-			const potWon = this.pot; // capture before awardChips zeroes this.pot
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(`${winner.name} wins $${this.pot}! (Everyone else folded) 🎉`);
 			this.pot = 0;
@@ -561,7 +640,7 @@ export class PokerGame {
 			this.ui.updateOpponentUI(this.players);
 			// Only sync when the human won (AI winning sole-survivor hands needs no sync)
 			if (winner.id === 0) {
-				this.syncChips('win', potWon);
+				this.syncChips('win');
 			}
 			setTimeout(() => this.dealNewHand(), 3000);
 			return;
@@ -590,14 +669,13 @@ export class PokerGame {
 			this.bettingRound = null;
 			// Determine winner(s) by comparing hands
 			const activePlayers = getActivePlayers(this.players);
-			const potWon = this.pot; // capture before any awardChips call
 			if (activePlayers.length === 1) {
 				// Only one player left - they win by default (folded on river)
 				const winner = activePlayers[0];
 				this.players[winner.id] = awardChips(winner, this.pot);
 				this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
 				if (winner.id === 0) {
-					this.syncChips('win', potWon);
+					this.syncChips('win');
 				}
 			} else {
 				// Multiple players - compare hands to find winner(s)
@@ -615,7 +693,7 @@ export class PokerGame {
 					this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
 					// Only sync if human didn't already fold (fold handler is the canonical sync for folds)
 					if (!this.players[0].folded) {
-						this.syncChips(winner.id === 0 ? 'win' : 'loss', winner.id === 0 ? potWon : 0);
+						this.syncChips(winner.id === 0 ? 'win' : 'loss');
 					}
 				} else {
 					// Tie - split pot (remainder chips go to first winner(s))
@@ -631,7 +709,7 @@ export class PokerGame {
 					// Only sync if human didn't already fold (fold handler is the canonical sync for folds)
 					if (!this.players[0].folded) {
 						// Push if human is in the tie; loss if human was eliminated by others tying
-						this.syncChips(humanIsWinner ? 'push' : 'loss', 0);
+						this.syncChips(humanIsWinner ? 'push' : 'loss');
 					}
 				}
 			}
@@ -673,7 +751,7 @@ export class PokerGame {
 				this.ui.updateUI(this.pot, this.players[0]);
 				this.updateGameStatus('You folded');
 				// Sync immediately — human chip count is now locked in for this hand
-				this.syncChips('loss', 0);
+				this.syncChips('loss');
 			} finally {
 				this.isProcessingAction = false;
 			}

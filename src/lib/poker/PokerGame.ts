@@ -67,6 +67,8 @@ export class PokerGame {
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
 	private pendingChipSyncs: PendingChipSync[] = [];
 	private isChipSyncInFlight = false;
+	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private autoDealToken = 0;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -78,9 +80,7 @@ export class PokerGame {
 		const balanceEl = document.getElementById('player-balance');
 		const rawText = balanceEl?.textContent ?? '';
 		const parsed = Number(rawText.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0]);
-		this.serverSyncedBalance = Number.isFinite(parsed)
-			? parsed
-			: this.settingsManager.getSettings().startingChips;
+		this.serverSyncedBalance = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
 
 		this.initPlayers();
 		this.attachEventListeners();
@@ -91,6 +91,33 @@ export class PokerGame {
 
 		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
 		void this.checkLlmConfigOnLoad();
+	}
+
+	private getEffectiveServerBalance(): number {
+		return Math.max(
+			0,
+			this.serverSyncedBalance + this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0),
+		);
+	}
+
+	private cancelPendingAutoDeal(): void {
+		this.autoDealToken += 1;
+		if (this.autoDealTimeoutId !== null) {
+			clearTimeout(this.autoDealTimeoutId);
+			this.autoDealTimeoutId = null;
+		}
+	}
+
+	private scheduleAutoDeal(delayMs: number): void {
+		this.cancelPendingAutoDeal();
+		const autoDealToken = this.autoDealToken;
+		this.autoDealTimeoutId = setTimeout(() => {
+			if (autoDealToken !== this.autoDealToken) {
+				return;
+			}
+			this.autoDealTimeoutId = null;
+			void this.dealNewHand();
+		}, delayMs);
 	}
 
 	/**
@@ -239,7 +266,7 @@ export class PokerGame {
 	private initPlayers() {
 		const settings = this.settingsManager.getSettings();
 		this.players = [
-			createPlayer(0, 'You', settings.startingChips, false),
+			createPlayer(0, 'You', this.getEffectiveServerBalance(), false),
 			createAIPlayer(1, 'Player 2', settings.startingChips),
 			createAIPlayer(2, 'Player 3', settings.startingChips),
 		];
@@ -296,8 +323,12 @@ export class PokerGame {
 	}
 
 	public async dealNewHand() {
+		this.cancelPendingAutoDeal();
+
 		// Clear LLM cache for new hand
 		clearLLMCache();
+
+		const settings = this.settingsManager.getSettings();
 
 		// If LLM-powered AI is enabled, ensure the user has a valid API key configured
 		const llmAwareSettings = this.settingsManager.getSettings();
@@ -321,27 +352,29 @@ export class PokerGame {
 		this.finalizeActiveHandBeforeDeal();
 
 		// Check for eliminated players (0 chips)
-		const settings = this.settingsManager.getSettings();
 
 		// Apply pending chip reset if settings were changed
 		if (this.pendingChipReset) {
-			this.players = this.players.map((p) => ({ ...p, chips: settings.startingChips }));
+			const effectiveServerBalance = this.getEffectiveServerBalance();
+			this.players = this.players.map((p) =>
+				p.id === 0
+					? { ...p, chips: effectiveServerBalance }
+					: { ...p, chips: settings.startingChips },
+			);
 			this.pendingChipReset = false;
 			this.updateGameStatus(`Chip stacks reset to $${settings.startingChips} for new game`);
 		}
 
 		const eliminatedPlayers = this.players.filter((p) => p.chips === 0);
 		if (eliminatedPlayers.length > 0) {
+			const effectiveServerBalance = this.getEffectiveServerBalance();
 			for (const player of eliminatedPlayers) {
 				if (player.id === 0) {
-					// Human player eliminated - offer rebuy
-					const rebuy = confirm(`You're out of chips! Rebuy for $${settings.startingChips}?`);
-					if (rebuy) {
-						this.players[0] = { ...this.players[0], chips: settings.startingChips };
-					} else {
+					if (effectiveServerBalance <= 0) {
 						this.updateGameStatus('Game Over - You ran out of chips!');
 						return; // Stop the game
 					}
+					this.players[0] = { ...this.players[0], chips: effectiveServerBalance };
 				} else {
 					// AI player eliminated - auto rebuy
 					this.players[player.id] = { ...this.players[player.id], chips: settings.startingChips };
@@ -642,7 +675,7 @@ export class PokerGame {
 			if (winner.id === 0) {
 				this.syncChips('win');
 			}
-			setTimeout(() => this.dealNewHand(), 3000);
+			this.scheduleAutoDeal(3000);
 			return;
 		}
 
@@ -717,7 +750,7 @@ export class PokerGame {
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.ui.updateOpponentUI(this.players);
 			// Auto-deal new hand after 3 seconds
-			setTimeout(() => this.dealNewHand(), 3000);
+			this.scheduleAutoDeal(3000);
 			return;
 		}
 

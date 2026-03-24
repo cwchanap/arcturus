@@ -71,7 +71,10 @@ export async function getLeaderboardData(
 
 	// Stage 2: parallel queries that depend on stage 1
 	const [badgeMap, currentUserRank, totalPlayers] = await Promise.all([
-		getBulkUserAchievements(db, userIds),
+		getBulkUserAchievements(db, userIds).catch((err: unknown) => {
+			console.error('[LEADERBOARD] Failed to fetch achievement badges:', err);
+			return new Map<string, string[]>();
+		}),
 		currentUserRankPromise,
 		totalPlayersPromise,
 	]);

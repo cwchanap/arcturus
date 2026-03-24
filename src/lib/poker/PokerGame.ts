@@ -152,6 +152,7 @@ export class PokerGame {
 	 */
 	private syncChips(outcome: ChipSyncOutcome): void {
 		if (this.humanChipsBefore <= 0) {
+			console.warn('[CHIP_SYNC] syncChips called before hand baseline established; skipping.');
 			return;
 		}
 
@@ -187,15 +188,25 @@ export class PokerGame {
 		this.isChipSyncInFlight = true;
 
 		try {
+			let retryCount = 0;
+			const MAX_RETRIES = 3;
+
 			while (this.pendingChipSyncs.length > 0) {
 				const result = await this.sendChipSync(this.pendingChipSyncs[0]);
 
 				if (result === 'synced') {
+					retryCount = 0;
 					this.pendingChipSyncs.shift();
 					continue;
 				}
 
 				if (result === 'retry') {
+					retryCount++;
+					if (retryCount >= MAX_RETRIES) {
+						console.error('[CHIP_SYNC] Max retries exceeded for BALANCE_MISMATCH. Dropping sync.');
+						this.pendingChipSyncs.shift();
+						retryCount = 0;
+					}
 					continue;
 				}
 
@@ -231,7 +242,8 @@ export class PokerGame {
 					currentBalance?: number;
 					error?: string;
 				};
-			} catch {
+			} catch (parseError) {
+				console.warn('[CHIP_SYNC] Failed to parse chip sync response JSON:', parseError);
 				if (response.ok) {
 					this.serverSyncedBalance += sync.delta;
 					return 'synced';
@@ -257,8 +269,15 @@ export class PokerGame {
 				}
 			}
 
+			// Non-retryable client errors (4xx except 409 BALANCE_MISMATCH): drop the sync
+			if (response.status >= 400 && response.status < 500) {
+				console.error('[CHIP_SYNC] Non-retryable error', response.status, '- dropping sync.');
+				return 'synced'; // treat as consumed so it's removed from the queue
+			}
+
 			return 'pending';
-		} catch {
+		} catch (error) {
+			console.error('[CHIP_SYNC] Network error syncing chips to server:', error);
 			return 'pending';
 		}
 	}
@@ -331,8 +350,7 @@ export class PokerGame {
 		const settings = this.settingsManager.getSettings();
 
 		// If LLM-powered AI is enabled, ensure the user has a valid API key configured
-		const llmAwareSettings = this.settingsManager.getSettings();
-		if (llmAwareSettings.useLLMAI) {
+		if (settings.useLLMAI) {
 			const llmSettings = await this.getLLMSettings();
 			if (!llmSettings) {
 				this.updateGameStatus(
@@ -362,7 +380,7 @@ export class PokerGame {
 					: { ...p, chips: settings.startingChips },
 			);
 			this.pendingChipReset = false;
-			this.updateGameStatus(`Chip stacks reset to $${settings.startingChips} for new game`);
+			this.updateGameStatus(`Chip stacks reset for new game`);
 		}
 
 		const eliminatedPlayers = this.players.filter((p) => p.chips === 0);

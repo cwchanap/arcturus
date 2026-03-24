@@ -852,4 +852,88 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies[1].delta).toBe(-50);
 		expect(game.serverSyncedBalance).toBe(500);
 	});
+
+	test('sends outcome: push with biggestWinCandidate: 0 for a tie hand', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url === '/api/profile/llm-settings') {
+				return { ok: true, status: 200, json: async () => ({ settings: null }) };
+			}
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		// Push: chip count unchanged (split pot)
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 500 };
+		game.syncChips('push');
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].outcome).toBe('push');
+		expect(chipUpdateBodies[0].delta).toBe(0);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(0);
+	});
+
+	test('syncs using updated serverSyncedBalance when response.json() fails but response is ok', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			if (url === '/api/profile/llm-settings') {
+				return { ok: true, status: 200, json: async () => ({ settings: null }) };
+			}
+			return {
+				ok: true,
+				status: 200,
+				json: async (): Promise<unknown> => {
+					throw new Error('Unexpected end of JSON input');
+				},
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.syncChips('win');
+
+		await flushAsyncWork();
+
+		// Falls back to serverSyncedBalance += delta when JSON parse fails but response.ok
+		expect(game.serverSyncedBalance).toBe(550);
+	});
 });

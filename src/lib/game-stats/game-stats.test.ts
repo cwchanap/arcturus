@@ -304,6 +304,32 @@ describe('getGameLeaderboardData', () => {
 		expect(result.entries[0].metricValue).toBeCloseTo(66.666, 2);
 		expect(result.entries[1].metricValue).toBeCloseTo(53.333, 2);
 	});
+
+	test('propagates badges from badgeMap into leaderboard entries', async () => {
+		resetGameStatsMocks();
+		mock.module('../achievements/achievement-repository', () => ({
+			getBulkUserAchievements: async () =>
+				new Map([
+					['user1', ['🏆', '🌟']],
+					['user2', ['💎']],
+				]),
+		}));
+
+		const result = await getGameLeaderboardData({} as any, {
+			gameType: 'blackjack',
+			rankingMetric: 'wins',
+			currentUserId: null,
+			limit: 2,
+		});
+
+		expect(result.entries[0].badges).toEqual(['🏆', '🌟']);
+		expect(result.entries[1].badges).toEqual(['💎']);
+
+		// Restore empty map for subsequent tests
+		mock.module('../achievements/achievement-repository', () => ({
+			getBulkUserAchievements: async () => new Map(),
+		}));
+	});
 });
 
 describe('getUserStatsAllGames', () => {

@@ -100,6 +100,31 @@ export class PokerGame {
 		);
 	}
 
+	private rebaseHumanTableBalance(serverBalance: number): void {
+		const pendingDelta = this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0);
+		const currentHandDelta =
+			this.humanChipsBefore > 0 ? this.players[0].chips - this.humanChipsBefore : 0;
+		const rebasedBaseline = Math.max(0, serverBalance + pendingDelta);
+
+		this.serverSyncedBalance = serverBalance;
+
+		if (this.humanChipsBefore > 0) {
+			this.humanChipsBefore = rebasedBaseline;
+			this.players[0] = {
+				...this.players[0],
+				chips: Math.max(0, rebasedBaseline + currentHandDelta),
+			};
+		} else {
+			this.players[0] = {
+				...this.players[0],
+				chips: rebasedBaseline,
+			};
+		}
+
+		this.ui.updateUI(this.pot, this.players[0]);
+		this.updateActionButtons();
+	}
+
 	private cancelPendingAutoDeal(): void {
 		this.autoDealToken += 1;
 		if (this.autoDealTimeoutId !== null) {
@@ -203,9 +228,11 @@ export class PokerGame {
 				if (result === 'retry') {
 					retryCount++;
 					if (retryCount >= MAX_RETRIES) {
-						console.error('[CHIP_SYNC] Max retries exceeded for BALANCE_MISMATCH. Dropping sync.');
-						this.pendingChipSyncs.shift();
+						console.error(
+							'[CHIP_SYNC] Max retries exceeded for BALANCE_MISMATCH. Leaving sync queued.',
+						);
 						retryCount = 0;
+						break;
 					}
 					continue;
 				}
@@ -262,11 +289,18 @@ export class PokerGame {
 				return 'synced';
 			}
 
-			if (typeof data?.currentBalance === 'number') {
-				this.serverSyncedBalance = data.currentBalance;
-				if (data.error === 'BALANCE_MISMATCH') {
-					return 'retry';
-				}
+			if (
+				response.status === 409 &&
+				data?.error === 'BALANCE_MISMATCH' &&
+				typeof data.currentBalance === 'number'
+			) {
+				this.rebaseHumanTableBalance(data.currentBalance);
+				return 'retry';
+			}
+
+			if (response.status === 409 || response.status === 429) {
+				console.warn('[CHIP_SYNC] Sync deferred after transient response', response.status);
+				return 'pending';
 			}
 
 			// Non-retryable client errors (4xx except 409 BALANCE_MISMATCH): drop the sync

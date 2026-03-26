@@ -2,6 +2,7 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import PokerCardContainer from '../../components/PokerCardContainer.astro';
+import { redactUserId } from '../../lib/achievements/achievement-repository';
 
 const user = Astro.locals.user;
 
@@ -10,7 +11,9 @@ if (!user) {
 }
 
 if (user.chipBalance === null || user.chipBalance === undefined) {
-	console.warn(`[POKER] chipBalance null for user ${user.id}; falling back to default.`);
+	console.warn(
+		`[POKER] chipBalance null for user ${redactUserId(user.id)}; falling back to default.`,
+	);
 }
 const initialBalance = user.chipBalance ?? 1000;
 ---

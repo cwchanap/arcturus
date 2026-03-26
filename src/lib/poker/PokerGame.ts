@@ -176,6 +176,13 @@ export class PokerGame {
 		}, delayMs);
 	}
 
+	private getBiggestWinCandidate(delta: number): number {
+		const committedChips = Math.max(0, this.players[0]?.totalBet ?? 0);
+		const grossCollectedFromCommittedChips = delta + committedChips;
+
+		return Math.max(0, delta, this.pot, grossCollectedFromCommittedChips);
+	}
+
 	/**
 	 * Check LLM configuration once on page load.
 	 * If LLM AI is enabled but no valid key is configured, show the overlay and
@@ -216,7 +223,7 @@ export class PokerGame {
 		this.pendingChipSyncs.push({
 			delta,
 			outcome,
-			biggestWinCandidate: outcome === 'win' && delta > 0 ? delta : 0,
+			biggestWinCandidate: outcome === 'win' && delta > 0 ? this.getBiggestWinCandidate(delta) : 0,
 		});
 		this.humanChipsBefore = 0;
 		void this.flushChipSyncQueue();

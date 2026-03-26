@@ -673,7 +673,7 @@ describe('PokerGame syncChips', () => {
 
 		game.humanChipsBefore = 500;
 		game.pot = 300;
-		game.players[0] = { ...game.players[0], chips: 350, folded: false };
+		game.players[0] = { ...game.players[0], chips: 350, totalBet: 150, folded: false };
 		game.players[1] = { ...game.players[1], folded: true };
 		game.players[2] = { ...game.players[2], folded: true };
 		game.nextPhase();
@@ -682,7 +682,7 @@ describe('PokerGame syncChips', () => {
 
 		expect(chipUpdateBodies).toHaveLength(1);
 		expect(chipUpdateBodies[0].delta).toBe(150);
-		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(300);
 	});
 
 	test('persists the abandoned hand delta before resetting a new hand baseline', async () => {

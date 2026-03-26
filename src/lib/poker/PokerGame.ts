@@ -128,6 +128,33 @@ export class PokerGame {
 		this.updateActionButtons();
 	}
 
+	private acknowledgeAppliedChipSync(sync: PendingChipSync, serverBalance: number): void {
+		const remainingPendingDelta = this.pendingChipSyncs
+			.slice(1)
+			.reduce((sum, pendingSync) => sum + pendingSync.delta, 0);
+		const currentHandDelta =
+			this.humanChipsBefore > 0 ? this.players[0].chips - this.humanChipsBefore : 0;
+		const rebasedBaseline = Math.max(0, serverBalance + remainingPendingDelta);
+
+		this.serverSyncedBalance = serverBalance;
+
+		if (this.humanChipsBefore > 0) {
+			this.humanChipsBefore = rebasedBaseline;
+			this.players[0] = {
+				...this.players[0],
+				chips: Math.max(0, rebasedBaseline + currentHandDelta),
+			};
+		} else {
+			this.players[0] = {
+				...this.players[0],
+				chips: rebasedBaseline,
+			};
+		}
+
+		this.ui.updateUI(this.pot, this.players[0]);
+		this.updateActionButtons();
+	}
+
 	private cancelPendingAutoDeal(): void {
 		this.autoDealToken += 1;
 		if (this.autoDealTimeoutId !== null) {
@@ -363,6 +390,13 @@ export class PokerGame {
 				data?.error === 'BALANCE_MISMATCH' &&
 				typeof data.currentBalance === 'number'
 			) {
+				const acknowledgedBalance = Math.max(0, this.serverSyncedBalance + sync.delta);
+				if (data.currentBalance === acknowledgedBalance) {
+					this.acknowledgeAppliedChipSync(sync, data.currentBalance);
+					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
+					return 'synced';
+				}
+
 				this.rebaseHumanTableBalance(data.currentBalance);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'retry';

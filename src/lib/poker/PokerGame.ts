@@ -34,6 +34,7 @@ import { GameSettingsManager } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
+const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 
 type PendingChipSync = {
 	delta: number;
@@ -69,6 +70,8 @@ export class PokerGame {
 	private isChipSyncInFlight = false;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
+	private chipSyncRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -78,8 +81,8 @@ export class PokerGame {
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
 		const balanceEl = document.getElementById('player-balance');
-		const rawText = balanceEl?.textContent ?? '';
-		const parsed = Number(rawText.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0]);
+		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
+		const parsed = Number(rawBalance.match(/-?\d+/)?.[0] ?? Number.NaN);
 		this.serverSyncedBalance = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
 
 		this.initPlayers();
@@ -131,6 +134,34 @@ export class PokerGame {
 			clearTimeout(this.autoDealTimeoutId);
 			this.autoDealTimeoutId = null;
 		}
+	}
+
+	private cancelPendingChipSyncRetry(): void {
+		if (this.chipSyncRetryTimeoutId !== null) {
+			clearTimeout(this.chipSyncRetryTimeoutId);
+			this.chipSyncRetryTimeoutId = null;
+		}
+	}
+
+	private scheduleChipSyncRetry(delayMs = CHIP_SYNC_RETRY_DELAY_MS): void {
+		if (this.pendingChipSyncs.length === 0 || this.isChipSyncInFlight) {
+			return;
+		}
+
+		this.cancelPendingChipSyncRetry();
+		this.chipSyncRetryTimeoutId = setTimeout(() => {
+			this.chipSyncRetryTimeoutId = null;
+			void this.flushChipSyncQueue();
+		}, delayMs);
+	}
+
+	private getChipSyncRetryDelayMs(retryAfterHeader?: string | null): number {
+		const retryAfterSeconds = Number.parseInt(retryAfterHeader ?? '', 10);
+		if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+			return retryAfterSeconds * 1000;
+		}
+
+		return CHIP_SYNC_RETRY_DELAY_MS;
 	}
 
 	private scheduleAutoDeal(delayMs: number): void {
@@ -206,10 +237,16 @@ export class PokerGame {
 	}
 
 	private async flushChipSyncQueue(): Promise<void> {
-		if (this.isChipSyncInFlight || this.pendingChipSyncs.length === 0) {
+		if (this.pendingChipSyncs.length === 0) {
+			this.cancelPendingChipSyncRetry();
 			return;
 		}
 
+		if (this.isChipSyncInFlight) {
+			return;
+		}
+
+		this.cancelPendingChipSyncRetry();
 		this.isChipSyncInFlight = true;
 
 		try {
@@ -241,6 +278,9 @@ export class PokerGame {
 			}
 		} finally {
 			this.isChipSyncInFlight = false;
+			if (this.pendingChipSyncs.length > 0) {
+				this.scheduleChipSyncRetry(this.chipSyncRetryDelayMs);
+			}
 		}
 	}
 
@@ -273,19 +313,25 @@ export class PokerGame {
 				console.warn('[CHIP_SYNC] Failed to parse chip sync response JSON:', parseError);
 				if (response.ok) {
 					this.serverSyncedBalance += sync.delta;
+					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 					return 'synced';
 				}
 
+				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
+					response.headers?.get?.('Retry-After') ?? null,
+				);
 				return 'pending';
 			}
 
 			if (typeof data?.balance === 'number') {
 				this.serverSyncedBalance = data.balance;
+				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}
 
 			if (response.ok) {
 				this.serverSyncedBalance += sync.delta;
+				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}
 
@@ -295,10 +341,14 @@ export class PokerGame {
 				typeof data.currentBalance === 'number'
 			) {
 				this.rebaseHumanTableBalance(data.currentBalance);
+				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'retry';
 			}
 
 			if (response.status === 409 || response.status === 429) {
+				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
+					response.headers?.get?.('Retry-After') ?? null,
+				);
 				console.warn('[CHIP_SYNC] Sync deferred after transient response', response.status);
 				return 'pending';
 			}
@@ -306,12 +356,17 @@ export class PokerGame {
 			// Non-retryable client errors (4xx except 409 BALANCE_MISMATCH): drop the sync
 			if (response.status >= 400 && response.status < 500) {
 				console.error('[CHIP_SYNC] Non-retryable error', response.status, '- dropping sync.');
+				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced'; // treat as consumed so it's removed from the queue
 			}
 
+			this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
+				response.headers?.get?.('Retry-After') ?? null,
+			);
 			return 'pending';
 		} catch (error) {
 			console.error('[CHIP_SYNC] Network error syncing chips to server:', error);
+			this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 			return 'pending';
 		}
 	}

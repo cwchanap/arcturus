@@ -17,6 +17,7 @@ import { PokerGame } from './PokerGame';
 function mockPokerGameDOM() {
 	interface MockElement {
 		addEventListener: () => void;
+		dataset?: Record<string, string>;
 		innerHTML?: string;
 		textContent?: string;
 		classList?: { add: () => void; remove: () => void; toggle: () => void };
@@ -32,6 +33,7 @@ function mockPokerGameDOM() {
 			if (!elements[id]) {
 				elements[id] = {
 					addEventListener: () => {},
+					dataset: {},
 					innerHTML: '',
 					textContent: '',
 					classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -336,6 +338,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			dataset: {},
 			innerHTML: '',
 			textContent: '40',
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -349,10 +352,28 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		expect(game.players[2].chips).toBe(500);
 	});
 
+	test('initializes the human stack from the raw balance attribute when display text is localized', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '1000' },
+			innerHTML: '',
+			textContent: '$1.000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as { players: Player[]; serverSyncedBalance: number };
+
+		expect(game.serverSyncedBalance).toBe(1000);
+		expect(game.players[0].chips).toBe(1000);
+	});
+
 	test('preserves the account-backed human stack when applying a pending chip reset', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			dataset: {},
 			innerHTML: '',
 			textContent: '500',
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -618,6 +639,10 @@ describe('PokerGame syncChips', () => {
 		};
 
 		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const deferred = { resolveFirstResponse: null as null | (() => void) };
+		const firstResponse = new Promise((resolve) => {
+			deferred.resolveFirstResponse = () => resolve(undefined);
+		});
 		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -937,6 +962,7 @@ describe('PokerGame syncChips', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			dataset: {},
 			innerHTML: '',
 			textContent: '500',
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -944,6 +970,10 @@ describe('PokerGame syncChips', () => {
 		};
 
 		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const deferred = { resolveFirstResponse: null as null | (() => void) };
+		const firstResponse = new Promise((resolve) => {
+			deferred.resolveFirstResponse = () => resolve(undefined);
+		});
 		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
@@ -1003,10 +1033,81 @@ describe('PokerGame syncChips', () => {
 		expect(game.serverSyncedBalance).toBe(450);
 	});
 
+	test('automatically retries a deferred sync after the retry delay elapses', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			if (chipUpdateBodies.length === 1) {
+				return {
+					ok: false,
+					status: 429,
+					headers: new Headers({ 'Retry-After': '1' }),
+					json: async () => ({ error: 'RATE_LIMITED' }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				headers: new Headers(),
+				json: async () => ({ balance: 450 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 450 };
+		game.syncChips('loss');
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(game.pendingChipSyncs).toHaveLength(1);
+
+		await new Promise((resolve) => setTimeout(resolve, 1100));
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(2);
+		expect(chipUpdateBodies[1].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].delta).toBe(-50);
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(450);
+	});
+
 	test('keeps a 409 without currentBalance queued until a later flush succeeds', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			dataset: {},
 			innerHTML: '',
 			textContent: '500',
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },

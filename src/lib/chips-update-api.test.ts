@@ -730,7 +730,7 @@ describe('chips update API', () => {
 	test('returns balance mismatch when optimistic lock fails', async () => {
 		resetMocks();
 		const POST = createHandler();
-		mockCreateDb.db = createMockDb({ updateChanges: 0 });
+		mockCreateDb.db = createMockDb({ updateChanges: 0, readChipBalance: 975 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
@@ -743,6 +743,7 @@ describe('chips update API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(409);
 		expect(body.error).toBe('BALANCE_MISMATCH');
+		expect(body.currentBalance).toBe(975);
 	});
 
 	test('returns balance mismatch when provided previousBalance differs from server balance', async () => {

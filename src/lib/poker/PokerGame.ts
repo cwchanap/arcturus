@@ -38,8 +38,8 @@ const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 
 type PendingChipSync = {
 	delta: number;
-	outcome: ChipSyncOutcome;
-	biggestWinCandidate: number;
+	outcome?: ChipSyncOutcome;
+	biggestWinCandidate?: number;
 };
 
 export class PokerGame {
@@ -213,18 +213,20 @@ export class PokerGame {
 	 * 429 responses are silently dropped (stats for that hand are lost).
 	 * This is intentional — poker does not implement a pending-stats accumulator.
 	 */
-	private syncChips(outcome: ChipSyncOutcome): void {
+	private syncChips(outcome?: ChipSyncOutcome): void {
 		if (this.humanChipsBefore <= 0) {
 			console.warn('[CHIP_SYNC] syncChips called before hand baseline established; skipping.');
 			return;
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		this.pendingChipSyncs.push({
-			delta,
-			outcome,
-			biggestWinCandidate: outcome === 'win' && delta > 0 ? this.getBiggestWinCandidate(delta) : 0,
-		});
+		const pendingSync: PendingChipSync = { delta };
+		if (outcome !== undefined) {
+			pendingSync.outcome = outcome;
+			pendingSync.biggestWinCandidate =
+				outcome === 'win' && delta > 0 ? this.getBiggestWinCandidate(delta) : 0;
+		}
+		this.pendingChipSyncs.push(pendingSync);
 		this.humanChipsBefore = 0;
 		void this.flushChipSyncQueue();
 	}
@@ -240,7 +242,7 @@ export class PokerGame {
 			return;
 		}
 
-		this.syncChips(delta > 0 ? 'win' : 'loss');
+		this.syncChips();
 	}
 
 	private async flushChipSyncQueue(): Promise<void> {
@@ -293,19 +295,33 @@ export class PokerGame {
 
 	private async sendChipSync(sync: PendingChipSync): Promise<'synced' | 'retry' | 'pending'> {
 		try {
+			const requestBody: {
+				previousBalance: number;
+				delta: number;
+				gameType: 'poker';
+				outcome?: ChipSyncOutcome;
+				handCount?: number;
+				winsIncrement?: number;
+				lossesIncrement?: number;
+				biggestWinCandidate?: number;
+			} = {
+				previousBalance: this.serverSyncedBalance,
+				delta: sync.delta,
+				gameType: 'poker',
+			};
+
+			if (sync.outcome !== undefined) {
+				requestBody.outcome = sync.outcome;
+				requestBody.handCount = 1;
+				requestBody.winsIncrement = sync.outcome === 'win' ? 1 : 0;
+				requestBody.lossesIncrement = sync.outcome === 'loss' ? 1 : 0;
+				requestBody.biggestWinCandidate = sync.biggestWinCandidate ?? 0;
+			}
+
 			const response = await fetch('/api/chips/update', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					previousBalance: this.serverSyncedBalance,
-					delta: sync.delta,
-					gameType: 'poker',
-					outcome: sync.outcome,
-					handCount: 1,
-					winsIncrement: sync.outcome === 'win' ? 1 : 0,
-					lossesIncrement: sync.outcome === 'loss' ? 1 : 0,
-					biggestWinCandidate: sync.biggestWinCandidate,
-				}),
+				body: JSON.stringify(requestBody),
 			});
 
 			let data: { balance?: number; currentBalance?: number; error?: string } | null = null;

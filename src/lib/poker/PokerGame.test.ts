@@ -734,6 +734,11 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(1);
 		expect(chipUpdateBodies[0].delta).toBe(-50);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].outcome).toBeUndefined();
+		expect(chipUpdateBodies[0].handCount).toBeUndefined();
+		expect(chipUpdateBodies[0].winsIncrement).toBeUndefined();
+		expect(chipUpdateBodies[0].lossesIncrement).toBeUndefined();
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBeUndefined();
 		expect(game.humanChipsBefore).toBe(450);
 		expect(game.players[0].chips).toBe(440);
 	});

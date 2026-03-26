@@ -729,12 +729,24 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			// Check if update affected any rows (D1 returns changes in meta)
 			const rowsAffected = getRowsAffected(result);
 			if (rowsAffected === 0) {
+				const [latestRow] = await db
+					.select({ chipBalance: user.chipBalance })
+					.from(user)
+					.where(eq(user.id, locals.user.id))
+					.limit(1);
+				const latestBalanceRaw = latestRow?.chipBalance;
+				const latestBalance =
+					typeof latestBalanceRaw === 'number' && Number.isFinite(latestBalanceRaw)
+						? Math.trunc(latestBalanceRaw)
+						: serverBalance;
+
 				// Concurrent modification detected - balance changed between read and write
 				return new Response(
 					JSON.stringify({
 						success: false,
 						error: 'BALANCE_MISMATCH',
 						message: 'Balance was modified concurrently. Please refresh and try again.',
+						currentBalance: latestBalance,
 					}),
 					{
 						status: 409,

@@ -204,10 +204,7 @@ export class PokerGame {
 	}
 
 	private getBiggestWinCandidate(delta: number): number {
-		const committedChips = Math.max(0, this.players[0]?.totalBet ?? 0);
-		const grossCollectedFromCommittedChips = delta + committedChips;
-
-		return Math.max(0, delta, this.pot, grossCollectedFromCommittedChips);
+		return Math.max(0, delta);
 	}
 
 	/**
@@ -391,6 +388,7 @@ export class PokerGame {
 				typeof data.currentBalance === 'number'
 			) {
 				const acknowledgedBalance = Math.max(0, this.serverSyncedBalance + sync.delta);
+
 				if (data.currentBalance === acknowledgedBalance) {
 					this.acknowledgeAppliedChipSync(sync, data.currentBalance);
 					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
@@ -410,11 +408,14 @@ export class PokerGame {
 				return 'pending';
 			}
 
-			// Non-retryable client errors (4xx except 409 BALANCE_MISMATCH): drop the sync
 			if (response.status >= 400 && response.status < 500) {
-				console.error('[CHIP_SYNC] Non-retryable error', response.status, '- dropping sync.');
+				console.error(
+					'[CHIP_SYNC] Client error left queued for manual recovery',
+					response.status,
+					data?.error,
+				);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'synced'; // treat as consumed so it's removed from the queue
+				return 'pending';
 			}
 
 			this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(

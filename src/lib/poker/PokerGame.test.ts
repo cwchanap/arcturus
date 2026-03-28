@@ -682,7 +682,7 @@ describe('PokerGame syncChips', () => {
 
 		expect(chipUpdateBodies).toHaveLength(1);
 		expect(chipUpdateBodies[0].delta).toBe(150);
-		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(300);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
 	});
 
 	test('persists the abandoned hand delta before resetting a new hand baseline', async () => {
@@ -1250,10 +1250,11 @@ describe('PokerGame syncChips', () => {
 		expect(game.serverSyncedBalance).toBe(450);
 	});
 
-	test('sends outcome: push with biggestWinCandidate: 0 for a tie hand', async () => {
+	test('keeps a DELTA_EXCEEDS_LIMIT sync queued until a later flush succeeds', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			dataset: {},
 			innerHTML: '',
 			textContent: '500',
 			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -1264,11 +1265,94 @@ describe('PokerGame syncChips', () => {
 		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
 			if (url === '/api/profile/llm-settings') {
-				return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
 			}
+
 			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
-			return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			if (chipUpdateBodies.length === 1) {
+				return {
+					ok: false,
+					status: 400,
+					json: async () => ({ error: 'DELTA_EXCEEDS_LIMIT' }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 650 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			flushChipSyncQueue: () => Promise<void>;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 650 };
+		game.syncChips('win');
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].delta).toBe(150);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
+		expect(game.pendingChipSyncs).toHaveLength(1);
+		expect(game.serverSyncedBalance).toBe(500);
+
+		await game.flushChipSyncQueue();
+
+		expect(chipUpdateBodies).toHaveLength(2);
+		expect(chipUpdateBodies[1].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].delta).toBe(150);
+		expect(chipUpdateBodies[1].biggestWinCandidate).toBe(150);
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(650);
+	});
+
+	test('sends outcome: push with biggestWinCandidate: 0 for a tie hand', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 500 }),
+			};
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
 
@@ -1278,7 +1362,6 @@ describe('PokerGame syncChips', () => {
 			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
 		};
 
-		// Push: chip count unchanged (split pot)
 		game.humanChipsBefore = 500;
 		game.players[0] = { ...game.players[0], chips: 500 };
 		game.syncChips('push');

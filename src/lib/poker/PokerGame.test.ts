@@ -685,7 +685,7 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
 	});
 
-	test('persists the abandoned hand delta before resetting a new hand baseline', async () => {
+	test('records an abandoned hand as a loss before resetting a new hand baseline', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -734,13 +734,71 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(1);
 		expect(chipUpdateBodies[0].delta).toBe(-50);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
-		expect(chipUpdateBodies[0].outcome).toBeUndefined();
-		expect(chipUpdateBodies[0].handCount).toBeUndefined();
-		expect(chipUpdateBodies[0].winsIncrement).toBeUndefined();
-		expect(chipUpdateBodies[0].lossesIncrement).toBeUndefined();
-		expect(chipUpdateBodies[0].biggestWinCandidate).toBeUndefined();
+		expect(chipUpdateBodies[0].outcome).toBe('loss');
+		expect(chipUpdateBodies[0].handCount).toBe(1);
+		expect(chipUpdateBodies[0].winsIncrement).toBe(0);
+		expect(chipUpdateBodies[0].lossesIncrement).toBe(1);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(0);
 		expect(game.humanChipsBefore).toBe(450);
 		expect(game.players[0].chips).toBe(440);
+	});
+
+	test('records a zero-delta abandoned hand as a loss before dealing again', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 500 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			processAITurn: () => Promise<void>;
+			dealNewHand: () => Promise<void>;
+		};
+
+		game.processAITurn = async () => {};
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 500 };
+
+		await game.dealNewHand();
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].delta).toBe(0);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].outcome).toBe('loss');
+		expect(chipUpdateBodies[0].handCount).toBe(1);
+		expect(chipUpdateBodies[0].winsIncrement).toBe(0);
+		expect(chipUpdateBodies[0].lossesIncrement).toBe(1);
+		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(0);
+		expect(game.humanChipsBefore).toBe(500);
+		expect(game.players[0].chips).toBe(490);
 	});
 
 	test('serializes queued syncs and uses the updated balance for later hands', async () => {

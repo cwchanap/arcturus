@@ -260,13 +260,7 @@ export class PokerGame {
 			return;
 		}
 
-		const delta = this.players[0].chips - this.humanChipsBefore;
-		if (delta === 0) {
-			this.humanChipsBefore = 0;
-			return;
-		}
-
-		this.syncChips();
+		this.syncChips('loss');
 	}
 
 	private async flushChipSyncQueue(): Promise<void> {

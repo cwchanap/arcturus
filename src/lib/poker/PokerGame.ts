@@ -37,6 +37,7 @@ type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 
 type PendingChipSync = {
+	syncId: string;
 	delta: number;
 	outcome?: ChipSyncOutcome;
 	biggestWinCandidate?: number;
@@ -101,6 +102,14 @@ export class PokerGame {
 			0,
 			this.serverSyncedBalance + this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0),
 		);
+	}
+
+	private createChipSyncId(): string {
+		if (typeof globalThis.crypto?.randomUUID === 'function') {
+			return globalThis.crypto.randomUUID();
+		}
+
+		return `poker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 	}
 
 	private rebaseHumanTableBalance(serverBalance: number): void {
@@ -244,7 +253,7 @@ export class PokerGame {
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		const pendingSync: PendingChipSync = { delta };
+		const pendingSync: PendingChipSync = { syncId: this.createChipSyncId(), delta };
 		if (outcome !== undefined) {
 			pendingSync.outcome = outcome;
 			pendingSync.biggestWinCandidate =
@@ -317,6 +326,7 @@ export class PokerGame {
 				previousBalance: number;
 				delta: number;
 				gameType: 'poker';
+				syncId: string;
 				outcome?: ChipSyncOutcome;
 				handCount?: number;
 				winsIncrement?: number;
@@ -326,6 +336,7 @@ export class PokerGame {
 				previousBalance: this.serverSyncedBalance,
 				delta: sync.delta,
 				gameType: 'poker',
+				syncId: sync.syncId,
 			};
 
 			if (sync.outcome !== undefined) {
@@ -381,14 +392,6 @@ export class PokerGame {
 				data?.error === 'BALANCE_MISMATCH' &&
 				typeof data.currentBalance === 'number'
 			) {
-				const acknowledgedBalance = Math.max(0, this.serverSyncedBalance + sync.delta);
-
-				if (data.currentBalance === acknowledgedBalance) {
-					this.acknowledgeAppliedChipSync(sync, data.currentBalance);
-					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-					return 'synced';
-				}
-
 				this.rebaseHumanTableBalance(data.currentBalance);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'retry';

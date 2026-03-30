@@ -47,11 +47,151 @@ import {
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
+type ChipSyncReceiptRecord = {
+	userId: string;
+	syncId: string;
+	gameType: string;
+	previousBalance: number;
+	balance: number;
+	delta: number;
+	statsDelta: number | null;
+	outcome: string | null;
+	handCount: number | null;
+	winsIncrement: number | null;
+	lossesIncrement: number | null;
+	biggestWinCandidate: number | null;
+};
+
+type CanonicalChipSyncPayload = {
+	syncId: string;
+	gameType: string;
+	previousBalance: number;
+	delta: number;
+	statsDelta: number | null;
+	outcome: string | null;
+	handCount: number | null;
+	winsIncrement: number | null;
+	lossesIncrement: number | null;
+	biggestWinCandidate: number | null;
+};
+
+type ChipSyncBatchParams = {
+	userId: string;
+	gameType: string;
+	syncId: string;
+	previousBalance: number;
+	newBalance: number;
+	delta: number;
+	matchedBalanceValue: number;
+	statsDelta: number | null;
+	outcome: string | null;
+	handCount: number | null;
+	winsIncrement: number | null;
+	lossesIncrement: number | null;
+	biggestWinCandidate: number | null;
+	updatedAtUnixSeconds: number;
+	shouldRecordStats: boolean;
+};
+
 export const BATCHED_GAME_TYPES = new Set(['craps']);
 const MAX_HAND_COUNT = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 export function getRowsAffected(result: RowsAffectedResult): number {
 	return result?.meta?.changes ?? result?.rowsAffected ?? 0;
+}
+
+function isValidSyncId(syncId: unknown): syncId is string {
+	return typeof syncId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(syncId);
+}
+
+function doesChipSyncReceiptMatch(
+	receipt: ChipSyncReceiptRecord,
+	payload: CanonicalChipSyncPayload,
+): boolean {
+	return (
+		receipt.syncId === payload.syncId &&
+		receipt.gameType === payload.gameType &&
+		receipt.previousBalance === payload.previousBalance &&
+		receipt.delta === payload.delta &&
+		receipt.statsDelta === payload.statsDelta &&
+		receipt.outcome === payload.outcome &&
+		receipt.handCount === payload.handCount &&
+		receipt.winsIncrement === payload.winsIncrement &&
+		receipt.lossesIncrement === payload.lossesIncrement &&
+		receipt.biggestWinCandidate === payload.biggestWinCandidate
+	);
+}
+
+async function readChipSyncReceipt(
+	dbBinding: D1Database,
+	userId: string,
+	syncId: string,
+): Promise<ChipSyncReceiptRecord | null> {
+	return (
+		(await dbBinding
+			.prepare(
+				`SELECT userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate FROM chip_sync_receipt WHERE userId = ? AND syncId = ? LIMIT 1`,
+			)
+			.bind(userId, syncId)
+			.first<ChipSyncReceiptRecord>()) ?? null
+	);
+}
+
+async function applyChipSyncBatch(
+	dbBinding: D1Database,
+	params: ChipSyncBatchParams,
+): Promise<number> {
+	const statements: D1PreparedStatement[] = [
+		dbBinding
+			.prepare(`UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ?`)
+			.bind(params.newBalance, params.userId, params.matchedBalanceValue),
+		dbBinding
+			.prepare(
+				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+			)
+			.bind(
+				params.userId,
+				params.syncId,
+				params.gameType,
+				params.previousBalance,
+				params.newBalance,
+				params.delta,
+				params.statsDelta,
+				params.outcome,
+				params.handCount,
+				params.winsIncrement,
+				params.lossesIncrement,
+				params.biggestWinCandidate,
+				params.updatedAtUnixSeconds,
+			),
+	];
+
+	if (params.shouldRecordStats) {
+		const insertedBiggestWin = Math.max(params.biggestWinCandidate ?? 0, 0);
+		statements.push(
+			dbBinding
+				.prepare(
+					`INSERT INTO game_stats (userId, gameType, totalWins, totalLosses, handsPlayed, biggestWin, netProfit, updatedAt) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1 ON CONFLICT(userId, gameType) DO UPDATE SET totalWins = game_stats.totalWins + excluded.totalWins, totalLosses = game_stats.totalLosses + excluded.totalLosses, handsPlayed = game_stats.handsPlayed + excluded.handsPlayed, biggestWin = CASE WHEN ? IS NULL THEN game_stats.biggestWin WHEN ? > 0 AND ? > game_stats.biggestWin THEN ? ELSE game_stats.biggestWin END, netProfit = game_stats.netProfit + excluded.netProfit, updatedAt = excluded.updatedAt`,
+				)
+				.bind(
+					params.userId,
+					params.gameType,
+					params.winsIncrement ?? 0,
+					params.lossesIncrement ?? 0,
+					params.handCount ?? 1,
+					insertedBiggestWin,
+					params.statsDelta ?? params.delta,
+					params.updatedAtUnixSeconds,
+					params.biggestWinCandidate,
+					params.biggestWinCandidate,
+					params.biggestWinCandidate,
+					params.biggestWinCandidate,
+				),
+		);
+	}
+
+	const results = await dbBinding.batch(statements);
+	return getRowsAffected(results[0] as RowsAffectedResult);
 }
 
 export function determineBiggestWinCandidate({
@@ -211,30 +351,11 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		const userId = locals.user.id;
 		const now = Date.now();
 
-		// Rate limiting check
-		const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
-		if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
-			const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
-			return new Response(
-				JSON.stringify({
-					success: false,
-					error: 'RATE_LIMITED',
-					message: `Please wait ${waitTime} second(s) before updating chips again`,
-				}),
-				{
-					status: 429,
-					headers: {
-						'Content-Type': 'application/json',
-						'Retry-After': String(waitTime),
-					},
-				},
-			);
-		}
-
 		// Parse request body with explicit error handling for malformed JSON
 		let body: {
 			delta?: unknown;
 			gameType?: unknown;
+			syncId?: unknown;
 			previousBalance?: unknown;
 			maxBet?: unknown;
 			outcome?: unknown;
@@ -263,6 +384,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		const {
 			delta,
 			gameType,
+			syncId,
 			previousBalance: clientPreviousBalance,
 			outcome,
 			handCount,
@@ -603,6 +725,34 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
+		if (syncId !== undefined && !isValidSyncId(syncId)) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_SYNC_ID',
+					message: 'syncId must be a non-empty alphanumeric identifier',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
+		if (syncId !== undefined && clientPreviousBalance === undefined) {
+			return new Response(
+				JSON.stringify({
+					success: false,
+					error: 'INVALID_REQUEST_BODY',
+					message: 'previousBalance is required when syncId is provided',
+				}),
+				{
+					status: 400,
+					headers: { 'Content-Type': 'application/json' },
+				},
+			);
+		}
+
 		// Check DB binding exists (may be undefined in local dev without Cloudflare bindings)
 		const dbBinding = locals.runtime?.env?.DB ?? null;
 		if (!dbBinding) {
@@ -653,6 +803,179 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			const rawServerBalance = currentRow.chipBalance;
 			const serverBalance = Number.isFinite(rawServerBalance) ? Math.trunc(rawServerBalance) : 0;
 			const needsRepair = rawServerBalance !== serverBalance;
+			const shouldRecordStats = outcome !== undefined && validOutcomes.includes(outcome as string);
+			const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
+			const actualWinsIncrement =
+				typeof winsIncrement === 'number'
+					? winsIncrement
+					: shouldRecordStats && outcome === 'win'
+						? 1
+						: 0;
+			const actualLossesIncrement =
+				typeof lossesIncrement === 'number'
+					? lossesIncrement
+					: shouldRecordStats && outcome === 'loss'
+						? 1
+						: 0;
+			const clampedBiggestWinCandidate =
+				typeof biggestWinCandidate === 'number' ? Math.min(biggestWinCandidate, maxWin) : undefined;
+			const statsDeltaForTracking = validatedStatsDelta ?? delta;
+			const actualBiggestWinCandidate = shouldRecordStats
+				? determineBiggestWinCandidate({
+						delta: statsDeltaForTracking,
+						biggestWinCandidate: clampedBiggestWinCandidate,
+						winsIncrement: actualWinsIncrement,
+						lossesIncrement: actualLossesIncrement,
+						handCount: resolvedHandCount,
+						gameType,
+					})
+				: null;
+			const canonicalSyncPayload =
+				syncId !== undefined
+					? {
+							syncId,
+							gameType,
+							previousBalance: clientPreviousBalance as number,
+							delta,
+							statsDelta: shouldRecordStats ? statsDeltaForTracking : null,
+							outcome: shouldRecordStats ? outcome : null,
+							handCount: shouldRecordStats ? resolvedHandCount : null,
+							winsIncrement: shouldRecordStats ? actualWinsIncrement : null,
+							lossesIncrement: shouldRecordStats ? actualLossesIncrement : null,
+							biggestWinCandidate: shouldRecordStats ? (actualBiggestWinCandidate ?? null) : null,
+						}
+					: null;
+
+			const buildSuccessResponse = (
+				balance: number,
+				previousBalance: number,
+				responseDelta: number,
+				newAchievements: Array<{ id: string; name: string; icon: string }>,
+				warnings: string[],
+			) =>
+				new Response(
+					JSON.stringify({
+						success: true,
+						balance,
+						previousBalance,
+						delta: responseDelta,
+						message: 'Chip balance updated successfully',
+						newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+						warnings: warnings.length > 0 ? warnings : undefined,
+					}),
+					{
+						status: 200,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+
+			const resolveAchievementResponse = async ({
+				balance,
+				resolvedGameType,
+				recentWinAmount,
+			}: {
+				balance: number;
+				resolvedGameType: string | null;
+				recentWinAmount: number | undefined;
+			}) => {
+				const newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+				const warnings: string[] = [];
+
+				if (!resolvedGameType || !isValidGameType(resolvedGameType)) {
+					return { newAchievements, warnings };
+				}
+
+				try {
+					const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, balance, {
+						recentWinAmount,
+						gameType: resolvedGameType as GameType,
+					});
+
+					newAchievements.push(
+						...earnedAchievements.map((achievement) => ({
+							id: achievement.id,
+							name: achievement.name,
+							icon: achievement.icon,
+						})),
+					);
+
+					if (newAchievements.length > 0) {
+						console.warn(
+							`[ACHIEVEMENT] User ${redactUserId(userId)} earned: ${newAchievements.map((achievement) => achievement.name).join(', ')}`,
+						);
+					}
+				} catch (statsError) {
+					console.error(
+						'[STATS_ERROR] Failed to record game stats or check achievements:',
+						statsError,
+					);
+					warnings.push('Stats tracking failed');
+				}
+
+				return { newAchievements, warnings };
+			};
+
+			if (canonicalSyncPayload !== null) {
+				const existingReceipt = await readChipSyncReceipt(
+					dbBinding,
+					userId,
+					canonicalSyncPayload.syncId,
+				);
+
+				if (existingReceipt !== null) {
+					if (!doesChipSyncReceiptMatch(existingReceipt, canonicalSyncPayload)) {
+						return new Response(
+							JSON.stringify({
+								success: false,
+								error: 'SYNC_ID_REUSE_MISMATCH',
+								message: 'syncId has already been used for a different chip sync payload',
+							}),
+							{
+								status: 409,
+								headers: { 'Content-Type': 'application/json' },
+							},
+						);
+					}
+
+					const achievementResolution = await resolveAchievementResponse({
+						balance: existingReceipt.balance,
+						resolvedGameType: existingReceipt.outcome ? existingReceipt.gameType : null,
+						recentWinAmount: existingReceipt.outcome
+							? resolveRecentWinAmountForAchievements(
+									existingReceipt.biggestWinCandidate,
+									existingReceipt.statsDelta ?? existingReceipt.delta,
+								)
+							: undefined,
+					});
+
+					return buildSuccessResponse(
+						existingReceipt.balance,
+						existingReceipt.previousBalance,
+						existingReceipt.delta,
+						achievementResolution.newAchievements,
+						achievementResolution.warnings,
+					);
+				}
+			}
+
+			const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
+			if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+				const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'RATE_LIMITED',
+						message: `Please wait ${waitTime} second(s) before updating chips again`,
+					}),
+					{
+						status: 429,
+						headers: {
+							'Content-Type': 'application/json',
+							'Retry-After': String(waitTime),
+						},
+					},
+				);
+			}
 
 			// Optimistic locking: reject if client's previousBalance doesn't match server
 			if (clientPreviousBalance !== undefined) {
@@ -710,53 +1033,133 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				);
 			}
 
-			// Atomic update with optimistic locking via WHERE condition
-			// This prevents TOCTOU race by ensuring balance hasn't changed since we read it.
-			// When the stored balance is fractional (needsRepair), we match against rawServerBalance
-			// so the repair and the delta update happen in a single atomic write.
-			const result = await db
-				.update(user)
-				.set({
-					chipBalance: newBalance,
-				})
-				.where(
-					and(
-						eq(user.id, locals.user.id),
-						eq(user.chipBalance, needsRepair ? rawServerBalance : serverBalance),
-					),
-				);
+			if (canonicalSyncPayload !== null) {
+				const rowsAffected = await applyChipSyncBatch(dbBinding, {
+					userId,
+					gameType,
+					syncId: canonicalSyncPayload.syncId,
+					previousBalance: canonicalSyncPayload.previousBalance,
+					newBalance,
+					delta,
+					matchedBalanceValue: needsRepair ? rawServerBalance : serverBalance,
+					statsDelta: canonicalSyncPayload.statsDelta,
+					outcome: canonicalSyncPayload.outcome,
+					handCount: canonicalSyncPayload.handCount,
+					winsIncrement: canonicalSyncPayload.winsIncrement,
+					lossesIncrement: canonicalSyncPayload.lossesIncrement,
+					biggestWinCandidate: canonicalSyncPayload.biggestWinCandidate,
+					updatedAtUnixSeconds: Math.trunc(now / 1000),
+					shouldRecordStats,
+				});
 
-			// Check if update affected any rows (D1 returns changes in meta)
-			const rowsAffected = getRowsAffected(result);
-			if (rowsAffected === 0) {
-				const [latestRow] = await db
-					.select({ chipBalance: user.chipBalance })
-					.from(user)
-					.where(eq(user.id, locals.user.id))
-					.limit(1);
-				const latestBalanceRaw = latestRow?.chipBalance;
-				const latestBalance =
-					typeof latestBalanceRaw === 'number' && Number.isFinite(latestBalanceRaw)
-						? Math.trunc(latestBalanceRaw)
-						: serverBalance;
+				if (rowsAffected === 0) {
+					const replayReceipt = await readChipSyncReceipt(
+						dbBinding,
+						userId,
+						canonicalSyncPayload.syncId,
+					);
 
-				// Concurrent modification detected - balance changed between read and write
-				return new Response(
-					JSON.stringify({
-						success: false,
-						error: 'BALANCE_MISMATCH',
-						message: 'Balance was modified concurrently. Please refresh and try again.',
-						currentBalance: latestBalance,
-					}),
-					{
-						status: 409,
-						headers: { 'Content-Type': 'application/json' },
-					},
-				);
+					if (replayReceipt !== null) {
+						if (!doesChipSyncReceiptMatch(replayReceipt, canonicalSyncPayload)) {
+							return new Response(
+								JSON.stringify({
+									success: false,
+									error: 'SYNC_ID_REUSE_MISMATCH',
+									message: 'syncId has already been used for a different chip sync payload',
+								}),
+								{
+									status: 409,
+									headers: { 'Content-Type': 'application/json' },
+								},
+							);
+						}
+
+						const achievementResolution = await resolveAchievementResponse({
+							balance: replayReceipt.balance,
+							resolvedGameType: replayReceipt.outcome ? replayReceipt.gameType : null,
+							recentWinAmount: replayReceipt.outcome
+								? resolveRecentWinAmountForAchievements(
+										replayReceipt.biggestWinCandidate,
+										replayReceipt.statsDelta ?? replayReceipt.delta,
+									)
+								: undefined,
+						});
+
+						return buildSuccessResponse(
+							replayReceipt.balance,
+							replayReceipt.previousBalance,
+							replayReceipt.delta,
+							achievementResolution.newAchievements,
+							achievementResolution.warnings,
+						);
+					}
+
+					const [latestRow] = await db
+						.select({ chipBalance: user.chipBalance })
+						.from(user)
+						.where(eq(user.id, locals.user.id))
+						.limit(1);
+					const latestBalanceRaw = latestRow?.chipBalance;
+					const latestBalance =
+						typeof latestBalanceRaw === 'number' && Number.isFinite(latestBalanceRaw)
+							? Math.trunc(latestBalanceRaw)
+							: serverBalance;
+
+					return new Response(
+						JSON.stringify({
+							success: false,
+							error: 'BALANCE_MISMATCH',
+							message: 'Balance was modified concurrently. Please refresh and try again.',
+							currentBalance: latestBalance,
+						}),
+						{
+							status: 409,
+							headers: { 'Content-Type': 'application/json' },
+						},
+					);
+				}
+			} else {
+				const result = await db
+					.update(user)
+					.set({
+						chipBalance: newBalance,
+					})
+					.where(
+						and(
+							eq(user.id, locals.user.id),
+							eq(user.chipBalance, needsRepair ? rawServerBalance : serverBalance),
+						),
+					);
+
+				const rowsAffected = getRowsAffected(result);
+				if (rowsAffected === 0) {
+					const [latestRow] = await db
+						.select({ chipBalance: user.chipBalance })
+						.from(user)
+						.where(eq(user.id, locals.user.id))
+						.limit(1);
+					const latestBalanceRaw = latestRow?.chipBalance;
+					const latestBalance =
+						typeof latestBalanceRaw === 'number' && Number.isFinite(latestBalanceRaw)
+							? Math.trunc(latestBalanceRaw)
+							: serverBalance;
+
+					return new Response(
+						JSON.stringify({
+							success: false,
+							error: 'BALANCE_MISMATCH',
+							message: 'Balance was modified concurrently. Please refresh and try again.',
+							currentBalance: latestBalance,
+						}),
+						{
+							status: 409,
+							headers: { 'Content-Type': 'application/json' },
+						},
+					);
+				}
 			}
 
-			// Update rate limit timestamp on successful update
-			lastUpdateByUserImpl.set(userId, Date.now());
+			lastUpdateByUserImpl.set(userId, now);
 
 			// Audit log for wins (positive deltas) to help detect exploitation patterns
 			if (delta > 0) {
@@ -770,33 +1173,21 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
 			const warnings: string[] = [];
 
-			if (outcome && validOutcomes.includes(outcome as string)) {
+			if (canonicalSyncPayload !== null) {
+				const achievementResolution = await resolveAchievementResponse({
+					balance: newBalance,
+					resolvedGameType: canonicalSyncPayload.outcome ? canonicalSyncPayload.gameType : null,
+					recentWinAmount: canonicalSyncPayload.outcome
+						? resolveRecentWinAmountForAchievements(
+								canonicalSyncPayload.biggestWinCandidate,
+								canonicalSyncPayload.statsDelta ?? canonicalSyncPayload.delta,
+							)
+						: undefined,
+				});
+				newAchievements = achievementResolution.newAchievements;
+				warnings.push(...achievementResolution.warnings);
+			} else if (outcome && validOutcomes.includes(outcome as string)) {
 				try {
-					const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
-
-					// Determine biggestWinCandidate for stats tracking
-					// For split-hand rounds (e.g., blackjack splits), client sends biggestWinCandidate
-					// to specify maximum per-hand win. We should use this value instead of null.
-					// Only ignore biggestWinCandidate for truly aggregated multi-round syncs where:
-					// - No explicit biggestWinCandidate provided, OR
-					// - Multiple wins and losses (mixed outcome, not a clean single-hand win)
-					// Clamp biggestWinCandidate to server-validated payout bounds
-					// Prevents inflating leaderboard stats with an arbitrarily large value
-					const clampedBiggestWinCandidate =
-						typeof biggestWinCandidate === 'number'
-							? Math.min(biggestWinCandidate, maxWin)
-							: undefined;
-
-					const statsDeltaForTracking = validatedStatsDelta ?? delta;
-					const actualBiggestWinCandidate = determineBiggestWinCandidate({
-						delta: statsDeltaForTracking,
-						biggestWinCandidate: clampedBiggestWinCandidate,
-						winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
-						lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
-						handCount: resolvedHandCount,
-						gameType,
-					});
-
 					// Record game stats (only for games with stats tracking enabled)
 					// Poker is accepted for chip updates but excluded from stats until
 					// round-stat payloads are wired for poker rounds
@@ -807,8 +1198,8 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							chipDelta: statsDeltaForTracking,
 							handCount: resolvedHandCount,
 							// Use provided winsIncrement/lossesIncrement for split-hand accuracy
-							winsIncrement: typeof winsIncrement === 'number' ? winsIncrement : undefined,
-							lossesIncrement: typeof lossesIncrement === 'number' ? lossesIncrement : undefined,
+							winsIncrement: actualWinsIncrement,
+							lossesIncrement: actualLossesIncrement,
 							// Use calculated biggestWinCandidate based on round type
 							biggestWinCandidate: actualBiggestWinCandidate,
 						});
@@ -849,24 +1240,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				}
 			}
 
-			// Return success response with validated values only
-			return new Response(
-				JSON.stringify({
-					success: true,
-					balance: newBalance,
-					previousBalance: serverBalance,
-					delta,
-					message: 'Chip balance updated successfully',
-					// Include newly earned achievements for client-side notifications
-					newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
-					// Include warnings for non-fatal errors (e.g., stats tracking failures)
-					warnings: warnings.length > 0 ? warnings : undefined,
-				}),
-				{
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			);
+			return buildSuccessResponse(newBalance, serverBalance, delta, newAchievements, warnings);
 		} catch (error) {
 			console.error('Chip balance update error:', error);
 			return new Response(

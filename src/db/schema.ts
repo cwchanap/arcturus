@@ -24,6 +24,31 @@ export const session = sqliteTable('session', {
 		.references(() => user.id),
 });
 
+export const chipSyncReceipt = sqliteTable(
+	'chip_sync_receipt',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		syncId: text('syncId').notNull(),
+		gameType: text('gameType').notNull(),
+		previousBalance: integer('previousBalance').notNull(),
+		balance: integer('balance').notNull(),
+		delta: integer('delta').notNull(),
+		statsDelta: integer('statsDelta'),
+		outcome: text('outcome'),
+		handCount: integer('handCount'),
+		winsIncrement: integer('winsIncrement'),
+		lossesIncrement: integer('lossesIncrement'),
+		biggestWinCandidate: integer('biggestWinCandidate'),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.syncId] }),
+		userCreatedIdx: index('chip_sync_receipt_user_created_idx').on(table.userId, table.createdAt),
+	}),
+);
+
 export const account = sqliteTable('account', {
 	id: text('id').primaryKey(),
 	accountId: text('accountId').notNull(),

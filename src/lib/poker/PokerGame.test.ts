@@ -942,7 +942,7 @@ describe('PokerGame syncChips', () => {
 		expect(game.players[0].chips).toBe(500);
 	});
 
-	test('treats BALANCE_MISMATCH as acknowledged when currentBalance already includes the queued delta', async () => {
+	test('retries equal-balance BALANCE_MISMATCH responses with the same syncId instead of dropping the queued sync', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -971,11 +971,19 @@ describe('PokerGame syncChips', () => {
 			}
 
 			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
-			await firstResponse;
+			if (chipUpdateBodies.length === 1) {
+				await firstResponse;
+				return {
+					ok: false,
+					status: 409,
+					json: async () => ({ error: 'BALANCE_MISMATCH', currentBalance: 550 }),
+				};
+			}
+
 			return {
-				ok: false,
-				status: 409,
-				json: async () => ({ error: 'BALANCE_MISMATCH', currentBalance: 550 }),
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 600 }),
 			};
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
@@ -1004,13 +1012,17 @@ describe('PokerGame syncChips', () => {
 		await flushAsyncWork();
 		await flushAsyncWork();
 
-		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(50);
+		expect(chipUpdateBodies[0].syncId).toEqual(expect.any(String));
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].delta).toBe(50);
+		expect(chipUpdateBodies[1].syncId).toBe(chipUpdateBodies[0].syncId);
 		expect(game.pendingChipSyncs).toHaveLength(0);
-		expect(game.serverSyncedBalance).toBe(550);
-		expect(game.humanChipsBefore).toBe(550);
-		expect(game.players[0].chips).toBe(530);
+		expect(game.serverSyncedBalance).toBe(600);
+		expect(game.humanChipsBefore).toBe(600);
+		expect(game.players[0].chips).toBe(580);
 	});
 
 	test('rebases the active hand baseline when BALANCE_MISMATCH refreshes the server balance', async () => {

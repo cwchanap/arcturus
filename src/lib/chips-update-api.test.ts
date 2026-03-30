@@ -117,16 +117,161 @@ function createMockDb({
 	return db;
 }
 
+function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
+	const receipts = new Map<
+		string,
+		{
+			userId: string;
+			syncId: string;
+			gameType: string;
+			previousBalance: number;
+			balance: number;
+			delta: number;
+			statsDelta: number | null;
+			outcome: string | null;
+			handCount: number | null;
+			winsIncrement: number | null;
+			lossesIncrement: number | null;
+			biggestWinCandidate: number | null;
+		}
+	>();
+	let currentChipBalance = chipBalance;
+	let gameStatsBatchCount = 0;
+
+	const binding = {
+		prepare(sql: string) {
+			return {
+				sql,
+				bind(...args: unknown[]) {
+					return {
+						sql,
+						args,
+						first: async <T>() => {
+							if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+								return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+							}
+
+							throw new Error(`Unexpected first() query: ${sql}`);
+						},
+					};
+				},
+			};
+		},
+		async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+			let previousChanges = 0;
+			const results: Array<{ meta: { changes: number } }> = [];
+
+			for (const statement of statements) {
+				if (statement.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+					const [nextBalance, _userId, matchedBalanceValue] = statement.args as [
+						number,
+						string,
+						number,
+					];
+
+					if (currentChipBalance === matchedBalanceValue) {
+						currentChipBalance = nextBalance;
+						previousChanges = 1;
+						results.push({ meta: { changes: 1 } });
+					} else {
+						previousChanges = 0;
+						results.push({ meta: { changes: 0 } });
+					}
+					continue;
+				}
+
+				if (statement.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+					if (previousChanges === 1) {
+						const [
+							userId,
+							syncId,
+							gameType,
+							previousBalance,
+							balance,
+							delta,
+							statsDelta,
+							outcome,
+							handCount,
+							winsIncrement,
+							lossesIncrement,
+							biggestWinCandidate,
+						] = statement.args as [
+							string,
+							string,
+							string,
+							number,
+							number,
+							number,
+							number | null,
+							string | null,
+							number | null,
+							number | null,
+							number | null,
+							number | null,
+							number,
+						];
+
+						receipts.set(`${userId}:${syncId}`, {
+							userId,
+							syncId,
+							gameType,
+							previousBalance,
+							balance,
+							delta,
+							statsDelta,
+							outcome,
+							handCount,
+							winsIncrement,
+							lossesIncrement,
+							biggestWinCandidate,
+						});
+						previousChanges = 1;
+						results.push({ meta: { changes: 1 } });
+					} else {
+						previousChanges = 0;
+						results.push({ meta: { changes: 0 } });
+					}
+					continue;
+				}
+
+				if (statement.sql.startsWith('INSERT INTO game_stats')) {
+					if (previousChanges === 1) {
+						gameStatsBatchCount += 1;
+						previousChanges = 1;
+						results.push({ meta: { changes: 1 } });
+					} else {
+						previousChanges = 0;
+						results.push({ meta: { changes: 0 } });
+					}
+					continue;
+				}
+
+				throw new Error(`Unexpected batch SQL: ${statement.sql}`);
+			}
+
+			return results;
+		},
+	};
+
+	return {
+		binding: binding as unknown as D1Database,
+		getCurrentChipBalance: () => currentChipBalance,
+		getGameStatsBatchCount: () => gameStatsBatchCount,
+	};
+}
+
 function createLocals({
 	user,
 	withDb = true,
+	dbBinding,
 }: {
 	user?: { id: string; chipBalance?: number } | null;
 	withDb?: boolean;
+	dbBinding?: unknown;
 }) {
 	return {
 		user: user ?? null,
-		runtime: withDb ? { env: { DB: { binding: true } } } : { env: {} },
+		runtime: withDb ? { env: { DB: dbBinding ?? { binding: true } } } : { env: {} },
 	};
 }
 
@@ -767,6 +912,60 @@ describe('chips update API', () => {
 		expect(response.status).toBe(409);
 		expect(body.error).toBe('BALANCE_MISMATCH');
 		expect(body.currentBalance).toBe(1000);
+	});
+
+	test('replays a completed syncId request from its receipt without re-recording stats', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const chipSyncBinding = createMockChipSyncBinding({ chipBalance: 1000 });
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => [];
+
+		const requestBody = {
+			delta: 50,
+			gameType: 'poker',
+			syncId: 'poker-sync-1',
+			previousBalance: 1000,
+			outcome: 'win',
+			handCount: 1,
+		};
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify(requestBody),
+		});
+
+		const firstResponse = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-sync-replay', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		const firstBody = await readJson(firstResponse);
+
+		expect(firstResponse.status).toBe(200);
+		expect(firstBody.balance).toBe(1050);
+		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(chipSyncBinding.getCurrentChipBalance()).toBe(1050);
+		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
+
+		const replayResponse = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-sync-replay', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		const replayBody = await readJson(replayResponse);
+
+		expect(replayResponse.status).toBe(200);
+		expect(replayBody.balance).toBe(1050);
+		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(chipSyncBinding.getCurrentChipBalance()).toBe(1050);
+		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
 	});
 
 	test('updates balance and returns achievements for valid request', async () => {

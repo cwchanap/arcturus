@@ -272,6 +272,23 @@ export function resolveRecentWinAmountForAchievements(
 	return delta > 0 ? delta : undefined;
 }
 
+function resolveAchievementRecentWinAmount(
+	gameType: string | null | undefined,
+	outcome: string | null | undefined,
+	actualBiggestWinCandidate: number | null | undefined,
+	delta: number,
+): number | undefined {
+	if (!outcome) {
+		return undefined;
+	}
+
+	if (gameType === 'poker' && outcome === 'push') {
+		return undefined;
+	}
+
+	return resolveRecentWinAmountForAchievements(actualBiggestWinCandidate, delta);
+}
+
 // Game-specific betting limits
 // Different games have fundamentally different payout structures:
 // - Blackjack: ~1.5:1 (Natural) to 6:1 (Split+Double scenarios)
@@ -940,12 +957,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					const achievementResolution = await resolveAchievementResponse({
 						balance: existingReceipt.balance,
 						resolvedGameType: existingReceipt.outcome ? existingReceipt.gameType : null,
-						recentWinAmount: existingReceipt.outcome
-							? resolveRecentWinAmountForAchievements(
-									existingReceipt.biggestWinCandidate,
-									existingReceipt.statsDelta ?? existingReceipt.delta,
-								)
-							: undefined,
+						recentWinAmount: resolveAchievementRecentWinAmount(
+							existingReceipt.gameType,
+							existingReceipt.outcome,
+							existingReceipt.biggestWinCandidate,
+							existingReceipt.statsDelta ?? existingReceipt.delta,
+						),
 					});
 
 					return buildSuccessResponse(
@@ -1077,12 +1094,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						const achievementResolution = await resolveAchievementResponse({
 							balance: replayReceipt.balance,
 							resolvedGameType: replayReceipt.outcome ? replayReceipt.gameType : null,
-							recentWinAmount: replayReceipt.outcome
-								? resolveRecentWinAmountForAchievements(
-										replayReceipt.biggestWinCandidate,
-										replayReceipt.statsDelta ?? replayReceipt.delta,
-									)
-								: undefined,
+							recentWinAmount: resolveAchievementRecentWinAmount(
+								replayReceipt.gameType,
+								replayReceipt.outcome,
+								replayReceipt.biggestWinCandidate,
+								replayReceipt.statsDelta ?? replayReceipt.delta,
+							),
 						});
 
 						return buildSuccessResponse(
@@ -1177,12 +1194,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				const achievementResolution = await resolveAchievementResponse({
 					balance: newBalance,
 					resolvedGameType: canonicalSyncPayload.outcome ? canonicalSyncPayload.gameType : null,
-					recentWinAmount: canonicalSyncPayload.outcome
-						? resolveRecentWinAmountForAchievements(
-								canonicalSyncPayload.biggestWinCandidate,
-								canonicalSyncPayload.statsDelta ?? canonicalSyncPayload.delta,
-							)
-						: undefined,
+					recentWinAmount: resolveAchievementRecentWinAmount(
+						canonicalSyncPayload.gameType,
+						canonicalSyncPayload.outcome,
+						canonicalSyncPayload.biggestWinCandidate,
+						canonicalSyncPayload.statsDelta ?? canonicalSyncPayload.delta,
+					),
 				});
 				newAchievements = achievementResolution.newAchievements;
 				warnings.push(...achievementResolution.warnings);
@@ -1210,7 +1227,9 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					// calculates pre-win balance internally as (currentChipBalance - recentWinAmount)
 					const earnedAchievements = isValidGameType(gameType)
 						? await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-								recentWinAmount: resolveRecentWinAmountForAchievements(
+								recentWinAmount: resolveAchievementRecentWinAmount(
+									gameType,
+									outcome as string,
 									actualBiggestWinCandidate,
 									statsDeltaForTracking,
 								),

@@ -968,6 +968,66 @@ describe('chips update API', () => {
 		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
 	});
 
+	test('does not pass recentWinAmount for poker push sync achievements, including receipt replay', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const chipSyncBinding = createMockChipSyncBinding({ chipBalance: 1000 });
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => [];
+
+		const requestBody = {
+			delta: 50,
+			gameType: 'poker',
+			syncId: 'poker-push-sync-1',
+			previousBalance: 1000,
+			outcome: 'push',
+			handCount: 1,
+		};
+
+		const firstResponse = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-poker-push-sync', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		const firstBody = await readJson(firstResponse);
+
+		expect(firstResponse.status).toBe(200);
+		expect(firstBody.balance).toBe(1050);
+		const firstAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
+			recentWinAmount?: number;
+			gameType?: string;
+		};
+		expect(firstAchievementOptions?.gameType).toBe('poker');
+		expect(firstAchievementOptions?.recentWinAmount).toBeUndefined();
+
+		const replayResponse = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-poker-push-sync', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		const replayBody = await readJson(replayResponse);
+
+		expect(replayResponse.status).toBe(200);
+		expect(replayBody.balance).toBe(1050);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(2);
+		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[1]?.[3] as {
+			recentWinAmount?: number;
+			gameType?: string;
+		};
+		expect(replayAchievementOptions?.gameType).toBe('poker');
+		expect(replayAchievementOptions?.recentWinAmount).toBeUndefined();
+	});
+
 	test('updates balance and returns achievements for valid request', async () => {
 		resetMocks();
 		const POST = createHandler();

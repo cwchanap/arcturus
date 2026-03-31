@@ -145,7 +145,8 @@ export async function getBulkUserAchievements(
 	const results = await db
 		.select({ userId: userAchievement.userId, achievementId: userAchievement.achievementId })
 		.from(userAchievement)
-		.where(inArray(userAchievement.userId, userIds));
+		.where(inArray(userAchievement.userId, userIds))
+		.orderBy(userAchievement.userId, userAchievement.earnedAt, userAchievement.achievementId);
 
 	const map = new Map<string, string[]>();
 	for (const row of results) {

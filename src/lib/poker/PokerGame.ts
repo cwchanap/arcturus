@@ -66,6 +66,7 @@ export class PokerGame {
 	private isProcessingAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
 	private pendingChipReset = false; // Flag to reset chips on next deal
+	private hasServerSyncedBalance = false;
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
 	private pendingChipSyncs: PendingChipSync[] = [];
@@ -86,9 +87,11 @@ export class PokerGame {
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
 		const balanceEl = document.getElementById('player-balance');
+		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
 		const parsed = Number(rawBalance.match(/-?\d+/)?.[0] ?? Number.NaN);
-		this.serverSyncedBalance = Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+		this.hasServerSyncedBalance = balanceAvailable === 'false' ? false : Number.isFinite(parsed);
+		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 
 		this.initPlayers();
 		this.attachEventListeners();
@@ -96,6 +99,14 @@ export class PokerGame {
 		this.renderSettingsPanel();
 		this.updateBetControls(); // Initialize bet controls based on settings
 		this.aiRival.highlightSuggestedMove(null);
+
+		if (!this.hasServerSyncedBalance) {
+			const dealButton = document.getElementById('btn-deal') as HTMLButtonElement | null;
+			if (dealButton) {
+				dealButton.disabled = true;
+			}
+			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+		}
 
 		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
 		void this.checkLlmConfigOnLoad();
@@ -310,6 +321,11 @@ export class PokerGame {
 	}
 
 	private syncChips(outcome?: ChipSyncOutcome): void {
+		if (!this.hasServerSyncedBalance) {
+			console.warn('[CHIP_SYNC] syncChips called without an available server balance; skipping.');
+			return;
+		}
+
 		if (this.humanChipsBefore <= 0) {
 			console.warn('[CHIP_SYNC] syncChips called before hand baseline established; skipping.');
 			return;
@@ -605,6 +621,11 @@ export class PokerGame {
 
 				return;
 			}
+		}
+
+		if (!this.hasServerSyncedBalance) {
+			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+			return;
 		}
 
 		this.finalizeActiveHandBeforeDeal();

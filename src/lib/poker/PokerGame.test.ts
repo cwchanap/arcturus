@@ -23,6 +23,7 @@ function mockPokerGameDOM() {
 		classList?: { add: () => void; remove: () => void; toggle: () => void };
 		querySelector?: () => MockElement | null;
 		querySelectorAll?: () => MockElement[];
+		disabled?: boolean;
 		value?: string;
 	}
 
@@ -39,6 +40,7 @@ function mockPokerGameDOM() {
 					classList: { add: () => {}, remove: () => {}, toggle: () => {} },
 					querySelector: () => null,
 					querySelectorAll: () => [],
+					disabled: false,
 					value: '0',
 				};
 			}
@@ -411,6 +413,36 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 		expect(game.serverSyncedBalance).toBe(1000);
 		expect(game.players[0].chips).toBe(1000);
+	});
+
+	test('keeps poker non-playable when the server balance is unavailable', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '', balanceAvailable: 'false' },
+			innerHTML: '',
+			textContent: 'Unavailable',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			disabled: false,
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			serverSyncedBalance: number;
+			humanChipsBefore: number;
+			dealNewHand: () => Promise<void>;
+		};
+
+		expect(game.serverSyncedBalance).toBe(0);
+		expect(game.players[0].chips).toBe(0);
+		expect(elements['btn-deal']?.disabled).toBe(true);
+		expect(elements['game-status']?.textContent).toContain('Unable to load your chip balance');
+
+		await game.dealNewHand();
+
+		expect(game.humanChipsBefore).toBe(0);
+		expect(elements['game-status']?.textContent).toContain('Unable to load your chip balance');
 	});
 
 	test('preserves the account-backed human stack when applying a pending chip reset', async () => {

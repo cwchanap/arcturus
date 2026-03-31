@@ -60,6 +60,7 @@ type ChipSyncReceiptRecord = {
 	winsIncrement: number | null;
 	lossesIncrement: number | null;
 	biggestWinCandidate: number | null;
+	overallRank: number | null;
 };
 
 type CanonicalChipSyncPayload = {
@@ -130,7 +131,7 @@ async function readChipSyncReceipt(
 	return (
 		(await dbBinding
 			.prepare(
-				`SELECT userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate FROM chip_sync_receipt WHERE userId = ? AND syncId = ? LIMIT 1`,
+				`SELECT userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank FROM chip_sync_receipt WHERE userId = ? AND syncId = ? LIMIT 1`,
 			)
 			.bind(userId, syncId)
 			.first<ChipSyncReceiptRecord>()) ?? null
@@ -147,7 +148,7 @@ async function applyChipSyncBatch(
 			.bind(params.newBalance, params.userId, params.matchedBalanceValue),
 		dbBinding
 			.prepare(
-				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`,
+				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ? WHERE changes() = 1`,
 			)
 			.bind(
 				params.userId,
@@ -162,6 +163,9 @@ async function applyChipSyncBatch(
 				params.winsIncrement,
 				params.lossesIncrement,
 				params.biggestWinCandidate,
+				params.newBalance,
+				params.newBalance,
+				params.userId,
 				params.updatedAtUnixSeconds,
 			),
 	];
@@ -890,10 +894,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				balance,
 				resolvedGameType,
 				recentWinAmount,
+				overallRank,
 			}: {
 				balance: number;
 				resolvedGameType: string | null;
 				recentWinAmount: number | undefined;
+				overallRank?: number | null;
 			}) => {
 				const newAchievements: Array<{ id: string; name: string; icon: string }> = [];
 				const warnings: string[] = [];
@@ -906,6 +912,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 					const earnedAchievements = await checkAndGrantAchievementsImpl(db, userId, balance, {
 						recentWinAmount,
 						gameType: resolvedGameType as GameType,
+						overallRank,
 					});
 
 					newAchievements.push(
@@ -963,6 +970,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							existingReceipt.biggestWinCandidate,
 							existingReceipt.statsDelta ?? existingReceipt.delta,
 						),
+						overallRank: existingReceipt.overallRank,
 					});
 
 					return buildSuccessResponse(
@@ -1050,6 +1058,8 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				);
 			}
 
+			let persistedReceipt: ChipSyncReceiptRecord | null = null;
+
 			if (canonicalSyncPayload !== null) {
 				const rowsAffected = await applyChipSyncBatch(dbBinding, {
 					userId,
@@ -1100,6 +1110,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 								replayReceipt.biggestWinCandidate,
 								replayReceipt.statsDelta ?? replayReceipt.delta,
 							),
+							overallRank: replayReceipt.overallRank,
 						});
 
 						return buildSuccessResponse(
@@ -1135,6 +1146,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						},
 					);
 				}
+
+				persistedReceipt = await readChipSyncReceipt(
+					dbBinding,
+					userId,
+					canonicalSyncPayload.syncId,
+				);
 			} else {
 				const result = await db
 					.update(user)
@@ -1191,15 +1208,22 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			const warnings: string[] = [];
 
 			if (canonicalSyncPayload !== null) {
+				const achievementReceipt = persistedReceipt;
 				const achievementResolution = await resolveAchievementResponse({
-					balance: newBalance,
-					resolvedGameType: canonicalSyncPayload.outcome ? canonicalSyncPayload.gameType : null,
+					balance: achievementReceipt?.balance ?? newBalance,
+					resolvedGameType:
+						(achievementReceipt?.outcome ?? canonicalSyncPayload.outcome)
+							? (achievementReceipt?.gameType ?? canonicalSyncPayload.gameType)
+							: null,
 					recentWinAmount: resolveAchievementRecentWinAmount(
-						canonicalSyncPayload.gameType,
-						canonicalSyncPayload.outcome,
-						canonicalSyncPayload.biggestWinCandidate,
-						canonicalSyncPayload.statsDelta ?? canonicalSyncPayload.delta,
+						achievementReceipt?.gameType ?? canonicalSyncPayload.gameType,
+						achievementReceipt?.outcome ?? canonicalSyncPayload.outcome,
+						achievementReceipt?.biggestWinCandidate ?? canonicalSyncPayload.biggestWinCandidate,
+						achievementReceipt?.statsDelta ??
+							canonicalSyncPayload.statsDelta ??
+							canonicalSyncPayload.delta,
 					),
+					overallRank: achievementReceipt?.overallRank,
 				});
 				newAchievements = achievementResolution.newAchievements;
 				warnings.push(...achievementResolution.warnings);

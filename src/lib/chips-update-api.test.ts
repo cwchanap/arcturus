@@ -117,7 +117,13 @@ function createMockDb({
 	return db;
 }
 
-function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
+function createMockChipSyncBinding({
+	chipBalance,
+	overallRank = null,
+}: {
+	chipBalance: number;
+	overallRank?: number | null;
+}) {
 	const receipts = new Map<
 		string,
 		{
@@ -133,6 +139,7 @@ function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
 			winsIncrement: number | null;
 			lossesIncrement: number | null;
 			biggestWinCandidate: number | null;
+			overallRank: number | null;
 		}
 	>();
 	let currentChipBalance = chipBalance;
@@ -195,6 +202,9 @@ function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
 							winsIncrement,
 							lossesIncrement,
 							biggestWinCandidate,
+							_newBalanceForHigherBalanceCount,
+							_newBalanceForTieBreak,
+							_rankUserId,
 						] = statement.args as [
 							string,
 							string,
@@ -208,6 +218,9 @@ function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
 							number | null,
 							number | null,
 							number | null,
+							number,
+							number,
+							string,
 							number,
 						];
 
@@ -224,6 +237,7 @@ function createMockChipSyncBinding({ chipBalance }: { chipBalance: number }) {
 							winsIncrement,
 							lossesIncrement,
 							biggestWinCandidate,
+							overallRank,
 						});
 						previousChanges = 1;
 						results.push({ meta: { changes: 1 } });
@@ -966,6 +980,55 @@ describe('chips update API', () => {
 		expect(mockRecordGameRound.calls.length).toBe(0);
 		expect(chipSyncBinding.getCurrentChipBalance()).toBe(1050);
 		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
+	});
+
+	test('preserves the original overallRank snapshot when replaying a sync receipt', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const chipSyncBinding = createMockChipSyncBinding({ chipBalance: 1000, overallRank: 7 });
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => [];
+
+		const requestBody = {
+			delta: 50,
+			gameType: 'poker',
+			syncId: 'poker-rank-sync-1',
+			previousBalance: 1000,
+			outcome: 'win',
+			handCount: 1,
+		};
+
+		const firstResponse = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-rank-replay', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		expect(firstResponse.status).toBe(200);
+		const firstAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
+			overallRank?: number | null;
+		};
+		expect(firstAchievementOptions?.overallRank).toBe(7);
+
+		const replayResponse = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-rank-replay', chipBalance: 1000 },
+				dbBinding: chipSyncBinding.binding,
+			}),
+		} as any);
+		expect(replayResponse.status).toBe(200);
+		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[1]?.[3] as {
+			overallRank?: number | null;
+		};
+		expect(replayAchievementOptions?.overallRank).toBe(7);
 	});
 
 	test('does not pass recentWinAmount for poker push sync achievements, including receipt replay', async () => {

@@ -41,6 +41,7 @@ export const chipSyncReceipt = sqliteTable(
 		winsIncrement: integer('winsIncrement'),
 		lossesIncrement: integer('lossesIncrement'),
 		biggestWinCandidate: integer('biggestWinCandidate'),
+		overallRank: integer('overallRank'),
 		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	},
 	(table) => ({

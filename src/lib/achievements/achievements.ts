@@ -78,6 +78,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		options: {
 			recentWinAmount?: number;
 			gameType?: GameType;
+			overallRank?: number | null;
 		} = {},
 	): Promise<AchievementCheckContext> {
 		const [existingAchievementIds, stats, overallRank] = await Promise.all([
@@ -85,7 +86,9 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 				deps.getEarnedAchievementIds(db, userId),
 			),
 			runDatabaseOperation('getAggregateUserStats', () => deps.getAggregateUserStats(db, userId)),
-			runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
+			options.overallRank !== undefined
+				? Promise.resolve(options.overallRank)
+				: runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
 		]);
 
 		return {
@@ -110,6 +113,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		options: {
 			recentWinAmount?: number;
 			gameType?: GameType;
+			overallRank?: number | null;
 		} = {},
 		achievementsList: AchievementDefinition[] = ACHIEVEMENTS,
 	): Promise<AchievementDefinition[]> {

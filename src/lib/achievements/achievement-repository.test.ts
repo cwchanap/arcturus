@@ -7,6 +7,7 @@ import {
 	getAchievementCount,
 	getBulkUserAchievements,
 } from './achievement-repository';
+import { userAchievement } from '../../db/schema';
 import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
 
@@ -178,14 +179,24 @@ describe('achievement-repository', () => {
 });
 
 describe('getBulkUserAchievements', () => {
-	function createBulkMockDb(rows: Array<{ userId: string; achievementId: string }>): Database {
+	function createBulkMockDb(
+		rows: Array<{ userId: string; achievementId: string }>,
+	): Database & { orderByCalls: unknown[][] } {
+		const orderByCalls: unknown[][] = [];
+
 		return {
+			orderByCalls,
 			select: () => ({
 				from: () => ({
-					where: () => Promise.resolve(rows),
+					where: () => ({
+						orderBy: (...columns: unknown[]) => {
+							orderByCalls.push(columns);
+							return Promise.resolve(rows);
+						},
+					}),
 				}),
 			}),
-		} as unknown as Database;
+		} as unknown as Database & { orderByCalls: unknown[][] };
 	}
 
 	test('returns empty Map when userIds array is empty (no DB query)', async () => {
@@ -205,6 +216,19 @@ describe('getBulkUserAchievements', () => {
 
 		expect(result.get('user1')).toEqual(['🌟', '🏆']);
 		expect(result.get('user2')).toEqual(['💎']);
+	});
+
+	test('requests deterministic ordering for bulk badge fetches', async () => {
+		const mockDb = createBulkMockDb([{ userId: 'user1', achievementId: 'champion' }]);
+
+		await getBulkUserAchievements(mockDb, ['user1']);
+
+		expect(mockDb.orderByCalls).toHaveLength(1);
+		expect(mockDb.orderByCalls[0]).toEqual([
+			userAchievement.userId,
+			userAchievement.earnedAt,
+			userAchievement.achievementId,
+		]);
 	});
 
 	test('user with no achievements is absent from the map (empty array not stored)', async () => {

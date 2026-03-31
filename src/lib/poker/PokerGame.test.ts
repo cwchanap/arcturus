@@ -936,7 +936,7 @@ describe('PokerGame syncChips', () => {
 
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
-		expect(chipUpdateBodies[1].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
 		expect(chipUpdateBodies[1].delta).toBe(-50);
 		expect(game.serverSyncedBalance).toBe(500);
 		expect(game.players[0].chips).toBe(500);
@@ -1015,7 +1015,7 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(50);
-		expect(chipUpdateBodies[1].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
 		expect(chipUpdateBodies[1].delta).toBe(50);
 		expect(chipUpdateBodies[1].syncId).toBe(chipUpdateBodies[0].syncId);
 		expect(game.pendingChipSyncs).toHaveLength(0);
@@ -1096,11 +1096,95 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(50);
-		expect(chipUpdateBodies[1].previousBalance).toBe(500);
+		expect(chipUpdateBodies[1].previousBalance).toBe(450);
 		expect(chipUpdateBodies[1].delta).toBe(50);
 		expect(game.humanChipsBefore).toBe(500);
 		expect(game.players[0].chips).toBe(480);
 		expect(game.serverSyncedBalance).toBe(500);
+	});
+
+	test('rebases later queued sync baselines after BALANCE_MISMATCH before flushing them', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const deferred = { resolveFirstResponse: null as null | (() => void) };
+		const firstResponse = new Promise((resolve) => {
+			deferred.resolveFirstResponse = () => resolve(undefined);
+		});
+
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			if (chipUpdateBodies.length === 1) {
+				await firstResponse;
+				return {
+					ok: false,
+					status: 409,
+					json: async () => ({ error: 'BALANCE_MISMATCH', currentBalance: 550 }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: chipUpdateBodies.length === 2 ? 600 : 560 }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.syncChips('win');
+
+		await flushAsyncWork();
+
+		game.humanChipsBefore = 550;
+		game.players[0] = { ...game.players[0], chips: 510 };
+		game.syncChips('loss');
+
+		if (deferred.resolveFirstResponse) {
+			deferred.resolveFirstResponse();
+		}
+
+		await flushAsyncWork();
+		await flushAsyncWork();
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(3);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].delta).toBe(50);
+		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].delta).toBe(50);
+		expect(chipUpdateBodies[2].previousBalance).toBe(600);
+		expect(chipUpdateBodies[2].delta).toBe(-40);
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(560);
 	});
 
 	test('keeps a rate-limited sync queued until a later flush succeeds', async () => {

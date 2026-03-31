@@ -108,6 +108,20 @@ describe('achievements orchestration', () => {
 		expect(ids.length).toBeGreaterThan(0);
 	});
 
+	test('checkAndGrantAchievements uses provided overallRank snapshot instead of refetching rank', async () => {
+		resetMocks();
+		const db = createMockDb();
+
+		const results = await checkAndGrantAchievements(db, 'user1', 2000, {
+			recentWinAmount: 1500,
+			gameType: 'blackjack' as GameType,
+			overallRank: 1,
+		});
+
+		expect(mockGetUserRank.calls.length).toBe(0);
+		expect(results.some((achievement) => achievement.id === 'champion')).toBe(true);
+	});
+
 	test('checkAndGrantAchievements skips missing check functions', async () => {
 		resetMocks();
 		const db = createMockDb();

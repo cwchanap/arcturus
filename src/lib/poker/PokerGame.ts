@@ -113,6 +113,22 @@ export class PokerGame {
 		return `poker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 	}
 
+	private rebasePendingChipSyncBaselines(serverBalance: number): void {
+		if (this.pendingChipSyncs.length === 0) {
+			return;
+		}
+
+		const baselineShift = serverBalance - this.pendingChipSyncs[0].previousBalance;
+		if (baselineShift === 0) {
+			return;
+		}
+
+		this.pendingChipSyncs = this.pendingChipSyncs.map((pendingSync) => ({
+			...pendingSync,
+			previousBalance: Math.max(0, pendingSync.previousBalance + baselineShift),
+		}));
+	}
+
 	private rebaseHumanTableBalance(serverBalance: number): void {
 		const pendingDelta = this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0);
 		const currentHandDelta =
@@ -391,6 +407,7 @@ export class PokerGame {
 				data?.error === 'BALANCE_MISMATCH' &&
 				typeof data.currentBalance === 'number'
 			) {
+				this.rebasePendingChipSyncBaselines(data.currentBalance);
 				this.rebaseHumanTableBalance(data.currentBalance);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'retry';

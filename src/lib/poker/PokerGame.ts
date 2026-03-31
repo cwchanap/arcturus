@@ -489,7 +489,10 @@ export class PokerGame {
 				return 'retry';
 			}
 
-			if (response.status === 409 || response.status === 429) {
+			if (
+				response.status === 429 ||
+				(response.status === 409 && data?.error === 'BALANCE_MISMATCH')
+			) {
 				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
 					response.headers?.get?.('Retry-After') ?? null,
 				);

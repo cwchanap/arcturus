@@ -936,7 +936,7 @@ describe('PokerGame syncChips', () => {
 
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
-		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].previousBalance).toBe(500);
 		expect(chipUpdateBodies[1].delta).toBe(-50);
 		expect(game.serverSyncedBalance).toBe(500);
 		expect(game.players[0].chips).toBe(500);
@@ -1015,8 +1015,7 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(50);
-		expect(chipUpdateBodies[0].syncId).toEqual(expect.any(String));
-		expect(chipUpdateBodies[1].previousBalance).toBe(550);
+		expect(chipUpdateBodies[1].previousBalance).toBe(500);
 		expect(chipUpdateBodies[1].delta).toBe(50);
 		expect(chipUpdateBodies[1].syncId).toBe(chipUpdateBodies[0].syncId);
 		expect(game.pendingChipSyncs).toHaveLength(0);
@@ -1097,7 +1096,7 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies).toHaveLength(2);
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(50);
-		expect(chipUpdateBodies[1].previousBalance).toBe(450);
+		expect(chipUpdateBodies[1].previousBalance).toBe(500);
 		expect(chipUpdateBodies[1].delta).toBe(50);
 		expect(game.humanChipsBefore).toBe(500);
 		expect(game.players[0].chips).toBe(480);

@@ -38,6 +38,7 @@ const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 
 type PendingChipSync = {
 	syncId: string;
+	previousBalance: number;
 	delta: number;
 	outcome?: ChipSyncOutcome;
 	biggestWinCandidate?: number;
@@ -240,12 +241,6 @@ export class PokerGame {
 		}
 	}
 
-	/**
-	 * Sync chip balance change to server after a hand completes.
-	 * Fire-and-forget: game play is not blocked on the response.
-	 * 429 responses are silently dropped (stats for that hand are lost).
-	 * This is intentional — poker does not implement a pending-stats accumulator.
-	 */
 	private syncChips(outcome?: ChipSyncOutcome): void {
 		if (this.humanChipsBefore <= 0) {
 			console.warn('[CHIP_SYNC] syncChips called before hand baseline established; skipping.');
@@ -253,7 +248,11 @@ export class PokerGame {
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		const pendingSync: PendingChipSync = { syncId: this.createChipSyncId(), delta };
+		const pendingSync: PendingChipSync = {
+			syncId: this.createChipSyncId(),
+			previousBalance: this.getEffectiveServerBalance(),
+			delta,
+		};
 		if (outcome !== undefined) {
 			pendingSync.outcome = outcome;
 			pendingSync.biggestWinCandidate =
@@ -333,7 +332,7 @@ export class PokerGame {
 				lossesIncrement?: number;
 				biggestWinCandidate?: number;
 			} = {
-				previousBalance: this.serverSyncedBalance,
+				previousBalance: sync.previousBalance,
 				delta: sync.delta,
 				gameType: 'poker',
 				syncId: sync.syncId,
@@ -364,7 +363,7 @@ export class PokerGame {
 			} catch (parseError) {
 				console.warn('[CHIP_SYNC] Failed to parse chip sync response JSON:', parseError);
 				if (response.ok) {
-					this.serverSyncedBalance += sync.delta;
+					this.acknowledgeAppliedChipSync(sync, Math.max(0, sync.previousBalance + sync.delta));
 					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 					return 'synced';
 				}
@@ -376,13 +375,13 @@ export class PokerGame {
 			}
 
 			if (typeof data?.balance === 'number') {
-				this.serverSyncedBalance = data.balance;
+				this.acknowledgeAppliedChipSync(sync, data.balance);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}
 
 			if (response.ok) {
-				this.serverSyncedBalance += sync.delta;
+				this.acknowledgeAppliedChipSync(sync, Math.max(0, sync.previousBalance + sync.delta));
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}

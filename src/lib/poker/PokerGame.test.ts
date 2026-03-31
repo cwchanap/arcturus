@@ -62,6 +62,50 @@ async function flushAsyncWork() {
 	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+type ScheduledTimer = {
+	id: number;
+	delay: number;
+	cleared: boolean;
+	callback: () => void;
+};
+
+function mockTrackedTimers() {
+	const originalSetTimeout = globalThis.setTimeout;
+	const originalClearTimeout = globalThis.clearTimeout;
+	const scheduledTimers: ScheduledTimer[] = [];
+	let nextTimerId = 1;
+
+	globalThis.setTimeout = ((callback: () => void, delay?: number) => {
+		const timer = {
+			id: nextTimerId++,
+			delay: typeof delay === 'number' ? delay : 0,
+			cleared: false,
+			callback: () => {
+				if (!timer.cleared) {
+					callback();
+				}
+			},
+		};
+		scheduledTimers.push(timer);
+		return timer.id as unknown as ReturnType<typeof setTimeout>;
+	}) as unknown as typeof setTimeout;
+
+	globalThis.clearTimeout = ((timeoutId?: ReturnType<typeof setTimeout>) => {
+		const timer = scheduledTimers.find((entry) => entry.id === (timeoutId as unknown as number));
+		if (timer) {
+			timer.cleared = true;
+		}
+	}) as unknown as typeof clearTimeout;
+
+	return {
+		scheduledTimers,
+		restore() {
+			globalThis.setTimeout = originalSetTimeout;
+			globalThis.clearTimeout = originalClearTimeout;
+		},
+	};
+}
+
 describe('PokerGame Core Logic', () => {
 	beforeEach(() => {
 		mockPokerGameDOM();
@@ -460,36 +504,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
 
-		const originalSetTimeout = globalThis.setTimeout;
-		const originalClearTimeout = globalThis.clearTimeout;
-		const scheduledTimers: Array<{
-			id: number;
-			delay: number;
-			cleared: boolean;
-			callback: () => void;
-		}> = [];
-		let nextTimerId = 1;
-
-		globalThis.setTimeout = ((callback: () => void, delay?: number) => {
-			const timer = {
-				id: nextTimerId++,
-				delay: typeof delay === 'number' ? delay : 0,
-				cleared: false,
-				callback: () => {
-					if (!timer.cleared) {
-						callback();
-					}
-				},
-			};
-			scheduledTimers.push(timer);
-			return timer.id as unknown as ReturnType<typeof setTimeout>;
-		}) as unknown as typeof setTimeout;
-		globalThis.clearTimeout = ((timeoutId?: ReturnType<typeof setTimeout>) => {
-			const timer = scheduledTimers.find((entry) => entry.id === (timeoutId as unknown as number));
-			if (timer) {
-				timer.cleared = true;
-			}
-		}) as unknown as typeof clearTimeout;
+		const timers = mockTrackedTimers();
 
 		try {
 			const game = new PokerGame() as unknown as {
@@ -514,7 +529,9 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 			expect(chipUpdateBodies).toHaveLength(1);
 
-			const staleAutoDeal = scheduledTimers.find((timer) => timer.delay === 3000 && !timer.cleared);
+			const staleAutoDeal = timers.scheduledTimers.find(
+				(timer) => timer.delay === 3000 && !timer.cleared,
+			);
 			expect(staleAutoDeal).toBeDefined();
 
 			await game.dealNewHand();
@@ -531,8 +548,112 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			expect(chipUpdateBodies).toHaveLength(1);
 			expect(game.humanChipsBefore).toBe(500);
 		} finally {
-			globalThis.setTimeout = originalSetTimeout;
-			globalThis.clearTimeout = originalClearTimeout;
+			timers.restore();
+		}
+	});
+
+	test('ignores a stale next-phase callback after a manual deal starts a fresh hand', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				currentPlayerIndex: number;
+				communityCards: Card[];
+				gamePhase: string;
+				processAITurn: () => Promise<void>;
+				advanceTurn: () => void;
+				dealNewHand: () => Promise<void>;
+			};
+
+			game.processAITurn = async () => {};
+			game.currentPlayerIndex = 0;
+			game.players = game.players.map((player) => ({
+				...player,
+				folded: false,
+				hasActed: true,
+				currentBet: 10,
+			}));
+
+			game.advanceTurn();
+
+			const staleNextPhase = timers.scheduledTimers.find(
+				(timer) => timer.delay === 1000 && !timer.cleared,
+			);
+			expect(staleNextPhase).toBeDefined();
+
+			await game.dealNewHand();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(game.gamePhase).toBe('preflop');
+			expect(game.communityCards).toHaveLength(0);
+
+			staleNextPhase?.callback();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(game.gamePhase).toBe('preflop');
+			expect(game.communityCards).toHaveLength(0);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('ignores a stale AI delay callback after a manual deal starts a fresh hand', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				currentPlayerIndex: number;
+				processAITurn: () => Promise<void>;
+				dealNewHand: () => Promise<void>;
+			};
+
+			const originalProcessAITurn = game.processAITurn.bind(game);
+			game.currentPlayerIndex = 1;
+			void originalProcessAITurn();
+
+			const staleAiDelay = timers.scheduledTimers.find((timer) => !timer.cleared);
+			expect(staleAiDelay).toBeDefined();
+
+			game.processAITurn = async () => {};
+			await game.dealNewHand();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(game.currentPlayerIndex).toBe(1);
+			expect(game.players[1].hasActed).toBe(false);
+			expect(game.players[1].folded).toBe(false);
+
+			staleAiDelay?.callback();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(game.currentPlayerIndex).toBe(1);
+			expect(game.players[1].hasActed).toBe(false);
+			expect(game.players[1].folded).toBe(false);
+		} finally {
+			timers.restore();
 		}
 	});
 });
@@ -1403,7 +1524,7 @@ describe('PokerGame syncChips', () => {
 		expect(game.serverSyncedBalance).toBe(450);
 	});
 
-	test('keeps a DELTA_EXCEEDS_LIMIT sync queued until a later flush succeeds', async () => {
+	test('drops a DELTA_EXCEEDS_LIMIT sync and rebases the local bankroll to the confirmed server balance', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -1463,17 +1584,15 @@ describe('PokerGame syncChips', () => {
 		expect(chipUpdateBodies[0].previousBalance).toBe(500);
 		expect(chipUpdateBodies[0].delta).toBe(150);
 		expect(chipUpdateBodies[0].biggestWinCandidate).toBe(150);
-		expect(game.pendingChipSyncs).toHaveLength(1);
+		expect(game.pendingChipSyncs).toHaveLength(0);
 		expect(game.serverSyncedBalance).toBe(500);
+		expect(game.players[0].chips).toBe(500);
 
 		await game.flushChipSyncQueue();
 
-		expect(chipUpdateBodies).toHaveLength(2);
-		expect(chipUpdateBodies[1].previousBalance).toBe(500);
-		expect(chipUpdateBodies[1].delta).toBe(150);
-		expect(chipUpdateBodies[1].biggestWinCandidate).toBe(150);
+		expect(chipUpdateBodies).toHaveLength(1);
 		expect(game.pendingChipSyncs).toHaveLength(0);
-		expect(game.serverSyncedBalance).toBe(650);
+		expect(game.serverSyncedBalance).toBe(500);
 	});
 
 	test('sends outcome: push with biggestWinCandidate: 0 for a tie hand', async () => {

@@ -74,6 +74,9 @@ export class PokerGame {
 	private autoDealToken = 0;
 	private chipSyncRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
+	private turnTransitionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	private pendingTurnTransitionResolver: ((completed: boolean) => void) | null = null;
+	private turnTransitionToken = 0;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -181,6 +184,12 @@ export class PokerGame {
 		this.updateActionButtons();
 	}
 
+	private discardRejectedChipSync(sync: PendingChipSync): void {
+		this.rebasePendingChipSyncBaselines(sync.previousBalance);
+		this.rebaseHumanTableBalance(sync.previousBalance);
+		this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
+	}
+
 	private cancelPendingAutoDeal(): void {
 		this.autoDealToken += 1;
 		if (this.autoDealTimeoutId !== null) {
@@ -194,6 +203,49 @@ export class PokerGame {
 			clearTimeout(this.chipSyncRetryTimeoutId);
 			this.chipSyncRetryTimeoutId = null;
 		}
+	}
+
+	private clearPendingTurnTransitionTimeout(completed: boolean): void {
+		if (this.turnTransitionTimeoutId !== null) {
+			clearTimeout(this.turnTransitionTimeoutId);
+			this.turnTransitionTimeoutId = null;
+		}
+
+		if (this.pendingTurnTransitionResolver !== null) {
+			const resolvePendingTurnTransition = this.pendingTurnTransitionResolver;
+			this.pendingTurnTransitionResolver = null;
+			resolvePendingTurnTransition(completed);
+		}
+	}
+
+	private cancelPendingTurnTransitions(): void {
+		this.turnTransitionToken += 1;
+		this.clearPendingTurnTransitionTimeout(false);
+		this.isProcessingAction = false;
+	}
+
+	private scheduleTurnTransition(delayMs: number, callback: () => void): void {
+		const turnTransitionToken = this.turnTransitionToken;
+		this.clearPendingTurnTransitionTimeout(false);
+		this.turnTransitionTimeoutId = setTimeout(() => {
+			this.turnTransitionTimeoutId = null;
+			if (turnTransitionToken !== this.turnTransitionToken) {
+				return;
+			}
+			callback();
+		}, delayMs);
+	}
+
+	private waitForTurnTransition(delayMs: number, turnTransitionToken: number): Promise<boolean> {
+		this.clearPendingTurnTransitionTimeout(false);
+		return new Promise((resolve) => {
+			this.pendingTurnTransitionResolver = resolve;
+			this.turnTransitionTimeoutId = setTimeout(() => {
+				this.turnTransitionTimeoutId = null;
+				this.pendingTurnTransitionResolver = null;
+				resolve(turnTransitionToken === this.turnTransitionToken);
+			}, delayMs);
+		});
 	}
 
 	private scheduleChipSyncRetry(delayMs = CHIP_SYNC_RETRY_DELAY_MS): void {
@@ -313,6 +365,15 @@ export class PokerGame {
 					continue;
 				}
 
+				if (result === 'discarded') {
+					retryCount = 0;
+					const discardedSync = this.pendingChipSyncs.shift();
+					if (discardedSync) {
+						this.discardRejectedChipSync(discardedSync);
+					}
+					continue;
+				}
+
 				if (result === 'retry') {
 					retryCount++;
 					if (retryCount >= MAX_RETRIES) {
@@ -335,7 +396,9 @@ export class PokerGame {
 		}
 	}
 
-	private async sendChipSync(sync: PendingChipSync): Promise<'synced' | 'retry' | 'pending'> {
+	private async sendChipSync(
+		sync: PendingChipSync,
+	): Promise<'discarded' | 'synced' | 'retry' | 'pending'> {
 		try {
 			const requestBody: {
 				previousBalance: number;
@@ -384,6 +447,19 @@ export class PokerGame {
 					return 'synced';
 				}
 
+				if (response.status >= 400 && response.status < 500) {
+					if (response.status === 409 || response.status === 429) {
+						this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
+							response.headers?.get?.('Retry-After') ?? null,
+						);
+						return 'pending';
+					}
+
+					console.error('[CHIP_SYNC] Dropping permanently rejected sync', response.status);
+					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
+					return 'discarded';
+				}
+
 				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
 					response.headers?.get?.('Retry-After') ?? null,
 				);
@@ -423,12 +499,12 @@ export class PokerGame {
 
 			if (response.status >= 400 && response.status < 500) {
 				console.error(
-					'[CHIP_SYNC] Client error left queued for manual recovery',
+					'[CHIP_SYNC] Dropping permanently rejected sync',
 					response.status,
 					data?.error,
 				);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'pending';
+				return 'discarded';
 			}
 
 			this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
@@ -503,6 +579,7 @@ export class PokerGame {
 
 	public async dealNewHand() {
 		this.cancelPendingAutoDeal();
+		this.cancelPendingTurnTransitions();
 
 		// Clear LLM cache for new hand
 		clearLLMCache();
@@ -631,13 +708,18 @@ export class PokerGame {
 		if (this.isProcessingAction) return;
 		if (this.currentPlayerIndex === 0) return; // Not AI's turn
 
-		const currentPlayer = this.players[this.currentPlayerIndex];
-		if (!currentPlayer || !currentPlayer.isAI) return;
+		const turnTransitionToken = this.turnTransitionToken;
 
 		// AI decision delay based on settings
 		const aiDelay = this.settingsManager.getAIDelay();
 		const delay = aiDelay.min + Math.random() * (aiDelay.max - aiDelay.min);
-		await new Promise((resolve) => setTimeout(resolve, delay));
+		const transitionCompleted = await this.waitForTurnTransition(delay, turnTransitionToken);
+		if (!transitionCompleted) return;
+		if (turnTransitionToken !== this.turnTransitionToken) return;
+		if (this.currentPlayerIndex === 0) return;
+
+		const currentPlayer = this.players[this.currentPlayerIndex];
+		if (!currentPlayer || !currentPlayer.isAI) return;
 
 		// Get AI config
 		const aiConfig = this.aiConfigs.get(currentPlayer.id);
@@ -674,11 +756,15 @@ export class PokerGame {
 		if (settings.useLLMAI) {
 			// Try LLM-based AI with fallback to rule-based
 			const llmSettings = await this.getLLMSettings();
+			if (turnTransitionToken !== this.turnTransitionToken) return;
 			decision = await makeLLMDecision(context, aiConfig.personality, llmSettings);
+			if (turnTransitionToken !== this.turnTransitionToken) return;
 		} else {
 			// Use rule-based AI
 			decision = makeAIDecision(context, aiConfig);
 		}
+
+		if (turnTransitionToken !== this.turnTransitionToken) return;
 
 		// Execute decision
 		const highestBet = getHighestBet(this.players);
@@ -769,7 +855,7 @@ export class PokerGame {
 		// Check if betting round is complete
 		if (isBettingRoundComplete(this.players)) {
 			// Move to next phase
-			setTimeout(() => this.nextPhase(), 1000);
+			this.scheduleTurnTransition(1000, () => this.nextPhase());
 			return;
 		}
 
@@ -984,10 +1070,10 @@ export class PokerGame {
 				this.players[0] = { ...this.players[0], hasActed: true };
 				this.updateGameStatus('You checked');
 			} finally {
-				setTimeout(() => {
+				this.scheduleTurnTransition(200, () => {
 					this.isProcessingAction = false;
 					this.advanceTurn();
-				}, 200);
+				});
 			}
 		});
 

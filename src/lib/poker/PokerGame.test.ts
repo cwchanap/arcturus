@@ -1524,6 +1524,68 @@ describe('PokerGame syncChips', () => {
 		expect(game.serverSyncedBalance).toBe(450);
 	});
 
+	test('drops a SYNC_ID_REUSE_MISMATCH sync and rebases the local bankroll to the confirmed server balance', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const chipUpdateBodies: Array<Record<string, unknown>> = [];
+		const fetchMock = mock(async (input: string | URL | Request, init?: RequestInit) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
+			return {
+				ok: false,
+				status: 409,
+				json: async () => ({ error: 'SYNC_ID_REUSE_MISMATCH' }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			flushChipSyncQueue: () => Promise<void>;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 650 };
+		game.syncChips('win');
+
+		await flushAsyncWork();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(chipUpdateBodies[0].previousBalance).toBe(500);
+		expect(chipUpdateBodies[0].delta).toBe(150);
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(500);
+		expect(game.players[0].chips).toBe(500);
+
+		await game.flushChipSyncQueue();
+
+		expect(chipUpdateBodies).toHaveLength(1);
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(500);
+	});
+
 	test('drops a DELTA_EXCEEDS_LIMIT sync and rebases the local bankroll to the confirmed server balance', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

@@ -241,10 +241,7 @@ async function applyChipSyncBatch(
 				params.newBalance,
 				params.userId,
 				params.updatedAtUnixSeconds,
-				serializeChipSyncAchievementPayload({
-					newAchievements: [],
-					warnings: [],
-				}),
+				null,
 			),
 	];
 

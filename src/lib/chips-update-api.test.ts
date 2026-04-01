@@ -243,7 +243,7 @@ function createMockChipSyncBinding({
 							number,
 							string,
 							number,
-							string,
+							string | null,
 						];
 
 						receipts.set(`${userId}:${syncId}`, {
@@ -1397,6 +1397,122 @@ describe('chips update API', () => {
 		expect(body.balance).toBe(1010);
 		// Repair is now folded into the single atomic update (no separate repair call)
 		expect(mockDb.updateCalls).toBe(1);
+	});
+
+	test('replays a pending receipt (null achievementPayload) by re-running achievement resolution', async () => {
+		// Simulates the race condition where a receipt was inserted with NULL achievementPayload
+		// (achievements not yet finalized) and a retry arrives before the original request completes.
+		// The retry should fall through to re-run achievement resolution rather than returning empty results.
+		resetMocks();
+		const POST = createHandler();
+
+		// Create a mock binding with a pre-existing receipt that has null achievementPayload
+		const receipts = new Map<
+			string,
+			{
+				userId: string;
+				syncId: string;
+				gameType: string;
+				previousBalance: number;
+				balance: number;
+				delta: number;
+				statsDelta: number | null;
+				outcome: string | null;
+				handCount: number | null;
+				winsIncrement: number | null;
+				lossesIncrement: number | null;
+				biggestWinCandidate: number | null;
+				overallRank: number | null;
+				achievementPayload: string | null;
+			}
+		>();
+		receipts.set('user-pending-sync:poker-pending-1', {
+			userId: 'user-pending-sync',
+			syncId: 'poker-pending-1',
+			gameType: 'poker',
+			previousBalance: 1000,
+			balance: 1050,
+			delta: 50,
+			statsDelta: 50,
+			outcome: 'win',
+			handCount: 1,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 50,
+			overallRank: null,
+			achievementPayload: null, // KEY: null means achievements not yet finalized
+		});
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => {
+								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+									const [achievementPayload, userId, syncId] = args as [string, string, string];
+									const existingReceipt = receipts.get(`${userId}:${syncId}`);
+									if (existingReceipt) {
+										receipts.set(`${userId}:${syncId}`, {
+											...existingReceipt,
+											achievementPayload,
+										});
+										return { meta: { changes: 1 } };
+									}
+									return { meta: { changes: 0 } };
+								}
+								throw new Error(`Unexpected run() query: ${sql}`);
+							},
+						};
+					},
+				};
+			},
+			async batch() {
+				throw new Error('Unexpected batch call in replay test');
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1050 });
+		mockCheckAndGrantAchievements.impl = async () => [mockAchievement];
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 50,
+				gameType: 'poker',
+				syncId: 'poker-pending-1',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-pending-sync', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(1050);
+		// The retry should have re-run achievement resolution and found the achievement
+		expect(body.newAchievements).toEqual([
+			{ id: mockAchievement.id, name: mockAchievement.name, icon: mockAchievement.icon },
+		]);
+		// Achievement resolution was called (not short-circuited by stale empty payload)
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 	});
 
 	test('returns warning when stats tracking fails', async () => {

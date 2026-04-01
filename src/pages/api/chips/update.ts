@@ -47,6 +47,17 @@ import {
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
+type ChipSyncAchievementRecord = {
+	id: string;
+	name: string;
+	icon: string;
+};
+
+type ChipSyncAchievementPayload = {
+	newAchievements: ChipSyncAchievementRecord[];
+	warnings: string[];
+};
+
 type ChipSyncReceiptRecord = {
 	userId: string;
 	syncId: string;
@@ -61,6 +72,7 @@ type ChipSyncReceiptRecord = {
 	lossesIncrement: number | null;
 	biggestWinCandidate: number | null;
 	overallRank: number | null;
+	achievementPayload: string | null;
 };
 
 type CanonicalChipSyncPayload = {
@@ -123,6 +135,56 @@ function doesChipSyncReceiptMatch(
 	);
 }
 
+function isChipSyncAchievementRecord(value: unknown): value is ChipSyncAchievementRecord {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		typeof (value as Record<string, unknown>).id === 'string' &&
+		typeof (value as Record<string, unknown>).name === 'string' &&
+		typeof (value as Record<string, unknown>).icon === 'string'
+	);
+}
+
+function parseChipSyncAchievementPayload(
+	rawPayload: string | null | undefined,
+): ChipSyncAchievementPayload | null {
+	if (typeof rawPayload !== 'string' || rawPayload.length === 0) {
+		return null;
+	}
+
+	try {
+		const parsed = JSON.parse(rawPayload) as {
+			newAchievements?: unknown;
+			warnings?: unknown;
+		};
+
+		if (
+			!Array.isArray(parsed.newAchievements) ||
+			!parsed.newAchievements.every(isChipSyncAchievementRecord)
+		) {
+			return null;
+		}
+
+		if (
+			!Array.isArray(parsed.warnings) ||
+			!parsed.warnings.every((warning) => typeof warning === 'string')
+		) {
+			return null;
+		}
+
+		return {
+			newAchievements: parsed.newAchievements,
+			warnings: parsed.warnings,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function serializeChipSyncAchievementPayload(payload: ChipSyncAchievementPayload): string {
+	return JSON.stringify(payload);
+}
+
 async function readChipSyncReceipt(
 	dbBinding: D1Database,
 	userId: string,
@@ -131,11 +193,23 @@ async function readChipSyncReceipt(
 	return (
 		(await dbBinding
 			.prepare(
-				`SELECT userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank FROM chip_sync_receipt WHERE userId = ? AND syncId = ? LIMIT 1`,
+				`SELECT userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload FROM chip_sync_receipt WHERE userId = ? AND syncId = ? LIMIT 1`,
 			)
 			.bind(userId, syncId)
 			.first<ChipSyncReceiptRecord>()) ?? null
 	);
+}
+
+async function updateChipSyncAchievementPayload(
+	dbBinding: D1Database,
+	userId: string,
+	syncId: string,
+	payload: ChipSyncAchievementPayload,
+): Promise<void> {
+	await dbBinding
+		.prepare(`UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?`)
+		.bind(serializeChipSyncAchievementPayload(payload), userId, syncId)
+		.run();
 }
 
 async function applyChipSyncBatch(
@@ -148,7 +222,7 @@ async function applyChipSyncBatch(
 			.bind(params.newBalance, params.userId, params.matchedBalanceValue),
 		dbBinding
 			.prepare(
-				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ? WHERE changes() = 1`,
+				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, createdAt, achievementPayload) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ?, ? WHERE changes() = 1`,
 			)
 			.bind(
 				params.userId,
@@ -167,6 +241,10 @@ async function applyChipSyncBatch(
 				params.newBalance,
 				params.userId,
 				params.updatedAtUnixSeconds,
+				serializeChipSyncAchievementPayload({
+					newAchievements: [],
+					warnings: [],
+				}),
 			),
 	];
 
@@ -961,6 +1039,20 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						);
 					}
 
+					const persistedAchievementPayload = parseChipSyncAchievementPayload(
+						existingReceipt.achievementPayload,
+					);
+
+					if (persistedAchievementPayload !== null) {
+						return buildSuccessResponse(
+							existingReceipt.balance,
+							existingReceipt.previousBalance,
+							existingReceipt.delta,
+							persistedAchievementPayload.newAchievements,
+							persistedAchievementPayload.warnings,
+						);
+					}
+
 					const achievementResolution = await resolveAchievementResponse({
 						balance: existingReceipt.balance,
 						resolvedGameType: existingReceipt.outcome ? existingReceipt.gameType : null,
@@ -1101,6 +1193,20 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							);
 						}
 
+						const persistedAchievementPayload = parseChipSyncAchievementPayload(
+							replayReceipt.achievementPayload,
+						);
+
+						if (persistedAchievementPayload !== null) {
+							return buildSuccessResponse(
+								replayReceipt.balance,
+								replayReceipt.previousBalance,
+								replayReceipt.delta,
+								persistedAchievementPayload.newAchievements,
+								persistedAchievementPayload.warnings,
+							);
+						}
+
 						const achievementResolution = await resolveAchievementResponse({
 							balance: replayReceipt.balance,
 							resolvedGameType: replayReceipt.outcome ? replayReceipt.gameType : null,
@@ -1227,6 +1333,31 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				});
 				newAchievements = achievementResolution.newAchievements;
 				warnings.push(...achievementResolution.warnings);
+
+				const persistedAchievementPayload: ChipSyncAchievementPayload = {
+					newAchievements,
+					warnings: [...warnings],
+				};
+
+				if (achievementReceipt !== null) {
+					achievementReceipt.achievementPayload = serializeChipSyncAchievementPayload(
+						persistedAchievementPayload,
+					);
+				}
+
+				try {
+					await updateChipSyncAchievementPayload(
+						dbBinding,
+						userId,
+						canonicalSyncPayload.syncId,
+						persistedAchievementPayload,
+					);
+				} catch (receiptPayloadError) {
+					console.error(
+						'[CHIP_SYNC_RECEIPT] Failed to persist achievement payload:',
+						receiptPayloadError,
+					);
+				}
 			} else if (outcome && validOutcomes.includes(outcome as string)) {
 				try {
 					// Record game stats (only for games with stats tracking enabled)

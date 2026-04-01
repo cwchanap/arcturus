@@ -140,6 +140,7 @@ function createMockChipSyncBinding({
 			lossesIncrement: number | null;
 			biggestWinCandidate: number | null;
 			overallRank: number | null;
+			achievementPayload: string | null;
 		}
 	>();
 	let currentChipBalance = chipBalance;
@@ -159,6 +160,24 @@ function createMockChipSyncBinding({
 							}
 
 							throw new Error(`Unexpected first() query: ${sql}`);
+						},
+						run: async () => {
+							if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+								const [achievementPayload, userId, syncId] = args as [string, string, string];
+								const existingReceipt = receipts.get(`${userId}:${syncId}`);
+
+								if (existingReceipt) {
+									receipts.set(`${userId}:${syncId}`, {
+										...existingReceipt,
+										achievementPayload,
+									});
+									return { meta: { changes: 1 } };
+								}
+
+								return { meta: { changes: 0 } };
+							}
+
+							throw new Error(`Unexpected run() query: ${sql}`);
 						},
 					};
 				},
@@ -205,6 +224,8 @@ function createMockChipSyncBinding({
 							_newBalanceForHigherBalanceCount,
 							_newBalanceForTieBreak,
 							_rankUserId,
+							_createdAt,
+							achievementPayload,
 						] = statement.args as [
 							string,
 							string,
@@ -222,6 +243,7 @@ function createMockChipSyncBinding({
 							number,
 							string,
 							number,
+							string,
 						];
 
 						receipts.set(`${userId}:${syncId}`, {
@@ -238,6 +260,7 @@ function createMockChipSyncBinding({
 							lossesIncrement,
 							biggestWinCandidate,
 							overallRank,
+							achievementPayload,
 						});
 						previousChanges = 1;
 						results.push({ meta: { changes: 1 } });
@@ -933,7 +956,6 @@ describe('chips update API', () => {
 		const POST = createHandler();
 		const chipSyncBinding = createMockChipSyncBinding({ chipBalance: 1000 });
 		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
-		mockCheckAndGrantAchievements.impl = async () => [];
 
 		const requestBody = {
 			delta: 50,
@@ -959,9 +981,15 @@ describe('chips update API', () => {
 
 		expect(firstResponse.status).toBe(200);
 		expect(firstBody.balance).toBe(1050);
+		expect(firstBody.newAchievements).toEqual([
+			{ id: mockAchievement.id, name: mockAchievement.name, icon: mockAchievement.icon },
+		]);
 		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 		expect(chipSyncBinding.getCurrentChipBalance()).toBe(1050);
 		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
+
+		mockCheckAndGrantAchievements.impl = async () => [];
 
 		const replayResponse = await POST({
 			request: new Request('http://test.local', {
@@ -977,7 +1005,11 @@ describe('chips update API', () => {
 
 		expect(replayResponse.status).toBe(200);
 		expect(replayBody.balance).toBe(1050);
+		expect(replayBody.newAchievements).toEqual([
+			{ id: mockAchievement.id, name: mockAchievement.name, icon: mockAchievement.icon },
+		]);
 		expect(mockRecordGameRound.calls.length).toBe(0);
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 		expect(chipSyncBinding.getCurrentChipBalance()).toBe(1050);
 		expect(chipSyncBinding.getGameStatsBatchCount()).toBe(1);
 	});
@@ -1025,7 +1057,8 @@ describe('chips update API', () => {
 			}),
 		} as any);
 		expect(replayResponse.status).toBe(200);
-		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[1]?.[3] as {
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
+		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
 			overallRank?: number | null;
 		};
 		expect(replayAchievementOptions?.overallRank).toBe(7);
@@ -1082,8 +1115,8 @@ describe('chips update API', () => {
 
 		expect(replayResponse.status).toBe(200);
 		expect(replayBody.balance).toBe(1050);
-		expect(mockCheckAndGrantAchievements.calls.length).toBe(2);
-		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[1]?.[3] as {
+		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
+		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
 			recentWinAmount?: number;
 			gameType?: string;
 		};

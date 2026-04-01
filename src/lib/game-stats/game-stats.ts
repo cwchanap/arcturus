@@ -165,12 +165,7 @@ export async function getGameLeaderboardData(
 	} = options;
 
 	// Stage 1: fetch top players (userIds not known until this resolves)
-	const rawPlayersPromise = getTopPlayersForGame(db, gameType, rankingMetric, limit);
-	const currentUserRankPromise = currentUserId
-		? getUserGameRank(db, currentUserId, gameType, rankingMetric)
-		: Promise.resolve(null);
-	const totalPlayersPromise = getTotalPlayersForGame(db, gameType, rankingMetric);
-	const rawPlayers = await rawPlayersPromise;
+	const rawPlayers = await getTopPlayersForGame(db, gameType, rankingMetric, limit);
 	const userIds = rawPlayers.map((p) => p.userId);
 
 	// Stage 2: parallel queries that depend on stage 1
@@ -179,8 +174,10 @@ export async function getGameLeaderboardData(
 			console.error('[GAME_STATS] Failed to fetch achievement badges:', err);
 			return new Map<string, string[]>();
 		}),
-		currentUserRankPromise,
-		totalPlayersPromise,
+		currentUserId
+			? getUserGameRank(db, currentUserId, gameType, rankingMetric)
+			: Promise.resolve(null),
+		getTotalPlayersForGame(db, gameType, rankingMetric),
 	]);
 
 	// Transform raw data into leaderboard entries with badges

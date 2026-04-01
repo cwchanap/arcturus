@@ -50,6 +50,10 @@ const mockGetTotalPlayersForGame = Object.assign(async () => 10, {
 	calls: [] as any[],
 	impl: async () => 10,
 });
+const mockGetBulkUserAchievements = Object.assign(async () => new Map<string, string[]>(), {
+	calls: [] as any[],
+	impl: async () => new Map<string, string[]>(),
+});
 const mockGetAllUserGameStats = Object.assign(async (): Promise<GameStats[]> => [], {
 	calls: [] as any[],
 	impl: async (): Promise<GameStats[]> => [],
@@ -64,7 +68,10 @@ let getUserStatsAllGames: typeof import('./game-stats').getUserStatsAllGames;
 
 beforeAll(() => {
 	mock.module('../achievements/achievement-repository', () => ({
-		getBulkUserAchievements: async () => new Map(),
+		getBulkUserAchievements: async (...args: unknown[]) => {
+			mockGetBulkUserAchievements.calls.push(args);
+			return mockGetBulkUserAchievements.impl();
+		},
 	}));
 
 	mock.module('./game-stats-repository', () => ({
@@ -103,7 +110,11 @@ afterAll(async () => {
 	// Rebind the mocked module back to its real implementation so later test files
 	// (especially game-stats-repository.test.ts) are not affected.
 	const actualRepository = await import(`./game-stats-repository.ts?restore=${Date.now()}`);
+	const actualAchievementRepository = await import(
+		`../achievements/achievement-repository.ts?restore=${Date.now()}`
+	);
 	mock.module('./game-stats-repository', () => actualRepository);
+	mock.module('../achievements/achievement-repository', () => actualAchievementRepository);
 	mock.restore();
 });
 
@@ -112,10 +123,12 @@ function resetGameStatsMocks() {
 	mockGetTopPlayersForGame.calls = [];
 	mockGetUserGameRank.calls = [];
 	mockGetTotalPlayersForGame.calls = [];
+	mockGetBulkUserAchievements.calls = [];
 	mockGetAllUserGameStats.calls = [];
 	mockGetTopPlayersForGame.impl = async () => defaultPlayers;
 	mockGetUserGameRank.impl = async () => 2;
 	mockGetTotalPlayersForGame.impl = async () => 10;
+	mockGetBulkUserAchievements.impl = async () => new Map();
 	mockGetAllUserGameStats.impl = async () => [];
 }
 
@@ -307,13 +320,11 @@ describe('getGameLeaderboardData', () => {
 
 	test('propagates badges from badgeMap into leaderboard entries', async () => {
 		resetGameStatsMocks();
-		mock.module('../achievements/achievement-repository', () => ({
-			getBulkUserAchievements: async () =>
-				new Map([
-					['user1', ['🏆', '🌟']],
-					['user2', ['💎']],
-				]),
-		}));
+		mockGetBulkUserAchievements.impl = async () =>
+			new Map([
+				['user1', ['🏆', '🌟']],
+				['user2', ['💎']],
+			]);
 
 		const result = await getGameLeaderboardData({} as any, {
 			gameType: 'blackjack',
@@ -324,11 +335,29 @@ describe('getGameLeaderboardData', () => {
 
 		expect(result.entries[0].badges).toEqual(['🏆', '🌟']);
 		expect(result.entries[1].badges).toEqual(['💎']);
+		expect(mockGetBulkUserAchievements.calls).toHaveLength(1);
+	});
 
-		// Restore empty map for subsequent tests
-		mock.module('../achievements/achievement-repository', () => ({
-			getBulkUserAchievements: async () => new Map(),
-		}));
+	test('does not start rank or total queries when top players fails', async () => {
+		resetGameStatsMocks();
+		const topPlayersError = new Error('top players failed');
+		mockGetTopPlayersForGame.impl = async () => {
+			throw topPlayersError;
+		};
+
+		await expect(
+			getGameLeaderboardData({} as any, {
+				gameType: 'blackjack',
+				rankingMetric: 'wins',
+				currentUserId: 'user1',
+				limit: 2,
+			}),
+		).rejects.toThrow(topPlayersError.message);
+
+		expect(mockGetTopPlayersForGame.calls).toHaveLength(1);
+		expect(mockGetUserGameRank.calls).toHaveLength(0);
+		expect(mockGetTotalPlayersForGame.calls).toHaveLength(0);
+		expect(mockGetBulkUserAchievements.calls).toHaveLength(0);
 	});
 });
 

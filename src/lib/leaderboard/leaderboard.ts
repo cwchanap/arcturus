@@ -61,12 +61,7 @@ export async function getLeaderboardData(
 	const { limit = DEFAULT_LEADERBOARD_LIMIT, currentUserId = null } = options;
 
 	// Stage 1: fetch top players (userIds not known until this resolves)
-	const rawPlayersPromise = getTopPlayers(db, limit);
-	const currentUserRankPromise = currentUserId
-		? getUserRank(db, currentUserId)
-		: Promise.resolve(null);
-	const totalPlayersPromise = getTotalPlayerCount(db);
-	const rawPlayers = await rawPlayersPromise;
+	const rawPlayers = await getTopPlayers(db, limit);
 	const userIds = rawPlayers.map((p) => p.userId);
 
 	// Stage 2: parallel queries that depend on stage 1
@@ -75,8 +70,8 @@ export async function getLeaderboardData(
 			console.error('[LEADERBOARD] Failed to fetch achievement badges:', err);
 			return new Map<string, string[]>();
 		}),
-		currentUserRankPromise,
-		totalPlayersPromise,
+		currentUserId ? getUserRank(db, currentUserId) : Promise.resolve(null),
+		getTotalPlayerCount(db),
 	]);
 
 	// Transform raw data into leaderboard entries with rank, current user flag, and badges

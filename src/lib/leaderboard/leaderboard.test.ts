@@ -101,6 +101,21 @@ describe('Leaderboard Data Transformation', () => {
 			expect(entries[4].rank).toBe(5);
 		});
 
+		test('returns empty badge arrays when badgeMap is omitted', () => {
+			const rawPlayers: RawPlayerData[] = [
+				{ userId: 'user1', playerName: 'Alice', chipBalance: 50000 },
+				{ userId: 'user2', playerName: 'Bob', chipBalance: 30000 },
+			];
+
+			// Call without third argument to exercise default parameter path
+			const entries = transformToLeaderboardEntries(rawPlayers, null);
+
+			expect(Array.isArray(entries[0].badges)).toBe(true);
+			expect(entries[0].badges).toEqual([]);
+			expect(Array.isArray(entries[1].badges)).toBe(true);
+			expect(entries[1].badges).toEqual([]);
+		});
+
 		test('applies badges from badgeMap and falls back to empty arrays', () => {
 			const rawPlayers: RawPlayerData[] = [
 				{ userId: 'user1', playerName: 'Alice', chipBalance: 50000 },

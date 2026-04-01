@@ -427,6 +427,24 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		expect(game.players[0].chips).toBe(1000);
 	});
 
+	test('parses locale-formatted textContent when data-balance attribute is absent', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			// No dataset.balance — forces fallback to textContent
+			dataset: {},
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as { players: Player[]; serverSyncedBalance: number };
+
+		expect(game.serverSyncedBalance).toBe(1000);
+		expect(game.players[0].chips).toBe(1000);
+	});
+
 	test('keeps poker non-playable when the server balance is unavailable', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

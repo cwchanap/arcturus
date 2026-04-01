@@ -95,7 +95,9 @@ export class PokerGame {
 		const balanceEl = document.getElementById('player-balance');
 		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
-		const parsed = Number(rawBalance.match(/-?\d+/)?.[0] ?? Number.NaN);
+		// Strip locale formatting (commas, currency symbols) then parse
+		const sanitized = rawBalance.replace(/[^0-9.-]/g, '');
+		const parsed = Number(sanitized);
 		this.hasServerSyncedBalance = balanceAvailable === 'false' ? false : Number.isFinite(parsed);
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 

@@ -51,6 +51,18 @@ function mockPokerGameDOM() {
 	};
 
 	(global as unknown as { HTMLButtonElement: unknown }).HTMLButtonElement = class {};
+	(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
+		dispatchEvent: () => true,
+	} as unknown as Window & typeof globalThis;
+	(globalThis as typeof globalThis & { CustomEvent: typeof CustomEvent }).CustomEvent = class<T> {
+		type: string;
+		detail: T | null;
+
+		constructor(type: string, eventInitDict?: CustomEventInit<T>) {
+			this.type = type;
+			this.detail = eventInitDict?.detail ?? null;
+		}
+	} as typeof CustomEvent;
 
 	return elements;
 }
@@ -779,6 +791,66 @@ describe('PokerGame syncChips', () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock).toHaveBeenCalledWith('/api/profile/llm-settings');
+	});
+
+	test('dispatches achievement-earned when chip sync returns new achievements', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const dispatchEvent = mock((event: { type: string; detail?: unknown }) => event);
+		(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
+			dispatchEvent: dispatchEvent as unknown as Window['dispatchEvent'],
+		} as unknown as Window & typeof globalThis;
+
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+			if (url === '/api/profile/llm-settings') {
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ settings: null }),
+				};
+			}
+
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					balance: 650,
+					newAchievements: [{ id: 'poker-first-win', name: 'First Win', icon: 'trophy' }],
+				}),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 650 };
+		game.syncChips('win');
+
+		await flushAsyncWork();
+		await flushAsyncWork();
+
+		expect(dispatchEvent).toHaveBeenCalledTimes(1);
+		expect(dispatchEvent.mock.calls[0]?.[0]).toMatchObject({
+			type: 'achievement-earned',
+			detail: {
+				achievements: [{ id: 'poker-first-win', name: 'First Win', icon: 'trophy' }],
+			},
+		});
 	});
 
 	test('records biggest win candidate as net profit instead of total pot', async () => {

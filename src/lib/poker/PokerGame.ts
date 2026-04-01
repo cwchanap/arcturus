@@ -44,6 +44,12 @@ type PendingChipSync = {
 	biggestWinCandidate?: number;
 };
 
+type EarnedAchievement = {
+	id: string;
+	name: string;
+	icon: string;
+};
+
 export class PokerGame {
 	// Helper classes
 	private deck: DeckManager;
@@ -193,6 +199,26 @@ export class PokerGame {
 
 		this.ui.updateUI(this.pot, this.players[0]);
 		this.updateActionButtons();
+	}
+
+	private dispatchEarnedAchievements(achievements?: EarnedAchievement[]): void {
+		if (!achievements || achievements.length === 0) {
+			return;
+		}
+
+		if (
+			typeof window === 'undefined' ||
+			typeof window.dispatchEvent !== 'function' ||
+			typeof CustomEvent !== 'function'
+		) {
+			return;
+		}
+
+		window.dispatchEvent(
+			new CustomEvent('achievement-earned', {
+				detail: { achievements },
+			}),
+		);
 	}
 
 	private discardRejectedChipSync(sync: PendingChipSync): void {
@@ -447,13 +473,19 @@ export class PokerGame {
 				body: JSON.stringify(requestBody),
 			});
 
-			let data: { balance?: number; currentBalance?: number; error?: string } | null = null;
+			let data: {
+				balance?: number;
+				currentBalance?: number;
+				error?: string;
+				newAchievements?: EarnedAchievement[];
+			} | null = null;
 
 			try {
 				data = (await response.json()) as {
 					balance?: number;
 					currentBalance?: number;
 					error?: string;
+					newAchievements?: EarnedAchievement[];
 				};
 			} catch (parseError) {
 				console.warn('[CHIP_SYNC] Failed to parse chip sync response JSON:', parseError);
@@ -484,12 +516,14 @@ export class PokerGame {
 
 			if (typeof data?.balance === 'number') {
 				this.acknowledgeAppliedChipSync(sync, data.balance);
+				this.dispatchEarnedAchievements(data.newAchievements);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}
 
 			if (response.ok) {
 				this.acknowledgeAppliedChipSync(sync, Math.max(0, sync.previousBalance + sync.delta));
+				this.dispatchEarnedAchievements(data?.newAchievements);
 				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 				return 'synced';
 			}

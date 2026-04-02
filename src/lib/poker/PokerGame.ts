@@ -35,6 +35,7 @@ import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const CHIP_SYNC_RETRY_DELAY_MS = 2000;
+const PENDING_SYNCS_STORAGE_KEY = 'arcturus_poker_pending_syncs';
 
 type PendingChipSync = {
 	syncId: string;
@@ -77,6 +78,7 @@ export class PokerGame {
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
 	private pendingChipSyncs: PendingChipSync[] = [];
 	private isChipSyncInFlight = false;
+	private pendingSyncsDirty = false;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
 	private chipSyncRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -114,10 +116,20 @@ export class PokerGame {
 				dealButton.disabled = true;
 			}
 			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+		} else {
+			this.loadPersistedPendingSyncs();
+			if (this.pendingChipSyncs.length > 0) {
+				this.rebaseHumanTableBalance(this.serverSyncedBalance);
+				void this.flushChipSyncQueue();
+			}
 		}
 
 		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
 		void this.checkLlmConfigOnLoad();
+
+		window.addEventListener('beforeunload', () => {
+			this.persistPendingSyncs();
+		});
 	}
 
 	private getEffectiveServerBalance(): number {
@@ -149,6 +161,7 @@ export class PokerGame {
 			...pendingSync,
 			previousBalance: Math.max(0, pendingSync.previousBalance + baselineShift),
 		}));
+		this.markPendingSyncsDirty();
 	}
 
 	private rebaseHumanTableBalance(serverBalance: number): void {
@@ -287,6 +300,66 @@ export class PokerGame {
 		});
 	}
 
+	private persistPendingSyncs(): void {
+		if (this.pendingSyncsDirty) {
+			this.pendingSyncsDirty = false;
+		}
+		try {
+			if (this.pendingChipSyncs.length === 0) {
+				localStorage.removeItem(PENDING_SYNCS_STORAGE_KEY);
+			} else {
+				localStorage.setItem(PENDING_SYNCS_STORAGE_KEY, JSON.stringify(this.pendingChipSyncs));
+			}
+		} catch {
+			// localStorage unavailable or full — best effort
+		}
+	}
+
+	private loadPersistedPendingSyncs(): void {
+		try {
+			const raw = localStorage.getItem(PENDING_SYNCS_STORAGE_KEY);
+			if (!raw) return;
+			const parsed = JSON.parse(raw);
+			if (!Array.isArray(parsed) || parsed.length === 0) return;
+			const restored: PendingChipSync[] = [];
+			for (const entry of parsed) {
+				if (
+					typeof entry?.syncId === 'string' &&
+					typeof entry.previousBalance === 'number' &&
+					typeof entry.delta === 'number'
+				) {
+					restored.push({
+						syncId: entry.syncId,
+						previousBalance: entry.previousBalance,
+						delta: entry.delta,
+						...(entry.outcome ? { outcome: entry.outcome as ChipSyncOutcome } : {}),
+						...(typeof entry.biggestWinCandidate === 'number'
+							? { biggestWinCandidate: entry.biggestWinCandidate }
+							: {}),
+					});
+				}
+			}
+			if (restored.length > 0) {
+				this.pendingChipSyncs = restored;
+			}
+		} catch {
+			// Corrupted data — ignore
+		}
+	}
+
+	private markPendingSyncsDirty(): void {
+		this.pendingSyncsDirty = true;
+		try {
+			queueMicrotask(() => {
+				if (this.pendingSyncsDirty) {
+					this.persistPendingSyncs();
+				}
+			});
+		} catch {
+			this.persistPendingSyncs();
+		}
+	}
+
 	private scheduleChipSyncRetry(delayMs = CHIP_SYNC_RETRY_DELAY_MS): void {
 		if (this.pendingChipSyncs.length === 0 || this.isChipSyncInFlight) {
 			return;
@@ -371,6 +444,7 @@ export class PokerGame {
 				outcome === 'win' && delta > 0 ? this.getBiggestWinCandidate(delta) : 0;
 		}
 		this.pendingChipSyncs.push(pendingSync);
+		this.markPendingSyncsDirty();
 		this.humanChipsBefore = 0;
 		if (this.chipSyncRetryTimeoutId !== null) {
 			return;
@@ -437,6 +511,7 @@ export class PokerGame {
 			}
 		} finally {
 			this.isChipSyncInFlight = false;
+			this.markPendingSyncsDirty();
 			if (this.pendingChipSyncs.length > 0) {
 				this.scheduleChipSyncRetry(this.chipSyncRetryDelayMs);
 			}

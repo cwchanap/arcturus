@@ -372,6 +372,9 @@ export class PokerGame {
 		}
 		this.pendingChipSyncs.push(pendingSync);
 		this.humanChipsBefore = 0;
+		if (this.chipSyncRetryTimeoutId !== null) {
+			return;
+		}
 		void this.flushChipSyncQueue();
 	}
 

@@ -86,7 +86,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 				deps.getEarnedAchievementIds(db, userId),
 			),
 			runDatabaseOperation('getAggregateUserStats', () => deps.getAggregateUserStats(db, userId)),
-			options.overallRank !== undefined
+			options.overallRank != null
 				? Promise.resolve(options.overallRank)
 				: runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
 		]);

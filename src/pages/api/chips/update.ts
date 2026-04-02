@@ -1235,6 +1235,25 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							overallRank: replayReceipt.overallRank,
 						});
 
+						const recomputedPayload: ChipSyncAchievementPayload = {
+							newAchievements: achievementResolution.newAchievements,
+							warnings: [...achievementResolution.warnings],
+						};
+
+						try {
+							await updateChipSyncAchievementPayload(
+								dbBinding,
+								userId,
+								replayReceipt.syncId,
+								recomputedPayload,
+							);
+						} catch (receiptPayloadError) {
+							console.error(
+								'[CHIP_SYNC_RECEIPT] Failed to persist recomputed achievement payload on raced replay:',
+								receiptPayloadError,
+							);
+						}
+
 						return buildSuccessResponse(
 							replayReceipt.balance,
 							replayReceipt.previousBalance,

@@ -53,6 +53,7 @@ function mockPokerGameDOM() {
 	(global as unknown as { HTMLButtonElement: unknown }).HTMLButtonElement = class {};
 	(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
 		dispatchEvent: () => true,
+		addEventListener: () => {},
 	} as unknown as Window & typeof globalThis;
 	(globalThis as typeof globalThis & { CustomEvent: typeof CustomEvent }).CustomEvent = class<T> {
 		type: string;
@@ -824,6 +825,7 @@ describe('PokerGame syncChips', () => {
 		const dispatchEvent = mock((event: { type: string; detail?: unknown }) => event);
 		(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
 			dispatchEvent: dispatchEvent as unknown as Window['dispatchEvent'],
+			addEventListener: () => {},
 		} as unknown as Window & typeof globalThis;
 
 		const fetchMock = mock(async (input: string | URL | Request) => {

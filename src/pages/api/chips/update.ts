@@ -1062,23 +1062,25 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						overallRank: existingReceipt.overallRank,
 					});
 
-					const recomputedPayload: ChipSyncAchievementPayload = {
-						newAchievements: achievementResolution.newAchievements,
-						warnings: [...achievementResolution.warnings],
-					};
+					if (achievementResolution.warnings.length === 0) {
+						const recomputedPayload: ChipSyncAchievementPayload = {
+							newAchievements: achievementResolution.newAchievements,
+							warnings: [...achievementResolution.warnings],
+						};
 
-					try {
-						await updateChipSyncAchievementPayload(
-							dbBinding,
-							userId,
-							existingReceipt.syncId,
-							recomputedPayload,
-						);
-					} catch (receiptPayloadError) {
-						console.error(
-							'[CHIP_SYNC_RECEIPT] Failed to persist recomputed achievement payload on replay:',
-							receiptPayloadError,
-						);
+						try {
+							await updateChipSyncAchievementPayload(
+								dbBinding,
+								userId,
+								existingReceipt.syncId,
+								recomputedPayload,
+							);
+						} catch (receiptPayloadError) {
+							console.error(
+								'[CHIP_SYNC_RECEIPT] Failed to persist recomputed achievement payload on replay:',
+								receiptPayloadError,
+							);
+						}
 					}
 
 					return buildSuccessResponse(
@@ -1235,23 +1237,25 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							overallRank: replayReceipt.overallRank,
 						});
 
-						const recomputedPayload: ChipSyncAchievementPayload = {
-							newAchievements: achievementResolution.newAchievements,
-							warnings: [...achievementResolution.warnings],
-						};
+						if (achievementResolution.warnings.length === 0) {
+							const recomputedPayload: ChipSyncAchievementPayload = {
+								newAchievements: achievementResolution.newAchievements,
+								warnings: [...achievementResolution.warnings],
+							};
 
-						try {
-							await updateChipSyncAchievementPayload(
-								dbBinding,
-								userId,
-								replayReceipt.syncId,
-								recomputedPayload,
-							);
-						} catch (receiptPayloadError) {
-							console.error(
-								'[CHIP_SYNC_RECEIPT] Failed to persist recomputed achievement payload on raced replay:',
-								receiptPayloadError,
-							);
+							try {
+								await updateChipSyncAchievementPayload(
+									dbBinding,
+									userId,
+									replayReceipt.syncId,
+									recomputedPayload,
+								);
+							} catch (receiptPayloadError) {
+								console.error(
+									'[CHIP_SYNC_RECEIPT] Failed to persist recomputed achievement payload on raced replay:',
+									receiptPayloadError,
+								);
+							}
 						}
 
 						return buildSuccessResponse(
@@ -1369,29 +1373,31 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				newAchievements = achievementResolution.newAchievements;
 				warnings.push(...achievementResolution.warnings);
 
-				const persistedAchievementPayload: ChipSyncAchievementPayload = {
-					newAchievements,
-					warnings: [...warnings],
-				};
+				if (achievementResolution.warnings.length === 0) {
+					const persistedAchievementPayload: ChipSyncAchievementPayload = {
+						newAchievements,
+						warnings: [...warnings],
+					};
 
-				if (achievementReceipt !== null) {
-					achievementReceipt.achievementPayload = serializeChipSyncAchievementPayload(
-						persistedAchievementPayload,
-					);
-				}
+					if (achievementReceipt !== null) {
+						achievementReceipt.achievementPayload = serializeChipSyncAchievementPayload(
+							persistedAchievementPayload,
+						);
+					}
 
-				try {
-					await updateChipSyncAchievementPayload(
-						dbBinding,
-						userId,
-						canonicalSyncPayload.syncId,
-						persistedAchievementPayload,
-					);
-				} catch (receiptPayloadError) {
-					console.error(
-						'[CHIP_SYNC_RECEIPT] Failed to persist achievement payload:',
-						receiptPayloadError,
-					);
+					try {
+						await updateChipSyncAchievementPayload(
+							dbBinding,
+							userId,
+							canonicalSyncPayload.syncId,
+							persistedAchievementPayload,
+						);
+					} catch (receiptPayloadError) {
+						console.error(
+							'[CHIP_SYNC_RECEIPT] Failed to persist achievement payload:',
+							receiptPayloadError,
+						);
+					}
 				}
 			} else if (outcome && validOutcomes.includes(outcome as string)) {
 				try {

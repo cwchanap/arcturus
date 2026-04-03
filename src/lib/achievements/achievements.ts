@@ -13,6 +13,12 @@ import type {
 	AchievementId,
 } from './types';
 import type { GameType } from '../game-stats/types';
+
+type AchievementContextOptions = {
+	recentWinAmount?: number;
+	gameType?: GameType;
+	overallRank?: number | null;
+};
 import { ACHIEVEMENTS, ACHIEVEMENT_CHECKS } from './achievement-rules';
 import type { AchievementCheckFn } from './achievement-rules';
 import {
@@ -75,11 +81,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		db: Database,
 		userId: string,
 		currentChipBalance: number,
-		options: {
-			recentWinAmount?: number;
-			gameType?: GameType;
-			overallRank?: number | null;
-		} = {},
+		options: AchievementContextOptions = {},
 	): Promise<AchievementCheckContext> {
 		const [existingAchievementIds, stats, overallRank] = await Promise.all([
 			runDatabaseOperation('getEarnedAchievementIds', () =>
@@ -110,11 +112,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		db: Database,
 		userId: string,
 		currentChipBalance: number,
-		options: {
-			recentWinAmount?: number;
-			gameType?: GameType;
-			overallRank?: number | null;
-		} = {},
+		options: AchievementContextOptions = {},
 		achievementsList: AchievementDefinition[] = ACHIEVEMENTS,
 	): Promise<AchievementDefinition[]> {
 		const context = await buildAchievementContext(db, userId, currentChipBalance, options);

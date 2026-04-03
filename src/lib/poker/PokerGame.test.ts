@@ -73,8 +73,10 @@ function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
 }
 
+const realSetTimeout = setTimeout;
+
 async function flushAsyncWork() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
+	await new Promise((resolve) => realSetTimeout(resolve, 0));
 }
 
 type ScheduledTimer = {

@@ -12,6 +12,10 @@ import { ACHIEVEMENT_IDS } from './types';
 import type { GameType } from '../game-stats/types';
 import { ACHIEVEMENTS } from './achievement-rules';
 
+const ACHIEVEMENT_BY_ID = new Map<string, (typeof ACHIEVEMENTS)[number]>(
+	ACHIEVEMENTS.map((a) => [a.id, a]),
+);
+
 /**
  * Redact user ID for logging to avoid PII exposure
  * Returns a truncated version of the userId (first 4 chars + '***')
@@ -150,7 +154,7 @@ export async function getBulkUserAchievements(
 
 	const map = new Map<string, string[]>();
 	for (const row of results) {
-		const achievement = ACHIEVEMENTS.find((a) => a.id === row.achievementId);
+		const achievement = ACHIEVEMENT_BY_ID.get(row.achievementId);
 		if (!achievement) continue;
 		const existing = map.get(row.userId) ?? [];
 		existing.push(achievement.icon);

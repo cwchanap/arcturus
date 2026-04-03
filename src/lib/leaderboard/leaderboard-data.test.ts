@@ -70,13 +70,7 @@ beforeEach(() => {
 	mockGetBulkUserAchievements.impl = async () => new Map([['user-1', ['🏆']]]);
 });
 
-afterAll(async () => {
-	const actualRepository = await import(`./leaderboard-repository.ts?restore=${Date.now()}`);
-	const actualAchievements = await import(
-		`../achievements/achievement-repository.ts?restore=${Date.now()}`
-	);
-	mock.module('./leaderboard-repository', () => actualRepository);
-	mock.module('../achievements/achievement-repository', () => actualAchievements);
+afterAll(() => {
 	mock.restore();
 });
 

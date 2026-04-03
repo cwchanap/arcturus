@@ -589,6 +589,9 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			game.nextPhase();
 			await Promise.resolve();
 			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
 
 			expect(chipUpdateBodies).toHaveLength(1);
 

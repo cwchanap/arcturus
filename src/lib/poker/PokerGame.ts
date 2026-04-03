@@ -35,7 +35,8 @@ import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const CHIP_SYNC_RETRY_DELAY_MS = 2000;
-const PENDING_SYNCS_STORAGE_KEY = 'arcturus_poker_pending_syncs';
+const PENDING_SYNCS_STORAGE_KEY_PREFIX = 'arcturus_poker_pending_syncs';
+const MAX_DEAL_SYNC_RETRIES = 10;
 
 type PendingChipSync = {
 	syncId: string;
@@ -79,6 +80,7 @@ export class PokerGame {
 	private pendingChipSyncs: PendingChipSync[] = [];
 	private isChipSyncInFlight = false;
 	private pendingSyncsDirty = false;
+	private pendingSyncsStorageKey: string;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
 	private chipSyncRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -86,6 +88,7 @@ export class PokerGame {
 	private turnTransitionTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private pendingTurnTransitionResolver: ((completed: boolean) => void) | null = null;
 	private turnTransitionToken = 0;
+	private dealSyncRetryCount = 0;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -102,6 +105,17 @@ export class PokerGame {
 		const parsed = Number(sanitized);
 		this.hasServerSyncedBalance = balanceAvailable === 'false' ? false : Number.isFinite(parsed);
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
+
+		const userId = balanceEl?.dataset?.userId ?? '';
+		this.pendingSyncsStorageKey = userId
+			? `${PENDING_SYNCS_STORAGE_KEY_PREFIX}:${userId}`
+			: PENDING_SYNCS_STORAGE_KEY_PREFIX;
+
+		try {
+			localStorage.removeItem(PENDING_SYNCS_STORAGE_KEY_PREFIX);
+		} catch {
+			// best effort — key may not exist
+		}
 
 		this.initPlayers();
 		this.attachEventListeners();
@@ -306,9 +320,9 @@ export class PokerGame {
 		}
 		try {
 			if (this.pendingChipSyncs.length === 0) {
-				localStorage.removeItem(PENDING_SYNCS_STORAGE_KEY);
+				localStorage.removeItem(this.pendingSyncsStorageKey);
 			} else {
-				localStorage.setItem(PENDING_SYNCS_STORAGE_KEY, JSON.stringify(this.pendingChipSyncs));
+				localStorage.setItem(this.pendingSyncsStorageKey, JSON.stringify(this.pendingChipSyncs));
 			}
 		} catch {
 			// localStorage unavailable or full — best effort
@@ -317,7 +331,7 @@ export class PokerGame {
 
 	private loadPersistedPendingSyncs(): void {
 		try {
-			const raw = localStorage.getItem(PENDING_SYNCS_STORAGE_KEY);
+			const raw = localStorage.getItem(this.pendingSyncsStorageKey);
 			if (!raw) return;
 			const parsed = JSON.parse(raw);
 			if (!Array.isArray(parsed) || parsed.length === 0) return;
@@ -746,7 +760,21 @@ export class PokerGame {
 			return;
 		}
 
+		const preExistingPendingCount = this.pendingChipSyncs.length;
 		this.finalizeActiveHandBeforeDeal();
+
+		if (preExistingPendingCount > 0 && this.pendingChipSyncs.length > 0) {
+			if (this.dealSyncRetryCount >= MAX_DEAL_SYNC_RETRIES) {
+				this.dealSyncRetryCount = 0;
+				this.updateGameStatus('Unable to sync chip balance. Please refresh the page.');
+				return;
+			}
+			this.dealSyncRetryCount++;
+			this.updateGameStatus('Syncing chip balance...');
+			this.scheduleAutoDeal(1000);
+			return;
+		}
+		this.dealSyncRetryCount = 0;
 
 		// Check for eliminated players (0 chips)
 

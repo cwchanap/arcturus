@@ -142,6 +142,7 @@ export class PokerGame {
 		void this.checkLlmConfigOnLoad();
 
 		window.addEventListener('beforeunload', () => {
+			this.finalizeActiveHandBeforeDeal();
 			this.persistPendingSyncs();
 		});
 	}

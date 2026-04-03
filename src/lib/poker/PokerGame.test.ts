@@ -1550,31 +1550,39 @@ describe('PokerGame syncChips', () => {
 		}) as unknown as typeof fetch;
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
 
-		const game = new PokerGame() as unknown as {
-			players: Player[];
-			humanChipsBefore: number;
-			serverSyncedBalance: number;
-			pendingChipSyncs: Array<Record<string, unknown>>;
-			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
-		};
+		const timers = mockTrackedTimers();
 
-		game.humanChipsBefore = 500;
-		game.players[0] = { ...game.players[0], chips: 450 };
-		game.syncChips('loss');
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				serverSyncedBalance: number;
+				pendingChipSyncs: Array<Record<string, unknown>>;
+				syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			};
 
-		await flushAsyncWork();
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 450 };
+			game.syncChips('loss');
 
-		expect(chipUpdateBodies).toHaveLength(1);
-		expect(game.pendingChipSyncs).toHaveLength(1);
+			await flushAsyncWork();
 
-		await new Promise((resolve) => setTimeout(resolve, 1100));
-		await flushAsyncWork();
+			expect(chipUpdateBodies).toHaveLength(1);
+			expect(game.pendingChipSyncs).toHaveLength(1);
 
-		expect(chipUpdateBodies).toHaveLength(2);
-		expect(chipUpdateBodies[1].previousBalance).toBe(500);
-		expect(chipUpdateBodies[1].delta).toBe(-50);
-		expect(game.pendingChipSyncs).toHaveLength(0);
-		expect(game.serverSyncedBalance).toBe(450);
+			const retryTimer = timers.scheduledTimers.find((t) => !t.cleared);
+			expect(retryTimer).toBeDefined();
+			retryTimer?.callback();
+			await flushAsyncWork();
+
+			expect(chipUpdateBodies).toHaveLength(2);
+			expect(chipUpdateBodies[1].previousBalance).toBe(500);
+			expect(chipUpdateBodies[1].delta).toBe(-50);
+			expect(game.pendingChipSyncs).toHaveLength(0);
+			expect(game.serverSyncedBalance).toBe(450);
+		} finally {
+			timers.restore();
+		}
 	});
 
 	test('keeps a 409 without currentBalance queued until a later flush succeeds', async () => {

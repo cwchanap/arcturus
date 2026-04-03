@@ -48,6 +48,7 @@ const initialBalanceLabel = hasInitialBalance
 						id="player-balance"
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={hasInitialBalance ? 'true' : 'false'}
+						data-user-id={user.id}
 					>
 						{initialBalanceLabel}
 					</div>

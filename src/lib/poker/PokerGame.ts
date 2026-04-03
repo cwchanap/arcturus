@@ -619,6 +619,10 @@ export class PokerGame {
 				return 'retry';
 			}
 
+			// Fallback for BALANCE_MISMATCH responses that do not include a numeric
+			// currentBalance (the branch above handles the case with currentBalance
+			// and calls rebasePendingChipSyncBaselines + rebaseHumanTableBalance).
+			// Also covers 429 rate-limit responses. Both cases defer the sync.
 			if (
 				response.status === 429 ||
 				(response.status === 409 && data?.error === 'BALANCE_MISMATCH')

@@ -1354,6 +1354,12 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 			if (canonicalSyncPayload !== null) {
 				const achievementReceipt = persistedReceipt;
+				if (achievementReceipt === null) {
+					console.warn(
+						'[CHIP_SYNC_RECEIPT] Receipt missing after successful batch write for sync %s — achievement rank will be refetched',
+						canonicalSyncPayload.syncId,
+					);
+				}
 				const achievementResolution = await resolveAchievementResponse({
 					balance: achievementReceipt?.balance ?? newBalance,
 					resolvedGameType:
@@ -1368,7 +1374,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 							canonicalSyncPayload.statsDelta ??
 							canonicalSyncPayload.delta,
 					),
-					overallRank: achievementReceipt?.overallRank,
+					overallRank: achievementReceipt?.overallRank ?? null,
 				});
 				newAchievements = achievementResolution.newAchievements;
 				warnings.push(...achievementResolution.warnings);

@@ -826,7 +826,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				JSON.stringify({
 					success: false,
 					error: 'INVALID_SYNC_ID',
-					message: 'syncId must be a non-empty alphanumeric identifier',
+					message: 'syncId must be 1-128 characters: letters, digits, underscores, or hyphens',
 				}),
 				{
 					status: 400,

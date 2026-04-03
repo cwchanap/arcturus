@@ -34,6 +34,7 @@ import { GameSettingsManager } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
+const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
 const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 const PENDING_SYNCS_STORAGE_KEY_PREFIX = 'arcturus_poker_pending_syncs';
 const MAX_DEAL_SYNC_RETRIES = 10;
@@ -344,15 +345,18 @@ export class PokerGame {
 					typeof entry.previousBalance === 'number' &&
 					typeof entry.delta === 'number'
 				) {
-					restored.push({
+					const restoredEntry: PendingChipSync = {
 						syncId: entry.syncId,
 						previousBalance: entry.previousBalance,
 						delta: entry.delta,
-						...(entry.outcome ? { outcome: entry.outcome as ChipSyncOutcome } : {}),
-						...(typeof entry.biggestWinCandidate === 'number'
-							? { biggestWinCandidate: entry.biggestWinCandidate }
-							: {}),
-					});
+					};
+					if (typeof entry.outcome === 'string' && VALID_CHIP_SYNC_OUTCOMES.has(entry.outcome)) {
+						restoredEntry.outcome = entry.outcome as ChipSyncOutcome;
+						if (typeof entry.biggestWinCandidate === 'number') {
+							restoredEntry.biggestWinCandidate = entry.biggestWinCandidate;
+						}
+					}
+					restored.push(restoredEntry);
 				}
 			}
 			if (restored.length > 0) {

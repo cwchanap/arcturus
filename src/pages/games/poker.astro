@@ -46,6 +46,7 @@ const initialBalanceLabel = hasInitialBalance
 					<div
 						class="text-2xl font-bold text-yellow-400"
 						id="player-balance"
+						data-testid="player-balance"
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={hasInitialBalance ? 'true' : 'false'}
 						data-user-id={user.id}

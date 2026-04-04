@@ -716,6 +716,30 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			}
 		}
 
+		// Validate outcome consistency against final stats delta.
+		// For batched games, statsDelta may differ from balance delta;
+		// for all others, statsDelta equals balance delta.
+		if (outcome !== undefined) {
+			const finalStatsDelta = validatedStatsDelta ?? delta;
+			const outcomeValid =
+				(outcome === 'win' && finalStatsDelta > 0) ||
+				(outcome === 'loss' && finalStatsDelta < 0) ||
+				(outcome === 'push' && finalStatsDelta === 0);
+			if (!outcomeValid) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'INVALID_STATS_INCONSISTENCY',
+						message: `outcome '${outcome}' is inconsistent with stats delta ${finalStatsDelta}`,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+		}
+
 		// Determine limits based on game type
 		// GAME_LIMITS membership check above guarantees gameType is a supported key.
 		const limits = GAME_LIMITS[gameType as keyof typeof GAME_LIMITS];

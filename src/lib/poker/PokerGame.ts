@@ -338,12 +338,16 @@ export class PokerGame {
 			if (!raw) return;
 			const parsed = JSON.parse(raw);
 			if (!Array.isArray(parsed) || parsed.length === 0) return;
+			const SYNC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 			const restored: PendingChipSync[] = [];
 			for (const entry of parsed) {
 				if (
 					typeof entry?.syncId === 'string' &&
+					SYNC_ID_RE.test(entry.syncId) &&
 					typeof entry.previousBalance === 'number' &&
-					typeof entry.delta === 'number'
+					Number.isInteger(entry.previousBalance) &&
+					typeof entry.delta === 'number' &&
+					Number.isInteger(entry.delta)
 				) {
 					const restoredEntry: PendingChipSync = {
 						syncId: entry.syncId,
@@ -352,7 +356,11 @@ export class PokerGame {
 					};
 					if (typeof entry.outcome === 'string' && VALID_CHIP_SYNC_OUTCOMES.has(entry.outcome)) {
 						restoredEntry.outcome = entry.outcome as ChipSyncOutcome;
-						if (typeof entry.biggestWinCandidate === 'number') {
+						if (
+							typeof entry.biggestWinCandidate === 'number' &&
+							Number.isInteger(entry.biggestWinCandidate) &&
+							entry.biggestWinCandidate >= 0
+						) {
 							restoredEntry.biggestWinCandidate = entry.biggestWinCandidate;
 						}
 					}

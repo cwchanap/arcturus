@@ -1535,4 +1535,681 @@ describe('chips update API', () => {
 		expect(response.status).toBe(200);
 		expect(body.warnings?.[0]).toContain('Stats tracking failed');
 	});
+
+	test('rejects with SYNC_ID_REUSE_MISMATCH when existing receipt payload differs', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+		receipts.set('user-mismatch:poker-mismatch-1', {
+			userId: 'user-mismatch',
+			syncId: 'poker-mismatch-1',
+			gameType: 'poker',
+			previousBalance: 1000,
+			balance: 1100,
+			delta: 100,
+			statsDelta: 100,
+			outcome: 'win',
+			handCount: 1,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 100,
+			overallRank: null,
+			achievementPayload: JSON.stringify({ newAchievements: [], warnings: [] }),
+		});
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => ({ meta: { changes: 0 } }),
+						};
+					},
+				};
+			},
+			async batch() {
+				throw new Error('Unexpected batch call');
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 50,
+				gameType: 'poker',
+				syncId: 'poker-mismatch-1',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-mismatch', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('SYNC_ID_REUSE_MISMATCH');
+	});
+
+	test('returns replayed receipt when batch returns 0 rows due to concurrent write', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+		let batchCallCount = 0;
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => {
+								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+									const [achievementPayload, userId, syncId] = args as [string, string, string];
+									const existing = receipts.get(`${userId}:${syncId}`);
+									if (existing) {
+										receipts.set(`${userId}:${syncId}`, {
+											...existing,
+											achievementPayload,
+										});
+										return { meta: { changes: 1 } };
+									}
+									return { meta: { changes: 0 } };
+								}
+								throw new Error(`Unexpected run() query: ${sql}`);
+							},
+						};
+					},
+				};
+			},
+			async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+				batchCallCount++;
+				const results: Array<{ meta: { changes: number } }> = [];
+				for (const stmt of statements) {
+					if (stmt.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO game_stats')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
+				}
+
+				receipts.set('user-race:poker-race-1', {
+					userId: 'user-race',
+					syncId: 'poker-race-1',
+					gameType: 'poker',
+					previousBalance: 1000,
+					balance: 1050,
+					delta: 50,
+					statsDelta: 50,
+					outcome: 'win',
+					handCount: 1,
+					winsIncrement: 1,
+					lossesIncrement: 0,
+					biggestWinCandidate: 50,
+					overallRank: 3,
+					achievementPayload: JSON.stringify({
+						newAchievements: [{ id: 'champion', name: 'Champion', icon: '🏆' }],
+						warnings: [],
+					}),
+				});
+
+				return results;
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => [];
+
+		const requestBody = {
+			delta: 50,
+			gameType: 'poker',
+			syncId: 'poker-race-1',
+			previousBalance: 1000,
+			outcome: 'win',
+			handCount: 1,
+		};
+
+		const response = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify(requestBody),
+			}),
+			locals: createLocals({
+				user: { id: 'user-race', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(1050);
+		expect(body.newAchievements).toEqual([{ id: 'champion', name: 'Champion', icon: '🏆' }]);
+		expect(batchCallCount).toBe(1);
+	});
+
+	test('returns BALANCE_MISMATCH when batch returns 0 rows and no receipt exists', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => ({ meta: { changes: 0 } }),
+						};
+					},
+				};
+			},
+			async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+				const results: Array<{ meta: { changes: number } }> = [];
+				for (const stmt of statements) {
+					if (stmt.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO game_stats')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
+				}
+				return results;
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ readChipBalance: 975 });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 50,
+				gameType: 'poker',
+				syncId: 'poker-batch-fail-1',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-batch-fail', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('BALANCE_MISMATCH');
+		expect(body.currentBalance).toBe(975);
+	});
+
+	test('rate limits syncId requests when no receipt exists and within cooldown', async () => {
+		resetMocks();
+		const rateLimitMap = new Map<string, number>();
+		rateLimitMap.set('user-sync-rate', Date.now());
+		const POST = createHandler({ lastUpdateByUser: rateLimitMap });
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return null as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => ({ meta: { changes: 0 } }),
+						};
+					},
+				};
+			},
+			async batch() {
+				throw new Error('Unexpected batch call');
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 50,
+				gameType: 'poker',
+				syncId: 'poker-rate-1',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-sync-rate', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(429);
+		expect(body.error).toBe('RATE_LIMITED');
+	});
+
+	test('returns SYNC_ID_REUSE_MISMATCH when batch fails and concurrent receipt has different payload', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => ({ meta: { changes: 0 } }),
+						};
+					},
+				};
+			},
+			async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+				const results: Array<{ meta: { changes: number } }> = [];
+				for (const stmt of statements) {
+					if (stmt.sql.startsWith('UPDATE user SET chipBalance')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO game_stats')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
+				}
+
+				receipts.set('user-batch-mismatch:poker-batch-mismatch-1', {
+					userId: 'user-batch-mismatch',
+					syncId: 'poker-batch-mismatch-1',
+					gameType: 'poker',
+					previousBalance: 1000,
+					balance: 1100,
+					delta: 100,
+					statsDelta: 100,
+					outcome: 'win',
+					handCount: 1,
+					winsIncrement: 1,
+					lossesIncrement: 0,
+					biggestWinCandidate: 100,
+					overallRank: null,
+					achievementPayload: null,
+				});
+
+				return results;
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 50,
+				gameType: 'poker',
+				syncId: 'poker-batch-mismatch-1',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({
+				user: { id: 'user-batch-mismatch', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('SYNC_ID_REUSE_MISMATCH');
+	});
+
+	test('logs warning and continues when receipt is null after successful batch write', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return null as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => {
+								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+									return { meta: { changes: 0 } };
+								}
+								throw new Error(`Unexpected run() query: ${sql}`);
+							},
+						};
+					},
+				};
+			},
+			async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+				const results: Array<{ meta: { changes: number } }> = [];
+				for (const stmt of statements) {
+					if (stmt.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+						results.push({ meta: { changes: 1 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+						results.push({ meta: { changes: 1 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO game_stats')) {
+						results.push({ meta: { changes: 1 } });
+						continue;
+					}
+					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
+				}
+				return results;
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => [];
+
+		const warnSpy = console.warn;
+		const warnings: string[] = [];
+		console.warn = (...args: unknown[]) => {
+			warnings.push(String(args[0] ?? ''));
+		};
+
+		try {
+			const request = new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify({
+					delta: 50,
+					gameType: 'poker',
+					syncId: 'poker-null-receipt-1',
+					previousBalance: 1000,
+					outcome: 'win',
+					handCount: 1,
+				}),
+			});
+
+			const response = await POST({
+				request,
+				locals: createLocals({
+					user: { id: 'user-null-receipt', chipBalance: 1000 },
+					dbBinding: binding as unknown as D1Database,
+				}),
+			} as any);
+			const body = await readJson(response);
+
+			expect(response.status).toBe(200);
+			expect(body.balance).toBe(1050);
+			expect(warnings.some((w) => w.includes('Receipt missing after successful batch write'))).toBe(
+				true,
+			);
+		} finally {
+			console.warn = warnSpy;
+		}
+	});
+
+	test('replays pending receipt on raced path with achievement resolution warnings', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+		receipts.set('user-raced-warn:poker-raced-warn-1', {
+			userId: 'user-raced-warn',
+			syncId: 'poker-raced-warn-1',
+			gameType: 'poker',
+			previousBalance: 1000,
+			balance: 1050,
+			delta: 50,
+			statsDelta: 50,
+			outcome: 'win',
+			handCount: 1,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 50,
+			overallRank: null,
+			achievementPayload: null,
+		});
+
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => {
+								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+									const [achievementPayload, userId, syncId] = args as [string, string, string];
+									const existing = receipts.get(`${userId}:${syncId}`);
+									if (existing) {
+										receipts.set(`${userId}:${syncId}`, {
+											...existing,
+											achievementPayload,
+										});
+										return { meta: { changes: 1 } };
+									}
+									return { meta: { changes: 0 } };
+								}
+								throw new Error(`Unexpected run() query: ${sql}`);
+							},
+						};
+					},
+				};
+			},
+			async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+				const results: Array<{ meta: { changes: number } }> = [];
+				for (const stmt of statements) {
+					if (stmt.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO chip_sync_receipt')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					if (stmt.sql.startsWith('INSERT INTO game_stats')) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
+				}
+				return results;
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => {
+			throw new Error('achievement check failed');
+		};
+
+		const response = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify({
+					delta: 50,
+					gameType: 'poker',
+					syncId: 'poker-raced-warn-1',
+					previousBalance: 1000,
+					outcome: 'win',
+					handCount: 1,
+				}),
+			}),
+			locals: createLocals({
+				user: { id: 'user-raced-warn', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+		const body = await readJson(response);
+
+		expect(response.status).toBe(200);
+		expect(body.balance).toBe(1050);
+		expect(body.warnings).toContain('Stats tracking failed');
+		expect(body.newAchievements).toBeUndefined();
+	});
+
+	test('skips achievement payload persistence when achievement resolution has warnings on replay', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const receipts = new Map<string, any>();
+		receipts.set('user-warn-replay:poker-warn-replay-1', {
+			userId: 'user-warn-replay',
+			syncId: 'poker-warn-replay-1',
+			gameType: 'poker',
+			previousBalance: 1000,
+			balance: 1050,
+			delta: 50,
+			statsDelta: 50,
+			outcome: 'win',
+			handCount: 1,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 50,
+			overallRank: null,
+			achievementPayload: null,
+		});
+
+		let updatePayloadCalled = false;
+		const binding = {
+			prepare(sql: string) {
+				return {
+					sql,
+					bind(...args: unknown[]) {
+						return {
+							sql,
+							args,
+							first: async <T>() => {
+								if (sql.startsWith('SELECT userId, syncId, gameType, previousBalance')) {
+									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
+								}
+								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							run: async () => {
+								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
+									updatePayloadCalled = true;
+									return { meta: { changes: 1 } };
+								}
+								throw new Error(`Unexpected run() query: ${sql}`);
+							},
+						};
+					},
+				};
+			},
+			async batch() {
+				throw new Error('Unexpected batch call');
+			},
+		};
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		mockCheckAndGrantAchievements.impl = async () => {
+			throw new Error('achievement check failed');
+		};
+
+		const response = await POST({
+			request: new Request('http://test.local', {
+				method: 'POST',
+				body: JSON.stringify({
+					delta: 50,
+					gameType: 'poker',
+					syncId: 'poker-warn-replay-1',
+					previousBalance: 1000,
+					outcome: 'win',
+					handCount: 1,
+				}),
+			}),
+			locals: createLocals({
+				user: { id: 'user-warn-replay', chipBalance: 1000 },
+				dbBinding: binding as unknown as D1Database,
+			}),
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(updatePayloadCalled).toBe(false);
+	});
 });

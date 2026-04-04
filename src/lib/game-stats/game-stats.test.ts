@@ -359,6 +359,35 @@ describe('getGameLeaderboardData', () => {
 		expect(mockGetTotalPlayersForGame.calls).toHaveLength(0);
 		expect(mockGetBulkUserAchievements.calls).toHaveLength(0);
 	});
+
+	test('returns empty badges when getBulkUserAchievements rejects', async () => {
+		resetGameStatsMocks();
+		mockGetBulkUserAchievements.impl = async () => {
+			throw new Error('badge fetch failed');
+		};
+
+		const errorSpy = console.error;
+		const errors: string[] = [];
+		console.error = (...args: unknown[]) => {
+			errors.push(String(args[0] ?? ''));
+		};
+
+		try {
+			const result = await getGameLeaderboardData({} as any, {
+				gameType: 'blackjack',
+				rankingMetric: 'wins',
+				currentUserId: null,
+				limit: 2,
+			});
+
+			expect(result.entries).toHaveLength(2);
+			expect(result.entries[0].badges).toEqual([]);
+			expect(result.entries[1].badges).toEqual([]);
+			expect(errors.some((e) => e.includes('Failed to fetch achievement badges'))).toBe(true);
+		} finally {
+			console.error = errorSpy;
+		}
+	});
 });
 
 describe('getUserStatsAllGames', () => {

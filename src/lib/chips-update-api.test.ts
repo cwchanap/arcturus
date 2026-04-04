@@ -1072,7 +1072,7 @@ describe('chips update API', () => {
 		mockCheckAndGrantAchievements.impl = async () => [];
 
 		const requestBody = {
-			delta: 50,
+			delta: 0,
 			gameType: 'poker',
 			syncId: 'poker-push-sync-1',
 			previousBalance: 1000,
@@ -1093,7 +1093,7 @@ describe('chips update API', () => {
 		const firstBody = await readJson(firstResponse);
 
 		expect(firstResponse.status).toBe(200);
-		expect(firstBody.balance).toBe(1050);
+		expect(firstBody.balance).toBe(1000);
 		const firstAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
 			recentWinAmount?: number;
 			gameType?: string;
@@ -1114,7 +1114,7 @@ describe('chips update API', () => {
 		const replayBody = await readJson(replayResponse);
 
 		expect(replayResponse.status).toBe(200);
-		expect(replayBody.balance).toBe(1050);
+		expect(replayBody.balance).toBe(1000);
 		expect(mockCheckAndGrantAchievements.calls.length).toBe(1);
 		const replayAchievementOptions = mockCheckAndGrantAchievements.calls[0]?.[3] as {
 			recentWinAmount?: number;

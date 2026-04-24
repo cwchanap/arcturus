@@ -1,7 +1,39 @@
 # Design: Achievement Badge Column + Poker Game Stats
 
 **Date:** 2026-03-20
-**Status:** Approved
+**Status:** Implemented (2026-04-23) — both features shipped; two gaps remain (see below)
+
+---
+
+## Implementation Status (as of 2026-04-23)
+
+### Feature 1 — Achievement Badge Column
+
+✅ **Fully implemented** (core + unit tests)
+
+| Item                                                                                       | Status           |
+| ------------------------------------------------------------------------------------------ | ---------------- |
+| `getBulkUserAchievements` in `achievement-repository.ts`                                   | ✅ Done          |
+| `badges: string[]` on `LeaderboardEntry` and `GameLeaderboardEntry`                        | ✅ Done          |
+| Two-stage parallel fetch in `getLeaderboardData` / `getGameLeaderboardData`                | ✅ Done          |
+| Badges column rendered in `leaderboard.astro` (overall + game tabs)                        | ✅ Done          |
+| Unit tests (`achievement-repository.test.ts`, `leaderboard.test.ts`, `game-stats.test.ts`) | ✅ Done          |
+| E2E tests in `leaderboard.spec.ts` (Badges column header + emoji assertion)                | ❌ Not yet added |
+
+### Feature 2 — Poker Game Stats
+
+✅ **Fully implemented** (core + unit tests)
+
+| Item                                                                                       | Status                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `'poker'` added to `GAME_TYPES`, `GAME_TYPE_LABELS`, `GAME_TYPE_ICONS` in `constants.ts`   | ✅ Done                                                                                                                                                                 |
+| `poker.astro` injects `user.chipBalance` via `data-balance` attribute on `#player-balance` | ✅ Done (uses `data-balance` + `data-balance-available` rather than text-content parsing described in the original design, but functionally equivalent and more robust) |
+| `serverSyncedBalance` private field in `PokerGame.ts`, seeded from DOM                     | ✅ Done                                                                                                                                                                 |
+| `syncChips()` called at all round-ending paths (opponents fold, human folds, showdown)     | ✅ Done                                                                                                                                                                 |
+| `humanChipsBefore` baseline captured at hand start for correct delta                       | ✅ Done                                                                                                                                                                 |
+| Unit tests in `PokerGame.test.ts` covering all 6 sync scenarios                            | ✅ Done                                                                                                                                                                 |
+| Achievement toast wired in `poker.astro` (blackjack/baccarat/craps already done)           | ❌ Not yet added                                                                                                                                                        |
+| E2E tests for poker stats (`poker.spec.ts` / `poker-turn-flow.spec.ts`)                    | ❌ Not yet added                                                                                                                                                        |
 
 ---
 

@@ -123,7 +123,7 @@ The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `b
 **Priority:** Low
 **Effort:** Medium
 **Impact:** Long-term engagement
-**Status:** ⚠️ Partially implemented — `userAchievement` table (schema ready) is in active use, and both achievement awarding plus leaderboard badge UI are live; notification UX remains future work
+**Status:** ⚠️ Mostly implemented — achievement awarding, leaderboard badge UI (`getBulkUserAchievements`, `badges: string[]` column), and achievement toast notification UX are all live for Blackjack, Baccarat, and Craps; two gaps remain
 
 #### Requirements
 
@@ -143,9 +143,10 @@ The `gameStats` table is live with `totalWins`, `totalLosses`, `handsPlayed`, `b
 
 #### Remaining Work
 
-1. Surface newly earned achievements to players with notification UX
-2. Add any supporting delivery/presentation work needed beyond the current API response
-3. (`achievement` definition table + `userAchievement` join already in schema)
+1. Wire `achievement-toast` into `poker.astro` (Blackjack/Baccarat/Craps already done via `initAchievementToast`; Poker still missing the `#achievement-toast` element and the `initAchievementToast` call after `syncChips` resolves)
+2. Add E2E tests for the Badges column in `leaderboard.spec.ts`:
+   - Assert "Badges" column header is present on both the overall tab and game-specific tabs
+   - Assert badge emoji appears for a user with at least one known achievement
 
 ---
 
@@ -237,13 +238,13 @@ GET /api/leaderboard/history
 
 ## Timeline Estimate
 
-| Phase                  | Effort    | Status                   | Dependencies                 |
-| ---------------------- | --------- | ------------------------ | ---------------------------- |
-| Phase 1: Time-Based    | 2-3 weeks | ❌ Not started           | Cloudflare scheduled workers |
-| Phase 2: Game-Specific | 2 weeks   | ✅ Done                  | —                            |
-| Phase 3: Social        | 4-5 weeks | ❌ Not started           | Friend system                |
-| Phase 4: Achievements  | 2 weeks   | ⚠️ Notifications pending | Notification UX              |
-| Phase 5: Tournaments   | 6+ weeks  | ❌ Not started           | Tournament system            |
+| Phase                  | Effort    | Status                       | Dependencies                                      |
+| ---------------------- | --------- | ---------------------------- | ------------------------------------------------- |
+| Phase 1: Time-Based    | 2-3 weeks | ❌ Not started               | Cloudflare scheduled workers                      |
+| Phase 2: Game-Specific | 2 weeks   | ✅ Done                      | —                                                 |
+| Phase 3: Social        | 4-5 weeks | ❌ Not started               | Friend system                                     |
+| Phase 4: Achievements  | 2 weeks   | ⚠️ Poker toast + E2E missing | Wire poker achievement toast; add badge E2E tests |
+| Phase 5: Tournaments   | 6+ weeks  | ❌ Not started               | Tournament system                                 |
 
 ---
 

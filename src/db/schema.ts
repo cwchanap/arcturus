@@ -160,3 +160,15 @@ export const userAchievement = sqliteTable(
 		userEarnedIdx: index('user_achievement_user_earned_idx').on(table.userId, table.earnedAt),
 	}),
 );
+
+/**
+ * Multiplayer room membership.
+ * Enforces a user can only be in a single MP room at a time (userId is primary key).
+ */
+export const mpMembership = sqliteTable('mp_membership', {
+	userId: text('userId')
+		.primaryKey()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	roomCode: text('roomCode').notNull(),
+	joinedAt: integer('joinedAt', { mode: 'timestamp' }).notNull(),
+});

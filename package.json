@@ -48,7 +48,8 @@
 		"better-sqlite3": "^12.4.1",
 		"canvas-confetti": "^1.9.3",
 		"drizzle-orm": "^0.44.5",
-		"tailwindcss": "^4.1.13"
+		"tailwindcss": "^4.1.13",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@astrojs/cloudflare": "^12.6.10",

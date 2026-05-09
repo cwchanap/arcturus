@@ -1,0 +1,104 @@
+---
+import CasinoLayout from '../../../layouts/casino.astro';
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/signin');
+---
+
+<CasinoLayout title="Multiplayer Poker — Arcturus Casino">
+	<div class="max-w-xl mx-auto p-8 space-y-6">
+		<h1 class="text-3xl font-bold text-white">Multiplayer Poker</h1>
+
+		<section class="bg-slate-900/60 p-6 rounded-lg space-y-4">
+			<h2 class="text-xl font-semibold text-white">Create a private room</h2>
+			<form id="create-form" class="space-y-3">
+				<label class="block text-slate-200">
+					Max seats:
+					<select name="maxSeats" class="ml-2 bg-slate-800 text-white p-1 rounded">
+						<option value="2">2 (heads-up)</option>
+						<option value="4" selected>4</option>
+						<option value="6">6</option>
+					</select>
+				</label>
+				<label class="block text-slate-200">
+					Small blind:
+					<input
+						type="number"
+						name="smallBlind"
+						value="5"
+						min="1"
+						class="bg-slate-800 text-white p-1 rounded w-24"
+					/>
+				</label>
+				<label class="block text-slate-200">
+					Big blind:
+					<input
+						type="number"
+						name="bigBlind"
+						value="10"
+						min="2"
+						class="bg-slate-800 text-white p-1 rounded w-24"
+					/>
+				</label>
+				<button
+					type="submit"
+					data-testid="create-room"
+					class="bg-emerald-600 px-4 py-2 rounded text-white"
+				>
+					Create room
+				</button>
+			</form>
+		</section>
+
+		<section class="bg-slate-900/60 p-6 rounded-lg space-y-4">
+			<h2 class="text-xl font-semibold text-white">Join with code</h2>
+			<form id="join-form" class="space-y-3">
+				<input
+					type="text"
+					name="code"
+					placeholder="MP-XXXXXX"
+					pattern="MP-[A-Z0-9]{6}"
+					required
+					class="bg-slate-800 text-white p-2 rounded w-full uppercase"
+					data-testid="join-code-input"
+				/>
+				<button
+					type="submit"
+					data-testid="join-room"
+					class="bg-blue-600 px-4 py-2 rounded text-white"
+				>
+					Join
+				</button>
+			</form>
+		</section>
+
+		<p id="status" class="text-rose-300 min-h-6" data-testid="status"></p>
+	</div>
+</CasinoLayout>
+
+<script>
+	const status = document.getElementById('status') as HTMLElement;
+
+	document.getElementById('create-form')!.addEventListener('submit', async (e) => {
+		e.preventDefault();
+		const fd = new FormData(e.target as HTMLFormElement);
+		const res = await fetch('/api/mp/rooms', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				maxSeats: Number(fd.get('maxSeats')),
+				smallBlind: Number(fd.get('smallBlind')),
+				bigBlind: Number(fd.get('bigBlind')),
+			}),
+		});
+		const json = await res.json();
+		if (res.ok) location.href = `/games/poker-mp/${json.code}`;
+		else status.textContent = json.error ?? 'Failed';
+	});
+
+	document.getElementById('join-form')!.addEventListener('submit', (e) => {
+		e.preventDefault();
+		const fd = new FormData(e.target as HTMLFormElement);
+		const code = String(fd.get('code')).toUpperCase();
+		location.href = `/games/poker-mp/${code}`;
+	});
+</script>

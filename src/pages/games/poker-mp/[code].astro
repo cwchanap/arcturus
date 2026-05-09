@@ -1,0 +1,146 @@
+---
+import CasinoLayout from '../../../layouts/casino.astro';
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/signin');
+const code = Astro.params.code;
+---
+
+<CasinoLayout title={`Poker ${code} — Arcturus`}>
+	<div class="max-w-4xl mx-auto p-4 space-y-4" data-room-code={code}>
+		<header class="flex justify-between items-center">
+			<h1 class="text-2xl font-bold text-white">Room {code}</h1>
+			<span data-testid="connection-status" class="text-emerald-300">Connecting…</span>
+		</header>
+
+		<div data-testid="table" class="bg-emerald-950/80 rounded-lg p-6">
+			<div data-testid="board" class="flex gap-2 justify-center min-h-24"></div>
+			<div data-testid="pot" class="text-center text-yellow-300 mt-3"></div>
+		</div>
+
+		<div data-testid="seats" class="grid grid-cols-3 gap-3"></div>
+
+		<div data-testid="hole-cards" class="flex gap-2 justify-center min-h-24"></div>
+
+		<div class="flex gap-2 justify-center" data-testid="actions">
+			<button data-action="fold" class="bg-rose-600 px-4 py-2 rounded text-white">Fold</button>
+			<button data-action="check" class="bg-slate-600 px-4 py-2 rounded text-white">Check</button>
+			<button data-action="call" class="bg-blue-600 px-4 py-2 rounded text-white">Call</button>
+			<input
+				type="number"
+				data-testid="raise-amount"
+				class="bg-slate-800 text-white p-2 rounded w-32"
+				placeholder="Amount"
+			/>
+			<button data-action="raise" class="bg-emerald-600 px-4 py-2 rounded text-white">Raise</button>
+		</div>
+
+		<div class="flex gap-3 justify-center flex-wrap">
+			<button data-testid="take-seat-0" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 0
+			</button>
+			<button data-testid="take-seat-1" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 1
+			</button>
+			<button data-testid="take-seat-2" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 2
+			</button>
+			<button data-testid="take-seat-3" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 3
+			</button>
+			<button data-testid="take-seat-4" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 4
+			</button>
+			<button data-testid="take-seat-5" class="bg-slate-700 px-3 py-1 rounded text-white">
+				Sit at 5
+			</button>
+			<button data-testid="start-hand" class="bg-amber-600 px-3 py-1 rounded text-white">
+				Start hand
+			</button>
+		</div>
+
+		<div data-testid="log" class="text-slate-300 text-sm space-y-1 max-h-40 overflow-auto"></div>
+	</div>
+</CasinoLayout>
+
+<script>
+	import { MultiplayerPokerClient } from '../../../lib/mp-poker/client';
+
+	const root = document.querySelector('[data-room-code]') as HTMLElement;
+	const code = root.dataset.roomCode!;
+	const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+	const client = new MultiplayerPokerClient(`${proto}//${location.host}/api/mp/rooms/${code}/ws`);
+
+	const statusEl = document.querySelector('[data-testid="connection-status"]') as HTMLElement;
+	const seatsEl = document.querySelector('[data-testid="seats"]') as HTMLElement;
+	const boardEl = document.querySelector('[data-testid="board"]') as HTMLElement;
+	const potEl = document.querySelector('[data-testid="pot"]') as HTMLElement;
+	const holeEl = document.querySelector('[data-testid="hole-cards"]') as HTMLElement;
+	const logEl = document.querySelector('[data-testid="log"]') as HTMLElement;
+	const raiseAmt = document.querySelector('[data-testid="raise-amount"]') as HTMLInputElement;
+
+	const SUIT_SYMBOLS: Record<string, string> = {
+		hearts: '♥',
+		diamonds: '♦',
+		clubs: '♣',
+		spades: '♠',
+	};
+
+	function renderCard(c: { value: string; suit: string }): string {
+		const sym = SUIT_SYMBOLS[c.suit] ?? '?';
+		const color = c.suit === 'hearts' || c.suit === 'diamonds' ? 'text-rose-400' : 'text-white';
+		return `<span class="inline-block bg-slate-800 px-2 py-1 rounded ${color}">${c.value}${sym}</span>`;
+	}
+
+	client.on((msg) => {
+		if (msg.type === 'room_state') {
+			boardEl.innerHTML = msg.board.map(renderCard).join('');
+			potEl.textContent = `Pot: ${msg.pot}`;
+			seatsEl.innerHTML = msg.seats
+				.map(
+					(s) =>
+						`<div class="bg-slate-800 p-3 rounded text-white" data-testid="seat-${s.seatIndex}">
+							Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ${s.committed} in pot
+						</div>`,
+				)
+				.join('');
+		} else if (msg.type === 'hand_started') {
+			holeEl.innerHTML = msg.holeCards.map(renderCard).join('');
+		} else if (msg.type === 'hand_ended') {
+			const w = msg.winners.map((win) => `seat ${win.seatIndex} +${win.amount}`).join(', ');
+			logEl.insertAdjacentHTML('afterbegin', `<div data-testid="log-entry">Hand ended: ${w}</div>`);
+		} else if (msg.type === 'error') {
+			logEl.insertAdjacentHTML(
+				'afterbegin',
+				`<div class="text-rose-400">Error: ${msg.message}</div>`,
+			);
+		}
+	});
+
+	client.connect().then(() => {
+		statusEl.textContent = 'Connected';
+	});
+
+	document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const action = btn.dataset.action!;
+			if (action === 'raise') {
+				const amount = Number(raiseAmt.value);
+				if (!amount) return;
+				client.send({ type: 'action', action: 'raise', amount });
+			} else {
+				client.send({ type: 'action', action: action as 'fold' | 'check' | 'call' });
+			}
+		});
+	});
+
+	document.querySelectorAll<HTMLButtonElement>('[data-testid^="take-seat-"]').forEach((btn) => {
+		btn.addEventListener('click', () => {
+			const idx = Number(btn.dataset.testid!.split('-').pop());
+			client.send({ type: 'take_seat', seatIndex: idx });
+		});
+	});
+
+	document.querySelector('[data-testid="start-hand"]')!.addEventListener('click', () => {
+		client.send({ type: 'start_hand' });
+	});
+</script>

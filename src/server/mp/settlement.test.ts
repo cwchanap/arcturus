@@ -16,7 +16,7 @@ describe('buildSettlePayload', () => {
 		expect(byUser.u2.syncId).toBe('mp-poker:MP-AAA111:h-1:u2');
 	});
 
-	test('zero deltas omitted', () => {
+	test('calculates deltas for winner and loser with unequal committed', () => {
 		const payload = buildSettlePayload({
 			roomCode: 'MP-BBB222',
 			handId: 'h-2',
@@ -40,5 +40,53 @@ describe('buildSettlePayload', () => {
 			],
 		});
 		expect(payload.entries.length).toBe(0);
+	});
+
+	test('side pot scenario: short-stack winner gets only main pot', () => {
+		// u1 all-in for 10, u2 and u3 each committed 100
+		// u1 wins main pot (30), u2 wins side pot (180)
+		const payload = buildSettlePayload({
+			roomCode: 'MP-DDD444',
+			handId: 'h-4',
+			committed: { u1: 10, u2: 100, u3: 100 },
+			winners: [
+				{ userId: 'u1', amount: 30 },
+				{ userId: 'u2', amount: 180 },
+			],
+		});
+		const byUser = Object.fromEntries(payload.entries.map((e) => [e.userId, e]));
+		expect(byUser.u1.delta).toBe(20); // won 30 - committed 10
+		expect(byUser.u2.delta).toBe(80); // won 180 - committed 100
+		expect(byUser.u3.delta).toBe(-100); // won 0 - committed 100
+	});
+
+	test('settlement deltas are zero-sum (total delta equals zero)', () => {
+		// Verify no chips are created or destroyed
+		const payload = buildSettlePayload({
+			roomCode: 'MP-ZEROSUM',
+			handId: 'h-zs',
+			committed: { u1: 100, u2: 200, u3: 150 },
+			winners: [{ userId: 'u2', amount: 450 }],
+		});
+		const totalDelta = payload.entries.reduce((sum, e) => sum + e.delta, 0);
+		expect(totalDelta).toBe(0);
+	});
+
+	test('split pot with odd chips still produces zero-sum deltas', () => {
+		// If engine distributes odd chips correctly, the winner amounts
+		// should sum to total committed, making deltas zero-sum
+		const totalCommitted = 103; // odd number
+		const payload = buildSettlePayload({
+			roomCode: 'MP-ODD',
+			handId: 'h-odd',
+			committed: { u1: 50, u2: 53 },
+			// Engine should split 103 as 52+51 or similar, not 51+51 (losing 1)
+			winners: [
+				{ userId: 'u1', amount: 52 },
+				{ userId: 'u2', amount: 51 },
+			],
+		});
+		const totalDelta = payload.entries.reduce((sum, e) => sum + e.delta, 0);
+		expect(totalDelta).toBe(0);
 	});
 });

@@ -1,8 +1,12 @@
 ---
 import CasinoLayout from '../../../layouts/casino.astro';
+import { isValidRoomCode } from '../../../lib/mp-poker/roomCode';
 const user = Astro.locals.user;
 if (!user) return Astro.redirect('/signin');
 const code = Astro.params.code;
+if (!code || !isValidRoomCode(code)) {
+	return new Response('Not found', { status: 404 });
+}
 ---
 
 <CasinoLayout title={`Poker ${code} — Arcturus`}>
@@ -85,47 +89,63 @@ const code = Astro.params.code;
 		spades: '♠',
 	};
 
-	function renderCard(c: { value: string; suit: string }): string {
+	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
 		const sym = SUIT_SYMBOLS[c.suit] ?? '?';
 		const color = c.suit === 'hearts' || c.suit === 'diamonds' ? 'text-rose-400' : 'text-white';
-		return `<span class="inline-block bg-slate-800 px-2 py-1 rounded ${color}">${c.value}${sym}</span>`;
+		const span = document.createElement('span');
+		span.className = `inline-block bg-slate-800 px-2 py-1 rounded ${color}`;
+		span.textContent = `${c.value}${sym}`;
+		return span;
+	}
+
+	function clearAndAppend(parent: HTMLElement, children: HTMLElement[]): void {
+		parent.textContent = '';
+		for (const child of children) parent.appendChild(child);
 	}
 
 	client.on((msg) => {
 		if (msg.type === 'room_state') {
-			boardEl.innerHTML = msg.board.map(renderCard).join('');
+			clearAndAppend(boardEl, msg.board.map(createCardEl));
 			potEl.textContent = `Pot: ${msg.pot}`;
-			seatsEl.innerHTML = msg.seats
-				.map(
-					(s) =>
-						`<div class="bg-slate-800 p-3 rounded text-white" data-testid="seat-${s.seatIndex}">
-							Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ${s.committed} in pot
-						</div>`,
-				)
-				.join('');
+			seatsEl.textContent = '';
+			for (const s of msg.seats) {
+				const div = document.createElement('div');
+				div.className = 'bg-slate-800 p-3 rounded text-white';
+				div.setAttribute('data-testid', `seat-${s.seatIndex}`);
+				div.textContent = `Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ${s.committed} in pot`;
+				seatsEl.appendChild(div);
+			}
 		} else if (msg.type === 'hand_started') {
-			holeEl.innerHTML = msg.holeCards.map(renderCard).join('');
+			clearAndAppend(holeEl, msg.holeCards.map(createCardEl));
 		} else if (msg.type === 'hand_ended') {
 			const w = msg.winners.map((win) => `seat ${win.seatIndex} +${win.amount}`).join(', ');
-			logEl.insertAdjacentHTML('afterbegin', `<div data-testid="log-entry">Hand ended: ${w}</div>`);
+			const entry = document.createElement('div');
+			entry.setAttribute('data-testid', 'log-entry');
+			entry.textContent = `Hand ended: ${w}`;
+			logEl.prepend(entry);
 		} else if (msg.type === 'error') {
-			logEl.insertAdjacentHTML(
-				'afterbegin',
-				`<div class="text-rose-400">Error: ${msg.message}</div>`,
-			);
+			const errDiv = document.createElement('div');
+			errDiv.className = 'text-rose-400';
+			errDiv.textContent = `Error: ${msg.message}`;
+			logEl.prepend(errDiv);
 		}
 	});
 
-	client.connect().then(() => {
-		statusEl.textContent = 'Connected';
-	});
+	client
+		.connect()
+		.then(() => {
+			statusEl.textContent = 'Connected';
+		})
+		.catch(() => {
+			statusEl.textContent = 'Disconnected';
+		});
 
 	document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
 		btn.addEventListener('click', () => {
 			const action = btn.dataset.action!;
 			if (action === 'raise') {
 				const amount = Number(raiseAmt.value);
-				if (!amount) return;
+				if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(amount)) return;
 				client.send({ type: 'action', action: 'raise', amount });
 			} else {
 				client.send({ type: 'action', action: action as 'fold' | 'check' | 'call' });

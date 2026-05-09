@@ -17,6 +17,11 @@ export default defineConfig({
 		platformProxy: {
 			enabled: true,
 		},
+		// Custom entry re-exports Durable Object classes so wrangler can bind them.
+		workerEntryPoint: {
+			path: 'src/worker.ts',
+			namedExports: ['arcturus'],
+		},
 	}),
 	server: {
 		port: 2000,

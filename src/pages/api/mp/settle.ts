@@ -11,8 +11,9 @@ interface SettleEntry {
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
+	const mpSecret = locals.runtime.env.MP_AUTH_SECRET;
 	const auth = request.headers.get('x-arcturus-auth');
-	if (!auth) return new Response('Forbidden', { status: 403 });
+	if (!mpSecret || auth !== mpSecret) return new Response('Forbidden', { status: 403 });
 	const body = (await request.json()) as { entries: SettleEntry[] };
 	if (!Array.isArray(body.entries)) return new Response('Bad payload', { status: 400 });
 	const db = createDb(locals.runtime.env.DB);
@@ -28,7 +29,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		const row = await db.select().from(user).where(eq(user.id, entry.userId)).get();
 		if (!row) continue;
 		const previous = row.chipBalance;
-		const next = Math.max(0, previous + entry.delta);
+		// Do NOT clamp to zero — the delta is derived from committed amounts
+		// captured at hand start. Clamping would forgive losses and break
+		// zero-sum settlement (winners credited full pot, losers pay less).
+		const next = previous + entry.delta;
 
 		await db
 			.update(user)

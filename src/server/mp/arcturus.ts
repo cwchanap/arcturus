@@ -11,11 +11,13 @@ import {
 	leaveSeat,
 	startHand,
 	applyAction,
+	buildSidePots,
 	EngineError,
 	type Room,
 	type RoomConfig,
 	type HandState,
 } from '../../lib/mp-poker/engine';
+import type { Card } from '../../lib/poker/types';
 import { buildSettlePayload } from './settlement';
 
 interface InitRequest {
@@ -90,7 +92,8 @@ function asKnownErrorCode(code: string): KnownErrorCode {
 const RECONNECT_TIMEOUT_MS = 30_000;
 const IDLE_TEARDOWN_MS = 5 * 60 * 1000;
 
-export class Arcturus implements DurableObject {
+// Lowercase class name per binding convention (matches `arcturus` in wrangler.toml).
+export class arcturus implements DurableObject {
 	private state: DurableObjectState;
 	private env: Env;
 	private room: Room | null = null;
@@ -112,6 +115,27 @@ export class Arcturus implements DurableObject {
 				this.currentHandId = persisted.currentHandId ?? 0;
 			}
 		});
+		// Rebuild sockets map from hibernated WebSockets
+		this.rebuildSocketsFromHibernation();
+	}
+
+	private rebuildSocketsFromHibernation(): void {
+		for (const ws of this.state.getWebSockets()) {
+			try {
+				const attached = ws.deserializeAttachment() as {
+					userId: string;
+					displayName: string;
+				} | null;
+				if (attached?.userId) {
+					this.sockets.set(ws, {
+						userId: attached.userId,
+						displayName: attached.displayName ?? '',
+					});
+				}
+			} catch {
+				/* socket has no attachment — skip */
+			}
+		}
 	}
 
 	async fetch(request: Request): Promise<Response> {
@@ -170,7 +194,8 @@ export class Arcturus implements DurableObject {
 	private async handleUpgrade(request: Request): Promise<Response> {
 		if (!this.room) return new Response('Room not initialized', { status: 404 });
 		const userId = request.headers.get('x-arcturus-user-id');
-		const displayName = request.headers.get('x-arcturus-display-name');
+		const rawDisplayName = request.headers.get('x-arcturus-display-name');
+		const displayName = rawDisplayName ? decodeURIComponent(rawDisplayName) : null;
 		if (!userId || !displayName) return new Response('Missing identity headers', { status: 401 });
 
 		if (request.headers.get('Upgrade') !== 'websocket') {
@@ -181,6 +206,7 @@ export class Arcturus implements DurableObject {
 		const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
 		this.state.acceptWebSocket(server);
 		this.sockets.set(server, { userId, displayName });
+		server.serializeAttachment({ userId, displayName });
 
 		const seats = this.room.seats.map((s) =>
 			s.userId === userId ? { ...s, connected: true, disconnectedAt: null } : s,
@@ -189,6 +215,19 @@ export class Arcturus implements DurableObject {
 		await this.persist();
 
 		this.send(server, this.makeRoomStateMessage());
+
+		// Resend private hole cards if the user is in an active hand
+		if (this.room.hand && this.room.hand.holeCards[userId]) {
+			const cards = this.room.hand.holeCards[userId];
+			if (cards.length === 2) {
+				this.send(server, {
+					type: 'hand_started',
+					dealerSeat: this.room.hand.dealerSeat,
+					holeCards: [cards[0], cards[1]],
+				});
+			}
+		}
+
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -225,6 +264,10 @@ export class Arcturus implements DurableObject {
 				}
 				case 'leave_seat':
 					this.room = leaveSeat(this.room, identity.userId);
+					// If user is no longer seated, release their room lock
+					if (!this.room.seats.some((s) => s.userId === identity.userId)) {
+						await this.releaseMembership(identity.userId);
+					}
 					await this.persist();
 					this.broadcastRoomState();
 					await this.scheduleNextAlarm();
@@ -234,10 +277,23 @@ export class Arcturus implements DurableObject {
 						this.send(ws, { type: 'error', code: 'INVALID_ACTION', message: 'host only' });
 						return;
 					}
+					if (
+						this.room.phase === 'in-hand' ||
+						this.room.phase === 'settling' ||
+						this.room.phase === 'frozen'
+					) {
+						this.send(ws, {
+							type: 'error',
+							code: 'INVALID_ACTION',
+							message: 'hand already in progress',
+						});
+						return;
+					}
 					const seated = this.room.seats.filter((s) => s.userId !== null).map((s) => s.userId!);
 					const snapshots = await this.fetchSnapshot(seated);
 					this.currentHandId++;
-					const handId = `${this.roomCode}-${this.currentHandId}`;
+					const cryptoSuffix = crypto.randomUUID();
+					const handId = `${this.roomCode}-${this.currentHandId}-${cryptoSuffix}`;
 					this.room = startHand(this.room, { snapshots, deckSeed: handId });
 					await this.persist();
 					this.broadcastHandStarted();
@@ -247,6 +303,7 @@ export class Arcturus implements DurableObject {
 					this.room = applyAction(this.room, identity.userId, parsed);
 					await this.persist();
 					if (this.room.phase === 'settling') {
+						this.broadcastHandEnded();
 						await this.runSettlement();
 					}
 					this.broadcastRoomState();
@@ -277,10 +334,37 @@ export class Arcturus implements DurableObject {
 		const identity = this.sockets.get(ws);
 		this.sockets.delete(ws);
 		if (!identity || !this.room) return;
+
+		// If another socket for the same user still exists, keep the seat connected
+		const hasOtherSocket = Array.from(this.sockets.values()).some(
+			(id) => id.userId === identity.userId,
+		);
+		if (hasOtherSocket) {
+			await this.persist();
+			return;
+		}
+
 		const seats = this.room.seats.map((s) =>
 			s.userId === identity.userId ? { ...s, connected: false, disconnectedAt: Date.now() } : s,
 		);
 		this.room = { ...this.room, seats };
+
+		// If the disconnected player is the active seat, auto-fold their hand
+		if (this.room.phase === 'in-hand' && this.room.hand && this.room.hand.currentSeat !== null) {
+			const currentSeat = this.room.seats[this.room.hand.currentSeat];
+			if (currentSeat?.userId === identity.userId) {
+				try {
+					this.room = applyAction(this.room, identity.userId, { action: 'fold' });
+					if (this.room.phase === 'settling') {
+						this.broadcastHandEnded();
+						await this.runSettlement();
+					}
+				} catch {
+					/* best-effort auto-fold */
+				}
+			}
+		}
+
 		await this.persist();
 		await this.scheduleNextAlarm();
 		this.broadcastRoomState();
@@ -294,6 +378,62 @@ export class Arcturus implements DurableObject {
 		await this.loaded;
 		if (!this.room) return;
 		const now = Date.now();
+
+		// Collect timed-out userIds before clearing seats
+		const timedOutUserIds: string[] = [];
+		for (const s of this.room.seats) {
+			if (s.userId && s.disconnectedAt !== null && now - s.disconnectedAt >= RECONNECT_TIMEOUT_MS) {
+				timedOutUserIds.push(s.userId);
+			}
+		}
+
+		// Fold ALL timed-out players still in the active hand before clearing seats
+		if (this.room.phase === 'in-hand' && this.room.hand) {
+			for (const userId of timedOutUserIds) {
+				if (this.room.hand.folded.has(userId)) continue;
+				// Only fold players actually dealt into this hand
+				if (!this.room.hand.holeCards[userId]) continue;
+				// If it's not their turn, temporarily move action to them so fold can apply
+				if (this.room.hand.currentSeat !== null) {
+					const currentSeatIdx = this.room.hand.currentSeat;
+					const currentSeat = this.room.seats[currentSeatIdx];
+					if (currentSeat?.userId !== userId) {
+						// Find their seat and temporarily set them as current so applyAction works
+						const theirSeat = this.room.seats.find((s) => s.userId === userId);
+						if (theirSeat) {
+							this.room = {
+								...this.room,
+								hand: { ...this.room.hand, currentSeat: theirSeat.seatIndex },
+							};
+						}
+					}
+				}
+				try {
+					this.room = applyAction(this.room, userId, { action: 'fold' });
+					if (this.room.phase === 'settling') {
+						this.broadcastHandEnded();
+						await this.runSettlement();
+					}
+				} catch {
+					/* best-effort fold */
+				}
+			}
+		}
+
+		// Release membership locks for evicted users before clearing seats
+		for (const uid of timedOutUserIds) {
+			// Only release if the user won't have any seat after clearing
+			const otherSeats = this.room.seats.filter(
+				(s) =>
+					s.userId === uid &&
+					(s.disconnectedAt === null || now - s.disconnectedAt < RECONNECT_TIMEOUT_MS),
+			);
+			if (otherSeats.length === 0) {
+				await this.releaseMembership(uid);
+			}
+		}
+
+		// Now clear the timed-out seats
 		let mutated = false;
 		const seats = this.room.seats.map((s) => {
 			if (s.userId && s.disconnectedAt !== null && now - s.disconnectedAt >= RECONNECT_TIMEOUT_MS) {
@@ -393,6 +533,25 @@ export class Arcturus implements DurableObject {
 		this.broadcast({ type: 'emote_received', fromSeat: seat.seatIndex, emoteId });
 	}
 
+	private broadcastHandEnded(): void {
+		if (!this.room?.hand) return;
+		const hand = this.room.hand;
+		const lastLog = this.room.handLog[this.room.handLog.length - 1];
+		if (!lastLog) return;
+		const pots = buildSidePots(hand, this.room.seats);
+		this.broadcast({
+			type: 'hand_ended',
+			winners: lastLog.winners,
+			pots: pots.map((p) => ({ amount: p.amount, eligibleSeats: p.eligibleSeatIndices })),
+			showdownCards: this.room.seats
+				.filter((s) => s.userId && hand.holeCards[s.userId] && !hand.folded.has(s.userId))
+				.map((s) => ({
+					seatIndex: s.seatIndex,
+					cards: hand.holeCards[s.userId!] as [Card, Card],
+				})),
+		});
+	}
+
 	private makeRoomStateMessage(): ServerMessage {
 		if (!this.room) {
 			return {
@@ -435,18 +594,39 @@ export class Arcturus implements DurableObject {
 	}
 
 	private async fetchSnapshot(userIds: string[]): Promise<Record<string, number>> {
-		const origin = this.env.WORKER_ORIGIN ?? 'http://localhost:2000';
+		const origin = this.env.WORKER_ORIGIN;
+		if (!origin) throw new Error('WORKER_ORIGIN not configured');
+		const mpAuth = this.env.MP_AUTH_SECRET ?? this.doSecret ?? '';
 		const res = await fetch(`${origin}/api/mp/snapshot`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				'x-arcturus-auth': this.doSecret ?? '',
+				'x-arcturus-auth': mpAuth,
 			},
 			body: JSON.stringify({ userIds, roomCode: this.roomCode }),
 		});
 		if (!res.ok) throw new Error(`snapshot failed: ${res.status}`);
 		const json = (await res.json()) as { balances: Record<string, number> };
 		return json.balances;
+	}
+
+	private async releaseMembership(userId: string): Promise<void> {
+		const origin = this.env.WORKER_ORIGIN;
+		if (!origin) return;
+		const mpAuth = this.env.MP_AUTH_SECRET ?? this.doSecret ?? '';
+		try {
+			await fetch(`${origin}/api/mp/lock`, {
+				method: 'POST',
+				headers: {
+					'content-type': 'application/json',
+					'x-arcturus-auth': mpAuth,
+					'x-arcturus-user-id': userId,
+				},
+				body: JSON.stringify({ action: 'release' }),
+			});
+		} catch {
+			/* best-effort release */
+		}
 	}
 
 	private async runSettlement(): Promise<void> {
@@ -468,7 +648,9 @@ export class Arcturus implements DurableObject {
 		});
 
 		let attempts = 0;
-		const origin = this.env.WORKER_ORIGIN ?? 'http://localhost:2000';
+		const origin = this.env.WORKER_ORIGIN;
+		if (!origin) throw new Error('WORKER_ORIGIN not configured');
+		const mpAuth = this.env.MP_AUTH_SECRET ?? this.doSecret ?? '';
 		while (attempts < 3) {
 			attempts++;
 			try {
@@ -476,7 +658,7 @@ export class Arcturus implements DurableObject {
 					method: 'POST',
 					headers: {
 						'content-type': 'application/json',
-						'x-arcturus-auth': this.doSecret ?? '',
+						'x-arcturus-auth': mpAuth,
 					},
 					body: JSON.stringify(payload),
 				});

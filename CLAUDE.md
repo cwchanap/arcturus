@@ -24,6 +24,7 @@ const secret = Astro.locals.runtime.env.BETTER_AUTH_SECRET;
 - **Astro SSR** (`output: 'server'`) with Cloudflare adapter
 - **Better Auth** - Session-based authentication
 - **Drizzle ORM** + **Cloudflare D1** - Edge SQLite database
+- **Cloudflare Durable Objects** - One `Arcturus` DO instance per multiplayer poker room (binding: `arcturus`, lowercase). Hibernatable WebSockets for real-time game state.
 - **Tailwind CSS v4** - Via Vite plugin (NOT PostCSS)
 - **Bun** - Package manager and test runner
 - **Playwright** - E2E testing
@@ -190,6 +191,11 @@ src/
 │   │   ├── BlackjackUIRenderer.ts # UI rendering logic
 │   │   ├── GameSettingsManager.ts # Settings persistence
 │   │   └── blackjackClient.ts  # Client-side integration
+│   ├── mp-poker/          # Multiplayer poker — pure logic, Bun-testable
+│   │   ├── engine.ts       # Authoritative game state machine
+│   │   ├── protocol.ts     # Zod-validated WS message schemas
+│   │   ├── client.ts       # Browser WS wrapper
+│   │   └── roomCode.ts     # Room code generator + validator
 │   └── baccarat/          # Baccarat game logic (modular)
 │       ├── types.ts       # TypeScript interfaces
 │       ├── constants.ts   # Game constants
@@ -204,6 +210,10 @@ src/
 │       └── baccaratClient.ts   # Client-side integration
 ├── db/
 │   └── schema.ts          # Drizzle schema (single source of truth)
+├── server/
+│   └── mp/                 # DO + server-only mp glue (Miniflare-tested, not pure Bun)
+│       ├── arcturus.ts     # Arcturus DO class — authoritative poker session
+│       └── settlement.ts   # Pure: build settle payload from hand result
 └── middleware.ts          # Auth + session injection (runs on ALL requests)
 
 e2e/                       # Playwright E2E tests

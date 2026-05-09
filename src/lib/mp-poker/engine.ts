@@ -44,6 +44,7 @@ export interface Room {
 	seats: SeatState[];
 	hand: HandState | null;
 	handLog: HandLogEntry[];
+	lastDealerSeat: number;
 }
 
 export class EngineError extends Error {
@@ -52,6 +53,7 @@ export class EngineError extends Error {
 		message: string,
 	) {
 		super(message);
+		this.name = 'EngineError';
 	}
 }
 
@@ -70,13 +72,16 @@ export function createRoom(config: RoomConfig): Room {
 			disconnectedAt: null,
 		});
 	}
-	return { config, phase: 'idle', seats, hand: null, handLog: [] };
+	return { config, phase: 'idle', seats, hand: null, handLog: [], lastDealerSeat: -1 };
 }
 
 export function takeSeat(
 	room: Room,
 	args: { userId: string; displayName: string; seatIndex: number; mainBalance: number },
 ): Room {
+	if (room.phase === 'in-hand') {
+		throw new EngineError('INVALID_PHASE', 'cannot take seat during active hand');
+	}
 	const { userId, displayName, seatIndex, mainBalance } = args;
 	if (seatIndex < 0 || seatIndex >= room.seats.length) {
 		throw new EngineError('INVALID_SEAT', 'seat out of range');
@@ -96,6 +101,9 @@ export function takeSeat(
 }
 
 export function leaveSeat(room: Room, userId: string): Room {
+	if (room.phase === 'in-hand') {
+		throw new EngineError('INVALID_PHASE', 'cannot leave seat during active hand; fold instead');
+	}
 	const seats = room.seats.map((s) =>
 		s.userId === userId
 			? { ...s, userId: null, displayName: null, connected: false, disconnectedAt: null }
@@ -169,7 +177,7 @@ export function startHand(
 		committed[seat.userId!] = 0;
 	}
 
-	const lastDealerIndex = room.hand?.dealerSeat ?? -1;
+	const lastDealerIndex = room.lastDealerSeat;
 	const eligibleIndices = eligible.map((s) => s.seatIndex).sort((a, b) => a - b);
 	const dealerSeat = eligibleIndices.find((i) => i > lastDealerIndex) ?? eligibleIndices[0];
 
@@ -218,7 +226,7 @@ export function startHand(
 		handStacks,
 	};
 
-	return { ...room, phase: 'in-hand', hand };
+	return { ...room, phase: 'in-hand', hand, lastDealerSeat: dealerSeat };
 }
 
 export type ActionInput =
@@ -259,6 +267,7 @@ export function applyAction(room: Room, userId: string, input: ActionInput): Roo
 			if (toCall > 0) throw new EngineError('INVALID_ACTION', 'cannot check facing a bet');
 			break;
 		case 'call': {
+			if (toCall <= 0) throw new EngineError('INVALID_ACTION', 'nothing to call');
 			const pay = Math.min(toCall, remaining);
 			newCommitted[userId] = committedNow + pay;
 			if (pay === remaining) newAllIn.add(userId);
@@ -275,26 +284,10 @@ export function applyAction(room: Room, userId: string, input: ActionInput): Roo
 			const pay = Math.min(target - committedNow, remaining);
 			newCommitted[userId] = committedNow + pay;
 			if (pay === remaining) newAllIn.add(userId);
-			newLastRaise = target - hand.currentBet;
-			newBet = newCommitted[userId];
-			for (const s of room.seats) {
-				if (
-					s.userId &&
-					s.userId !== userId &&
-					!newFolded.has(s.userId) &&
-					!newAllIn.has(s.userId)
-				) {
-					newHasActed.delete(s.userId);
-				}
-			}
-			break;
-		}
-		case 'all_in': {
-			const pay = remaining;
-			newCommitted[userId] = committedNow + pay;
-			newAllIn.add(userId);
-			if (newCommitted[userId] > hand.currentBet) {
-				newLastRaise = newCommitted[userId] - hand.currentBet;
+			const raiseIncrement = newCommitted[userId] - hand.currentBet;
+			// Only update lastRaiseAmount and reopen action for full raises
+			if (raiseIncrement >= hand.lastRaiseAmount) {
+				newLastRaise = raiseIncrement;
 				newBet = newCommitted[userId];
 				for (const s of room.seats) {
 					if (
@@ -305,6 +298,36 @@ export function applyAction(room: Room, userId: string, input: ActionInput): Roo
 					) {
 						newHasActed.delete(s.userId);
 					}
+				}
+			} else {
+				// Short all-in raise: update currentBet but preserve lastRaiseAmount
+				newBet = Math.max(newBet, newCommitted[userId]);
+			}
+			break;
+		}
+		case 'all_in': {
+			const pay = remaining;
+			newCommitted[userId] = committedNow + pay;
+			newAllIn.add(userId);
+			if (newCommitted[userId] > hand.currentBet) {
+				const raiseIncrement = newCommitted[userId] - hand.currentBet;
+				// Only update lastRaiseAmount and reopen action for full raises
+				if (raiseIncrement >= hand.lastRaiseAmount) {
+					newLastRaise = raiseIncrement;
+					newBet = newCommitted[userId];
+					for (const s of room.seats) {
+						if (
+							s.userId &&
+							s.userId !== userId &&
+							!newFolded.has(s.userId) &&
+							!newAllIn.has(s.userId)
+						) {
+							newHasActed.delete(s.userId);
+						}
+					}
+				} else {
+					// Short all-in: update currentBet but preserve lastRaiseAmount
+					newBet = Math.max(newBet, newCommitted[userId]);
 				}
 			}
 			break;
@@ -438,20 +461,93 @@ function makeShowdownPlayer(seatIndex: number, userId: string, hand: HandState):
 	};
 }
 
+interface PotResult {
+	amount: number;
+	eligibleSeatIndices: number[];
+}
+
+/**
+ * Build side pots from committed amounts. Standard algorithm:
+ * 1. Sort all-in/eligible commitment levels ascending
+ * 2. For each level, the pot is (level - prevLevel) × count of players who contributed at least that much
+ * 3. Only non-folded players who contributed to a pot level are eligible to win it
+ */
+export function buildSidePots(hand: HandState, seats: SeatState[]): PotResult[] {
+	// All players who were dealt into the hand (have hole cards)
+	const participants = seats.filter((s) => s.userId && hand.holeCards[s.userId]);
+	if (participants.length === 0) return [];
+
+	// Get sorted unique commitment levels (only levels where at least one player is all-in or folded)
+	const committed = hand.committed;
+	const levels = [...new Set(Object.values(committed))].sort((a, b) => a - b);
+	if (levels.length === 0) return [];
+
+	const pots: PotResult[] = [];
+	let prevLevel = 0;
+
+	for (const level of levels) {
+		if (level <= prevLevel) continue;
+
+		// Players who contributed at least `level` chips
+		const contributors = participants.filter((s) => (committed[s.userId!] ?? 0) >= level);
+		// Only non-folded players can win
+		const eligible = contributors.filter((s) => s.userId && !hand.folded.has(s.userId));
+		if (eligible.length === 0) {
+			// If all eligible folded, the pot goes to the last remaining player(s) — handled by fold-out
+			prevLevel = level;
+			continue;
+		}
+
+		const potAmount = (level - prevLevel) * contributors.length;
+		pots.push({
+			amount: potAmount,
+			eligibleSeatIndices: eligible.map((s) => s.seatIndex),
+		});
+		prevLevel = level;
+	}
+
+	return pots;
+}
+
 function finishHand(room: Room, reason: 'fold-out' | 'showdown'): Room {
 	const hand = room.hand!;
-	const totalPot = Object.values(hand.committed).reduce((a, b) => a + b, 0);
 	const remaining = room.seats.filter(
 		(s) => s.userId && hand.holeCards[s.userId] && !hand.folded.has(s.userId),
 	);
+
 	let winners: { seatIndex: number; amount: number }[];
+
 	if (reason === 'fold-out' || remaining.length === 1) {
+		// Fold-out: single remaining player wins everything
+		const totalPot = Object.values(hand.committed).reduce((a, b) => a + b, 0);
 		winners = [{ seatIndex: remaining[0].seatIndex, amount: totalPot }];
 	} else {
-		const players = remaining.map((s) => makeShowdownPlayer(s.seatIndex, s.userId!, hand));
-		const winningPlayers = determineShowdownWinners(players, hand.board);
-		const split = Math.floor(totalPot / winningPlayers.length);
-		winners = winningPlayers.map((p) => ({ seatIndex: p.id, amount: split }));
+		// Showdown with side pots
+		const pots = buildSidePots(hand, room.seats);
+		const winMap = new Map<number, number>();
+
+		for (const pot of pots) {
+			const eligiblePlayers = pot.eligibleSeatIndices
+				.map((si) => {
+					const seat = room.seats[si];
+					return seat.userId ? makeShowdownPlayer(si, seat.userId, hand) : null;
+				})
+				.filter((p): p is Player => p !== null);
+
+			const potWinners = determineShowdownWinners(eligiblePlayers, hand.board);
+			const split = Math.floor(pot.amount / potWinners.length);
+			const remainder = pot.amount - split * potWinners.length;
+			// Distribute odd chips to winners closest left of dealer (standard poker rule)
+			for (let i = 0; i < potWinners.length; i++) {
+				const extra = i < remainder ? 1 : 0;
+				winMap.set(potWinners[i].id, (winMap.get(potWinners[i].id) ?? 0) + split + extra);
+			}
+		}
+
+		winners = Array.from(winMap.entries()).map(([seatIndex, amount]) => ({
+			seatIndex,
+			amount,
+		}));
 	}
 
 	const newLog = [...room.handLog, { endedAt: Date.now(), winners }].slice(-20);

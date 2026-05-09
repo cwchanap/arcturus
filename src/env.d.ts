@@ -3,6 +3,7 @@
 interface Env {
 	DB: D1Database;
 	BETTER_AUTH_SECRET?: string;
+	MP_AUTH_SECRET?: string;
 	arcturus: DurableObjectNamespace;
 	WORKER_ORIGIN?: string;
 }

@@ -81,17 +81,35 @@ if (!user) return Astro.redirect('/signin');
 	document.getElementById('create-form')!.addEventListener('submit', async (e) => {
 		e.preventDefault();
 		const fd = new FormData(e.target as HTMLFormElement);
-		const res = await fetch('/api/mp/rooms', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				maxSeats: Number(fd.get('maxSeats')),
-				smallBlind: Number(fd.get('smallBlind')),
-				bigBlind: Number(fd.get('bigBlind')),
-			}),
-		});
-		const json = await res.json();
-		if (res.ok) location.href = `/games/poker-mp/${json.code}`;
+		const sb = Number(fd.get('smallBlind'));
+		const bb = Number(fd.get('bigBlind'));
+		if (sb >= bb) {
+			status.textContent = 'Small blind must be less than big blind';
+			return;
+		}
+		let res: Response;
+		try {
+			res = await fetch('/api/mp/rooms', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					maxSeats: Number(fd.get('maxSeats')),
+					smallBlind: sb,
+					bigBlind: bb,
+				}),
+			});
+		} catch {
+			status.textContent = 'Network error — please try again';
+			return;
+		}
+		let json: { code?: string; error?: string };
+		try {
+			json = await res.json();
+		} catch {
+			status.textContent = `Unexpected response (${res.status})`;
+			return;
+		}
+		if (res.ok && json.code) location.href = `/games/poker-mp/${json.code}`;
 		else status.textContent = json.error ?? 'Failed';
 	});
 

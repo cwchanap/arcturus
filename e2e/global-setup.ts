@@ -1,4 +1,4 @@
-import { chromium, type FullConfig } from '@playwright/test';
+import { chromium, type FullConfig, type BrowserContext, type Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,9 +19,7 @@ async function sleep(ms: number) {
 	await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readChipBalanceFromPage(
-	page: import('@playwright/test').Page,
-): Promise<number | null> {
+async function readChipBalanceFromPage(page: Page): Promise<number | null> {
 	const loc = page.locator('[data-chip-balance]');
 	const count = await loc.count();
 	for (let i = 0; i < count; i++) {
@@ -37,217 +35,165 @@ async function readChipBalanceFromPage(
 	return null;
 }
 
-/**
- * Global setup that runs once before all tests.
- * Creates test user if needed and signs in with the test account, then saves the authentication state.
- */
+async function provisionUser(
+	context: BrowserContext,
+	page: Page,
+	baseURL: string,
+	credentials: { email: string; password: string; name: string },
+	authFile: string,
+): Promise<void> {
+	const { email, password, name } = credentials;
+
+	await page.goto(`${baseURL}/signup`);
+	await page.fill('input[name="name"]', name);
+	await page.fill('input[name="email"]', email);
+	await page.fill('input[name="password"]', password);
+	await page.click('button[type="submit"]');
+	try {
+		await page.waitForURL(`${baseURL}/`, { timeout: 15000 });
+	} catch {
+		/* signup may fail if account exists; fall through to signin below */
+	}
+
+	const authChecks = [
+		() => page.locator('span[data-chip-balance]').isVisible(),
+		() => page.locator('text=Dashboard').isVisible(),
+		() => page.locator('text=Play Now').isVisible(),
+		() => page.locator(`text=${name}`).isVisible(),
+	];
+	const verifyAuthenticated = async (): Promise<boolean> => {
+		for (const check of authChecks) {
+			try {
+				if (await check()) return true;
+			} catch {
+				/* try next */
+			}
+		}
+		return false;
+	};
+
+	let authenticated = await verifyAuthenticated();
+	if (!authenticated) {
+		await page.goto(`${baseURL}/signin`);
+		await page.fill('input[name="email"]', email);
+		await page.fill('input[name="password"]', password);
+		await page.click('button[type="submit"]');
+		await page.waitForURL(`${baseURL}/`, { timeout: 10000 });
+		authenticated = await verifyAuthenticated();
+	}
+	if (!authenticated) {
+		throw new Error(`Login verification failed for ${email}`);
+	}
+
+	await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
+	await page.locator('[data-chip-balance]').first().waitFor({ state: 'attached', timeout: 10000 });
+
+	let currentBalance = (await readChipBalanceFromPage(page)) ?? 0;
+	if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
+		for (let attempt = 0; attempt < 5; attempt++) {
+			const delta = MINIMUM_E2E_CHIP_BALANCE - currentBalance;
+			const response = await page.request.post(`${baseURL}/api/chips/update`, {
+				data: { delta, gameType: 'blackjack', previousBalance: currentBalance },
+			});
+			if (response.ok()) {
+				let refreshed: number | null = null;
+				for (let r = 0; r < 3; r++) {
+					await sleep(2100);
+					await page.reload({ waitUntil: 'networkidle' });
+					refreshed = await readChipBalanceFromPage(page);
+					if (typeof refreshed === 'number') break;
+				}
+				if (typeof refreshed === 'number') {
+					currentBalance = refreshed;
+					break;
+				}
+				throw new Error('Chip balance update succeeded but could not be read back');
+			}
+			if (response.status() === 429) {
+				const retryAfter = Number(response.headers()['retry-after'] ?? '2');
+				await sleep((Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100);
+				currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
+				continue;
+			}
+			if (response.status() === 409) {
+				const data = (await response.json().catch(() => null)) as {
+					currentBalance?: number;
+				} | null;
+				if (typeof data?.currentBalance === 'number') {
+					currentBalance = data.currentBalance;
+					continue;
+				}
+			}
+			const errorText = await response.text().catch(() => '');
+			throw new Error(`Failed to top up chip balance: ${response.status()} ${errorText}`);
+		}
+		if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
+			throw new Error(
+				`Chip balance top-up did not reach minimum (${currentBalance} < ${MINIMUM_E2E_CHIP_BALANCE})`,
+			);
+		}
+	}
+
+	await context.storageState({ path: authFile });
+}
+
+const TEST_USERS = [
+	{
+		credentials: {
+			email: 'e2e-test@arcturus.local',
+			password: 'PlaywrightTest123!',
+			name: 'E2E Test User',
+		},
+		authFile: 'user.json',
+	},
+	{
+		credentials: {
+			email: 'e2e-test-2@arcturus.local',
+			password: 'PlaywrightTest123!',
+			name: 'E2E Test User 2',
+		},
+		authFile: 'user-2.json',
+	},
+] as const;
+
 async function globalSetup(config: FullConfig) {
-	const authFile = path.join(process.cwd(), 'e2e', '.auth', 'user.json');
-	const authDir = path.dirname(authFile);
+	const authDir = path.join(process.cwd(), 'e2e', '.auth');
 	if (!fs.existsSync(authDir)) {
 		fs.mkdirSync(authDir, { recursive: true });
 	}
 
-	// Test account credentials - dedicated for E2E testing
-	const TEST_EMAIL = 'e2e-test@arcturus.local';
-	const TEST_PASSWORD = 'PlaywrightTest123!';
-	const TEST_NAME = 'E2E Test User';
-
-	// Resolve baseURL from Playwright config or environment.
-	// FullConfig exposes projects; use the first project's use.baseURL by convention.
 	const projectBaseURL =
 		config.projects?.[0]?.use?.baseURL && typeof config.projects[0].use.baseURL === 'string'
 			? config.projects[0].use.baseURL
 			: undefined;
-
 	const baseURL = projectBaseURL || process.env.BASE_URL || 'http://localhost:2000';
 
 	const browser = await chromium.launch();
-	const context = await browser.newContext();
-	const page = await context.newPage();
-
 	try {
-		// Navigate to signup page and create account
-		await page.goto(`${baseURL}/signup`);
-
-		// Fill in signup form
-		await page.fill('input[name="name"]', TEST_NAME);
-		await page.fill('input[name="email"]', TEST_EMAIL);
-		await page.fill('input[name="password"]', TEST_PASSWORD);
-
-		// Click signup button
-		await page.click('button[type="submit"]');
-
-		// Wait for navigation after signup
-		await page.waitForURL(`${baseURL}/`, { timeout: 15000 });
-
-		// Verify we're logged in by checking for authenticated user elements
-		const authChecks = [
-			{
-				name: 'Chip balance data attribute',
-				check: () => page.locator('span[data-chip-balance]').isVisible(),
-			},
-			{ name: 'Dashboard button', check: () => page.locator('text=Dashboard').isVisible() },
-			{ name: 'Play Now button', check: () => page.locator('text=Play Now').isVisible() },
-			{ name: 'User name display', check: () => page.locator(`text=${TEST_NAME}`).isVisible() },
-		];
-
-		// Helper to run the auth checks until one passes
-		const verifyAuthenticated = async (): Promise<boolean> => {
-			for (const { name: _name, check } of authChecks) {
+		for (const user of TEST_USERS) {
+			const context = await browser.newContext();
+			const page = await context.newPage();
+			const authFile = path.join(authDir, user.authFile);
+			try {
+				await provisionUser(context, page, baseURL, user.credentials, authFile);
+			} catch (error: unknown) {
+				console.error(`Global setup failed for ${user.credentials.email}`);
+				console.error(`Base URL: ${baseURL}`);
+				console.error(`Current URL: ${page.url()}`);
 				try {
-					const isVisible = await check();
-					if (isVisible) {
-						return true;
-					}
-				} catch (_error) {
-					// Silent failure, will try next check
-					// (individual checks may fail if specific UI elements are not present)
+					await page.screenshot({
+						path: path.join(authDir, `global-setup-${user.authFile}.error.png`),
+						fullPage: true,
+					});
+				} catch {
+					/* best-effort */
 				}
+				await context.close();
+				throw error instanceof Error ? error : new Error(String(error));
 			}
-			return false;
-		};
-
-		let authenticated = await verifyAuthenticated();
-
-		if (!authenticated) {
-			// Try signing in as fallback
-			await page.goto(`${baseURL}/signin`);
-			await page.fill('input[name="email"]', TEST_EMAIL);
-			await page.fill('input[name="password"]', TEST_PASSWORD);
-			await page.click('button[type="submit"]');
-			await page.waitForURL(`${baseURL}/`, { timeout: 10000 });
-
-			// Re-check authentication using the shared helper
-			authenticated = await verifyAuthenticated();
+			await context.close();
 		}
-
-		if (!authenticated) {
-			throw new Error(
-				'Login verification failed - no user authentication indicators found after multiple attempts',
-			);
-		}
-
-		await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
-		await page
-			.locator('[data-chip-balance]')
-			.first()
-			.waitFor({ state: 'attached', timeout: 10000 });
-
-		let currentBalance = await readChipBalanceFromPage(page);
-		if (typeof currentBalance !== 'number') {
-			currentBalance = 0;
-		}
-
-		if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
-			for (let attempt = 0; attempt < 5; attempt++) {
-				const delta = MINIMUM_E2E_CHIP_BALANCE - currentBalance;
-				const response = await page.request.post(`${baseURL}/api/chips/update`, {
-					data: {
-						delta,
-						gameType: 'blackjack',
-						previousBalance: currentBalance,
-					},
-				});
-
-				if (response.ok()) {
-					let refreshedBalance: number | null = null;
-					for (let readAttempt = 0; readAttempt < 3; readAttempt++) {
-						await sleep(2100);
-						await page.reload({ waitUntil: 'networkidle' });
-						refreshedBalance = await readChipBalanceFromPage(page);
-						if (typeof refreshedBalance === 'number') {
-							break;
-						}
-					}
-
-					if (typeof refreshedBalance === 'number') {
-						currentBalance = refreshedBalance;
-						break;
-					}
-
-					throw new Error(
-						'Chip balance update succeeded but chip balance could not be read from the page after multiple reloads',
-					);
-				}
-
-				if (response.status() === 429) {
-					const retryAfter = Number(response.headers()['retry-after'] ?? '2');
-					await sleep((Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100);
-					currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
-					continue;
-				}
-
-				if (response.status() === 409) {
-					// This parse/cast is intentionally minimal (we only need currentBalance). If E2E failures
-					// become hard to debug, consider parsing a richer error shape (e.g. error/message/code)
-					// and including it in the thrown error to surface more context in test logs.
-					const data = (await response.json().catch(() => null)) as {
-						currentBalance?: number;
-					} | null;
-					if (typeof data?.currentBalance === 'number') {
-						currentBalance = data.currentBalance;
-						continue;
-					}
-				}
-
-				const errorText = await response.text().catch(() => '');
-				throw new Error(`Failed to top up E2E chip balance: ${response.status()} ${errorText}`);
-			}
-
-			if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
-				throw new Error(
-					`E2E chip balance top-up did not reach minimum (${currentBalance} < ${MINIMUM_E2E_CHIP_BALANCE})`,
-				);
-			}
-		}
-
-		// Save authentication state
-		await context.storageState({ path: authFile });
-	} catch (error: unknown) {
-		const currentUrl = page.url();
-		console.error('Global setup signup/signin failed');
-		console.error(`Base URL: ${baseURL}`);
-		console.error(`Current URL: ${currentUrl}`);
-
-		// Log any visible validation or error messages
-		try {
-			const errorMessages = await page
-				.locator('text=/invalid|error|failed|required|already exists|already in use/i')
-				.allInnerTexts();
-			if (errorMessages.length > 0) {
-				console.error('Validation / error messages detected on page:', errorMessages);
-			}
-		} catch {
-			// Ignore locator/DOM failures in logging path
-		}
-
-		// Capture screenshot for debugging
-		try {
-			await page.screenshot({
-				path: path.join(__dirname, '.auth', 'global-setup-signup-error.png'),
-				fullPage: true,
-			});
-			console.error('Screenshot captured at .auth/global-setup-signup-error.png for debugging.');
-		} catch {
-			// Best-effort only
-		}
-
-		// Capture trace if desired (optional, best-effort)
-		try {
-			await context.tracing.start({ screenshots: true, snapshots: true });
-			await context.tracing.stop({
-				path: path.join(__dirname, '.auth', 'global-setup-signup-trace.zip'),
-			});
-			console.error('Trace captured at .auth/global-setup-signup-trace.zip for debugging.');
-		} catch {
-			// Ignore trace failures
-		}
-
-		// Fail-fast: ensure setup does not silently continue
-		throw error instanceof Error ? error : new Error(`Global setup failed: ${String(error)}`);
 	} finally {
-		await context.close();
 		await browser.close();
 	}
 }

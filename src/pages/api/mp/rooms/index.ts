@@ -4,12 +4,20 @@ import { generateRoomCode } from '../../../../lib/mp-poker/roomCode';
 export const POST: APIRoute = async ({ locals, request }) => {
 	const user = locals.user;
 	if (!user) return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
-	const body = (await request.json()) as {
-		maxSeats: number;
-		smallBlind: number;
-		bigBlind: number;
-	};
+
+	let body: { maxSeats: number; smallBlind: number; bigBlind: number };
+	try {
+		body = (await request.json()) as { maxSeats: number; smallBlind: number; bigBlind: number };
+	} catch {
+		return new Response(JSON.stringify({ error: 'INVALID_JSON' }), { status: 400 });
+	}
 	if (
+		typeof body.maxSeats !== 'number' ||
+		typeof body.smallBlind !== 'number' ||
+		typeof body.bigBlind !== 'number' ||
+		!Number.isFinite(body.maxSeats) ||
+		!Number.isFinite(body.smallBlind) ||
+		!Number.isFinite(body.bigBlind) ||
 		body.maxSeats < 2 ||
 		body.maxSeats > 6 ||
 		body.smallBlind < 1 ||
@@ -26,17 +34,22 @@ export const POST: APIRoute = async ({ locals, request }) => {
 		const code = generateRoomCode();
 		const id = env.arcturus.idFromName(code);
 		const stub = env.arcturus.get(id);
-		const res = await stub.fetch('http://do/init', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				maxSeats: body.maxSeats,
-				smallBlind: body.smallBlind,
-				bigBlind: body.bigBlind,
-				hostUserId: user.id,
-				roomCode: code,
-			}),
-		});
+		let res: Response;
+		try {
+			res = await stub.fetch('http://do/init', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					maxSeats: body.maxSeats,
+					smallBlind: body.smallBlind,
+					bigBlind: body.bigBlind,
+					hostUserId: user.id,
+					roomCode: code,
+				}),
+			});
+		} catch {
+			return new Response(JSON.stringify({ error: 'DO_UNAVAILABLE' }), { status: 502 });
+		}
 		if (res.ok) return new Response(JSON.stringify({ code }), { status: 201 });
 		if (res.status !== 409) {
 			const err = await res.text();

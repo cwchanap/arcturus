@@ -24,11 +24,15 @@ preview_id = "65898cef372b402bbb79dc25e9964be4"
 # Multiplayer poker room (one DO instance per room code)
 [[durable_objects.bindings]]
 name = "arcturus"
-class_name = "Arcturus"
+class_name = "arcturus"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["Arcturus"]
+new_classes = ["arcturus"]
 
+# Worker vars — DO NOT put localhost or dev-only values here.
+# These are deployed to production. Use .dev.vars for local overrides.
+# Production secrets (MP_AUTH_SECRET, WORKER_ORIGIN) should be set via:
+#   wrangler secret put MP_AUTH_SECRET
+#   wrangler secret put WORKER_ORIGIN
 [vars]
-WORKER_ORIGIN = "http://localhost:2000"

@@ -4,8 +4,7 @@
 
 import { App } from 'astro/app';
 import { handle } from '@astrojs/cloudflare/handler';
-
-export { arcturus } from './server/mp/arcturus';
+import { Arcturus as ArcturusDO } from './server/mp/arcturus';
 
 interface AstroManifest {
 	[key: string]: unknown;
@@ -30,5 +29,5 @@ export function createExports(manifest: AstroManifest) {
 			context,
 		);
 	};
-	return { default: { fetch } };
+	return { default: { fetch }, Arcturus: ArcturusDO };
 }

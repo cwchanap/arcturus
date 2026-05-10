@@ -60,6 +60,9 @@ if (!code || !isValidRoomCode(code)) {
 			<button data-testid="start-hand" class="bg-amber-600 px-3 py-1 rounded text-white">
 				Start hand
 			</button>
+			<button data-testid="leave-seat" class="bg-rose-700 px-3 py-1 rounded text-white">
+				Leave seat
+			</button>
 		</div>
 
 		<div data-testid="log" class="text-slate-300 text-sm space-y-1 max-h-40 overflow-auto"></div>
@@ -107,6 +110,10 @@ if (!code || !isValidRoomCode(code)) {
 		if (msg.type === 'room_state') {
 			clearAndAppend(boardEl, msg.board.map(createCardEl));
 			potEl.textContent = `Pot: ${msg.pot}`;
+			// Clear stale hole cards when room is not in an active hand
+			if (msg.phase !== 'in-hand') {
+				holeEl.textContent = '';
+			}
 			seatsEl.textContent = '';
 			for (const s of msg.seats) {
 				const div = document.createElement('div');
@@ -123,12 +130,19 @@ if (!code || !isValidRoomCode(code)) {
 			entry.setAttribute('data-testid', 'log-entry');
 			entry.textContent = `Hand ended: ${w}`;
 			logEl.prepend(entry);
+			// Clear stale hole cards once the hand is over
+			holeEl.textContent = '';
 		} else if (msg.type === 'error') {
 			const errDiv = document.createElement('div');
 			errDiv.className = 'text-rose-400';
 			errDiv.textContent = `Error: ${msg.message}`;
 			logEl.prepend(errDiv);
 		}
+	});
+
+	client.onDisconnect(() => {
+		statusEl.textContent = 'Disconnected';
+		statusEl.classList.add('text-rose-400');
 	});
 
 	client
@@ -138,7 +152,16 @@ if (!code || !isValidRoomCode(code)) {
 		})
 		.catch(() => {
 			statusEl.textContent = 'Disconnected';
+			statusEl.classList.add('text-rose-400');
 		});
+
+	// Expose client for E2E tests to send leave_seat and other messages.
+	// In production builds import.meta.env.DEV is false, so we also check a
+	// build-time PUBLIC_E2E flag set by the MP Playwright config's webServer command.
+	// Astro only exposes PUBLIC_* prefixed env vars to client-side code.
+	if (import.meta.env.DEV || import.meta.env.PUBLIC_E2E) {
+		(window as unknown as Record<string, unknown>).__mpClient = client;
+	}
 
 	document.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
 		btn.addEventListener('click', () => {
@@ -155,12 +178,17 @@ if (!code || !isValidRoomCode(code)) {
 
 	document.querySelectorAll<HTMLButtonElement>('[data-testid^="take-seat-"]').forEach((btn) => {
 		btn.addEventListener('click', () => {
-			const idx = Number(btn.dataset.testid!.split('-').pop());
+			const idx = parseInt(btn.dataset.testid!.split('-').pop() ?? '', 10);
+			if (!Number.isInteger(idx) || idx < 0) return;
 			client.send({ type: 'take_seat', seatIndex: idx });
 		});
 	});
 
 	document.querySelector('[data-testid="start-hand"]')!.addEventListener('click', () => {
 		client.send({ type: 'start_hand' });
+	});
+
+	document.querySelector('[data-testid="leave-seat"]')!.addEventListener('click', () => {
+		client.send({ type: 'leave_seat' });
 	});
 </script>

@@ -29,7 +29,7 @@ describe('buildSettlePayload', () => {
 		expect(byUser.u2.delta).toBe(50);
 	});
 
-	test('player who pushes (won === committed) has delta zero and is omitted', () => {
+	test('player who pushes (won === committed) is included with zero delta for escrow release', () => {
 		const payload = buildSettlePayload({
 			roomCode: 'MP-CCC333',
 			handId: 'h-3',
@@ -39,7 +39,12 @@ describe('buildSettlePayload', () => {
 				{ userId: 'u2', amount: 100 },
 			],
 		});
-		expect(payload.entries.length).toBe(0);
+		// Zero-delta entries must still be included so the settle API
+		// releases each player's heldChips back to chipBalance.
+		expect(payload.entries.length).toBe(2);
+		const byUser = Object.fromEntries(payload.entries.map((e) => [e.userId, e]));
+		expect(byUser.u1.delta).toBe(0);
+		expect(byUser.u2.delta).toBe(0);
 	});
 
 	test('side pot scenario: short-stack winner gets only main pot', () => {
@@ -88,5 +93,26 @@ describe('buildSettlePayload', () => {
 		});
 		const totalDelta = payload.entries.reduce((sum, e) => sum + e.delta, 0);
 		expect(totalDelta).toBe(0);
+	});
+
+	test('every committed player receives an entry regardless of delta', () => {
+		// Even a player who neither won nor lost (e.g. folded early, side pot
+		// returns exactly their committed amount) must get a settle entry so
+		// the API releases their heldChips escrow.
+		const payload = buildSettlePayload({
+			roomCode: 'MP-ESCROW',
+			handId: 'h-esc',
+			committed: { u1: 100, u2: 50, u3: 25 },
+			winners: [
+				{ userId: 'u1', amount: 125 }, // wins u2+u3 committed
+				{ userId: 'u2', amount: 50 }, // push — gets committed back
+				{ userId: 'u3', amount: 0 }, // loses
+			],
+		});
+		expect(payload.entries.length).toBe(3);
+		const byUser = Object.fromEntries(payload.entries.map((e) => [e.userId, e]));
+		expect(byUser.u1.delta).toBe(25);
+		expect(byUser.u2.delta).toBe(0);
+		expect(byUser.u3.delta).toBe(-25);
 	});
 });

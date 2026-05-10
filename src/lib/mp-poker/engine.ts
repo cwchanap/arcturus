@@ -31,6 +31,10 @@ export interface HandState {
 	allIn: Set<string>;
 	hasActed: Set<string>;
 	handStacks: Record<string, number>;
+	/** Immutable userId → seatIndex mapping captured at deal time.
+	 *  Survives seat clearing (e.g. disconnect eviction) so
+	 *  buildSidePots always resolves winners correctly. */
+	seatIndexMap: Record<string, number>;
 }
 
 export interface HandLogEntry {
@@ -79,7 +83,7 @@ export function takeSeat(
 	room: Room,
 	args: { userId: string; displayName: string; seatIndex: number; mainBalance: number },
 ): Room {
-	if (room.phase === 'in-hand') {
+	if (room.phase === 'in-hand' || room.phase === 'frozen' || room.phase === 'settling') {
 		throw new EngineError('INVALID_PHASE', 'cannot take seat during active hand');
 	}
 	const { userId, displayName, seatIndex, mainBalance } = args;
@@ -110,9 +114,13 @@ export function leaveSeat(room: Room, userId: string): Room {
 			: s,
 	);
 	const anyOccupied = seats.some((s) => s.userId !== null);
+	// Preserve frozen/settling phase even when all seats empty — prevents bypassing
+	// the freeze that protects an unresolved settlement.
+	const nextPhase =
+		anyOccupied || room.phase === 'frozen' || room.phase === 'settling' ? room.phase : 'idle';
 	return {
 		...room,
-		phase: anyOccupied ? room.phase : 'idle',
+		phase: nextPhase,
 		seats,
 	};
 }
@@ -155,6 +163,9 @@ export function startHand(
 	room: Room,
 	args: { snapshots: Record<string, number>; deckSeed: string },
 ): Room {
+	if (room.phase === 'in-hand' || room.phase === 'frozen') {
+		throw new EngineError('INVALID_PHASE', 'cannot start hand while room is in-hand or frozen');
+	}
 	const seated = room.seats.filter((s) => s.userId !== null);
 	if (seated.length < 2) {
 		throw new EngineError('NOT_ENOUGH_PLAYERS', 'need at least 2 seated players');
@@ -224,6 +235,7 @@ export function startHand(
 		allIn,
 		hasActed: new Set(),
 		handStacks,
+		seatIndexMap: Object.fromEntries(eligible.map((s) => [s.userId!, s.seatIndex])),
 	};
 
 	return { ...room, phase: 'in-hand', hand, lastDealerSeat: dealerSeat };
@@ -236,6 +248,34 @@ export type ActionInput =
 	| { action: 'bet'; amount: number }
 	| { action: 'raise'; amount: number }
 	| { action: 'all_in' };
+
+/**
+ * Force-fold a player without advancing the turn cursor.
+ * Used for disconnect timeouts where the folded player may not be the current actor.
+ * If the fold leaves only one player, the hand finishes via fold-out.
+ */
+export function forceFold(room: Room, userId: string): Room {
+	if (room.phase !== 'in-hand' || !room.hand) {
+		return room;
+	}
+	const hand = room.hand;
+	if (!hand.holeCards[userId] || hand.folded.has(userId)) {
+		return room;
+	}
+
+	const newFolded = new Set(hand.folded);
+	newFolded.add(userId);
+
+	const remaining = room.seats.filter(
+		(s) => s.userId && hand.holeCards[s.userId] && !newFolded.has(s.userId),
+	);
+
+	if (remaining.length <= 1) {
+		return finishHand({ ...room, hand: { ...hand, folded: newFolded } }, 'fold-out');
+	}
+
+	return { ...room, hand: { ...hand, folded: newFolded } };
+}
 
 export function applyAction(room: Room, userId: string, input: ActionInput): Room {
 	if (room.phase !== 'in-hand' || !room.hand) {
@@ -251,6 +291,26 @@ export function applyAction(room: Room, userId: string, input: ActionInput): Roo
 	const committedNow = hand.committed[userId];
 	const remaining = stack - committedNow;
 	const toCall = hand.currentBet - committedNow;
+
+	// A player who has already acted in this betting round may only call or
+	// fold when facing a short all-in that did not reopen the action.
+	// After a full raise, hasActed is cleared for affected players, so this
+	// guard does not block legitimate re-raises.
+	// Exception: all_in with remaining <= toCall is a call, not a raise —
+	// the player is simply putting in their last chips to match the bet.
+	const alreadyActed = hand.hasActed.has(userId);
+	const allInIsCall = input.action === 'all_in' && remaining <= toCall;
+	if (
+		alreadyActed &&
+		toCall > 0 &&
+		(input.action === 'raise' || input.action === 'bet' || input.action === 'all_in') &&
+		!allInIsCall
+	) {
+		throw new EngineError(
+			'INVALID_ACTION',
+			'cannot raise; action not reopened — call or fold only',
+		);
+	}
 
 	const newCommitted = { ...hand.committed };
 	const newFolded = new Set(hand.folded);
@@ -278,6 +338,8 @@ export function applyAction(room: Room, userId: string, input: ActionInput): Roo
 			const target = input.amount;
 			if (target <= hand.currentBet)
 				throw new EngineError('INVALID_ACTION', 'raise must exceed current bet');
+			if (target <= committedNow)
+				throw new EngineError('INVALID_ACTION', 'raise must exceed current commitment');
 			const minRaise = hand.currentBet + hand.lastRaiseAmount;
 			if (target < minRaise && target - committedNow < remaining)
 				throw new EngineError('INVALID_ACTION', 'raise below min-raise');
@@ -422,14 +484,22 @@ function advanceRound(room: Room): Room {
 		)
 		.map((s) => s.seatIndex)
 		.sort((a, b) => a - b);
-	if (eligibleIndices.length === 0) {
-		// Everyone all-in: fast-forward through remaining streets to showdown
+	if (eligibleIndices.length < 2) {
+		// Fewer than 2 players can act (all-in or heads-up with one all-in):
+		// fast-forward through remaining streets to showdown
 		return advanceRound({
 			...room,
 			hand: { ...hand, board, deck, bettingRound: nextRound },
 		});
 	}
 	const firstSeat = eligibleIndices.find((i) => i > hand.dealerSeat) ?? eligibleIndices[0];
+	// Keep currentBet aligned with cumulative commitments so that raiseIncrement
+	// (= newCommitted - currentBet) measures the actual chip increase, not the
+	// total committed.  Using maxCommitted means toCall = 0 for every eligible
+	// player (they can check), while min-raise is correctly computed as
+	// maxCommitted + lastRaiseAmount.
+	const eligibleUserIds = eligibleIndices.map((i) => room.seats[i].userId!);
+	const maxCommitted = Math.max(...eligibleUserIds.map((uid) => hand.committed[uid] ?? 0));
 	return {
 		...room,
 		hand: {
@@ -437,7 +507,7 @@ function advanceRound(room: Room): Room {
 			board,
 			deck,
 			bettingRound: nextRound,
-			currentBet: 0,
+			currentBet: maxCommitted,
 			lastRaiseAmount: room.config.bigBlind,
 			hasActed: new Set(),
 			currentSeat: firstSeat,
@@ -471,11 +541,18 @@ interface PotResult {
  * 1. Sort all-in/eligible commitment levels ascending
  * 2. For each level, the pot is (level - prevLevel) × count of players who contributed at least that much
  * 3. Only non-folded players who contributed to a pot level are eligible to win it
+ *
+ * Uses hand.seatIndexMap (captured at deal time) for userId → seatIndex resolution,
+ * so it remains correct even if seats are cleared (e.g. disconnect eviction).
  */
-export function buildSidePots(hand: HandState, seats: SeatState[]): PotResult[] {
-	// All players who were dealt into the hand (have hole cards)
-	const participants = seats.filter((s) => s.userId && hand.holeCards[s.userId]);
-	if (participants.length === 0) return [];
+export function buildSidePots(hand: HandState, _seats: SeatState[]): PotResult[] {
+	// All players who were dealt into the hand — use holeCards as source of truth
+	const dealtUserIds = Object.keys(hand.holeCards);
+	if (dealtUserIds.length === 0) return [];
+
+	// Use the immutable seatIndexMap captured at deal time instead of scanning
+	// live seats (which may have userId cleared after disconnect eviction).
+	const seatIndexMap = hand.seatIndexMap;
 
 	// Get sorted unique commitment levels (only levels where at least one player is all-in or folded)
 	const committed = hand.committed;
@@ -489,9 +566,9 @@ export function buildSidePots(hand: HandState, seats: SeatState[]): PotResult[] 
 		if (level <= prevLevel) continue;
 
 		// Players who contributed at least `level` chips
-		const contributors = participants.filter((s) => (committed[s.userId!] ?? 0) >= level);
+		const contributors = dealtUserIds.filter((uid) => (committed[uid] ?? 0) >= level);
 		// Only non-folded players can win
-		const eligible = contributors.filter((s) => s.userId && !hand.folded.has(s.userId));
+		const eligible = contributors.filter((uid) => !hand.folded.has(uid));
 		if (eligible.length === 0) {
 			// If all eligible folded, the pot goes to the last remaining player(s) — handled by fold-out
 			prevLevel = level;
@@ -501,7 +578,7 @@ export function buildSidePots(hand: HandState, seats: SeatState[]): PotResult[] 
 		const potAmount = (level - prevLevel) * contributors.length;
 		pots.push({
 			amount: potAmount,
-			eligibleSeatIndices: eligible.map((s) => s.seatIndex),
+			eligibleSeatIndices: eligible.map((uid) => seatIndexMap[uid] ?? -1),
 		});
 		prevLevel = level;
 	}
@@ -537,10 +614,23 @@ function finishHand(room: Room, reason: 'fold-out' | 'showdown'): Room {
 			const potWinners = determineShowdownWinners(eligiblePlayers, hand.board);
 			const split = Math.floor(pot.amount / potWinners.length);
 			const remainder = pot.amount - split * potWinners.length;
-			// Distribute odd chips to winners closest left of dealer (standard poker rule)
+			// Sort winners by clockwise distance from dealer for odd-chip distribution.
+			// Standard poker rule: odd chips go to the player closest LEFT of the dealer
+			// (first clockwise after the button), with the dealer themselves receiving last.
+			const numSeats = room.seats.length;
+			const sortedForOddChip = [...potWinners].sort((a, b) => {
+				const rawA = (a.id - hand.dealerSeat + numSeats) % numSeats;
+				const rawB = (b.id - hand.dealerSeat + numSeats) % numSeats;
+				const distA = rawA === 0 ? numSeats : rawA;
+				const distB = rawB === 0 ? numSeats : rawB;
+				return distA - distB;
+			});
 			for (let i = 0; i < potWinners.length; i++) {
 				const extra = i < remainder ? 1 : 0;
-				winMap.set(potWinners[i].id, (winMap.get(potWinners[i].id) ?? 0) + split + extra);
+				winMap.set(
+					sortedForOddChip[i].id,
+					(winMap.get(sortedForOddChip[i].id) ?? 0) + split + extra,
+				);
 			}
 		}
 

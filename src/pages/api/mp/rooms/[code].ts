@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { isValidRoomCode } from '../../../../lib/mp-poker/roomCode';
 
 export const GET: APIRoute = async ({ params, locals }) => {
+	const user = locals.user;
+	if (!user) return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
 	const code = params.code;
 	if (!code || !isValidRoomCode(code)) {
 		return new Response(JSON.stringify({ error: 'INVALID_CODE' }), {
@@ -10,6 +12,9 @@ export const GET: APIRoute = async ({ params, locals }) => {
 		});
 	}
 	const env = locals.runtime.env;
+	if (!env.arcturus) {
+		return new Response(JSON.stringify({ error: 'DO_UNAVAILABLE' }), { status: 503 });
+	}
 	const id = env.arcturus.idFromName(code);
 	const stub = env.arcturus.get(id);
 	return stub.fetch('http://do/metadata');

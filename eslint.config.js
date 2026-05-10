@@ -13,7 +13,14 @@ export default tseslint.config(
 
 	// Global ignores
 	{
-		ignores: ['dist/**', '.astro/**', 'node_modules/**', 'drizzle/**/*.sql', '**/*.d.ts'],
+		ignores: [
+			'dist/**',
+			'.astro/**',
+			'.wrangler/**',
+			'node_modules/**',
+			'drizzle/**/*.sql',
+			'**/*.d.ts',
+		],
 	},
 
 	// TypeScript and JavaScript files

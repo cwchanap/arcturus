@@ -7,6 +7,7 @@ export const user = sqliteTable('user', {
 	emailVerified: integer('emailVerified', { mode: 'boolean' }).notNull(),
 	image: text('image'),
 	chipBalance: integer('chipBalance').notNull().default(10000),
+	heldChips: integer('heldChips').notNull().default(0),
 	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 });

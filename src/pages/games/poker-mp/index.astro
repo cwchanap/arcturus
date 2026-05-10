@@ -60,6 +60,7 @@ if (!user) return Astro.redirect('/signin');
 					required
 					class="bg-slate-800 text-white p-2 rounded w-full uppercase"
 					data-testid="join-code-input"
+					oninput="this.value=this.value.toUpperCase()"
 				/>
 				<button
 					type="submit"
@@ -83,8 +84,8 @@ if (!user) return Astro.redirect('/signin');
 		const fd = new FormData(e.target as HTMLFormElement);
 		const sb = Number(fd.get('smallBlind'));
 		const bb = Number(fd.get('bigBlind'));
-		if (sb >= bb) {
-			status.textContent = 'Small blind must be less than big blind';
+		if (bb < sb * 2) {
+			status.textContent = 'Big blind must be at least 2× the small blind';
 			return;
 		}
 		let res: Response;

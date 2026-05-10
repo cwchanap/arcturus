@@ -20,7 +20,10 @@ export function buildSettlePayload(args: {
 	for (const [userId, paid] of Object.entries(args.committed)) {
 		const won = winById.get(userId) ?? 0;
 		const delta = won - paid;
-		if (delta === 0) continue;
+		// Always include every participant — even zero-delta (push) entries.
+		// The settle API releases heldChips only for users present in the
+		// entries, so omitting a zero-delta player would leave their chips
+		// locked in escrow (chipBalance=0, heldChips>0) forever.
 		entries.push({
 			userId,
 			delta,

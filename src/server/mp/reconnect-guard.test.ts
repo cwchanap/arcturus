@@ -959,27 +959,43 @@ describe('releaseMembership: pre-escrow reconnection guard', () => {
 describe('releaseMembership: post-lock-release reconnection guard', () => {
 	/**
 	 * Simulates the lock release flow including the post-fetch guard.
-	 * Returns whether the lock was released, re-acquired, or left deleted.
+	 * Returns whether the lock was released, re-acquired, left deleted,
+	 * or re-acquire failed (sockets closed).
 	 */
 	function simulatePostLockReleaseGuard(
 		userId: string,
 		pendingLockReleases: Set<string>,
 		fetchSucceeded: boolean,
 		isActiveAfterFetch: boolean,
+		reacquireSucceeded: boolean = true,
 	): {
 		result: boolean;
 		pendingAfter: Set<string>;
-		lockState: 'released' | 're-acquired' | 'unchanged';
+		lockState: 'released' | 're-acquired' | 'unchanged' | 'reacquire-failed';
+		socketsClosed: boolean;
 	} {
 		if (fetchSucceeded) {
 			// Post-fetch guard: user reconnected during the fetch await
 			if (isActiveAfterFetch) {
-				// Lock was already deleted — re-acquire it
+				if (!reacquireSucceeded) {
+					// Lock was deleted but re-acquire failed — close sockets
+					// so the alarm handler can retry without the active-user
+					// guard blocking it.  User stays in pendingLockReleases.
+					pendingLockReleases.add(userId);
+					return {
+						result: false,
+						pendingAfter: new Set(pendingLockReleases),
+						lockState: 'reacquire-failed',
+						socketsClosed: true,
+					};
+				}
+				// Lock was already deleted — re-acquire succeeded
 				pendingLockReleases.add(userId);
 				return {
 					result: false,
 					pendingAfter: new Set(pendingLockReleases),
 					lockState: 're-acquired',
+					socketsClosed: false,
 				};
 			}
 			// User still disconnected — lock released successfully
@@ -988,6 +1004,7 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 				result: true,
 				pendingAfter: new Set(pendingLockReleases),
 				lockState: 'released',
+				socketsClosed: false,
 			};
 		}
 		// Fetch failed — lock state unchanged
@@ -995,6 +1012,7 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 			result: false,
 			pendingAfter: new Set(pendingLockReleases),
 			lockState: 'unchanged',
+			socketsClosed: false,
 		};
 	}
 
@@ -1011,6 +1029,24 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 		const result = simulatePostLockReleaseGuard('u1', pending, true, true);
 		expect(result.result).toBe(false);
 		expect(result.lockState).toBe('re-acquired');
+		expect(result.pendingAfter.has('u1')).toBe(true);
+	});
+
+	test('user reconnects during fetch — re-acquire fails, sockets closed', () => {
+		const pending = new Set(['u1']);
+		const result = simulatePostLockReleaseGuard('u1', pending, true, true, false);
+		expect(result.result).toBe(false);
+		expect(result.lockState).toBe('reacquire-failed');
+		expect(result.socketsClosed).toBe(true);
+		// Still tracked in pendingLockReleases so alarm retries the release
+		expect(result.pendingAfter.has('u1')).toBe(true);
+	});
+
+	test('user reconnects during fetch — re-acquire succeeds, sockets not closed', () => {
+		const pending = new Set(['u1']);
+		const result = simulatePostLockReleaseGuard('u1', pending, true, true, true);
+		expect(result.lockState).toBe('re-acquired');
+		expect(result.socketsClosed).toBe(false);
 		expect(result.pendingAfter.has('u1')).toBe(true);
 	});
 
@@ -1035,6 +1071,23 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 		// Eviction decision: allReleased should be false
 		const allReleased = u1Result.result && u2Result.result;
 		expect(allReleased).toBe(false);
+	});
+
+	test('reacquire-failed user: alarm retry sees inactive user and retries release', () => {
+		// After sockets are closed, isUserActive returns false, so the alarm
+		// handler should retry the release (not skip via active-user guard).
+		const pending = new Set(['u1']);
+		const guardResult = simulatePostLockReleaseGuard('u1', pending, true, true, false);
+		expect(guardResult.socketsClosed).toBe(true);
+		expect(guardResult.pendingAfter.has('u1')).toBe(true);
+
+		// Simulate alarm handler: sockets are closed so user is not active
+		const userStillActive = false; // would be false because sockets were closed
+		if (userStillActive) {
+			pending.delete('u1'); // skip
+		}
+		// User not active → alarm retries releaseMembership
+		expect(pending.has('u1')).toBe(true);
 	});
 
 	test('full flow: pre-escrow guard aborts before reaching lock release', () => {

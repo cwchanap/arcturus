@@ -284,25 +284,39 @@ export class Arcturus implements DurableObject {
 		this.sockets.set(server, { userId, displayName });
 		server.serializeAttachment({ userId, displayName });
 
-		const seats = this.room.seats.map((s) =>
-			s.userId === userId ? { ...s, connected: true, disconnectedAt: null } : s,
+		// Check if the player's seat reconnect grace has already expired.
+		// If so, accept the WebSocket but do NOT restore the seat — the alarm
+		// handler will fold (if in hand) and clear the seat.  This prevents a
+		// late reconnect from bypassing the forced-fold / eviction.
+		const now = Date.now();
+		const expiredSeat = this.room.seats.find(
+			(s) =>
+				s.userId === userId &&
+				s.disconnectedAt !== null &&
+				now - s.disconnectedAt >= RECONNECT_TIMEOUT_MS,
 		);
-		this.room = { ...this.room, seats };
 
-		// If the reconnecting player is the current actor in an active hand and
-		// no turn deadline exists (e.g. the alarm cleared it while they were
-		// disconnected within the reconnect grace), set a fresh deadline so the
-		// alarm will auto-fold them if they idle. Without this the hand hangs
-		// indefinitely because no future alarm is scheduled to auto-fold.
-		if (this.room.phase === 'in-hand' && this.room.hand && this.turnDeadline === null) {
-			const currentSeat = this.room.hand.currentSeat;
-			const currentUserId = currentSeat !== null ? this.room.seats[currentSeat]?.userId : null;
-			if (currentUserId === userId) {
-				this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+		if (!expiredSeat) {
+			const seats = this.room.seats.map((s) =>
+				s.userId === userId ? { ...s, connected: true, disconnectedAt: null } : s,
+			);
+			this.room = { ...this.room, seats };
+
+			// If the reconnecting player is the current actor in an active hand and
+			// no turn deadline exists (e.g. the alarm cleared it while they were
+			// disconnected within the reconnect grace), set a fresh deadline so the
+			// alarm will auto-fold them if they idle. Without this the hand hangs
+			// indefinitely because no future alarm is scheduled to auto-fold.
+			if (this.room.phase === 'in-hand' && this.room.hand && this.turnDeadline === null) {
+				const currentSeat = this.room.hand.currentSeat;
+				const currentUserId = currentSeat !== null ? this.room.seats[currentSeat]?.userId : null;
+				if (currentUserId === userId) {
+					this.turnDeadline = now + TURN_TIMEOUT_MS;
+				}
 			}
+			await this.persist();
 		}
 
-		await this.persist();
 		await this.scheduleNextAlarm();
 
 		this.broadcastRoomState();
@@ -605,6 +619,44 @@ export class Arcturus implements DurableObject {
 					break;
 				}
 				case 'action': {
+					// Guard: if the turn deadline has already passed and the sender is the
+					// current actor, auto-fold them.  This prevents a delayed alarm from
+					// allowing a late action after the timeout has technically expired.
+					if (
+						this.room.phase === 'in-hand' &&
+						this.room.hand &&
+						this.turnDeadline !== null &&
+						Date.now() > this.turnDeadline
+					) {
+						const currentSeat = this.room.hand.currentSeat;
+						const currentUserId =
+							currentSeat !== null ? this.room.seats[currentSeat]?.userId : null;
+						if (currentUserId === identity.userId) {
+							try {
+								this.room = applyAction(this.room, identity.userId, { action: 'fold' });
+								if (this.room.phase === 'settling') {
+									this.broadcastHandEnded();
+									await this.runSettlement();
+								} else if (this.room.phase === 'in-hand' && this.room.hand) {
+									this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
+								} else {
+									this.turnDeadline = null;
+								}
+								await this.persist();
+								this.broadcastRoomState();
+							} catch {
+								/* best-effort fold */
+								this.turnDeadline = null;
+							}
+							this.send(ws, {
+								type: 'error',
+								code: 'INVALID_ACTION',
+								message: 'turn timed out',
+							});
+							return;
+						}
+					}
+
 					this.room = applyAction(this.room, identity.userId, parsed);
 					if (this.room.phase === 'in-hand' && this.room.hand) {
 						this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;

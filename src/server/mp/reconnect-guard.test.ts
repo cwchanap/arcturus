@@ -1102,3 +1102,67 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 		expect(result.pendingAfter.has('u1')).toBe(true);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Test: reconnect grace period enforcement
+//
+// When the reconnect alarm is delivered late, handleUpgrade must check the
+// elapsed disconnect time before clearing disconnectedAt.  If the grace has
+// already expired, the seat must NOT be restored — the alarm handler will
+// fold (if in hand) and clear the seat.
+// ---------------------------------------------------------------------------
+
+describe('reconnect grace period enforcement', () => {
+	const RECONNECT_TIMEOUT_MS = 30_000;
+
+	interface GraceSeat {
+		userId: string | null;
+		disconnectedAt: number | null;
+		connected: boolean;
+	}
+
+	function shouldRestoreSeatOnReconnect(seat: GraceSeat, now: number): boolean {
+		if (seat.disconnectedAt === null) return true;
+		return now - seat.disconnectedAt < RECONNECT_TIMEOUT_MS;
+	}
+
+	test('restores seat when reconnect is within grace period', () => {
+		const now = 1_000_000;
+		const seat: GraceSeat = {
+			userId: 'u1',
+			disconnectedAt: now - 15_000,
+			connected: false,
+		};
+		expect(shouldRestoreSeatOnReconnect(seat, now)).toBe(true);
+	});
+
+	test('does not restore seat when grace has expired', () => {
+		const now = 1_000_000;
+		const seat: GraceSeat = {
+			userId: 'u1',
+			disconnectedAt: now - 35_000,
+			connected: false,
+		};
+		expect(shouldRestoreSeatOnReconnect(seat, now)).toBe(false);
+	});
+
+	test('restores seat when player was never disconnected', () => {
+		const now = 1_000_000;
+		const seat: GraceSeat = {
+			userId: 'u1',
+			disconnectedAt: null,
+			connected: true,
+		};
+		expect(shouldRestoreSeatOnReconnect(seat, now)).toBe(true);
+	});
+
+	test('does not restore seat at exact timeout boundary', () => {
+		const now = 1_000_000;
+		const seat: GraceSeat = {
+			userId: 'u1',
+			disconnectedAt: now - RECONNECT_TIMEOUT_MS,
+			connected: false,
+		};
+		expect(shouldRestoreSeatOnReconnect(seat, now)).toBe(false);
+	});
+});

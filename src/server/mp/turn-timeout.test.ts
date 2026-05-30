@@ -460,3 +460,54 @@ describe('runSettlement freeze guard', () => {
 		expect(shouldFreezeAfterSettlementFailure(null)).toBe(false);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Test: action deadline guard
+//
+// When a delayed alarm allows a player to send an action after turnDeadline
+// has passed, the action handler must check the deadline and auto-fold the
+// current actor instead of accepting the late action.
+// ---------------------------------------------------------------------------
+
+describe('action deadline guard', () => {
+	function shouldRejectActionDueToTimeout(
+		phase: Room['phase'],
+		hand: Hand | null,
+		turnDeadline: number | null,
+		now: number,
+		currentSeatUserId: string | null,
+		actionUserId: string,
+	): boolean {
+		if (phase !== 'in-hand' || !hand || turnDeadline === null) return false;
+		if (now <= turnDeadline) return false;
+		return currentSeatUserId === actionUserId;
+	}
+
+	test('rejects action when deadline passed and sender is current actor', () => {
+		expect(
+			shouldRejectActionDueToTimeout('in-hand', { currentSeat: 0 }, 1000, 2000, 'u1', 'u1'),
+		).toBe(true);
+	});
+
+	test('allows action when deadline not yet passed', () => {
+		expect(
+			shouldRejectActionDueToTimeout('in-hand', { currentSeat: 0 }, 2000, 1000, 'u1', 'u1'),
+		).toBe(false);
+	});
+
+	test('allows action when sender is not current actor', () => {
+		expect(
+			shouldRejectActionDueToTimeout('in-hand', { currentSeat: 0 }, 1000, 2000, 'u2', 'u1'),
+		).toBe(false);
+	});
+
+	test('allows action when no deadline exists', () => {
+		expect(
+			shouldRejectActionDueToTimeout('in-hand', { currentSeat: 0 }, null, 2000, 'u1', 'u1'),
+		).toBe(false);
+	});
+
+	test('allows action when phase is not in-hand', () => {
+		expect(shouldRejectActionDueToTimeout('seating', null, 1000, 2000, 'u1', 'u1')).toBe(false);
+	});
+});

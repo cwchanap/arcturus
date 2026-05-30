@@ -1407,7 +1407,24 @@ export class Arcturus implements DurableObject {
 					// Without this, the user could acquire a lock for
 					// another room while still active on this socket.
 					if (this.isUserActive(userId)) {
-						await this.acquireMembershipLock(userId);
+						const reacquired = await this.acquireMembershipLock(userId);
+						if (!reacquired) {
+							// Lock was deleted but re-acquire failed (transient error or
+							// another room grabbed the user).  The user cannot safely
+							// remain active without a membership row — close their
+							// sockets so the alarm handler can retry the release on
+							// the next tick without the active-user guard blocking it.
+							for (const [ws, id] of this.sockets.entries()) {
+								if (id.userId === userId) {
+									this.sockets.delete(ws);
+									try {
+										ws.close(1012, 'Membership restore failed — reconnect required');
+									} catch {
+										/* ignore */
+									}
+								}
+							}
+						}
 						this.pendingLockReleases.add(userId);
 						return false;
 					}

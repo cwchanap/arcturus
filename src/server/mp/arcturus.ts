@@ -619,6 +619,18 @@ export class Arcturus implements DurableObject {
 					break;
 				}
 				case 'action': {
+					// Guard: reject actions from players whose seat is disconnected
+					// (reconnect grace expired). The alarm handler will fold/clear them.
+					const playerSeat = this.room.seats.find((s) => s.userId === identity.userId);
+					if (!playerSeat || !playerSeat.connected) {
+						this.send(ws, {
+							type: 'error',
+							code: 'INVALID_ACTION',
+							message: 'seat disconnected — reconnect grace expired',
+						});
+						return;
+					}
+
 					// Guard: if the turn deadline has already passed and the sender is the
 					// current actor, auto-fold them.  This prevents a delayed alarm from
 					// allowing a late action after the timeout has technically expired.
@@ -1462,13 +1474,19 @@ export class Arcturus implements DurableObject {
 						const reacquired = await this.acquireMembershipLock(userId);
 						if (!reacquired) {
 							// Lock was deleted but re-acquire failed (transient error or
-							// another room grabbed the user).  The user cannot safely
-							// remain active without a membership row — close their
-							// sockets so the alarm handler can retry the release on
-							// the next tick without the active-user guard blocking it.
+							// another room grabbed the user).  Mark the seat as
+							// disconnected before closing the socket so webSocketClose
+							// can run its normal cleanup path instead of no-oping.
+							if (this.room) {
+								const seats = this.room.seats.map((s) =>
+									s.userId === userId ? { ...s, connected: false, disconnectedAt: Date.now() } : s,
+								);
+								this.room = { ...this.room, seats };
+							}
 							for (const [ws, id] of this.sockets.entries()) {
 								if (id.userId === userId) {
-									this.sockets.delete(ws);
+									// Do NOT remove from this.sockets here — let
+									// webSocketClose handle cleanup.
 									try {
 										ws.close(1012, 'Membership restore failed — reconnect required');
 									} catch {

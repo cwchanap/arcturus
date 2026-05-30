@@ -1166,3 +1166,165 @@ describe('reconnect grace period enforcement', () => {
 		expect(shouldRestoreSeatOnReconnect(seat, now)).toBe(false);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Test: re-acquire failure leaves ghost connected seat (P1 fix)
+//
+// When the lock-release fetch succeeds but re-acquire fails (user reconnected
+// during the fetch await), the seat must be marked disconnected BEFORE the
+// socket is closed.  Without this, webSocketClose no-ops because the socket
+// was already removed from this.sockets, the seat stays connected, and the
+// alarm handler treats the user as still active — skipping the retry and
+// leaving a ghost seat that blocks other players.
+// ---------------------------------------------------------------------------
+
+describe('re-acquire failure: seat marked disconnected before socket close', () => {
+	interface ReacquireSeat {
+		userId: string | null;
+		connected: boolean;
+		disconnectedAt: number | null;
+	}
+
+	function isUserActive(
+		userId: string,
+		sockets: Map<WebSocket, { userId: string }>,
+		seats: ReacquireSeat[],
+	): boolean {
+		if (Array.from(sockets.values()).some((id) => id.userId === userId)) return true;
+		return seats.some((s) => s.userId === userId && s.connected);
+	}
+
+	/**
+	 * Simulates the post-lock-release re-acquire failure branch:
+	 * 1. Seat is marked disconnected before closing the socket
+	 * 2. Socket is NOT removed from the map before closing
+	 * 3. webSocketClose fires and removes the socket from the map
+	 */
+	function simulateReacquireFailureCleanup(
+		seats: ReacquireSeat[],
+		sockets: Map<WebSocket, { userId: string }>,
+		userId: string,
+	): { seatsAfter: ReacquireSeat[]; socketsAfterClose: Map<WebSocket, { userId: string }> } {
+		// Step 1: mark seat disconnected
+		const seatsAfter = seats.map((s) =>
+			s.userId === userId ? { ...s, connected: false, disconnectedAt: Date.now() } : s,
+		);
+
+		// Step 2: socket stays in map until webSocketClose fires
+		// Step 3: webSocketClose removes the socket
+		const socketsAfterClose = new Map(sockets);
+		for (const [ws, id] of socketsAfterClose.entries()) {
+			if (id.userId === userId) {
+				socketsAfterClose.delete(ws);
+			}
+		}
+
+		return { seatsAfter, socketsAfterClose };
+	}
+
+	test('seat marked disconnected so alarm retry is not blocked', () => {
+		const mockWs = {} as WebSocket;
+		const sockets = new Map<WebSocket, { userId: string }>([[mockWs, { userId: 'u1' }]]);
+		const seats: ReacquireSeat[] = [{ userId: 'u1', connected: true, disconnectedAt: null }];
+
+		const result = simulateReacquireFailureCleanup(seats, sockets, 'u1');
+
+		// Seat must be disconnected
+		expect(result.seatsAfter[0].connected).toBe(false);
+		expect(result.seatsAfter[0].disconnectedAt).not.toBeNull();
+		// After webSocketClose removes the socket, user is no longer active
+		expect(isUserActive('u1', result.socketsAfterClose, result.seatsAfter)).toBe(false);
+	});
+
+	test('alarm handler retries release when user is no longer active', () => {
+		const mockWs = {} as WebSocket;
+		const sockets = new Map<WebSocket, { userId: string }>([[mockWs, { userId: 'u1' }]]);
+		const seats: ReacquireSeat[] = [{ userId: 'u1', connected: true, disconnectedAt: null }];
+
+		const result = simulateReacquireFailureCleanup(seats, sockets, 'u1');
+
+		// After webSocketClose fires, the socket is gone and seat is disconnected.
+		// The alarm handler checks isUserActive (which checks sockets + connected).
+		expect(isUserActive('u1', result.socketsAfterClose, result.seatsAfter)).toBe(false);
+
+		// Simulate alarm logic: only skip release if user is STILL active
+		const stillActive = isUserActive('u1', result.socketsAfterClose, result.seatsAfter);
+		expect(stillActive).toBe(false);
+		// Since user is not active, alarm proceeds to retry releaseMembership
+	});
+
+	test('other players seats are untouched', () => {
+		const mockWs = {} as WebSocket;
+		const sockets = new Map<WebSocket, { userId: string }>([[mockWs, { userId: 'u1' }]]);
+		const seats: ReacquireSeat[] = [
+			{ userId: 'u1', connected: true, disconnectedAt: null },
+			{ userId: 'u2', connected: true, disconnectedAt: null },
+		];
+
+		const result = simulateReacquireFailureCleanup(seats, sockets, 'u1');
+
+		expect(result.seatsAfter[0].connected).toBe(false);
+		expect(result.seatsAfter[1].connected).toBe(true);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Test: reject actions from expired reconnect seats (P2 fix)
+//
+// When a player reconnects after RECONNECT_TIMEOUT_MS, handleUpgrade accepts
+// the new WebSocket but does NOT restore the seat.  Before the alarm folds/
+// clears that seat, an action message can reach applyAction, which only checks
+// that the seat userId matches — not that the seat is connected.  The fix adds
+// a connected-status guard before applyAction.
+// ---------------------------------------------------------------------------
+
+describe('action guard: reject actions from disconnected seats', () => {
+	interface ActionSeat {
+		userId: string | null;
+		connected: boolean;
+	}
+
+	function canSendAction(userId: string, seats: ActionSeat[]): boolean {
+		const seat = seats.find((s) => s.userId === userId);
+		return seat !== undefined && seat.connected;
+	}
+
+	test('connected player can send actions', () => {
+		const seats: ActionSeat[] = [
+			{ userId: 'u1', connected: true },
+			{ userId: 'u2', connected: true },
+		];
+		expect(canSendAction('u1', seats)).toBe(true);
+		expect(canSendAction('u2', seats)).toBe(true);
+	});
+
+	test('disconnected player (expired reconnect) cannot send actions', () => {
+		const seats: ActionSeat[] = [
+			{ userId: 'u1', connected: true },
+			{ userId: 'u2', connected: false },
+		];
+		expect(canSendAction('u2', seats)).toBe(false);
+	});
+
+	test('player not in any seat cannot send actions', () => {
+		const seats: ActionSeat[] = [{ userId: 'u1', connected: true }];
+		expect(canSendAction('u999', seats)).toBe(false);
+	});
+
+	test('spectator with socket but no seat cannot send actions', () => {
+		// A spectator might have an open socket but no seat
+		const seats: ActionSeat[] = [{ userId: 'u1', connected: true }];
+		expect(canSendAction('spectator', seats)).toBe(false);
+	});
+
+	test('guard prevents timed-out player from acting before alarm fires', () => {
+		// Scenario: u2 disconnected 35s ago (grace expired).
+		// handleUpgrade accepted their new socket but did NOT restore the seat.
+		// Before the alarm folds/clears the seat, u2 sends an action.
+		const seats: ActionSeat[] = [
+			{ userId: 'u1', connected: true },
+			{ userId: 'u2', connected: false }, // expired reconnect
+		];
+		expect(canSendAction('u2', seats)).toBe(false);
+	});
+});

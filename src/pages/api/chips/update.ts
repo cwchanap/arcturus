@@ -927,22 +927,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			const needsRepair = rawServerBalance !== serverBalance;
 			const shouldRecordStats = outcome !== undefined && validOutcomes.includes(outcome as string);
 
-			// Prevent chip updates while the user has chips escrowed in an active MP hand.
-			// Settlement releases escrow via chipBalance + heldChips + delta; allowing
-			// concurrent updates to chipBalance would weaken the escrow invariant.
-			if (heldChips > 0) {
-				return new Response(
-					JSON.stringify({
-						success: false,
-						error: 'MP_ESCROW_ACTIVE',
-						message: 'Chip updates blocked while multiplayer hand is active',
-					}),
-					{
-						status: 409,
-						headers: { 'Content-Type': 'application/json' },
-					},
-				);
-			}
 			const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;
 			const actualWinsIncrement =
 				typeof winsIncrement === 'number'
@@ -1134,6 +1118,23 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						achievementResolution.warnings,
 					);
 				}
+			}
+
+			// Prevent chip updates while the user has chips escrowed in an active MP hand.
+			// Settlement releases escrow via chipBalance + heldChips + delta; allowing
+			// concurrent updates to chipBalance would weaken the escrow invariant.
+			if (heldChips > 0) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'MP_ESCROW_ACTIVE',
+						message: 'Chip updates blocked while multiplayer hand is active',
+					}),
+					{
+						status: 409,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
 			}
 
 			const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;

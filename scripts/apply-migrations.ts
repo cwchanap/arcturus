@@ -115,9 +115,9 @@ export function parseMigrationSql(sqlContent: string): {
 		indexes.add(match[1]);
 	}
 
-	// Match ALTER TABLE ADD COLUMN statements
+	// Match ALTER TABLE ADD [COLUMN] statements (SQLite accepts both forms)
 	const alterColumnRegex =
-		/ALTER\s+TABLE\s+["`]?(\w+)["`]?\s+ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
+		/ALTER\s+TABLE\s+["`]?(\w+)["`]?\s+ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi;
 	while ((match = alterColumnRegex.exec(sqlContent)) !== null) {
 		columns.push({ table: match[1], column: match[2] });
 	}

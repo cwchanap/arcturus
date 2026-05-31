@@ -1434,8 +1434,9 @@ export class Arcturus implements DurableObject {
 
 		const origin = this.env.WORKER_ORIGIN;
 		if (!origin) {
-			// Cannot release lock without origin — treat as failure so the
-			// caller adds the user to pendingLockReleases for alarm-based retry.
+			// Cannot release lock without origin — track in pendingLockReleases
+			// so the alarm handler retries once the binding is configured.
+			this.pendingLockReleases.add(userId);
 			console.error(
 				`[releaseMembership] WORKER_ORIGIN not configured, cannot release lock for user=${userId} room=${this.roomCode}`,
 			);
@@ -1510,11 +1511,13 @@ export class Arcturus implements DurableObject {
 				if (res.status >= 400 && res.status < 500) {
 					// The lock API returns 200 even when the row was already deleted
 					// (DELETE is idempotent), so a 4xx means a genuine auth or request
-					// failure — the membership row was NOT deleted.  Return false so
-					// the caller keeps the user in pendingLockReleases for alarm-based
-					// retry.  Without this, a secret mismatch (403) or malformed request
-					// (400) would leave the user permanently stuck with ALREADY_IN_ROOM
-					// after the DO evicts and loses the retry mechanism.
+					// failure — the membership row was NOT deleted.  Track in
+					// pendingLockReleases so the alarm handler retries; callers like
+					// webSocketClose and timed-out seat cleanup do not pre-register
+					// the user.  Without this, a secret mismatch (403) or malformed
+					// request (400) would leave the user permanently stuck with
+					// ALREADY_IN_ROOM after the DO evicts and loses the retry mechanism.
+					this.pendingLockReleases.add(userId);
 					console.warn(
 						`[releaseMembership] lock release ${res.status} for user=${userId} room=${this.roomCode}: ${body}`,
 					);

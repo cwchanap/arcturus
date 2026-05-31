@@ -306,7 +306,7 @@ describe('reconnect turn deadline restoration', () => {
 	/**
 	 * Simulates the handleUpgrade reconnect logic:
 	 * - Player reconnects (connected=true, disconnectedAt=null)
-	 * - If phase is 'in-hand', hand exists, and turnDeadline is null:
+	 * - If phase is 'in-hand', hand exists, and turnDeadline is null or expired:
 	 *   check if reconnecting player is the current actor
 	 * - If yes, set a fresh turnDeadline
 	 */
@@ -318,7 +318,11 @@ describe('reconnect turn deadline restoration', () => {
 		reconnectingUserId: string,
 		now: number,
 	): number | null {
-		if (phase !== 'in-hand' || !hand || currentTurnDeadline !== null) {
+		if (
+			phase !== 'in-hand' ||
+			!hand ||
+			(currentTurnDeadline !== null && currentTurnDeadline > now)
+		) {
 			return currentTurnDeadline;
 		}
 		if (currentSeatUserId === reconnectingUserId) {
@@ -340,7 +344,7 @@ describe('reconnect turn deadline restoration', () => {
 		expect(result).toBe(now + TURN_TIMEOUT_MS);
 	});
 
-	test('does not set deadline when turnDeadline is already set', () => {
+	test('does not set deadline when turnDeadline is in the future', () => {
 		const now = 1_000_000;
 		const existingDeadline = now + 30_000;
 		const result = simulateReconnectDeadline(
@@ -353,6 +357,21 @@ describe('reconnect turn deadline restoration', () => {
 		);
 		// Keep existing deadline — don't overwrite
 		expect(result).toBe(existingDeadline);
+	});
+
+	test('sets fresh deadline when existing deadline has expired', () => {
+		const now = 1_000_000;
+		const expiredDeadline = now - 5_000; // expired 5s ago
+		const result = simulateReconnectDeadline(
+			'in-hand',
+			{ currentSeat: 0 },
+			expiredDeadline,
+			'u1',
+			'u1',
+			now,
+		);
+		// Refresh expired deadline so reconnecting actor gets a full turn
+		expect(result).toBe(now + TURN_TIMEOUT_MS);
 	});
 
 	test('does not set deadline when reconnecting player is not current actor', () => {

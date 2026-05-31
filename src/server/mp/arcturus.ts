@@ -306,10 +306,15 @@ export class Arcturus implements DurableObject {
 
 			// If the reconnecting player is the current actor in an active hand and
 			// no turn deadline exists (e.g. the alarm cleared it while they were
-			// disconnected within the reconnect grace), set a fresh deadline so the
-			// alarm will auto-fold them if they idle. Without this the hand hangs
-			// indefinitely because no future alarm is scheduled to auto-fold.
-			if (this.room.phase === 'in-hand' && this.room.hand && this.turnDeadline === null) {
+			// disconnected within the reconnect grace) or the deadline has already
+			// expired, set a fresh deadline so the alarm will auto-fold them if they
+			// idle. Without this the hand hangs indefinitely because no future alarm
+			// is scheduled to auto-fold.
+			if (
+				this.room.phase === 'in-hand' &&
+				this.room.hand &&
+				(this.turnDeadline === null || this.turnDeadline <= now)
+			) {
 				const currentSeat = this.room.hand.currentSeat;
 				const currentUserId = currentSeat !== null ? this.room.seats[currentSeat]?.userId : null;
 				if (currentUserId === userId) {

@@ -47,6 +47,23 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 			if (lockAge >= IN_PROGRESS_GRACE_MS) {
 				const status = await roomExists(env.arcturus, existing.roomCode);
 				if (status === 'gone') {
+					// Release any escrowed chips for the old room before deleting the
+					// membership row. The release-escrow endpoint scopes by roomCode
+					// via mp_membership, so we must release while the row still exists.
+					// If we deleted first and the subsequent join failed before the
+					// new room snapshotted chips, the user would be stuck with
+					// chipBalance=0 and heldChips>0, blocking all chip updates.
+					const d1 = locals.runtime.env.DB;
+					const nowSeconds = Math.trunc(Date.now() / 1000);
+					await d1
+						.prepare(
+							`UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? ` +
+								`WHERE id = ? AND heldChips > 0 ` +
+								`AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = ? AND roomCode = ?)`,
+						)
+						.bind(nowSeconds, user.id, user.id, existing.roomCode)
+						.run();
+
 					// Scope delete to the specific stale roomCode so a concurrent
 					// request that already replaced the row doesn't get clobbered.
 					await db

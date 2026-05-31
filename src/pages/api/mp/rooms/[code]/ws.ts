@@ -180,12 +180,16 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 				// Release any escrowed chips before deleting the membership lock.
 				// The /api/mp/release-escrow endpoint scopes releases by roomCode
 				// via mp_membership; deleting the row first would leave heldChips
-				// permanently stuck.
+				// permanently stuck. Scope the UPDATE to the expected roomCode so
+				// a concurrent request that already moved the user to a different
+				// room doesn't have its new escrow released.
 				const nowSeconds = Math.trunc(Date.now() / 1000);
 				await locals.runtime.env.DB.prepare(
-					'UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? WHERE id = ? AND heldChips > 0',
+					'UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? ' +
+						'WHERE id = ? AND heldChips > 0 ' +
+						'AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = ? AND roomCode = ?)',
 				)
-					.bind(nowSeconds, user.id)
+					.bind(nowSeconds, user.id, user.id, code)
 					.run();
 				// Scope delete to the expected roomCode so a concurrent request
 				// that already replaced the membership to a different room doesn't

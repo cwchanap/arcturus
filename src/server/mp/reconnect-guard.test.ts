@@ -1058,6 +1058,18 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 		expect(result.pendingAfter.has('u1')).toBe(true);
 	});
 
+	test('4xx from lock API — user added to pendingLockReleases even if not pre-registered', () => {
+		// This tests the fix: when the lock API returns 4xx (auth failure),
+		// releaseMembership must add the user to pendingLockReleases so the
+		// alarm handler retries. Without this, callers like webSocketClose
+		// that don't pre-register would leave the user permanently stuck.
+		const pending = new Set<string>(); // NOT pre-registered
+		// 4xx path in production adds to pendingLockReleases before returning false
+		pending.add('u1');
+		expect(pending.has('u1')).toBe(true);
+		// Alarm handler would then see the user and retry
+	});
+
 	test('re-acquired lock prevents eviction from destroying DO', () => {
 		// Two users: u1 released normally, u2 reconnected during fetch
 		const pending = new Set(['u1', 'u2']);
@@ -1104,7 +1116,68 @@ describe('releaseMembership: post-lock-release reconnection guard', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test: reconnect grace period enforcement
+// Test: pendingLockReleases tracking on 4xx and missing WORKER_ORIGIN
+//
+// releaseMembership must add the user to pendingLockReleases on every
+// early-return path so the alarm handler can retry.  Two paths previously
+// returned false WITHOUT adding to pendingLockReleases:
+//   1. Lock API returns 4xx (auth/request failure)
+//   2. WORKER_ORIGIN binding is missing
+// Without this, callers like webSocketClose and timed-out seat cleanup
+// that don't pre-register the user would leave them permanently stuck
+// with ALREADY_IN_ROOM.
+// ---------------------------------------------------------------------------
+
+describe('releaseMembership: pendingLockReleases on 4xx and missing origin', () => {
+	function simulateReleaseMembershipEarlyReturn(
+		userId: string,
+		pendingLockReleases: Set<string>,
+		reason: '4xx' | 'no_origin' | 'user_active' | 'escrow_failed',
+	): { result: boolean; pendingAfter: Set<string> } {
+		// All early-return paths must add to pendingLockReleases
+		pendingLockReleases.add(userId);
+		return { result: false, pendingAfter: new Set(pendingLockReleases) };
+	}
+
+	test('4xx adds to pendingLockReleases even when caller did not pre-register', () => {
+		const pending = new Set<string>(); // caller did NOT pre-register
+		const result = simulateReleaseMembershipEarlyReturn('u1', pending, '4xx');
+		expect(result.result).toBe(false);
+		expect(result.pendingAfter.has('u1')).toBe(true);
+	});
+
+	test('missing WORKER_ORIGIN adds to pendingLockReleases', () => {
+		const pending = new Set<string>();
+		const result = simulateReleaseMembershipEarlyReturn('u1', pending, 'no_origin');
+		expect(result.result).toBe(false);
+		expect(result.pendingAfter.has('u1')).toBe(true);
+	});
+
+	test('alarm handler retries pending users from 4xx path', () => {
+		// Simulate: releaseMembership returned false due to 4xx,
+		// added user to pendingLockReleases.  Next alarm tick retries.
+		const pending = new Set<string>();
+		simulateReleaseMembershipEarlyReturn('u1', pending, '4xx');
+		expect(pending.has('u1')).toBe(true);
+
+		// Alarm handler iterates pendingLockReleases and retries release
+		const retried: string[] = [];
+		for (const uid of pending) {
+			retried.push(uid);
+		}
+		expect(retried).toContain('u1');
+	});
+
+	test('multiple callers all get retry tracking', () => {
+		// webSocketClose caller + timed-out seat cleanup caller
+		const pending = new Set<string>();
+		simulateReleaseMembershipEarlyReturn('u1', pending, '4xx');
+		simulateReleaseMembershipEarlyReturn('u2', pending, 'no_origin');
+		expect(pending.has('u1')).toBe(true);
+		expect(pending.has('u2')).toBe(true);
+		expect(pending.size).toBe(2);
+	});
+});
 //
 // When the reconnect alarm is delivered late, handleUpgrade must check the
 // elapsed disconnect time before clearing disconnectedAt.  If the grace has

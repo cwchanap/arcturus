@@ -1,1 +1,1 @@
-ALTER TABLE `user` ADD `heldChips` integer DEFAULT 0 NOT NULL;
+ALTER TABLE `user` ADD COLUMN `heldChips` integer DEFAULT 0 NOT NULL;

@@ -158,7 +158,7 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 		}
 	}
 	headers.set('x-arcturus-user-id', user.id);
-	headers.set('x-arcturus-display-name', encodeURIComponent(user.name));
+	headers.set('x-arcturus-display-name', encodeURIComponent(user.name || 'Player'));
 
 	let doRes: Response;
 	try {
@@ -182,16 +182,16 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 		return new Response(JSON.stringify({ error: 'DO_ERROR' }), { status: 502 });
 	}
 
-	// If the DO rejected the upgrade, only clean up the membership row when
-	// the DO confirmed the room is definitively gone (404). On transient failures
-	// (5xx, timeouts) the room may still hold escrowed chips or an accepted
-	// WebSocket; deleting the lock would let the user join another room and
-	// double-spend via the new room's snapshot.
+	// If the DO rejected the upgrade, clean up the membership row when the DO
+	// returned a deterministic 4xx response (room gone, bad auth, etc.) — the DO
+	// definitively rejected the request, so no escrow was set up and no socket
+	// was accepted. On transient failures (5xx, timeouts) the room may still
+	// hold escrowed chips or an accepted WebSocket; deleting the lock would let
+	// the user join another room and double-spend via the new room's snapshot.
 	if (doRes.status !== 101) {
-		const isRoomDefinitivelyGone = doRes.status === 404;
+		const is4xx = doRes.status >= 400 && doRes.status < 500;
 		const shouldCleanup =
-			isRoomDefinitivelyGone &&
-			(lockAcquired || (existing !== undefined && existing.roomCode === code));
+			is4xx && (lockAcquired || (existing !== undefined && existing.roomCode === code));
 		if (shouldCleanup) {
 			try {
 				// Release any escrowed chips before deleting the membership lock.

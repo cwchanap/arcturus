@@ -1274,16 +1274,22 @@ export class Arcturus implements DurableObject {
 		const lastLog = this.room.handLog[this.room.handLog.length - 1];
 		if (!lastLog) return;
 		const pots = buildSidePots(hand, this.room.seats);
+		// Only reveal hole cards for real showdowns (2+ non-folded players).
+		// Fold-outs should not expose the winner's private cards.
+		const nonFolded = this.room.seats.filter(
+			(s) => s.userId && hand.holeCards[s.userId] && !hand.folded.has(s.userId),
+		);
+		const isShowdown = nonFolded.length >= 2;
 		this.broadcast({
 			type: 'hand_ended',
 			winners: lastLog.winners,
 			pots: pots.map((p) => ({ amount: p.amount, eligibleSeats: p.eligibleSeatIndices })),
-			showdownCards: this.room.seats
-				.filter((s) => s.userId && hand.holeCards[s.userId] && !hand.folded.has(s.userId))
-				.map((s) => ({
-					seatIndex: s.seatIndex,
-					cards: hand.holeCards[s.userId!] as [Card, Card],
-				})),
+			showdownCards: isShowdown
+				? nonFolded.map((s) => ({
+						seatIndex: s.seatIndex,
+						cards: hand.holeCards[s.userId!] as [Card, Card],
+					}))
+				: [],
 		});
 	}
 

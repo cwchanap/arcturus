@@ -80,13 +80,17 @@ function resetMocks() {
 
 function createMockDb({
 	chipBalance = 1000,
+	heldChips = 0,
 	updateChanges = 1,
 	readChipBalance = chipBalance,
+	readHeldChips = heldChips,
 	selectThrows = false,
 }: {
 	chipBalance?: number;
+	heldChips?: number;
 	updateChanges?: number;
 	readChipBalance?: number;
+	readHeldChips?: number;
 	selectThrows?: boolean;
 } = {}): Database & { updateCalls: number } {
 	let updateCalls = 0;
@@ -98,7 +102,8 @@ function createMockDb({
 			return {
 				from: () => ({
 					where: () => ({
-						limit: () => Promise.resolve([{ chipBalance: readChipBalance }]),
+						limit: () =>
+							Promise.resolve([{ chipBalance: readChipBalance, heldChips: readHeldChips }]),
 					}),
 				}),
 			};
@@ -827,6 +832,25 @@ describe('chips update API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(400);
 		expect(body.error).toBe('INSUFFICIENT_BALANCE');
+	});
+
+	test('rejects when MP escrow is active (heldChips > 0)', async () => {
+		resetMocks();
+		const POST = createHandler();
+		mockCreateDb.db = createMockDb({ chipBalance: 500, heldChips: 500 });
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-escrow', chipBalance: 500 } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('MP_ESCROW_ACTIVE');
+		expect(body.message).toContain('multiplayer hand is active');
 	});
 
 	test('returns database error on DB failure', async () => {

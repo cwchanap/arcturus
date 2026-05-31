@@ -1320,6 +1320,13 @@ export class Arcturus implements DurableObject {
 			r.phase === 'in-hand' && r.hand && this.turnDeadline !== null
 				? Math.max(0, this.turnDeadline - Date.now())
 				: 0;
+		const betToCall =
+			r.hand && r.hand.currentSeat !== null
+				? Math.max(
+						0,
+						r.hand.currentBet - (r.hand.committed[r.seats[r.hand.currentSeat]?.userId ?? ''] ?? 0),
+					)
+				: 0;
 		return {
 			type: 'room_state',
 			phase: r.phase as Phase,
@@ -1327,7 +1334,7 @@ export class Arcturus implements DurableObject {
 			pot,
 			board: r.hand?.board ?? [],
 			currentSeat: r.hand?.currentSeat ?? null,
-			betToCall: r.hand?.currentBet ?? 0,
+			betToCall,
 			timeRemainingMs,
 		};
 	}
@@ -1643,84 +1650,87 @@ export class Arcturus implements DurableObject {
 		});
 
 		const origin = this.env.WORKER_ORIGIN;
-		if (!origin) throw new Error('WORKER_ORIGIN not configured');
 		const mpAuth = this.env.MP_AUTH_SECRET ?? this.doSecret ?? '';
-		for (let attempt = 1; attempt <= 3; attempt++) {
-			let res: Response;
-			try {
-				res = await fetch(`${origin}/api/mp/settle`, {
-					method: 'POST',
-					headers: {
-						'content-type': 'application/json',
-						'x-arcturus-auth': mpAuth,
-					},
-					body: JSON.stringify(payload),
-					signal: AbortSignal.timeout(10_000),
-				});
-			} catch (err) {
-				// Transient network error — retry
-				console.error(`[settle] attempt ${attempt}/3 network error:`, err);
-				if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
-				continue;
-			}
-
-			if (res.ok) {
-				// Capture committed users before clearing hand so we can release
-				// deferred membership locks for players whose seats were cleared
-				// during the hand (e.g. disconnect-timeout folded players).
-				const committedUserIds = this.room.hand ? Object.keys(this.room.hand.committed) : [];
-
-				// Pre-register users needing deferred release into pendingLockReleases
-				// BEFORE clearing the hand. This ensures the list is durable — if the
-				// DO is restarted or evicted after the persist below, the constructor
-				// will reload pendingLockReleases and schedule a retry alarm rather
-				// than permanently locking the user out of other rooms.
-				for (const uid of committedUserIds) {
-					const stillSeated = this.room.seats.some((s) => s.userId === uid);
-					const hasOpenSocket = Array.from(this.sockets.values()).some((id) => id.userId === uid);
-					if (!stillSeated && !hasOpenSocket) {
-						this.pendingLockReleases.add(uid);
-					}
+		if (!origin) {
+			console.error(`[settle] WORKER_ORIGIN not configured. Freezing room ${this.roomCode}.`);
+		} else {
+			for (let attempt = 1; attempt <= 3; attempt++) {
+				let res: Response;
+				try {
+					res = await fetch(`${origin}/api/mp/settle`, {
+						method: 'POST',
+						headers: {
+							'content-type': 'application/json',
+							'x-arcturus-auth': mpAuth,
+						},
+						body: JSON.stringify(payload),
+						signal: AbortSignal.timeout(10_000),
+					});
+				} catch (err) {
+					// Transient network error — retry
+					console.error(`[settle] attempt ${attempt}/3 network error:`, err);
+					if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
+					continue;
 				}
 
-				this.room = { ...this.room, phase: 'seating', hand: null };
-				await this.persist();
+				if (res.ok) {
+					// Capture committed users before clearing hand so we can release
+					// deferred membership locks for players whose seats were cleared
+					// during the hand (e.g. disconnect-timeout folded players).
+					const committedUserIds = this.room.hand ? Object.keys(this.room.hand.committed) : [];
 
-				// Actually release membership for pre-registered users. Re-check
-				// seated/socket state because a user may have reconnected during
-				// the persist() await (DO input gate allows WebSocket handlers to
-				// interleave across awaits).
-				for (const uid of committedUserIds) {
-					if (!this.pendingLockReleases.has(uid)) continue;
-					const stillSeated = this.room.seats.some((s) => s.userId === uid);
-					const hasOpenSocket = Array.from(this.sockets.values()).some((id) => id.userId === uid);
-					if (stillSeated || hasOpenSocket) {
-						// User reconnected during persist — remove from pending and skip
-						this.pendingLockReleases.delete(uid);
-						continue;
+					// Pre-register users needing deferred release into pendingLockReleases
+					// BEFORE clearing the hand. This ensures the list is durable — if the
+					// DO is restarted or evicted after the persist below, the constructor
+					// will reload pendingLockReleases and schedule a retry alarm rather
+					// than permanently locking the user out of other rooms.
+					for (const uid of committedUserIds) {
+						const stillSeated = this.room.seats.some((s) => s.userId === uid);
+						const hasOpenSocket = Array.from(this.sockets.values()).some((id) => id.userId === uid);
+						if (!stillSeated && !hasOpenSocket) {
+							this.pendingLockReleases.add(uid);
+						}
 					}
-					await this.releaseMembership(uid);
-				}
-				// Persist again if pendingLockReleases changed (either releaseMembership
-				// failures re-added entries, or reconnected users were removed).
-				if (this.pendingLockReleases.size > 0) {
+
+					this.room = { ...this.room, phase: 'seating', hand: null };
 					await this.persist();
-				}
-				await this.scheduleNextAlarm();
-				return;
-			}
 
-			const body = await res.text().catch(() => '');
-			if (res.status >= 400 && res.status < 500) {
-				// Permanent client error (e.g. 409 insufficient_balance) — don't retry
-				console.error(
-					`[settle] permanent failure ${res.status}: ${body}. Freezing room ${this.roomCode}.`,
-				);
-				break;
+					// Actually release membership for pre-registered users. Re-check
+					// seated/socket state because a user may have reconnected during
+					// the persist() await (DO input gate allows WebSocket handlers to
+					// interleave across awaits).
+					for (const uid of committedUserIds) {
+						if (!this.pendingLockReleases.has(uid)) continue;
+						const stillSeated = this.room.seats.some((s) => s.userId === uid);
+						const hasOpenSocket = Array.from(this.sockets.values()).some((id) => id.userId === uid);
+						if (stillSeated || hasOpenSocket) {
+							// User reconnected during persist — remove from pending and skip
+							this.pendingLockReleases.delete(uid);
+							continue;
+						}
+						await this.releaseMembership(uid);
+					}
+					// Persist again if pendingLockReleases changed (either releaseMembership
+					// failures re-added entries, or reconnected users were removed).
+					if (this.pendingLockReleases.size > 0) {
+						await this.persist();
+					}
+					await this.scheduleNextAlarm();
+					return;
+				}
+
+				const body = await res.text().catch(() => '');
+				if (res.status >= 400 && res.status < 500) {
+					// Permanent client error (e.g. 409 insufficient_balance) — don't retry
+					console.error(
+						`[settle] permanent failure ${res.status}: ${body}. Freezing room ${this.roomCode}.`,
+					);
+					break;
+				}
+				// Transient server error — retry
+				console.error(`[settle] attempt ${attempt}/3 server error ${res.status}: ${body}`);
+				if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
 			}
-			// Transient server error — retry
-			console.error(`[settle] attempt ${attempt}/3 server error ${res.status}: ${body}`);
-			if (attempt < 3) await new Promise((r) => setTimeout(r, 250 * attempt));
 		}
 		// Guard: if another concurrent runSettlement() invocation already settled
 		// this hand (cleared this.room.hand to null and moved phase to 'seating'),

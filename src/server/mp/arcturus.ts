@@ -125,9 +125,11 @@ export class Arcturus implements DurableObject {
 	 *     the hand was persisted — the constructor loads these IDs to recover. */
 	private pendingEscrowReleases = new Set<string>();
 	/** Guard to prevent concurrent start_hand invocations from interleaving
-	 *  around the non-storage fetchSnapshot() await. Set synchronously before
-	 *  the first await so any handler that enters while another is mid-flight
-	 *  sees true and bails out immediately. */
+	 *  around the non-storage fetchSnapshot() await, and to stop the alarm
+	 *  handler from treating in-flight escrow as stuck (room.hand is still
+	 *  null while fetchSnapshot is outstanding). Set synchronously before the
+	 *  first await so any handler that enters while another is mid-flight sees
+	 *  true and skips. */
 	private isStartingHand = false;
 	/** Deadline (epoch ms) by which the current seated actor must act. Used to
 	 *  auto-fold connected idle players so the hand does not stall indefinitely. */
@@ -808,7 +810,10 @@ export class Arcturus implements DurableObject {
 		// their chips are stuck in heldChips with no hand to settle them.
 		// Escrow release does NOT release the membership lock, so the one-room
 		// invariant is preserved.
-		if (this.pendingEscrowReleases.size > 0) {
+		// Skip while start_hand is mid-flight: fetchSnapshot has already moved
+		// chips to heldChips but room.hand is still null, so the isHandParticipant
+		// check below would false-negative and release in-flight escrow.
+		if (this.pendingEscrowReleases.size > 0 && !this.isStartingHand) {
 			const pendingEscrow = [...this.pendingEscrowReleases];
 			for (const uid of pendingEscrow) {
 				// If the user is now in the active hand's committed map, their

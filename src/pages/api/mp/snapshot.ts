@@ -20,14 +20,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		!Array.isArray((body as Record<string, unknown>).userIds) ||
 		!(body as Record<string, unknown>).userIds.every(
 			(id: unknown) => typeof id === 'string' && id.trim().length > 0,
-		)
+		) ||
+		typeof (body as Record<string, unknown>).roomCode !== 'string' ||
+		(body as Record<string, unknown>).roomCode.trim().length === 0
 	) {
-		return new Response(JSON.stringify({ error: 'Invalid userIds' }), {
+		return new Response(JSON.stringify({ error: 'Invalid userIds or roomCode' }), {
 			status: 400,
 			headers: { 'content-type': 'application/json' },
 		});
 	}
 	const userIds = (body as { userIds: string[] }).userIds;
+	const roomCode = (body as { roomCode: string }).roomCode;
 	if (userIds.length === 0) {
 		return new Response(JSON.stringify({ balances: {} }), {
 			headers: { 'content-type': 'application/json' },
@@ -42,20 +45,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	// previous room crashed leaving stale heldChips > 0, those stranded chips
 	// are recovered into the new buy-in rather than silently reused while
 	// chipBalance remains unescrowed.
+	// Scoped by roomCode via mp_membership so a stale/delayed DO cannot
+	// escrow chips for a user who has already moved to another room.
 	const escrowBatch = userIds.map((id) =>
 		d1
 			.prepare(
-				`UPDATE user SET heldChips = chipBalance + heldChips, chipBalance = 0, updatedAt = ? WHERE id = ?`,
+				`UPDATE user SET heldChips = chipBalance + heldChips, chipBalance = 0, updatedAt = ? ` +
+					`WHERE id = ? AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = ? AND roomCode = ?)`,
 			)
-			.bind(nowSeconds, id),
+			.bind(nowSeconds, id, id, roomCode),
 	);
 	await d1.batch(escrowBatch);
 
 	// Fetch the escrowed amounts (heldChips) to return as balances for the DO.
+	// Only include users whose membership still points at this room.
 	const placeholders = userIds.map(() => '?').join(',');
 	const rows = await d1
-		.prepare(`SELECT id, heldChips FROM user WHERE id IN (${placeholders})`)
-		.bind(...userIds)
+		.prepare(
+			`SELECT id, heldChips FROM user ` +
+				`WHERE id IN (${placeholders}) ` +
+				`AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = user.id AND roomCode = ?)`,
+		)
+		.bind(...userIds, roomCode)
 		.all();
 	const balances: Record<string, number> = {};
 	for (const r of rows.results as { id: string; heldChips: number }[]) {

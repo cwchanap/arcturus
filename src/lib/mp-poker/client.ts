@@ -19,22 +19,30 @@ export class MultiplayerPokerClient {
 		// Close any existing socket before opening a new one to prevent orphaned connections
 		if (this.ws && this.ws.readyState !== WebSocket.CLOSED) {
 			this.ws.close();
+			this._connected = false;
 		}
 		return new Promise((resolve, reject) => {
 			const ws = new WebSocket(this.url);
 			this.ws = ws;
+			let settled = false;
 			ws.onopen = () => {
+				settled = true;
 				this._connected = true;
 				resolve();
 			};
 			ws.onerror = (e) => {
-				if (!this._connected) {
+				if (!settled) {
+					settled = true;
 					// Pre-open error — reject the connect promise
 					reject(e);
 				}
 				// Post-open errors are followed by onclose, which handles cleanup
 			};
 			ws.onclose = () => {
+				if (!settled) {
+					settled = true;
+					reject(new Error('WebSocket closed before opening'));
+				}
 				// Only react if this socket is still the active one — a superseded
 				// socket's close event must not flip _connected or fire disconnect
 				// handlers for the new connection.

@@ -151,6 +151,11 @@ describe_('Multiplayer Poker', () => {
 			await leaveSeat(pageA, 0);
 		} finally {
 			await ctxA.close();
+			try {
+				await ctxB.close();
+			} catch {
+				/* already closed at line ~144 */
+			}
 		}
 	});
 });

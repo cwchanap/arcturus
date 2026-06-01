@@ -21,13 +21,23 @@ describe('lockBodySchema', () => {
 		expect(result.success).toBe(false);
 	});
 
-	test('accepts valid release', () => {
-		const result = lockBodySchema.safeParse({ action: 'release' });
+	test('accepts valid release with roomCode', () => {
+		const result = lockBodySchema.safeParse({ action: 'release', roomCode: 'ABCD' });
 		expect(result.success).toBe(true);
 		if (result.success) {
 			expect(result.data.action).toBe('release');
-			expect(result.data.roomCode).toBeUndefined();
+			expect(result.data.roomCode).toBe('ABCD');
 		}
+	});
+
+	test('rejects release without roomCode', () => {
+		const result = lockBodySchema.safeParse({ action: 'release' });
+		expect(result.success).toBe(false);
+	});
+
+	test('rejects release with empty roomCode', () => {
+		const result = lockBodySchema.safeParse({ action: 'release', roomCode: '' });
+		expect(result.success).toBe(false);
 	});
 
 	test('rejects invalid action', () => {

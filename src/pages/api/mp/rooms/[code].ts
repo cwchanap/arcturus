@@ -3,7 +3,11 @@ import { isValidRoomCode } from '../../../../lib/mp-poker/roomCode';
 
 export const GET: APIRoute = async ({ params, locals }) => {
 	const user = locals.user;
-	if (!user) return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
+	if (!user)
+		return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json' },
+		});
 	const code = params.code;
 	if (!code || !isValidRoomCode(code)) {
 		return new Response(JSON.stringify({ error: 'INVALID_CODE' }), {

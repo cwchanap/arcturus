@@ -12,7 +12,7 @@ export const lockBodySchema = z.discriminatedUnion('action', [
 	}),
 	z.object({
 		action: z.literal('release'),
-		roomCode: z.string().optional(),
+		roomCode: z.string().min(1),
 	}),
 ]);
 
@@ -59,13 +59,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
 		// Scope the delete to the specific roomCode to prevent a DO for room A
 		// from accidentally wiping a membership lock that user X acquired for room B
 		// after leaving A.
-		const conditions = [eq(mpMembership.userId, userId!)];
-		if (parsed.roomCode) {
-			conditions.push(eq(mpMembership.roomCode, parsed.roomCode));
-		}
 		await db
 			.delete(mpMembership)
-			.where(and(...conditions))
+			.where(and(eq(mpMembership.userId, userId!), eq(mpMembership.roomCode, parsed.roomCode)))
 			.run();
 		return new Response(JSON.stringify({ ok: true }));
 	}

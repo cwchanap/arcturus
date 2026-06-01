@@ -80,6 +80,23 @@ describe('MultiplayerPokerClient', () => {
 		}
 		expect(client.connected).toBe(false);
 	});
+
+	test('replacement socket failure rejects when previously connected', async () => {
+		const client = new MultiplayerPokerClient('ws://localhost');
+
+		// Manually simulate being connected from a previous session
+		const clientAny = client as unknown as {
+			ws: { readyState: number; close: () => void } | null;
+			_connected: boolean;
+		};
+		clientAny._connected = true;
+		clientAny.ws = { readyState: WebSocket.OPEN, close() {} };
+
+		// connect() closes the old socket and attempts a new one.
+		// With no server at ws://localhost the replacement must reject.
+		await expect(client.connect()).rejects.toThrow();
+		expect(client.connected).toBe(false);
+	});
 });
 
 describe('MultiplayerPokerClient — superseded socket scoping', () => {

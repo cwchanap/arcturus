@@ -4,6 +4,7 @@
  */
 
 import type { RoundOutcome, BetType } from './types';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 export interface LLMSettings {
 	provider: 'openai' | 'gemini';
@@ -133,29 +134,27 @@ async function callOpenAI(
 	model: string,
 	apiKey: string,
 ): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
 	try {
-		const response = await fetch('https://api.openai.com/v1/chat/completions', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${apiKey}`,
+		const response = await fetchWithTimeout(
+			'https://api.openai.com/v1/chat/completions',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({
+					model,
+					messages: [
+						{ role: 'system', content: systemPrompt },
+						{ role: 'user', content: userPrompt },
+					],
+					temperature: 0.7,
+					max_tokens: 300,
+				}),
 			},
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: 'system', content: systemPrompt },
-					{ role: 'user', content: userPrompt },
-				],
-				temperature: 0.7,
-				max_tokens: 300,
-			}),
-			signal: controller.signal,
-		});
-
-		clearTimeout(timeout);
+			DEFAULT_TIMEOUT,
+		);
 
 		if (!response.ok) {
 			const error = await response.text();
@@ -167,7 +166,6 @@ async function callOpenAI(
 		};
 		return data.choices?.[0]?.message?.content || '';
 	} catch (error) {
-		clearTimeout(timeout);
 		if (error instanceof Error && error.name === 'AbortError') {
 			throw new Error('Request timed out');
 		}
@@ -184,11 +182,8 @@ async function callGemini(
 	model: string,
 	apiKey: string,
 ): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
 	try {
-		const response = await fetch(
+		const response = await fetchWithTimeout(
 			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
 			{
 				method: 'POST',
@@ -206,11 +201,9 @@ async function callGemini(
 						maxOutputTokens: 300,
 					},
 				}),
-				signal: controller.signal,
 			},
+			DEFAULT_TIMEOUT,
 		);
-
-		clearTimeout(timeout);
 
 		if (!response.ok) {
 			const error = await response.text();
@@ -222,7 +215,6 @@ async function callGemini(
 		};
 		return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 	} catch (error) {
-		clearTimeout(timeout);
 		if (error instanceof Error && error.name === 'AbortError') {
 			throw new Error('Request timed out');
 		}

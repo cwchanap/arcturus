@@ -3,10 +3,12 @@
  * Falls back to rule-based strategy on failure
  */
 
-import type { AIDecision, GameContext, Card, Suit } from './types';
+import type { AIDecision, GameContext, Card } from './types';
+import { getSuitSymbol } from '../card-format';
 import type { AIPersonality } from './aiStrategy';
 import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStrategy';
 import { getHighestBet, getCallAmount } from './player';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 export interface LLMSettings {
 	provider: 'openai' | 'gemini';
@@ -66,13 +68,7 @@ const decisionCache = new DecisionCache();
  * Format card for LLM prompt
  */
 function formatCard(card: Card): string {
-	const suitSymbols: Record<Suit, string> = {
-		hearts: '♥',
-		diamonds: '♦',
-		clubs: '♣',
-		spades: '♠',
-	};
-	return `${card.value}${suitSymbols[card.suit]}`;
+	return `${card.value}${getSuitSymbol(card.suit)}`;
 }
 
 /**
@@ -128,11 +124,9 @@ Make your decision now:`;
  * Call OpenAI API
  */
 async function callOpenAI(prompt: string, model: string, apiKey: string): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-	try {
-		const response = await fetch('https://api.openai.com/v1/chat/completions', {
+	const response = await fetchWithTimeout(
+		'https://api.openai.com/v1/chat/completions',
+		{
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -150,67 +144,52 @@ async function callOpenAI(prompt: string, model: string, apiKey: string): Promis
 				temperature: 0.7,
 				max_tokens: 100,
 			}),
-			signal: controller.signal,
-		});
+		},
+		5000, // 5 second timeout
+	);
 
-		clearTimeout(timeout);
-
-		if (!response.ok) {
-			throw new Error(`OpenAI API error: ${response.status}`);
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const data = (await response.json()) as any;
-		return data?.choices?.[0]?.message?.content ?? '';
-	} catch (error) {
-		clearTimeout(timeout);
-		throw error;
+	if (!response.ok) {
+		throw new Error(`OpenAI API error: ${response.status}`);
 	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const data = (await response.json()) as any;
+	return data?.choices?.[0]?.message?.content ?? '';
 }
 
 /**
  * Call Gemini API
  */
 async function callGemini(prompt: string, model: string, apiKey: string): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+	const response = await fetchWithTimeout(
+		`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				generationConfig: { temperature: 0.7, maxOutputTokens: 100 },
+				contents: [
+					{
+						role: 'user',
+						parts: [{ text: prompt }],
+					},
+				],
+			}),
+		},
+		5000, // 5 second timeout
+	);
 
-	try {
-		const response = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-			{
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					generationConfig: { temperature: 0.7, maxOutputTokens: 100 },
-					contents: [
-						{
-							role: 'user',
-							parts: [{ text: prompt }],
-						},
-					],
-				}),
-				signal: controller.signal,
-			},
-		);
-
-		clearTimeout(timeout);
-
-		if (!response.ok) {
-			throw new Error(`Gemini API error: ${response.status}`);
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const data = (await response.json()) as any;
-		const text = data?.candidates?.[0]?.content?.parts
-			?.map((part: { text?: string }) => part.text ?? '')
-			.join('')
-			.trim();
-		return text || '';
-	} catch (error) {
-		clearTimeout(timeout);
-		throw error;
+	if (!response.ok) {
+		throw new Error(`Gemini API error: ${response.status}`);
 	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const data = (await response.json()) as any;
+	const text = data?.candidates?.[0]?.content?.parts
+		?.map((part: { text?: string }) => part.text ?? '')
+		.join('')
+		.trim();
+	return text || '';
 }
 
 /**

@@ -3,8 +3,10 @@
  * Provides AI-powered advice for Blackjack decisions using OpenAI or Gemini APIs
  */
 
-import type { Card, Suit, BlackjackAction, Hand } from './types';
+import type { Card, BlackjackAction, Hand } from './types';
+import { getSuitSymbol } from '../card-format';
 import { calculateHandValue } from './handEvaluator';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 export interface LLMSettings {
 	provider: 'openai' | 'gemini';
@@ -33,13 +35,7 @@ const DEFAULT_TIMEOUT = 5000; // 5 seconds
  * Format card for display in prompt
  */
 function formatCard(card: Card): string {
-	const suitSymbols: Record<Suit, string> = {
-		hearts: '♥',
-		diamonds: '♦',
-		clubs: '♣',
-		spades: '♠',
-	};
-	return `${card.rank}${suitSymbols[card.suit]}`;
+	return `${card.rank}${getSuitSymbol(card.suit)}`;
 }
 
 /**
@@ -93,14 +89,12 @@ async function callOpenAI(
 	apiKey: string,
 	systemMessage?: string,
 ): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
 	const defaultSystem =
 		'You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.';
 
-	try {
-		const response = await fetch('https://api.openai.com/v1/chat/completions', {
+	const response = await fetchWithTimeout(
+		'https://api.openai.com/v1/chat/completions',
+		{
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
@@ -118,23 +112,18 @@ async function callOpenAI(
 				temperature: 0.3,
 				max_tokens: 150,
 			}),
-			signal: controller.signal,
-		});
+		},
+		DEFAULT_TIMEOUT,
+	);
 
-		clearTimeout(timeout);
-
-		if (!response.ok) {
-			const errorText = await response.text().catch(() => '');
-			throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const data = (await response.json()) as any;
-		return data?.choices?.[0]?.message?.content ?? '';
-	} catch (error) {
-		clearTimeout(timeout);
-		throw error;
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => '');
+		throw new Error(`OpenAI API error: ${response.status} ${errorText}`);
 	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const data = (await response.json()) as any;
+	return data?.choices?.[0]?.message?.content ?? '';
 }
 
 /**
@@ -147,54 +136,44 @@ async function callGemini(
 	apiKey: string,
 	systemMessage?: string,
 ): Promise<string> {
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
 	const defaultSystem =
 		'You are an expert Blackjack strategist. Provide brief, actionable advice. Respond only with valid JSON.';
 	const systemPrefix = systemMessage ?? defaultSystem;
 
-	try {
-		const response = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-			{
-				method: 'POST',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					generationConfig: { temperature: 0.3, maxOutputTokens: 150 },
-					contents: [
-						{
-							role: 'user',
-							parts: [
-								{
-									text: `${systemPrefix}\n\n${prompt}`,
-								},
-							],
-						},
-					],
-				}),
-				signal: controller.signal,
-			},
-		);
+	const response = await fetchWithTimeout(
+		`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				generationConfig: { temperature: 0.3, maxOutputTokens: 150 },
+				contents: [
+					{
+						role: 'user',
+						parts: [
+							{
+								text: `${systemPrefix}\n\n${prompt}`,
+							},
+						],
+					},
+				],
+			}),
+		},
+		DEFAULT_TIMEOUT,
+	);
 
-		clearTimeout(timeout);
-
-		if (!response.ok) {
-			const errorText = await response.text().catch(() => '');
-			throw new Error(`Gemini API error: ${response.status} ${errorText}`);
-		}
-
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const data = (await response.json()) as any;
-		const text = data?.candidates?.[0]?.content?.parts
-			?.map((part: { text?: string }) => part.text ?? '')
-			.join('')
-			.trim();
-		return text || '';
-	} catch (error) {
-		clearTimeout(timeout);
-		throw error;
+	if (!response.ok) {
+		const errorText = await response.text().catch(() => '');
+		throw new Error(`Gemini API error: ${response.status} ${errorText}`);
 	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const data = (await response.json()) as any;
+	const text = data?.candidates?.[0]?.content?.parts
+		?.map((part: { text?: string }) => part.text ?? '')
+		.join('')
+		.trim();
+	return text || '';
 }
 
 /**

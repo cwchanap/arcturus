@@ -2,20 +2,10 @@
  * PokerUIRenderer - Handles all DOM manipulation and UI updates
  */
 
-import type { Card, Player, Suit } from './types';
+import type { Card, Player } from './types';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 
 export class PokerUIRenderer {
-	private getSuitSymbol(suit: Suit): string {
-		const symbols = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit];
-	}
-
 	public renderPlayerCards(humanPlayer: Player, communityCards: Card[]) {
 		// Convert Card type to CardData format expected by card-slot-utils
 		const cards = humanPlayer.hand.map((card) => ({ rank: card.value, suit: card.suit }));

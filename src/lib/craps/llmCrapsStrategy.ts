@@ -4,6 +4,7 @@
  */
 
 import type { CrapsAdvice, CrapsAdviceContext, BetType, DiceRoll } from './types';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 export interface LLMSettings {
 	provider: 'openai' | 'gemini';
@@ -80,29 +81,28 @@ async function callOpenAI(
 	model: string,
 	apiKey: string,
 ): Promise<string> {
-	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT);
 	try {
-		const res = await fetch('https://api.openai.com/v1/chat/completions', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-			body: JSON.stringify({
-				model,
-				messages: [
-					{ role: 'system', content: system },
-					{ role: 'user', content: user },
-				],
-				temperature: 0.8,
-				max_tokens: 250,
-			}),
-			signal: ctrl.signal,
-		});
-		clearTimeout(timer);
+		const res = await fetchWithTimeout(
+			'https://api.openai.com/v1/chat/completions',
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+				body: JSON.stringify({
+					model,
+					messages: [
+						{ role: 'system', content: system },
+						{ role: 'user', content: user },
+					],
+					temperature: 0.8,
+					max_tokens: 250,
+				}),
+			},
+			DEFAULT_TIMEOUT,
+		);
 		if (!res.ok) throw new Error(`OpenAI error ${res.status}`);
 		const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
 		return data.choices?.[0]?.message?.content ?? '';
 	} catch (e) {
-		clearTimeout(timer);
 		if (e instanceof Error && e.name === 'AbortError') throw new Error('Request timed out');
 		throw e;
 	}
@@ -114,10 +114,8 @@ async function callGemini(
 	model: string,
 	apiKey: string,
 ): Promise<string> {
-	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT);
 	try {
-		const res = await fetch(
+		const res = await fetchWithTimeout(
 			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
 			{
 				method: 'POST',
@@ -126,17 +124,15 @@ async function callGemini(
 					contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
 					generationConfig: { temperature: 0.8, maxOutputTokens: 250 },
 				}),
-				signal: ctrl.signal,
 			},
+			DEFAULT_TIMEOUT,
 		);
-		clearTimeout(timer);
 		if (!res.ok) throw new Error(`Gemini error ${res.status}`);
 		const data = (await res.json()) as {
 			candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
 		};
 		return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 	} catch (e) {
-		clearTimeout(timer);
 		if (e instanceof Error && e.name === 'AbortError') throw new Error('Request timed out');
 		throw e;
 	}

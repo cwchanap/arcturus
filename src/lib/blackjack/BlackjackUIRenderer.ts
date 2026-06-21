@@ -6,6 +6,7 @@
 import type { Hand, BlackjackGameState, BlackjackAction } from './types';
 import { getHandValueDisplay } from './handEvaluator';
 import { clearChildren } from '../dom-utils';
+import { getSuitSymbol } from '../card-format';
 
 export class BlackjackUIRenderer {
 	/**
@@ -160,25 +161,12 @@ export class BlackjackUIRenderer {
 	}
 
 	/**
-	 * Get suit symbol for display
-	 */
-	private getSuitSymbol(suit: string): string {
-		const symbols: Record<string, string> = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit] || suit;
-	}
-
-	/**
 	 * Create a blackjack card element
 	 */
 	private createBlackjackCard(rank: string, suit: string): HTMLDivElement {
 		const card = document.createElement('div');
 		card.className = 'card';
-		card.textContent = `${rank}${this.getSuitSymbol(suit)}`;
+		card.textContent = `${rank}${getSuitSymbol(suit)}`;
 		return card;
 	}
 

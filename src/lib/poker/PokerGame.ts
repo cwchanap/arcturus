@@ -149,11 +149,12 @@ export class PokerGame {
 		});
 	}
 
+	private getPendingChipSyncDelta(): number {
+		return this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0);
+	}
+
 	private getEffectiveServerBalance(): number {
-		return Math.max(
-			0,
-			this.serverSyncedBalance + this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0),
-		);
+		return Math.max(0, this.serverSyncedBalance + this.getPendingChipSyncDelta());
 	}
 
 	private createChipSyncId(): string {
@@ -182,7 +183,7 @@ export class PokerGame {
 	}
 
 	private rebaseHumanTableBalance(serverBalance: number): void {
-		const pendingDelta = this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0);
+		const pendingDelta = this.getPendingChipSyncDelta();
 		const currentHandDelta =
 			this.humanChipsBefore > 0 ? this.players[0].chips - this.humanChipsBefore : 0;
 		const rebasedBaseline = Math.max(0, serverBalance + pendingDelta);
@@ -259,26 +260,24 @@ export class PokerGame {
 		this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 	}
 
+	private clearTimeoutRef(id: ReturnType<typeof setTimeout> | null): null {
+		if (id !== null) {
+			clearTimeout(id);
+		}
+		return null;
+	}
+
 	private cancelPendingAutoDeal(): void {
 		this.autoDealToken += 1;
-		if (this.autoDealTimeoutId !== null) {
-			clearTimeout(this.autoDealTimeoutId);
-			this.autoDealTimeoutId = null;
-		}
+		this.autoDealTimeoutId = this.clearTimeoutRef(this.autoDealTimeoutId);
 	}
 
 	private cancelPendingChipSyncRetry(): void {
-		if (this.chipSyncRetryTimeoutId !== null) {
-			clearTimeout(this.chipSyncRetryTimeoutId);
-			this.chipSyncRetryTimeoutId = null;
-		}
+		this.chipSyncRetryTimeoutId = this.clearTimeoutRef(this.chipSyncRetryTimeoutId);
 	}
 
 	private clearPendingTurnTransitionTimeout(completed: boolean): void {
-		if (this.turnTransitionTimeoutId !== null) {
-			clearTimeout(this.turnTransitionTimeoutId);
-			this.turnTransitionTimeoutId = null;
-		}
+		this.turnTransitionTimeoutId = this.clearTimeoutRef(this.turnTransitionTimeoutId);
 
 		if (this.pendingTurnTransitionResolver !== null) {
 			const resolvePendingTurnTransition = this.pendingTurnTransitionResolver;
@@ -1062,13 +1061,7 @@ export class PokerGame {
 		const positionFromDealer =
 			(playerIndex - dealerIndex + this.players.length) % this.players.length;
 
-		if (positionFromDealer <= 1) {
-			return 'early';
-		} else if (positionFromDealer === 2) {
-			return 'middle';
-		} else {
-			return 'late';
-		}
+		return positionFromDealer <= 1 ? 'early' : positionFromDealer === 2 ? 'middle' : 'late';
 	}
 
 	private updateGameStatus(message: string) {

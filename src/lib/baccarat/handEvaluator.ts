@@ -5,6 +5,7 @@
 
 import type { Card, Hand, Rank } from './types';
 import { CARD_VALUES, NATURAL_THRESHOLD } from './constants';
+import { getSuitSymbol } from '../card-format';
 
 /**
  * Get the baccarat value of a single card
@@ -85,17 +86,4 @@ export function describeHand(hand: Hand): string {
 	const cardStr = hand.cards.map((c) => `${c.rank}${getSuitSymbol(c.suit)}`).join(' ');
 	const natural = isNatural(hand) ? ' (Natural!)' : '';
 	return `${cardStr} = ${value}${natural}`;
-}
-
-/**
- * Get suit symbol for display
- */
-function getSuitSymbol(suit: Card['suit']): string {
-	const symbols: Record<Card['suit'], string> = {
-		hearts: '♥',
-		diamonds: '♦',
-		clubs: '♣',
-		spades: '♠',
-	};
-	return symbols[suit];
 }

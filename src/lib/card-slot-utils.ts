@@ -4,14 +4,7 @@
  * NO DOM element creation - only visibility toggling and text updates
  */
 
-const SUIT_SYMBOLS: Record<string, string> = {
-	hearts: '♥',
-	diamonds: '♦',
-	clubs: '♣',
-	spades: '♠',
-};
-
-const RED_SUITS = new Set(['hearts', 'diamonds']);
+import { getSuitSymbol, isRedSuit } from './card-format';
 
 export interface CardData {
 	rank: string;
@@ -62,9 +55,8 @@ export function setSlotState(slot: Element, state: SlotState, card?: CardData): 
  * Update card face elements with card data
  */
 function updateCardFace(cardFace: Element, card: CardData): void {
-	const suitSymbol = SUIT_SYMBOLS[card.suit] || card.suit;
-	const isRed = RED_SUITS.has(card.suit);
-	const colorClass = isRed ? 'card-red' : 'card-black';
+	const suitSymbol = getSuitSymbol(card.suit);
+	const colorClass = isRedSuit(card.suit) ? 'card-red' : 'card-black';
 
 	// Update rank elements
 	cardFace.querySelectorAll('[data-rank]').forEach((el) => {

@@ -312,16 +312,6 @@ export class BaccaratUIRenderer {
 
 	// ===== Private Helpers =====
 
-	private getSuitSymbol(suit: string): string {
-		const symbols: Record<string, string> = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit] || suit;
-	}
-
 	private getSuitColor(suit: string): string {
 		return suit === 'hearts' || suit === 'diamonds' ? 'text-red-500' : 'text-neutral-900';
 	}

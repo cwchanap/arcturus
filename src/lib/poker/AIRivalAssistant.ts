@@ -3,8 +3,9 @@
  * Provides AI-powered move suggestions using OpenAI or Gemini APIs
  */
 
-import type { Card, Player, Suit } from './types';
+import type { Card, Player } from './types';
 import { getCallAmount, getHighestBet } from './index';
+import { getSuitSymbol } from '../card-format';
 
 export type AiProvider = 'openai' | 'gemini';
 export type AiSettings = {
@@ -156,18 +157,8 @@ export class AIRivalAssistant {
 
 	// === Prompt Building ===
 
-	private getSuitSymbol(suit: Suit): string {
-		const symbols = {
-			hearts: '♥',
-			diamonds: '♦',
-			clubs: '♣',
-			spades: '♠',
-		};
-		return symbols[suit];
-	}
-
 	private formatCard(card: Card) {
-		return `${card.value}${this.getSuitSymbol(card.suit)}`;
+		return `${card.value}${getSuitSymbol(card.suit)}`;
 	}
 
 	private formatCards(cards: Card[]) {

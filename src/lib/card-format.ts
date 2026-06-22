@@ -19,6 +19,18 @@ export function getSuitSymbol(suit: string): string {
 	return SUIT_SYMBOLS[suit] ?? suit;
 }
 
+/**
+ * Map a suit name to its display glyph, returning `'?'` for unknown suits.
+ *
+ * Use this (rather than `getSuitSymbol`) at render sites that previously
+ * rendered a literal `'?'` placeholder for unrecognized suits, so that
+ * contract is preserved in a single testable place instead of being
+ * re-derived inline at each call site.
+ */
+export function getSuitGlyph(suit: string): string {
+	return SUIT_SYMBOLS[suit] === undefined ? '?' : SUIT_SYMBOLS[suit];
+}
+
 /** Whether a suit renders in red (hearts / diamonds). */
 export function isRedSuit(suit: string): boolean {
 	return RED_SUITS.has(suit);

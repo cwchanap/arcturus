@@ -81,15 +81,22 @@ describe('fetchWithTimeout', () => {
 	test('removes the caller-signal abort listener after a successful fetch', async () => {
 		const okResponse = new Response('ok', { status: 200 });
 		const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(okResponse);
-		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
 
 		const caller = new AbortController();
+		const addSpy = spyOn(caller.signal, 'addEventListener');
+		const removeSpy = spyOn(caller.signal, 'removeEventListener');
 		await fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000);
 
-		// The listener registered for caller-abort chaining must be removed on
-		// the success path so the signal does not retain a dangling listener.
-		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		// The exact function reference registered as the caller-abort chaining
+		// listener must be the one removed, so the signal does not retain a
+		// dangling listener (and a regression that removes the *wrong*
+		// listener cannot slip through).
+		const abortAddCalls = addSpy.mock.calls.filter((c) => c[0] === 'abort');
+		expect(abortAddCalls).toHaveLength(1);
+		const addedListener = abortAddCalls[0][1];
+		expect(removeSpy).toHaveBeenCalledWith('abort', addedListener);
 		removeSpy.mockRestore();
+		addSpy.mockRestore();
 		fetchSpy.mockRestore();
 	});
 
@@ -120,17 +127,23 @@ describe('fetchWithTimeout', () => {
 					});
 				}),
 		);
-		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
 
 		const caller = new AbortController();
+		const addSpy = spyOn(caller.signal, 'addEventListener');
+		const removeSpy = spyOn(caller.signal, 'removeEventListener');
 		const promise = fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000);
 		caller.abort();
 
 		await expect(promise).rejects.toThrow('aborted');
 		// The finally block must clean up the caller-signal listener on the
-		// rejection path too, so the signal does not retain a dangling listener.
-		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		// rejection path too — and it must be the *same* function reference
+		// that was registered, not just any function.
+		const abortAddCalls = addSpy.mock.calls.filter((c) => c[0] === 'abort');
+		expect(abortAddCalls).toHaveLength(1);
+		const addedListener = abortAddCalls[0][1];
+		expect(removeSpy).toHaveBeenCalledWith('abort', addedListener);
 		removeSpy.mockRestore();
+		addSpy.mockRestore();
 		fetchSpy.mockRestore();
 	});
 
@@ -147,16 +160,21 @@ describe('fetchWithTimeout', () => {
 					});
 				}),
 		);
-		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
 
 		const caller = new AbortController();
+		const addSpy = spyOn(caller.signal, 'addEventListener');
+		const removeSpy = spyOn(caller.signal, 'removeEventListener');
 		// Short timeout fires first; fetch rejects via the internal controller,
 		// and the finally block must still remove the caller-signal listener.
 		await expect(
 			fetchWithTimeout('https://example.com', { signal: caller.signal }, 10),
 		).rejects.toThrow('aborted');
-		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		const abortAddCalls = addSpy.mock.calls.filter((c) => c[0] === 'abort');
+		expect(abortAddCalls).toHaveLength(1);
+		const addedListener = abortAddCalls[0][1];
+		expect(removeSpy).toHaveBeenCalledWith('abort', addedListener);
 		removeSpy.mockRestore();
+		addSpy.mockRestore();
 		fetchSpy.mockRestore();
 	});
 });

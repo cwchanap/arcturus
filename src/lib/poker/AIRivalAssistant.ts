@@ -6,6 +6,7 @@
 import type { Card, Player } from './types';
 import { getCallAmount, getHighestBet } from './index';
 import { getSuitSymbol } from '../card-format';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 export type AiProvider = 'openai' | 'gemini';
 export type AiSettings = {
@@ -196,25 +197,37 @@ Keep the JSON as the only output.`;
 	// === API Calls ===
 
 	private async callOpenAi(prompt: string, model: string, apiKey: string) {
-		const response = await fetch('https://api.openai.com/v1/chat/completions', {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({
-				model,
-				messages: [
-					{
-						role: 'system',
-						content:
-							'You are an elite poker rival helping determine the next move. Answer in JSON only.',
+		let response: Response;
+		try {
+			response = await fetchWithTimeout(
+				'https://api.openai.com/v1/chat/completions',
+				{
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
+						authorization: `Bearer ${apiKey}`,
 					},
-					{ role: 'user', content: prompt },
-				],
-				temperature: 0.6,
-			}),
-		});
+					body: JSON.stringify({
+						model,
+						messages: [
+							{
+								role: 'system',
+								content:
+									'You are an elite poker rival helping determine the next move. Answer in JSON only.',
+							},
+							{ role: 'user', content: prompt },
+						],
+						temperature: 0.6,
+					}),
+				},
+				5000, // 5 second timeout
+			);
+		} catch (error) {
+			if (error instanceof Error && error.name === 'AbortError') {
+				throw new Error('Request timed out');
+			}
+			throw error;
+		}
 
 		const data = (await response.json()) as {
 			error?: { message?: string };
@@ -232,30 +245,39 @@ Keep the JSON as the only output.`;
 	}
 
 	private async callGemini(prompt: string, model: string, apiKey: string) {
-		const response = await fetch(
-			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-			{
-				method: 'POST',
-				headers: {
-					'content-type': 'application/json',
-				},
-				body: JSON.stringify({
-					generationConfig: {
-						temperature: 0.6,
+		let response: Response;
+		try {
+			response = await fetchWithTimeout(
+				`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+				{
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json',
 					},
-					contents: [
-						{
-							role: 'user',
-							parts: [
-								{
-									text: `You are an elite poker rival helping determine the next move. Answer in JSON only.\n${prompt}`,
-								},
-							],
+					body: JSON.stringify({
+						generationConfig: {
+							temperature: 0.6,
 						},
-					],
-				}),
-			},
-		);
+						contents: [
+							{
+								role: 'user',
+								parts: [
+									{
+										text: `You are an elite poker rival helping determine the next move. Answer in JSON only.\n${prompt}`,
+									},
+								],
+							},
+						],
+					}),
+				},
+				5000, // 5 second timeout
+			);
+		} catch (error) {
+			if (error instanceof Error && error.name === 'AbortError') {
+				throw new Error('Request timed out');
+			}
+			throw error;
+		}
 
 		const data = (await response.json()) as {
 			error?: { message?: string } | string;

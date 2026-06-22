@@ -77,4 +77,33 @@ describe('fetchWithTimeout', () => {
 		await expect(promise).rejects.toThrow('aborted');
 		fetchSpy.mockRestore();
 	});
+
+	test('removes the caller-signal abort listener after a successful fetch', async () => {
+		const okResponse = new Response('ok', { status: 200 });
+		const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(okResponse);
+		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
+
+		const caller = new AbortController();
+		await fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000);
+
+		// The listener registered for caller-abort chaining must be removed on
+		// the success path so the signal does not retain a dangling listener.
+		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		removeSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
+
+	test('does not throw when no caller signal is supplied', async () => {
+		const okResponse = new Response('ok', { status: 200 });
+		const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(okResponse);
+		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
+
+		// No caller signal → the finally block must skip removeEventListener
+		// without throwing. removeEventListener should not be called for the
+		// (non-existent) caller signal.
+		await expect(fetchWithTimeout('https://example.com', {}, 5000)).resolves.toBe(okResponse);
+		expect(removeSpy).not.toHaveBeenCalled();
+		removeSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
 });

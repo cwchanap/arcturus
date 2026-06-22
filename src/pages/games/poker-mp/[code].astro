@@ -71,6 +71,7 @@ if (!code || !isValidRoomCode(code)) {
 
 <script>
 	import { MultiplayerPokerClient } from '../../../lib/mp-poker/client';
+	import { getSuitSymbol, isRedSuit } from '../../../lib/card-format';
 
 	const root = document.querySelector('[data-room-code]') as HTMLElement;
 	const code = root.dataset.roomCode!;
@@ -85,16 +86,9 @@ if (!code || !isValidRoomCode(code)) {
 	const logEl = document.querySelector('[data-testid="log"]') as HTMLElement;
 	const raiseAmt = document.querySelector('[data-testid="raise-amount"]') as HTMLInputElement;
 
-	const SUIT_SYMBOLS: Record<string, string> = {
-		hearts: '♥',
-		diamonds: '♦',
-		clubs: '♣',
-		spades: '♠',
-	};
-
 	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
-		const sym = SUIT_SYMBOLS[c.suit] ?? '?';
-		const color = c.suit === 'hearts' || c.suit === 'diamonds' ? 'text-rose-400' : 'text-white';
+		const sym = getSuitSymbol(c.suit);
+		const color = isRedSuit(c.suit) ? 'text-rose-400' : 'text-white';
 		const span = document.createElement('span');
 		span.className = `inline-block bg-slate-800 px-2 py-1 rounded ${color}`;
 		span.textContent = `${c.value}${sym}`;

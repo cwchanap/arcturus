@@ -56,6 +56,37 @@ describe('fetchWithTimeout', () => {
 		fetchSpy.mockRestore();
 	});
 
+	test('registers no abort listener when the caller signal is already aborted', async () => {
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					if (init?.signal?.aborted) {
+						reject(new DOMException('aborted', 'AbortError'));
+						return;
+					}
+					init?.signal?.addEventListener('abort', () => {
+						reject(new DOMException('aborted', 'AbortError'));
+					});
+				}),
+		);
+
+		const caller = new AbortController();
+		const addSpy = spyOn(caller.signal, 'addEventListener');
+		caller.abort();
+
+		await expect(
+			fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000),
+		).rejects.toThrow('aborted');
+
+		// The already-aborted branch must short-circuit listener registration so
+		// the caller's signal never has a dangling listener attached. (The
+		// finally block still calls removeEventListener unconditionally, but
+		// removing a never-added listener is a no-op.)
+		expect(addSpy).not.toHaveBeenCalled();
+		addSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
+
 	test('propagates a caller signal aborted mid-flight', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
 			(_url: string, init?: RequestInit) =>

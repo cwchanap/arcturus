@@ -312,10 +312,6 @@ export class BaccaratUIRenderer {
 
 	// ===== Private Helpers =====
 
-	private getSuitColor(suit: string): string {
-		return suit === 'hearts' || suit === 'diamonds' ? 'text-red-500' : 'text-neutral-900';
-	}
-
 	private formatBetType(type: BetType): string {
 		const labels: Record<BetType, string> = {
 			player: 'Player',

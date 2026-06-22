@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { SUIT_SYMBOLS, getSuitSymbol, isRedSuit } from './card-format';
+import { SUIT_SYMBOLS, getSuitGlyph, getSuitSymbol, isRedSuit } from './card-format';
 
 describe('card-format', () => {
 	describe('getSuitSymbol', () => {
@@ -28,6 +28,24 @@ describe('card-format', () => {
 				clubs: '♣',
 				spades: '♠',
 			});
+		});
+	});
+
+	describe('getSuitGlyph', () => {
+		test('maps each known suit to its glyph', () => {
+			expect(getSuitGlyph('hearts')).toBe('♥');
+			expect(getSuitGlyph('diamonds')).toBe('♦');
+			expect(getSuitGlyph('clubs')).toBe('♣');
+			expect(getSuitGlyph('spades')).toBe('♠');
+		});
+
+		test("returns '?' for unknown suits", () => {
+			// This is the contract the mp-poker page's createCardEl previously
+			// derived inline (`sym === c.suit ? '?' : sym`). Pinning it here
+			// ensures a future "simplification" to getSuitSymbol cannot
+			// silently regress the '?' placeholder rendering.
+			expect(getSuitGlyph('unknown')).toBe('?');
+			expect(getSuitGlyph('')).toBe('?');
 		});
 	});
 

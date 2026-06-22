@@ -164,7 +164,9 @@ src/
 ├── lib/
 │   ├── auth.ts            # Server auth factory
 │   ├── auth-client.ts     # Browser auth utils
+│   ├── card-format.ts     # Shared suit-symbol/color helpers (cross-game)
 │   ├── db.ts              # Database factory
+│   ├── fetch-with-timeout.ts # Shared fetch + abort-timeout helper (cross-game)
 │   ├── missions.ts        # Mission system logic
 │   ├── llm-settings.ts    # User LLM configuration
 │   ├── poker/             # Poker game logic (modular)

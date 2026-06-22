@@ -106,4 +106,57 @@ describe('fetchWithTimeout', () => {
 		removeSpy.mockRestore();
 		fetchSpy.mockRestore();
 	});
+
+	test('removes the caller-signal abort listener after a caller-abort rejection', async () => {
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					if (init?.signal?.aborted) {
+						reject(new DOMException('aborted', 'AbortError'));
+						return;
+					}
+					init?.signal?.addEventListener('abort', () => {
+						reject(new DOMException('aborted', 'AbortError'));
+					});
+				}),
+		);
+		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
+
+		const caller = new AbortController();
+		const promise = fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000);
+		caller.abort();
+
+		await expect(promise).rejects.toThrow('aborted');
+		// The finally block must clean up the caller-signal listener on the
+		// rejection path too, so the signal does not retain a dangling listener.
+		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		removeSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
+
+	test('removes the caller-signal abort listener after a timeout rejection', async () => {
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					if (init?.signal?.aborted) {
+						reject(new DOMException('aborted', 'AbortError'));
+						return;
+					}
+					init?.signal?.addEventListener('abort', () => {
+						reject(new DOMException('aborted', 'AbortError'));
+					});
+				}),
+		);
+		const removeSpy = spyOn(AbortSignal.prototype, 'removeEventListener');
+
+		const caller = new AbortController();
+		// Short timeout fires first; fetch rejects via the internal controller,
+		// and the finally block must still remove the caller-signal listener.
+		await expect(
+			fetchWithTimeout('https://example.com', { signal: caller.signal }, 10),
+		).rejects.toThrow('aborted');
+		expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+		removeSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
 });

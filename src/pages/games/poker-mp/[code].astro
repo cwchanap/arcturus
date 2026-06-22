@@ -88,10 +88,11 @@ if (!code || !isValidRoomCode(code)) {
 
 	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
 		const sym = getSuitSymbol(c.suit);
+		const glyph = sym === c.suit ? '?' : sym;
 		const color = isRedSuit(c.suit) ? 'text-rose-400' : 'text-white';
 		const span = document.createElement('span');
 		span.className = `inline-block bg-slate-800 px-2 py-1 rounded ${color}`;
-		span.textContent = `${c.value}${sym}`;
+		span.textContent = `${c.value}${glyph}`;
 		return span;
 	}
 

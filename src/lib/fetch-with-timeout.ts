@@ -17,11 +17,12 @@ export async function fetchWithTimeout(
 ): Promise<Response> {
 	const controller = new AbortController();
 	const callerSignal = init.signal;
+	const onCallerAbort = () => controller.abort(callerSignal?.reason);
 	if (callerSignal) {
 		if (callerSignal.aborted) {
-			controller.abort();
+			controller.abort(callerSignal.reason);
 		} else {
-			callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+			callerSignal.addEventListener('abort', onCallerAbort, { once: true });
 		}
 	}
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -29,5 +30,6 @@ export async function fetchWithTimeout(
 		return await fetch(url, { ...init, signal: controller.signal });
 	} finally {
 		clearTimeout(timer);
+		if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
 	}
 }

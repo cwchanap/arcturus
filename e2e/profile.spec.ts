@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { TEST_USER } from './auth.setup';
+import { bootstrapTestUser } from './bootstrap-auth';
 
 test.describe('Profile Page', () => {
 	test.beforeEach(async ({ page }) => {
@@ -87,13 +88,8 @@ test.describe('Profile Page', () => {
 		// storageState session used by other E2E tests.
 		const appUrl = baseURL ?? 'http://localhost:2000';
 		const context = await browser.newContext({ storageState: undefined });
+		await bootstrapTestUser(context, appUrl, TEST_USER);
 		const page = await context.newPage();
-
-		await page.goto(`${appUrl}/signin`);
-		await page.fill('input[name="email"]', TEST_USER.email);
-		await page.fill('input[name="password"]', TEST_USER.password);
-		await page.click('button[type="submit"]');
-		await page.waitForURL(`${appUrl}/`, { timeout: 15000 });
 
 		await page.goto(`${appUrl}/profile`);
 		await page.locator('#signout-btn').click();
@@ -103,7 +99,7 @@ test.describe('Profile Page', () => {
 
 		// Verify we're on signin page
 		await expect(page).toHaveURL(`${appUrl}/signin`);
-		await expect(page.locator('text=Sign in to continue')).toBeVisible();
+		await expect(page.getByRole('button', { name: /continue with google/i })).toBeVisible();
 
 		await context.close();
 	});

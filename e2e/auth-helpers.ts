@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { TEST_USER } from './auth.setup';
+import { bootstrapPage } from './bootstrap-auth';
 
 export const waitForHomeRedirect = async (page: Page, timeout = 10000): Promise<boolean> => {
 	try {
@@ -21,7 +22,6 @@ const isAuthenticated = async (
 		if (!options.skipNavigation) {
 			await page.goto('/', { waitUntil: 'domcontentloaded' });
 		} else {
-			// Ensure the current page DOM is ready without navigating away
 			await page.waitForLoadState('domcontentloaded');
 		}
 		return await page.locator('[data-chip-balance]').first().isVisible();
@@ -31,29 +31,12 @@ const isAuthenticated = async (
 };
 
 export const ensureLoggedIn = async (page: Page): Promise<void> => {
-	if (await isAuthenticated(page)) {
-		return;
-	}
+	if (await isAuthenticated(page)) return;
 
-	await page.goto('/signin');
-	await page.fill('input[name="email"]', TEST_USER.email);
-	await page.fill('input[name="password"]', TEST_USER.password);
-	await page.click('button[type="submit"]');
-
-	const reachedHome = await waitForHomeRedirect(page);
-	if (reachedHome && (await isAuthenticated(page, { skipNavigation: true }))) {
-		return;
-	}
-
-	await page.goto('/signup');
-	await page.fill('input[name="name"]', TEST_USER.name);
-	await page.fill('input[name="email"]', TEST_USER.email);
-	await page.fill('input[name="password"]', TEST_USER.password);
-	await page.click('button[type="submit"]');
-	await page.waitForURL('/', { timeout: 15000 });
-	await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+	const baseURL = new URL(page.url()).origin;
+	await bootstrapPage(page, baseURL, TEST_USER);
 
 	if (!(await isAuthenticated(page, { skipNavigation: true }))) {
-		throw new Error('Failed to authenticate test user');
+		throw new Error('Failed to authenticate test user through bootstrap');
 	}
 };

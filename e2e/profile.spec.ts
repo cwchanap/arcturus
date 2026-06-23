@@ -104,12 +104,13 @@ test.describe('Profile Page', () => {
 		await context.close();
 	});
 
-	test('profile page is protected (requires auth)', async ({ browser }) => {
+	test('profile page is protected (requires auth)', async ({ browser, baseURL }) => {
 		// Use a fresh context with no stored auth state
+		const appUrl = baseURL ?? 'http://localhost:2000';
 		const context = await browser.newContext({ storageState: undefined });
 		const page = await context.newPage();
 
-		await page.goto('/profile');
+		await page.goto(`${appUrl}/profile`);
 
 		await expect(page).toHaveURL(/\/signin/);
 		await context.close();

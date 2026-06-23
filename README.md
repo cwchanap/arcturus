@@ -14,8 +14,7 @@ An Astro project with Better Auth, Drizzle ORM, and Cloudflare D1 database integ
 
 ## Authentication Features
 
-- Email/Password authentication
-- OAuth providers (GitHub, Google)
+- Google OAuth authentication
 - Session management
 - Protected routes
 - User dashboard
@@ -53,10 +52,12 @@ bun run db:generate
 bun run db:migrate:local
 ```
 
-3. Create `.env` file (copy from `.env.example`):
+3. Create `.dev.vars` for local Cloudflare Workers secrets:
 
 ```sh
-cp .env.example .env
+BETTER_AUTH_SECRET=<secret>
+GOOGLE_CLIENT_ID=<google-client-id>
+GOOGLE_CLIENT_SECRET=<google-client-secret>
 ```
 
 4. Start development server:
@@ -65,7 +66,7 @@ cp .env.example .env
 bun run dev
 ```
 
-Visit `http://localhost:4321`
+Visit `http://localhost:2000`
 
 ## Available Scripts
 
@@ -113,7 +114,7 @@ Visit `http://localhost:4321`
 │   │   ├── api/auth/     # Auth API endpoints
 │   │   ├── dashboard.astro # Protected page
 │   │   ├── signin.astro  # Sign in page
-│   │   └── signup.astro  # Sign up page
+│   │   └── profile.astro # Protected profile page
 │   └── styles/           # Global styles
 ├── astro.config.mjs      # Astro configuration
 ├── drizzle.config.ts     # Drizzle configuration
@@ -125,7 +126,6 @@ Visit `http://localhost:4321`
 
 - `/` - Home page
 - `/signin` - Sign in page
-- `/signup` - Sign up page
 - `/profile` - Protected profile page (requires authentication)
 - `/api/auth/*` - Authentication API endpoints
 
@@ -146,7 +146,15 @@ The project includes tables for:
 bun run build
 ```
 
-2. Deploy to Cloudflare:
+2. Configure Cloudflare secrets:
+
+```sh
+wrangler secret put BETTER_AUTH_SECRET
+wrangler secret put GOOGLE_CLIENT_ID
+wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+3. Deploy to Cloudflare:
 
 ```sh
 wrangler deploy
@@ -171,13 +179,15 @@ See [CODE_QUALITY.md](./CODE_QUALITY.md) for details.
 
 See `.env.example` for required environment variables.
 
-### OAuth Providers
+### Google OAuth
 
-To enable OAuth providers (GitHub, Google), you need to:
+To enable Google OAuth, you need to:
 
-1. Create OAuth applications on the respective platforms
+1. Create a Google OAuth application
 2. Add the client ID and secret to your environment variables
-3. Configure the callback URLs
+3. Configure the callback URLs:
+   - `http://localhost:2000/api/auth/callback/google`
+   - `https://<production-origin>/api/auth/callback/google`
 
 Detailed instructions in [AUTH_SETUP.md](./AUTH_SETUP.md).
 

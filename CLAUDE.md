@@ -87,8 +87,7 @@ bun run deploy                 # Build + deploy to Cloudflare
    ```typescript
    // Browser-side functions
    import { authClient } from '$lib/auth-client';
-   await authClient.signIn.email({ email, password });
-   await authClient.signUp.email({ email, password, name });
+   await authClient.signIn.social({ provider: 'google', callbackURL: '/' });
    await authClient.signOut();
    ```
 
@@ -159,7 +158,6 @@ src/
 │   │   ├── profile/            # User settings (LLM config)
 │   │   └── chips/update.ts     # Chip balance updates
 │   ├── signin.astro
-│   ├── signup.astro
 │   └── profile.astro
 ├── lib/
 │   ├── auth.ts            # Server auth factory
@@ -295,11 +293,7 @@ Tables defined in `src/db/schema.ts`:
 - UI mode: `bun run test:e2e:ui`
 - Headed mode: `bun run test:e2e:headed`
 
-**Test Account** (E2E):
-
-- Name: `E2E Test User`
-- Email: `e2e-test@arcturus.local`
-- Password: `PlaywrightTest123!`
+**E2E Auth**: Playwright uses the guarded auth bootstrap endpoint. Set `ENABLE_E2E_AUTH_BOOTSTRAP=true` and `E2E_AUTH_BOOTSTRAP_SECRET` only in local or CI test environments.
 
 ## Code Style
 
@@ -335,8 +329,10 @@ Before deploying to Cloudflare:
 1. Create D1 database: `wrangler d1 create arcturus-db`
 2. Update `database_id` in `wrangler.toml`
 3. Set secret: `wrangler secret put BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
-4. Apply migrations: `bun run db:migrate:remote`
-5. Deploy: `bun run deploy`
+4. Set Google OAuth client ID: `wrangler secret put GOOGLE_CLIENT_ID`
+5. Set Google OAuth client secret: `wrangler secret put GOOGLE_CLIENT_SECRET`
+6. Apply migrations: `bun run db:migrate:remote`
+7. Deploy: `bun run deploy`
 
 ## Common Issues
 

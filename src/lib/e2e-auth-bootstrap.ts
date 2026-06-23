@@ -6,7 +6,7 @@ export const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
 const E2E_BOOTSTRAP_PROVIDER_ID = 'e2e-bootstrap';
 
 type E2eBootstrapEnv = Partial<
-	Pick<Env, 'ENABLE_E2E_AUTH_BOOTSTRAP' | 'E2E_AUTH_BOOTSTRAP_SECRET'>
+	Pick<Env, 'APP_ENV' | 'ENABLE_E2E_AUTH_BOOTSTRAP' | 'E2E_AUTH_BOOTSTRAP_SECRET'>
 >;
 
 const bootstrapBodySchema = z.object({
@@ -22,8 +22,16 @@ export function getE2eBootstrapSecret(env: E2eBootstrapEnv): string | null {
 	return secret && secret.length > 0 ? secret : null;
 }
 
+export function isE2eAuthBootstrapRuntimeAllowed(env: E2eBootstrapEnv): boolean {
+	return env.APP_ENV === 'test' || env.APP_ENV === 'ci';
+}
+
 export function shouldInstallE2eAuthBootstrap(env: E2eBootstrapEnv): boolean {
-	return env.ENABLE_E2E_AUTH_BOOTSTRAP === 'true' && getE2eBootstrapSecret(env) !== null;
+	return (
+		isE2eAuthBootstrapRuntimeAllowed(env) &&
+		env.ENABLE_E2E_AUTH_BOOTSTRAP === 'true' &&
+		getE2eBootstrapSecret(env) !== null
+	);
 }
 
 export function isE2eBootstrapRequestAuthorized(headers: Headers, env: E2eBootstrapEnv): boolean {

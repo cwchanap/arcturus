@@ -38,6 +38,7 @@ jobs:
           echo "BETTER_AUTH_SECRET=test-secret-for-ci-only-$(openssl rand -base64 32)" > .dev.vars
           echo "GOOGLE_CLIENT_ID=ci-google-client-id" >> .dev.vars
           echo "GOOGLE_CLIENT_SECRET=ci-google-client-secret" >> .dev.vars
+          echo "APP_ENV=ci" >> .dev.vars
           echo "ENABLE_E2E_AUTH_BOOTSTRAP=true" >> .dev.vars
           echo "E2E_AUTH_BOOTSTRAP_SECRET=ci-e2e-bootstrap-secret" >> .dev.vars
           echo "BETTER_AUTH_URL=http://localhost:2000" >> .dev.vars

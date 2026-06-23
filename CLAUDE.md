@@ -293,7 +293,7 @@ Tables defined in `src/db/schema.ts`:
 - UI mode: `bun run test:e2e:ui`
 - Headed mode: `bun run test:e2e:headed`
 
-**E2E Auth**: Playwright uses the guarded auth bootstrap endpoint. Set `ENABLE_E2E_AUTH_BOOTSTRAP=true` and `E2E_AUTH_BOOTSTRAP_SECRET` only in local or CI test environments.
+**E2E Auth**: Playwright uses the guarded auth bootstrap endpoint. Set `APP_ENV=test` or `APP_ENV=ci` with `ENABLE_E2E_AUTH_BOOTSTRAP=true` and `E2E_AUTH_BOOTSTRAP_SECRET` only in local or CI test environments.
 
 ## Code Style
 

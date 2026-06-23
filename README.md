@@ -34,7 +34,7 @@ An Astro project with Better Auth, Drizzle ORM, and Cloudflare D1 database integ
 bun install
 ```
 
-2. Set up authentication (see [AUTH_SETUP.md](./AUTH_SETUP.md) for detailed instructions):
+2. Set up the local database:
 
 ```sh
 # Login to Cloudflare
@@ -59,6 +59,8 @@ BETTER_AUTH_SECRET=<secret>
 GOOGLE_CLIENT_ID=<google-client-id>
 GOOGLE_CLIENT_SECRET=<google-client-secret>
 ```
+
+Configure the Google OAuth app with `http://localhost:2000/api/auth/callback/google` as an authorized redirect URI for local development.
 
 4. Start development server:
 
@@ -111,11 +113,16 @@ Visit `http://localhost:2000`
 │   │   ├── auth-client.ts # Client-side auth
 │   │   └── db.ts         # Database client
 │   ├── pages/
-│   │   ├── api/auth/     # Auth API endpoints
-│   │   ├── dashboard.astro # Protected page
+│   │   ├── api/
+│   │   │   ├── auth/     # Better Auth API endpoints
+│   │   │   ├── chips/    # Chip balance API
+│   │   │   └── profile/  # Profile settings API
+│   │   ├── games/        # Casino game routes
+│   │   ├── index.astro   # Home page
 │   │   ├── signin.astro  # Sign in page
 │   │   └── profile.astro # Protected profile page
-│   └── styles/           # Global styles
+│   └── styles/
+│       └── global.css    # Global styles
 ├── astro.config.mjs      # Astro configuration
 ├── drizzle.config.ts     # Drizzle configuration
 ├── wrangler.toml         # Cloudflare Workers config
@@ -162,7 +169,7 @@ wrangler secret put GOOGLE_CLIENT_SECRET
 wrangler deploy
 ```
 
-For detailed deployment instructions, see [AUTH_SETUP.md](./AUTH_SETUP.md).
+Configure the production Google OAuth app with `https://<production-origin>/api/auth/callback/google` before deploying.
 
 ## Code Quality
 
@@ -190,8 +197,6 @@ To enable Google OAuth, you need to:
 3. Configure the callback URLs:
    - `http://localhost:2000/api/auth/callback/google`
    - `https://<production-origin>/api/auth/callback/google`
-
-Detailed instructions in [AUTH_SETUP.md](./AUTH_SETUP.md).
 
 ## Learn More
 

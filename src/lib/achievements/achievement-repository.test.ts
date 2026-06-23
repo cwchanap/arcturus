@@ -1,15 +1,28 @@
-import { describe, expect, test } from 'bun:test';
-import {
-	getUserAchievements,
-	getEarnedAchievementIds,
-	grantAchievement,
-	hasAchievement,
-	getAchievementCount,
-	getBulkUserAchievements,
-} from './achievement-repository';
+import { describe, expect, test, beforeAll } from 'bun:test';
 import { userAchievement } from '../../db/schema';
 import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
+
+// Dynamically import the real repository functions in beforeAll.
+// A cache-busting query string bypasses any mock.module() overrides that
+// other test files (e.g. game-stats.test.ts) may have registered globally,
+// which would otherwise replace these bindings with mocks.
+let getUserAchievements: typeof import('./achievement-repository').getUserAchievements;
+let getEarnedAchievementIds: typeof import('./achievement-repository').getEarnedAchievementIds;
+let grantAchievement: typeof import('./achievement-repository').grantAchievement;
+let hasAchievement: typeof import('./achievement-repository').hasAchievement;
+let getAchievementCount: typeof import('./achievement-repository').getAchievementCount;
+let getBulkUserAchievements: typeof import('./achievement-repository').getBulkUserAchievements;
+
+beforeAll(async () => {
+	const real = await import(`./achievement-repository.ts?real=${Date.now()}`);
+	getUserAchievements = real.getUserAchievements;
+	getEarnedAchievementIds = real.getEarnedAchievementIds;
+	grantAchievement = real.grantAchievement;
+	hasAchievement = real.hasAchievement;
+	getAchievementCount = real.getAchievementCount;
+	getBulkUserAchievements = real.getBulkUserAchievements;
+});
 
 function createMockDb({
 	selectResult = [],

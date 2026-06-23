@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildAuthConfig, getRequiredAuthConfig } from './auth';
+import { buildAuthConfig, getAuthPlugins, getRequiredAuthConfig } from './auth';
 
 const drizzleDb = {} as Parameters<typeof buildAuthConfig>[0];
 
@@ -33,5 +33,21 @@ describe('auth configuration', () => {
 		expect(config.socialProviders?.google?.clientSecret).toBe('test-google-client-secret');
 		expect(config.baseURL).toBe('http://localhost:2000');
 		expect(config.trustedOrigins).toEqual(['http://localhost:2000']);
+	});
+
+	test('includes the E2E bootstrap plugin only when explicitly enabled', () => {
+		const disabledConfig = buildAuthConfig(drizzleDb, completeEnv, undefined, []);
+		expect(disabledConfig.plugins).toEqual([]);
+	});
+
+	test('getAuthPlugins installs the E2E bootstrap plugin when guarded env is present', () => {
+		expect(getAuthPlugins(completeEnv).map((plugin) => plugin.id)).toEqual([]);
+		expect(
+			getAuthPlugins({
+				...completeEnv,
+				ENABLE_E2E_AUTH_BOOTSTRAP: 'true',
+				E2E_AUTH_BOOTSTRAP_SECRET: 'secret',
+			}).map((plugin) => plugin.id),
+		).toEqual(['e2e-auth-bootstrap']);
 	});
 });

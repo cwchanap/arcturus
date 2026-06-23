@@ -1,16 +1,27 @@
 /**
  * Authentication setup constants and utilities for Playwright tests.
- * All tests will use these credentials via global setup.
+ * The real product auth flow is Google-only; tests use a guarded bootstrap endpoint.
  */
 
 export const TEST_USER = {
 	email: 'e2e-test@arcturus.local',
-	password: 'PlaywrightTest123!',
 	name: 'E2E Test User',
 } as const;
 
-/**
- * Path to the saved authentication state.
- * This is populated by global-setup.ts before tests run.
- */
+export const TEST_USER_2 = {
+	email: 'e2e-test-2@arcturus.local',
+	name: 'E2E Test User 2',
+} as const;
+
+export const TEST_USERS = [
+	{
+		credentials: TEST_USER,
+		authFile: 'user.json',
+	},
+	{
+		credentials: TEST_USER_2,
+		authFile: 'user-2.json',
+	},
+] as const;
+
 export const AUTH_FILE = './e2e/.auth/user.json';

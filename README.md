@@ -129,6 +129,8 @@ Visit `http://localhost:2000`
 - `/profile` - Protected profile page (requires authentication)
 - `/api/auth/*` - Authentication API endpoints
 
+A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
+
 ## Database Schema
 
 The project includes tables for:

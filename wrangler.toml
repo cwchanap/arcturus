@@ -32,7 +32,10 @@ new_classes = ["Arcturus"]
 
 # Worker vars — DO NOT put localhost or dev-only values here.
 # These are deployed to production. Use .dev.vars for local overrides.
-# Production secrets (MP_AUTH_SECRET, WORKER_ORIGIN) should be set via:
+# GOOGLE_CLIENT_ID is public OAuth app metadata and can be a plain Worker var.
+# Production secrets (GOOGLE_CLIENT_SECRET, MP_AUTH_SECRET, WORKER_ORIGIN) should be set via:
+#   wrangler secret put GOOGLE_CLIENT_SECRET
 #   wrangler secret put MP_AUTH_SECRET
 #   wrangler secret put WORKER_ORIGIN
 [vars]
+GOOGLE_CLIENT_ID = "333977657035-o0bc5n6k1ac7nvah4u64meoereojvie8.apps.googleusercontent.com"

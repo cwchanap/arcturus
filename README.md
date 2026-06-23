@@ -62,6 +62,8 @@ GOOGLE_CLIENT_SECRET=<google-client-secret>
 
 Configure the Google OAuth app with `http://localhost:2000/api/auth/callback/google` as an authorized redirect URI for local development.
 
+For Playwright E2E authentication, use local-only bootstrap bindings: set `APP_ENV=test`, `ENABLE_E2E_AUTH_BOOTSTRAP=true`, and `E2E_AUTH_BOOTSTRAP_SECRET` in `.dev.vars`. Do not set those values in production.
+
 4. Start development server:
 
 ```sh

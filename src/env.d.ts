@@ -5,6 +5,7 @@ interface Env {
 	BETTER_AUTH_SECRET: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;
+	APP_ENV?: string;
 	ENABLE_E2E_AUTH_BOOTSTRAP?: string;
 	E2E_AUTH_BOOTSTRAP_SECRET?: string;
 	MP_AUTH_SECRET?: string;

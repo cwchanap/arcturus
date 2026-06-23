@@ -45,6 +45,7 @@ describe('auth configuration', () => {
 		expect(
 			getAuthPlugins({
 				...completeEnv,
+				APP_ENV: 'test',
 				ENABLE_E2E_AUTH_BOOTSTRAP: 'true',
 				E2E_AUTH_BOOTSTRAP_SECRET: 'secret',
 			}).map((plugin) => plugin.id),

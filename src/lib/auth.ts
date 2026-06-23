@@ -1,38 +1,68 @@
 import { betterAuth } from 'better-auth';
-import type { BetterAuthOptions } from 'better-auth';
+import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
 
-export function createAuth(db: D1Database, env: Env, baseURL?: string) {
-	const drizzleDb = drizzle(db, { schema });
+export type AuthEnvInput = Partial<
+	Pick<Env, 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET'>
+>;
 
-	// Get the secret from env, fallback to process.env for local development
-	const secret =
-		env.BETTER_AUTH_SECRET ||
-		process.env.BETTER_AUTH_SECRET ||
-		'development-secret-change-in-production';
+export function getRequiredAuthConfig(env: AuthEnvInput) {
+	const missing = [
+		['BETTER_AUTH_SECRET', env.BETTER_AUTH_SECRET],
+		['GOOGLE_CLIENT_ID', env.GOOGLE_CLIENT_ID],
+		['GOOGLE_CLIENT_SECRET', env.GOOGLE_CLIENT_SECRET],
+	]
+		.filter(([, value]) => typeof value !== 'string' || value.trim().length === 0)
+		.map(([key]) => key);
 
+	if (missing.length > 0) {
+		throw new Error(`Missing required auth environment binding(s): ${missing.join(', ')}`);
+	}
+
+	return {
+		betterAuthSecret: env.BETTER_AUTH_SECRET as string,
+		googleClientId: env.GOOGLE_CLIENT_ID as string,
+		googleClientSecret: env.GOOGLE_CLIENT_SECRET as string,
+	};
+}
+
+export function buildAuthConfig(
+	drizzleDb: ReturnType<typeof drizzle>,
+	env: AuthEnvInput,
+	baseURL?: string,
+	plugins: BetterAuthPlugin[] = [],
+): BetterAuthOptions {
+	const authEnv = getRequiredAuthConfig(env);
 	const authConfig: BetterAuthOptions = {
 		database: drizzleAdapter(drizzleDb, {
 			provider: 'sqlite',
 		}),
-		secret,
+		secret: authEnv.betterAuthSecret,
 		emailAndPassword: {
-			enabled: true,
-			// For now, email verification is disabled. Before enabling this in production,
-			// you must configure Better Auth's email verification flow and your email provider.
-			requireEmailVerification: false,
+			enabled: false,
 		},
+		socialProviders: {
+			google: {
+				clientId: authEnv.googleClientId,
+				clientSecret: authEnv.googleClientSecret,
+			},
+		},
+		plugins,
 	};
 
-	// Only configure baseURL if provided (for production)
 	if (baseURL) {
 		authConfig.baseURL = baseURL;
 		authConfig.trustedOrigins = [baseURL];
 	}
 
-	return betterAuth(authConfig);
+	return authConfig;
+}
+
+export function createAuth(db: D1Database, env: Env, baseURL?: string) {
+	const drizzleDb = drizzle(db, { schema });
+	return betterAuth(buildAuthConfig(drizzleDb, env, baseURL));
 }
 
 export type Auth = ReturnType<typeof createAuth>;

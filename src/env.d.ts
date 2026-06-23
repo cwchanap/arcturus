@@ -2,7 +2,11 @@
 
 interface Env {
 	DB: D1Database;
-	BETTER_AUTH_SECRET?: string;
+	BETTER_AUTH_SECRET: string;
+	GOOGLE_CLIENT_ID: string;
+	GOOGLE_CLIENT_SECRET: string;
+	ENABLE_E2E_AUTH_BOOTSTRAP?: string;
+	E2E_AUTH_BOOTSTRAP_SECRET?: string;
 	MP_AUTH_SECRET?: string;
 	arcturus: DurableObjectNamespace;
 	WORKER_ORIGIN?: string;

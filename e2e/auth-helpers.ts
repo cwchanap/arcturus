@@ -30,10 +30,18 @@ const isAuthenticated = async (
 	}
 };
 
+const getBootstrapBaseURL = (page: Page): string => {
+	const currentURL = page.url();
+	if (currentURL.startsWith('http://') || currentURL.startsWith('https://')) {
+		return new URL(currentURL).origin;
+	}
+	return 'http://localhost:2000';
+};
+
 export const ensureLoggedIn = async (page: Page): Promise<void> => {
 	if (await isAuthenticated(page)) return;
 
-	const baseURL = new URL(page.url()).origin;
+	const baseURL = getBootstrapBaseURL(page);
 	await bootstrapPage(page, baseURL, TEST_USER);
 
 	if (!(await isAuthenticated(page, { skipNavigation: true }))) {

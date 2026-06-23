@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
+import { bootstrapTestUser } from './bootstrap-auth';
 
 async function gotoCraps(page: Page) {
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
@@ -10,15 +11,11 @@ async function createIsolatedCrapsPage(browser: Browser, baseURL?: string) {
 	const page = await context.newPage();
 	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-	await page.goto('/signup', { waitUntil: 'domcontentloaded' });
-	await page.fill('input[name="name"]', `Craps Sync ${nonce}`);
-	await page.fill('input[name="email"]', `craps-sync-${nonce}@arcturus.local`);
-	await page.fill('input[name="password"]', 'PlaywrightTest123!');
-	await Promise.all([
-		page.waitForURL('/', { timeout: 15000 }),
-		page.click('button[type="submit"]'),
-	]);
-	await page.waitForLoadState('domcontentloaded');
+	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
+		email: `craps-sync-${nonce}@arcturus.local`,
+		name: `Craps Sync ${nonce}`,
+	});
+	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
 	await gotoCraps(page);
 
 	return { context, page };

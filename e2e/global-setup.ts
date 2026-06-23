@@ -2,6 +2,8 @@ import { chromium, type FullConfig, type BrowserContext, type Page } from '@play
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { TEST_USERS } from './auth.setup';
+import { bootstrapTestUser } from './bootstrap-auth';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,51 +41,10 @@ async function provisionUser(
 	context: BrowserContext,
 	page: Page,
 	baseURL: string,
-	credentials: { email: string; password: string; name: string },
+	credentials: { email: string; name: string },
 	authFile: string,
 ): Promise<void> {
-	const { email, password, name } = credentials;
-
-	await page.goto(`${baseURL}/signup`);
-	await page.fill('input[name="name"]', name);
-	await page.fill('input[name="email"]', email);
-	await page.fill('input[name="password"]', password);
-	await page.click('button[type="submit"]');
-	try {
-		await page.waitForURL(`${baseURL}/`, { timeout: 15000 });
-	} catch {
-		/* signup may fail if account exists; fall through to signin below */
-	}
-
-	const authChecks = [
-		() => page.locator('span[data-chip-balance]').isVisible(),
-		() => page.locator('text=Dashboard').isVisible(),
-		() => page.locator('text=Play Now').isVisible(),
-		() => page.locator(`text=${name}`).isVisible(),
-	];
-	const verifyAuthenticated = async (): Promise<boolean> => {
-		for (const check of authChecks) {
-			try {
-				if (await check()) return true;
-			} catch {
-				/* try next */
-			}
-		}
-		return false;
-	};
-
-	let authenticated = await verifyAuthenticated();
-	if (!authenticated) {
-		await page.goto(`${baseURL}/signin`);
-		await page.fill('input[name="email"]', email);
-		await page.fill('input[name="password"]', password);
-		await page.click('button[type="submit"]');
-		await page.waitForURL(`${baseURL}/`, { timeout: 10000 });
-		authenticated = await verifyAuthenticated();
-	}
-	if (!authenticated) {
-		throw new Error(`Login verification failed for ${email}`);
-	}
+	await bootstrapTestUser(context, baseURL, credentials);
 
 	await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
 	await page.locator('[data-chip-balance]').first().waitFor({ state: 'attached', timeout: 10000 });
@@ -136,25 +97,6 @@ async function provisionUser(
 
 	await context.storageState({ path: authFile });
 }
-
-const TEST_USERS = [
-	{
-		credentials: {
-			email: 'e2e-test@arcturus.local',
-			password: 'PlaywrightTest123!',
-			name: 'E2E Test User',
-		},
-		authFile: 'user.json',
-	},
-	{
-		credentials: {
-			email: 'e2e-test-2@arcturus.local',
-			password: 'PlaywrightTest123!',
-			name: 'E2E Test User 2',
-		},
-		authFile: 'user-2.json',
-	},
-] as const;
 
 async function globalSetup(config: FullConfig) {
 	const authDir = path.join(process.cwd(), 'e2e', '.auth');

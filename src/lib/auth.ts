@@ -3,6 +3,7 @@ import type { BetterAuthOptions, BetterAuthPlugin } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/d1';
 import * as schema from '../db/schema';
+import { e2eAuthBootstrapPlugin, shouldInstallE2eAuthBootstrap } from './e2e-auth-bootstrap';
 
 export type AuthEnvInput = Partial<
 	Pick<Env, 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET'>
@@ -60,9 +61,13 @@ export function buildAuthConfig(
 	return authConfig;
 }
 
+export function getAuthPlugins(env: AuthEnvInput & Partial<Env>): BetterAuthPlugin[] {
+	return shouldInstallE2eAuthBootstrap(env) ? [e2eAuthBootstrapPlugin(env)] : [];
+}
+
 export function createAuth(db: D1Database, env: Env, baseURL?: string) {
 	const drizzleDb = drizzle(db, { schema });
-	return betterAuth(buildAuthConfig(drizzleDb, env, baseURL));
+	return betterAuth(buildAuthConfig(drizzleDb, env, baseURL, getAuthPlugins(env)));
 }
 
 export type Auth = ReturnType<typeof createAuth>;

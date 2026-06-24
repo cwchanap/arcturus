@@ -24,12 +24,19 @@ const hasAuthError = url.searchParams.has('error') || url.searchParams.has('erro
 				</div>
 
 				{
-					hasAuthError && (
-						<div class="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-							Google sign-in did not complete. Please try again.
-						</div>
-					)
+					// Always rendered so the client-side sign-in handler can reveal it
+					// on a popup-blocked / network / unexpected error (the server-side
+					// `error`/`error_description` query params only cover some paths).
 				}
+				<div
+					id="signin-error"
+					class:list={[
+						'mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm',
+						!hasAuthError && 'hidden',
+					]}
+				>
+					Google sign-in did not complete. Please try again.
+				</div>
 
 				<button
 					type="button"
@@ -64,6 +71,7 @@ const hasAuthError = url.searchParams.has('error') || url.searchParams.has('erro
 			});
 		} catch (error) {
 			console.error('Google sign-in error:', error);
+			document.getElementById('signin-error')?.classList.remove('hidden');
 			googleButton.disabled = false;
 		}
 	});

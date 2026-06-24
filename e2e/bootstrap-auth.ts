@@ -2,7 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import type { BrowserContext, Page } from '@playwright/test';
 
-const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
+// NOTE: This constant is intentionally duplicated in src/lib/e2e-auth-bootstrap.ts.
+// The Worker-side plugin (Cloudflare Workers) and this Node-side Playwright helper
+// run in separate contexts and must not share imports. Keep both copies in sync —
+// they are pinned equal by `bootstrap-secret-header.test.ts`.
+export const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
 
 export type E2eUserCredentials = {
 	email: string;

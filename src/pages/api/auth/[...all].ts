@@ -14,7 +14,16 @@ export const ALL: APIRoute = async (context) => {
 	const url = new URL(context.request.url);
 	const baseURL = `${url.protocol}//${url.host}`;
 
-	const auth = createAuth(db, env, baseURL);
+	let auth;
+	try {
+		auth = createAuth(db, env, baseURL);
+	} catch (error) {
+		// Misconfigured auth (e.g. missing BETTER_AUTH_SECRET / Google OAuth
+		// secrets). Fail loudly *and* logged instead of an opaque 500, so the
+		// failure mode is diagnosable.
+		console.error('Auth configuration error:', error);
+		return new Response('Authentication is not configured', { status: 503 });
+	}
 
 	return auth.handler(context.request);
 };

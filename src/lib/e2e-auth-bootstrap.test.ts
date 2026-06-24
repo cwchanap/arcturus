@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	E2E_BOOTSTRAP_SECRET_HEADER,
 	getE2eBootstrapSecret,
+	hasBootstrapAccount,
 	isE2eAuthBootstrapRuntimeAllowed,
 	isE2eBootstrapRequestAuthorized,
 	shouldInstallE2eAuthBootstrap,
@@ -76,5 +77,35 @@ describe('e2e auth bootstrap guards', () => {
 				env,
 			),
 		).toBe(true);
+	});
+
+	test('rejects equal-length but mismatched secrets (exercises the XOR loop)', () => {
+		// 'wrong' is a different length from 'secret', so it short-circuits before
+		// the constant-time XOR. 'secr3t' is the same length, forcing the loop.
+		const env = {
+			ENABLE_E2E_AUTH_BOOTSTRAP: 'true',
+			E2E_AUTH_BOOTSTRAP_SECRET: 'secret',
+		};
+		expect(
+			isE2eBootstrapRequestAuthorized(
+				new Headers({ [E2E_BOOTSTRAP_SECRET_HEADER]: 'secr3t' }),
+				env,
+			),
+		).toBe(false);
+	});
+
+	test('hasBootstrapAccount only matches e2e-bootstrap provider accounts', () => {
+		expect(hasBootstrapAccount(undefined)).toBe(false);
+		expect(hasBootstrapAccount(null)).toBe(false);
+		expect(hasBootstrapAccount([])).toBe(false);
+		expect(hasBootstrapAccount([{ providerId: 'google', accountId: 'a' }])).toBe(false);
+		// Mixed providers — bootstrap account present.
+		expect(
+			hasBootstrapAccount([
+				{ providerId: 'google', accountId: 'a' },
+				{ providerId: 'e2e-bootstrap', accountId: 'b' },
+			]),
+		).toBe(true);
+		expect(hasBootstrapAccount([{ providerId: 'e2e-bootstrap', accountId: 'b' }])).toBe(true);
 	});
 });

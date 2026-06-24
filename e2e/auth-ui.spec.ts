@@ -3,7 +3,10 @@ import { expect, test } from '@playwright/test';
 test.describe('Google-only auth UI', () => {
 	// Both tests verify the guest (unauthenticated) experience, so override the
 	// project-wide authenticated storageState from playwright.config.ts.
-	test.use({ storageState: undefined });
+	// Note: `undefined` is Playwright's fixture default sentinel and falls back
+	// to the config-level storageState (AUTH_FILE); an explicit empty object is
+	// required to actually start with no cookies/origin state.
+	test.use({ storageState: { cookies: [], origins: [] } });
 
 	test('signin page exposes Google sign-in and no password form', async ({ page }) => {
 		await page.goto('/signin');

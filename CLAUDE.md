@@ -295,6 +295,8 @@ Tables defined in `src/db/schema.ts`:
 
 **E2E Auth**: Playwright uses the guarded auth bootstrap endpoint. Set `APP_ENV=test` or `APP_ENV=ci` with `ENABLE_E2E_AUTH_BOOTSTRAP=true` and `E2E_AUTH_BOOTSTRAP_SECRET` only in local or CI test environments.
 
+**Local E2E env caveat**: `Astro.locals.runtime.env` is populated by `getPlatformProxy()` from `wrangler.toml [vars]` + `.dev.vars`/`.env` files, NOT from the parent process's `process.env`. So `APP_ENV=test bun run dev` in `playwright.config.ts webServer.command` will NOT reach the Worker — the bootstrap plugin still sees `undefined` and `/api/auth/e2e/bootstrap` 404s. To run E2E locally, the bootstrap vars must live in `.dev.vars` (gitignored, so each dev adds them manually). CI works because the env is injected at the runner level into the deployed config.
+
 ## Code Style
 
 **Auto-enforced by pre-commit hooks** (Husky + lint-staged):
@@ -329,10 +331,9 @@ Before deploying to Cloudflare:
 1. Create D1 database: `wrangler d1 create arcturus-db`
 2. Update `database_id` in `wrangler.toml`
 3. Set secret: `wrangler secret put BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
-4. Set Google OAuth client ID: `wrangler secret put GOOGLE_CLIENT_ID`
-5. Set Google OAuth client secret: `wrangler secret put GOOGLE_CLIENT_SECRET`
-6. Apply migrations: `bun run db:migrate:remote`
-7. Deploy: `bun run deploy`
+4. Set Google OAuth client secret: `wrangler secret put GOOGLE_CLIENT_SECRET` (`GOOGLE_CLIENT_ID` is a public Worker var already declared in `wrangler.toml`)
+5. Apply migrations: `bun run db:migrate:remote`
+6. Deploy: `bun run deploy`
 
 ## Common Issues
 

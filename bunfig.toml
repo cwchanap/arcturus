@@ -1,0 +1,11 @@
+[test]
+# E2E auth bootstrap is a test-only backdoor gated by env + secret and exercised
+# by Playwright (e2e/), not by unit tests. Exclude its implementation (and the
+# dedicated unit tests that only assert its internal helpers) from unit coverage
+# so the report reflects production-relevant code.
+coveragePathIgnorePatterns = [
+	"src/lib/e2e-auth-bootstrap.ts",
+	"src/lib/e2e-auth-bootstrap.test.ts",
+	"src/lib/bootstrap-secret-header.test.ts",
+	"e2e/bootstrap-auth.ts",
+]

@@ -28,7 +28,8 @@ function readDevVars(): Record<string, string> {
 }
 
 export function getE2eBootstrapSecret(): string {
-	const secret = process.env.E2E_AUTH_BOOTSTRAP_SECRET ?? readDevVars().E2E_AUTH_BOOTSTRAP_SECRET;
+	const raw = process.env.E2E_AUTH_BOOTSTRAP_SECRET ?? readDevVars().E2E_AUTH_BOOTSTRAP_SECRET;
+	const secret = raw?.trim();
 	if (!secret) {
 		throw new Error(
 			'E2E_AUTH_BOOTSTRAP_SECRET must be set in the environment or .dev.vars for Playwright auth bootstrap',

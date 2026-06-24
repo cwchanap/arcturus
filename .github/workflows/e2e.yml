@@ -41,7 +41,6 @@ jobs:
           echo "APP_ENV=ci" >> .dev.vars
           echo "ENABLE_E2E_AUTH_BOOTSTRAP=true" >> .dev.vars
           echo "E2E_AUTH_BOOTSTRAP_SECRET=ci-e2e-bootstrap-secret" >> .dev.vars
-          echo "BETTER_AUTH_URL=http://localhost:2000" >> .dev.vars
 
       - name: Run Playwright tests
         run: bun run test:e2e:ci

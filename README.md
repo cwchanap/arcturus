@@ -161,9 +161,12 @@ bun run build
 
 ```sh
 wrangler secret put BETTER_AUTH_SECRET
-wrangler secret put GOOGLE_CLIENT_ID
 wrangler secret put GOOGLE_CLIENT_SECRET
+wrangler secret put MP_AUTH_SECRET
+wrangler secret put WORKER_ORIGIN
 ```
+
+`GOOGLE_CLIENT_ID` is already declared as a public Worker var in `wrangler.toml`, so it does not need to be set as a secret.
 
 3. Deploy to Cloudflare:
 

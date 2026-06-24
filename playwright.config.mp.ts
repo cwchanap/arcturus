@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { AUTH_FILE } from './e2e/auth.setup';
 
 /**
  * Playwright config for Multiplayer (MP) E2E tests.
@@ -17,7 +18,7 @@ export default defineConfig({
 	use: {
 		baseURL: 'http://localhost:2000',
 		trace: 'on-first-retry',
-		storageState: './e2e/.auth/user.json',
+		storageState: AUTH_FILE,
 	},
 
 	projects: [

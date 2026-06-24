@@ -20,8 +20,6 @@ const bootstrapBodySchema = z.object({
 	accountId: z.string().min(1).optional(),
 });
 
-type BootstrapBody = z.infer<typeof bootstrapBodySchema>;
-
 export function getE2eBootstrapSecret(env: E2eBootstrapEnv): string | null {
 	const secret = env.E2E_AUTH_BOOTSTRAP_SECRET?.trim();
 	return secret && secret.length > 0 ? secret : null;
@@ -79,7 +77,7 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 						throw new APIError('FORBIDDEN', { message: 'FORBIDDEN' });
 					}
 
-					const body = ctx.body as BootstrapBody;
+					const body = ctx.body;
 					const accountId = body.accountId ?? `e2e:${body.email}`;
 					const existingUser = await ctx.context.internalAdapter.findUserByEmail(body.email, {
 						includeAccounts: true,

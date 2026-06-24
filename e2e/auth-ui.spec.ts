@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('Google-only auth UI', () => {
+	// Both tests verify the guest (unauthenticated) experience, so override the
+	// project-wide authenticated storageState from playwright.config.ts.
+	test.use({ storageState: undefined });
+
 	test('signin page exposes Google sign-in and no password form', async ({ page }) => {
 		await page.goto('/signin');
 
@@ -17,16 +21,12 @@ test.describe('Google-only auth UI', () => {
 			.toBe(0);
 	});
 
-	test('homepage unauthenticated CTA points at signin', async ({ browser, baseURL }) => {
-		const context = await browser.newContext({ storageState: undefined });
-		const page = await context.newPage();
+	test('homepage unauthenticated CTA points at signin', async ({ page, baseURL }) => {
 		await page.goto(baseURL ?? 'http://localhost:2000');
 
 		await expect(page.getByRole('link', { name: 'Join Free', exact: true })).toHaveAttribute(
 			'href',
 			'/signin',
 		);
-
-		await context.close();
 	});
 });

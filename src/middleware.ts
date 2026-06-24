@@ -42,10 +42,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		const url = new URL(context.request.url);
 		const baseURL = `${url.protocol}//${url.host}`;
 
-		const auth = createAuth(dbBinding, env, baseURL);
-		const db = createDb(dbBinding);
-
+		// createAuth (and therefore createDb/getSession) must live inside the
+		// try below: getRequiredAuthConfig throws when BETTER_AUTH_SECRET /
+		// GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET is missing. The middleware
+		// runs on every request, so an unguarded throw here takes the whole
+		// site down. Falling back to a null session keeps the site online
+		// (matching the !dbBinding branch above) while the error is logged.
 		try {
+			const auth = createAuth(dbBinding, env, baseURL);
+			const db = createDb(dbBinding);
+
 			const session = await auth.api.getSession({
 				headers: context.request.headers,
 			});

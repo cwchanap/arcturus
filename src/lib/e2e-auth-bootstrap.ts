@@ -8,11 +8,33 @@ import { z } from 'zod';
 // runtime contexts (Cloudflare Workers vs Node test runner) and must not share
 // imports. Keep both copies in sync.
 export const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
-const E2E_BOOTSTRAP_PROVIDER_ID = 'e2e-bootstrap';
+export const E2E_BOOTSTRAP_PROVIDER_ID = 'e2e-bootstrap';
 
 export type E2eBootstrapEnv = Partial<
 	Pick<Env, 'APP_ENV' | 'ENABLE_E2E_AUTH_BOOTSTRAP' | 'E2E_AUTH_BOOTSTRAP_SECRET'>
 >;
+
+/**
+ * Minimal shape of a better-auth account row, as returned by
+ * `internalAdapter.findUserByEmail(email, { includeAccounts: true })`.
+ */
+export interface BootstrapAccount {
+	providerId: string;
+	accountId: string;
+}
+
+/**
+ * Returns true only when the matched user already owns an `e2e-bootstrap`
+ * account. The bootstrap endpoint must never reuse (and therefore authenticate
+ * as) an identity created via a real provider (e.g. Google) just because the
+ * email collided — that would let a bootstrap request mint a session for a
+ * non-bootstrap user.
+ */
+export function hasBootstrapAccount(accounts: BootstrapAccount[] | undefined | null): boolean {
+	return (
+		Array.isArray(accounts) && accounts.some((acc) => acc.providerId === E2E_BOOTSTRAP_PROVIDER_ID)
+	);
+}
 
 const bootstrapBodySchema = z.object({
 	email: z.string().email(),
@@ -82,9 +104,19 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 					const existingUser = await ctx.context.internalAdapter.findUserByEmail(body.email, {
 						includeAccounts: true,
 					});
-					const authUser =
-						existingUser?.user ??
-						(await ctx.context.internalAdapter.createUser(
+
+					let authUser;
+					if (existingUser) {
+						// Only reuse an identity that was itself bootstrapped. Matching a
+						// real (e.g. Google) user purely by email and minting a session
+						// for it would let the bootstrap endpoint authenticate as a
+						// non-bootstrap identity.
+						if (!hasBootstrapAccount(existingUser.accounts)) {
+							throw new APIError('CONFLICT', { message: 'EMAIL_CONFLICT' });
+						}
+						authUser = existingUser.user;
+					} else {
+						authUser = await ctx.context.internalAdapter.createUser(
 							{
 								email: body.email,
 								emailVerified: true,
@@ -92,7 +124,8 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 								name: body.name,
 							},
 							ctx,
-						));
+						);
+					}
 
 					const existingAccount = await ctx.context.internalAdapter.findAccountByProviderId(
 						accountId,

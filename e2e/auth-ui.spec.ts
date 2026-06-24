@@ -24,9 +24,6 @@ test.describe('Google-only auth UI', () => {
 	test('homepage unauthenticated CTA points at signin', async ({ page, baseURL }) => {
 		await page.goto(baseURL ?? 'http://localhost:2000');
 
-		await expect(page.getByRole('link', { name: 'Join Free', exact: true })).toHaveAttribute(
-			'href',
-			'/signin',
-		);
+		await expect(page.getByRole('link', { name: /Join Free/i })).toHaveAttribute('href', '/signin');
 	});
 });

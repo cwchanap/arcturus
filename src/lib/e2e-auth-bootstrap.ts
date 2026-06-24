@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
 const E2E_BOOTSTRAP_PROVIDER_ID = 'e2e-bootstrap';
 
-type E2eBootstrapEnv = Partial<
+export type E2eBootstrapEnv = Partial<
 	Pick<Env, 'APP_ENV' | 'ENABLE_E2E_AUTH_BOOTSTRAP' | 'E2E_AUTH_BOOTSTRAP_SECRET'>
 >;
 

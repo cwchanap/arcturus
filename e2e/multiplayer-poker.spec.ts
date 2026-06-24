@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { AUTH_FILE, AUTH_FILE_2 } from './auth.setup';
 
 // These tests require a DO-capable server (wrangler dev, NOT astro dev).
 // They are skipped unless the MP_E2E env var is set.
@@ -52,8 +53,8 @@ async function leaveSeat(page: import('@playwright/test').Page, seatIndex: numbe
 
 describe_('Multiplayer Poker', () => {
 	test('two-player heads-up hand: create, join, fold, settle', async ({ browser }) => {
-		const ctxA = await browser.newContext({ storageState: 'e2e/.auth/user.json' });
-		const ctxB = await browser.newContext({ storageState: 'e2e/.auth/user-2.json' });
+		const ctxA = await browser.newContext({ storageState: AUTH_FILE });
+		const ctxB = await browser.newContext({ storageState: AUTH_FILE_2 });
 		try {
 			const pageA = await ctxA.newPage();
 			const pageB = await ctxB.newPage();
@@ -114,8 +115,8 @@ describe_('Multiplayer Poker', () => {
 
 	test('disconnect mid-hand triggers 30s auto-fold', async ({ browser }) => {
 		test.slow();
-		const ctxA = await browser.newContext({ storageState: 'e2e/.auth/user.json' });
-		const ctxB = await browser.newContext({ storageState: 'e2e/.auth/user-2.json' });
+		const ctxA = await browser.newContext({ storageState: AUTH_FILE });
+		const ctxB = await browser.newContext({ storageState: AUTH_FILE_2 });
 		try {
 			const pageA = await ctxA.newPage();
 			const pageB = await ctxB.newPage();

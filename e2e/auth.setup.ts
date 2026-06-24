@@ -25,3 +25,4 @@ export const TEST_USERS = [
 ] as const;
 
 export const AUTH_FILE = './e2e/.auth/user.json';
+export const AUTH_FILE_2 = './e2e/.auth/user-2.json';

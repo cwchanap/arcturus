@@ -1,7 +1,12 @@
 import { setSessionCookie } from 'better-auth/cookies';
 import { createAuthEndpoint, type BetterAuthPlugin } from 'better-auth/plugins';
+import { APIError } from 'better-auth';
 import { z } from 'zod';
 
+// NOTE: This constant is intentionally duplicated in e2e/bootstrap-auth.ts.
+// The Worker-side plugin and the Node-side Playwright helper live in separate
+// runtime contexts (Cloudflare Workers vs Node test runner) and must not share
+// imports. Keep both copies in sync.
 export const E2E_BOOTSTRAP_SECRET_HEADER = 'x-e2e-auth-bootstrap-secret';
 const E2E_BOOTSTRAP_PROVIDER_ID = 'e2e-bootstrap';
 
@@ -34,9 +39,21 @@ export function shouldInstallE2eAuthBootstrap(env: E2eBootstrapEnv): boolean {
 	);
 }
 
+function constantTimeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) return false;
+	let diff = 0;
+	for (let i = 0; i < a.length; i++) {
+		diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+	}
+	return diff === 0;
+}
+
 export function isE2eBootstrapRequestAuthorized(headers: Headers, env: E2eBootstrapEnv): boolean {
 	const expected = getE2eBootstrapSecret(env);
-	return expected !== null && headers.get(E2E_BOOTSTRAP_SECRET_HEADER) === expected;
+	if (expected === null) return false;
+	const provided = headers.get(E2E_BOOTSTRAP_SECRET_HEADER);
+	if (provided === null) return false;
+	return constantTimeEqual(provided, expected);
 }
 
 export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
@@ -50,12 +67,16 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 					body: bootstrapBodySchema,
 				},
 				async (ctx) => {
+					// Defense-in-depth: the plugin is only installed when
+					// shouldInstallE2eAuthBootstrap returns true (see getAuthPlugins),
+					// so this check is expected to always pass at request time. It
+					// guards against future changes to plugin installation logic.
 					if (!shouldInstallE2eAuthBootstrap(env)) {
-						return ctx.json({ error: 'NOT_FOUND' }, { status: 404 });
+						throw new APIError('NOT_FOUND', { message: 'NOT_FOUND' });
 					}
 
 					if (!isE2eBootstrapRequestAuthorized(ctx.headers ?? new Headers(), env)) {
-						return ctx.json({ error: 'FORBIDDEN' }, { status: 403 });
+						throw new APIError('FORBIDDEN', { message: 'FORBIDDEN' });
 					}
 
 					const body = ctx.body as BootstrapBody;
@@ -81,7 +102,7 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 					);
 
 					if (existingAccount && existingAccount.userId !== authUser.id) {
-						return ctx.json({ error: 'ACCOUNT_CONFLICT' }, { status: 409 });
+						throw new APIError('CONFLICT', { message: 'ACCOUNT_CONFLICT' });
 					}
 
 					if (!existingAccount) {

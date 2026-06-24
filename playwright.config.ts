@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { AUTH_FILE } from './e2e/auth.setup';
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -24,7 +25,7 @@ export default defineConfig({
 		/* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
 		trace: 'on-first-retry',
 		/* Use saved authentication state for all tests */
-		storageState: './e2e/.auth/user.json',
+		storageState: AUTH_FILE,
 	},
 
 	/* Configure projects for major browsers */

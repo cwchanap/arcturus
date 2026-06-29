@@ -22,9 +22,7 @@ const suitSymbol = getSuitSymbol(suit);
 <div class="playing-card w-20 h-28 flex items-center justify-center">
 	{
 		faceDown ? (
-			<div class="absolute inset-1 bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
-				<div class="text-white text-4xl">🎴</div>
-			</div>
+			<div class="card-back-deco absolute inset-1 rounded" />
 		) : (
 			<div class="w-full h-full p-2 flex flex-col">
 				<div class={`text-xl font-bold ${suitColors[suit]}`}>{value}</div>

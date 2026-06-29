@@ -1,4 +1,6 @@
 ---
+import DecoIcon from './DecoIcon.astro';
+
 const user = Astro.locals.user;
 ---
 
@@ -6,21 +8,34 @@ const user = Astro.locals.user;
 	{
 		user ? (
 			<div class="flex items-center gap-3">
-				{user.image && <img src={user.image} alt={user.name} class="h-8 w-8 rounded-full" />}
-				<span class="text-sm font-medium text-gray-700">{user.name}</span>
-				<a href="/profile" class="text-sm text-indigo-600 hover:text-indigo-500">
+				{user.image ? (
+					<img
+						src={user.image}
+						alt={user.name}
+						class="h-8 w-8 rounded-full"
+						style="border: 1px solid var(--deco-brass)"
+					/>
+				) : (
+					<span
+						class="flex h-8 w-8 items-center justify-center rounded-full"
+						style="border: 1px solid var(--deco-brass); color: var(--deco-brass)"
+					>
+						<DecoIcon name="user" size={16} />
+					</span>
+				)}
+				<span class="font-body text-sm" style="color: var(--deco-ivory)">
+					{user.name}
+				</span>
+				<a href="/profile" class="deco-link">
 					Profile
 				</a>
 			</div>
 		) : (
 			<div class="flex items-center gap-3">
-				<a href="/signin" class="text-sm text-gray-700 hover:text-gray-900">
+				<a href="/signin" class="deco-link">
 					Sign In
 				</a>
-				<a
-					href="/signin"
-					class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"
-				>
+				<a href="/signin" class="deco-btn deco-btn-primary">
 					Join Free
 				</a>
 			</div>

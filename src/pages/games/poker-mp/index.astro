@@ -4,9 +4,12 @@ const user = Astro.locals.user;
 if (!user) return Astro.redirect('/signin');
 ---
 
-<CasinoLayout title="Multiplayer Poker — Arcturus Casino">
+<CasinoLayout
+	title="Multiplayer Poker — Arcturus Casino"
+	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
+>
 	<div class="max-w-xl mx-auto p-8 space-y-6">
-		<h1 class="text-3xl font-bold text-white">Multiplayer Poker</h1>
+		<h1 class="deco-section-title text-3xl">Multiplayer Poker</h1>
 
 		<section class="bg-slate-900/60 p-6 rounded-lg space-y-4">
 			<h2 class="text-xl font-semibold text-white">Create a private room</h2>

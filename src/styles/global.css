@@ -391,3 +391,160 @@ h6,
 		transform: none;
 	}
 }
+
+/* ===== Art Deco marketing surfaces (Phase 2) ===== */
+
+/* Page-level atmosphere: obsidian field + emerald glows */
+.deco-atmosphere {
+	position: relative;
+	background:
+		radial-gradient(60% 50% at 50% -10%, rgba(14, 59, 46, 0.55) 0%, transparent 70%),
+		radial-gradient(40% 40% at 85% 20%, rgba(200, 165, 92, 0.07) 0%, transparent 70%),
+		var(--deco-obsidian);
+}
+
+/* Eyebrow / section labels */
+.deco-section-eyebrow {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.32em;
+	font-size: 0.72rem;
+	color: var(--deco-brass);
+}
+
+.deco-display {
+	font-family: var(--font-display);
+	color: var(--deco-ivory);
+	letter-spacing: -0.01em;
+	line-height: 1.04;
+}
+.deco-display em {
+	font-style: italic;
+	color: var(--deco-brass-bright);
+}
+
+.deco-body-text {
+	font-family: var(--font-body);
+	color: var(--deco-ivory-dim);
+}
+
+/* Panels — sharp-cornered, brass-hairline, emerald-tinted */
+.deco-panel {
+	position: relative;
+	background: linear-gradient(160deg, rgba(14, 59, 46, 0.32), rgba(17, 24, 21, 0.86));
+	border: 1px solid rgba(200, 165, 92, 0.28);
+	border-radius: 3px;
+	box-shadow: var(--shadow-panel);
+}
+
+/* Deco corner brackets for framed panels */
+.deco-frame {
+	position: relative;
+}
+.deco-frame::before,
+.deco-frame::after {
+	content: '';
+	position: absolute;
+	width: 18px;
+	height: 18px;
+	border: 1px solid var(--deco-brass);
+	pointer-events: none;
+}
+.deco-frame::before {
+	top: 10px;
+	left: 10px;
+	border-right: 0;
+	border-bottom: 0;
+}
+.deco-frame::after {
+	bottom: 10px;
+	right: 10px;
+	border-left: 0;
+	border-top: 0;
+}
+
+/* Interactive card */
+.deco-card {
+	position: relative;
+	background: linear-gradient(160deg, rgba(14, 59, 46, 0.28), rgba(17, 24, 21, 0.9));
+	border: 1px solid rgba(200, 165, 92, 0.22);
+	border-radius: 3px;
+	overflow: hidden;
+	transition:
+		border-color 0.25s ease,
+		box-shadow 0.25s ease,
+		transform 0.25s ease;
+}
+.deco-card:hover {
+	border-color: var(--deco-brass);
+	box-shadow:
+		var(--shadow-panel),
+		0 0 0 1px rgba(200, 165, 92, 0.3),
+		0 0 28px rgba(200, 165, 92, 0.1);
+	transform: translateY(-4px);
+}
+
+/* Big numerals (stats) */
+.deco-stat-value {
+	font-family: var(--font-display);
+	font-weight: 800;
+	color: var(--deco-brass-bright);
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+}
+.deco-stat-label {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.2em;
+	font-size: 0.68rem;
+	color: var(--deco-muted);
+}
+
+/* Small brass badge (HOT, FEATURED) */
+.deco-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.16em;
+	font-size: 0.62rem;
+	font-weight: 600;
+	padding: 0.28rem 0.7rem;
+	border-radius: 2px;
+	color: var(--deco-obsidian);
+	background: var(--deco-brass);
+}
+
+/* Section heading (Playfair, with brass accent) */
+.deco-section-title {
+	font-family: var(--font-display);
+	font-weight: 700;
+	color: var(--deco-ivory);
+}
+
+/* Brass emblem frame for game cards */
+.deco-emblem-frame {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--deco-brass);
+	background:
+		radial-gradient(circle at 50% 38%, rgba(200, 165, 92, 0.14), transparent 62%),
+		linear-gradient(160deg, rgba(12, 51, 38, 0.55), rgba(11, 15, 14, 0.9));
+	transition:
+		color 0.25s ease,
+		transform 0.25s ease;
+}
+.deco-card:hover .deco-emblem-frame {
+	color: var(--deco-brass-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.deco-card,
+	.deco-card:hover,
+	.deco-emblem-frame {
+		transition: none;
+		transform: none;
+	}
+}

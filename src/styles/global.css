@@ -194,3 +194,200 @@ body {
 .chip-stack:hover {
 	animation: chipStack 0.5s ease-in-out;
 }
+
+/* ===== Art Deco design system (Phase 1) ===== */
+:root {
+	--deco-obsidian: #0b0f0e;
+	--deco-obsidian-2: #111815;
+	--deco-emerald-deep: #0c3326;
+	--deco-emerald: #0e3b2e;
+	--deco-emerald-line: #1c5c46;
+	--deco-brass: #c8a55c;
+	--deco-brass-bright: #e4c988;
+	--deco-brass-dim: #8c7438;
+	--deco-ivory: #f4efe6;
+	--deco-ivory-dim: #c9c2b4;
+	--deco-muted: #8a8377;
+	--deco-oxblood: #6e1f23;
+	--deco-oxblood-bright: #9a2d33;
+
+	--font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
+	--font-body: 'Jost', system-ui, -apple-system, sans-serif;
+
+	--shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.55);
+	--sheen-brass: 0 0 0 1px var(--deco-brass-bright), 0 0 24px rgba(228, 201, 136, 0.18);
+}
+
+/* Global font swap — the ONLY change that touches every page */
+body {
+	font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-display {
+	font-family: var(--font-display);
+}
+
+.font-body {
+	font-family: var(--font-body);
+}
+
+/* Subtle film-grain overlay for depth (opt-in via class) */
+.deco-grain {
+	position: relative;
+}
+.deco-grain::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 0;
+	opacity: 0.04;
+	mix-blend-mode: overlay;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.deco-grain > * {
+	position: relative;
+	z-index: 1;
+}
+
+/* Chrome surfaces */
+.deco-header {
+	background: rgba(11, 15, 14, 0.95);
+	border-bottom: 1px solid rgba(200, 165, 92, 0.3);
+	backdrop-filter: blur(6px);
+}
+.deco-footer {
+	background: rgba(11, 15, 14, 0.95);
+	border-top: 1px solid rgba(200, 165, 92, 0.3);
+}
+
+/* Wordmark + labels */
+.deco-wordmark {
+	font-family: var(--font-display);
+	font-weight: 800;
+	letter-spacing: 0.22em;
+	color: var(--deco-brass-bright);
+}
+.deco-eyebrow {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.18em;
+	font-size: 0.66rem;
+	color: var(--deco-muted);
+}
+.deco-heading {
+	font-family: var(--font-display);
+	color: var(--deco-brass-bright);
+}
+
+/* Hairline rule */
+.deco-rule {
+	height: 1px;
+	background: linear-gradient(
+		to right,
+		transparent,
+		var(--deco-brass) 20%,
+		var(--deco-brass) 80%,
+		transparent
+	);
+}
+
+/* Links */
+.deco-link {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.18em;
+	font-size: 0.78rem;
+	color: var(--deco-ivory-dim);
+	transition: color 0.18s ease;
+}
+.deco-link:hover {
+	color: var(--deco-brass-bright);
+}
+.deco-footer-link {
+	font-family: var(--font-body);
+	font-size: 0.875rem;
+	color: var(--deco-ivory-dim);
+	transition: color 0.18s ease;
+}
+.deco-footer-link:hover {
+	color: var(--deco-brass-bright);
+}
+
+/* Chip / framed pill */
+.deco-chip-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.45rem 1rem;
+	border-radius: 2px;
+	border: 1px solid rgba(200, 165, 92, 0.4);
+	background: var(--deco-obsidian-2);
+	color: var(--deco-brass-bright);
+}
+
+/* Buttons */
+.deco-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	font-family: var(--font-body);
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	font-size: 0.82rem;
+	padding: 0.7rem 1.5rem;
+	border-radius: 2px;
+	cursor: pointer;
+	text-decoration: none;
+	transition:
+		box-shadow 0.18s ease,
+		background-color 0.18s ease,
+		color 0.18s ease,
+		transform 0.18s ease;
+}
+.deco-btn-primary {
+	background: var(--deco-brass);
+	color: var(--deco-obsidian);
+	border: 1px solid var(--deco-brass-bright);
+}
+.deco-btn-primary:hover {
+	background: var(--deco-brass-bright);
+	box-shadow: var(--sheen-brass);
+	transform: translateY(-1px);
+}
+.deco-btn-outline {
+	background: transparent;
+	color: var(--deco-brass-bright);
+	border: 1px solid var(--deco-brass);
+}
+.deco-btn-outline:hover {
+	background: rgba(200, 165, 92, 0.1);
+	box-shadow: var(--sheen-brass);
+}
+.deco-btn-ghost {
+	background: transparent;
+	color: var(--deco-ivory-dim);
+	border: 1px solid transparent;
+}
+.deco-btn-ghost:hover {
+	color: var(--deco-brass-bright);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.deco-link,
+	.deco-footer-link,
+	.deco-btn {
+		transition: none;
+	}
+	.deco-btn:hover {
+		transform: none;
+	}
+}

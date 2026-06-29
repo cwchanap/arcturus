@@ -548,3 +548,166 @@ h6,
 		transform: none;
 	}
 }
+
+/* ===== Art Deco app surfaces (Phase 2b: leaderboard, missions, profile) ===== */
+.deco-accent {
+	color: var(--deco-brass-bright);
+}
+.deco-accent-dim {
+	color: var(--deco-brass);
+}
+.deco-eyebrow-sm {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.22em;
+	font-size: 0.7rem;
+	color: var(--deco-brass);
+}
+.deco-text {
+	color: var(--deco-ivory);
+}
+.deco-text-dim {
+	color: var(--deco-ivory-dim);
+}
+.deco-muted-text {
+	color: var(--deco-muted);
+}
+
+/* Tabs / pills */
+.deco-tab {
+	font-family: var(--font-body);
+	font-size: 0.85rem;
+	letter-spacing: 0.04em;
+	color: var(--deco-ivory-dim);
+	background: rgba(17, 24, 21, 0.6);
+	border: 1px solid rgba(200, 165, 92, 0.18);
+	border-radius: 2px;
+	transition:
+		color 0.18s ease,
+		border-color 0.18s ease,
+		background-color 0.18s ease;
+}
+.deco-tab:hover {
+	color: var(--deco-brass-bright);
+	border-color: rgba(200, 165, 92, 0.4);
+}
+.deco-tab-active {
+	color: var(--deco-obsidian);
+	background: var(--deco-brass);
+	border-color: var(--deco-brass-bright);
+}
+
+/* Tables */
+.deco-table-head {
+	background: rgba(12, 51, 38, 0.4);
+	border-bottom: 1px solid rgba(200, 165, 92, 0.28);
+}
+.deco-th {
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	font-size: 0.7rem;
+	color: var(--deco-brass);
+}
+.deco-row {
+	transition: background-color 0.18s ease;
+}
+.deco-row:hover {
+	background: rgba(200, 165, 92, 0.05);
+}
+.deco-row-active {
+	background: rgba(200, 165, 92, 0.08);
+	border-left: 3px solid var(--deco-brass);
+}
+
+/* Small brass-outline tag */
+.deco-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.14em;
+	font-size: 0.6rem;
+	font-weight: 600;
+	padding: 0.2rem 0.6rem;
+	border-radius: 2px;
+	border: 1px solid rgba(200, 165, 92, 0.4);
+	color: var(--deco-brass-bright);
+	background: rgba(200, 165, 92, 0.08);
+}
+
+/* Status pills (state-driven) */
+.deco-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	font-family: var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.16em;
+	font-size: 0.66rem;
+	font-weight: 600;
+	padding: 0.3rem 0.9rem;
+	border-radius: 2px;
+	border: 1px solid rgba(200, 165, 92, 0.4);
+	color: var(--deco-brass-bright);
+	background: rgba(17, 24, 21, 0.6);
+}
+.deco-pill-success {
+	border-color: rgba(46, 160, 110, 0.5);
+	color: #6fd6a8;
+	background: rgba(14, 59, 46, 0.5);
+}
+
+/* "Completed/disabled" state for the deco button (mission claim) */
+.deco-btn-done {
+	background: rgba(14, 59, 46, 0.5);
+	color: #6fd6a8;
+	border: 1px solid rgba(46, 160, 110, 0.5);
+	cursor: not-allowed;
+}
+.deco-btn-done:hover {
+	transform: none;
+	box-shadow: none;
+}
+
+/* Form fields */
+.deco-input {
+	font-family: var(--font-body);
+	color: var(--deco-ivory);
+	background: rgba(11, 15, 14, 0.6);
+	border: 1px solid rgba(200, 165, 92, 0.28);
+	border-radius: 2px;
+	transition:
+		border-color 0.18s ease,
+		box-shadow 0.18s ease;
+}
+.deco-input:focus {
+	outline: none;
+	border-color: var(--deco-brass);
+	box-shadow: 0 0 0 1px var(--deco-brass);
+}
+.deco-label {
+	font-family: var(--font-body);
+	font-size: 0.85rem;
+	color: var(--deco-ivory-dim);
+}
+
+/* Progress bar */
+.deco-progress-track {
+	background: rgba(17, 24, 21, 0.8);
+	border: 1px solid rgba(200, 165, 92, 0.2);
+	overflow: hidden;
+}
+.deco-progress-fill {
+	background: linear-gradient(to right, var(--deco-brass-dim), var(--deco-brass-bright));
+}
+
+/* Subtle icon button (e.g. show/hide/copy in forms) */
+.deco-icon-btn {
+	color: var(--deco-muted);
+	transition: color 0.18s ease;
+}
+.deco-icon-btn:hover {
+	color: var(--deco-brass-bright);
+}

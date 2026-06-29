@@ -94,9 +94,7 @@ const sizes = sizeClasses[size];
 
 				{/* Face-down card */}
 				<div class:list={['playing-card hidden', sizes.container, sizes.back]} data-card-back>
-					<div class="w-full h-full bg-gradient-to-br from-blue-600 to-blue-800 rounded flex items-center justify-center">
-						<span class="text-white opponent-back-icon">🂠</span>
-					</div>
+					<div class="card-back-deco w-full h-full rounded" />
 				</div>
 			</div>
 		))

@@ -62,13 +62,13 @@ body {
 	background:
 		radial-gradient(ellipse at center, var(--felt-green) 0%, var(--felt-dark) 100%),
 		url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
-	border: 10px solid #5c3317;
+	border: 8px solid var(--deco-obsidian-2);
 	border-radius: 50% / 38%;
 	box-shadow:
-		inset 0 0 80px rgba(0, 0, 0, 0.4),
+		inset 0 0 80px rgba(0, 0, 0, 0.45),
 		inset 0 0 40px rgba(0, 0, 0, 0.3),
 		0 8px 32px rgba(0, 0, 0, 0.6),
-		0 0 0 4px #3d2210;
+		0 0 0 2px var(--deco-brass);
 	position: relative;
 }
 
@@ -77,7 +77,7 @@ body {
 	content: '';
 	position: absolute;
 	inset: 20px;
-	border: 2px solid rgba(255, 215, 0, 0.12);
+	border: 1px solid rgba(200, 165, 92, 0.25);
 	border-radius: 50% / 38%;
 	pointer-events: none;
 }
@@ -138,17 +138,18 @@ body {
 		0 0 30px currentColor;
 }
 
-/* Gold button */
+/* Gold button — restyled to brass (Phase 3a) */
 .btn-gold {
-	background: linear-gradient(145deg, var(--casino-gold) 0%, var(--casino-dark-gold) 100%);
-	color: #1f2937;
+	background: linear-gradient(145deg, var(--deco-brass-bright) 0%, var(--deco-brass-dim) 100%);
+	color: var(--deco-obsidian);
 	font-weight: bold;
+	border: 1px solid var(--deco-brass-bright);
 	box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
 	transition: all 0.3s ease;
 }
 
 .btn-gold:hover {
-	box-shadow: var(--glow-gold);
+	box-shadow: var(--sheen-brass);
 	transform: translateY(-2px);
 }
 
@@ -710,4 +711,48 @@ h6,
 }
 .deco-icon-btn:hover {
 	color: var(--deco-brass-bright);
+}
+
+/* ===== Art Deco game tables (Phase 3a) ===== */
+
+/* Deco card back: emerald cross-hatch + centered brass diamond emblem.
+   Applied to every face-down card across all games (replaces the 🎴 emoji
+   and blue gradient). The emoji span is hidden, the emblem is drawn in CSS. */
+.card-back-deco,
+.playing-card-back,
+.baccarat-card-back {
+	background:
+		repeating-linear-gradient(
+			45deg,
+			rgba(200, 165, 92, 0.09) 0,
+			rgba(200, 165, 92, 0.09) 6px,
+			transparent 6px,
+			transparent 12px
+		),
+		linear-gradient(160deg, var(--deco-emerald) 0%, var(--deco-emerald-deep) 100%);
+	border: 1px solid rgba(200, 165, 92, 0.5);
+	overflow: hidden;
+}
+/* These two are static-flow elements and need a positioning context for the
+   emblem; .card-back-deco gets its positioning from Tailwind (absolute/w-full). */
+.playing-card-back,
+.baccarat-card-back {
+	position: relative;
+}
+.card-back-deco::after,
+.playing-card-back::after,
+.baccarat-card-back::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 34%;
+	height: 34%;
+	transform: translate(-50%, -50%) rotate(45deg);
+	border: 1.5px solid var(--deco-brass-bright);
+	box-shadow: 0 0 0 3px rgba(200, 165, 92, 0.15);
+}
+/* Hide the legacy emoji glyph inside card backs (emblem is drawn via ::after) */
+.card-back-icon {
+	display: none;
 }

@@ -13,7 +13,10 @@ if (!user) {
 const initialBalance = user.chipBalance ?? 1000;
 ---
 
-<CasinoLayout title="Baccarat - Arcturus Casino">
+<CasinoLayout
+	title="Baccarat - Arcturus Casino"
+	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
+>
 	<div
 		id="baccarat-root"
 		data-user-id={user.id}
@@ -29,11 +32,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				>
 					← Back to Games
 				</a>
-				<h1
-					class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-500"
-				>
-					Baccarat
-				</h1>
+				<h1 class="deco-section-title text-4xl">Baccarat</h1>
 			</div>
 			<div class="flex items-center gap-4">
 				<div class="bg-slate-800 px-4 py-2 rounded-lg border border-slate-600 text-sm">

@@ -8,7 +8,10 @@ if (!user) return Astro.redirect('/signin');
 const initialBalance = user.chipBalance ?? 1000;
 ---
 
-<CasinoLayout title="Craps - Arcturus Casino">
+<CasinoLayout
+	title="Craps - Arcturus Casino"
+	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
+>
 	<div
 		id="craps-root"
 		data-user-id={user.id}
@@ -24,11 +27,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				>
 					← Back to Games
 				</a>
-				<h1
-					class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-500"
-				>
-					Craps
-				</h1>
+				<h1 class="deco-section-title text-4xl">Craps</h1>
 			</div>
 			<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
 				<div class="text-xs text-slate-400 mb-1">Your Balance</div>

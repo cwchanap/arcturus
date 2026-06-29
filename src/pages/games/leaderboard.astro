@@ -14,6 +14,7 @@ import {
 	isValidRankingMetric,
 	type GameLeaderboardData,
 } from '../../lib/game-stats/game-stats';
+import DecoIcon from '../../components/DecoIcon.astro';
 
 const session = Astro.locals.session;
 
@@ -101,20 +102,15 @@ const currentUserInTop = isGameTab
 	: overallLeaderboardData?.currentUserInTop;
 ---
 
-<CasinoLayout title="Leaderboard - Arcturus Casino">
-	<section class="relative overflow-hidden">
-		<div class="absolute inset-0 pointer-events-none">
-			<div class="absolute top-24 -left-20 h-72 w-72 bg-yellow-500/10 rounded-full blur-3xl"></div>
-			<div class="absolute bottom-10 right-0 h-64 w-64 bg-amber-500/10 rounded-full blur-3xl"></div>
-		</div>
-
+<CasinoLayout
+	title="Leaderboard - Arcturus Casino"
+	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
+>
+	<section class="deco-atmosphere relative overflow-hidden">
 		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-			<header class="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-6">
+			<header class="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-8">
 				<div>
-					<a
-						href="/"
-						class="text-slate-400 hover:text-yellow-400 transition-colors text-sm mb-3 inline-flex items-center gap-1"
-					>
+					<a href="/" class="deco-link mb-4 inline-flex items-center gap-2">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
 								stroke-linecap="round"
@@ -124,13 +120,11 @@ const currentUserInTop = isGameTab
 						</svg>
 						Back to Lobby
 					</a>
-					<h1
-						class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 flex items-center gap-3"
-					>
-						<span class="text-4xl">🏆</span>
+					<h1 class="deco-section-title flex items-center gap-3 text-4xl">
+						<DecoIcon name="trophy" size={34} class="text-[var(--deco-brass)]" />
 						<span>Leaderboard</span>
 					</h1>
-					<p class="mt-2 text-slate-400">
+					<p class="deco-text-dim mt-2">
 						{
 							isGameTab
 								? `${GAME_TYPE_LABELS[selectedTab]} rankings`
@@ -141,10 +135,10 @@ const currentUserInTop = isGameTab
 
 				{
 					currentUserRank && (
-						<div class="rounded-2xl border border-yellow-500/20 bg-slate-900/70 px-6 py-4 text-center md:text-right">
-							<p class="text-xs uppercase tracking-widest text-yellow-400/60">Your Rank</p>
-							<p class="mt-1 text-3xl font-bold text-yellow-400">#{currentUserRank}</p>
-							<p class="text-xs text-slate-400 mt-1">
+						<div class="deco-panel deco-frame px-6 py-4 text-center md:text-right">
+							<p class="deco-eyebrow-sm">Your Rank</p>
+							<p class="deco-stat-value mt-1 text-3xl">#{currentUserRank}</p>
+							<p class="deco-muted-text text-xs mt-1">
 								of {formatNumber(totalPlayers ?? 0)} players
 							</p>
 						</div>
@@ -159,10 +153,8 @@ const currentUserInTop = isGameTab
 						<a
 							href={`/games/leaderboard?game=${tab.id}${tab.id !== 'all' ? `&metric=${validMetric}` : ''}`}
 							class:list={[
-								'px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors flex items-center gap-2',
-								selectedTab === tab.id
-									? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-									: 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:text-yellow-400 hover:border-yellow-500/30',
+								'deco-tab px-4 py-2 font-medium whitespace-nowrap flex items-center gap-2',
+								selectedTab === tab.id && 'deco-tab-active',
 							]}
 							data-testid={`tab-${tab.id}`}
 						>
@@ -177,16 +169,14 @@ const currentUserInTop = isGameTab
 			{
 				isGameTab && (
 					<div class="flex items-center gap-3 mb-6">
-						<span class="text-sm text-slate-400">Rank by:</span>
+						<span class="deco-text-dim text-sm">Rank by:</span>
 						<div class="flex gap-2" data-testid="metric-selector">
 							{RANKING_METRICS.map((metric) => (
 								<a
 									href={`/games/leaderboard?game=${selectedTab}&metric=${metric}`}
 									class:list={[
-										'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-										validMetric === metric
-											? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-											: 'bg-slate-800/50 text-slate-400 border border-slate-700/50 hover:text-yellow-400',
+										'deco-tab px-3 py-1.5 text-xs font-medium',
+										validMetric === metric && 'deco-tab-active',
 									]}
 									data-testid={`metric-${metric}`}
 								>
@@ -200,12 +190,14 @@ const currentUserInTop = isGameTab
 
 			{
 				errorMessage && (
-					<div class="rounded-2xl border border-red-500/30 bg-red-900/20 p-8 text-center">
-						<p class="text-red-400 text-lg">{errorMessage}</p>
-						<button
-							onclick="window.location.reload()"
-							class="mt-4 px-6 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/50 rounded-lg text-red-300 transition-colors"
-						>
+					<div
+						class="deco-panel p-8 text-center"
+						style="border-color: rgba(154,45,51,0.5); background: rgba(110,31,35,0.15)"
+					>
+						<p class="text-lg" style="color: #e7a6a0">
+							{errorMessage}
+						</p>
+						<button onclick="window.location.reload()" class="deco-btn deco-btn-outline mt-4">
 							Try Again
 						</button>
 					</div>
@@ -218,26 +210,18 @@ const currentUserInTop = isGameTab
 					!isGameTab &&
 					overallLeaderboardData &&
 					overallLeaderboardData.entries.length > 0 && (
-						<div class="rounded-2xl border border-yellow-500/20 bg-slate-900/80 shadow-2xl overflow-hidden">
+						<div class="deco-panel overflow-hidden">
 							<div class="overflow-x-auto">
 								<table class="w-full" data-testid="leaderboard-table">
-									<thead class="bg-slate-800/50 border-b border-yellow-500/20">
+									<thead class="deco-table-head">
 										<tr>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Rank
-											</th>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Player
-											</th>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Badges
-											</th>
-											<th class="px-6 py-4 text-right text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Chip Balance
-											</th>
+											<th class="deco-th px-6 py-4 text-left">Rank</th>
+											<th class="deco-th px-6 py-4 text-left">Player</th>
+											<th class="deco-th px-6 py-4 text-left">Badges</th>
+											<th class="deco-th px-6 py-4 text-right">Chip Balance</th>
 										</tr>
 									</thead>
-									<tbody class="divide-y divide-slate-700/50">
+									<tbody style="border-top: 1px solid rgba(200,165,92,0.12)">
 										{overallLeaderboardData.entries.map((entry) => {
 											const rankEmoji =
 												entry.rank === 1
@@ -250,16 +234,12 @@ const currentUserInTop = isGameTab
 
 											return (
 												<tr
-													class:list={[
-														'transition-colors',
-														entry.isCurrentUser
-															? 'bg-yellow-500/10 border-l-4 border-l-yellow-500'
-															: 'hover:bg-slate-800/50',
-													]}
+													class:list={[entry.isCurrentUser ? 'deco-row-active' : 'deco-row']}
+													style="border-bottom: 1px solid rgba(200,165,92,0.1)"
 													data-testid={entry.isCurrentUser ? 'current-user-row' : undefined}
 												>
 													<td class="px-6 py-4 whitespace-nowrap">
-														<span class="text-slate-300 font-semibold flex items-center gap-2">
+														<span class="deco-text-dim font-semibold flex items-center gap-2">
 															{rankEmoji && <span class="text-xl">{rankEmoji}</span>}
 															<span>#{entry.rank}</span>
 														</span>
@@ -267,18 +247,12 @@ const currentUserInTop = isGameTab
 													<td class="px-6 py-4 whitespace-nowrap">
 														<div class="flex items-center gap-3">
 															<span
-																class:list={[
-																	'font-medium',
-																	entry.isCurrentUser ? 'text-yellow-400' : 'text-white',
-																]}
+																class="font-medium"
+																style={`color: ${entry.isCurrentUser ? 'var(--deco-brass-bright)' : 'var(--deco-ivory)'}`}
 															>
 																{entry.playerName || 'Anonymous'}
 															</span>
-															{entry.isCurrentUser && (
-																<span class="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded-full font-semibold border border-yellow-500/30">
-																	YOU
-																</span>
-															)}
+															{entry.isCurrentUser && <span class="deco-tag">You</span>}
 														</div>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
@@ -288,14 +262,12 @@ const currentUserInTop = isGameTab
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
 														<span
-															class:list={[
-																'font-bold',
-																entry.isCurrentUser ? 'text-yellow-400' : 'text-white',
-															]}
+															class="font-bold tabular-nums"
+															style={`color: ${entry.isCurrentUser ? 'var(--deco-brass-bright)' : 'var(--deco-ivory)'}`}
 														>
 															{formatNumber(entry.chipBalance)}
 														</span>
-														<span class="text-slate-400 text-sm ml-1">chips</span>
+														<span class="deco-muted-text text-sm ml-1">chips</span>
 													</td>
 												</tr>
 											);
@@ -305,11 +277,14 @@ const currentUserInTop = isGameTab
 							</div>
 
 							{!currentUserInTop && currentUserRank && (
-								<div class="bg-slate-800/50 border-t border-yellow-500/20 p-4 text-center">
-									<p class="text-slate-300 text-sm">
+								<div
+									class="p-4 text-center"
+									style="border-top: 1px solid rgba(200,165,92,0.2); background: rgba(12,51,38,0.3)"
+								>
+									<p class="deco-text-dim text-sm">
 										You're ranked
-										<span class="text-yellow-400 font-bold">#{currentUserRank}</span>. Keep playing
-										to reach the top 50!
+										<span class="deco-accent font-bold">#{currentUserRank}</span>. Keep playing to
+										reach the top 50!
 									</p>
 								</div>
 							)}
@@ -323,29 +298,21 @@ const currentUserInTop = isGameTab
 					isGameTab &&
 					gameLeaderboardData &&
 					gameLeaderboardData.entries.length > 0 && (
-						<div class="rounded-2xl border border-yellow-500/20 bg-slate-900/80 shadow-2xl overflow-hidden">
+						<div class="deco-panel overflow-hidden">
 							<div class="overflow-x-auto">
 								<table class="w-full" data-testid="game-leaderboard-table">
-									<thead class="bg-slate-800/50 border-b border-yellow-500/20">
+									<thead class="deco-table-head">
 										<tr>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Rank
-											</th>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Player
-											</th>
-											<th class="px-6 py-4 text-left text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Badges
-											</th>
-											<th class="px-6 py-4 text-right text-xs font-semibold text-yellow-400 uppercase tracking-wider">
+											<th class="deco-th px-6 py-4 text-left">Rank</th>
+											<th class="deco-th px-6 py-4 text-left">Player</th>
+											<th class="deco-th px-6 py-4 text-left">Badges</th>
+											<th class="deco-th px-6 py-4 text-right">
 												{RANKING_METRIC_LABELS[validMetric]}
 											</th>
-											<th class="px-6 py-4 text-right text-xs font-semibold text-yellow-400 uppercase tracking-wider">
-												Stats
-											</th>
+											<th class="deco-th px-6 py-4 text-right">Stats</th>
 										</tr>
 									</thead>
-									<tbody class="divide-y divide-slate-700/50">
+									<tbody style="border-top: 1px solid rgba(200,165,92,0.12)">
 										{gameLeaderboardData.entries.map((entry) => {
 											const rankEmoji =
 												entry.rank === 1
@@ -358,16 +325,12 @@ const currentUserInTop = isGameTab
 
 											return (
 												<tr
-													class:list={[
-														'transition-colors',
-														entry.isCurrentUser
-															? 'bg-yellow-500/10 border-l-4 border-l-yellow-500'
-															: 'hover:bg-slate-800/50',
-													]}
+													class:list={[entry.isCurrentUser ? 'deco-row-active' : 'deco-row']}
+													style="border-bottom: 1px solid rgba(200,165,92,0.1)"
 													data-testid={entry.isCurrentUser ? 'current-user-row' : undefined}
 												>
 													<td class="px-6 py-4 whitespace-nowrap">
-														<span class="text-slate-300 font-semibold flex items-center gap-2">
+														<span class="deco-text-dim font-semibold flex items-center gap-2">
 															{rankEmoji && <span class="text-xl">{rankEmoji}</span>}
 															<span>#{entry.rank}</span>
 														</span>
@@ -375,18 +338,12 @@ const currentUserInTop = isGameTab
 													<td class="px-6 py-4 whitespace-nowrap">
 														<div class="flex items-center gap-3">
 															<span
-																class:list={[
-																	'font-medium',
-																	entry.isCurrentUser ? 'text-yellow-400' : 'text-white',
-																]}
+																class="font-medium"
+																style={`color: ${entry.isCurrentUser ? 'var(--deco-brass-bright)' : 'var(--deco-ivory)'}`}
 															>
 																{entry.playerName || 'Anonymous'}
 															</span>
-															{entry.isCurrentUser && (
-																<span class="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded-full font-semibold border border-yellow-500/30">
-																	YOU
-																</span>
-															)}
+															{entry.isCurrentUser && <span class="deco-tag">You</span>}
 														</div>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
@@ -396,16 +353,14 @@ const currentUserInTop = isGameTab
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
 														<span
-															class:list={[
-																'font-bold',
-																entry.isCurrentUser ? 'text-yellow-400' : 'text-white',
-															]}
+															class="font-bold tabular-nums"
+															style={`color: ${entry.isCurrentUser ? 'var(--deco-brass-bright)' : 'var(--deco-ivory)'}`}
 														>
 															{formatMetricValue(entry.metricValue, validMetric)}
 														</span>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
-														<div class="text-xs text-slate-400">
+														<div class="deco-muted-text text-xs">
 															<div>{entry.totalWins} wins</div>
 															<div>{entry.handsPlayed} hands</div>
 														</div>
@@ -418,10 +373,13 @@ const currentUserInTop = isGameTab
 							</div>
 
 							{!currentUserInTop && currentUserRank && (
-								<div class="bg-slate-800/50 border-t border-yellow-500/20 p-4 text-center">
-									<p class="text-slate-300 text-sm">
+								<div
+									class="p-4 text-center"
+									style="border-top: 1px solid rgba(200,165,92,0.2); background: rgba(12,51,38,0.3)"
+								>
+									<p class="deco-text-dim text-sm">
 										You're ranked
-										<span class="text-yellow-400 font-bold">#{currentUserRank}</span> in{' '}
+										<span class="deco-accent font-bold">#{currentUserRank}</span> in{' '}
 										{GAME_TYPE_LABELS[selectedTab]}. Keep playing to reach the top 50!
 									</p>
 								</div>
@@ -437,10 +395,10 @@ const currentUserInTop = isGameTab
 						(gameLeaderboardData == null || gameLeaderboardData.entries.length === 0)) ||
 						(!isGameTab &&
 							(overallLeaderboardData == null || overallLeaderboardData.entries.length === 0))) && (
-						<div class="rounded-2xl border border-slate-700/50 bg-slate-900/50 p-12 text-center">
+						<div class="deco-panel deco-frame p-12 text-center">
 							<div class="text-6xl mb-4">{isGameTab ? GAME_TYPE_ICONS[selectedTab] : '🏆'}</div>
-							<p class="text-slate-400 text-lg">No players found</p>
-							<p class="text-slate-500 text-sm mt-2">
+							<p class="deco-text-dim text-lg">No players found</p>
+							<p class="deco-muted-text text-sm mt-2">
 								{isGameTab
 									? `Be the first to play ${GAME_TYPE_LABELS[selectedTab]} and claim the top spot!`
 									: 'Be the first to claim the top spot!'}
@@ -449,27 +407,27 @@ const currentUserInTop = isGameTab
 					)
 			}
 
-			<div class="mt-8 rounded-2xl border border-yellow-500/20 bg-slate-900/60 p-6">
-				<h3 class="text-lg font-bold text-yellow-400 mb-3 flex items-center gap-2">
-					<span>🎯</span>
+			<div class="deco-panel mt-8 p-6">
+				<h3 class="deco-section-title mb-3 flex items-center gap-2 text-lg">
+					<DecoIcon name="star" size={18} class="text-[var(--deco-brass)]" />
 					<span>How Rankings Work</span>
 				</h3>
-				<ul class="space-y-2 text-sm text-slate-300">
+				<ul class="deco-text-dim space-y-2 text-sm">
 					{
 						isGameTab ? (
 							<>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>
 										Game leaderboards track your performance in {GAME_TYPE_LABELS[selectedTab]}
 									</span>
 								</li>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>Rank by Total Wins, Win Rate, Biggest Win, or Net Profit</span>
 								</li>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>
 										Win Rate requires at least 10 decided games (wins or losses) to appear on the
 										leaderboard
@@ -479,22 +437,22 @@ const currentUserInTop = isGameTab
 						) : (
 							<>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>Players are ranked by total chip balance (highest first)</span>
 								</li>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>Only the top 50 players are displayed on this leaderboard</span>
 								</li>
 								<li class="flex items-start gap-2">
-									<span class="text-yellow-400">•</span>
+									<span class="deco-accent-dim">&bull;</span>
 									<span>Earn chips by playing games and completing daily missions</span>
 								</li>
 							</>
 						)
 					}
 					<li class="flex items-start gap-2">
-						<span class="text-yellow-400">•</span>
+						<span class="deco-accent-dim">&bull;</span>
 						<span>Rankings update automatically as you play</span>
 					</li>
 				</ul>

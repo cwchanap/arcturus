@@ -1,6 +1,7 @@
 ---
 import CasinoLayout from '../layouts/casino.astro';
 import { createDb } from '../lib/db';
+import DecoIcon from '../components/DecoIcon.astro';
 import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
 import { getAchievementsWithStatus } from '../lib/achievements/achievements';
 import type { AchievementWithStatus } from '../lib/achievements/types';
@@ -89,28 +90,27 @@ const aiSettingsPayload = JSON.stringify({
 });
 ---
 
-<CasinoLayout title="Player Profile - Arcturus Casino">
-	<section class="relative overflow-hidden">
-		<div class="absolute inset-0 pointer-events-none">
-			<div class="absolute top-24 -left-20 h-72 w-72 bg-yellow-500/10 rounded-full blur-3xl"></div>
-			<div class="absolute bottom-10 right-0 h-64 w-64 bg-amber-500/10 rounded-full blur-3xl"></div>
-		</div>
-
+<CasinoLayout
+	title="Player Profile - Arcturus Casino"
+	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
+>
+	<section class="deco-atmosphere relative overflow-hidden">
 		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
-			<div class="bg-slate-900/80 border border-yellow-500/20 rounded-3xl shadow-2xl">
+			<div class="deco-panel deco-frame">
 				<div class="flex flex-col gap-10 p-8 sm:p-12">
 					<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-8">
 						<div class="flex items-center gap-5">
 							<div
 								data-testid="user-avatar"
-								class="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-600 text-3xl font-bold text-slate-900"
+								class="flex h-20 w-20 items-center justify-center rounded-sm text-3xl font-bold"
+								style="border: 1px solid var(--deco-brass); color: var(--deco-brass); background: linear-gradient(160deg, rgba(12,51,38,0.6), rgba(11,15,14,0.9)); font-family: var(--font-display)"
 							>
 								{
 									user.image ? (
 										<img
 											src={user.image}
 											alt={user.name ?? user.email ?? 'Player Avatar'}
-											class="h-20 w-20 rounded-2xl object-cover"
+											class="h-20 w-20 rounded-sm object-cover"
 										/>
 									) : (
 										<span>{fallbackInitial}</span>
@@ -118,69 +118,68 @@ const aiSettingsPayload = JSON.stringify({
 								}
 							</div>
 							<div>
-								<p class="text-sm uppercase tracking-widest text-yellow-400/80">Player Profile</p>
-								<h1 class="mt-2 text-3xl font-semibold text-white">
+								<p class="deco-eyebrow-sm">Player Profile</p>
+								<h1 class="deco-section-title mt-2 text-3xl">
 									{user.name ?? 'Casino Adventurer'}
 								</h1>
-								<p class="text-slate-400">{user.email}</p>
+								<p class="deco-text-dim">{user.email}</p>
 							</div>
 						</div>
 						<div class="flex items-center gap-4 self-start md:self-auto">
-							<span
-								class={`inline-flex items-center gap-2 rounded-full border px-4 py-1 text-xs font-semibold uppercase tracking-widest ${
-									user.emailVerified
-										? 'border-emerald-400/40 text-emerald-300'
-										: 'border-yellow-500/40 text-yellow-300'
-								}`}
-							>
+							<span class:list={['deco-pill', user.emailVerified && 'deco-pill-success']}>
 								{user.emailVerified ? 'Email Verified' : 'Verification Pending'}
 							</span>
-							<button
-								id="signout-btn"
-								type="button"
-								class="group relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-yellow-500/40 bg-slate-900/60 px-6 py-3 text-sm font-semibold text-yellow-300 transition focus:outline-none focus:ring-2 focus:ring-yellow-500/60 focus:ring-offset-2 focus:ring-offset-slate-900"
-							>
-								<span
-									class="absolute inset-0 -z-10 translate-y-full bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-600 opacity-90 transition-transform duration-300 group-hover:translate-y-0"
-								></span>
-								<span class="group-hover:text-slate-900">Sign out</span>
+							<button id="signout-btn" type="button" class="deco-btn deco-btn-outline">
+								<span>Sign out</span>
 							</button>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-						<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
-							<h2 class="text-lg font-semibold text-white">Account Details</h2>
-							<dl class="mt-6 space-y-4 text-sm text-slate-300">
+						<div class="deco-panel p-6">
+							<h2 class="deco-section-title text-lg">Account Details</h2>
+							<dl class="deco-text-dim mt-6 space-y-4 text-sm">
 								<div class="flex items-start justify-between">
-									<dt class="text-slate-400">Player Name</dt>
-									<dd class="font-medium text-white">{user.name ?? 'Not set'}</dd>
+									<dt class="deco-muted-text">Player Name</dt>
+									<dd class="deco-text font-medium">{user.name ?? 'Not set'}</dd>
 								</div>
 								<div class="flex items-start justify-between">
-									<dt class="text-slate-400">Email Address</dt>
-									<dd class="font-medium text-white">{user.email}</dd>
+									<dt class="deco-muted-text">Email Address</dt>
+									<dd class="deco-text font-medium">{user.email}</dd>
 								</div>
 								<div class="flex items-start justify-between">
-									<dt class="text-slate-400">Email Status</dt>
-									<dd class="font-medium text-white">
+									<dt class="deco-muted-text">Email Status</dt>
+									<dd class="deco-text font-medium">
 										{user.emailVerified ? 'Verified' : 'Awaiting verification'}
 									</dd>
 								</div>
 							</dl>
 						</div>
-						<div class="rounded-2xl border border-white/5 bg-slate-950/40 p-6">
-							<h2 class="text-lg font-semibold text-white">Casino Tips</h2>
-							<ul class="mt-6 space-y-4 text-sm text-slate-300">
+						<div class="deco-panel p-6">
+							<h2 class="deco-section-title text-lg">Casino Tips</h2>
+							<ul class="deco-text-dim mt-6 space-y-4 text-sm">
 								<li class="flex items-start gap-3">
-									<span class="text-xl">🎁</span>
+									<DecoIcon
+										name="chip"
+										size={18}
+										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
+									/>
 									<span>Claim your daily chip bonus to keep the games going.</span>
 								</li>
 								<li class="flex items-start gap-3">
-									<span class="text-xl">🏆</span>
+									<DecoIcon
+										name="trophy"
+										size={18}
+										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
+									/>
 									<span>Visit the tournaments page to join upcoming events.</span>
 								</li>
 								<li class="flex items-start gap-3">
-									<span class="text-xl">🤝</span>
+									<DecoIcon
+										name="star"
+										size={18}
+										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
+									/>
 									<span>Invite friends for exclusive in-game rewards.</span>
 								</li>
 							</ul>
@@ -189,18 +188,18 @@ const aiSettingsPayload = JSON.stringify({
 				</div>
 			</div>
 
-			<div class="mt-8 rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+			<div class="deco-panel mt-8 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<h2 class="text-lg font-semibold text-white">AI Rival Settings</h2>
-						<p class="text-sm text-slate-400">
+						<h2 class="deco-section-title text-lg">AI Rival Settings</h2>
+						<p class="deco-text-dim text-sm">
 							Choose your model provider and store API keys to enable the Gemini or OpenAI poker
 							rival.
 						</p>
 					</div>
 					<p
 						id="ai-settings-feedback"
-						class="text-xs font-semibold uppercase tracking-widest text-slate-400 text-right"
+						class="deco-muted-text text-right text-xs font-semibold uppercase tracking-widest"
 					>
 						Updated {
 							aiSettings.updatedAt.getTime() ? aiSettings.updatedAt.toLocaleDateString() : '—'
@@ -210,7 +209,10 @@ const aiSettingsPayload = JSON.stringify({
 
 				{
 					aiSettingsFetchError && (
-						<div class="mt-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+						<div
+							class="mt-4 rounded-sm border px-4 py-3 text-sm"
+							style="border-color: rgba(154,45,51,0.4); background: rgba(110,31,35,0.15); color: #e7a6a0"
+						>
 							Failed to load AI settings. Submitting this form may overwrite your saved
 							configuration.
 						</div>
@@ -224,13 +226,11 @@ const aiSettingsPayload = JSON.stringify({
 					data-initial-settings={aiSettingsPayload}
 				>
 					<div class="col-span-full sm:col-span-1">
-						<label for="ai-provider" class="block text-sm font-medium text-slate-200">
-							Model Provider
-						</label>
+						<label for="ai-provider" class="deco-label block font-medium"> Model Provider </label>
 						<select
 							id="ai-provider"
 							name="provider"
-							class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+							class="deco-input mt-2 w-full px-3 py-2 text-sm"
 						>
 							{
 								aiProviderOptions.map((provider) => (
@@ -242,13 +242,11 @@ const aiSettingsPayload = JSON.stringify({
 						</select>
 					</div>
 					<div class="col-span-full sm:col-span-1">
-						<label for="ai-model" class="block text-sm font-medium text-slate-200">
-							Model Variant
-						</label>
+						<label for="ai-model" class="deco-label block font-medium"> Model Variant </label>
 						<select
 							id="ai-model"
 							name="model"
-							class="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+							class="deco-input mt-2 w-full px-3 py-2 text-sm"
 							data-model-options={JSON.stringify(aiModelOptions)}
 							data-model-labels={JSON.stringify(modelLabels)}
 							data-initial-model={aiSettings.model}
@@ -266,11 +264,7 @@ const aiSettingsPayload = JSON.stringify({
 					</div>
 
 					<div class="col-span-full space-y-2">
-						<label
-							id="api-key-label"
-							for="api-key"
-							class="block text-sm font-medium text-slate-200"
-						>
+						<label id="api-key-label" for="api-key" class="deco-label block font-medium">
 							{aiSettings.provider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
 						</label>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -280,14 +274,14 @@ const aiSettingsPayload = JSON.stringify({
 									name="apiKey"
 									type="password"
 									placeholder={aiSettings.provider === 'openai' ? 'sk-...' : 'AIza...'}
-									class="w-full rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 pr-20 text-sm text-white focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+									class="deco-input w-full px-3 py-2 pr-20 text-sm"
 									autocomplete="off"
 								/>
 								<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
 									<button
 										type="button"
 										id="show-api-key"
-										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										class="deco-icon-btn rounded p-1.5"
 										title="Show API key"
 										style="display: none;"
 									>
@@ -309,7 +303,7 @@ const aiSettingsPayload = JSON.stringify({
 									<button
 										type="button"
 										id="hide-api-key"
-										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										class="deco-icon-btn rounded p-1.5"
 										title="Hide API key"
 										style="display: none;"
 									>
@@ -337,7 +331,7 @@ const aiSettingsPayload = JSON.stringify({
 									<button
 										type="button"
 										id="copy-api-key"
-										class="p-1.5 text-slate-400 hover:text-yellow-400 focus:outline-none focus:ring-1 focus:ring-yellow-500 rounded transition-colors"
+										class="deco-icon-btn rounded p-1.5"
 										title="Copy API key"
 										style="display: none;"
 									>
@@ -361,7 +355,7 @@ const aiSettingsPayload = JSON.stringify({
 							<div class="flex items-center gap-2">
 								<span
 									id="api-key-status"
-									class="text-xs font-semibold uppercase tracking-widest text-slate-400"
+									class="deco-muted-text text-xs font-semibold uppercase tracking-widest"
 								>
 									{
 										(aiSettings.provider === 'openai' && aiSettings.openaiApiKey) ||
@@ -380,7 +374,7 @@ const aiSettingsPayload = JSON.stringify({
 								</button>
 							</div>
 						</div>
-						<p id="api-key-help" class="text-xs text-slate-400">
+						<p id="api-key-help" class="deco-muted-text text-xs">
 							{
 								aiSettings.provider === 'openai'
 									? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
@@ -390,10 +384,7 @@ const aiSettingsPayload = JSON.stringify({
 					</div>
 
 					<div class="col-span-full flex justify-end">
-						<button
-							type="submit"
-							class="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-yellow-500 via-amber-500 to-yellow-600 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:from-yellow-400 hover:to-amber-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/60 focus:ring-offset-2 focus:ring-offset-slate-950"
-						>
+						<button type="submit" class="deco-btn deco-btn-primary">
 							Save Rival Preferences
 						</button>
 					</div>
@@ -401,25 +392,25 @@ const aiSettingsPayload = JSON.stringify({
 			</div>
 
 			<!-- Achievements Section -->
-			<div class="mt-8 rounded-2xl border border-white/5 bg-slate-950/40 p-6">
+			<div class="deco-panel mt-8 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<h2 class="text-lg font-semibold text-white">Achievements & Badges</h2>
-						<p class="text-sm text-slate-400">
+						<h2 class="deco-section-title text-lg">Achievements & Badges</h2>
+						<p class="deco-text-dim text-sm">
 							Earn badges by reaching milestones and accomplishing feats across all casino games.
 						</p>
 					</div>
 					<div class="text-right">
-						<p class="text-2xl font-bold text-yellow-400">
+						<p class="deco-stat-value text-2xl tabular-nums">
 							{achievementProgress.unlocked}/{achievementProgress.total}
 						</p>
-						<p class="text-xs text-slate-400 uppercase tracking-widest">Unlocked</p>
+						<p class="deco-eyebrow-sm">Unlocked</p>
 					</div>
 				</div>
 
 				<!-- Progress Bar -->
 				<div
-					class="mt-4 h-2 w-full rounded-full bg-slate-800 overflow-hidden"
+					class="deco-progress-track mt-4 h-2 w-full rounded-full"
 					role="progressbar"
 					aria-label="Achievement progress"
 					aria-valuemin="0"
@@ -428,7 +419,7 @@ const aiSettingsPayload = JSON.stringify({
 					aria-valuetext={`${clampedPercentage()}%`}
 				>
 					<div
-						class="h-full bg-gradient-to-r from-yellow-500 to-amber-500 transition-all duration-500"
+						class="deco-progress-fill h-full transition-all duration-500"
 						style={`width: ${clampedPercentage()}%`}
 					>
 					</div>
@@ -439,34 +430,40 @@ const aiSettingsPayload = JSON.stringify({
 					{
 						achievements.map((achievement) => (
 							<div
-								class={`relative rounded-xl border p-4 transition-all ${
+								class:list={[
+									'relative rounded-sm border p-4 transition-all',
+									!achievement.isUnlocked && 'opacity-60',
+								]}
+								style={
 									achievement.isUnlocked
-										? 'border-yellow-500/40 bg-gradient-to-br from-yellow-500/10 to-amber-500/5'
-										: 'border-slate-700/50 bg-slate-900/50 opacity-60'
-								}`}
+										? 'border-color: rgba(200,165,92,0.4); background: linear-gradient(160deg, rgba(200,165,92,0.1), rgba(17,24,21,0.6))'
+										: 'border-color: rgba(200,165,92,0.12); background: rgba(11,15,14,0.5)'
+								}
 								data-testid={`achievement-${achievement.id}`}
 							>
 								<div class="flex items-start gap-3">
 									<div
-										class={`flex h-12 w-12 items-center justify-center rounded-lg text-2xl ${
-											achievement.isUnlocked
-												? 'bg-gradient-to-br from-yellow-400/20 to-amber-500/20'
-												: 'bg-slate-800/50 grayscale'
+										class={`flex h-12 w-12 items-center justify-center rounded-sm text-2xl ${
+											achievement.isUnlocked ? '' : 'grayscale'
 										}`}
+										style={
+											achievement.isUnlocked
+												? 'border: 1px solid rgba(200,165,92,0.4); background: rgba(200,165,92,0.1)'
+												: 'border: 1px solid rgba(200,165,92,0.1); background: rgba(17,24,21,0.5)'
+										}
 									>
 										{achievement.icon}
 									</div>
 									<div class="flex-1 min-w-0">
 										<h3
-											class={`font-semibold ${
-												achievement.isUnlocked ? 'text-white' : 'text-slate-400'
-											}`}
+											class="font-semibold"
+											style={`color: ${achievement.isUnlocked ? 'var(--deco-ivory)' : 'var(--deco-muted)'}`}
 										>
 											{achievement.name}
 										</h3>
-										<p class="text-xs text-slate-400 mt-0.5">{achievement.description}</p>
+										<p class="deco-muted-text text-xs mt-0.5">{achievement.description}</p>
 										{achievement.isUnlocked && achievement.earnedAt && (
-											<p class="text-xs text-yellow-400/70 mt-1">
+											<p class="deco-accent-dim text-xs mt-1">
 												Earned{' '}
 												{new Date(achievement.earnedAt).toLocaleDateString(undefined, {
 													month: 'short',
@@ -478,7 +475,7 @@ const aiSettingsPayload = JSON.stringify({
 									</div>
 								</div>
 								{achievement.isUnlocked && (
-									<div class="absolute top-2 right-2">
+									<div class="absolute top-2 right-2 text-[var(--deco-brass)]">
 										<svg
 											xmlns="http://www.w3.org/2000/svg"
 											width="16"
@@ -489,7 +486,6 @@ const aiSettingsPayload = JSON.stringify({
 											stroke-width="2"
 											stroke-linecap="round"
 											stroke-linejoin="round"
-											class="text-yellow-400"
 										>
 											<polyline points="20 6 9 17 4 12" />
 										</svg>
@@ -507,7 +503,7 @@ const aiSettingsPayload = JSON.stringify({
 						</div>
 					) : achievements.length === 0 ? (
 						<div class="mt-6 text-center py-8">
-							<p class="text-slate-400">
+							<p class="deco-text-dim">
 								No achievements available yet. Start playing to earn badges!
 							</p>
 						</div>

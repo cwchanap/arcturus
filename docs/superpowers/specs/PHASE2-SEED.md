@@ -11,7 +11,7 @@ Phase 2 applies that system to the marketing and lobby surfaces:
 
 At Phase 2, also:
 
-- Migrate the global `body` background from the slate gradient to `--deco-obsidian` and apply `.deco-grain` globally (Phase 1 deliberately limited the only global change to fonts).
+- Apply `.deco-grain` globally. (The global `body` background migration to `--deco-obsidian` is **already done** — it shipped with Phase 1 in `src/styles/global.css`; only the grain overlay still needs to be opted in globally.)
 - Once no page references them, retire the legacy `--casino-*` / `--glow-*` tokens and the `.btn-gold` / gold-gradient utility patterns (game-table classes like `.felt-table`, `.playing-card`, `.poker-chip` stay until Phase 3).
 
 Preserve E2E hooks throughout: `getByRole('link', { name: /Join Free/i })` must keep `href="/signin"`; `nav a` "Leaderboard" stays; homepage CTA copy substring "Join Free" is matched by `e2e/auth-ui.spec.ts`.

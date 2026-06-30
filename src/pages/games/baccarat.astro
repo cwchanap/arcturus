@@ -129,57 +129,62 @@ const initialBalance = user.chipBalance ?? 1000;
 					<!-- Main Bets -->
 					<div class="grid grid-cols-3 gap-4 mb-4">
 						<!-- Player Bet -->
-						<div
+						<button
+							type="button"
 							data-bet-type="player"
 							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-sapphire)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
 							<div class="text-[var(--deco-sapphire)] font-bold text-lg mb-1">PLAYER</div>
 							<div class="text-[var(--deco-muted)] text-sm">Pays 1:1</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
-						</div>
+						</button>
 
 						<!-- Tie Bet -->
-						<div
+						<button
+							type="button"
 							data-bet-type="tie"
 							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-jade)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
 							<div class="text-[var(--deco-jade)] font-bold text-lg mb-1">TIE</div>
 							<div class="text-[var(--deco-muted)] text-sm">Pays 8:1</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
-						</div>
+						</button>
 
 						<!-- Banker Bet -->
-						<div
+						<button
+							type="button"
 							data-bet-type="banker"
 							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-oxblood-bright)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
 							<div class="text-[var(--deco-oxblood-bright)] font-bold text-lg mb-1">BANKER</div>
 							<div class="text-[var(--deco-muted)] text-sm">Pays 0.95:1</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
-						</div>
+						</button>
 					</div>
 
 					<!-- Side Bets -->
 					<div class="grid grid-cols-2 gap-4 mb-6">
 						<!-- Player Pair -->
-						<div
+						<button
+							type="button"
 							data-bet-type="playerPair"
 							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-amethyst)] rounded-xl p-3 cursor-pointer transition-all text-center"
 						>
 							<div class="text-[var(--deco-amethyst)] font-bold mb-1">PLAYER PAIR</div>
 							<div class="text-[var(--deco-muted)] text-xs">Pays 11:1</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
+						</button>
 
 						<!-- Banker Pair -->
-						<div
+						<button
+							type="button"
 							data-bet-type="bankerPair"
 							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-amethyst)] rounded-xl p-3 cursor-pointer transition-all text-center"
 						>
 							<div class="text-[var(--deco-amethyst)] font-bold mb-1">BANKER PAIR</div>
 							<div class="text-[var(--deco-muted)] text-xs">Pays 11:1</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
+						</button>
 					</div>
 
 					<!-- Chip Selection -->

@@ -7,10 +7,7 @@ const url = new URL(Astro.request.url);
 const hasAuthError = url.searchParams.has('error') || url.searchParams.has('error_description');
 ---
 
-<CasinoLayout
-	title="Sign In - Arcturus Casino"
-	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
->
+<CasinoLayout title="Sign In - Arcturus Casino">
 	<div
 		class="deco-atmosphere deco-grain flex min-h-[80vh] items-center justify-center px-4 py-16 sm:px-6 lg:px-8"
 	>
@@ -44,7 +41,7 @@ const hasAuthError = url.searchParams.has('error') || url.searchParams.has('erro
 						'mb-4 rounded-sm border border-[var(--deco-oxblood-bright)]/40 bg-[var(--deco-oxblood)]/15 p-4 text-sm',
 						!hasAuthError && 'hidden',
 					]}
-					style="color: #e7a6a0"
+					style="color: var(--deco-rose)"
 				>
 					Google sign-in did not complete. Please try again.
 				</div>

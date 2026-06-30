@@ -14,10 +14,7 @@ if (!user) {
 const initialBalance = user.chipBalance ?? 1000;
 ---
 
-<CasinoLayout
-	title="Blackjack - Arcturus Casino"
-	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
->
+<CasinoLayout title="Blackjack - Arcturus Casino">
 	<div
 		id="blackjack-root"
 		data-user-id={user.id}

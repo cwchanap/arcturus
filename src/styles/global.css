@@ -17,7 +17,7 @@
 
 /* Background patterns */
 body {
-	background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+	background: var(--deco-obsidian);
 	min-height: 100vh;
 }
 
@@ -221,6 +221,10 @@ body {
 	--deco-sapphire: #3b6e8c;
 	--deco-jade: #2f9e6f;
 	--deco-amethyst: #7d5a9e;
+
+	/* Functional text accents for win/loss/error states on dark surfaces */
+	--deco-mint: #6fd6a8;
+	--deco-rose: #e7a6a0;
 
 	--font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
 	--font-body: 'Jost', system-ui, -apple-system, sans-serif;
@@ -666,14 +670,14 @@ h6,
 }
 .deco-pill-success {
 	border-color: rgba(46, 160, 110, 0.5);
-	color: #6fd6a8;
+	color: var(--deco-mint);
 	background: rgba(14, 59, 46, 0.5);
 }
 
 /* "Completed/disabled" state for the deco button (mission claim) */
 .deco-btn-done {
 	background: rgba(14, 59, 46, 0.5);
-	color: #6fd6a8;
+	color: var(--deco-mint);
 	border: 1px solid rgba(46, 160, 110, 0.5);
 	cursor: not-allowed;
 }

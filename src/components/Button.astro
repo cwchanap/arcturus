@@ -4,9 +4,10 @@ interface Props {
 	href?: string;
 	type?: 'button' | 'submit';
 	class?: string;
+	[key: string]: unknown;
 }
 
-const { variant = 'primary', href, type = 'button', class: className = '' } = Astro.props;
+const { variant = 'primary', href, type = 'button', class: className = '', ...rest } = Astro.props;
 
 const variantClass =
 	variant === 'outline'
@@ -16,15 +17,16 @@ const variantClass =
 			: 'deco-btn-primary';
 
 const cls = `deco-btn ${variantClass} ${className}`.trim();
+const restProps = rest as Record<string, unknown>;
 ---
 
 {
 	href ? (
-		<a href={href} class={cls}>
+		<a href={href} class={cls} {...restProps}>
 			<slot />
 		</a>
 	) : (
-		<button type={type} class={cls}>
+		<button type={type} class={cls} {...restProps}>
 			<slot />
 		</button>
 	)

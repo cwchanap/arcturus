@@ -396,17 +396,6 @@ h6,
 	color: var(--deco-brass-bright);
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.deco-link,
-	.deco-footer-link,
-	.deco-btn {
-		transition: none;
-	}
-	.deco-btn:hover {
-		transform: none;
-	}
-}
-
 /* ===== Art Deco marketing surfaces (Phase 2) ===== */
 
 /* Page-level atmosphere: obsidian field + emerald glows */
@@ -553,15 +542,6 @@ h6,
 }
 .deco-card:hover .deco-emblem-frame {
 	color: var(--deco-brass-bright);
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.deco-card,
-	.deco-card:hover,
-	.deco-emblem-frame {
-		transition: none;
-		transform: none;
-	}
 }
 
 /* ===== Art Deco app surfaces (Phase 2b: leaderboard, missions, profile) ===== */
@@ -772,4 +752,23 @@ h6,
 /* Hide the legacy emoji glyph inside card backs (emblem is drawn via ::after) */
 .card-back-icon {
 	display: none;
+}
+
+/* ===== Reduced motion: global a11y reset (spec §9) ===== */
+/* Canonical reset (Web.dev / The A11Y Project). Neutralizes every transition,
+   animation, and smooth-scroll regardless of source — deco classes, Tailwind
+   utilities (hover:scale-*, group-hover:*), or scoped styles — so users with
+   prefers-reduced-motion perceive no motion. Durations use 0.01ms (not 0ms) to
+   dodge transitionend edge cases; animation-iteration-count:1 stops infinite
+   loops from firing repeatedly at the instant duration. Replaces the prior
+   per-class blocks that left Tailwind hover transforms uncovered. */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
 }

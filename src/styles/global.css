@@ -21,6 +21,13 @@ body {
 	min-height: 100vh;
 }
 
+/* Global focus-visible ring for the dark theme.
+   Zero-specificity :where() so component focus styles can still override. */
+:where(a, button, [tabindex], input, select, textarea, summary):focus-visible {
+	outline: 2px solid var(--deco-brass-bright);
+	outline-offset: 2px;
+}
+
 /* Card styling */
 .playing-card {
 	aspect-ratio: 2.5 / 3.5;
@@ -668,7 +675,7 @@ h6,
 		border-color 0.18s ease,
 		box-shadow 0.18s ease;
 }
-.deco-input:focus {
+.deco-input:focus-visible {
 	outline: none;
 	border-color: var(--deco-brass);
 	box-shadow: 0 0 0 1px var(--deco-brass);

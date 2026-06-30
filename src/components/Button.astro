@@ -1,10 +1,11 @@
 ---
-interface Props {
+import type { HTMLAttributes } from 'astro/types';
+
+interface Props extends Omit<HTMLAttributes<'a'>, 'class'> {
 	variant?: 'primary' | 'outline' | 'ghost';
 	href?: string;
 	type?: 'button' | 'submit';
 	class?: string;
-	[key: string]: unknown;
 }
 
 const { variant = 'primary', href, type = 'button', class: className = '', ...rest } = Astro.props;
@@ -17,16 +18,15 @@ const variantClass =
 			: 'deco-btn-primary';
 
 const cls = `deco-btn ${variantClass} ${className}`.trim();
-const restProps = rest as Record<string, unknown>;
 ---
 
 {
 	href ? (
-		<a href={href} class={cls} {...restProps}>
+		<a href={href} class={cls} {...rest}>
 			<slot />
 		</a>
 	) : (
-		<button type={type} class={cls} {...restProps}>
+		<button type={type} class={cls} {...rest}>
 			<slot />
 		</button>
 	)

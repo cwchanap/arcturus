@@ -8,10 +8,7 @@ if (!user) return Astro.redirect('/signin');
 const initialBalance = user.chipBalance ?? 1000;
 ---
 
-<CasinoLayout
-	title="Craps - Arcturus Casino"
-	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
->
+<CasinoLayout title="Craps - Arcturus Casino">
 	<div
 		id="craps-root"
 		data-user-id={user.id}

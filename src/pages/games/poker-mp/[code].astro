@@ -9,10 +9,7 @@ if (!code || !isValidRoomCode(code)) {
 }
 ---
 
-<CasinoLayout
-	title={`Poker ${code} — Arcturus`}
-	bodyClass="bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]"
->
+<CasinoLayout title={`Poker ${code} — Arcturus`}>
 	<div class="max-w-4xl mx-auto p-4 space-y-4" data-room-code={code}>
 		<header class="flex justify-between items-center">
 			<h1 class="deco-section-title text-2xl">Room {code}</h1>

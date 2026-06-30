@@ -251,15 +251,15 @@ export function initBlackjackClient(): void {
 			btnAiRival.classList.remove('opacity-50');
 			if (aiRivalStatus) {
 				aiRivalStatus.textContent = 'AI advisor ready';
-				aiRivalStatus.classList.remove('text-slate-500');
-				aiRivalStatus.classList.add('text-green-400');
+				aiRivalStatus.classList.remove('text-[var(--deco-muted)]');
+				aiRivalStatus.classList.add('text-[var(--deco-jade)]');
 			}
 		} else {
 			btnAiRival.classList.add('opacity-50');
 			if (aiRivalStatus) {
 				aiRivalStatus.textContent = 'Configure API keys in profile to enable';
-				aiRivalStatus.classList.remove('text-green-400');
-				aiRivalStatus.classList.add('text-slate-500');
+				aiRivalStatus.classList.remove('text-[var(--deco-jade)]');
+				aiRivalStatus.classList.add('text-[var(--deco-muted)]');
 			}
 		}
 	}
@@ -669,7 +669,7 @@ export function initBlackjackClient(): void {
 	function highlightRecommendedAction(action: string | null) {
 		// Remove existing highlights
 		[btnHit, btnStand, btnDouble, btnSplit].forEach((btn) => {
-			btn.classList.remove('ring-2', 'ring-offset-2', 'ring-cyan-400');
+			btn.classList.remove('ring-2', 'ring-offset-2', 'ring-[var(--deco-brass-bright)]');
 		});
 
 		if (!action) return;
@@ -683,7 +683,7 @@ export function initBlackjackClient(): void {
 
 		const targetBtn = buttonMap[action];
 		if (targetBtn && !targetBtn.disabled) {
-			targetBtn.classList.add('ring-2', 'ring-offset-2', 'ring-cyan-400');
+			targetBtn.classList.add('ring-2', 'ring-offset-2', 'ring-[var(--deco-brass-bright)]');
 		}
 	}
 

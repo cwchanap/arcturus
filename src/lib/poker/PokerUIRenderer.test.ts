@@ -500,7 +500,7 @@ describe('PokerUIRenderer', () => {
 
 			expect(appendedElements.length).toBe(1);
 			expect(appendedElements[0].textContent).toBe('✕ FOLD');
-			expect(appendedElements[0].className).toContain('bg-red-600');
+			expect(appendedElements[0].className).toContain('bg-[var(--deco-oxblood-bright)]');
 		});
 
 		test('shows check decision', () => {
@@ -525,7 +525,7 @@ describe('PokerUIRenderer', () => {
 			renderer.showAIDecision(1, 'check');
 
 			expect(appendedElements[0].textContent).toBe('✓ CHECK');
-			expect(appendedElements[0].className).toContain('bg-blue-600');
+			expect(appendedElements[0].className).toContain('bg-[var(--deco-sapphire)]');
 		});
 
 		test('shows call decision with amount', () => {
@@ -550,7 +550,7 @@ describe('PokerUIRenderer', () => {
 			renderer.showAIDecision(2, 'call', 50);
 
 			expect(appendedElements[0].textContent).toBe('✓ CALL $50');
-			expect(appendedElements[0].className).toContain('bg-green-600');
+			expect(appendedElements[0].className).toContain('bg-[var(--deco-jade)]');
 		});
 
 		test('shows raise decision with amount', () => {
@@ -575,7 +575,7 @@ describe('PokerUIRenderer', () => {
 			renderer.showAIDecision(1, 'raise', 100);
 
 			expect(appendedElements[0].textContent).toBe('↑ RAISE $100');
-			expect(appendedElements[0].className).toContain('bg-yellow-600');
+			expect(appendedElements[0].className).toContain('bg-[var(--deco-brass)]');
 		});
 
 		test('removes existing decision badge before adding new one', () => {

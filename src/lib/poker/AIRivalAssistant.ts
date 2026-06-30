@@ -96,14 +96,18 @@ export class AIRivalAssistant {
 		}
 
 		statusEl.textContent = text;
-		statusEl.classList.remove('text-slate-300', 'text-emerald-400', 'text-rose-400');
+		statusEl.classList.remove(
+			'text-[var(--deco-ivory-dim)]',
+			'text-[var(--deco-jade)]',
+			'text-[var(--deco-oxblood-bright)]',
+		);
 
 		if (resolvedTone === 'success') {
-			statusEl.classList.add('text-emerald-400');
+			statusEl.classList.add('text-[var(--deco-jade)]');
 		} else if (resolvedTone === 'error') {
-			statusEl.classList.add('text-rose-400');
+			statusEl.classList.add('text-[var(--deco-oxblood-bright)]');
 		} else {
-			statusEl.classList.add('text-slate-300');
+			statusEl.classList.add('text-[var(--deco-ivory-dim)]');
 		}
 	}
 
@@ -389,9 +393,9 @@ Keep the JSON as the only output.`;
 		(Object.keys(buttonMap) as AiMoveType[]).forEach((key) => {
 			const el = this.getElementById(buttonMap[key]);
 			if (!(typeof HTMLButtonElement !== 'undefined' && el instanceof HTMLButtonElement)) return;
-			el.classList.remove('ring-2', 'ring-offset-2', 'ring-yellow-400');
+			el.classList.remove('ring-2', 'ring-offset-2', 'ring-[var(--deco-brass-bright)]');
 			if (move && key === move) {
-				el.classList.add('ring-2', 'ring-offset-2', 'ring-yellow-400');
+				el.classList.add('ring-2', 'ring-offset-2', 'ring-[var(--deco-brass-bright)]');
 			}
 		});
 	}

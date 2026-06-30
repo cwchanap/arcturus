@@ -69,7 +69,7 @@ export class PokerUIRenderer {
 			if (!parent.querySelector('.folded-badge')) {
 				const badge = document.createElement('div');
 				badge.className =
-					'folded-badge absolute top-0 right-0 bg-red-600 text-white text-xs px-2 py-1 rounded';
+					'folded-badge absolute top-0 right-0 bg-[var(--deco-oxblood-bright)] text-white text-xs px-2 py-1 rounded';
 				badge.textContent = 'FOLDED';
 				parent.style.position = 'relative';
 				parent.appendChild(badge);
@@ -110,23 +110,23 @@ export class PokerUIRenderer {
 		// Style based on action
 		switch (action.toLowerCase()) {
 			case 'fold':
-				badge.className += ' bg-red-600 text-white';
+				badge.className += ' bg-[var(--deco-oxblood-bright)] text-white';
 				badge.textContent = '✕ FOLD';
 				break;
 			case 'check':
-				badge.className += ' bg-blue-600 text-white';
+				badge.className += ' bg-[var(--deco-sapphire)] text-white';
 				badge.textContent = '✓ CHECK';
 				break;
 			case 'call':
-				badge.className += ' bg-green-600 text-white';
+				badge.className += ' bg-[var(--deco-jade)] text-white';
 				badge.textContent = `✓ CALL $${amount || 0}`;
 				break;
 			case 'raise':
-				badge.className += ' bg-yellow-600 text-white';
+				badge.className += ' bg-[var(--deco-brass)] text-[var(--deco-obsidian)]';
 				badge.textContent = `↑ RAISE $${amount || 0}`;
 				break;
 			default:
-				badge.className += ' bg-gray-600 text-white';
+				badge.className += ' bg-[var(--deco-obsidian-3)] text-white';
 				badge.textContent = action.toUpperCase();
 		}
 
@@ -153,7 +153,7 @@ export class PokerUIRenderer {
 						setSlotState(slot, 'card', cards[index]);
 						// Add winner highlight if needed
 						if (isWinner) {
-							slot.classList.add('ring-2', 'ring-yellow-400');
+							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
 						}
 					} else {
 						setSlotState(slot, 'hidden');
@@ -174,7 +174,7 @@ export class PokerUIRenderer {
 						setSlotState(slot, 'card', cards[index]);
 						// Add winner highlight if needed
 						if (isWinner) {
-							slot.classList.add('ring-2', 'ring-yellow-400');
+							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
 						}
 					} else {
 						setSlotState(slot, 'hidden');
@@ -194,7 +194,7 @@ export class PokerUIRenderer {
 			const slots = container.querySelectorAll('.card-slot');
 			slots.forEach((slot, index) => {
 				// Remove any winner highlight
-				slot.classList.remove('ring-2', 'ring-yellow-400');
+				slot.classList.remove('ring-2', 'ring-[var(--deco-brass-bright)]');
 				if (index < 2) {
 					setSlotState(slot, 'facedown');
 				} else {

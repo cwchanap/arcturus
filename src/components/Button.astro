@@ -3,25 +3,15 @@ import type { HTMLAttributes } from 'astro/types';
 
 type Variant = 'primary' | 'outline' | 'ghost';
 
-// Discriminated by `href`: anchor branch renders an `<a>` and only accepts
-// anchor attributes; button branch renders a `<button>` and only accepts
-// button attributes. `type` is declared on both sides so it can be destructured
-// from the union — `never` on the anchor branch rejects it there.
-type Props =
-	| (Omit<HTMLAttributes<'a'>, 'class'> & {
-			variant?: Variant;
-			href: string;
-			type?: never;
-			class?: string;
-	  })
-	| (Omit<HTMLAttributes<'button'>, 'class' | 'type'> & {
-			variant?: Variant;
-			href?: undefined;
-			type?: 'button' | 'submit';
-			class?: string;
-	  });
+// Anchor-only primitive. All current call sites use `href`. If a real `<button>`
+// is needed later, reintroduce a discriminated union — don't add a dead branch.
+type Props = Omit<HTMLAttributes<'a'>, 'class'> & {
+	variant?: Variant;
+	href: string;
+	class?: string;
+};
 
-const { variant = 'primary', href, type = 'button', class: className = '', ...rest } = Astro.props;
+const { variant = 'primary', href, class: className = '', ...rest } = Astro.props;
 
 const variantClass =
 	variant === 'outline'
@@ -33,14 +23,6 @@ const variantClass =
 const cls = `deco-btn ${variantClass} ${className}`.trim();
 ---
 
-{
-	href ? (
-		<a href={href} class={cls} {...(rest as Omit<HTMLAttributes<'a'>, 'class'>)}>
-			<slot />
-		</a>
-	) : (
-		<button type={type} class={cls} {...(rest as Omit<HTMLAttributes<'button'>, 'class' | 'type'>)}>
-			<slot />
-		</button>
-	)
-}
+<a href={href} class={cls} {...rest as Omit<HTMLAttributes<'a'>, 'class'>}>
+	<slot />
+</a>

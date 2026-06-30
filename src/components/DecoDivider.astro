@@ -1,20 +1,15 @@
 ---
 interface Props {
 	tone?: 'brass' | 'emerald';
-	width?: string;
 	class?: string;
 }
 
-const { tone = 'brass', width, class: className = '' } = Astro.props;
+const { tone = 'brass', class: className = '' } = Astro.props;
 const color = tone === 'emerald' ? 'var(--deco-emerald-line)' : 'var(--deco-brass)';
 const ruleStyle = `background:linear-gradient(to right,transparent,${color} 35%,${color} 65%,transparent)`;
-const widthStyle = width ? `max-width:${width}` : '';
 ---
 
-<div
-	class={`flex items-center justify-center gap-4 ${className}`.trim()}
-	style={`color:${color}${widthStyle ? `;${widthStyle}` : ''}`}
->
+<div class={`flex items-center justify-center gap-4 ${className}`.trim()} style={`color:${color}`}>
 	<span class="h-px flex-1" style={ruleStyle}></span>
 	<svg
 		width="36"

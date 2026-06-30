@@ -153,18 +153,6 @@ body {
 	transform: translateY(-2px);
 }
 
-/* Game card hover effect */
-.game-card {
-	transition: all 0.3s ease;
-	border: 2px solid transparent;
-}
-
-.game-card:hover {
-	border-color: var(--casino-gold);
-	box-shadow: var(--glow-gold);
-	transform: scale(1.05);
-}
-
 /* Slot machine animation */
 @keyframes spin {
 	from {

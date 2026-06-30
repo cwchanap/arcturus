@@ -177,19 +177,27 @@ if (!code || !isValidRoomCode(code)) {
 		}
 	});
 
+	// Connection status helper: always reset both tone classes before applying
+	// the active one so the element never retains a stale tone from a prior state.
+	const STATUS_TONE_JADE = 'text-[var(--deco-jade)]';
+	const STATUS_TONE_OXBLOOD = 'text-[var(--deco-oxblood-bright)]';
+	function setConnectionState(text: string, tone: string) {
+		statusEl.textContent = text;
+		statusEl.classList.remove(STATUS_TONE_JADE, STATUS_TONE_OXBLOOD);
+		statusEl.classList.add(tone);
+	}
+
 	client.onDisconnect(() => {
-		statusEl.textContent = 'Disconnected';
-		statusEl.classList.add('text-[var(--deco-oxblood-bright)]');
+		setConnectionState('Disconnected', STATUS_TONE_OXBLOOD);
 	});
 
 	client
 		.connect()
 		.then(() => {
-			statusEl.textContent = 'Connected';
+			setConnectionState('Connected', STATUS_TONE_JADE);
 		})
 		.catch(() => {
-			statusEl.textContent = 'Disconnected';
-			statusEl.classList.add('text-[var(--deco-oxblood-bright)]');
+			setConnectionState('Disconnected', STATUS_TONE_OXBLOOD);
 		});
 
 	// Expose client for E2E tests to send leave_seat and other messages.

@@ -505,7 +505,7 @@ git commit -m "feat(ui): add DecoDivider sunburst ornament"
 **Interfaces:**
 
 - Consumes: `.deco-btn`, `.deco-btn-primary`, `.deco-btn-outline`, `.deco-btn-ghost` from Task 1.
-- Produces: `Button` component with props `{ variant?: 'primary' | 'outline' | 'ghost'; href?: string; type?: 'button' | 'submit'; class?: string }`. Renders an `<a>` when `href` is set, otherwise a `<button>`. `variant` defaults to `'primary'`. Available for Phase 2 (not wired into chrome here).
+- Produces: `Button` component that renders an `<a>` when `href` is set, otherwise a `<button>`. `variant` defaults to `'primary'`. Props are a discriminated union keyed on `href` so anchor-only attrs (`target`, `rel`, `download`, …) and button-only attrs (`disabled`, `type`, …) are type-checked for the right branch, and any remaining standard attributes are forwarded via `{...rest}` onto the rendered element. Available for Phase 2 (not wired into chrome here).
 
 - [ ] **Step 1: Replace the file contents**
 
@@ -513,14 +513,28 @@ Replace the entire contents of `src/components/Button.astro` with:
 
 ```astro
 ---
-interface Props {
-	variant?: 'primary' | 'outline' | 'ghost';
-	href?: string;
-	type?: 'button' | 'submit';
-	class?: string;
-}
+import type { HTMLAttributes } from 'astro/types';
 
-const { variant = 'primary', href, type = 'button', class: className = '' } = Astro.props;
+type Variant = 'primary' | 'outline' | 'ghost';
+
+// Discriminated by `href`: anchor branch renders an `<a>` and only accepts
+// anchor attributes; button branch renders a `<button>` and only accepts
+// button attributes. Remaining standard attributes spread via `{...rest}`.
+type Props =
+	| (Omit<HTMLAttributes<'a'>, 'class'> & {
+			variant?: Variant;
+			href: string;
+			type?: never;
+			class?: string;
+	  })
+	| (Omit<HTMLAttributes<'button'>, 'class' | 'type'> & {
+			variant?: Variant;
+			href?: undefined;
+			type?: 'button' | 'submit';
+			class?: string;
+	  });
+
+const { variant = 'primary', href, type = 'button', class: className = '', ...rest } = Astro.props;
 
 const variantClass =
 	variant === 'outline'
@@ -534,11 +548,11 @@ const cls = `deco-btn ${variantClass} ${className}`.trim();
 
 {
 	href ? (
-		<a href={href} class={cls}>
+		<a href={href} class={cls} {...rest}>
 			<slot />
 		</a>
 	) : (
-		<button type={type} class={cls}>
+		<button type={type} class={cls} {...rest}>
 			<slot />
 		</button>
 	)
@@ -639,15 +653,7 @@ Find the existing `<footer …>…</footer>` and replace the whole element with:
 <footer class={`deco-footer ${footerClass}`.trim()}>
 	<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 		<DecoDivider class="mb-10" />
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-8">
-			<div>
-				<h3 class="deco-heading text-lg mb-4">About</h3>
-				<ul class="space-y-2">
-					<li><a href="#" class="deco-footer-link">About Us</a></li>
-					<li><a href="#" class="deco-footer-link">Responsible Gaming</a></li>
-					<li><a href="#" class="deco-footer-link">Privacy Policy</a></li>
-				</ul>
-			</div>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
 			<div>
 				<h3 class="deco-heading text-lg mb-4">Games</h3>
 				<ul class="space-y-2">
@@ -657,18 +663,11 @@ Find the existing `<footer …>…</footer>` and replace the whole element with:
 				</ul>
 			</div>
 			<div>
-				<h3 class="deco-heading text-lg mb-4">Support</h3>
+				<h3 class="deco-heading text-lg mb-4">Arcturus</h3>
 				<ul class="space-y-2">
-					<li><a href="#" class="deco-footer-link">Help Center</a></li>
-					<li><a href="#" class="deco-footer-link">Contact Us</a></li>
-					<li><a href="#" class="deco-footer-link">FAQ</a></li>
-				</ul>
-			</div>
-			<div>
-				<h3 class="deco-heading text-lg mb-4">Legal</h3>
-				<ul class="space-y-2">
-					<li><a href="#" class="deco-footer-link">Terms of Service</a></li>
-					<li><a href="#" class="deco-footer-link">18+ Only</a></li>
+					<li><a href="/missions/daily" class="deco-footer-link">Daily Mission</a></li>
+					<li><a href="/games/leaderboard" class="deco-footer-link">Leaderboard</a></li>
+					<li><a href="/profile" class="deco-footer-link">Profile</a></li>
 				</ul>
 			</div>
 		</div>
@@ -679,6 +678,8 @@ Find the existing `<footer …>…</footer>` and replace the whole element with:
 	</div>
 </footer>
 ```
+
+Preserve every existing footer `href` from the original `AppLayout` footer — do **not** introduce placeholder `href="#"` links, which would regress real navigation (the Leaderboard link, in particular, is asserted by E2E). Only the structure/styling changes to the `deco-footer` markup.
 
 - [ ] **Step 4: Format, lint, and build**
 

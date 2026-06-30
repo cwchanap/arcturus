@@ -682,6 +682,9 @@ h6,
 	cursor: not-allowed;
 }
 .deco-btn-done:hover {
+	background: rgba(14, 59, 46, 0.5);
+	color: var(--deco-mint);
+	border-color: rgba(46, 160, 110, 0.5);
 	transform: none;
 	box-shadow: none;
 }

@@ -44,7 +44,7 @@ Each phase gets its own spec → plan → implementation cycle. Phases 2–3 are
 | Emoji | Removed from chrome; replaced by inline SVG icons + deco glyphs |
 | Token strategy | Add new `--deco-*` tokens; keep legacy `--casino-*` tokens intact for un-migrated pages |
 | Logo | Typeset "ARCTURUS" wordmark + deco star mark (no slot-machine emoji) |
-| Migration safety | Body font applies globally immediately (net win); per-page color/layout restyles are deferred to later phases |
+| Migration safety | Body font **and** background (`--deco-obsidian`) apply globally immediately (net win); per-page layout restyles and surface classes (panels, cards, tables) are deferred to later phases |
 
 ---
 

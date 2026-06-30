@@ -212,6 +212,16 @@ body {
 	--deco-oxblood: #6e1f23;
 	--deco-oxblood-bright: #9a2d33;
 
+	/* Neutral surface ramp + hairline for in-game HUD panels */
+	--deco-obsidian-3: #1a2420;
+	--deco-line: #2a3a33;
+
+	/* Muted jewel-tone accents — period-appropriate functional color coding
+	   (bet types, win/loss/info states) that stays distinct on dark felt */
+	--deco-sapphire: #3b6e8c;
+	--deco-jade: #2f9e6f;
+	--deco-amethyst: #7d5a9e;
+
 	--font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
 	--font-body: 'Jost', system-ui, -apple-system, sans-serif;
 

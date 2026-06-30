@@ -132,7 +132,7 @@ export class BaccaratUIRenderer {
 		clearChildren(container);
 
 		if (bets.length === 0) {
-			container.appendChild(createTextSpan('No bets placed', 'text-neutral-500'));
+			container.appendChild(createTextSpan('No bets placed', 'text-[var(--deco-muted)]'));
 			return;
 		}
 
@@ -240,7 +240,7 @@ export class BaccaratUIRenderer {
 		clearChildren(container);
 
 		if (history.length === 0) {
-			container.appendChild(createTextSpan('No history yet', 'text-neutral-500'));
+			container.appendChild(createTextSpan('No history yet', 'text-[var(--deco-muted)]'));
 			return;
 		}
 

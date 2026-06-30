@@ -28,20 +28,24 @@ const initialBalance = user.chipBalance ?? 1000;
 			<div>
 				<a
 					href="/games"
-					class="text-slate-400 hover:text-yellow-400 transition-colors mb-2 inline-block"
+					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
 					← Back to Games
 				</a>
 				<h1 class="deco-section-title text-4xl">Baccarat</h1>
 			</div>
 			<div class="flex items-center gap-4">
-				<div class="bg-slate-800 px-4 py-2 rounded-lg border border-slate-600 text-sm">
-					<span class="text-slate-400">Shoe:</span>
-					<span id="shoe-count" class="text-white ml-1">416 cards</span>
+				<div
+					class="bg-[var(--deco-obsidian-2)] px-4 py-2 rounded-lg border border-[var(--deco-line)] text-sm"
+				>
+					<span class="text-[var(--deco-muted)]">Shoe:</span>
+					<span id="shoe-count" class="text-[var(--deco-ivory)] ml-1">416 cards</span>
 				</div>
-				<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
-					<div class="text-xs text-slate-400 mb-1">Your Balance</div>
-					<div class="text-2xl font-bold text-yellow-400" id="chip-balance">
+				<div
+					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+				>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">Your Balance</div>
+					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
 						${initialBalance.toLocaleString()}
 					</div>
 				</div>
@@ -57,7 +61,7 @@ const initialBalance = user.chipBalance ?? 1000;
 					<!-- Game Status Message -->
 					<div
 						id="game-status"
-						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-yellow-400 bg-slate-900/90 backdrop-blur-sm px-6 py-2 rounded-full border border-yellow-500/50 z-10"
+						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] backdrop-blur-sm px-6 py-2 rounded-full border border-[var(--deco-brass)] z-10"
 					>
 						Place your bets
 					</div>
@@ -65,37 +69,49 @@ const initialBalance = user.chipBalance ?? 1000;
 					<!-- Banker Area -->
 					<div id="banker-hand" class="mb-8">
 						<div class="text-center">
-							<div class="text-sm text-red-400 uppercase tracking-wider mb-2 font-semibold">
+							<div
+								class="text-sm text-[var(--deco-oxblood-bright)] uppercase tracking-wider mb-2 font-semibold"
+							>
 								Banker
 							</div>
 							<BaccaratCardContainer id="banker-cards" maxCards={3} />
-							<div class="hand-value text-xl font-bold text-white mt-2" id="banker-value"></div>
+							<div
+								class="hand-value text-xl font-bold text-[var(--deco-ivory)] mt-2"
+								id="banker-value"
+							>
+							</div>
 						</div>
 					</div>
 
 					<!-- Divider -->
-					<div class="border-t border-slate-600/50 my-6"></div>
+					<div class="border-t border-[var(--deco-line)] my-6"></div>
 
 					<!-- Player Area -->
 					<div id="player-hand" class="mb-6">
 						<div class="text-center">
-							<div class="text-sm text-blue-400 uppercase tracking-wider mb-2 font-semibold">
+							<div
+								class="text-sm text-[var(--deco-sapphire)] uppercase tracking-wider mb-2 font-semibold"
+							>
 								Player
 							</div>
 							<BaccaratCardContainer id="player-cards" maxCards={3} />
-							<div class="hand-value text-xl font-bold text-white mt-2" id="player-value"></div>
+							<div
+								class="hand-value text-xl font-bold text-[var(--deco-ivory)] mt-2"
+								id="player-value"
+							>
+							</div>
 						</div>
 					</div>
 
 					<!-- Round Result Overlay -->
 					<div
 						id="round-result"
-						class="absolute inset-0 bg-slate-900/95 backdrop-blur-sm rounded-3xl flex items-center justify-center z-20 hidden"
+						class="absolute inset-0 bg-[var(--deco-obsidian)] backdrop-blur-sm rounded-3xl flex items-center justify-center z-20 hidden"
 					>
 						<div class="text-center p-8">
-							<div class="result-winner text-4xl font-bold text-yellow-400 mb-4"></div>
-							<div class="result-scores text-xl text-slate-300 mb-4"></div>
-							<div class="result-pairs text-lg text-green-400 mb-4"></div>
+							<div class="result-winner text-4xl font-bold text-[var(--deco-brass)] mb-4"></div>
+							<div class="result-scores text-xl text-[var(--deco-ivory-dim)] mb-4"></div>
+							<div class="result-pairs text-lg text-[var(--deco-jade)] mb-4"></div>
 							<div class="result-bets space-y-2 mb-6"></div>
 							<button id="new-round-button" class="btn-gold px-8 py-3 rounded-lg font-bold text-lg">
 								NEW ROUND
@@ -105,39 +121,44 @@ const initialBalance = user.chipBalance ?? 1000;
 				</div>
 
 				<!-- Betting Area -->
-				<div id="betting-area" class="bg-slate-900 rounded-xl p-6 border border-slate-700">
-					<h3 class="text-lg font-bold text-white mb-4 text-center">Place Your Bets</h3>
+				<div
+					id="betting-area"
+					class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]"
+				>
+					<h3 class="text-lg font-bold text-[var(--deco-ivory)] mb-4 text-center">
+						Place Your Bets
+					</h3>
 
 					<!-- Main Bets -->
 					<div class="grid grid-cols-3 gap-4 mb-4">
 						<!-- Player Bet -->
 						<div
 							data-bet-type="player"
-							class="bet-area bg-blue-900/30 hover:bg-blue-900/50 border-2 border-blue-500/30 hover:border-blue-500 rounded-xl p-4 cursor-pointer transition-all text-center"
+							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-sapphire)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
-							<div class="text-blue-400 font-bold text-lg mb-1">PLAYER</div>
-							<div class="text-slate-400 text-sm">Pays 1:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-2 h-6"></div>
+							<div class="text-[var(--deco-sapphire)] font-bold text-lg mb-1">PLAYER</div>
+							<div class="text-[var(--deco-muted)] text-sm">Pays 1:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
 						</div>
 
 						<!-- Tie Bet -->
 						<div
 							data-bet-type="tie"
-							class="bet-area bg-green-900/30 hover:bg-green-900/50 border-2 border-green-500/30 hover:border-green-500 rounded-xl p-4 cursor-pointer transition-all text-center"
+							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-jade)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
-							<div class="text-green-400 font-bold text-lg mb-1">TIE</div>
-							<div class="text-slate-400 text-sm">Pays 8:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-2 h-6"></div>
+							<div class="text-[var(--deco-jade)] font-bold text-lg mb-1">TIE</div>
+							<div class="text-[var(--deco-muted)] text-sm">Pays 8:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
 						</div>
 
 						<!-- Banker Bet -->
 						<div
 							data-bet-type="banker"
-							class="bet-area bg-red-900/30 hover:bg-red-900/50 border-2 border-red-500/30 hover:border-red-500 rounded-xl p-4 cursor-pointer transition-all text-center"
+							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-oxblood-bright)] rounded-xl p-4 cursor-pointer transition-all text-center"
 						>
-							<div class="text-red-400 font-bold text-lg mb-1">BANKER</div>
-							<div class="text-slate-400 text-sm">Pays 0.95:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-2 h-6"></div>
+							<div class="text-[var(--deco-oxblood-bright)] font-bold text-lg mb-1">BANKER</div>
+							<div class="text-[var(--deco-muted)] text-sm">Pays 0.95:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-2 h-6"></div>
 						</div>
 					</div>
 
@@ -146,21 +167,21 @@ const initialBalance = user.chipBalance ?? 1000;
 						<!-- Player Pair -->
 						<div
 							data-bet-type="playerPair"
-							class="bet-area bg-purple-900/30 hover:bg-purple-900/50 border-2 border-purple-500/30 hover:border-purple-500 rounded-xl p-3 cursor-pointer transition-all text-center"
+							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-amethyst)] rounded-xl p-3 cursor-pointer transition-all text-center"
 						>
-							<div class="text-purple-400 font-bold mb-1">PLAYER PAIR</div>
-							<div class="text-slate-400 text-xs">Pays 11:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-amethyst)] font-bold mb-1">PLAYER PAIR</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 11:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 
 						<!-- Banker Pair -->
 						<div
 							data-bet-type="bankerPair"
-							class="bet-area bg-purple-900/30 hover:bg-purple-900/50 border-2 border-purple-500/30 hover:border-purple-500 rounded-xl p-3 cursor-pointer transition-all text-center"
+							class="bet-area bg-[var(--deco-obsidian)] border-2 border-[var(--deco-line)] hover:border-[var(--deco-amethyst)] rounded-xl p-3 cursor-pointer transition-all text-center"
 						>
-							<div class="text-purple-400 font-bold mb-1">BANKER PAIR</div>
-							<div class="text-slate-400 text-xs">Pays 11:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-amethyst)] font-bold mb-1">BANKER PAIR</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 11:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
 
@@ -186,13 +207,13 @@ const initialBalance = user.chipBalance ?? 1000;
 					<!-- Total Bet & Actions -->
 					<div class="flex items-center justify-between">
 						<div>
-							<span class="text-slate-400">Total Bet:</span>
-							<span id="total-bet" class="text-yellow-400 font-bold ml-2">$0</span>
+							<span class="text-[var(--deco-muted)]">Total Bet:</span>
+							<span id="total-bet" class="text-[var(--deco-brass)] font-bold ml-2">$0</span>
 						</div>
 						<div class="flex gap-3">
 							<button
 								id="clear-bets-button"
-								class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+								class="px-4 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg transition-colors"
 							>
 								Clear
 							</button>
@@ -211,56 +232,62 @@ const initialBalance = user.chipBalance ?? 1000;
 			<!-- Sidebar (1 column) -->
 			<div class="space-y-6">
 				<!-- Scoreboard -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">History</h3>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-sm font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
+						History
+					</h3>
 					<div id="scoreboard" class="flex flex-wrap gap-1 min-h-[60px]">
-						<span class="text-neutral-500">No history yet</span>
+						<span class="text-[var(--deco-muted)]">No history yet</span>
 					</div>
-					<div class="mt-3 pt-3 border-t border-slate-700">
+					<div class="mt-3 pt-3 border-t border-[var(--deco-line)]">
 						<div class="grid grid-cols-3 gap-2 text-center text-xs">
 							<div>
-								<div class="text-blue-400 font-bold" id="stat-player">0%</div>
-								<div class="text-slate-500">Player</div>
+								<div class="text-[var(--deco-sapphire)] font-bold" id="stat-player">0%</div>
+								<div class="text-[var(--deco-muted)]">Player</div>
 							</div>
 							<div>
-								<div class="text-green-400 font-bold" id="stat-tie">0%</div>
-								<div class="text-slate-500">Tie</div>
+								<div class="text-[var(--deco-jade)] font-bold" id="stat-tie">0%</div>
+								<div class="text-[var(--deco-muted)]">Tie</div>
 							</div>
 							<div>
-								<div class="text-red-400 font-bold" id="stat-banker">0%</div>
-								<div class="text-slate-500">Banker</div>
+								<div class="text-[var(--deco-oxblood-bright)] font-bold" id="stat-banker">0%</div>
+								<div class="text-[var(--deco-muted)]">Banker</div>
 							</div>
 						</div>
 					</div>
 				</div>
 
 				<!-- Active Bets -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Your Bets</h3>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-sm font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
+						Your Bets
+					</h3>
 					<div id="active-bets" class="space-y-2 min-h-[40px]">
-						<span class="text-neutral-500">No bets placed</span>
+						<span class="text-[var(--deco-muted)]">No bets placed</span>
 					</div>
 				</div>
 
 				<!-- Payouts Reference -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Payouts</h3>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-sm font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
+						Payouts
+					</h3>
 					<div class="space-y-2 text-sm">
 						<div class="flex justify-between">
-							<span class="text-blue-400">Player</span>
-							<span class="text-slate-300">1:1</span>
+							<span class="text-[var(--deco-sapphire)]">Player</span>
+							<span class="text-[var(--deco-ivory-dim)]">1:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-red-400">Banker</span>
-							<span class="text-slate-300">0.95:1</span>
+							<span class="text-[var(--deco-oxblood-bright)]">Banker</span>
+							<span class="text-[var(--deco-ivory-dim)]">0.95:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-green-400">Tie</span>
-							<span class="text-slate-300">8:1</span>
+							<span class="text-[var(--deco-jade)]">Tie</span>
+							<span class="text-[var(--deco-ivory-dim)]">8:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-purple-400">Pairs</span>
-							<span class="text-slate-300">11:1</span>
+							<span class="text-[var(--deco-amethyst)]">Pairs</span>
+							<span class="text-[var(--deco-ivory-dim)]">11:1</span>
 						</div>
 					</div>
 				</div>
@@ -270,12 +297,16 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- Insufficient Chips Overlay -->
 		<div
 			id="insufficient-chips-overlay"
-			class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 flex items-center justify-center hidden"
+			class="fixed inset-0 bg-[var(--deco-obsidian)] backdrop-blur-sm z-50 flex items-center justify-center hidden"
 		>
-			<div class="bg-slate-800 rounded-xl p-8 border border-red-500/50 max-w-md text-center">
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-xl p-8 border border-[var(--deco-oxblood)] max-w-md text-center"
+			>
 				<div class="text-5xl mb-4">💸</div>
-				<h2 class="text-2xl font-bold text-white mb-2">Insufficient Chips</h2>
-				<p class="text-slate-400 mb-6">You don't have enough chips to continue playing.</p>
+				<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">Insufficient Chips</h2>
+				<p class="text-[var(--deco-muted)] mb-6">
+					You don't have enough chips to continue playing.
+				</p>
 				<a href="/games" class="btn-gold px-8 py-3 rounded-lg font-bold inline-block">
 					Return to Lobby
 				</a>
@@ -290,7 +321,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		role="status"
 		aria-live="polite"
 		aria-atomic="true"
-		class="fixed bottom-4 right-4 bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
+		class="fixed bottom-4 right-4 bg-gradient-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 		style="z-index: 9999;"
 	>
 		<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
@@ -358,8 +389,8 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 
 	.bet-area-active {
-		border-color: rgba(234, 179, 8, 0.8) !important;
-		box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+		border-color: rgba(200, 165, 92, 0.85) !important;
+		box-shadow: 0 0 20px rgba(200, 165, 92, 0.3);
 	}
 
 	.betting-disabled {
@@ -383,8 +414,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		background: rgba(234, 179, 8, 0.1);
-		border: 1px solid rgba(234, 179, 8, 0.3);
+		background: rgba(200, 165, 92, 0.1);
+		border: 1px solid rgba(200, 165, 92, 0.3);
 		padding: 4px 12px;
 		border-radius: 20px;
 	}
@@ -404,7 +435,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	.chip-select.selected {
 		transform: scale(1.2);
-		filter: drop-shadow(0 0 10px rgba(234, 179, 8, 0.5));
+		filter: drop-shadow(0 0 10px rgba(200, 165, 92, 0.5));
 	}
 </style>
 
@@ -736,7 +767,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Active bets display
 		clearChildren(activeBetsEl);
 		if (state.activeBets.length === 0) {
-			activeBetsEl.appendChild(createTextSpan('No bets placed', 'text-neutral-500'));
+			activeBetsEl.appendChild(createTextSpan('No bets placed', 'text-[var(--deco-muted)]'));
 		} else {
 			const betTypeLabelMap: Record<string, string> = {
 				player: 'Player',
@@ -769,7 +800,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		// Scoreboard
 		clearChildren(scoreboardEl);
 		if (state.roundHistory.length === 0) {
-			scoreboardEl.appendChild(createTextSpan('No history yet', 'text-neutral-500'));
+			scoreboardEl.appendChild(createTextSpan('No history yet', 'text-[var(--deco-muted)]'));
 		} else {
 			state.roundHistory.forEach((round) => {
 				scoreboardEl.appendChild(createScoreboardDot(round.winner));

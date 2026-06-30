@@ -16,12 +16,15 @@ if (!code || !isValidRoomCode(code)) {
 	<div class="max-w-4xl mx-auto p-4 space-y-4" data-room-code={code}>
 		<header class="flex justify-between items-center">
 			<h1 class="deco-section-title text-2xl">Room {code}</h1>
-			<span data-testid="connection-status" class="text-emerald-300">Connecting…</span>
+			<span data-testid="connection-status" class="text-[var(--deco-jade)]">Connecting…</span>
 		</header>
 
-		<div data-testid="table" class="bg-emerald-950/80 rounded-lg p-6">
+		<div
+			data-testid="table"
+			class="bg-[var(--deco-emerald-deep)] rounded-lg p-6 border border-[var(--deco-brass-dim)]"
+		>
 			<div data-testid="board" class="flex gap-2 justify-center min-h-24"></div>
-			<div data-testid="pot" class="text-center text-yellow-300 mt-3"></div>
+			<div data-testid="pot" class="text-center text-[var(--deco-brass-bright)] mt-3"></div>
 		</div>
 
 		<div data-testid="seats" class="grid grid-cols-3 gap-3"></div>
@@ -29,46 +32,83 @@ if (!code || !isValidRoomCode(code)) {
 		<div data-testid="hole-cards" class="flex gap-2 justify-center min-h-24"></div>
 
 		<div class="flex gap-2 justify-center" data-testid="actions">
-			<button data-action="fold" class="bg-rose-600 px-4 py-2 rounded text-white">Fold</button>
-			<button data-action="check" class="bg-slate-600 px-4 py-2 rounded text-white">Check</button>
-			<button data-action="call" class="bg-blue-600 px-4 py-2 rounded text-white">Call</button>
+			<button
+				data-action="fold"
+				class="bg-[var(--deco-oxblood-bright)] px-4 py-2 rounded text-white">Fold</button
+			>
+			<button data-action="check" class="bg-[var(--deco-obsidian-3)] px-4 py-2 rounded text-white"
+				>Check</button
+			>
+			<button data-action="call" class="bg-[var(--deco-sapphire)] px-4 py-2 rounded text-white"
+				>Call</button
+			>
 			<input
 				type="number"
 				data-testid="raise-amount"
-				class="bg-slate-800 text-white p-2 rounded w-32"
+				class="bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] p-2 rounded w-32 border border-[var(--deco-line)]"
 				placeholder="Amount"
 			/>
-			<button data-action="raise" class="bg-emerald-600 px-4 py-2 rounded text-white">Raise</button>
+			<button data-action="raise" class="bg-[var(--deco-jade)] px-4 py-2 rounded text-white"
+				>Raise</button
+			>
 		</div>
 
 		<div class="flex gap-3 justify-center flex-wrap">
-			<button data-testid="take-seat-0" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-0"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 0
 			</button>
-			<button data-testid="take-seat-1" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-1"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 1
 			</button>
-			<button data-testid="take-seat-2" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-2"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 2
 			</button>
-			<button data-testid="take-seat-3" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-3"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 3
 			</button>
-			<button data-testid="take-seat-4" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-4"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 4
 			</button>
-			<button data-testid="take-seat-5" class="bg-slate-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="take-seat-5"
+				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+			>
 				Sit at 5
 			</button>
-			<button data-testid="start-hand" class="bg-amber-600 px-3 py-1 rounded text-white">
+			<button
+				data-testid="start-hand"
+				class="bg-[var(--deco-brass)] px-3 py-1 rounded text-[var(--deco-obsidian)] font-semibold"
+			>
 				Start hand
 			</button>
-			<button data-testid="leave-seat" class="bg-rose-700 px-3 py-1 rounded text-white">
+			<button
+				data-testid="leave-seat"
+				class="bg-[var(--deco-oxblood)] px-3 py-1 rounded text-white"
+			>
 				Leave seat
 			</button>
 		</div>
 
-		<div data-testid="log" class="text-slate-300 text-sm space-y-1 max-h-40 overflow-auto"></div>
+		<div
+			data-testid="log"
+			class="text-[var(--deco-ivory-dim)] text-sm space-y-1 max-h-40 overflow-auto"
+		>
+		</div>
 	</div>
 </CasinoLayout>
 
@@ -91,9 +131,11 @@ if (!code || !isValidRoomCode(code)) {
 
 	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
 		const glyph = getSuitGlyph(c.suit);
-		const color = isRedSuit(c.suit) ? 'text-rose-400' : 'text-white';
+		const color = isRedSuit(c.suit)
+			? 'text-[var(--deco-oxblood-bright)]'
+			: 'text-[var(--deco-ivory)]';
 		const span = document.createElement('span');
-		span.className = `inline-block bg-slate-800 px-2 py-1 rounded ${color}`;
+		span.className = `inline-block bg-[var(--deco-obsidian-2)] px-2 py-1 rounded ${color}`;
 		span.textContent = `${c.value}${glyph}`;
 		return span;
 	}
@@ -114,7 +156,8 @@ if (!code || !isValidRoomCode(code)) {
 			seatsEl.textContent = '';
 			for (const s of msg.seats) {
 				const div = document.createElement('div');
-				div.className = 'bg-slate-800 p-3 rounded text-white';
+				div.className =
+					'bg-[var(--deco-obsidian-2)] p-3 rounded text-[var(--deco-ivory)] border border-[var(--deco-line)]';
 				div.setAttribute('data-testid', `seat-${s.seatIndex}`);
 				div.textContent = `Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ${s.committed} in pot`;
 				seatsEl.appendChild(div);
@@ -131,7 +174,7 @@ if (!code || !isValidRoomCode(code)) {
 			holeEl.textContent = '';
 		} else if (msg.type === 'error') {
 			const errDiv = document.createElement('div');
-			errDiv.className = 'text-rose-400';
+			errDiv.className = 'text-[var(--deco-oxblood-bright)]';
 			errDiv.textContent = `Error: ${msg.message}`;
 			logEl.prepend(errDiv);
 		}
@@ -139,7 +182,7 @@ if (!code || !isValidRoomCode(code)) {
 
 	client.onDisconnect(() => {
 		statusEl.textContent = 'Disconnected';
-		statusEl.classList.add('text-rose-400');
+		statusEl.classList.add('text-[var(--deco-oxblood-bright)]');
 	});
 
 	client
@@ -149,7 +192,7 @@ if (!code || !isValidRoomCode(code)) {
 		})
 		.catch(() => {
 			statusEl.textContent = 'Disconnected';
-			statusEl.classList.add('text-rose-400');
+			statusEl.classList.add('text-[var(--deco-oxblood-bright)]');
 		});
 
 	// Expose client for E2E tests to send leave_seat and other messages.

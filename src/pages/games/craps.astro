@@ -23,15 +23,17 @@ const initialBalance = user.chipBalance ?? 1000;
 			<div>
 				<a
 					href="/games"
-					class="text-slate-400 hover:text-yellow-400 transition-colors mb-2 inline-block"
+					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
 					← Back to Games
 				</a>
 				<h1 class="deco-section-title text-4xl">Craps</h1>
 			</div>
-			<div class="bg-slate-800 px-6 py-3 rounded-lg border border-yellow-500/30">
-				<div class="text-xs text-slate-400 mb-1">Your Balance</div>
-				<div class="text-2xl font-bold text-yellow-400" id="chip-balance">
+			<div
+				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+			>
+				<div class="text-xs text-[var(--deco-muted)] mb-1">Your Balance</div>
+				<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
 					{'$' + initialBalance.toLocaleString()}
 				</div>
 			</div>
@@ -41,7 +43,9 @@ const initialBalance = user.chipBalance ?? 1000;
 			<!-- Main Game Area (3 cols) -->
 			<div class="lg:col-span-3 space-y-4">
 				<!-- Dice + Status Bar -->
-				<div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex items-center gap-6">
+				<div
+					class="bg-[var(--deco-obsidian-2)] rounded-xl border border-[var(--deco-line)] p-4 flex items-center gap-6"
+				>
 					<div class="flex gap-4 items-center">
 						<div class="die-display" id="die1" data-value="0">
 							<svg viewBox="0 0 60 60" class="w-14 h-14" aria-hidden="true">
@@ -56,27 +60,29 @@ const initialBalance = user.chipBalance ?? 1000;
 							</svg>
 						</div>
 						<div class="text-center">
-							<div class="text-slate-400 text-xs uppercase tracking-wider">Total</div>
-							<div class="text-3xl font-bold text-white" id="roll-total">—</div>
+							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">Total</div>
+							<div class="text-3xl font-bold text-[var(--deco-ivory)]" id="roll-total">—</div>
 						</div>
 					</div>
 
-					<div class="flex-1 border-l border-slate-700 pl-4">
+					<div class="flex-1 border-l border-[var(--deco-line)] pl-4">
 						<div class="flex items-center gap-3 mb-1">
 							<span
 								id="phase-badge"
-								class="px-2 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 uppercase tracking-wider"
+								class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-sapphire)] uppercase tracking-wider"
 							>
 								Come-Out
 							</span>
 							<span
 								id="point-badge"
-								class="hidden px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400"
+								class="hidden px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)]"
 							>
 								Point: —
 							</span>
 						</div>
-						<div id="game-message" class="text-slate-300 text-sm">Place your bets, then roll!</div>
+						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm">
+							Place your bets, then roll!
+						</div>
 					</div>
 
 					<div>
@@ -99,19 +105,21 @@ const initialBalance = user.chipBalance ?? 1000;
 							data-bet-type="passLine"
 							class="bet-zone pass-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-white font-bold text-sm uppercase tracking-wider">Pass Line</div>
-							<div class="text-slate-400 text-xs">Pays 1:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
+								Pass Line
+							</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
 							data-bet-type="dontPass"
 							class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-white font-bold text-sm uppercase tracking-wider">
+							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
 								Don't Pass Bar
 							</div>
-							<div class="text-slate-400 text-xs">Pays 1:1 (Bar 12)</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1 (Bar 12)</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
 
@@ -121,21 +129,21 @@ const initialBalance = user.chipBalance ?? 1000;
 							data-bet-type="passLineOdds"
 							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-emerald-400 font-bold text-sm uppercase tracking-wider">
+							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
 								Pass Odds
 							</div>
-							<div class="text-slate-400 text-xs">0% house edge · 2x max</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-muted)] text-xs">0% house edge · 2x max</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
 							data-bet-type="dontPassOdds"
 							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-emerald-400 font-bold text-sm uppercase tracking-wider">
+							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
 								Don't Pass Odds
 							</div>
-							<div class="text-slate-400 text-xs">0% house edge · 2x max</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-muted)] text-xs">0% house edge · 2x max</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
 
@@ -144,29 +152,29 @@ const initialBalance = user.chipBalance ?? 1000;
 						{
 							[4, 5, 6, 8, 9, 10].map((n) => (
 								<div class="number-box rounded-lg p-2 text-center" data-number={n}>
-									<div class="text-white font-bold text-sm">
+									<div class="text-[var(--deco-ivory)] font-bold text-sm">
 										{n === 6 ? 'SIX' : n === 8 ? 'EIGHT' : n}
 									</div>
 									<div
 										data-bet-type={`place${n}`}
 										class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
 									>
-										<div class="text-slate-400 text-xs">Place</div>
-										<div class="bet-amount text-yellow-400 font-bold h-4 text-xs" />
+										<div class="text-[var(--deco-muted)] text-xs">Place</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
 									</div>
 									<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
-										<div class="text-blue-300 text-xs font-bold come-display-amount" />
+										<div class="text-[var(--deco-sapphire)] text-xs font-bold come-display-amount" />
 									</div>
 									<div class="flex gap-1 mt-1 justify-center">
 										<div
 											data-bet-type={`buy${n}`}
-											class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-emerald-400 hover:bg-emerald-900/30"
+											class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-jade)] hover:bg-[var(--deco-emerald-deep)]"
 										>
 											B
 										</div>
 										<div
 											data-bet-type={`lay${n}`}
-											class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-red-400 hover:bg-red-900/30"
+											class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-oxblood-bright)] hover:bg-[var(--deco-oxblood)]"
 										>
 											L
 										</div>
@@ -182,27 +190,33 @@ const initialBalance = user.chipBalance ?? 1000;
 							data-bet-type="come"
 							class="bet-zone come-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-blue-400 font-bold text-sm uppercase tracking-wider">Come</div>
-							<div class="text-slate-400 text-xs">Pays 1:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-sapphire)] font-bold text-sm uppercase tracking-wider">
+								Come
+							</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
 							data-bet-type="field"
 							class="bet-zone field-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-purple-400 font-bold text-sm uppercase tracking-wider">Field</div>
-							<div class="text-slate-400 text-xs">3,4,9,10,11 · 2× on 2 · 3× on 12</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-amethyst)] font-bold text-sm uppercase tracking-wider">
+								Field
+							</div>
+							<div class="text-[var(--deco-muted)] text-xs">3,4,9,10,11 · 2× on 2 · 3× on 12</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
 							data-bet-type="dontCome"
 							class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
-							<div class="text-orange-400 font-bold text-sm uppercase tracking-wider">
+							<div
+								class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider"
+							>
 								Don't Come
 							</div>
-							<div class="text-slate-400 text-xs">Pays 1:1 (Bar 12)</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1 (Bar 12)</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
 
@@ -212,23 +226,27 @@ const initialBalance = user.chipBalance ?? 1000;
 							data-bet-type="big6"
 							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 						>
-							<div class="text-slate-300 font-bold text-sm uppercase tracking-wider">Big 6</div>
-							<div class="text-slate-400 text-xs">Pays 1:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
+								Big 6
+							</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
 							data-bet-type="big8"
 							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 						>
-							<div class="text-slate-300 font-bold text-sm uppercase tracking-wider">Big 8</div>
-							<div class="text-slate-400 text-xs">Pays 1:1</div>
-							<div class="bet-amount text-yellow-400 font-bold mt-1 h-5 text-sm"></div>
+							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
+								Big 8
+							</div>
+							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
 
 					<!-- Hardways Row -->
-					<div class="border-t border-slate-700/50 pt-3">
-						<div class="text-slate-400 text-xs uppercase tracking-wider mb-2 text-center">
+					<div class="border-t border-[var(--deco-line)] pt-3">
+						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
 							Hardways (off during come-out)
 						</div>
 						<div class="grid grid-cols-4 gap-2">
@@ -243,9 +261,9 @@ const initialBalance = user.chipBalance ?? 1000;
 										data-bet-type={h.type}
 										class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
 									>
-										<div class="text-amber-400 font-bold text-xs">{h.label}</div>
-										<div class="text-slate-400 text-xs">{h.pays}</div>
-										<div class="bet-amount text-yellow-400 font-bold mt-1 h-4 text-xs" />
+										<div class="text-[var(--deco-brass-bright)] font-bold text-xs">{h.label}</div>
+										<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
 									</div>
 								))
 							}
@@ -253,8 +271,8 @@ const initialBalance = user.chipBalance ?? 1000;
 					</div>
 
 					<!-- Proposition Bets -->
-					<div class="border-t border-slate-700/50 pt-3">
-						<div class="text-slate-400 text-xs uppercase tracking-wider mb-2 text-center">
+					<div class="border-t border-[var(--deco-line)] pt-3">
+						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
 							Proposition Bets (one-roll)
 						</div>
 						<div class="grid grid-cols-7 gap-1.5">
@@ -272,9 +290,11 @@ const initialBalance = user.chipBalance ?? 1000;
 										data-bet-type={p.type}
 										class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
 									>
-										<div class="text-red-400 font-bold text-xs leading-tight">{p.label}</div>
-										<div class="text-slate-500 text-xs">{p.pays}</div>
-										<div class="bet-amount text-yellow-400 font-bold mt-0.5 h-4 text-xs" />
+										<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
+											{p.label}
+										</div>
+										<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
 									</div>
 								))
 							}
@@ -283,7 +303,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				</div><!-- /craps-table -->
 
 				<!-- Chip Selection + Controls -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<div class="flex flex-wrap items-center justify-between gap-4">
 						<div class="flex gap-2 flex-wrap">
 							{
@@ -309,15 +329,17 @@ const initialBalance = user.chipBalance ?? 1000;
 						</div>
 						<div class="flex items-center gap-3">
 							<div>
-								<span class="text-slate-400 text-sm">Total Bet:</span>
-								<span id="total-bet" data-testid="total-bet" class="text-yellow-400 font-bold ml-1"
-									>$0</span
+								<span class="text-[var(--deco-muted)] text-sm">Total Bet:</span>
+								<span
+									id="total-bet"
+									data-testid="total-bet"
+									class="text-[var(--deco-brass)] font-bold ml-1">$0</span
 								>
 							</div>
 							<button
 								id="clear-bets-button"
 								data-testid="clear-bets-button"
-								class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
+								class="px-3 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg text-sm transition-colors"
 							>
 								Clear Bets
 							</button>
@@ -329,8 +351,8 @@ const initialBalance = user.chipBalance ?? 1000;
 			<!-- Sidebar (1 col) -->
 			<div class="space-y-4">
 				<!-- Roll History -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
 						Roll History
 					</h3>
 					<div
@@ -338,17 +360,19 @@ const initialBalance = user.chipBalance ?? 1000;
 						data-testid="roll-history"
 						class="flex flex-wrap gap-1.5 min-h-[40px]"
 					>
-						<span class="roll-history-placeholder text-neutral-500 text-xs">No rolls yet</span>
+						<span class="roll-history-placeholder text-[var(--deco-muted)] text-xs"
+							>No rolls yet</span
+						>
 					</div>
 				</div>
 
 				<!-- Active Bets -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
 						Active Bets
 					</h3>
 					<div id="active-bets" data-testid="active-bets" class="space-y-1.5 min-h-[40px]">
-						<span class="text-neutral-500 text-xs">No bets placed</span>
+						<span class="text-[var(--deco-muted)] text-xs">No bets placed</span>
 					</div>
 				</div>
 
@@ -356,68 +380,97 @@ const initialBalance = user.chipBalance ?? 1000;
 				<div
 					id="come-odds-panel"
 					data-testid="come-odds-panel"
-					class="hidden bg-slate-900 rounded-xl p-4 border border-blue-500/20"
+					class="hidden bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]"
 				>
-					<h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider mb-3">
+					<h3 class="text-xs font-bold text-[var(--deco-sapphire)] uppercase tracking-wider mb-3">
 						Come Bet Odds
 					</h3>
 					<div id="come-odds-list" data-testid="come-odds-list" class="space-y-2"></div>
-					<p class="text-slate-500 text-xs mt-2">Click to add 2× odds (0% edge)</p>
+					<p class="text-[var(--deco-muted)] text-xs mt-2">Click to add 2× odds (0% edge)</p>
 				</div>
 
 				<!-- Payouts Reference -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
-					<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Payouts</h3>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
+						Payouts
+					</h3>
 					<div class="space-y-1 text-xs">
 						<div class="flex justify-between">
-							<span class="text-slate-300">Pass/Come</span><span class="text-slate-400">1:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Pass/Come</span><span
+								class="text-[var(--deco-muted)]">1:1</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Odds (4/10)</span><span class="text-slate-400">2:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Odds (4/10)</span><span
+								class="text-[var(--deco-muted)]">2:1</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Odds (5/9)</span><span class="text-slate-400">3:2</span>
+							<span class="text-[var(--deco-ivory-dim)]">Odds (5/9)</span><span
+								class="text-[var(--deco-muted)]">3:2</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Odds (6/8)</span><span class="text-slate-400">6:5</span>
+							<span class="text-[var(--deco-ivory-dim)]">Odds (6/8)</span><span
+								class="text-[var(--deco-muted)]">6:5</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Place 6/8</span><span class="text-slate-400">7:6</span>
+							<span class="text-[var(--deco-ivory-dim)]">Place 6/8</span><span
+								class="text-[var(--deco-muted)]">7:6</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Place 5/9</span><span class="text-slate-400">7:5</span>
+							<span class="text-[var(--deco-ivory-dim)]">Place 5/9</span><span
+								class="text-[var(--deco-muted)]">7:5</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Place 4/10</span><span class="text-slate-400">9:5</span>
+							<span class="text-[var(--deco-ivory-dim)]">Place 4/10</span><span
+								class="text-[var(--deco-muted)]">9:5</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Hard 6/8</span><span class="text-slate-400">9:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Hard 6/8</span><span
+								class="text-[var(--deco-muted)]">9:1</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Hard 4/10</span><span class="text-slate-400">7:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Hard 4/10</span><span
+								class="text-[var(--deco-muted)]">7:1</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Any 7</span><span class="text-slate-400">4:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Any 7</span><span
+								class="text-[var(--deco-muted)]">4:1</span
+							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-slate-300">Yo (11)</span><span class="text-slate-400">15:1</span>
+							<span class="text-[var(--deco-ivory-dim)]">Yo (11)</span><span
+								class="text-[var(--deco-muted)]">15:1</span
+							>
 						</div>
 					</div>
 				</div>
 
 				<!-- LLM Advisor -->
-				<div class="bg-slate-900 rounded-xl p-4 border border-slate-700">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<div class="flex items-center justify-between mb-3">
-						<h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">AI Advisor</h3>
+						<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider">
+							AI Advisor
+						</h3>
 						<button
 							id="llm-advice-btn"
 							data-testid="llm-advice-btn"
-							class="px-3 py-1 bg-yellow-600/20 hover:bg-yellow-600/40 text-yellow-400 rounded text-xs transition-colors border border-yellow-500/30"
+							class="px-3 py-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-brass)] rounded text-xs transition-colors border border-[var(--deco-brass-dim)]"
 						>
 							Ask
 						</button>
 					</div>
-					<div id="llm-advice" class="text-slate-400 text-xs leading-relaxed min-h-[48px]">
+					<div
+						id="llm-advice"
+						class="text-[var(--deco-muted)] text-xs leading-relaxed min-h-[48px]"
+					>
 						Configure AI in your profile, then ask for advice.
 					</div>
 				</div>
@@ -427,12 +480,14 @@ const initialBalance = user.chipBalance ?? 1000;
 		<!-- Insufficient Chips Overlay -->
 		<div
 			id="insufficient-overlay"
-			class="fixed inset-0 bg-slate-900/95 backdrop-blur-sm z-50 items-center justify-center hidden"
+			class="fixed inset-0 bg-[var(--deco-obsidian)] backdrop-blur-sm z-50 items-center justify-center hidden"
 		>
-			<div class="bg-slate-800 rounded-xl p-8 border border-red-500/50 max-w-md text-center">
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-xl p-8 border border-[var(--deco-oxblood)] max-w-md text-center"
+			>
 				<div class="text-5xl mb-4">💸</div>
-				<h2 class="text-2xl font-bold text-white mb-2">Insufficient Chips</h2>
-				<p class="text-slate-400 mb-6">You don't have enough chips to continue.</p>
+				<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">Insufficient Chips</h2>
+				<p class="text-[var(--deco-muted)] mb-6">You don't have enough chips to continue.</p>
 				<a href="/games" class="btn-gold px-8 py-3 rounded-lg font-bold inline-block"
 					>Return to Lobby</a
 				>
@@ -446,7 +501,7 @@ const initialBalance = user.chipBalance ?? 1000;
 			role="status"
 			aria-live="polite"
 			aria-atomic="true"
-			class="fixed bottom-4 right-4 bg-gradient-to-r from-yellow-500 to-amber-500 text-slate-900 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
+			class="fixed bottom-4 right-4 bg-gradient-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 			style="z-index: 9999;"
 		>
 			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
@@ -475,17 +530,17 @@ const initialBalance = user.chipBalance ?? 1000;
 		transition: all 0.15s ease;
 	}
 	.bet-zone:hover {
-		border-color: rgba(234, 179, 8, 0.5);
-		background: rgba(234, 179, 8, 0.05);
+		border-color: rgba(200, 165, 92, 0.5);
+		background: rgba(200, 165, 92, 0.05);
 		transform: translateY(-1px);
 	}
 	.bet-zone:focus-visible {
-		outline: 2px solid rgba(234, 179, 8, 0.9);
+		outline: 2px solid rgba(200, 165, 92, 0.9);
 		outline-offset: 2px;
 	}
 	.bet-zone-active {
-		border-color: rgba(234, 179, 8, 0.8) !important;
-		box-shadow: 0 0 12px rgba(234, 179, 8, 0.25);
+		border-color: rgba(200, 165, 92, 0.8) !important;
+		box-shadow: 0 0 12px rgba(200, 165, 92, 0.25);
 	}
 	.bet-zone-locked {
 		opacity: 0.6;
@@ -499,34 +554,34 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 
 	.pass-zone {
-		background: rgba(59, 130, 246, 0.08);
+		background: rgba(59, 110, 140, 0.12);
 	}
 	.dont-zone {
-		background: rgba(239, 68, 68, 0.08);
+		background: rgba(154, 45, 51, 0.14);
 	}
 	.odds-zone {
-		background: rgba(16, 185, 129, 0.08);
+		background: rgba(47, 158, 111, 0.12);
 	}
 	.come-zone {
-		background: rgba(96, 165, 250, 0.08);
+		background: rgba(59, 110, 140, 0.14);
 	}
 	.field-zone {
-		background: rgba(168, 85, 247, 0.08);
+		background: rgba(125, 90, 158, 0.14);
 	}
 	.place-zone {
-		background: rgba(245, 158, 11, 0.08);
+		background: rgba(200, 165, 92, 0.1);
 	}
 	.hardway-zone {
-		background: rgba(251, 191, 36, 0.08);
+		background: rgba(228, 201, 136, 0.1);
 	}
 	.prop-zone {
-		background: rgba(239, 68, 68, 0.08);
+		background: rgba(154, 45, 51, 0.14);
 	}
 	.buy-zone {
-		background: rgba(16, 185, 129, 0.1);
+		background: rgba(47, 158, 111, 0.14);
 	}
 	.lay-zone {
-		background: rgba(239, 68, 68, 0.1);
+		background: rgba(154, 45, 51, 0.16);
 	}
 
 	.number-box {
@@ -534,8 +589,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		border: 1px solid rgba(255, 255, 255, 0.08);
 	}
 	.number-box-point {
-		border-color: rgba(234, 179, 8, 0.6) !important;
-		box-shadow: 0 0 16px rgba(234, 179, 8, 0.2);
+		border-color: rgba(200, 165, 92, 0.6) !important;
+		box-shadow: 0 0 16px rgba(200, 165, 92, 0.2);
 	}
 
 	.die-face {
@@ -580,24 +635,24 @@ const initialBalance = user.chipBalance ?? 1000;
 		font-weight: bold;
 	}
 	.roll-natural {
-		background: #166534;
-		color: #86efac;
+		background: #103d2c;
+		color: #6fd6a0;
 	}
 	.roll-craps {
-		background: #7f1d1d;
-		color: #fca5a5;
+		background: #4a161a;
+		color: #d98f93;
 	}
 	.roll-point {
-		background: #1e3a5f;
-		color: #93c5fd;
+		background: #1d3a4a;
+		color: #8fc3dd;
 	}
 	.roll-normal {
-		background: #1e293b;
-		color: #94a3b8;
+		background: #1a2420;
+		color: #8a8377;
 	}
 	.roll-seven {
-		background: #7c2d12;
-		color: #fdba74;
+		background: #5a2d12;
+		color: #e4c988;
 	}
 
 	.chip-select {
@@ -605,7 +660,7 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 	.chip-select.selected {
 		transform: scale(1.2);
-		filter: drop-shadow(0 0 8px rgba(234, 179, 8, 0.5));
+		filter: drop-shadow(0 0 8px rgba(200, 165, 92, 0.5));
 	}
 </style>
 
@@ -957,14 +1012,14 @@ const initialBalance = user.chipBalance ?? 1000;
 			if (state.phase === 'come-out') {
 				phaseBadge.textContent = 'Come-Out';
 				phaseBadge.className =
-					'px-2 py-0.5 rounded text-xs font-bold bg-blue-500/20 text-blue-400 uppercase tracking-wider';
+					'px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-sapphire)] uppercase tracking-wider';
 				pointBadge.classList.add('hidden');
 				oddsRow.classList.add('hidden');
 				oddsRow.style.removeProperty('display');
 			} else {
 				phaseBadge.textContent = 'Point Phase';
 				phaseBadge.className =
-					'px-2 py-0.5 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 uppercase tracking-wider';
+					'px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)] uppercase tracking-wider';
 				pointBadge.textContent = `Point: ${state.point}`;
 				pointBadge.classList.remove('hidden');
 				oddsRow.classList.remove('hidden');
@@ -1079,7 +1134,8 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		function renderActiveBets(bets: CrapsBet[]) {
 			if (bets.length === 0) {
-				activeBetsEl.innerHTML = '<span class="text-neutral-500 text-xs">No bets placed</span>';
+				activeBetsEl.innerHTML =
+					'<span class="text-[var(--deco-muted)] text-xs">No bets placed</span>';
 				return;
 			}
 			activeBetsEl.innerHTML = '';
@@ -1091,10 +1147,10 @@ const initialBalance = user.chipBalance ?? 1000;
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between text-xs';
 				const labelSpan = document.createElement('span');
-				labelSpan.className = 'text-slate-300';
+				labelSpan.className = 'text-[var(--deco-ivory-dim)]';
 				labelSpan.textContent = `${label}${pointStr}`;
 				const amountSpan = document.createElement('span');
-				amountSpan.className = 'text-yellow-400 font-bold';
+				amountSpan.className = 'text-[var(--deco-brass)] font-bold';
 				amountSpan.textContent = `$${bet.amount}${oddsStr}`;
 				row.appendChild(labelSpan);
 				row.appendChild(amountSpan);
@@ -1121,11 +1177,11 @@ const initialBalance = user.chipBalance ?? 1000;
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between gap-2';
 				const labelSpan = document.createElement('span');
-				labelSpan.className = 'text-slate-300 text-xs flex-1';
+				labelSpan.className = 'text-[var(--deco-ivory-dim)] text-xs flex-1';
 				labelSpan.textContent = `${label} ($${currentOdds}/$${maxOdds})`;
 				const button = document.createElement('button');
 				button.className =
-					'add-come-odds px-2 py-1 text-xs bg-emerald-900/30 hover:bg-emerald-900/50 text-emerald-400 border border-emerald-500/30 rounded';
+					'add-come-odds px-2 py-1 text-xs bg-[var(--deco-emerald-deep)] hover:bg-[var(--deco-emerald)] text-[var(--deco-jade)] border border-[var(--deco-emerald-line)] rounded';
 				button.dataset.betId = String(bet.id);
 				button.textContent = `+$${oddsAmount}`;
 				row.appendChild(labelSpan);
@@ -1191,11 +1247,11 @@ const initialBalance = user.chipBalance ?? 1000;
 
 		function showRollResult(result: RollResult) {
 			// Show outcome in message area based on player's actual result (netDelta)
-			let msgClass = 'text-slate-300';
+			let msgClass = 'text-[var(--deco-ivory-dim)]';
 			if (result.netDelta > 0) {
-				msgClass = 'text-green-400';
+				msgClass = 'text-[var(--deco-jade)]';
 			} else if (result.netDelta < 0) {
-				msgClass = 'text-red-400';
+				msgClass = 'text-[var(--deco-oxblood-bright)]';
 			}
 			gameMessageEl.className = `text-sm font-semibold ${msgClass}`;
 			gameMessageEl.textContent = result.message;
@@ -1204,14 +1260,14 @@ const initialBalance = user.chipBalance ?? 1000;
 			if (result.netDelta !== 0) {
 				const sign = result.netDelta > 0 ? '+' : '';
 				const deltaEl = document.createElement('span');
-				deltaEl.className = `ml-2 text-xs ${result.netDelta > 0 ? 'text-green-400' : 'text-red-400'}`;
+				deltaEl.className = `ml-2 text-xs ${result.netDelta > 0 ? 'text-[var(--deco-jade)]' : 'text-[var(--deco-oxblood-bright)]'}`;
 				deltaEl.textContent = `(${sign}$${result.netDelta})`;
 				gameMessageEl.appendChild(deltaEl);
 			}
 		}
 
 		function showMessage(msg: string, type: 'info' | 'error' = 'info') {
-			gameMessageEl.className = `text-sm ${type === 'error' ? 'text-red-400' : 'text-slate-300'}`;
+			gameMessageEl.className = `text-sm ${type === 'error' ? 'text-[var(--deco-oxblood-bright)]' : 'text-[var(--deco-ivory-dim)]'}`;
 			gameMessageEl.textContent = msg;
 		}
 

@@ -118,7 +118,7 @@ export class PokerUIRenderer {
 				badge.textContent = '✓ CHECK';
 				break;
 			case 'call':
-				badge.className += ' bg-[var(--deco-jade)] text-white';
+				badge.className += ' bg-[var(--deco-jade)] text-[var(--deco-obsidian)]';
 				badge.textContent = `✓ CALL $${amount || 0}`;
 				break;
 			case 'raise':

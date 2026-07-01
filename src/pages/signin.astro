@@ -38,10 +38,9 @@ const hasAuthError = url.searchParams.has('error') || url.searchParams.has('erro
 				<div
 					id="signin-error"
 					class:list={[
-						'mb-4 rounded-sm border border-[var(--deco-oxblood-bright)]/40 bg-[var(--deco-oxblood)]/15 p-4 text-sm',
+						'mb-4 rounded-sm border border-[var(--deco-oxblood-bright)]/40 bg-[var(--deco-oxblood)]/15 p-4 text-sm text-[var(--deco-rose)]',
 						!hasAuthError && 'hidden',
 					]}
-					style="color: var(--deco-rose)"
 				>
 					Google sign-in did not complete. Please try again.
 				</div>

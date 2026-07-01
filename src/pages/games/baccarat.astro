@@ -43,7 +43,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				>
 					<div class="text-xs text-[var(--deco-muted)] mb-1">Your Balance</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
-						${initialBalance.toLocaleString()}
+						{`$${initialBalance.toLocaleString()}`}
 					</div>
 				</div>
 			</div>
@@ -337,13 +337,6 @@ const initialBalance = user.chipBalance ?? 1000;
 </CasinoLayout>
 
 <style>
-	.felt-table {
-		background: linear-gradient(135deg, #0d4a35 0%, #0a3829 50%, #073020 100%);
-		box-shadow:
-			inset 0 0 100px rgba(0, 0, 0, 0.3),
-			0 10px 40px rgba(0, 0, 0, 0.5);
-	}
-
 	.card-placeholder {
 		width: 60px;
 		height: 84px;

@@ -50,3 +50,11 @@ E2E hooks preserved throughout: `getByRole('link', { name: /Join Free/i })` keep
 `href="/signin"`; nav `a` "Leaderboard" stays; homepage CTA copy substring
 "Join Free" is matched by `e2e/auth-ui.spec.ts`; all `data-testid` hooks and
 `data-chip-balance` are intact.
+
+## Component contract notes
+
+- **`Button.astro`** ships as an anchor-only primitive (`href` required, no
+  `<button>` branch). This is an intentional YAGNI narrowing, not drift: all 7
+  call sites (`src/pages/index.astro`) pass `href`. If a real `<button>` is
+  needed later, reintroduce the discriminated union per the inline comment in
+  `src/components/Button.astro` — don't add a dead branch speculatively.

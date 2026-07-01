@@ -38,13 +38,17 @@ export function setFeedback(
 	if (!feedbackEl) return;
 
 	feedbackEl.textContent = message;
-	feedbackEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-slate-400');
+	feedbackEl.classList.remove(
+		'text-[var(--deco-mint)]',
+		'text-[var(--deco-rose)]',
+		'text-[var(--deco-ivory-dim)]',
+	);
 	if (tone === 'success') {
-		feedbackEl.classList.add('text-emerald-400');
+		feedbackEl.classList.add('text-[var(--deco-mint)]');
 	} else if (tone === 'error') {
-		feedbackEl.classList.add('text-rose-400');
+		feedbackEl.classList.add('text-[var(--deco-rose)]');
 	} else {
-		feedbackEl.classList.add('text-slate-400');
+		feedbackEl.classList.add('text-[var(--deco-ivory-dim)]');
 	}
 }
 

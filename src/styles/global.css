@@ -709,7 +709,7 @@ h6,
 
 /* Deco card back: emerald cross-hatch + centered brass diamond emblem.
    Applied to every face-down card across all games (replaces the 🎴 emoji
-   and blue gradient). The emoji span is hidden, the emblem is drawn in CSS. */
+   and blue gradient). The emblem is drawn in CSS via ::after. */
 .card-back-deco,
 .playing-card-back,
 .baccarat-card-back {
@@ -743,10 +743,6 @@ h6,
 	transform: translate(-50%, -50%) rotate(45deg);
 	border: 1.5px solid var(--deco-brass-bright);
 	box-shadow: 0 0 0 3px rgba(200, 165, 92, 0.15);
-}
-/* Hide the legacy emoji glyph inside card backs (emblem is drawn via ::after) */
-.card-back-icon {
-	display: none;
 }
 
 /* ===== Reduced motion: global a11y reset (spec §9) ===== */

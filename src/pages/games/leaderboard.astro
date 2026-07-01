@@ -194,7 +194,7 @@ const currentUserInTop = isGameTab
 						<p class="text-lg" style="color: var(--deco-rose)">
 							{errorMessage}
 						</p>
-						<button onclick="window.location.reload()" class="deco-btn deco-btn-outline mt-4">
+						<button id="leaderboard-retry" class="deco-btn deco-btn-outline mt-4">
 							Try Again
 						</button>
 					</div>
@@ -465,3 +465,8 @@ const currentUserInTop = isGameTab
 		</div>
 	</section>
 </CasinoLayout>
+
+<script>
+	const retryBtn = document.getElementById('leaderboard-retry');
+	retryBtn?.addEventListener('click', () => window.location.reload());
+</script>

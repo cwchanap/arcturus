@@ -384,8 +384,8 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 
 	.bet-area-active {
-		border-color: rgba(200, 165, 92, 0.85) !important;
-		box-shadow: 0 0 20px rgba(200, 165, 92, 0.3);
+		border-color: color-mix(in srgb, var(--deco-brass) 85%, transparent) !important;
+		box-shadow: 0 0 20px color-mix(in srgb, var(--deco-brass) 30%, transparent);
 	}
 
 	.betting-disabled {
@@ -409,8 +409,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		display: inline-flex;
 		align-items: center;
 		gap: 8px;
-		background: rgba(200, 165, 92, 0.1);
-		border: 1px solid rgba(200, 165, 92, 0.3);
+		background: color-mix(in srgb, var(--deco-brass) 10%, transparent);
+		border: 1px solid color-mix(in srgb, var(--deco-brass) 30%, transparent);
 		padding: 4px 12px;
 		border-radius: 20px;
 	}
@@ -430,7 +430,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	.chip-select.selected {
 		transform: scale(1.2);
-		filter: drop-shadow(0 0 10px rgba(200, 165, 92, 0.5));
+		filter: drop-shadow(0 0 10px color-mix(in srgb, var(--deco-brass) 50%, transparent));
 	}
 </style>
 

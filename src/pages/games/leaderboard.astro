@@ -218,7 +218,7 @@ const currentUserInTop = isGameTab
 											<th class="deco-th px-6 py-4 text-right">Chip Balance</th>
 										</tr>
 									</thead>
-									<tbody style="border-top: 1px solid rgba(200,165,92,0.12)">
+									<tbody style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 12%, transparent)">
 										{overallLeaderboardData.entries.map((entry) => {
 											const rankEmoji =
 												entry.rank === 1
@@ -232,7 +232,7 @@ const currentUserInTop = isGameTab
 											return (
 												<tr
 													class:list={[entry.isCurrentUser ? 'deco-row-active' : 'deco-row']}
-													style="border-bottom: 1px solid rgba(200,165,92,0.1)"
+													style="border-bottom: 1px solid color-mix(in srgb, var(--deco-brass) 10%, transparent)"
 													data-testid={entry.isCurrentUser ? 'current-user-row' : undefined}
 												>
 													<td class="px-6 py-4 whitespace-nowrap">
@@ -280,7 +280,7 @@ const currentUserInTop = isGameTab
 							{!currentUserInTop && currentUserRank && (
 								<div
 									class="p-4 text-center"
-									style="border-top: 1px solid rgba(200,165,92,0.2); background: rgba(12,51,38,0.3)"
+									style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 20%, transparent); background: rgba(12,51,38,0.3)"
 								>
 									<p class="deco-text-dim text-sm">
 										You're ranked
@@ -313,7 +313,7 @@ const currentUserInTop = isGameTab
 											<th class="deco-th px-6 py-4 text-right">Stats</th>
 										</tr>
 									</thead>
-									<tbody style="border-top: 1px solid rgba(200,165,92,0.12)">
+									<tbody style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 12%, transparent)">
 										{gameLeaderboardData.entries.map((entry) => {
 											const rankEmoji =
 												entry.rank === 1
@@ -327,7 +327,7 @@ const currentUserInTop = isGameTab
 											return (
 												<tr
 													class:list={[entry.isCurrentUser ? 'deco-row-active' : 'deco-row']}
-													style="border-bottom: 1px solid rgba(200,165,92,0.1)"
+													style="border-bottom: 1px solid color-mix(in srgb, var(--deco-brass) 10%, transparent)"
 													data-testid={entry.isCurrentUser ? 'current-user-row' : undefined}
 												>
 													<td class="px-6 py-4 whitespace-nowrap">
@@ -380,7 +380,7 @@ const currentUserInTop = isGameTab
 							{!currentUserInTop && currentUserRank && (
 								<div
 									class="p-4 text-center"
-									style="border-top: 1px solid rgba(200,165,92,0.2); background: rgba(12,51,38,0.3)"
+									style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 20%, transparent); background: rgba(12,51,38,0.3)"
 								>
 									<p class="deco-text-dim text-sm">
 										You're ranked

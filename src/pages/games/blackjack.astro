@@ -546,7 +546,7 @@ const initialBalance = user.chipBalance ?? 1000;
 
 	:global(.hand-container.active-hand) {
 		border: 2px solid var(--deco-brass);
-		background: rgba(200, 165, 92, 0.1);
+		background: color-mix(in srgb, var(--deco-brass) 10%, transparent);
 	}
 
 	:global(.hand-container.inactive-hand) {

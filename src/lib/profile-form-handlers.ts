@@ -39,6 +39,7 @@ export function setFeedback(
 
 	feedbackEl.textContent = message;
 	feedbackEl.classList.remove(
+		'deco-muted-text',
 		'text-[var(--deco-mint)]',
 		'text-[var(--deco-rose)]',
 		'text-[var(--deco-ivory-dim)]',

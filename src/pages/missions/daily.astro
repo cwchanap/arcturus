@@ -155,7 +155,7 @@ const lastCompletedLabel = progress.completedDate
 		hidden
 	>
 		<div
-			class="pointer-events-auto flex max-w-sm items-start gap-3 rounded-2xl border border-yellow-500/40 bg-slate-900/90 px-6 py-4 text-sm font-semibold text-yellow-100 shadow-2xl ring-1 ring-yellow-500/30 backdrop-blur"
+			class="pointer-events-auto flex max-w-sm items-start gap-3 rounded-2xl border border-[var(--deco-brass)]/40 bg-[var(--deco-obsidian-2)]/90 px-6 py-4 text-sm font-semibold text-[var(--deco-brass-bright)] shadow-2xl ring-1 ring-[var(--deco-brass)]/30 backdrop-blur"
 			data-toast-content
 			role="status"
 			aria-live="polite"
@@ -185,9 +185,21 @@ const lastCompletedLabel = progress.completedDate
 	const toastMessage = toast?.querySelector<HTMLElement>('[data-toast-message]');
 	const toastIcon = toast?.querySelector<HTMLElement>('[data-toast-icon]');
 	const toastVariants = {
-		success: ['border-emerald-500/40', 'text-emerald-200', 'ring-emerald-500/30'],
-		info: ['border-yellow-500/40', 'text-yellow-100', 'ring-yellow-500/30'],
-		error: ['border-red-500/40', 'text-red-200', 'ring-red-500/30'],
+		success: [
+			'border-[var(--deco-jade)]/40',
+			'text-[var(--deco-mint)]',
+			'ring-[var(--deco-jade)]/30',
+		],
+		info: [
+			'border-[var(--deco-brass)]/40',
+			'text-[var(--deco-brass-bright)]',
+			'ring-[var(--deco-brass)]/30',
+		],
+		error: [
+			'border-[var(--deco-oxblood-bright)]/40',
+			'text-[var(--deco-rose)]',
+			'ring-[var(--deco-oxblood-bright)]/30',
+		],
 	} as const;
 	const toastIcons = {
 		success: '🎉',

@@ -2,17 +2,9 @@
 
 /* Gambling Theme CSS Variables */
 :root {
-	--casino-gold: #ffd700;
-	--casino-dark-gold: #c5a028;
-	--casino-red: #dc2626;
-	--casino-dark-red: #991b1b;
-	--casino-green: #059669;
-	--casino-dark-green: #065f46;
 	--felt-green: #0a5f38;
 	--felt-dark: #064331;
 	--card-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
-	--glow-gold: 0 0 20px rgba(255, 215, 0, 0.4);
-	--glow-red: 0 0 20px rgba(220, 38, 38, 0.4);
 }
 
 /* Background patterns */
@@ -84,7 +76,7 @@ body {
 	content: '';
 	position: absolute;
 	inset: 20px;
-	border: 1px solid rgba(200, 165, 92, 0.25);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 25%, transparent);
 	border-radius: 50% / 38%;
 	pointer-events: none;
 }
@@ -269,12 +261,12 @@ h6,
 /* Chrome surfaces */
 .deco-header {
 	background: rgba(11, 15, 14, 0.95);
-	border-bottom: 1px solid rgba(200, 165, 92, 0.3);
+	border-bottom: 1px solid color-mix(in srgb, var(--deco-brass) 30%, transparent);
 	backdrop-filter: blur(6px);
 }
 .deco-footer {
 	background: rgba(11, 15, 14, 0.95);
-	border-top: 1px solid rgba(200, 165, 92, 0.3);
+	border-top: 1px solid color-mix(in srgb, var(--deco-brass) 30%, transparent);
 }
 
 /* Wordmark + labels */
@@ -337,7 +329,7 @@ h6,
 	gap: 0.5rem;
 	padding: 0.45rem 1rem;
 	border-radius: 2px;
-	border: 1px solid rgba(200, 165, 92, 0.4);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent);
 	background: var(--deco-obsidian-2);
 	color: var(--deco-brass-bright);
 }
@@ -379,7 +371,7 @@ h6,
 	border: 1px solid var(--deco-brass);
 }
 .deco-btn-outline:hover {
-	background: rgba(200, 165, 92, 0.1);
+	background: color-mix(in srgb, var(--deco-brass) 10%, transparent);
 	box-shadow: var(--sheen-brass);
 }
 .deco-btn-ghost {
@@ -398,7 +390,11 @@ h6,
 	position: relative;
 	background:
 		radial-gradient(60% 50% at 50% -10%, rgba(14, 59, 46, 0.55) 0%, transparent 70%),
-		radial-gradient(40% 40% at 85% 20%, rgba(200, 165, 92, 0.07) 0%, transparent 70%),
+		radial-gradient(
+			40% 40% at 85% 20%,
+			color-mix(in srgb, var(--deco-brass) 7%, transparent) 0%,
+			transparent 70%
+		),
 		var(--deco-obsidian);
 }
 
@@ -431,7 +427,7 @@ h6,
 .deco-panel {
 	position: relative;
 	background: linear-gradient(160deg, rgba(14, 59, 46, 0.32), rgba(17, 24, 21, 0.86));
-	border: 1px solid rgba(200, 165, 92, 0.28);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 28%, transparent);
 	border-radius: 3px;
 	box-shadow: var(--shadow-panel);
 }
@@ -466,7 +462,7 @@ h6,
 .deco-card {
 	position: relative;
 	background: linear-gradient(160deg, rgba(14, 59, 46, 0.28), rgba(17, 24, 21, 0.9));
-	border: 1px solid rgba(200, 165, 92, 0.22);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 22%, transparent);
 	border-radius: 3px;
 	overflow: hidden;
 	transition:
@@ -478,8 +474,8 @@ h6,
 	border-color: var(--deco-brass);
 	box-shadow:
 		var(--shadow-panel),
-		0 0 0 1px rgba(200, 165, 92, 0.3),
-		0 0 28px rgba(200, 165, 92, 0.1);
+		0 0 0 1px color-mix(in srgb, var(--deco-brass) 30%, transparent),
+		0 0 28px color-mix(in srgb, var(--deco-brass) 10%, transparent);
 	transform: translateY(-4px);
 }
 
@@ -529,7 +525,11 @@ h6,
 	justify-content: center;
 	color: var(--deco-brass);
 	background:
-		radial-gradient(circle at 50% 38%, rgba(200, 165, 92, 0.14), transparent 62%),
+		radial-gradient(
+			circle at 50% 38%,
+			color-mix(in srgb, var(--deco-brass) 14%, transparent),
+			transparent 62%
+		),
 		linear-gradient(160deg, rgba(12, 51, 38, 0.55), rgba(11, 15, 14, 0.9));
 	transition:
 		color 0.25s ease,
@@ -570,7 +570,7 @@ h6,
 	letter-spacing: 0.04em;
 	color: var(--deco-ivory-dim);
 	background: rgba(17, 24, 21, 0.6);
-	border: 1px solid rgba(200, 165, 92, 0.18);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 18%, transparent);
 	border-radius: 2px;
 	transition:
 		color 0.18s ease,
@@ -579,7 +579,7 @@ h6,
 }
 .deco-tab:hover {
 	color: var(--deco-brass-bright);
-	border-color: rgba(200, 165, 92, 0.4);
+	border-color: color-mix(in srgb, var(--deco-brass) 40%, transparent);
 }
 .deco-tab-active {
 	color: var(--deco-obsidian);
@@ -590,7 +590,7 @@ h6,
 /* Tables */
 .deco-table-head {
 	background: rgba(12, 51, 38, 0.4);
-	border-bottom: 1px solid rgba(200, 165, 92, 0.28);
+	border-bottom: 1px solid color-mix(in srgb, var(--deco-brass) 28%, transparent);
 }
 .deco-th {
 	font-family: var(--font-body);
@@ -603,10 +603,10 @@ h6,
 	transition: background-color 0.18s ease;
 }
 .deco-row:hover {
-	background: rgba(200, 165, 92, 0.05);
+	background: color-mix(in srgb, var(--deco-brass) 5%, transparent);
 }
 .deco-row-active {
-	background: rgba(200, 165, 92, 0.08);
+	background: color-mix(in srgb, var(--deco-brass) 8%, transparent);
 	border-left: 3px solid var(--deco-brass);
 }
 
@@ -622,9 +622,9 @@ h6,
 	font-weight: 600;
 	padding: 0.2rem 0.6rem;
 	border-radius: 2px;
-	border: 1px solid rgba(200, 165, 92, 0.4);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent);
 	color: var(--deco-brass-bright);
-	background: rgba(200, 165, 92, 0.08);
+	background: color-mix(in srgb, var(--deco-brass) 8%, transparent);
 }
 
 /* Status pills (state-driven) */
@@ -639,7 +639,7 @@ h6,
 	font-weight: 600;
 	padding: 0.3rem 0.9rem;
 	border-radius: 2px;
-	border: 1px solid rgba(200, 165, 92, 0.4);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent);
 	color: var(--deco-brass-bright);
 	background: rgba(17, 24, 21, 0.6);
 }
@@ -669,7 +669,7 @@ h6,
 	font-family: var(--font-body);
 	color: var(--deco-ivory);
 	background: rgba(11, 15, 14, 0.6);
-	border: 1px solid rgba(200, 165, 92, 0.28);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 28%, transparent);
 	border-radius: 2px;
 	transition:
 		border-color 0.18s ease,
@@ -689,7 +689,7 @@ h6,
 /* Progress bar */
 .deco-progress-track {
 	background: rgba(17, 24, 21, 0.8);
-	border: 1px solid rgba(200, 165, 92, 0.2);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 20%, transparent);
 	overflow: hidden;
 }
 .deco-progress-fill {
@@ -716,13 +716,13 @@ h6,
 	background:
 		repeating-linear-gradient(
 			45deg,
-			rgba(200, 165, 92, 0.09) 0,
-			rgba(200, 165, 92, 0.09) 6px,
+			color-mix(in srgb, var(--deco-brass) 9%, transparent) 0,
+			color-mix(in srgb, var(--deco-brass) 9%, transparent) 6px,
 			transparent 6px,
 			transparent 12px
 		),
 		linear-gradient(160deg, var(--deco-emerald) 0%, var(--deco-emerald-deep) 100%);
-	border: 1px solid rgba(200, 165, 92, 0.5);
+	border: 1px solid color-mix(in srgb, var(--deco-brass) 50%, transparent);
 	overflow: hidden;
 }
 /* These two are static-flow elements and need a positioning context for the
@@ -742,7 +742,7 @@ h6,
 	height: 34%;
 	transform: translate(-50%, -50%) rotate(45deg);
 	border: 1.5px solid var(--deco-brass-bright);
-	box-shadow: 0 0 0 3px rgba(200, 165, 92, 0.15);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--deco-brass) 15%, transparent);
 }
 
 /* ===== Reduced motion: global a11y reset (spec §9) ===== */
@@ -752,7 +752,12 @@ h6,
    prefers-reduced-motion perceive no motion. Durations use 0.01ms (not 0ms) to
    dodge transitionend edge cases; animation-iteration-count:1 stops infinite
    loops from firing repeatedly at the instant duration. Replaces the prior
-   per-class blocks that left Tailwind hover transforms uncovered. */
+   per-class blocks that left Tailwind hover transforms uncovered.
+   The transform:none rule on :hover/:focus closes the gap left by the duration
+   reset — without it, hover transforms (deco-card, deco-btn-primary,
+   playing-card, hover:scale-*, group-hover:*) still apply instantly, which is
+   a perceivable jump. No element in this codebase uses hover/focus transforms
+   for structural reveal, so neutralizing them is safe. */
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
@@ -761,5 +766,10 @@ h6,
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
+	}
+	*:hover,
+	*:focus,
+	*:focus-visible {
+		transform: none !important;
 	}
 }

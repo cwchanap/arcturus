@@ -527,17 +527,17 @@ const initialBalance = user.chipBalance ?? 1000;
 		transition: all 0.15s ease;
 	}
 	.bet-zone:hover {
-		border-color: rgba(200, 165, 92, 0.5);
-		background: rgba(200, 165, 92, 0.05);
+		border-color: color-mix(in srgb, var(--deco-brass) 50%, transparent);
+		background: color-mix(in srgb, var(--deco-brass) 5%, transparent);
 		transform: translateY(-1px);
 	}
 	.bet-zone:focus-visible {
-		outline: 2px solid rgba(200, 165, 92, 0.9);
+		outline: 2px solid color-mix(in srgb, var(--deco-brass) 90%, transparent);
 		outline-offset: 2px;
 	}
 	.bet-zone-active {
-		border-color: rgba(200, 165, 92, 0.8) !important;
-		box-shadow: 0 0 12px rgba(200, 165, 92, 0.25);
+		border-color: color-mix(in srgb, var(--deco-brass) 80%, transparent) !important;
+		box-shadow: 0 0 12px color-mix(in srgb, var(--deco-brass) 25%, transparent);
 	}
 	.bet-zone-locked {
 		opacity: 0.6;
@@ -566,7 +566,7 @@ const initialBalance = user.chipBalance ?? 1000;
 		background: rgba(125, 90, 158, 0.14);
 	}
 	.place-zone {
-		background: rgba(200, 165, 92, 0.1);
+		background: color-mix(in srgb, var(--deco-brass) 10%, transparent);
 	}
 	.hardway-zone {
 		background: rgba(228, 201, 136, 0.1);
@@ -586,8 +586,8 @@ const initialBalance = user.chipBalance ?? 1000;
 		border: 1px solid rgba(255, 255, 255, 0.08);
 	}
 	.number-box-point {
-		border-color: rgba(200, 165, 92, 0.6) !important;
-		box-shadow: 0 0 16px rgba(200, 165, 92, 0.2);
+		border-color: color-mix(in srgb, var(--deco-brass) 60%, transparent) !important;
+		box-shadow: 0 0 16px color-mix(in srgb, var(--deco-brass) 20%, transparent);
 	}
 
 	.die-face {
@@ -657,7 +657,7 @@ const initialBalance = user.chipBalance ?? 1000;
 	}
 	.chip-select.selected {
 		transform: scale(1.2);
-		filter: drop-shadow(0 0 8px rgba(200, 165, 92, 0.5));
+		filter: drop-shadow(0 0 8px color-mix(in srgb, var(--deco-brass) 50%, transparent));
 	}
 </style>
 

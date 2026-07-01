@@ -21,7 +21,7 @@ interface Props {
 const {
 	title = 'Arcturus Casino',
 	headerSticky: headerStickyProp,
-	bodyClass = 'bg-[var(--deco-obsidian)] text-[var(--deco-ivory)]',
+	bodyClass = 'text-[var(--deco-ivory)]',
 	footerClass = 'mt-20',
 } = Astro.props as Props;
 const headerSticky = headerStickyProp ?? true;
@@ -71,7 +71,6 @@ const formattedChipBalance =
 
 						<nav class="hidden md:flex items-center gap-8">
 							<a href="/missions/daily" class="deco-link">Daily Mission</a>
-							<a href="/games/tournaments" class="deco-link">Tournaments</a>
 							<a href="/games/leaderboard" class="deco-link">Leaderboard</a>
 						</nav>
 
@@ -97,7 +96,7 @@ const formattedChipBalance =
 			<footer class={`deco-footer ${footerClass}`.trim()}>
 				<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 					<DecoDivider class="mb-10" />
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
 						<div>
 							<h3 class="deco-heading text-lg mb-4">Games</h3>
 							<ul class="space-y-2">
@@ -112,6 +111,13 @@ const formattedChipBalance =
 								<li><a href="/missions/daily" class="deco-footer-link">Daily Mission</a></li>
 								<li><a href="/games/leaderboard" class="deco-footer-link">Leaderboard</a></li>
 								<li><a href="/profile" class="deco-footer-link">Profile</a></li>
+							</ul>
+						</div>
+						<div>
+							<h3 class="deco-heading text-lg mb-4">Legal</h3>
+							<ul class="space-y-2">
+								<li><a href="#" class="deco-footer-link">Responsible Gaming</a></li>
+								<li><a href="#" class="deco-footer-link">18+ Only</a></li>
 							</ul>
 						</div>
 					</div>

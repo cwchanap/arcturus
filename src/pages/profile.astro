@@ -442,8 +442,8 @@ const aiSettingsPayload = JSON.stringify({
 								]}
 								style={
 									achievement.isUnlocked
-										? 'border-color: rgba(200,165,92,0.4); background: linear-gradient(160deg, rgba(200,165,92,0.1), rgba(17,24,21,0.6))'
-										: 'border-color: rgba(200,165,92,0.12); background: rgba(11,15,14,0.5)'
+										? 'border-color: color-mix(in srgb, var(--deco-brass) 40%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--deco-brass) 10%, transparent), rgba(17,24,21,0.6))'
+										: 'border-color: color-mix(in srgb, var(--deco-brass) 12%, transparent); background: rgba(11,15,14,0.5)'
 								}
 								data-testid={`achievement-${achievement.id}`}
 							>
@@ -454,8 +454,8 @@ const aiSettingsPayload = JSON.stringify({
 										}`}
 										style={
 											achievement.isUnlocked
-												? 'border: 1px solid rgba(200,165,92,0.4); background: rgba(200,165,92,0.1)'
-												: 'border: 1px solid rgba(200,165,92,0.1); background: rgba(17,24,21,0.5)'
+												? 'border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent); background: color-mix(in srgb, var(--deco-brass) 10%, transparent)'
+												: 'border: 1px solid color-mix(in srgb, var(--deco-brass) 10%, transparent); background: rgba(17,24,21,0.5)'
 										}
 									>
 										{achievement.icon}

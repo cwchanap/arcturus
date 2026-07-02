@@ -9,6 +9,7 @@ import {
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
+import { isGuestModeValue, shouldSyncAccountChips } from '../public-game-session';
 import {
 	clearPendingStats,
 	createPendingStats,
@@ -102,7 +103,7 @@ export function initBlackjackClient(): void {
 	// Initialize settings manager (per-user)
 	const rootEl = document.getElementById('blackjack-root');
 	const userId = rootEl?.getAttribute('data-user-id') ?? 'anonymous';
-	const isGuestMode = rootEl?.dataset.guestMode === 'true';
+	const isGuestMode = isGuestModeValue(rootEl?.dataset?.guestMode);
 	const isAnonymousUser = userId === 'anonymous';
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
@@ -888,6 +889,10 @@ export function initBlackjackClient(): void {
 			} catch (_error) {
 				// Silently fail - commentary is optional
 			}
+		}
+
+		if (!shouldSyncAccountChips({ isGuestMode })) {
+			return;
 		}
 
 		// Update balance in database

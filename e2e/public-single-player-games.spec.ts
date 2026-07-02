@@ -156,4 +156,35 @@ test.describe('public single-player games', () => {
 
 		await expect(page).toHaveURL(/\/signin$/);
 	});
+
+	test('guest blackjack can complete a round without calling chip sync', async ({ page }) => {
+		const chipUpdateRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/chips/update')) {
+				chipUpdateRequests.push(request.url());
+			}
+		});
+
+		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
+
+		await page.locator('#bet-amount').fill('50');
+		await page.getByRole('button', { name: 'Deal' }).click();
+		await expect(page.locator('#game-controls')).toBeVisible();
+
+		for (let i = 0; i < 6; i++) {
+			if (await page.locator('#btn-new-round').isVisible()) break;
+			if (await page.locator('#btn-stand').isEnabled()) {
+				await page.locator('#btn-stand').click();
+			} else if (await page.locator('#btn-hit').isEnabled()) {
+				await page.locator('#btn-hit').click();
+			} else {
+				break;
+			}
+		}
+
+		await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 10000 });
+		await page.waitForTimeout(500);
+		expect(chipUpdateRequests).toEqual([]);
+	});
 });

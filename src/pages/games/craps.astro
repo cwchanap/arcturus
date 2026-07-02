@@ -680,6 +680,7 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
 	import { initAchievementToast } from '../../lib/achievement-toast';
+	import { isGuestModeValue, shouldSyncAccountChips } from '../../lib/public-game-session';
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
@@ -701,6 +702,7 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 		if (!root) throw new Error('craps-root not found');
 		const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 		const userId = root.dataset.userId ?? 'anonymous';
+		const isGuestMode = isGuestModeValue(root.dataset.guestMode);
 		const persistedSessionKey = `craps-session:${userId}`;
 		const droppedRollSyncsKey = `craps-dropped-roll-syncs:${userId}`;
 
@@ -779,6 +781,10 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 		}
 
 		function persistDroppedRollSyncs(error: string | undefined, status: number): boolean {
+			if (!shouldSyncAccountChips({ isGuestMode })) {
+				return false;
+			}
+
 			const payload: PersistedDroppedRollSyncs = {
 				rolls: pendingRollSyncs.map((roll) => ({ ...roll })),
 				droppedDueTo4xx: true,
@@ -1435,6 +1441,14 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 		// ─── Balance sync ─────────────────────────────────────────────────────────────
 
 		async function syncBalance() {
+			if (!shouldSyncAccountChips({ isGuestMode })) {
+				pendingRollSyncs = [];
+				syncPending = false;
+				pendingRetryScheduled = false;
+				persistSession();
+				return;
+			}
+
 			if (isSyncInProgress) {
 				syncPending = true;
 				return;

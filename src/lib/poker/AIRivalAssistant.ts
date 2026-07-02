@@ -37,6 +37,12 @@ export class AIRivalAssistant {
 		return document.getElementById(id);
 	}
 
+	private isGuestMode(): boolean {
+		const rootEl = this.getElementById('poker-root');
+		const balanceEl = this.getElementById('player-balance');
+		return rootEl?.dataset.guestMode === 'true' || balanceEl?.dataset.guestMode === 'true';
+	}
+
 	// === UI State Management ===
 
 	public setButtonState(options: { loading?: boolean; disabled?: boolean } = {}) {
@@ -125,6 +131,13 @@ export class AIRivalAssistant {
 	}
 
 	private async loadAiSettings() {
+		if (this.isGuestMode()) {
+			this.aiSettings = null;
+			this.setButtonState({ disabled: true });
+			this.updateStatus('Sign in to use profile-backed AI rivals.', 'neutral');
+			return;
+		}
+
 		this.updateStatus('Loading rival settings…', 'neutral');
 		try {
 			const response = await fetch('/api/profile/llm-settings');

@@ -89,3 +89,7 @@ export {
 // AI board texture
 export type { BoardTexture, BoardTextureKind } from './aiBoardTexture';
 export { classifyBoardTexture } from './aiBoardTexture';
+
+// AI visible equity
+export type { VisibleEquityEstimate } from './aiEquity';
+export { buildUnknownDeck, estimateVisibleEquity } from './aiEquity';

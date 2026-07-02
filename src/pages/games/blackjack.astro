@@ -372,6 +372,7 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 							<input
 								type="checkbox"
 								id="setting-use-llm"
+								disabled={gameSession.isGuest}
 								class="w-5 h-5 bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded text-[var(--deco-brass)] focus:ring-[var(--deco-brass)] focus:ring-offset-[var(--deco-obsidian)]"
 							/>
 							<label for="setting-use-llm" class="text-sm text-[var(--deco-ivory-dim)]">
@@ -379,10 +380,18 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 							</label>
 						</div>
 						<p class="text-xs text-[var(--deco-muted)]">
-							Requires API key configured in <a
-								href="/profile"
-								class="text-[var(--deco-brass)] hover:underline">profile settings</a
-							>
+							{
+								gameSession.isGuest ? (
+									'Sign in to use profile-backed AI advice.'
+								) : (
+									<>
+										Requires API key configured in{' '}
+										<a href="/profile" class="text-[var(--deco-brass)] hover:underline">
+											profile settings
+										</a>
+									</>
+								)
+							}
 						</p>
 					</div>
 				</div>

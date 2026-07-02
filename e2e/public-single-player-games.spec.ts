@@ -22,6 +22,7 @@ test.describe('public single-player games', () => {
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#btn-ai-rival',
 			aiStatusSelector: '#ai-rival-status',
+			accountOnlySettingsSelector: '#setting-use-llm',
 			shouldAvoidProfileLlmSettingsRequest: true,
 		},
 		{
@@ -76,9 +77,16 @@ test.describe('public single-player games', () => {
 				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
 			}
 
+			if (game.accountOnlySettingsSelector) {
+				await expect(page.locator(game.accountOnlySettingsSelector)).toBeDisabled();
+			}
+
 			if (game.shouldAvoidProfileLlmSettingsRequest) {
 				await page.waitForLoadState('networkidle');
 				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
+				if (game.accountOnlySettingsSelector) {
+					await expect(page.locator(game.accountOnlySettingsSelector)).toBeDisabled();
+				}
 				await expect(page.locator(game.aiStatusSelector)).toContainText('Sign in');
 				expect(profileLlmSettingsRequests).toEqual([]);
 			}
@@ -113,6 +121,33 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#setting-use-llm-ai')).not.toBeChecked();
 		await expect(page.locator('#setting-use-llm-ai')).toBeDisabled();
 		await expect(page.locator('#llm-overlay')).toBeHidden();
+		expect(profileLlmSettingsRequests).toEqual([]);
+	});
+
+	test('public blackjack ignores persisted guest LLM advisor settings', async ({ page }) => {
+		const profileLlmSettingsRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/profile/llm-settings')) {
+				profileLlmSettingsRequests.push(request.url());
+			}
+		});
+
+		await page.addInitScript(() => {
+			localStorage.setItem(
+				'arcturus:blackjack:settings:anonymous',
+				JSON.stringify({ useLLM: true }),
+			);
+		});
+
+		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+		await page.waitForLoadState('networkidle');
+
+		await expect(page).toHaveURL(/\/games\/blackjack$/);
+		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.locator('#btn-ai-rival')).toBeDisabled();
+		await expect(page.locator('#ai-rival-status')).toContainText('Sign in');
+		await expect(page.locator('#setting-use-llm')).not.toBeChecked();
+		await expect(page.locator('#setting-use-llm')).toBeDisabled();
 		expect(profileLlmSettingsRequests).toEqual([]);
 	});
 

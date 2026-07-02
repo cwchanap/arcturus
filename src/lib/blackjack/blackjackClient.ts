@@ -107,7 +107,7 @@ export function initBlackjackClient(): void {
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
-	let llmUserEnabled = settings.useLLM;
+	let llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 	// Get initial balance from DOM; fall back to settings.startingChips if missing
 	const balanceEl = document.getElementById('player-balance');
@@ -318,7 +318,8 @@ export function initBlackjackClient(): void {
 		minBetInput.value = settings.minBet.toString();
 		maxBetInput.value = settings.maxBet.toString();
 		dealerSpeedSelect.value = settings.dealerSpeed;
-		useLlmCheckbox.checked = settings.useLLM;
+		useLlmCheckbox.checked = isGuestMode ? false : settings.useLLM;
+		useLlmCheckbox.disabled = isGuestMode;
 	}
 
 	// Settings panel toggle (only if elements exist)
@@ -348,7 +349,7 @@ export function initBlackjackClient(): void {
 				| 'slow'
 				| 'normal'
 				| 'fast';
-			const newUseLlm = useLlmCheckbox.checked;
+			const newUseLlm = isGuestMode ? false : useLlmCheckbox.checked;
 
 			if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
 				statusEl.textContent = 'Starting chips must be a positive number.';
@@ -377,7 +378,7 @@ export function initBlackjackClient(): void {
 			const previousStartingChips = settings.startingChips;
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
-			llmUserEnabled = settings.useLLM;
+			llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 			// Update game instance bet limits so new rounds honor configured limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);
@@ -411,7 +412,7 @@ export function initBlackjackClient(): void {
 			settingsManager.resetToDefaults();
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
-			llmUserEnabled = settings.useLLM;
+			llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 			// Update game instance bet limits so new rounds honor reset limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);

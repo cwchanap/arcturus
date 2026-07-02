@@ -45,6 +45,10 @@ function mockPokerGameDOM() {
 					value: '0',
 				};
 			}
+			elements[id].dataset ??= {};
+			elements[id].classList ??= { add: () => {}, remove: () => {}, toggle: () => {} };
+			elements[id].querySelector ??= () => null;
+			elements[id].querySelectorAll ??= () => [];
 			return elements[id];
 		},
 		querySelector: () => null,
@@ -490,6 +494,78 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 		expect(game.serverSyncedBalance).toBe(1000);
 		expect(game.players[0].chips).toBe(1000);
+	});
+
+	test('guest mode stays playable and skips account chip sync', async () => {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '1000',
+				balanceAvailable: 'true',
+				guestMode: 'true',
+				userId: '',
+			},
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		const fetchCalls: string[] = [];
+		const originalFetch = globalThis.fetch;
+		const fetchMock = mock(async (input: string | URL | Request) => {
+			const url =
+				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+			fetchCalls.push(url);
+			return {
+				ok: false,
+				status: 401,
+				json: async () => ({ error: 'UNAUTHORIZED' }),
+			};
+		}) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock;
+
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				hasServerSyncedBalance: boolean;
+				syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			};
+
+			expect(game.hasServerSyncedBalance).toBe(true);
+			expect(game.players[0].chips).toBe(1000);
+
+			game.humanChipsBefore = 1000;
+			game.players[0] = { ...game.players[0], chips: 1050 };
+			game.syncChips('win');
+
+			await flushAsyncWork();
+
+			expect(fetchCalls).not.toContain('/api/chips/update');
+			expect(game.humanChipsBefore).toBe(0);
+			expect(game.players[0].chips).toBe(1050);
+		} finally {
+			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+		}
 	});
 
 	test('keeps poker non-playable when the server balance is unavailable', async () => {

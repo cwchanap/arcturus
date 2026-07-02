@@ -193,4 +193,46 @@ test.describe('public single-player games', () => {
 		await page.waitForTimeout(500);
 		expect(chipUpdateRequests).toEqual([]);
 	});
+
+	test('guest craps restores persisted local bankroll without chip sync', async ({ page }) => {
+		const chipUpdateRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/chips/update')) {
+				chipUpdateRequests.push(request.url());
+			}
+		});
+
+		await page.addInitScript(() => {
+			localStorage.setItem(
+				'craps-session:anonymous',
+				JSON.stringify({
+					gameState: {
+						phase: 'come-out',
+						point: null,
+						lastRoll: null,
+						rollHistory: [],
+						activeBets: [],
+						chipBalance: 1025,
+						rollCount: 0,
+						settings: {
+							minBet: 5,
+							maxBet: 500,
+							maxOddsMultiplier: 2,
+							animationSpeed: 'normal',
+							llmEnabled: false,
+							soundEnabled: true,
+						},
+					},
+					selectedChipAmount: 50,
+				}),
+			);
+		});
+
+		await page.goto('/games/craps', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.locator('#chip-balance')).toHaveText('$1,025');
+		await page.waitForTimeout(500);
+		expect(chipUpdateRequests).toEqual([]);
+	});
 });

@@ -12,6 +12,7 @@ import {
 	foldPlayer,
 } from './index';
 import { PokerGame } from './PokerGame';
+import { DEFAULT_SETTINGS } from './types';
 
 // Mock DOM for PokerGame constructor
 function mockPokerGameDOM() {
@@ -395,6 +396,49 @@ describe('PokerGame Core Logic', () => {
 });
 
 describe('PokerGame bankroll and auto-deal guards', () => {
+	test('initializes AI configs with persisted per-opponent difficulties', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '$500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) =>
+				key === 'poker_game_settings'
+					? JSON.stringify({
+							...DEFAULT_SETTINGS,
+							aiPersonality1: 'tight-passive',
+							aiPersonality2: 'loose-aggressive',
+							aiDifficulty1: 'easy',
+							aiDifficulty2: 'hard',
+						})
+					: null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		const game = new PokerGame() as unknown as {
+			aiConfigs: Map<number, { personality: string; difficulty: string }>;
+		};
+
+		expect(game.aiConfigs.get(1)).toMatchObject({
+			personality: 'tight-passive',
+			difficulty: 'easy',
+		});
+		expect(game.aiConfigs.get(2)).toMatchObject({
+			personality: 'loose-aggressive',
+			difficulty: 'hard',
+		});
+	});
+
 	test('initializes the human stack from the server-rendered balance', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

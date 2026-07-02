@@ -3,7 +3,7 @@
  * Refactored to use specialized helper classes
  */
 
-import type { Card, Player, BettingRound, GameContext } from './types';
+import type { Card, Player, BettingRound, GameContext, GameSettings } from './types';
 import type { AIConfig } from './aiStrategy';
 import {
 	BIG_BLIND,
@@ -52,6 +52,8 @@ type EarnedAchievement = {
 	name: string;
 	icon: string;
 };
+
+type AIDifficultySetting = GameSettings['aiDifficulty1'];
 
 export class PokerGame {
 	// Helper classes
@@ -691,9 +693,9 @@ export class PokerGame {
 		];
 		this.players[this.dealerIndex].isDealer = true;
 
-		// Assign AI personalities from settings
-		this.aiConfigs.set(1, createAIConfig(settings.aiPersonality1));
-		this.aiConfigs.set(2, createAIConfig(settings.aiPersonality2));
+		// Assign AI personalities and difficulties from settings
+		this.aiConfigs.set(1, createAIConfig(settings.aiPersonality1, settings.aiDifficulty1));
+		this.aiConfigs.set(2, createAIConfig(settings.aiPersonality2, settings.aiDifficulty2));
 
 		// Update blinds from settings
 		this.minimumBet = settings.bigBlind;
@@ -940,7 +942,12 @@ export class PokerGame {
 			// Try LLM-based AI with fallback to rule-based
 			const llmSettings = await this.getLLMSettings();
 			if (turnTransitionToken !== this.turnTransitionToken) return;
-			decision = await makeLLMDecision(context, aiConfig.personality, llmSettings);
+			decision = await makeLLMDecision(
+				context,
+				aiConfig.personality,
+				llmSettings,
+				aiConfig.difficulty,
+			);
 			if (turnTransitionToken !== this.turnTransitionToken) return;
 		} else {
 			// Use rule-based AI
@@ -1359,6 +1366,12 @@ export class PokerGame {
 			const aiPersonality2El = document.getElementById(
 				'setting-ai-personality-2',
 			) as HTMLSelectElement | null;
+			const aiDifficulty1El = document.getElementById(
+				'setting-ai-difficulty-1',
+			) as HTMLSelectElement | null;
+			const aiDifficulty2El = document.getElementById(
+				'setting-ai-difficulty-2',
+			) as HTMLSelectElement | null;
 			const useLLMAIEl = document.getElementById('setting-use-llm-ai') as HTMLInputElement | null;
 
 			// Validate all required elements are present
@@ -1369,6 +1382,8 @@ export class PokerGame {
 				!aiSpeedEl ||
 				!aiPersonality1El ||
 				!aiPersonality2El ||
+				!aiDifficulty1El ||
+				!aiDifficulty2El ||
 				!useLLMAIEl
 			) {
 				console.error('Settings form is missing required elements');
@@ -1391,6 +1406,8 @@ export class PokerGame {
 				| 'loose-aggressive'
 				| 'tight-passive'
 				| 'loose-passive';
+			const aiDifficulty1 = (aiDifficulty1El.value || 'medium') as AIDifficultySetting;
+			const aiDifficulty2 = (aiDifficulty2El.value || 'medium') as AIDifficultySetting;
 			const useLLMAI = useLLMAIEl.checked;
 
 			this.settingsManager.updateSettings({
@@ -1400,12 +1417,14 @@ export class PokerGame {
 				aiSpeed,
 				aiPersonality1,
 				aiPersonality2,
+				aiDifficulty1,
+				aiDifficulty2,
 				useLLMAI,
 			});
 
 			// Update AI configs
-			this.aiConfigs.set(1, createAIConfig(aiPersonality1));
-			this.aiConfigs.set(2, createAIConfig(aiPersonality2));
+			this.aiConfigs.set(1, createAIConfig(aiPersonality1, aiDifficulty1));
+			this.aiConfigs.set(2, createAIConfig(aiPersonality2, aiDifficulty2));
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;
@@ -1427,8 +1446,8 @@ export class PokerGame {
 
 			// Update AI configs to match reset defaults
 			const defaults = this.settingsManager.getSettings();
-			this.aiConfigs.set(1, createAIConfig(defaults.aiPersonality1));
-			this.aiConfigs.set(2, createAIConfig(defaults.aiPersonality2));
+			this.aiConfigs.set(1, createAIConfig(defaults.aiPersonality1, defaults.aiDifficulty1));
+			this.aiConfigs.set(2, createAIConfig(defaults.aiPersonality2, defaults.aiDifficulty2));
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;
@@ -1458,6 +1477,12 @@ export class PokerGame {
 		const aiPersonality2Select = document.getElementById(
 			'setting-ai-personality-2',
 		) as HTMLSelectElement | null;
+		const aiDifficulty1Select = document.getElementById(
+			'setting-ai-difficulty-1',
+		) as HTMLSelectElement | null;
+		const aiDifficulty2Select = document.getElementById(
+			'setting-ai-difficulty-2',
+		) as HTMLSelectElement | null;
 		const useLLMAICheckbox = document.getElementById(
 			'setting-use-llm-ai',
 		) as HTMLInputElement | null;
@@ -1469,6 +1494,8 @@ export class PokerGame {
 		if (aiSpeedSelect) aiSpeedSelect.value = settings.aiSpeed;
 		if (aiPersonality1Select) aiPersonality1Select.value = settings.aiPersonality1;
 		if (aiPersonality2Select) aiPersonality2Select.value = settings.aiPersonality2;
+		if (aiDifficulty1Select) aiDifficulty1Select.value = settings.aiDifficulty1;
+		if (aiDifficulty2Select) aiDifficulty2Select.value = settings.aiDifficulty2;
 		if (useLLMAICheckbox) useLLMAICheckbox.checked = settings.useLLMAI;
 	}
 

@@ -340,8 +340,10 @@ describe('makeAIDecision() - bet sizing', () => {
 		const decision = makeAIDecision(context, config);
 
 		if (decision.action === 'raise') {
-			// Should not bet more than 75% of pot (per implementation)
-			expect(decision.amount || 0).toBeLessThanOrEqual(Math.floor(context.pot * 0.75));
+			// Profile-based sizing is pot-aware and rounds to the table minimum.
+			const roundedPotCap =
+				Math.ceil((context.pot * 0.8) / context.minimumBet) * context.minimumBet;
+			expect(decision.amount || 0).toBeLessThanOrEqual(roundedPotCap);
 		}
 	});
 });
@@ -446,5 +448,71 @@ describe('makeAIDecision() - decision consistency', () => {
 			expect(decision.amount).toBeDefined();
 			expect(decision.amount).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe('makeAIDecision() - difficulty ladder', () => {
+	test('createAIConfig defaults to medium difficulty for compatibility', () => {
+		const config = createAIConfig('tight-aggressive');
+
+		expect(config.personality).toBe('tight-aggressive');
+		expect(config.difficulty).toBe('medium');
+	});
+
+	test('createAIConfig accepts explicit difficulty', () => {
+		const config = createAIConfig('loose-passive', 'hard');
+
+		expect(config.personality).toBe('loose-passive');
+		expect(config.difficulty).toBe('hard');
+	});
+
+	test('hard difficulty continues with a strong draw that easy difficulty folds to pressure', () => {
+		const aiPlayer = player(1, 500, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]);
+		const context: GameContext = {
+			player: aiPlayer,
+			players: [aiPlayer, player(2, 500, 180), player(3, 500, 0)],
+			communityCards: [card('9', 'hearts', 9), card('5', 'hearts', 5), card('2', 'clubs', 2)],
+			pot: 220,
+			minimumBet: 10,
+			phase: 'flop',
+			bettingRound: 'flop',
+			position: 'late',
+		};
+
+		const easyDecision = makeAIDecision(context, {
+			...createAIConfig('tight-passive', 'easy'),
+			random: () => 0.99,
+		});
+		const hardDecision = makeAIDecision(context, {
+			...createAIConfig('tight-passive', 'hard'),
+			random: () => 0.99,
+		});
+
+		expect(easyDecision.action).toBe('fold');
+		expect(['call', 'raise']).toContain(hardDecision.action);
+		expect(hardDecision.reasoning).toContain('hard');
+	});
+
+	test('hard aggressive bot can semi-bluff a strong draw when random roll allows it', () => {
+		const aiPlayer = player(1, 500, 0, [card('Q', 'spades', 12), card('J', 'spades', 11)]);
+		const context: GameContext = {
+			player: aiPlayer,
+			players: [aiPlayer, player(2, 500, 0), player(3, 500, 0)],
+			communityCards: [card('10', 'spades', 10), card('9', 'clubs', 9), card('2', 'spades', 2)],
+			pot: 80,
+			minimumBet: 10,
+			phase: 'flop',
+			bettingRound: 'flop',
+			position: 'late',
+		};
+
+		const decision = makeAIDecision(context, {
+			...createAIConfig('loose-aggressive', 'hard'),
+			random: () => 0.01,
+		});
+
+		expect(decision.action).toBe('raise');
+		expect(decision.amount).toBeGreaterThanOrEqual(10);
+		expect(decision.reasoning).toContain('semi-bluff');
 	});
 });

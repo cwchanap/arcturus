@@ -85,3 +85,7 @@ export {
 	applyPersonalityToDifficulty,
 	isAIDifficulty,
 } from './aiDifficulty';
+
+// AI board texture
+export type { BoardTexture, BoardTextureKind } from './aiBoardTexture';
+export { classifyBoardTexture } from './aiBoardTexture';

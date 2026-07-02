@@ -2,6 +2,8 @@
  * Poker game type definitions
  */
 
+import type { AIDifficulty } from './aiDifficulty';
+
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
 
 export type Card = {
@@ -34,6 +36,8 @@ export interface GameSettings {
 	aiSpeed: 'slow' | 'normal' | 'fast';
 	aiPersonality1: 'tight-aggressive' | 'loose-aggressive' | 'tight-passive' | 'loose-passive';
 	aiPersonality2: 'tight-aggressive' | 'loose-aggressive' | 'tight-passive' | 'loose-passive';
+	aiDifficulty1: AIDifficulty;
+	aiDifficulty2: AIDifficulty;
 	useLLMAI: boolean; // Enable LLM-powered AI opponents
 }
 
@@ -44,6 +48,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	aiSpeed: 'normal',
 	aiPersonality1: 'tight-aggressive',
 	aiPersonality2: 'loose-aggressive',
+	aiDifficulty1: 'medium',
+	aiDifficulty2: 'medium',
 	useLLMAI: false, // Default to rule-based AI
 };
 

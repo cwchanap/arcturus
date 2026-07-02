@@ -7,7 +7,11 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
-const initialBalanceLabel = `$${initialBalance.toLocaleString()}`;
+const hasInitialBalance = gameSession.balanceAvailableValue === 'true';
+const initialBalanceLabel = hasInitialBalance
+	? `$${initialBalance.toLocaleString()}`
+	: 'Unavailable';
+const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 ---
 
 <CasinoLayout title="Texas Hold'em Poker - Arcturus Casino">
@@ -36,10 +40,10 @@ const initialBalanceLabel = `$${initialBalance.toLocaleString()}`;
 						class="text-2xl font-bold text-[var(--deco-brass)]"
 						id="player-balance"
 						data-testid="player-balance"
-						data-balance={String(initialBalance)}
+						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={gameSession.balanceAvailableValue}
 						data-guest-mode={gameSession.guestModeValue}
-						data-user-id={gameSession.userId}
+						data-user-id={runtimeUserId}
 					>
 						{initialBalanceLabel}
 					</div>
@@ -270,20 +274,38 @@ const initialBalanceLabel = `$${initialBalance.toLocaleString()}`;
 					<div>
 						<div class="text-sm text-[var(--deco-muted)] mb-1">AI Rival</div>
 						<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-							Loading rival settings…
+							{
+								gameSession.isGuest
+									? 'Sign in to use profile-backed AI rivals.'
+									: 'Loading rival settings…'
+							}
 						</div>
 					</div>
 					<button
 						id="btn-ai-move"
+						disabled={gameSession.isGuest}
 						class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-sapphire)] to-[var(--deco-emerald)] px-4 py-2 text-sm font-semibold text-[var(--deco-ivory)] transition disabled:cursor-not-allowed disabled:opacity-60"
 					>
 						Ask AI Rival
 					</button>
 				</div>
 				<p class="mt-3 text-xs text-[var(--deco-muted)]">
-					Configure API keys in your
-					<a href="/profile" class="text-[var(--deco-brass)] hover:underline">profile settings</a>
-					to enable Gemini or OpenAI rivals.
+					{
+						gameSession.isGuest
+							? 'Sign in to configure profile-backed Gemini or OpenAI rivals.'
+							: 'Configure API keys in your'
+					}
+					{
+						!gameSession.isGuest && (
+							<>
+								{' '}
+								<a href="/profile" class="text-[var(--deco-brass)] hover:underline">
+									profile settings
+								</a>{' '}
+								to enable Gemini or OpenAI rivals.
+							</>
+						)
+					}
 				</p>
 			</div>
 

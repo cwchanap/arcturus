@@ -6,12 +6,13 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
+const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 ---
 
 <CasinoLayout title="Craps - Arcturus Casino">
 	<div
 		id="craps-root"
-		data-user-id={gameSession.userId}
+		data-user-id={runtimeUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -460,6 +461,7 @@ const initialBalance = gameSession.initialBalance;
 						<button
 							id="llm-advice-btn"
 							data-testid="llm-advice-btn"
+							disabled={gameSession.isGuest}
 							class="px-3 py-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-brass)] rounded text-xs transition-colors border border-[var(--deco-brass-dim)]"
 						>
 							Ask
@@ -469,7 +471,11 @@ const initialBalance = gameSession.initialBalance;
 						id="llm-advice"
 						class="text-[var(--deco-muted)] text-xs leading-relaxed min-h-[48px]"
 					>
-						Configure AI in your profile, then ask for advice.
+						{
+							gameSession.isGuest
+								? 'Sign in before using profile-backed AI advice.'
+								: 'Configure AI in your profile, then ask for advice.'
+						}
 					</div>
 				</div>
 			</div><!-- /sidebar -->

@@ -4,6 +4,13 @@ test.describe('Poker turn flow smoke test', () => {
 	test('deal, human action, AI acts, next phase continues', async ({ page }) => {
 		await page.goto('/games/poker', { waitUntil: 'networkidle' });
 
+		await page.getByRole('button', { name: /configure/i }).click();
+		await expect(page.locator('#setting-ai-difficulty-1')).toBeVisible();
+		await expect(page.locator('#setting-ai-difficulty-2')).toBeVisible();
+		await expect(page.locator('#setting-ai-difficulty-1')).toHaveValue('medium');
+		await expect(page.locator('#setting-ai-difficulty-2')).toHaveValue('medium');
+		await page.getByRole('button', { name: /configure/i }).click();
+
 		const dealButton = page.getByRole('button', { name: 'DEAL NEW HAND' });
 		await dealButton.click();
 

@@ -89,6 +89,22 @@ describe('llmAIStrategy', () => {
 			expect(decision.reasoning).toContain('rule-based fallback');
 		});
 
+		test('falls back to rule-based hard difficulty when requested', async () => {
+			const context = createContext(
+				player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				[
+					player(0, 1000, 0),
+					player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				],
+			);
+
+			const decision = await makeLLMDecision(context, 'tight-aggressive', null, 'hard');
+
+			expect(decision.action).toBeDefined();
+			expect(decision.reasoning).toContain('hard');
+			expect(decision.reasoning).toContain('rule-based fallback');
+		});
+
 		test('falls back to rule-based when LLM API fails', async () => {
 			mockFetch(async () => {
 				throw new Error('Network error');

@@ -7,6 +7,7 @@ import type { AIDecision, GameContext, Card } from './types';
 import { getSuitSymbol } from '../card-format';
 import type { AIPersonality } from './aiStrategy';
 import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStrategy';
+import type { AIDifficulty } from './aiDifficulty';
 import { getHighestBet, getCallAmount } from './player';
 import { fetchWithTimeout } from '../fetch-with-timeout';
 
@@ -237,6 +238,7 @@ export async function makeLLMDecision(
 	context: GameContext,
 	personality: AIPersonality,
 	llmSettings: LLMSettings | null,
+	difficulty: AIDifficulty = 'medium',
 ): Promise<AIDecision> {
 	// Check cache first
 	const cached = decisionCache.get(context);
@@ -246,7 +248,7 @@ export async function makeLLMDecision(
 
 	// If no LLM settings, fall back to rule-based
 	if (!llmSettings) {
-		const aiConfig = createAIConfig(personality);
+		const aiConfig = createAIConfig(personality, difficulty);
 		const decision = makeRuleBasedDecision(context, aiConfig);
 		return { ...decision, reasoning: `${decision.reasoning} (rule-based fallback)` };
 	}
@@ -269,13 +271,13 @@ export async function makeLLMDecision(
 		}
 
 		// Parse failed, fall back to rule-based
-		const aiConfig = createAIConfig(personality);
+		const aiConfig = createAIConfig(personality, difficulty);
 		const fallbackDecision = makeRuleBasedDecision(context, aiConfig);
 		return { ...fallbackDecision, reasoning: `${fallbackDecision.reasoning} (LLM parse failed)` };
 	} catch (error) {
 		console.error('LLM decision failed:', error);
 		// Fall back to rule-based on error
-		const aiConfig = createAIConfig(personality);
+		const aiConfig = createAIConfig(personality, difficulty);
 		const fallbackDecision = makeRuleBasedDecision(context, aiConfig);
 		return { ...fallbackDecision, reasoning: `${fallbackDecision.reasoning} (LLM error fallback)` };
 	}

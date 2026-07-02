@@ -165,6 +165,10 @@ test.describe('public single-player games', () => {
 			}
 		});
 
+		await page.addInitScript(() => {
+			Math.random = () => 0;
+		});
+
 		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
 
@@ -184,6 +188,8 @@ test.describe('public single-player games', () => {
 		}
 
 		await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 10000 });
+		await expect(page.locator('#game-status')).toContainText('BLACKJACK');
+		await expect(page.locator('#player-balance')).toHaveText('$1,075');
 		await page.waitForTimeout(500);
 		expect(chipUpdateRequests).toEqual([]);
 	});

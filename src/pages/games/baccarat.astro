@@ -452,6 +452,7 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 	} from '../../lib/baccarat/balance-sync-state';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
+	import { isGuestModeValue, shouldSyncAccountChips } from '../../lib/public-game-session';
 
 	// Get initial data
 	const root = document.getElementById('baccarat-root');
@@ -459,6 +460,7 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 		throw new Error('Baccarat root element not found');
 	}
 	const initialBalance = Number(root.dataset.initialBalance ?? 1000);
+	const isGuestMode = isGuestModeValue(root.dataset.guestMode);
 
 	// Initialize game
 	const game = new BaccaratGame({
@@ -823,6 +825,10 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 	let lastSyncedBalance = initialBalance;
 
 	async function syncBalance(roundNetDelta: number) {
+		if (!shouldSyncAccountChips({ isGuestMode })) {
+			return;
+		}
+
 		// Clear any pending retry timer from previous sync attempt to prevent stale deltas
 		if (pendingRetryTimer) {
 			clearTimeout(pendingRetryTimer);

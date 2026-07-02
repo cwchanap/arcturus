@@ -7,12 +7,13 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
+const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 ---
 
 <CasinoLayout title="Baccarat - Arcturus Casino">
 	<div
 		id="baccarat-root"
-		data-user-id={gameSession.userId}
+		data-user-id={runtimeUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"

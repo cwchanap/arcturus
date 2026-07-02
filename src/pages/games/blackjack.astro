@@ -8,12 +8,13 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
+const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 ---
 
 <CasinoLayout title="Blackjack - Arcturus Casino">
 	<div
 		id="blackjack-root"
-		data-user-id={gameSession.userId}
+		data-user-id={runtimeUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -219,11 +220,16 @@ const initialBalance = gameSession.initialBalance;
 						<div>
 							<div class="text-sm text-[var(--deco-muted)] mb-1">AI Strategy Advisor</div>
 							<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-								Configure API keys in profile to enable
+								{
+									gameSession.isGuest
+										? 'Sign in to use profile-backed AI advice.'
+										: 'Configure API keys in profile to enable'
+								}
 							</div>
 						</div>
 						<button
 							id="btn-ai-rival"
+							disabled={gameSession.isGuest}
 							class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-jade)] to-[var(--deco-emerald)] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
 							title="Get AI strategy advice"
 						>

@@ -93,3 +93,7 @@ export { classifyBoardTexture } from './aiBoardTexture';
 // AI visible equity
 export type { VisibleEquityEstimate } from './aiEquity';
 export { buildUnknownDeck, estimateVisibleEquity } from './aiEquity';
+
+// AI bet sizing
+export type { BetSizingInput } from './aiBetSizing';
+export { chooseRaiseAmount } from './aiBetSizing';

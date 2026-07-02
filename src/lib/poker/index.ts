@@ -83,4 +83,5 @@ export {
 	DEFAULT_AI_DIFFICULTY,
 	getDifficultyProfile,
 	applyPersonalityToDifficulty,
+	isAIDifficulty,
 } from './aiDifficulty';

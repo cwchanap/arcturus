@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import { GameSettingsManager } from './GameSettingsManager';
+import { DEFAULT_AI_DIFFICULTY } from './aiDifficulty';
 import { DEFAULT_SETTINGS } from './types';
 import type { GameSettings } from './types';
 
@@ -58,6 +59,8 @@ describe('GameSettingsManager', () => {
 			const settings = manager.getSettings();
 
 			expect(settings).toEqual(DEFAULT_SETTINGS);
+			expect(settings.aiDifficulty1).toBe(DEFAULT_AI_DIFFICULTY);
+			expect(settings.aiDifficulty2).toBe(DEFAULT_AI_DIFFICULTY);
 		});
 
 		test('loads settings from localStorage when available', () => {
@@ -454,6 +457,20 @@ describe('GameSettingsManager', () => {
 			expect(settings.aiPersonality1).toBe('tight-passive');
 			expect(settings.aiDifficulty1).toBe('medium');
 			expect(settings.aiDifficulty2).toBe('medium');
+		});
+
+		test('invalid persisted difficulty values normalize to medium defaults', () => {
+			mockLocalStorage.store['poker_game_settings'] = JSON.stringify({
+				...DEFAULT_SETTINGS,
+				aiDifficulty1: 'expert',
+				aiDifficulty2: 'beginner',
+			});
+
+			const manager2 = new GameSettingsManager();
+			const settings = manager2.getSettings();
+
+			expect(settings.aiDifficulty1).toBe(DEFAULT_AI_DIFFICULTY);
+			expect(settings.aiDifficulty2).toBe(DEFAULT_AI_DIFFICULTY);
 		});
 
 		test('multiple rapid updates are handled correctly', () => {

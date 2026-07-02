@@ -2,7 +2,7 @@
  * Poker game type definitions
  */
 
-import type { AIDifficulty } from './aiDifficulty';
+import { DEFAULT_AI_DIFFICULTY, type AIDifficulty } from './aiDifficulty';
 
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
 
@@ -48,8 +48,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	aiSpeed: 'normal',
 	aiPersonality1: 'tight-aggressive',
 	aiPersonality2: 'loose-aggressive',
-	aiDifficulty1: 'medium',
-	aiDifficulty2: 'medium',
+	aiDifficulty1: DEFAULT_AI_DIFFICULTY,
+	aiDifficulty2: DEFAULT_AI_DIFFICULTY,
 	useLLMAI: false, // Default to rule-based AI
 };
 

@@ -3,6 +3,7 @@
  */
 
 import type { GameSettings } from './types';
+import { isAIDifficulty } from './aiDifficulty';
 import { DEFAULT_SETTINGS } from './types';
 
 const SETTINGS_KEY = 'poker_game_settings';
@@ -31,10 +32,20 @@ export class GameSettingsManager {
 					}
 				}
 				// Validate and merge with defaults to ensure all fields exist
-				return {
+				const settings = {
 					...DEFAULT_SETTINGS,
 					...validSettings,
 				};
+
+				if (!isAIDifficulty(settings.aiDifficulty1)) {
+					settings.aiDifficulty1 = DEFAULT_SETTINGS.aiDifficulty1;
+				}
+
+				if (!isAIDifficulty(settings.aiDifficulty2)) {
+					settings.aiDifficulty2 = DEFAULT_SETTINGS.aiDifficulty2;
+				}
+
+				return settings;
 			}
 		} catch (error) {
 			console.error('Failed to load settings:', error);

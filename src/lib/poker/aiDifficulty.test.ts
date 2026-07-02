@@ -3,6 +3,7 @@ import {
 	DEFAULT_AI_DIFFICULTY,
 	applyPersonalityToDifficulty,
 	getDifficultyProfile,
+	isAIDifficulty,
 	type AIDifficulty,
 } from './aiDifficulty';
 
@@ -32,6 +33,10 @@ describe('aiDifficulty', () => {
 		expect(getDifficultyProfile('hard').mistakeRate).not.toBe(0.99);
 	});
 
+	test('falls back to medium for unknown runtime difficulty values', () => {
+		expect(getDifficultyProfile('expert' as AIDifficulty).difficulty).toBe(DEFAULT_AI_DIFFICULTY);
+	});
+
 	test('tight personality narrows continuing range', () => {
 		const base = getDifficultyProfile('medium');
 		const adjusted = applyPersonalityToDifficulty(base, 'tight-aggressive');
@@ -57,8 +62,10 @@ describe('aiDifficulty', () => {
 		expect(aggressive.aggressionMultiplier).toBeGreaterThan(passive.aggressionMultiplier);
 	});
 
-	test('rejects unknown difficulty at compile-time through AIDifficulty union', () => {
+	test('recognizes the supported runtime difficulty values', () => {
 		const difficulties: AIDifficulty[] = ['easy', 'medium', 'hard'];
+		expect(difficulties.every(isAIDifficulty)).toBe(true);
+		expect(isAIDifficulty('expert')).toBe(false);
 		expect(difficulties.map((difficulty) => getDifficultyProfile(difficulty).difficulty)).toEqual(
 			difficulties,
 		);

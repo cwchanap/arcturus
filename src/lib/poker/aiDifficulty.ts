@@ -1,4 +1,4 @@
-type AIPersonality = 'tight-passive' | 'tight-aggressive' | 'loose-passive' | 'loose-aggressive';
+import type { AIPersonality } from './aiStrategy';
 
 export type AIDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -72,10 +72,15 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
 }
 
+export function isAIDifficulty(value: unknown): value is AIDifficulty {
+	return value === 'easy' || value === 'medium' || value === 'hard';
+}
+
 export function getDifficultyProfile(
 	difficulty: AIDifficulty = DEFAULT_AI_DIFFICULTY,
 ): AIDifficultyProfile {
-	return { ...BASE_PROFILES[difficulty] };
+	const safeDifficulty = isAIDifficulty(difficulty) ? difficulty : DEFAULT_AI_DIFFICULTY;
+	return { ...BASE_PROFILES[safeDifficulty] };
 }
 
 export function applyPersonalityToDifficulty(

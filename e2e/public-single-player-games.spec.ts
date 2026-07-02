@@ -91,6 +91,31 @@ test.describe('public single-player games', () => {
 		await expect(page).toHaveURL(/\/signin$/);
 	});
 
+	test('public poker ignores persisted guest LLM opponent settings', async ({ page }) => {
+		const profileLlmSettingsRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/profile/llm-settings')) {
+				profileLlmSettingsRequests.push(request.url());
+			}
+		});
+
+		await page.addInitScript(() => {
+			localStorage.setItem('poker_game_settings', JSON.stringify({ useLLMAI: true }));
+		});
+
+		await page.goto('/games/poker', { waitUntil: 'domcontentloaded' });
+		await page.waitForLoadState('networkidle');
+
+		await expect(page).toHaveURL(/\/games\/poker$/);
+		await expect(page.locator('#poker-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.locator('#btn-ai-move')).toBeDisabled();
+		await expect(page.locator('#ai-rival-status')).toContainText('Sign in');
+		await expect(page.locator('#setting-use-llm-ai')).not.toBeChecked();
+		await expect(page.locator('#setting-use-llm-ai')).toBeDisabled();
+		await expect(page.locator('#llm-overlay')).toBeHidden();
+		expect(profileLlmSettingsRequests).toEqual([]);
+	});
+
 	test('multiplayer poker room remains protected', async ({ page }) => {
 		await page.goto('/games/poker-mp/MP-ABC123', { waitUntil: 'domcontentloaded' });
 

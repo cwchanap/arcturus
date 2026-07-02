@@ -3,21 +3,19 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import CardContainer from '../../components/CardContainer.astro';
 import SplitHandsContainer from '../../components/SplitHandsContainer.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
 
 const user = Astro.locals.user;
-
-if (!user) {
-	return Astro.redirect('/signin');
-}
-
-// Use nullish coalescing to preserve zero balance (|| would treat 0 as falsy)
-const initialBalance = user.chipBalance ?? 1000;
+const gameSession = createPublicGameSession(user);
+const initialBalance = gameSession.initialBalance;
 ---
 
 <CasinoLayout title="Blackjack - Arcturus Casino">
 	<div
 		id="blackjack-root"
-		data-user-id={user.id}
+		data-user-id={gameSession.userId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
 	>
 		<!-- Game Header -->
@@ -35,7 +33,7 @@ const initialBalance = user.chipBalance ?? 1000;
 				<div
 					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 				>
-					<div class="text-xs text-[var(--deco-muted)] mb-1">Your Balance</div>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="player-balance">
 						{`$${initialBalance.toLocaleString()}`}
 					</div>

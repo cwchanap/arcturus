@@ -32,6 +32,7 @@ import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
+import { isGuestModeValue, shouldSyncAccountChips } from '../public-game-session';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
@@ -104,14 +105,16 @@ export class PokerGame {
 		const balanceEl = document.getElementById('player-balance');
 		const rootEl = document.getElementById('poker-root');
 		this.isGuestMode =
-			rootEl?.dataset?.guestMode === 'true' || balanceEl?.dataset?.guestMode === 'true';
+			isGuestModeValue(balanceEl?.dataset?.guestMode) ||
+			isGuestModeValue(rootEl?.dataset?.guestMode);
 		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
 		// Strip locale formatting (commas, currency symbols) then parse
 		const sanitized = rawBalance.replace(/[^0-9.-]/g, '');
 		const hasDigit = /[0-9]/.test(sanitized);
 		const parsed = hasDigit ? Number(sanitized) : Number.NaN;
-		this.hasServerSyncedBalance = balanceAvailable === 'false' ? false : Number.isFinite(parsed);
+		this.hasServerSyncedBalance =
+			this.isGuestMode || (balanceAvailable === 'false' ? false : Number.isFinite(parsed));
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 
 		const userId = balanceEl?.dataset?.userId ?? '';
@@ -138,7 +141,7 @@ export class PokerGame {
 				dealButton.disabled = true;
 			}
 			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
-		} else {
+		} else if (!this.isGuestMode) {
 			this.loadPersistedPendingSyncs();
 			if (this.pendingChipSyncs.length > 0) {
 				this.rebaseHumanTableBalance(this.serverSyncedBalance);
@@ -151,7 +154,9 @@ export class PokerGame {
 
 		window.addEventListener('beforeunload', () => {
 			this.finalizeActiveHandBeforeDeal();
-			this.persistPendingSyncs();
+			if (!this.isGuestMode) {
+				this.persistPendingSyncs();
+			}
 		});
 	}
 
@@ -459,6 +464,11 @@ export class PokerGame {
 	}
 
 	private syncChips(outcome?: ChipSyncOutcome): void {
+		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
+			this.humanChipsBefore = 0;
+			return;
+		}
+
 		if (!this.hasServerSyncedBalance) {
 			console.warn('[CHIP_SYNC] syncChips called without an available server balance; skipping.');
 			return;

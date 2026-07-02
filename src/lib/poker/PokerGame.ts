@@ -92,6 +92,7 @@ export class PokerGame {
 	private pendingTurnTransitionResolver: ((completed: boolean) => void) | null = null;
 	private turnTransitionToken = 0;
 	private dealSyncRetryCount = 0;
+	private isGuestMode = false;
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -101,6 +102,9 @@ export class PokerGame {
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
 		const balanceEl = document.getElementById('player-balance');
+		const rootEl = document.getElementById('poker-root');
+		this.isGuestMode =
+			rootEl?.dataset?.guestMode === 'true' || balanceEl?.dataset?.guestMode === 'true';
 		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
 		// Strip locale formatting (commas, currency symbols) then parse
@@ -432,6 +436,10 @@ export class PokerGame {
 	 * prevent the user from starting LLM-powered games until resolved.
 	 */
 	private async checkLlmConfigOnLoad() {
+		if (this.isGuestMode) {
+			return;
+		}
+
 		const settings = this.settingsManager.getSettings();
 		if (!settings.useLLMAI) {
 			return;
@@ -711,6 +719,10 @@ export class PokerGame {
 		apiKey: string;
 		model: string;
 	} | null> {
+		if (this.isGuestMode) {
+			return null;
+		}
+
 		try {
 			const response = await fetch('/api/profile/llm-settings');
 			if (!response.ok) {
@@ -753,7 +765,7 @@ export class PokerGame {
 		const settings = this.settingsManager.getSettings();
 
 		// If LLM-powered AI is enabled, ensure the user has a valid API key configured
-		if (settings.useLLMAI) {
+		if (settings.useLLMAI && !this.isGuestMode) {
 			const llmSettings = await this.getLLMSettings();
 			if (!llmSettings) {
 				this.updateGameStatus(
@@ -938,7 +950,7 @@ export class PokerGame {
 		const settings = this.settingsManager.getSettings();
 		let decision;
 
-		if (settings.useLLMAI) {
+		if (settings.useLLMAI && !this.isGuestMode) {
 			// Try LLM-based AI with fallback to rule-based
 			const llmSettings = await this.getLLMSettings();
 			if (turnTransitionToken !== this.turnTransitionToken) return;
@@ -1408,7 +1420,7 @@ export class PokerGame {
 				| 'loose-passive';
 			const aiDifficulty1 = (aiDifficulty1El.value || 'medium') as AIDifficultySetting;
 			const aiDifficulty2 = (aiDifficulty2El.value || 'medium') as AIDifficultySetting;
-			const useLLMAI = useLLMAIEl.checked;
+			const useLLMAI = this.isGuestMode ? false : useLLMAIEl.checked;
 
 			this.settingsManager.updateSettings({
 				startingChips,
@@ -1496,7 +1508,19 @@ export class PokerGame {
 		if (aiPersonality2Select) aiPersonality2Select.value = settings.aiPersonality2;
 		if (aiDifficulty1Select) aiDifficulty1Select.value = settings.aiDifficulty1;
 		if (aiDifficulty2Select) aiDifficulty2Select.value = settings.aiDifficulty2;
-		if (useLLMAICheckbox) useLLMAICheckbox.checked = settings.useLLMAI;
+		if (useLLMAICheckbox) {
+			useLLMAICheckbox.checked = this.isGuestMode ? false : settings.useLLMAI;
+			useLLMAICheckbox.disabled = this.isGuestMode;
+			useLLMAICheckbox.title = this.isGuestMode
+				? 'Sign in to use profile-backed LLM AI opponents.'
+				: '';
+			const llmHelpText = useLLMAICheckbox.parentElement?.querySelector('.text-xs');
+			if (llmHelpText) {
+				llmHelpText.textContent = this.isGuestMode
+					? 'Sign in to use profile-backed OpenAI/Gemini opponents.'
+					: 'Enable OpenAI/Gemini for smarter, more human-like AI play. Requires API key configured in profile.';
+			}
+		}
 	}
 
 	private updateBetControls() {

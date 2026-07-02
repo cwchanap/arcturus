@@ -892,6 +892,7 @@ export function initBlackjackClient(): void {
 		}
 
 		if (!shouldSyncAccountChips({ isGuestMode })) {
+			renderGame();
 			return;
 		}
 

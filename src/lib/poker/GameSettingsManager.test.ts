@@ -91,6 +91,8 @@ describe('GameSettingsManager', () => {
 			expect(settings.bigBlind).toBe(DEFAULT_SETTINGS.bigBlind);
 			expect(settings.aiPersonality1).toBe(DEFAULT_SETTINGS.aiPersonality1);
 			expect(settings.aiPersonality2).toBe(DEFAULT_SETTINGS.aiPersonality2);
+			expect(settings.aiDifficulty1).toBe(DEFAULT_SETTINGS.aiDifficulty1);
+			expect(settings.aiDifficulty2).toBe(DEFAULT_SETTINGS.aiDifficulty2);
 			expect(settings.useLLMAI).toBe(DEFAULT_SETTINGS.useLLMAI);
 		});
 
@@ -188,6 +190,17 @@ describe('GameSettingsManager', () => {
 			expect(settings.aiPersonality2).toBe('tight-passive');
 		});
 
+		test('updates AI difficulty settings', () => {
+			manager.updateSettings({
+				aiDifficulty1: 'easy',
+				aiDifficulty2: 'hard',
+			});
+
+			const settings = manager.getSettings();
+			expect(settings.aiDifficulty1).toBe('easy');
+			expect(settings.aiDifficulty2).toBe('hard');
+		});
+
 		test('updates LLM AI setting', () => {
 			manager.updateSettings({ useLLMAI: true });
 
@@ -252,6 +265,8 @@ describe('GameSettingsManager', () => {
 				aiSpeed: 'fast',
 				aiPersonality1: 'loose-passive',
 				aiPersonality2: 'tight-passive',
+				aiDifficulty1: 'easy',
+				aiDifficulty2: 'hard',
 				useLLMAI: true,
 			});
 
@@ -422,6 +437,23 @@ describe('GameSettingsManager', () => {
 			expect(settings.startingChips).toBe(1000);
 			expect(settings.smallBlind).toBe(DEFAULT_SETTINGS.smallBlind);
 			expect(settings.bigBlind).toBe(20);
+		});
+
+		test('legacy settings without difficulty merge in medium defaults', () => {
+			mockLocalStorage.store['poker_game_settings'] = JSON.stringify({
+				startingChips: 1000,
+				aiPersonality1: 'tight-passive',
+				aiPersonality2: 'loose-aggressive',
+				useLLMAI: false,
+			});
+
+			const manager2 = new GameSettingsManager();
+			const settings = manager2.getSettings();
+
+			expect(settings.startingChips).toBe(1000);
+			expect(settings.aiPersonality1).toBe('tight-passive');
+			expect(settings.aiDifficulty1).toBe('medium');
+			expect(settings.aiDifficulty2).toBe('medium');
 		});
 
 		test('multiple rapid updates are handled correctly', () => {

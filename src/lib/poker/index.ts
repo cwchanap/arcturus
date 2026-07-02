@@ -76,3 +76,11 @@ export {
 // AI strategy
 export type { AIPersonality, AIConfig } from './aiStrategy';
 export { createAIConfig, makeAIDecision } from './aiStrategy';
+
+// AI difficulty
+export type { AIDifficulty, AIDifficultyProfile } from './aiDifficulty';
+export {
+	DEFAULT_AI_DIFFICULTY,
+	getDifficultyProfile,
+	applyPersonalityToDifficulty,
+} from './aiDifficulty';

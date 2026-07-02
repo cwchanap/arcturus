@@ -102,6 +102,7 @@ export function initBlackjackClient(): void {
 	// Initialize settings manager (per-user)
 	const rootEl = document.getElementById('blackjack-root');
 	const userId = rootEl?.getAttribute('data-user-id') ?? 'anonymous';
+	const isGuestMode = rootEl?.dataset.guestMode === 'true';
 	const isAnonymousUser = userId === 'anonymous';
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
@@ -194,6 +195,15 @@ export function initBlackjackClient(): void {
 
 	// Load LLM settings on page load
 	async function loadLlmSettings() {
+		if (isGuestMode) {
+			llmSettings = null;
+			llmConfigured = false;
+			llmConfigOverlay.classList.add('hidden');
+			llmConfigOverlay.classList.remove('flex');
+			updateAiRivalButtonState();
+			return;
+		}
+
 		try {
 			const response = await fetch('/api/profile/llm-settings');
 			if (!response.ok) {
@@ -247,6 +257,17 @@ export function initBlackjackClient(): void {
 	// Note: Button stays clickable even when unconfigured so users can click
 	// to see the overlay explaining how to configure API keys
 	function updateAiRivalButtonState() {
+		if (isGuestMode) {
+			btnAiRival.disabled = true;
+			btnAiRival.classList.add('opacity-50');
+			if (aiRivalStatus) {
+				aiRivalStatus.textContent = 'Sign in to use profile-backed AI advice.';
+				aiRivalStatus.classList.remove('text-[var(--deco-jade)]', 'text-[var(--deco-muted)]');
+				aiRivalStatus.classList.add('text-[var(--deco-ivory-dim)]');
+			}
+			return;
+		}
+
 		if (llmConfigured) {
 			btnAiRival.classList.remove('opacity-50');
 			if (aiRivalStatus) {

@@ -11,6 +11,8 @@ test.describe('public single-player games', () => {
 			heading: "Texas Hold'em Poker",
 			metadataTarget: 'balance',
 			accountOnlyButtonSelector: '#btn-ai-move',
+			aiStatusSelector: '#ai-rival-status',
+			shouldAvoidProfileLlmSettingsRequest: true,
 		},
 		{
 			path: '/games/blackjack',
@@ -19,6 +21,8 @@ test.describe('public single-player games', () => {
 			heading: 'Blackjack',
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#btn-ai-rival',
+			aiStatusSelector: '#ai-rival-status',
+			shouldAvoidProfileLlmSettingsRequest: true,
 		},
 		{
 			path: '/games/baccarat',
@@ -26,6 +30,7 @@ test.describe('public single-player games', () => {
 			balanceSelector: '#chip-balance',
 			heading: 'Baccarat',
 			metadataTarget: 'root',
+			shouldAvoidProfileLlmSettingsRequest: false,
 		},
 		{
 			path: '/games/craps',
@@ -34,11 +39,19 @@ test.describe('public single-player games', () => {
 			heading: 'Craps',
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#llm-advice-btn',
+			shouldAvoidProfileLlmSettingsRequest: false,
 		},
 	] as const;
 
 	for (const game of publicGames) {
 		test(`${game.path} renders in guest mode without sign-in`, async ({ page }) => {
+			const profileLlmSettingsRequests: string[] = [];
+			page.on('request', (request) => {
+				if (request.url().includes('/api/profile/llm-settings')) {
+					profileLlmSettingsRequests.push(request.url());
+				}
+			});
+
 			await page.goto(game.path, { waitUntil: 'domcontentloaded' });
 
 			await expect(page).toHaveURL(new RegExp(`${game.path}$`));
@@ -61,6 +74,13 @@ test.describe('public single-player games', () => {
 
 			if (game.accountOnlyButtonSelector) {
 				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
+			}
+
+			if (game.shouldAvoidProfileLlmSettingsRequest) {
+				await page.waitForLoadState('networkidle');
+				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
+				await expect(page.locator(game.aiStatusSelector)).toContainText('Sign in');
+				expect(profileLlmSettingsRequests).toEqual([]);
 			}
 		});
 	}

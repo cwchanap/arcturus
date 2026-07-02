@@ -27,6 +27,14 @@ describe('public-game-session', () => {
 		expect(session.initialBalance).toBe(750);
 	});
 
+	test('uses the default guest balance when guest fallback is NaN', () => {
+		const session = createPublicGameSession(undefined, Number.NaN);
+
+		expect(session.isGuest).toBe(true);
+		expect(session.initialBalance).toBe(DEFAULT_GUEST_GAME_BALANCE);
+		expect(Number.isFinite(session.initialBalance)).toBe(true);
+	});
+
 	test('creates an account session from a finite user chip balance', () => {
 		const session = createPublicGameSession({ id: 'user-1', chipBalance: 1250 });
 
@@ -46,6 +54,15 @@ describe('public-game-session', () => {
 		expect(session.isGuest).toBe(false);
 		expect(session.initialBalance).toBe(900);
 		expect(session.balanceAvailableValue).toBe('false');
+	});
+
+	test('uses the default guest balance when account fallback is infinite', () => {
+		const session = createPublicGameSession({ id: 'user-1', chipBalance: null }, Infinity);
+
+		expect(session.isGuest).toBe(false);
+		expect(session.initialBalance).toBe(DEFAULT_GUEST_GAME_BALANCE);
+		expect(session.balanceAvailableValue).toBe('false');
+		expect(Number.isFinite(session.initialBalance)).toBe(true);
 	});
 
 	test('detects guest mode values from DOM dataset strings', () => {

@@ -18,6 +18,9 @@ function normalizeBalance(balance: number | null | undefined, fallbackBalance: n
 	if (typeof balance === 'number' && Number.isFinite(balance)) {
 		return Math.max(0, Math.trunc(balance));
 	}
+	if (!Number.isFinite(fallbackBalance)) {
+		return DEFAULT_GUEST_GAME_BALANCE;
+	}
 	return Math.max(0, Math.trunc(fallbackBalance));
 }
 

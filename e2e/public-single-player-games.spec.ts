@@ -190,7 +190,9 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 10000 });
 		await expect(page.locator('#game-status')).toContainText('BLACKJACK');
 		await expect(page.locator('#player-balance')).toHaveText('$1,075');
-		await page.waitForTimeout(500);
+		// Deterministically wait for network to settle before asserting no chip
+		// sync requests fire, instead of a fixed sleep.
+		await page.waitForLoadState('networkidle');
 		expect(chipUpdateRequests).toEqual([]);
 	});
 
@@ -232,7 +234,9 @@ test.describe('public single-player games', () => {
 
 		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
 		await expect(page.locator('#chip-balance')).toHaveText('$1,025');
-		await page.waitForTimeout(500);
+		// Deterministically wait for network to settle before asserting no chip
+		// sync requests fire, instead of a fixed sleep.
+		await page.waitForLoadState('networkidle');
 		expect(chipUpdateRequests).toEqual([]);
 	});
 });

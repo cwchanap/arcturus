@@ -1,4 +1,5 @@
 import type { AIPersonality } from './types';
+import { clamp } from './aiMath';
 
 export type AIDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -68,10 +69,6 @@ const BASE_PROFILES: Record<AIDifficulty, AIDifficultyProfile> = {
 	},
 };
 
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
-}
-
 export function isAIDifficulty(value: unknown): value is AIDifficulty {
 	return value === 'easy' || value === 'medium' || value === 'hard';
 }
@@ -118,9 +115,11 @@ export function applyPersonalityToDifficulty(
 		adjusted.maxPotRaiseFraction -= 0.12;
 	}
 
-	if (personality.startsWith('tight')) {
-		adjusted.bluffFrequency = Math.min(adjusted.bluffFrequency, profile.bluffFrequency);
-	}
+	// Note: tight bluffFrequency is reduced in the tight block above, but we do
+	// NOT re-clamp it here. A tight-aggressive personality composes the tight
+	// reduction (x0.75) with the aggressive boost (x1.45), yielding a slight net
+	// increase above the base profile so the aggressive character is preserved.
+	// A separate post-pass clamp would cancel the aggressive boost for TAG.
 
 	adjusted.continueThreshold = clamp(adjusted.continueThreshold, 0.18, 0.72);
 	adjusted.raiseThreshold = clamp(adjusted.raiseThreshold, 0.38, 0.9);

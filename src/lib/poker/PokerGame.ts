@@ -1032,18 +1032,22 @@ export class PokerGame {
 				break;
 
 			case 'call':
-				if (callAmount > 0 && callAmount <= currentPlayer.chips) {
+				if (callAmount > 0) {
+					// placeBet() clamps to remaining chips and marks the player all-in,
+					// so short stacks can call all-in instead of being forced to fold.
+					const actualCall = Math.min(callAmount, currentPlayer.chips);
 					this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 					this.pot = calculatePot(this.players);
-					this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
-					this.ui.showAIDecision(currentPlayer.id, 'call', callAmount);
+					const allInNote = this.players[this.currentPlayerIndex].isAllIn ? ' (all-in)' : '';
+					this.updateGameStatus(`${currentPlayer.name} calls $${actualCall}${allInNote}`);
+					this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
-					// Can't afford to call, fold instead
-					this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
-					this.updateGameStatus(`${currentPlayer.name} folds`);
-					this.ui.showAIDecision(currentPlayer.id, 'fold');
+					// No bet to call - treat as a check
+					this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
+					this.updateGameStatus(`${currentPlayer.name} checks`);
+					this.ui.showAIDecision(currentPlayer.id, 'check');
 				}
 				break;
 
@@ -1062,12 +1066,14 @@ export class PokerGame {
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
-					// Can't afford to raise, call instead
-					if (callAmount > 0 && callAmount <= currentPlayer.chips) {
+					// Can't afford to raise, call instead (placeBet clamps to all-in)
+					if (callAmount > 0) {
+						const actualCall = Math.min(callAmount, currentPlayer.chips);
 						this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 						this.pot = calculatePot(this.players);
-						this.updateGameStatus(`${currentPlayer.name} calls $${callAmount}`);
-						this.ui.showAIDecision(currentPlayer.id, 'call', callAmount);
+						const allInNote = this.players[this.currentPlayerIndex].isAllIn ? ' (all-in)' : '';
+						this.updateGameStatus(`${currentPlayer.name} calls $${actualCall}${allInNote}`);
+						this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
 						this.ui.updateUI(this.pot, this.players[0]);
 						this.ui.updateOpponentUI(this.players);
 					} else {
@@ -1114,6 +1120,12 @@ export class PokerGame {
 			(playerIndex - dealerIndex + this.players.length) % this.players.length;
 
 		if (positionFromDealer === 0) return 'late';
+		// 3-handed: dealer=late, the seat immediately after the dealer acts first
+		// postflop (early), and the remaining seat is middle. Without this special
+		// case both non-dealer seats collapse to 'early' and 'middle' is unreachable.
+		if (this.players.length === 3) {
+			return positionFromDealer === 1 ? 'early' : 'middle';
+		}
 		return positionFromDealer <= 2 ? 'early' : positionFromDealer === 3 ? 'middle' : 'late';
 	}
 
@@ -1316,17 +1328,16 @@ export class PokerGame {
 				return;
 			}
 
-			if (callAmount > this.players[0].chips) {
-				return;
-			}
-
 			this.isProcessingAction = true;
 			this.updateActionButtons();
 			try {
+				// placeBet() clamps to remaining chips and marks the player all-in.
+				const actualCall = Math.min(callAmount, this.players[0].chips);
 				this.players[0] = placeBet(this.players[0], callAmount);
 				this.pot = calculatePot(this.players);
 				this.ui.updateUI(this.pot, this.players[0]);
-				this.updateGameStatus(`You called $${callAmount}`);
+				const allInNote = this.players[0].isAllIn ? ' (all-in)' : '';
+				this.updateGameStatus(`You called $${actualCall}${allInNote}`);
 			} finally {
 				this.isProcessingAction = false;
 			}

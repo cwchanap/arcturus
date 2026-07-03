@@ -1,4 +1,5 @@
 import type { Card } from './types';
+import { clamp } from './aiMath';
 
 export type BoardTextureKind = 'none' | 'dry' | 'semi-wet' | 'wet';
 
@@ -13,10 +14,6 @@ export interface BoardTexture {
 	connectedness: number;
 	pressure: number;
 	tags: string[];
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
 }
 
 function hasStraightPressure(ranks: number[]): boolean {
@@ -82,7 +79,12 @@ export function classifyBoardTexture(communityCards: Card[]): BoardTexture {
 	let pressure = 0.12;
 	if (paired) pressure += 0.12;
 	if (twoTone) pressure += 0.18;
-	if (monotone) pressure += 0.38;
+	// Monotone boards already enable a made flush / flush draw and are inherently
+	// wet. A bare monotone flop (e.g. 2♠-5♠-8♠) still lands in 'wet' territory,
+	// and an Ace- or King-high monotone board (e.g. A♠-8♠-3♠) carries a nut-flush
+	// threat that demands an extra boost so it never drops below 'wet'.
+	if (monotone) pressure += 0.45;
+	if (monotone && highCardCount >= 1) pressure += 0.1;
 	if (straightDrawPossible) pressure += 0.25;
 	if (highCardCount >= 2) pressure += 0.08;
 	pressure += connectedness * 0.15;

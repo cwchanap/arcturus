@@ -1,5 +1,6 @@
 import type { GameContext } from './types';
 import type { AIDifficultyProfile } from './aiDifficulty';
+import { clamp } from './aiMath';
 
 export interface BetSizingInput {
 	context: GameContext;
@@ -10,10 +11,6 @@ export interface BetSizingInput {
 
 function roundToStep(value: number, step: number): number {
 	return Math.max(step, Math.round(value / step) * step);
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
 }
 
 export function chooseRaiseAmount(input: BetSizingInput): number | null {

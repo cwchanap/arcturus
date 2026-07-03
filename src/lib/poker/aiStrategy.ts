@@ -13,6 +13,7 @@ import {
 import { classifyBoardTexture } from './aiBoardTexture';
 import { chooseRaiseAmount } from './aiBetSizing';
 import { estimateVisibleEquity } from './aiEquity';
+import { clamp } from './aiMath';
 
 export interface AIConfig {
 	personality: AIPersonality;
@@ -20,10 +21,6 @@ export interface AIConfig {
 	bluffFrequency: number;
 	aggressionLevel: number;
 	random?: () => number;
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
 }
 
 function basePersonalityTuning(personality: AIPersonality): {
@@ -137,7 +134,7 @@ export function makeAIDecision(context: GameContext, config: AIConfig): AIDecisi
 	}
 
 	if (
-		callAmount <= context.player.chips &&
+		callAmount > 0 &&
 		(effectiveEquity >= continueThreshold ||
 			equityEstimate.potOdds < 0.22 * profile.callLooseness ||
 			drawIsRelevant)

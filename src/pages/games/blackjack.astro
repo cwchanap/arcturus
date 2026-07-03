@@ -8,13 +8,15 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
-const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
+// Only expose a client-side identifier for guest sessions; authenticated
+// accounts must not have their user ID rendered into the DOM.
+const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 ---
 
 <CasinoLayout title="Blackjack - Arcturus Casino">
 	<div
 		id="blackjack-root"
-		data-user-id={runtimeUserId}
+		data-user-id={guestUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"

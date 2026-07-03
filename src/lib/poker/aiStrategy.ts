@@ -162,11 +162,8 @@ function getPosition(player: Player, players: Player[]): 'early' | 'middle' | 'l
 
 	const positionFromDealer = (playerIndex - dealerIndex + players.length) % players.length;
 
-	if (positionFromDealer <= 1) {
-		return 'early';
-	}
-	if (positionFromDealer <= 2) {
-		return 'middle';
-	}
+	if (positionFromDealer === 0) return 'late';
+	if (positionFromDealer <= 2) return 'early';
+	if (positionFromDealer === 3) return 'middle';
 	return 'late';
 }

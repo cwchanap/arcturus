@@ -1113,7 +1113,8 @@ export class PokerGame {
 		const positionFromDealer =
 			(playerIndex - dealerIndex + this.players.length) % this.players.length;
 
-		return positionFromDealer <= 1 ? 'early' : positionFromDealer === 2 ? 'middle' : 'late';
+		if (positionFromDealer === 0) return 'late';
+		return positionFromDealer <= 2 ? 'early' : positionFromDealer === 3 ? 'middle' : 'late';
 	}
 
 	private updateGameStatus(message: string) {

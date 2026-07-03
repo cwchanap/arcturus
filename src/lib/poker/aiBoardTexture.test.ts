@@ -64,5 +64,8 @@ describe('classifyBoardTexture', () => {
 		expect(texture.flushDrawPossible).toBe(true);
 		expect(texture.tags).toContain('monotone');
 		expect(texture.pressure).toBeGreaterThan(0.5);
+		// Ace-high monotone carries a nut-flush threat and must classify as wet,
+		// not semi-wet.
+		expect(texture.kind).toBe('wet');
 	});
 });

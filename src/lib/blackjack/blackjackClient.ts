@@ -130,6 +130,15 @@ export function initBlackjackClient(): void {
 		? loadGuestBankroll(guestBankrollGameKey, userId, initialBalance)
 		: initialBalance;
 
+	// Persist the guest bankroll immediately after any balance mutation so a
+	// mid-round refresh restores the current (post-wager) balance instead of the
+	// pre-round balance. No-op for authenticated sessions (those sync to server).
+	const persistGuestBalance = () => {
+		if (isGuestMode) {
+			persistGuestBankroll(guestBankrollGameKey, userId, game.getBalance());
+		}
+	};
+
 	// Track the server-synced balance separately from game state.
 	// This is the balance the server knows about, updated only after successful API calls.
 	// Used for optimistic locking to avoid BALANCE_MISMATCH errors.
@@ -467,6 +476,7 @@ export function initBlackjackClient(): void {
 		try {
 			game.placeBet(betAmount);
 			game.deal();
+			persistGuestBalance();
 
 			// Update UI
 			renderGame();
@@ -536,6 +546,7 @@ export function initBlackjackClient(): void {
 	btnDouble.addEventListener('click', () => {
 		try {
 			game.doubleDown();
+			persistGuestBalance();
 			const stateAfter = game.getState();
 
 			// Check what phase we're in after double down
@@ -572,6 +583,7 @@ export function initBlackjackClient(): void {
 	btnSplit.addEventListener('click', () => {
 		try {
 			game.split();
+			persistGuestBalance();
 			statusEl.textContent = 'Playing hand 1...';
 			renderGame();
 		} catch (error) {

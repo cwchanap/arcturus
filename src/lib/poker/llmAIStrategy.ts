@@ -6,7 +6,7 @@
 import type { AIDecision, AIPersonality, GameContext, Card } from './types';
 import { getSuitSymbol } from '../card-format';
 import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStrategy';
-import type { AIDifficulty } from './aiDifficulty';
+import { DEFAULT_AI_DIFFICULTY, type AIDifficulty } from './aiDifficulty';
 import { getHighestBet, getCallAmount } from './player';
 import { fetchWithTimeout } from '../fetch-with-timeout';
 
@@ -237,7 +237,7 @@ export async function makeLLMDecision(
 	context: GameContext,
 	personality: AIPersonality,
 	llmSettings: LLMSettings | null,
-	difficulty: AIDifficulty = 'medium',
+	difficulty: AIDifficulty = DEFAULT_AI_DIFFICULTY,
 ): Promise<AIDecision> {
 	// Check cache first
 	const cached = decisionCache.get(context);

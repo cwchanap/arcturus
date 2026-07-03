@@ -7,6 +7,7 @@ import type { Card, Player } from './types';
 import { getCallAmount, getHighestBet } from './index';
 import { getSuitSymbol } from '../card-format';
 import { fetchWithTimeout } from '../fetch-with-timeout';
+import { isGuestModeValue } from '../public-game-session';
 
 export type AiProvider = 'openai' | 'gemini';
 export type AiSettings = {
@@ -40,7 +41,9 @@ export class AIRivalAssistant {
 	private isGuestMode(): boolean {
 		const rootEl = this.getElementById('poker-root');
 		const balanceEl = this.getElementById('player-balance');
-		return rootEl?.dataset.guestMode === 'true' || balanceEl?.dataset.guestMode === 'true';
+		return (
+			isGuestModeValue(rootEl?.dataset.guestMode) || isGuestModeValue(balanceEl?.dataset.guestMode)
+		);
 	}
 
 	// === UI State Management ===

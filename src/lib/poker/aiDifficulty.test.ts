@@ -42,7 +42,12 @@ describe('aiDifficulty', () => {
 		const adjusted = applyPersonalityToDifficulty(base, 'tight-aggressive');
 
 		expect(adjusted.continueThreshold).toBeGreaterThan(base.continueThreshold);
-		expect(adjusted.bluffFrequency).toBeLessThanOrEqual(base.bluffFrequency);
+		// tight-aggressive composes the tight reduction (x0.75) with the aggressive
+		// boost (x1.45), so it should bluff slightly MORE than the base profile and
+		// strictly more than tight-passive (which gets no aggressive boost).
+		expect(adjusted.bluffFrequency).toBeGreaterThan(base.bluffFrequency);
+		const tightPassive = applyPersonalityToDifficulty(base, 'tight-passive');
+		expect(adjusted.bluffFrequency).toBeGreaterThan(tightPassive.bluffFrequency);
 	});
 
 	test('loose personality widens continuing range', () => {

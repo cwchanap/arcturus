@@ -6,6 +6,7 @@ import {
 	evaluatePreflopHand,
 } from './handEvaluator';
 import { classifyBoardTexture } from './aiBoardTexture';
+import { clamp } from './aiMath';
 
 export interface VisibleEquityEstimate {
 	equity: number;
@@ -16,10 +17,6 @@ export interface VisibleEquityEstimate {
 	outs: number;
 	texturePressure: number;
 	activeOpponents: number;
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.min(max, Math.max(min, value));
 }
 
 export function estimateVisibleEquity(context: GameContext): VisibleEquityEstimate {

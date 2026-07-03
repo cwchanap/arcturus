@@ -6,15 +6,15 @@ import { createPublicGameSession } from '../../lib/public-game-session';
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
-// Only expose a client-side identifier for guest sessions; authenticated
-// accounts must not have their user ID rendered into the DOM.
-const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
+// Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
+// authenticated users. The raw account id is never rendered into the DOM.
+const clientUserId = gameSession.clientUserId;
 ---
 
 <CasinoLayout title="Craps - Arcturus Casino">
 	<div
 		id="craps-root"
-		data-user-id={guestUserId}
+		data-user-id={clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
 		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
@@ -682,7 +682,12 @@ const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
 	import { initAchievementToast } from '../../lib/achievement-toast';
-	import { isGuestModeValue, shouldSyncAccountChips } from '../../lib/public-game-session';
+	import {
+		isGuestModeValue,
+		loadGuestBankroll,
+		persistGuestBankroll,
+		shouldSyncAccountChips,
+	} from '../../lib/public-game-session';
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
@@ -707,14 +712,33 @@ const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 		const isGuestMode = isGuestModeValue(root.dataset.guestMode);
 		const persistedSessionKey = `craps-session:${userId}`;
 		const droppedRollSyncsKey = `craps-dropped-roll-syncs:${userId}`;
+		const guestBankrollGameKey = 'craps';
+
+		// For guest sessions, restore the bankroll from the shared per-user
+		// key (consistent with blackjack/baccarat/poker). If a persisted
+		// session exists, restoreSession() below overrides the balance with
+		// the session's value — which is authoritative because it is
+		// consistent with any active bets restored alongside it.
+		const restoredGuestBalance = isGuestMode
+			? loadGuestBankroll(guestBankrollGameKey, userId, initialBalance)
+			: initialBalance;
 
 		const game = new CrapsGame({
-			initialBalance,
+			initialBalance: restoredGuestBalance,
 			settings: { minBet: 5, maxBet: 500, maxOddsMultiplier: 2 },
 		});
 
+		// Persist the guest bankroll to the shared per-user key whenever the
+		// session is persisted, so the balance survives a refresh even if the
+		// session snapshot is cleared. No-op for authenticated sessions.
+		const persistGuestBalance = () => {
+			if (isGuestMode) {
+				persistGuestBankroll(guestBankrollGameKey, userId, game.getBalance());
+			}
+		};
+
 		let selectedChipAmount = 25;
-		let lastSyncedBalance = initialBalance;
+		let lastSyncedBalance = restoredGuestBalance;
 		let isSyncInProgress = false;
 		let syncPending = false;
 		let pendingRetryScheduled = false;
@@ -769,6 +793,7 @@ const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 				game.getBalance() === lastSyncedBalance
 			) {
 				localStorage.removeItem(persistedSessionKey);
+				persistGuestBalance();
 				return;
 			}
 			const payload: PersistedCrapsSession = {
@@ -780,6 +805,7 @@ const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 			} catch (err) {
 				console.error('[CRAPS] Failed to persist session to localStorage:', err);
 			}
+			persistGuestBalance();
 		}
 
 		function persistDroppedRollSyncs(error: string | undefined, status: number): boolean {

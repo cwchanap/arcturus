@@ -11,9 +11,9 @@ const hasInitialBalance = gameSession.balanceAvailableValue === 'true';
 const initialBalanceLabel = hasInitialBalance
 	? `$${initialBalance.toLocaleString()}`
 	: 'Unavailable';
-// Only expose a client-side identifier for guest sessions; authenticated
-// accounts must not have their user ID rendered into the DOM.
-const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
+// Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
+// authenticated users. The raw account id is never rendered into the DOM.
+const clientUserId = gameSession.clientUserId;
 ---
 
 <CasinoLayout title="Texas Hold'em Poker - Arcturus Casino">
@@ -45,7 +45,7 @@ const guestUserId = gameSession.isGuest ? 'anonymous' : undefined;
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={gameSession.balanceAvailableValue}
 						data-guest-mode={gameSession.guestModeValue}
-						data-user-id={guestUserId}
+						data-user-id={clientUserId}
 					>
 						{initialBalanceLabel}
 					</div>

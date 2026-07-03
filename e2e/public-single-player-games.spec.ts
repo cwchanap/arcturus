@@ -228,6 +228,8 @@ test.describe('public single-player games', () => {
 					selectedChipAmount: 50,
 				}),
 			);
+			// Also seed the shared bankroll key so both mechanisms agree.
+			localStorage.setItem('craps-bankroll:anonymous', '1025');
 		});
 
 		await page.goto('/games/craps', { waitUntil: 'domcontentloaded' });
@@ -236,6 +238,57 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#chip-balance')).toHaveText('$1,025');
 		// Deterministically wait for network to settle before asserting no chip
 		// sync requests fire, instead of a fixed sleep.
+		await page.waitForLoadState('networkidle');
+		expect(chipUpdateRequests).toEqual([]);
+	});
+
+	test('guest craps restores bankroll from shared helper when no session exists', async ({
+		page,
+	}) => {
+		const chipUpdateRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/chips/update')) {
+				chipUpdateRequests.push(request.url());
+			}
+		});
+
+		await page.addInitScript(() => {
+			// Only seed the shared bankroll key — no craps-session snapshot.
+			localStorage.setItem('craps-bankroll:anonymous', '850');
+		});
+
+		await page.goto('/games/craps', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.locator('#chip-balance')).toHaveText('$850');
+		await page.waitForLoadState('networkidle');
+		expect(chipUpdateRequests).toEqual([]);
+	});
+
+	test('guest baccarat can complete a round without calling chip sync', async ({ page }) => {
+		const chipUpdateRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/chips/update')) {
+				chipUpdateRequests.push(request.url());
+			}
+		});
+
+		await page.goto('/games/baccarat', { waitUntil: 'domcontentloaded' });
+		await expect(page.locator('#baccarat-root')).toHaveAttribute('data-guest-mode', 'true');
+
+		// Place a player bet (default chip is $50) and deal.
+		await page.locator('[data-bet-type="player"]').click();
+		await expect(page.locator('#deal-button')).toBeEnabled();
+		await page.locator('#deal-button').click();
+
+		// Baccarat round animates card-by-card; wait for the result overlay's
+		// "NEW ROUND" button to appear as the round-completion signal.
+		await expect(page.locator('#new-round-button')).toBeVisible({ timeout: 15000 });
+
+		// Balance must have moved off the starting $1,000 after a settled round.
+		const balanceText = await page.locator('#chip-balance').textContent();
+		expect(balanceText).not.toBe('$1,000');
+
 		await page.waitForLoadState('networkidle');
 		expect(chipUpdateRequests).toEqual([]);
 	});

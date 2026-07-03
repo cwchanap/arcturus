@@ -967,10 +967,15 @@ export class PokerGame {
 			return;
 		}
 
-		// Build game context for AI
+		// Build game context for AI. Opponent hole cards are stripped so the AI
+		// context never carries hidden information — defense-in-depth against any
+		// future strategy module accidentally reading opponent hands.
+		const sanitizedPlayers = this.players.map((p) =>
+			p.id === currentPlayer.id ? p : { ...p, hand: [] },
+		);
 		const context: GameContext = {
 			player: currentPlayer,
-			players: this.players,
+			players: sanitizedPlayers,
 			communityCards: this.communityCards,
 			pot: this.pot,
 			minimumBet: this.minimumBet,

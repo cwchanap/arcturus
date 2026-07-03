@@ -1,8 +1,10 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import {
 	DEFAULT_GUEST_GAME_BALANCE,
+	GUEST_CLIENT_USER_ID,
 	createPublicGameSession,
 	getGuestBankrollStorageKey,
+	hashUserId,
 	isGuestModeValue,
 	loadGuestBankroll,
 	persistGuestBankroll,
@@ -47,6 +49,7 @@ describe('public-game-session', () => {
 		expect(session).toEqual({
 			isGuest: true,
 			userId: '',
+			clientUserId: GUEST_CLIENT_USER_ID,
 			initialBalance: DEFAULT_GUEST_GAME_BALANCE,
 			balanceLabel: 'Guest Balance',
 			guestModeValue: 'true',
@@ -75,6 +78,7 @@ describe('public-game-session', () => {
 		expect(session).toEqual({
 			isGuest: false,
 			userId: 'user-1',
+			clientUserId: hashUserId('user-1'),
 			initialBalance: 1250,
 			balanceLabel: 'Your Balance',
 			guestModeValue: 'false',
@@ -161,5 +165,38 @@ describe('public-game-session', () => {
 		expect(loadGuestBankroll('poker', '', 1000)).toBe(1000);
 		persistGuestBankroll('poker', '', 500);
 		expect(loadGuestBankroll('poker', '', 1000)).toBe(1000);
+	});
+
+	test('hashUserId is deterministic for the same input', () => {
+		expect(hashUserId('user-abc')).toBe(hashUserId('user-abc'));
+	});
+
+	test('hashUserId produces distinct surrogates for distinct ids', () => {
+		expect(hashUserId('user-1')).not.toBe(hashUserId('user-2'));
+	});
+
+	test('hashUserId never returns the raw id or the guest sentinel', () => {
+		const id = 'sensitive-account-id-12345';
+		const surrogate = hashUserId(id);
+		expect(surrogate).not.toBe(id);
+		expect(surrogate).not.toBe(GUEST_CLIENT_USER_ID);
+		expect(surrogate.startsWith('u_')).toBe(true);
+	});
+
+	test('authenticated sessions get a per-user surrogate, not the guest sentinel', () => {
+		const session = createPublicGameSession({ id: 'user-42', chipBalance: 500 });
+		expect(session.clientUserId).toBe(hashUserId('user-42'));
+		expect(session.clientUserId).not.toBe(GUEST_CLIENT_USER_ID);
+	});
+
+	test('guest sessions always resolve to the guest sentinel', () => {
+		const session = createPublicGameSession(null);
+		expect(session.clientUserId).toBe(GUEST_CLIENT_USER_ID);
+	});
+
+	test('two authenticated users get distinct client surrogates', () => {
+		const a = createPublicGameSession({ id: 'user-a', chipBalance: 100 });
+		const b = createPublicGameSession({ id: 'user-b', chipBalance: 100 });
+		expect(a.clientUserId).not.toBe(b.clientUserId);
 	});
 });

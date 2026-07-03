@@ -25,7 +25,9 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 	const potOdds = calculatePotOdds(callAmount, context.pot);
 	const madeStrength =
 		context.communityCards.length === 0
-			? evaluatePreflopHand(context.player.hand[0], context.player.hand[1])
+			? context.player.hand.length >= 2
+				? evaluatePreflopHand(context.player.hand[0], context.player.hand[1])
+				: 0
 			: evaluatePostflopHand(context.player.hand, context.communityCards);
 	const outs = estimateDrawingOuts(context.player.hand, context.communityCards);
 	const texture = classifyBoardTexture(context.communityCards);

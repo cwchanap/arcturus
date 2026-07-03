@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Card, GameContext, Player } from './types';
-import { buildUnknownDeck, estimateVisibleEquity } from './aiEquity';
+import { estimateVisibleEquity } from './aiEquity';
 
 function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
@@ -34,19 +34,6 @@ function context(aiPlayer: Player, players: Player[], communityCards: Card[] = [
 		position: 'middle',
 	};
 }
-
-describe('buildUnknownDeck', () => {
-	test('excludes visible hole and community cards from a standard deck', () => {
-		const known = [card('A', 'spades', 14), card('K', 'hearts', 13), card('Q', 'diamonds', 12)];
-
-		const unknown = buildUnknownDeck(known);
-
-		expect(unknown).toHaveLength(49);
-		expect(unknown).not.toContainEqual(card('A', 'spades', 14));
-		expect(unknown).not.toContainEqual(card('K', 'hearts', 13));
-		expect(unknown).not.toContainEqual(card('Q', 'diamonds', 12));
-	});
-});
 
 describe('estimateVisibleEquity', () => {
 	test('rates pocket aces above weak offsuit preflop', () => {

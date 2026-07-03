@@ -1,12 +1,46 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import {
 	DEFAULT_GUEST_GAME_BALANCE,
 	createPublicGameSession,
+	getGuestBankrollStorageKey,
 	isGuestModeValue,
+	loadGuestBankroll,
+	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from './public-game-session';
 
 describe('public-game-session', () => {
+	let mockLocalStorage: {
+		store: Record<string, string>;
+		getItem: ReturnType<typeof mock>;
+		setItem: ReturnType<typeof mock>;
+		removeItem: ReturnType<typeof mock>;
+		clear: () => void;
+	};
+	let originalLocalStorage: Storage;
+
+	beforeEach(() => {
+		originalLocalStorage = global.localStorage;
+		mockLocalStorage = {
+			store: {},
+			getItem: mock((key: string) => mockLocalStorage.store[key] ?? null),
+			setItem: mock((key: string, value: string) => {
+				mockLocalStorage.store[key] = value;
+			}),
+			removeItem: mock((key: string) => {
+				delete mockLocalStorage.store[key];
+			}),
+			clear: () => {
+				mockLocalStorage.store = {};
+			},
+		};
+		global.localStorage = mockLocalStorage as unknown as Storage;
+	});
+
+	afterEach(() => {
+		mockLocalStorage.clear();
+		global.localStorage = originalLocalStorage;
+	});
 	test('creates a guest session when no user is present', () => {
 		const session = createPublicGameSession(null);
 
@@ -74,5 +108,58 @@ describe('public-game-session', () => {
 	test('only account-backed sessions should sync account chips', () => {
 		expect(shouldSyncAccountChips({ isGuestMode: true })).toBe(false);
 		expect(shouldSyncAccountChips({ isGuestMode: false })).toBe(true);
+	});
+
+	test('namespaces guest bankroll keys per game and user', () => {
+		expect(getGuestBankrollStorageKey('poker', 'anonymous')).toBe('poker-bankroll:anonymous');
+		expect(getGuestBankrollStorageKey('blackjack', 'u1')).toBe('blackjack-bankroll:u1');
+	});
+
+	test('persistGuestBankroll round-trips through loadGuestBankroll', () => {
+		const key = getGuestBankrollStorageKey('poker', 'anon-rt');
+		try {
+			persistGuestBankroll('poker', 'anon-rt', 1234);
+			expect(loadGuestBankroll('poker', 'anon-rt', 1000)).toBe(1234);
+		} finally {
+			localStorage.removeItem(key);
+		}
+	});
+
+	test('loadGuestBankroll falls back when no persisted value exists', () => {
+		const key = getGuestBankrollStorageKey('poker', 'anon-missing');
+		try {
+			localStorage.removeItem(key);
+			expect(loadGuestBankroll('poker', 'anon-missing', 1000)).toBe(1000);
+		} finally {
+			localStorage.removeItem(key);
+		}
+	});
+
+	test('loadGuestBankroll clamps non-negative and truncates decimals', () => {
+		const key = getGuestBankrollStorageKey('poker', 'anon-clamp');
+		try {
+			localStorage.setItem(key, '-50.9');
+			expect(loadGuestBankroll('poker', 'anon-clamp', 1000)).toBe(0);
+			localStorage.setItem(key, '2500.99');
+			expect(loadGuestBankroll('poker', 'anon-clamp', 1000)).toBe(2500);
+		} finally {
+			localStorage.removeItem(key);
+		}
+	});
+
+	test('loadGuestBankroll falls back for non-numeric persisted values', () => {
+		const key = getGuestBankrollStorageKey('poker', 'anon-bad');
+		try {
+			localStorage.setItem(key, 'not-a-number');
+			expect(loadGuestBankroll('poker', 'anon-bad', 1000)).toBe(1000);
+		} finally {
+			localStorage.removeItem(key);
+		}
+	});
+
+	test('guest bankroll helpers ignore empty userId', () => {
+		expect(loadGuestBankroll('poker', '', 1000)).toBe(1000);
+		persistGuestBankroll('poker', '', 500);
+		expect(loadGuestBankroll('poker', '', 1000)).toBe(1000);
 	});
 });

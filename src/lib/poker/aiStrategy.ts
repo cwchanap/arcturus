@@ -3,7 +3,7 @@
  * Local non-LLM decision making with difficulty and personality tuning.
  */
 
-import type { AIDecision, GameContext, Player } from './types';
+import type { AIDecision, AIPersonality, GameContext, Player } from './types';
 import {
 	DEFAULT_AI_DIFFICULTY,
 	applyPersonalityToDifficulty,
@@ -13,12 +13,6 @@ import {
 import { classifyBoardTexture } from './aiBoardTexture';
 import { chooseRaiseAmount } from './aiBetSizing';
 import { estimateVisibleEquity } from './aiEquity';
-
-export type AIPersonality =
-	| 'tight-passive'
-	| 'tight-aggressive'
-	| 'loose-passive'
-	| 'loose-aggressive';
 
 export interface AIConfig {
 	personality: AIPersonality;

@@ -1,4 +1,4 @@
-import type { Card, GameContext } from './types';
+import type { GameContext } from './types';
 import {
 	calculatePotOdds,
 	estimateDrawingOuts,
@@ -16,34 +16,10 @@ export interface VisibleEquityEstimate {
 	outs: number;
 	texturePressure: number;
 	activeOpponents: number;
-	unknownCards: number;
-}
-
-const SUITS: Card['suit'][] = ['hearts', 'diamonds', 'clubs', 'spades'];
-const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-
-function cardKey(card: Card): string {
-	return `${card.rank}:${card.suit}`;
 }
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
-}
-
-export function buildUnknownDeck(knownCards: Card[]): Card[] {
-	const known = new Set(knownCards.map(cardKey));
-	const deck: Card[] = [];
-
-	for (const suit of SUITS) {
-		for (let i = 0; i < VALUES.length; i++) {
-			const card = { value: VALUES[i], suit, rank: i + 2 };
-			if (!known.has(cardKey(card))) {
-				deck.push(card);
-			}
-		}
-	}
-
-	return deck;
 }
 
 export function estimateVisibleEquity(context: GameContext): VisibleEquityEstimate {
@@ -60,14 +36,14 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 		0,
 		context.players.filter((player) => player.id !== context.player.id && !player.folded).length,
 	);
-	const unknownCards = buildUnknownDeck([...context.player.hand, ...context.communityCards]).length;
 
 	const streetMultiplier =
-		context.bettingRound === 'flop' ? 2 : context.bettingRound === 'turn' ? 1 : 0.7;
+		context.bettingRound === 'flop' ? 2 : context.bettingRound === 'turn' ? 1 : 0;
 	const drawPotential = clamp(outs * 0.018 * streetMultiplier, 0, 0.34);
 	const opponentPenalty = clamp(activeOpponents * 0.045, 0, 0.18);
 	const texturePenalty = context.communityCards.length === 0 ? 0 : texture.pressure * 0.12;
-	const pairedHighCardPenalty = texture.paired && texture.highCardCount >= 2 ? 0.4 : 0;
+	const pairedHighCardPenalty =
+		texture.paired && texture.highCardCount >= 2 && madeStrength < 0.7 ? 0.4 : 0;
 	const positionBonus =
 		context.position === 'late' ? 0.03 : context.position === 'early' ? -0.025 : 0;
 
@@ -91,6 +67,5 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 		outs,
 		texturePressure: texture.pressure,
 		activeOpponents,
-		unknownCards,
 	};
 }

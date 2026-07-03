@@ -9,7 +9,12 @@ import {
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
-import { isGuestModeValue, shouldSyncAccountChips } from '../public-game-session';
+import {
+	isGuestModeValue,
+	loadGuestBankroll,
+	persistGuestBankroll,
+	shouldSyncAccountChips,
+} from '../public-game-session';
 import {
 	clearPendingStats,
 	createPendingStats,
@@ -120,10 +125,15 @@ export function initBlackjackClient(): void {
 	// numeric balance; anything else falls back to settings.startingChips).
 	const initialBalance = Number.isFinite(parsedBalance) ? parsedBalance : settings.startingChips;
 
+	const guestBankrollGameKey = 'blackjack';
+	const restoredGuestBalance = isGuestMode
+		? loadGuestBankroll(guestBankrollGameKey, userId, initialBalance)
+		: initialBalance;
+
 	// Track the server-synced balance separately from game state.
 	// This is the balance the server knows about, updated only after successful API calls.
 	// Used for optimistic locking to avoid BALANCE_MISMATCH errors.
-	let serverSyncedBalance = initialBalance;
+	let serverSyncedBalance = isGuestMode ? restoredGuestBalance : initialBalance;
 
 	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
 	// This prevents stats drift when multiple rounds are played before sync succeeds
@@ -141,7 +151,7 @@ export function initBlackjackClient(): void {
 	const MAX_FOLLOW_UP_ATTEMPTS = 3;
 
 	// Initialize game with configured bet limits
-	const game = new BlackjackGame(initialBalance, settings.minBet, settings.maxBet);
+	const game = new BlackjackGame(serverSyncedBalance, settings.minBet, settings.maxBet);
 
 	// LLM settings state
 	let llmSettings: LLMSettings | null = null;
@@ -392,6 +402,9 @@ export function initBlackjackClient(): void {
 				const balanceUpdated = game.setBalance(newStartingChips);
 				if (balanceUpdated) {
 					serverSyncedBalance = newStartingChips;
+					if (isGuestMode) {
+						persistGuestBankroll(guestBankrollGameKey, userId, newStartingChips);
+					}
 					renderGame();
 				}
 			}
@@ -892,6 +905,9 @@ export function initBlackjackClient(): void {
 		}
 
 		if (!shouldSyncAccountChips({ isGuestMode })) {
+			if (isGuestMode) {
+				persistGuestBankroll(guestBankrollGameKey, userId, game.getBalance());
+			}
 			renderGame();
 			return;
 		}

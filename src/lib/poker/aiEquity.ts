@@ -43,7 +43,7 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 	const opponentPenalty = clamp(activeOpponents * 0.045, 0, 0.18);
 	const texturePenalty = context.communityCards.length === 0 ? 0 : texture.pressure * 0.12;
 	const pairedHighCardPenalty =
-		texture.paired && texture.highCardCount >= 2 && madeStrength < 0.7 ? 0.4 : 0;
+		texture.paired && texture.highCardCount >= 2 && madeStrength < 0.55 ? 0.4 : 0;
 	const positionBonus =
 		context.position === 'late' ? 0.03 : context.position === 'early' ? -0.025 : 0;
 

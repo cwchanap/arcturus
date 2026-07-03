@@ -160,6 +160,13 @@ function getPosition(player: Player, players: Player[]): 'early' | 'middle' | 'l
 	const positionFromDealer = (playerIndex - dealerIndex + players.length) % players.length;
 
 	if (positionFromDealer === 0) return 'late';
+	// 3-handed: dealer=late, the seat immediately after the dealer acts first
+	// postflop (early), and the remaining seat is middle. Without this special
+	// case both non-dealer seats collapse to 'early' and 'middle' is unreachable.
+	// Mirrors PokerGame.getPlayerPosition so the fallback stays consistent.
+	if (players.length === 3) {
+		return positionFromDealer === 1 ? 'early' : 'middle';
+	}
 	if (positionFromDealer <= 2) return 'early';
 	if (positionFromDealer === 3) return 'middle';
 	return 'late';

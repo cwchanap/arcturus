@@ -95,6 +95,12 @@ export interface AIDecision {
 	reasoning?: string; // For debug/telemetry
 }
 
+export type AIPersonality =
+	| 'tight-passive'
+	| 'tight-aggressive'
+	| 'loose-passive'
+	| 'loose-aggressive';
+
 export interface GameContext {
 	player: Player;
 	players: Player[];

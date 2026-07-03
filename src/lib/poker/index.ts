@@ -13,6 +13,7 @@ export type {
 	GameState,
 	HandEvaluation,
 	AIDecision,
+	AIPersonality,
 	GameContext,
 	AIStrategy,
 	AIDecisionLog,
@@ -74,7 +75,7 @@ export {
 } from './handEvaluator';
 
 // AI strategy
-export type { AIPersonality, AIConfig } from './aiStrategy';
+export type { AIConfig } from './aiStrategy';
 export { createAIConfig, makeAIDecision } from './aiStrategy';
 
 // AI difficulty
@@ -92,7 +93,7 @@ export { classifyBoardTexture } from './aiBoardTexture';
 
 // AI visible equity
 export type { VisibleEquityEstimate } from './aiEquity';
-export { buildUnknownDeck, estimateVisibleEquity } from './aiEquity';
+export { estimateVisibleEquity } from './aiEquity';
 
 // AI bet sizing
 export type { BetSizingInput } from './aiBetSizing';

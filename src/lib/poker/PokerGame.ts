@@ -32,7 +32,12 @@ import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
-import { isGuestModeValue, shouldSyncAccountChips } from '../public-game-session';
+import {
+	isGuestModeValue,
+	loadGuestBankroll,
+	persistGuestBankroll,
+	shouldSyncAccountChips,
+} from '../public-game-session';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
@@ -94,6 +99,8 @@ export class PokerGame {
 	private turnTransitionToken = 0;
 	private dealSyncRetryCount = 0;
 	private isGuestMode = false;
+	private guestUserId = '';
+	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
 	constructor() {
 		this.deck = new DeckManager();
@@ -118,9 +125,18 @@ export class PokerGame {
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 
 		const userId = balanceEl?.dataset?.userId ?? '';
+		this.guestUserId = userId;
 		this.pendingSyncsStorageKey = userId
 			? `${PENDING_SYNCS_STORAGE_KEY_PREFIX}:${userId}`
 			: PENDING_SYNCS_STORAGE_KEY_PREFIX;
+
+		if (this.isGuestMode && this.hasServerSyncedBalance) {
+			this.serverSyncedBalance = loadGuestBankroll(
+				PokerGame.GUEST_BANKROLL_GAME_KEY,
+				userId,
+				this.serverSyncedBalance,
+			);
+		}
 
 		try {
 			localStorage.removeItem(PENDING_SYNCS_STORAGE_KEY_PREFIX);
@@ -465,6 +481,13 @@ export class PokerGame {
 
 	private syncChips(outcome?: ChipSyncOutcome): void {
 		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
+			if (this.isGuestMode) {
+				persistGuestBankroll(
+					PokerGame.GUEST_BANKROLL_GAME_KEY,
+					this.guestUserId,
+					this.players[0]?.chips ?? this.serverSyncedBalance,
+				);
+			}
 			this.humanChipsBefore = 0;
 			return;
 		}

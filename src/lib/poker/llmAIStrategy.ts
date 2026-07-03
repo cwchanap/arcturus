@@ -3,9 +3,8 @@
  * Falls back to rule-based strategy on failure
  */
 
-import type { AIDecision, GameContext, Card } from './types';
+import type { AIDecision, AIPersonality, GameContext, Card } from './types';
 import { getSuitSymbol } from '../card-format';
-import type { AIPersonality } from './aiStrategy';
 import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStrategy';
 import type { AIDifficulty } from './aiDifficulty';
 import { getHighestBet, getCallAmount } from './player';

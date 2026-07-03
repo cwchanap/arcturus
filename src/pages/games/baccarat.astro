@@ -452,7 +452,12 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 	} from '../../lib/baccarat/balance-sync-state';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
-	import { isGuestModeValue, shouldSyncAccountChips } from '../../lib/public-game-session';
+	import {
+		isGuestModeValue,
+		loadGuestBankroll,
+		persistGuestBankroll,
+		shouldSyncAccountChips,
+	} from '../../lib/public-game-session';
 
 	// Get initial data
 	const root = document.getElementById('baccarat-root');
@@ -461,14 +466,19 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 	}
 	const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 	const isGuestMode = isGuestModeValue(root.dataset.guestMode);
+	const userId = root.dataset.userId ?? 'anonymous';
+	const guestBankrollGameKey = 'baccarat';
+	const startingBalance = isGuestMode
+		? loadGuestBankroll(guestBankrollGameKey, userId, initialBalance)
+		: initialBalance;
 
 	// Initialize game
 	const game = new BaccaratGame({
-		initialBalance,
+		initialBalance: startingBalance,
 		settings: {
 			minBet: 10,
 			maxBet: 5000,
-			startingChips: initialBalance,
+			startingChips: startingBalance,
 			animationSpeed: 'normal',
 			llmEnabled: false,
 			soundEnabled: true,
@@ -822,10 +832,13 @@ const runtimeUserId = gameSession.isGuest ? 'anonymous' : gameSession.userId;
 		statusEl.classList.add('hidden');
 	}
 
-	let lastSyncedBalance = initialBalance;
+	let lastSyncedBalance = startingBalance;
 
 	async function syncBalance(roundNetDelta: number) {
 		if (!shouldSyncAccountChips({ isGuestMode })) {
+			if (isGuestMode) {
+				persistGuestBankroll(guestBankrollGameKey, userId, game.getBalance());
+			}
 			return;
 		}
 

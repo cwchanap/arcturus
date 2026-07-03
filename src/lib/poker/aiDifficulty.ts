@@ -1,4 +1,4 @@
-import type { AIPersonality } from './aiStrategy';
+import type { AIPersonality } from './types';
 
 export type AIDifficulty = 'easy' | 'medium' | 'hard';
 

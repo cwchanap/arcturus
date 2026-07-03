@@ -59,3 +59,31 @@ export function isGuestModeValue(value: string | null | undefined): boolean {
 export function shouldSyncAccountChips({ isGuestMode }: { isGuestMode: boolean }): boolean {
 	return !isGuestMode;
 }
+
+export function getGuestBankrollStorageKey(gameKey: string, userId: string): string {
+	return `${gameKey}-bankroll:${userId}`;
+}
+
+export function loadGuestBankroll(gameKey: string, userId: string, fallback: number): number {
+	if (!userId) return fallback;
+	try {
+		const raw = localStorage.getItem(getGuestBankrollStorageKey(gameKey, userId));
+		if (!raw) return fallback;
+		const parsed = Number(raw);
+		return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : fallback;
+	} catch {
+		return fallback;
+	}
+}
+
+export function persistGuestBankroll(gameKey: string, userId: string, balance: number): void {
+	if (!userId) return;
+	try {
+		localStorage.setItem(
+			getGuestBankrollStorageKey(gameKey, userId),
+			String(Math.max(0, Math.trunc(balance))),
+		);
+	} catch {
+		// best effort
+	}
+}

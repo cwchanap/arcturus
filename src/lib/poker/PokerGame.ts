@@ -34,6 +34,7 @@ import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager, isAIPersonality, isAISpeed } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 import {
+	DEFAULT_GUEST_GAME_BALANCE,
 	isGuestModeValue,
 	loadGuestBankroll,
 	persistGuestBankroll,
@@ -865,6 +866,7 @@ export class PokerGame {
 				if (player.id === 0) {
 					if (effectiveServerBalance <= 0) {
 						this.updateGameStatus('Game Over - You ran out of chips!');
+						this.showRebuyButton();
 						return; // Stop the game
 					}
 					this.players[0] = { ...this.players[0], chips: effectiveServerBalance };
@@ -931,6 +933,7 @@ export class PokerGame {
 		this.ui.updateOpponentUI(this.players);
 		this.ui.updateUI(this.pot, this.players[0]);
 		this.aiRival.highlightSuggestedMove(null);
+		this.hideRebuyButton();
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
@@ -1290,8 +1293,46 @@ export class PokerGame {
 		}
 	}
 
+	private showRebuyButton(): void {
+		const rebuyBtn = document.getElementById('btn-rebuy') as HTMLButtonElement | null;
+		if (rebuyBtn) {
+			rebuyBtn.hidden = false;
+		}
+	}
+
+	private hideRebuyButton(): void {
+		const rebuyBtn = document.getElementById('btn-rebuy') as HTMLButtonElement | null;
+		if (rebuyBtn) {
+			rebuyBtn.hidden = true;
+		}
+	}
+
+	/**
+	 * Reset a busted guest's bankroll to the default guest balance and deal a
+	 * fresh hand. Authenticated players cannot rebuy client-side — their chip
+	 * balance lives on the server and must be topped up through missions or
+	 * other server-side flows.
+	 */
+	private async rebuyBustedGuest(): Promise<void> {
+		if (!this.isGuestMode) return;
+
+		this.serverSyncedBalance = DEFAULT_GUEST_GAME_BALANCE;
+		persistGuestBankroll(
+			PokerGame.GUEST_BANKROLL_GAME_KEY,
+			this.guestUserId,
+			DEFAULT_GUEST_GAME_BALANCE,
+		);
+
+		// Reflect the restored balance in the DOM before dealing.
+		this.players[0] = { ...this.players[0], chips: DEFAULT_GUEST_GAME_BALANCE };
+		this.ui.updateUI(this.pot, this.players[0]);
+		this.hideRebuyButton();
+		await this.dealNewHand();
+	}
+
 	private attachEventListeners() {
 		document.getElementById('btn-deal')?.addEventListener('click', () => this.dealNewHand());
+		document.getElementById('btn-rebuy')?.addEventListener('click', () => this.rebuyBustedGuest());
 
 		document.getElementById('btn-fold')?.addEventListener('click', () => {
 			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;

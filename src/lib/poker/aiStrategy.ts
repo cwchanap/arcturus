@@ -17,25 +17,7 @@ import { clamp } from './aiMath';
 export interface AIConfig {
 	personality: AIPersonality;
 	difficulty: AIDifficulty;
-	bluffFrequency: number;
-	aggressionLevel: number;
 	random?: () => number;
-}
-
-function basePersonalityTuning(personality: AIPersonality): {
-	bluffFrequency: number;
-	aggressionLevel: number;
-} {
-	switch (personality) {
-		case 'tight-aggressive':
-			return { bluffFrequency: 0.15, aggressionLevel: 0.75 };
-		case 'tight-passive':
-			return { bluffFrequency: 0.05, aggressionLevel: 0.25 };
-		case 'loose-aggressive':
-			return { bluffFrequency: 0.25, aggressionLevel: 0.85 };
-		case 'loose-passive':
-			return { bluffFrequency: 0.1, aggressionLevel: 0.35 };
-	}
 }
 
 export function createAIConfig(
@@ -45,7 +27,6 @@ export function createAIConfig(
 	return {
 		personality,
 		difficulty,
-		...basePersonalityTuning(personality),
 	};
 }
 

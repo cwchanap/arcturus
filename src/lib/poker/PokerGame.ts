@@ -4,7 +4,7 @@
  */
 
 import type { Card, Player, BettingRound, GameContext, GameSettings } from './types';
-import type { AIConfig } from './aiStrategy';
+import type { AIConfig, AIPersonality, AIDifficulty } from './index';
 import {
 	BIG_BLIND,
 	createPlayer,
@@ -84,6 +84,7 @@ export class PokerGame {
 	private lastRaiseAmount = BIG_BLIND;
 	private isProcessingAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
+	private aiRandom?: () => number;
 	private pendingChipReset = false; // Flag to reset chips on next deal
 	private hasServerSyncedBalance = false;
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
@@ -104,7 +105,8 @@ export class PokerGame {
 	private guestUserId = '';
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
-	constructor() {
+	constructor(aiRandom?: () => number) {
+		this.aiRandom = aiRandom;
 		this.deck = new DeckManager();
 		this.ui = new PokerUIRenderer();
 		this.aiRival = new AIRivalAssistant();
@@ -734,6 +736,11 @@ export class PokerGame {
 		}
 	}
 
+	private buildAIConfig(personality: AIPersonality, difficulty: AIDifficulty): AIConfig {
+		const base = createAIConfig(personality, difficulty);
+		return this.aiRandom ? { ...base, random: this.aiRandom } : base;
+	}
+
 	private initPlayers() {
 		const settings = this.settingsManager.getSettings();
 		this.players = [
@@ -744,8 +751,8 @@ export class PokerGame {
 		this.players[this.dealerIndex].isDealer = true;
 
 		// Assign AI personalities and difficulties from settings
-		this.aiConfigs.set(1, createAIConfig(settings.aiPersonality1, settings.aiDifficulty1));
-		this.aiConfigs.set(2, createAIConfig(settings.aiPersonality2, settings.aiDifficulty2));
+		this.aiConfigs.set(1, this.buildAIConfig(settings.aiPersonality1, settings.aiDifficulty1));
+		this.aiConfigs.set(2, this.buildAIConfig(settings.aiPersonality2, settings.aiDifficulty2));
 
 		// Update blinds from settings
 		this.minimumBet = settings.bigBlind;
@@ -1541,8 +1548,8 @@ export class PokerGame {
 			});
 
 			// Update AI configs
-			this.aiConfigs.set(1, createAIConfig(aiPersonality1, aiDifficulty1));
-			this.aiConfigs.set(2, createAIConfig(aiPersonality2, aiDifficulty2));
+			this.aiConfigs.set(1, this.buildAIConfig(aiPersonality1, aiDifficulty1));
+			this.aiConfigs.set(2, this.buildAIConfig(aiPersonality2, aiDifficulty2));
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;
@@ -1564,8 +1571,8 @@ export class PokerGame {
 
 			// Update AI configs to match reset defaults
 			const defaults = this.settingsManager.getSettings();
-			this.aiConfigs.set(1, createAIConfig(defaults.aiPersonality1, defaults.aiDifficulty1));
-			this.aiConfigs.set(2, createAIConfig(defaults.aiPersonality2, defaults.aiDifficulty2));
+			this.aiConfigs.set(1, this.buildAIConfig(defaults.aiPersonality1, defaults.aiDifficulty1));
+			this.aiConfigs.set(2, this.buildAIConfig(defaults.aiPersonality2, defaults.aiDifficulty2));
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;

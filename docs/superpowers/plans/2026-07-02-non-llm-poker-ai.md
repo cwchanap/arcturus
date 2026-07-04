@@ -800,7 +800,7 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 	const unknownCards = buildUnknownDeck([...context.player.hand, ...context.communityCards]).length;
 
 	const streetMultiplier =
-		context.bettingRound === 'flop' ? 2 : context.bettingRound === 'turn' ? 1 : 0.7;
+		context.bettingRound === 'flop' ? 2 : context.bettingRound === 'turn' ? 1 : 0;
 	const drawPotential = clamp(outs * 0.018 * streetMultiplier, 0, 0.34);
 	const opponentPenalty = clamp(activeOpponents * 0.045, 0, 0.18);
 	const texturePenalty = context.communityCards.length === 0 ? 0 : texture.pressure * 0.12;
@@ -1733,3 +1733,17 @@ If no cleanup was needed, skip this commit.
 - `PokerGame.ts` remains responsible for executing and validating legal actions.
 - The LLM path remains optional and should only change by passing difficulty into the existing non-LLM fallback.
 - Prefer deterministic tests with `random: () => 0.99` or `random: () => 0.01` where asserting specific bluff or non-bluff behavior.
+
+---
+
+## Implementation Deviations from Plan
+
+The shipped `src/lib/poker/aiEquity.ts` differs from the snippet above in these intentional ways:
+
+1. **River `streetMultiplier`: `0.7` → `0`.** At the river all community cards are out, so no draws remain to hit. A non-zero multiplier inflated river equity for drawing hands that can no longer improve. Set to `0` so river equity is driven by made-hand strength only.
+2. **Added `pairedHighCardPenalty`.** When the board is paired with two or more high cards and made strength is below `0.55`, a `0.4` penalty is subtracted from equity. This discourages the AI from overvaluing one-pair/weak-pair hands on coordinated paired boards where an opponent likely has trips or a better two pair.
+
+Additional defensive hardening not in the plan snippet (no behavior change on well-formed inputs):
+
+- Preflop branch guards `context.player.hand.length >= 2` before reading `hand[0]`/`hand[1]`, defaulting to `0` strength for malformed state.
+- The returned `VisibleEquityEstimate` exposes `textureKind` (the classified board-texture label) and drops the `unknownCards` count that the plan listed but no caller consumed.

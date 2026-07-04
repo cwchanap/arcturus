@@ -5,7 +5,7 @@ import {
 	evaluatePostflopHand,
 	evaluatePreflopHand,
 } from './handEvaluator';
-import { classifyBoardTexture } from './aiBoardTexture';
+import { classifyBoardTexture, type BoardTextureKind } from './aiBoardTexture';
 import { clamp } from './aiMath';
 
 export interface VisibleEquityEstimate {
@@ -16,6 +16,7 @@ export interface VisibleEquityEstimate {
 	callAmount: number;
 	outs: number;
 	texturePressure: number;
+	textureKind: BoardTextureKind;
 	activeOpponents: number;
 }
 
@@ -65,6 +66,7 @@ export function estimateVisibleEquity(context: GameContext): VisibleEquityEstima
 		callAmount,
 		outs,
 		texturePressure: texture.pressure,
+		textureKind: texture.kind,
 		activeOpponents,
 	};
 }

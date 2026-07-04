@@ -109,7 +109,6 @@ export function initBlackjackClient(): void {
 	const rootEl = document.getElementById('blackjack-root');
 	const userId = rootEl?.getAttribute('data-user-id') ?? 'anonymous';
 	const isGuestMode = isGuestModeValue(rootEl?.dataset?.guestMode);
-	const isAnonymousUser = userId === 'anonymous';
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
@@ -406,14 +405,12 @@ export function initBlackjackClient(): void {
 			// Starting chips is a *settings* value. For authenticated users, chip balance is
 			// server-authoritative (to avoid rate-limit / optimistic-lock flakiness), so we do not
 			// attempt to sync or overwrite the user's real balance here.
-			// For anonymous/local sessions, apply it immediately to the in-memory game balance.
-			if (isAnonymousUser && newStartingChips !== previousStartingChips) {
+			// For guest sessions, apply it immediately to the in-memory game balance.
+			if (isGuestMode && newStartingChips !== previousStartingChips) {
 				const balanceUpdated = game.setBalance(newStartingChips);
 				if (balanceUpdated) {
 					serverSyncedBalance = newStartingChips;
-					if (isGuestMode) {
-						persistGuestBankroll(guestBankrollGameKey, userId, newStartingChips);
-					}
+					persistGuestBankroll(guestBankrollGameKey, userId, newStartingChips);
 					renderGame();
 				}
 			}

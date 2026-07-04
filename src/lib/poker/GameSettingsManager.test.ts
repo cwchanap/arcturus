@@ -204,6 +204,34 @@ describe('GameSettingsManager', () => {
 			expect(settings.aiDifficulty2).toBe('hard');
 		});
 
+		test('drops invalid enum values and retains existing setting', () => {
+			manager.updateSettings({ aiSpeed: 'fast', aiPersonality1: 'loose-passive' });
+			manager.updateSettings({
+				aiSpeed: 'turbo' as never,
+				aiPersonality1: 'maniac' as never,
+				aiDifficulty1: 'impossible' as never,
+			});
+
+			const settings = manager.getSettings();
+			expect(settings.aiSpeed).toBe('fast');
+			expect(settings.aiPersonality1).toBe('loose-passive');
+			expect(settings.aiDifficulty1).toBe(DEFAULT_SETTINGS.aiDifficulty1);
+		});
+
+		test('drops non-positive numeric values', () => {
+			manager.updateSettings({ startingChips: 2000, smallBlind: 10, bigBlind: 20 });
+			manager.updateSettings({
+				startingChips: 0,
+				smallBlind: -5,
+				bigBlind: NaN,
+			});
+
+			const settings = manager.getSettings();
+			expect(settings.startingChips).toBe(2000);
+			expect(settings.smallBlind).toBe(10);
+			expect(settings.bigBlind).toBe(20);
+		});
+
 		test('updates LLM AI setting', () => {
 			manager.updateSettings({ useLLMAI: true });
 

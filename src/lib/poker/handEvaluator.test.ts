@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Card, Player } from './types';
-import { determineShowdownWinners } from './handEvaluator';
+import {
+	determineShowdownWinners,
+	estimateDrawingOuts,
+	evaluatePostflopHand,
+} from './handEvaluator';
 import { createPlayer } from './player';
 
 type CardSpec = [value: string, suit: Card['suit']];
@@ -376,5 +380,71 @@ describe('determineShowdownWinners()', () => {
 		);
 		expect(winners).toHaveLength(1);
 		expect(winners[0].name).toBe('Player 1');
+	});
+});
+
+describe('evaluatePostflopHand()', () => {
+	function hole(value: string, suit: Card['suit']): Card {
+		return { value, suit, rank: CARD_VALUE_TO_RANK[value] };
+	}
+
+	test('detects a wheel straight (A-2-3-4-5) as a straight', () => {
+		// Player holds A-2, board brings 3-4-5 → wheel straight.
+		const hand = [hole('A', 'spades'), hole('2', 'hearts')];
+		const community = [hole('3', 'clubs'), hole('4', 'diamonds'), hole('5', 'spades')];
+
+		const wheelStrength = evaluatePostflopHand(hand, community);
+
+		// Compare against a non-straight high-card hand of the same cards minus the wheel.
+		const highCardStrength = evaluatePostflopHand(
+			[hole('A', 'spades'), hole('K', 'hearts')],
+			[hole('3', 'clubs'), hole('4', 'diamonds'), hole('7', 'spades')],
+		);
+
+		// A straight (0.8) must beat ace-high (0.35).
+		expect(wheelStrength).toBeGreaterThanOrEqual(0.8);
+		expect(wheelStrength).toBeGreaterThan(highCardStrength);
+	});
+
+	test('detects a regular straight postflop', () => {
+		const hand = [hole('9', 'spades'), hole('10', 'hearts')];
+		const community = [hole('J', 'clubs'), hole('Q', 'diamonds'), hole('K', 'spades')];
+
+		const strength = evaluatePostflopHand(hand, community);
+		expect(strength).toBeGreaterThanOrEqual(0.8);
+	});
+});
+
+describe('estimateDrawingOuts()', () => {
+	function hole(value: string, suit: Card['suit']): Card {
+		return { value, suit, rank: CARD_VALUE_TO_RANK[value] };
+	}
+
+	test('counts pair-to-trips outs for a single pair with no trips', () => {
+		// Player has a pair of 9s, no trips on board.
+		const hand = [hole('9', 'spades'), hole('9', 'hearts')];
+		const community = [hole('K', 'clubs'), hole('4', 'diamonds'), hole('2', 'spades')];
+
+		const outs = estimateDrawingOuts(hand, community);
+		// Should include the 2 trip outs for the pair.
+		expect(outs).toBeGreaterThanOrEqual(2);
+	});
+
+	test('does not add pair outs when trips are already present', () => {
+		// Board has trips (KKK); player holds a pair of 9s.
+		// With trips already made, the pair-to-trips outs should not double-count.
+		const hand = [hole('9', 'spades'), hole('9', 'hearts')];
+		const community = [hole('K', 'clubs'), hole('K', 'diamonds'), hole('K', 'spades')];
+
+		const tripsOuts = estimateDrawingOuts(hand, community);
+
+		// Compare against a single-pair no-trips scenario.
+		const pairOuts = estimateDrawingOuts(
+			[hole('9', 'spades'), hole('9', 'hearts')],
+			[hole('K', 'clubs'), hole('4', 'diamonds'), hole('2', 'spades')],
+		);
+
+		// Trips scenario must not report pair-draw outs; lone-pair should.
+		expect(tripsOuts).toBeLessThan(pairOuts);
 	});
 });

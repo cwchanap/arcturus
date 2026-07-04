@@ -112,6 +112,10 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 	// Evaluate hand
 	if (counts[0] === 4) return 0.95; // Four of a kind
 	if (counts[0] === 3 && counts[1] === 2) return 0.9; // Full house
+	// Known simplification: hasFlush && hasStraight can be true when the flush
+	// and straight use different cards, so this over-reports straight flushes.
+	// Acceptable here — this is a heuristic equity scalar fed into aiEquity,
+	// not used at showdown (showdown uses the precise evaluator below).
 	if (hasFlush && hasStraight) return 0.99; // Straight flush
 	if (hasFlush) return 0.85; // Flush
 	if (hasStraight) return 0.8; // Straight

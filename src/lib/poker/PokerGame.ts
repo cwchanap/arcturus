@@ -866,7 +866,11 @@ export class PokerGame {
 				if (player.id === 0) {
 					if (effectiveServerBalance <= 0) {
 						this.updateGameStatus('Game Over - You ran out of chips!');
-						this.showRebuyButton();
+						// Rebuy is guest-only; authed balances live on the server and
+						// must be topped up through missions or other server flows.
+						if (this.isGuestMode) {
+							this.showRebuyButton();
+						}
 						return; // Stop the game
 					}
 					this.players[0] = { ...this.players[0], chips: effectiveServerBalance };

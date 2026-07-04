@@ -1742,7 +1742,10 @@ const clientUserId = gameSession.clientUserId;
 				const { achievements } = (
 					event as CustomEvent<{ achievements: Array<{ id: string; name: string; icon: string }> }>
 				).detail;
-				enqueue(achievements);
+				// Validate achievements is an array before calling enqueue
+				if (Array.isArray(achievements)) {
+					enqueue(achievements);
+				}
 			});
 		}
 

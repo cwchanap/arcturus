@@ -501,6 +501,32 @@ describe('GameSettingsManager', () => {
 			expect(settings.aiDifficulty2).toBe(DEFAULT_AI_DIFFICULTY);
 		});
 
+		test('invalid persisted numeric and enum fields normalize to defaults on load', () => {
+			// Corrupted localStorage with out-of-domain values for fields that
+			// updateSettings validates but loadSettings previously did not.
+			mockLocalStorage.store['poker_game_settings'] = JSON.stringify({
+				...DEFAULT_SETTINGS,
+				startingChips: -5,
+				smallBlind: 0,
+				bigBlind: NaN,
+				aiSpeed: 'turbo',
+				aiPersonality1: 'maniac',
+				aiPersonality2: 42,
+				useLLMAI: 'yes',
+			});
+
+			const manager2 = new GameSettingsManager();
+			const settings = manager2.getSettings();
+
+			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
+			expect(settings.smallBlind).toBe(DEFAULT_SETTINGS.smallBlind);
+			expect(settings.bigBlind).toBe(DEFAULT_SETTINGS.bigBlind);
+			expect(settings.aiSpeed).toBe(DEFAULT_SETTINGS.aiSpeed);
+			expect(settings.aiPersonality1).toBe(DEFAULT_SETTINGS.aiPersonality1);
+			expect(settings.aiPersonality2).toBe(DEFAULT_SETTINGS.aiPersonality2);
+			expect(settings.useLLMAI).toBe(DEFAULT_SETTINGS.useLLMAI);
+		});
+
 		test('multiple rapid updates are handled correctly', () => {
 			for (let i = 0; i < 10; i++) {
 				manager.updateSettings({ startingChips: i });

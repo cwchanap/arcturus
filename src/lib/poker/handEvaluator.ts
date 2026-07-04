@@ -151,20 +151,45 @@ export function estimateDrawingOuts(hand: Card[], communityCards: Card[]): numbe
 
 	let outs = 0;
 
-	// Flush draw (4 of same suit)
+	// Detect an already-made straight so we don't count straight-draw outs
+	// behind a completed hand. Mirrors the check in evaluatePostflopHand.
+	const sortedValues = Object.keys(valueCounts)
+		.map(Number)
+		.sort((a, b) => b - a);
+	let hasStraight = false;
+	for (let i = 0; i <= sortedValues.length - 5; i++) {
+		if (sortedValues[i] - sortedValues[i + 4] === 4) {
+			hasStraight = true;
+			break;
+		}
+	}
+	// Wheel: A-2-3-4-5. Ace (14) plus 5-4-3-2.
+	if (
+		!hasStraight &&
+		valueCounts[14] &&
+		valueCounts[5] &&
+		valueCounts[4] &&
+		valueCounts[3] &&
+		valueCounts[2]
+	) {
+		hasStraight = true;
+	}
+
+	// Flush draw (4 of same suit). A made flush (5+) is naturally excluded
+	// since maxSuitCount would be >= 5, not === 4.
 	const maxSuitCount = Math.max(...Object.values(suitCounts));
 	if (maxSuitCount === 4) {
 		outs += 9; // 9 cards to complete flush
 	}
 
-	// Open-ended straight draw (simplified)
-	const sortedValues = Object.keys(valueCounts)
-		.map(Number)
-		.sort((a, b) => b - a);
-	for (let i = 0; i <= sortedValues.length - 4; i++) {
-		if (sortedValues[i] - sortedValues[i + 3] === 3) {
-			outs += 8; // 8 cards to complete straight
-			break;
+	// Open-ended straight draw (simplified). Skip when a straight is already
+	// made — the draw is irrelevant behind the completed hand.
+	if (!hasStraight) {
+		for (let i = 0; i <= sortedValues.length - 4; i++) {
+			if (sortedValues[i] - sortedValues[i + 3] === 3) {
+				outs += 8; // 8 cards to complete straight
+				break;
+			}
 		}
 	}
 

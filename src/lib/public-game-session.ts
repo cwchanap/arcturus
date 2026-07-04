@@ -33,6 +33,11 @@ export type PublicGameSession = {
  * surrogate across sessions and games, distinct users get distinct surrogates,
  * and the raw id is not recoverable from the output. This is sufficient for
  * DOM attribute + localStorage keying — it is NOT a security primitive.
+ *
+ * Collision expectation: 32-bit output means ~50% collision probability near
+ * ~65k distinct user ids (birthday bound). Acceptable while the user base is
+ * well below that scale; revisit if DOM/localStorage key collisions become
+ * observable.
  */
 export function hashUserId(userId: string): string {
 	let h = 0x811c9dc5;

@@ -85,29 +85,14 @@ export class GameSettingsManager {
 			const stored = localStorage.getItem(SETTINGS_KEY);
 			if (stored) {
 				const parsed = JSON.parse(stored);
-				// Filter out null/undefined values to prevent invalid states
-				const validSettings: Partial<GameSettings> = {};
-				for (const key in parsed) {
-					if (parsed[key] != null) {
-						// != null checks for both null and undefined
-						validSettings[key as keyof GameSettings] = parsed[key];
-					}
-				}
-				// Validate and merge with defaults to ensure all fields exist
-				const settings = {
+				// Route every field through the same domain validator used at
+				// write time so corrupted localStorage (e.g. bigBlind: -5) is
+				// dropped before merge rather than surviving into runtime state.
+				const sanitized = sanitizePartialSettings(DEFAULT_SETTINGS, parsed);
+				return {
 					...DEFAULT_SETTINGS,
-					...validSettings,
+					...sanitized,
 				};
-
-				if (!isAIDifficulty(settings.aiDifficulty1)) {
-					settings.aiDifficulty1 = DEFAULT_SETTINGS.aiDifficulty1;
-				}
-
-				if (!isAIDifficulty(settings.aiDifficulty2)) {
-					settings.aiDifficulty2 = DEFAULT_SETTINGS.aiDifficulty2;
-				}
-
-				return settings;
 			}
 		} catch (error) {
 			console.error('Failed to load settings:', error);

@@ -76,7 +76,10 @@ export function makeAIDecision(context: GameContext, config: AIConfig): AIDecisi
 	const raiseThreshold = clamp(profile.raiseThreshold + positionRaiseAdjustment, 0.3, 0.92);
 	const mistakeOffset = random() < profile.mistakeRate ? (random() < 0.5 ? -0.1 : 0.1) : 0;
 	const effectiveEquity = clamp(equityEstimate.equity + mistakeOffset, 0, 1);
-	const valueMadeHand = equityEstimate.madeStrength >= 0.7;
+	// Two-pair (0.6) and above count as a value made hand. Below that
+	// (single pair / high card) the hand is only raised via equity threshold
+	// or as a semi-bluff.
+	const valueMadeHand = equityEstimate.madeStrength >= 0.6;
 	const drawPressureTarget = canCheck ? 0.12 : equityEstimate.potOdds * 0.75;
 	const drawIsRelevant =
 		equityEstimate.drawPotential * profile.drawSensitivity > drawPressureTarget;

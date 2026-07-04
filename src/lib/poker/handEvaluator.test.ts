@@ -447,4 +447,18 @@ describe('estimateDrawingOuts()', () => {
 		// Trips scenario must not report pair-draw outs; lone-pair should.
 		expect(tripsOuts).toBeLessThan(pairOuts);
 	});
+
+	test('does not add straight-draw outs when a straight is already made', () => {
+		// Player + board form a made straight (6-7-8-9-10). The open-ended
+		// draw check would otherwise see 4 consecutive values and add 8 outs
+		// even though the straight is complete.
+		const hand = [hole('7', 'hearts'), hole('8', 'spades')];
+		const community = [hole('6', 'clubs'), hole('9', 'diamonds'), hole('10', 'spades')];
+
+		const outs = estimateDrawingOuts(hand, community);
+
+		// No flush draw, no pair, and the straight is already made, so the
+		// only possible outs are pair-to-trips (none here). Must be 0.
+		expect(outs).toBe(0);
+	});
 });

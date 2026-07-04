@@ -13,6 +13,7 @@ import {
 } from './index';
 import { PokerGame } from './PokerGame';
 import { DEFAULT_SETTINGS } from './types';
+import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
 
 // Mock DOM for PokerGame constructor
 function mockPokerGameDOM() {
@@ -25,6 +26,7 @@ function mockPokerGameDOM() {
 		querySelector?: () => MockElement | null;
 		querySelectorAll?: () => MockElement[];
 		disabled?: boolean;
+		hidden?: boolean;
 		value?: string;
 	}
 
@@ -42,6 +44,7 @@ function mockPokerGameDOM() {
 					querySelector: () => null,
 					querySelectorAll: () => [],
 					disabled: false,
+					hidden: false,
 					value: '0',
 				};
 			}
@@ -705,6 +708,76 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 		expect(game.players[0].chips).toBe(0);
 		expect(game.humanChipsBefore).toBe(0);
+	});
+
+	test('guest rebuy resets bankroll to default and deals a new hand', async () => {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '0',
+				balanceAvailable: 'true',
+				guestMode: 'true',
+				userId: 'guest-bust',
+			},
+			innerHTML: '',
+			textContent: '$0',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const storage: Record<string, string> = {};
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: (key: string, value: string) => {
+				storage[key] = value;
+			},
+			removeItem: (key: string) => {
+				delete storage[key];
+			},
+			clear: () => {
+				for (const k of Object.keys(storage)) delete storage[k];
+			},
+			key: () => null,
+			length: 0,
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			serverSyncedBalance: number;
+			humanChipsBefore: number;
+			isGuestMode: boolean;
+			processAITurn: () => Promise<void>;
+			dealNewHand: () => Promise<void>;
+			rebuyBustedGuest: () => Promise<void>;
+		};
+
+		game.processAITurn = async () => {};
+		game.serverSyncedBalance = 0;
+		game.players[0] = { ...game.players[0], chips: 0 };
+
+		// Busted guest deals → Game Over, rebuy button shown.
+		await game.dealNewHand();
+		expect(game.players[0].chips).toBe(0);
+		expect(elements['btn-rebuy']?.hidden).toBe(false);
+
+		// Rebuy restores the default guest balance and deals. Blinds are
+		// posted during the deal, so chips will be slightly below the reset
+		// amount — the key assertions are the bankroll reset and that the
+		// player is no longer busted.
+		await game.rebuyBustedGuest();
+		expect(game.serverSyncedBalance).toBe(DEFAULT_GUEST_GAME_BALANCE);
+		expect(game.players[0].chips).toBeGreaterThan(0);
+		expect(storage['poker-bankroll:guest-bust']).toBe(String(DEFAULT_GUEST_GAME_BALANCE));
+		expect(elements['btn-rebuy']?.hidden).toBe(true);
 	});
 
 	test('ignores a stale auto-deal callback after a manual deal starts a fresh hand', async () => {

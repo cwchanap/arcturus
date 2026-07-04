@@ -568,6 +568,56 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		}
 	});
 
+	test('guest mode syncs #player-balance DOM to the restored bankroll on init', () => {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		// Server-rendered DOM still shows the default $1,000 guest balance.
+		const balanceEl = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '1000',
+				balanceAvailable: 'true',
+				guestMode: 'true',
+				userId: 'guest-abc',
+			},
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = balanceEl;
+
+		// Restored guest bankroll is $850, differing from the server-rendered $1,000.
+		const storage: Record<string, string> = { 'poker-bankroll:guest-abc': '850' };
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: (key: string, value: string) => {
+				storage[key] = value;
+			},
+			removeItem: (key: string) => {
+				delete storage[key];
+			},
+			clear: () => {
+				for (const k of Object.keys(storage)) delete storage[k];
+			},
+			key: () => null,
+			length: 0,
+		};
+
+		const game = new PokerGame() as unknown as { players: Player[] };
+
+		expect(game.players[0].chips).toBe(850);
+		// DOM must be reconciled to the restored stack immediately, not left stale.
+		expect(balanceEl.textContent).toBe('$850');
+	});
+
 	test('keeps poker non-playable when the server balance is unavailable', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

@@ -145,6 +145,13 @@ export class PokerGame {
 		}
 
 		this.initPlayers();
+		// Guests restore their bankroll from localStorage, which may differ from
+		// the server-rendered #player-balance (default $1,000). Sync the DOM to
+		// the restored stack now so it doesn't disagree with the bet slider until
+		// the first action triggers updateUI.
+		if (this.isGuestMode && this.hasServerSyncedBalance) {
+			this.ui.updateUI(this.pot, this.players[0]);
+		}
 		this.attachEventListeners();
 		this.attachSettingsListeners();
 		this.renderSettingsPanel();

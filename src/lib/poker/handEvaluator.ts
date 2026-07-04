@@ -86,7 +86,7 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 	// Check for flush
 	const hasFlush = maxSuitCount >= 5;
 
-	// Check for straight (simplified - doesn't handle A-5)
+	// Check for straight, including the A-2-3-4-5 wheel where the ace plays low.
 	const sortedValues = Object.keys(valueCounts)
 		.map(Number)
 		.sort((a, b) => b - a);
@@ -96,6 +96,17 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 			hasStraight = true;
 			break;
 		}
+	}
+	// Wheel: A-2-3-4-5. Ace (14) plus 5-4-3-2.
+	if (
+		!hasStraight &&
+		valueCounts[14] &&
+		valueCounts[5] &&
+		valueCounts[4] &&
+		valueCounts[3] &&
+		valueCounts[2]
+	) {
+		hasStraight = true;
 	}
 
 	// Evaluate hand
@@ -157,10 +168,14 @@ export function estimateDrawingOuts(hand: Card[], communityCards: Card[]): numbe
 		}
 	}
 
-	// Pair with overcard
+	// Pair-to-trips draw: only count when the player has a single pair and no
+	// trips/quads already made (otherwise the pair is either the made hand being
+	// double-counted or irrelevant behind a stronger made hand).
 	const counts = Object.values(valueCounts);
-	if (counts.includes(2)) {
-		outs += 2; // 2 cards to improve pair
+	const pairCount = counts.filter((c) => c === 2).length;
+	const hasTripsOrBetter = counts.some((c) => c >= 3);
+	if (pairCount === 1 && !hasTripsOrBetter) {
+		outs += 2; // 2 cards to improve the pair to trips
 	}
 
 	return outs;

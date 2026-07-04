@@ -487,6 +487,15 @@ const clientUserId = gameSession.clientUserId;
 		},
 	});
 
+	// Persist the guest bankroll immediately after any balance mutation so a
+	// mid-round refresh restores the current (post-wager) balance instead of the
+	// pre-round balance. No-op for authenticated sessions (those sync to server).
+	const persistGuestBalance = () => {
+		if (isGuestMode) {
+			persistGuestBankroll(guestBankrollGameKey, userId, game.getBalance());
+		}
+	};
+
 	// State
 	let selectedChipAmount = 50;
 
@@ -561,6 +570,7 @@ const clientUserId = gameSession.clientUserId;
 			if (!type) return;
 			const result = game.placeBet(type, selectedChipAmount);
 			if (result.success) {
+				persistGuestBalance();
 				updateUI();
 			} else {
 				showStatus(result.error ?? 'Failed to place bet');
@@ -571,6 +581,7 @@ const clientUserId = gameSession.clientUserId;
 	// Clear bets
 	clearBetsButton.addEventListener('click', () => {
 		game.clearBets();
+		persistGuestBalance();
 		updateUI();
 	});
 

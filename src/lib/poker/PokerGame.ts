@@ -25,12 +25,13 @@ import {
 	distributePot,
 	determineShowdownWinners,
 	createAIConfig,
+	isAIDifficulty,
 	makeAIDecision,
 } from './index';
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
-import { GameSettingsManager } from './GameSettingsManager';
+import { GameSettingsManager, isAIPersonality, isAISpeed } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 import {
 	isGuestModeValue,
@@ -1460,23 +1461,26 @@ export class PokerGame {
 				return;
 			}
 
-			// Parse and validate values
+			// Parse and validate values. Enum values from <select> elements are
+			// validated against their domain and fall back to the current setting
+			// if the DOM is malformed.
 			const startingChips = parseInt(startingChipsEl.value || '500');
 			const smallBlind = parseInt(smallBlindEl.value || '5');
 			const bigBlind = parseInt(bigBlindEl.value || '10');
-			const aiSpeed = (aiSpeedEl.value || 'normal') as 'slow' | 'normal' | 'fast';
-			const aiPersonality1 = (aiPersonality1El.value || 'tight-aggressive') as
-				| 'tight-aggressive'
-				| 'loose-aggressive'
-				| 'tight-passive'
-				| 'loose-passive';
-			const aiPersonality2 = (aiPersonality2El.value || 'loose-aggressive') as
-				| 'tight-aggressive'
-				| 'loose-aggressive'
-				| 'tight-passive'
-				| 'loose-passive';
-			const aiDifficulty1 = (aiDifficulty1El.value || 'medium') as AIDifficultySetting;
-			const aiDifficulty2 = (aiDifficulty2El.value || 'medium') as AIDifficultySetting;
+			const currentSettings = this.settingsManager.getSettings();
+			const aiSpeed = isAISpeed(aiSpeedEl.value) ? aiSpeedEl.value : currentSettings.aiSpeed;
+			const aiPersonality1 = isAIPersonality(aiPersonality1El.value)
+				? aiPersonality1El.value
+				: currentSettings.aiPersonality1;
+			const aiPersonality2 = isAIPersonality(aiPersonality2El.value)
+				? aiPersonality2El.value
+				: currentSettings.aiPersonality2;
+			const aiDifficulty1: AIDifficultySetting = isAIDifficulty(aiDifficulty1El.value)
+				? aiDifficulty1El.value
+				: currentSettings.aiDifficulty1;
+			const aiDifficulty2: AIDifficultySetting = isAIDifficulty(aiDifficulty2El.value)
+				? aiDifficulty2El.value
+				: currentSettings.aiDifficulty2;
 			const useLLMAI = this.isGuestMode ? false : useLLMAIEl.checked;
 
 			this.settingsManager.updateSettings({

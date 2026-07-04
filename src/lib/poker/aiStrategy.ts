@@ -10,7 +10,6 @@ import {
 	getDifficultyProfile,
 	type AIDifficulty,
 } from './aiDifficulty';
-import { classifyBoardTexture } from './aiBoardTexture';
 import { chooseRaiseAmount } from './aiBetSizing';
 import { estimateVisibleEquity } from './aiEquity';
 import { clamp } from './aiMath';
@@ -57,7 +56,10 @@ export function makeAIDecision(context: GameContext, config: AIConfig): AIDecisi
 		config.personality,
 	);
 	const equityEstimate = estimateVisibleEquity(context);
-	const texture = classifyBoardTexture(context.communityCards);
+	const texture = {
+		pressure: equityEstimate.texturePressure,
+		kind: equityEstimate.textureKind,
+	};
 	const highestBet = Math.max(...context.players.map((player) => player.currentBet), 0);
 	const callAmount = Math.max(0, highestBet - context.player.currentBet);
 	const canCheck = callAmount === 0;

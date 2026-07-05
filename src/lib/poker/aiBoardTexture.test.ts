@@ -100,4 +100,19 @@ describe('classifyBoardTexture', () => {
 		expect(texture.straightDrawPossible).toBe(true);
 		expect(texture.tags).toContain('straight-pressure');
 	});
+
+	test('reports zero connectedness on a trips board where all ranks collapse', () => {
+		// Three of a kind on the flop: every card shares a rank, so the
+		// deduped sorted-rank set has length 1 and connectedness must be 0
+		// (the `sortedRanks.length < 2` branch).
+		const texture = classifyBoardTexture([
+			card('Q', 'spades', 12),
+			card('Q', 'hearts', 12),
+			card('Q', 'diamonds', 12),
+		]);
+
+		expect(texture.paired).toBe(true);
+		expect(texture.connectedness).toBe(0);
+		expect(texture.kind).toBe('dry');
+	});
 });

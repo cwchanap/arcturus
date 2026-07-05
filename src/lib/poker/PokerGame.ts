@@ -1187,7 +1187,10 @@ export class PokerGame {
 
 		btnFold.disabled = false;
 		btnCheck.disabled = callAmount > 0;
-		btnCall.disabled = callAmount <= 0 || callAmount > humanPlayer.chips;
+		// Keep Call enabled when the human has chips even if callAmount exceeds
+		// their stack: placeBet() clamps to remaining chips and marks the player
+		// all-in, so a short stack can still call off their stack through the UI.
+		btnCall.disabled = callAmount <= 0 || humanPlayer.chips <= 0;
 		btnRaise.disabled = humanPlayer.chips <= 0;
 	}
 

@@ -86,4 +86,18 @@ describe('classifyBoardTexture', () => {
 		expect(texture.pressure).toBeGreaterThan(0.5);
 		expect(texture.kind).toBe('wet');
 	});
+
+	test('detects straight pressure from a 3-rank cluster followed by an unrelated high card', () => {
+		// 2-3-4-K: the connected 2-3-4 cluster creates straight pressure even
+		// though a fixed 4-card slice would span to the King and miss it.
+		const texture = classifyBoardTexture([
+			card('2', 'spades', 2),
+			card('3', 'hearts', 3),
+			card('4', 'clubs', 4),
+			card('K', 'diamonds', 13),
+		]);
+
+		expect(texture.straightDrawPossible).toBe(true);
+		expect(texture.tags).toContain('straight-pressure');
+	});
 });

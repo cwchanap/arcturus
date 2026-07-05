@@ -448,6 +448,23 @@ describe('evaluatePostflopHand()', () => {
 		const strength = evaluatePostflopHand(hand, community);
 		expect(strength).toBe(0.99);
 	});
+
+	test('ranks two trips (KKK + 999) as a full house, not three of a kind', () => {
+		// Player holds KK, board brings K-9-9-9-x → two trips (KKK + 999).
+		// counts = [3, 3, 1]; a full house uses one trip as the pair.
+		// Must return 0.9 (full house), not 0.7 (trips).
+		const hand = [hole('K', 'spades'), hole('K', 'hearts')];
+		const community = [
+			hole('K', 'diamonds'),
+			hole('9', 'clubs'),
+			hole('9', 'diamonds'),
+			hole('9', 'hearts'),
+			hole('2', 'clubs'),
+		];
+
+		const strength = evaluatePostflopHand(hand, community);
+		expect(strength).toBe(0.9);
+	});
 });
 
 describe('estimateDrawingOuts()', () => {
@@ -494,6 +511,30 @@ describe('estimateDrawingOuts()', () => {
 
 		// No flush draw, no pair, and the straight is already made, so the
 		// only possible outs are pair-to-trips (none here). Must be 0.
+		expect(outs).toBe(0);
+	});
+
+	test('counts wheel draw (A-2-3-4) as 4 outs needing a 5', () => {
+		// Player holds A-4, board brings 2-3. A-2-3-4 needs a 5 to complete the
+		// wheel. This is a one-ended draw (4 outs), missed by the OESD check.
+		const hand = [hole('A', 'spades'), hole('4', 'hearts')];
+		const community = [hole('2', 'clubs'), hole('3', 'diamonds'), hole('9', 'spades')];
+
+		const outs = estimateDrawingOuts(hand, community);
+
+		// No flush draw (max 2 spades), no pair, no OESD → only the 4 wheel outs.
+		expect(outs).toBe(4);
+	});
+
+	test('does not count wheel draw outs when the wheel is already made', () => {
+		// Player holds A-2, board brings 3-4-5 → made wheel straight. The wheel
+		// draw check must not add 4 outs behind the completed hand.
+		const hand = [hole('A', 'spades'), hole('2', 'hearts')];
+		const community = [hole('3', 'clubs'), hole('4', 'diamonds'), hole('5', 'spades')];
+
+		const outs = estimateDrawingOuts(hand, community);
+
+		// Straight is made; no flush draw, no pair → 0 outs.
 		expect(outs).toBe(0);
 	});
 });

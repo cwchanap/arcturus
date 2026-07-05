@@ -68,4 +68,22 @@ describe('classifyBoardTexture', () => {
 		// not semi-wet.
 		expect(texture.kind).toBe('wet');
 	});
+
+	test('does not label turn/river flush draws as monotone', () => {
+		// 4-card board with 3 spades is a flush draw, not a monotone board.
+		// The `monotone` label is flop-only; pressure must stay high anyway.
+		const texture = classifyBoardTexture([
+			card('A', 'spades', 14),
+			card('8', 'spades', 8),
+			card('3', 'spades', 3),
+			card('2', 'clubs', 2),
+		]);
+
+		expect(texture.monotone).toBe(false);
+		expect(texture.tags).not.toContain('monotone');
+		expect(texture.tags).toContain('flush-draw');
+		// Flush-draw pressure is preserved even though the monotone label is off.
+		expect(texture.pressure).toBeGreaterThan(0.5);
+		expect(texture.kind).toBe('wet');
+	});
 });

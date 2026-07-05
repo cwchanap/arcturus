@@ -125,7 +125,7 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 	// Evaluate hand (highest to lowest strength)
 	if (hasStraightFlush) return 0.99; // Straight flush
 	if (counts[0] === 4) return 0.95; // Four of a kind
-	if (counts[0] === 3 && counts[1] === 2) return 0.9; // Full house
+	if (counts[0] === 3 && counts[1] >= 2) return 0.9; // Full house (incl. two trips)
 	if (hasFlush) return 0.85; // Flush
 	if (hasStraight) return 0.8; // Straight
 	if (counts[0] === 3) return 0.7; // Three of a kind
@@ -203,6 +203,15 @@ export function estimateDrawingOuts(hand: Card[], communityCards: Card[]): numbe
 				outs += 8; // 8 cards to complete straight
 				break;
 			}
+		}
+
+		// Wheel draw: A-2-3-4 (ace plays low) needs a 5 to complete A-2-3-4-5.
+		// This is a one-ended draw (4 outs), not an open-ender, and is missed by
+		// the consecutive-rank check above because the ace sits at rank 14.
+		// !hasStraight already implies no 5 is present (A-2-3-4-5 would be a made
+		// wheel straight), so no extra guard is needed.
+		if (valueCounts[14] && valueCounts[4] && valueCounts[3] && valueCounts[2]) {
+			outs += 4; // 4 fives to complete the wheel
 		}
 	}
 

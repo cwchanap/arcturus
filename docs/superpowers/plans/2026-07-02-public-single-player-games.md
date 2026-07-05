@@ -8,6 +8,12 @@
 
 **Tech Stack:** Astro SSR on Cloudflare Workers, TypeScript, Bun test runner, Playwright E2E, existing single-player game clients.
 
+> **Implementation deviations (post-spec):** The shipped code intentionally diverges from the spec below in three respects. The authoritative description of shipped behavior lives in `RELEASE_NOTES.md` (Unreleased → Guest Play); this plan is retained as the original step-by-step build record.
+>
+> 1. **Guest bankroll persistence.** The spec below gives guests a fresh `$1,000` bankroll on every page load (no `localStorage`). The shipped implementation persists the guest bankroll to `localStorage` under a per-game, per-user key (`{gameKey}-bankroll:{clientUserId}`) via `loadGuestBankroll` / `persistGuestBankroll` in `src/lib/public-game-session.ts`, so guests keep their progress across refreshes. This is a deliberate UX improvement; tests verify it.
+> 2. **Guest rebuy.** The shipped poker client gates a rebuy button on guest mode (busted guests can top back up), which is not part of the spec below. Authenticated users do not get the rebuy button (their balance lives on the server).
+> 3. **Opaque client user IDs.** The spec below renders `data-user-id={user.id}` (raw account id) and `userId: ''` for guests. The shipped implementation renders an opaque FNV-1a hash surrogate (`u_<base36>`) for authenticated users and `anonymous` for guests via `clientUserId` / `hashUserId`, so the raw account id is never exposed in the DOM. This also changed the `pendingChipSyncs` localStorage key namespace; see `RELEASE_NOTES.md` for the migration note.
+
 ---
 
 ## File Structure

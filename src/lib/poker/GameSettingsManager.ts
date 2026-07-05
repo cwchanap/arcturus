@@ -33,10 +33,7 @@ function isPositiveInteger(value: unknown): value is number {
  * valid member of its domain. Used at write time so invalid values from a
  * malformed DOM or stale localStorage never persist.
  */
-function sanitizePartialSettings(
-	current: GameSettings,
-	incoming: Partial<GameSettings>,
-): Partial<GameSettings> {
+function sanitizePartialSettings(incoming: Partial<GameSettings>): Partial<GameSettings> {
 	const sanitized: Partial<GameSettings> = {};
 
 	if (isPositiveInteger(incoming.startingChips)) {
@@ -88,7 +85,7 @@ export class GameSettingsManager {
 				// Route every field through the same domain validator used at
 				// write time so corrupted localStorage (e.g. bigBlind: -5) is
 				// dropped before merge rather than surviving into runtime state.
-				const sanitized = sanitizePartialSettings(DEFAULT_SETTINGS, parsed);
+				const sanitized = sanitizePartialSettings(parsed);
 				return {
 					...DEFAULT_SETTINGS,
 					...sanitized,
@@ -124,7 +121,7 @@ export class GameSettingsManager {
 	 * storage entry can never persist an out-of-domain setting.
 	 */
 	public updateSettings(newSettings: Partial<GameSettings>): void {
-		const sanitized = sanitizePartialSettings(this.settings, newSettings);
+		const sanitized = sanitizePartialSettings(newSettings);
 		this.settings = {
 			...this.settings,
 			...sanitized,

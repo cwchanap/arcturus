@@ -2,7 +2,7 @@
  * Pot calculation utilities
  */
 
-import type { Player } from './types';
+import type { Card, Player } from './types';
 
 /**
  * Calculates the total pot from all player bets
@@ -83,4 +83,44 @@ export function calculateSidePots(
  */
 export function getMinimumBet(bigBlind: number, lastRaiseAmount: number): number {
 	return Math.max(bigBlind, lastRaiseAmount);
+}
+
+/**
+ * Winner-determiner callback used by resolveSidePotAwards.
+ * Decoupled from handEvaluator so potCalculator stays dependency-free.
+ */
+export type WinnerDeterminer = (eligiblePlayers: Player[], communityCards: Card[]) => Player[];
+
+/**
+ * Resolves a showdown using side-pot eligibility. Each pot tier is awarded
+ * only to the best hand(s) among the non-folded players eligible for that
+ * tier, so a short all-in can never win chips from bets it did not cover.
+ *
+ * Returns a per-player award map (playerId -> chips to add) and the deduped
+ * list of players who won at least one tier (for hand-reveal UI).
+ */
+export function resolveSidePotAwards(
+	players: Player[],
+	communityCards: Card[],
+	determineWinners: WinnerDeterminer,
+): { awards: Map<number, number>; tierWinners: Player[] } {
+	const activePlayers = players.filter((p) => !p.folded);
+	const pots = calculateSidePots(players);
+	const awards = new Map<number, number>();
+	const tierWinners: Player[] = [];
+
+	for (const pot of pots) {
+		const eligible = activePlayers.filter((p) => pot.eligiblePlayerIds.includes(p.id));
+		if (eligible.length === 0) continue;
+		const winners = determineWinners(eligible, communityCards);
+		for (const w of winners) {
+			if (!tierWinners.some((p) => p.id === w.id)) tierWinners.push(w);
+		}
+		const distribution = distributePot(winners, pot.amount);
+		for (const [playerId, amount] of distribution.entries()) {
+			awards.set(playerId, (awards.get(playerId) ?? 0) + amount);
+		}
+	}
+
+	return { awards, tierWinners };
 }

@@ -611,6 +611,9 @@ const clientUserId = gameSession.clientUserId;
 
 			// Update balance/total immediately so tests don't read stale values while animations/network run
 			updateUI();
+			// Persist guest bankroll before animations so a mid-round refresh restores
+			// the post-deal balance instead of the pre-round balance.
+			persistGuestBalance();
 
 			await animateRound(outcome);
 			showResult(outcome);

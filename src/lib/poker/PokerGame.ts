@@ -22,7 +22,7 @@ import {
 	getHighestBet,
 	getCallAmount,
 	calculatePot,
-	distributePot,
+	resolveSidePotAwards,
 	determineShowdownWinners,
 	createAIConfig,
 	isAIDifficulty,
@@ -1244,39 +1244,41 @@ export class PokerGame {
 					this.syncChips('win');
 				}
 			} else {
-				// Multiple players - compare hands to find winner(s)
-				const winners = determineShowdownWinners(activePlayers, this.communityCards);
+				// Multiple players - resolve pots with side-pot eligibility so a
+				// short all-in can only win up to the tiers they contributed to.
+				const { awards, tierWinners } = resolveSidePotAwards(
+					this.players,
+					this.communityCards,
+					determineShowdownWinners,
+				);
 
-				// Reveal opponent hands at showdown
-				this.ui.revealOpponentHands(this.players, winners);
+				// Reveal opponent hands at showdown (across all tiers)
+				this.ui.revealOpponentHands(this.players, tierWinners);
 
-				const humanIsWinner = winners.some((w) => w.id === 0);
+				// Apply awards
+				for (const [playerId, amount] of awards.entries()) {
+					const player = this.players.find((p) => p.id === playerId);
+					if (player) {
+						this.players[playerId] = awardChips(player, amount);
+					}
+				}
 
-				if (winners.length === 1) {
-					// Single winner
-					const winner = winners[0];
-					this.players[winner.id] = awardChips(winner, this.pot);
+				// Status message
+				if (tierWinners.length === 1) {
+					const winner = tierWinners[0];
 					this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
-					// Only sync if human didn't already fold (fold handler is the canonical sync for folds)
-					if (!this.players[0].folded) {
-						this.syncChips(winner.id === 0 ? 'win' : 'loss');
-					}
 				} else {
-					// Tie - split pot (remainder chips go to first winner(s))
-					const distribution = distributePot(winners, this.pot);
-					for (const [playerId, amount] of distribution.entries()) {
-						const player = this.players.find((p) => p.id === playerId);
-						if (player) {
-							this.players[playerId] = awardChips(player, amount);
-						}
-					}
-					const winnerNames = winners.map((w) => w.name).join(', ');
+					const winnerNames = tierWinners.map((w) => w.name).join(', ');
 					this.updateGameStatus(`Tie! ${winnerNames} split the $${this.pot} pot 🤝`);
-					// Only sync if human didn't already fold (fold handler is the canonical sync for folds)
-					if (!this.players[0].folded) {
-						// Push if human is in the tie; loss if human was eliminated by others tying
-						this.syncChips(humanIsWinner ? 'push' : 'loss');
-					}
+				}
+
+				// Sync based on the human's net chip delta for the hand (accurate
+				// across side pots where the human may win some tiers and lose others)
+				if (!this.players[0].folded) {
+					const humanDelta = this.players[0].chips - this.humanChipsBefore;
+					const outcome: ChipSyncOutcome =
+						humanDelta > 0 ? 'win' : humanDelta < 0 ? 'loss' : 'push';
+					this.syncChips(outcome);
 				}
 			}
 			this.pot = 0;

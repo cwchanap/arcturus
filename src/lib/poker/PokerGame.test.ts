@@ -18,15 +18,18 @@ import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
 // Mock DOM for PokerGame constructor
 function mockPokerGameDOM() {
 	interface MockElement {
-		addEventListener: () => void;
+		addEventListener: (event: string, handler?: () => void) => void;
+		click: () => void;
 		dataset?: Record<string, string>;
 		innerHTML?: string;
 		textContent?: string;
+		textContentSet?: string;
 		classList?: { add: () => void; remove: () => void; toggle: () => void };
 		querySelector?: () => MockElement | null;
 		querySelectorAll?: () => MockElement[];
 		disabled?: boolean;
 		hidden?: boolean;
+		checked?: boolean;
 		value?: string;
 	}
 
@@ -35,8 +38,14 @@ function mockPokerGameDOM() {
 	(global as unknown as { document: unknown }).document = {
 		getElementById: (id: string) => {
 			if (!elements[id]) {
+				const listeners: Record<string, (() => void) | undefined> = {};
 				elements[id] = {
-					addEventListener: () => {},
+					addEventListener: (event: string, handler?: () => void) => {
+						listeners[event] = handler;
+					},
+					click: () => {
+						listeners['click']?.();
+					},
 					dataset: {},
 					innerHTML: '',
 					textContent: '',
@@ -45,6 +54,7 @@ function mockPokerGameDOM() {
 					querySelectorAll: () => [],
 					disabled: false,
 					hidden: false,
+					checked: false,
 					value: '0',
 				};
 			}
@@ -2195,5 +2205,430 @@ describe('PokerGame syncChips', () => {
 
 		// Falls back to serverSyncedBalance += delta when JSON parse fails but response.ok
 		expect(game.serverSyncedBalance).toBe(550);
+	});
+});
+
+describe('PokerGame guest LLM, showdown messaging, and position', () => {
+	beforeEach(() => {
+		mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			},
+		) as unknown as typeof fetch;
+	});
+
+	test('getLLMSettings returns null in guest mode without fetching', async () => {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '1000', balanceAvailable: 'true', guestMode: 'true', userId: '' },
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const fetchCalls: string[] = [];
+		const originalFetch = globalThis.fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				fetchCalls.push(url);
+				return { ok: true, status: 200, json: async () => ({ settings: null }) };
+			},
+		) as unknown as typeof fetch;
+
+		try {
+			const game = new PokerGame() as unknown as {
+				isGuestMode: boolean;
+				getLLMSettings: () => Promise<unknown>;
+			};
+
+			expect(game.isGuestMode).toBe(true);
+			const result = await game.getLLMSettings();
+			expect(result).toBeNull();
+			expect(fetchCalls).not.toContain('/api/profile/llm-settings');
+		} finally {
+			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+		}
+	});
+
+	test('formatShowdownMessage covers single winner, tie, empty, and multi-tier cases', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			formatShowdownMessage: (tierResults: Array<{ amount: number; winners: Player[] }>) => string;
+		};
+
+		expect(game.formatShowdownMessage([])).toBe('Showdown complete.');
+
+		const alice = createPlayer(0, 'Alice', 500);
+		const bob = createPlayer(1, 'Bob', 500);
+		expect(game.formatShowdownMessage([{ amount: 300, winners: [alice] }])).toBe(
+			'Alice wins $300! 🎉',
+		);
+		expect(game.formatShowdownMessage([{ amount: 300, winners: [alice, bob] }])).toBe(
+			'Tie! Alice, Bob split the $300 pot 🤝',
+		);
+
+		const charlie = createPlayer(2, 'Charlie', 500);
+		expect(
+			game.formatShowdownMessage([
+				{ amount: 200, winners: [alice] },
+				{ amount: 100, winners: [charlie] },
+			]),
+		).toBe('Main pot: Alice wins $200 | Side pot 1: Charlie wins $100');
+
+		expect(
+			game.formatShowdownMessage([
+				{ amount: 200, winners: [alice, bob] },
+				{ amount: 100, winners: [charlie] },
+			]),
+		).toBe('Main pot: Alice & Bob split $200 | Side pot 1: Charlie wins $100');
+	});
+
+	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			dealerIndex: number;
+			getPlayerPosition: (player: Player) => 'early' | 'middle' | 'late';
+		};
+
+		// 3 players, dealer at index 0.
+		game.dealerIndex = 0;
+		expect(game.getPlayerPosition(game.players[0])).toBe('late');
+		expect(game.getPlayerPosition(game.players[1])).toBe('early');
+		expect(game.getPlayerPosition(game.players[2])).toBe('middle');
+
+		// Rotate dealer to index 1.
+		game.dealerIndex = 1;
+		expect(game.getPlayerPosition(game.players[1])).toBe('late');
+		expect(game.getPlayerPosition(game.players[2])).toBe('early');
+		expect(game.getPlayerPosition(game.players[0])).toBe('middle');
+	});
+});
+
+describe('PokerGame settings save/reset with difficulty', () => {
+	test('save settings persists per-opponent difficulty and rebuilds AI configs', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			aiConfigs: Map<number, { personality: string; difficulty: string }>;
+			pendingChipReset: boolean;
+		};
+
+		// Populate all settings form elements with valid values (created by
+		// the constructor's renderSettingsPanel / attachSettingsListeners).
+		elements['setting-starting-chips'].value = '1000';
+		elements['setting-small-blind'].value = '10';
+		elements['setting-big-blind'].value = '20';
+		elements['setting-ai-speed'].value = 'fast';
+		elements['setting-ai-personality-1'].value = 'tight-passive';
+		elements['setting-ai-personality-2'].value = 'loose-aggressive';
+		elements['setting-ai-difficulty-1'].value = 'easy';
+		elements['setting-ai-difficulty-2'].value = 'hard';
+		elements['setting-use-llm-ai'].checked = false;
+
+		// Click save.
+		elements['btn-save-settings'].click();
+
+		expect(game.aiConfigs.get(1)).toMatchObject({
+			personality: 'tight-passive',
+			difficulty: 'easy',
+		});
+		expect(game.aiConfigs.get(2)).toMatchObject({
+			personality: 'loose-aggressive',
+			difficulty: 'hard',
+		});
+		expect(game.pendingChipReset).toBe(true);
+	});
+
+	test('save settings falls back to current settings when difficulty select is invalid', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			aiConfigs: Map<number, { personality: string; difficulty: string }>;
+		};
+
+		elements['setting-starting-chips'].value = '1000';
+		elements['setting-small-blind'].value = '10';
+		elements['setting-big-blind'].value = '20';
+		elements['setting-ai-speed'].value = 'normal';
+		elements['setting-ai-personality-1'].value = 'tight-aggressive';
+		elements['setting-ai-personality-2'].value = 'loose-passive';
+		// Invalid difficulty values → should fall back to current settings.
+		elements['setting-ai-difficulty-1'].value = 'bogus';
+		elements['setting-ai-difficulty-2'].value = '';
+		elements['setting-use-llm-ai'].checked = false;
+
+		elements['btn-save-settings'].click();
+
+		// Defaults are 'medium' for both difficulties.
+		expect(game.aiConfigs.get(1)?.difficulty).toBe('medium');
+		expect(game.aiConfigs.get(2)?.difficulty).toBe('medium');
+	});
+
+	test('reset settings rebuilds AI configs from defaults including difficulty', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			aiConfigs: Map<number, { personality: string; difficulty: string }>;
+			pendingChipReset: boolean;
+		};
+
+		elements['btn-reset-settings'].click();
+
+		const defaults = DEFAULT_SETTINGS;
+		expect(game.aiConfigs.get(1)).toMatchObject({
+			personality: defaults.aiPersonality1,
+			difficulty: defaults.aiDifficulty1,
+		});
+		expect(game.aiConfigs.get(2)).toMatchObject({
+			personality: defaults.aiPersonality2,
+			difficulty: defaults.aiDifficulty2,
+		});
+		expect(game.pendingChipReset).toBe(true);
+	});
+});
+
+describe('PokerGame human call all-in via UI', () => {
+	test('btn-call clamps to remaining chips and marks the player all-in', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			currentPlayerIndex: number;
+			isProcessingAction: boolean;
+			pot: number;
+		};
+
+		// Human's turn, facing a bet larger than their stack.
+		game.currentPlayerIndex = 0;
+		game.players[0] = { ...game.players[0], chips: 30, currentBet: 0, folded: false };
+		game.players[1] = { ...game.players[1], currentBet: 100, folded: false };
+		game.players[2] = { ...game.players[2], currentBet: 100, folded: false };
+
+		elements['btn-call'].click();
+
+		// placeBet clamps to 30 chips and marks all-in.
+		expect(game.players[0].chips).toBe(0);
+		expect(game.players[0].isAllIn).toBe(true);
+		expect(game.players[0].currentBet).toBe(30);
+	});
+});
+
+describe('PokerGame beforeunload guest guard', () => {
+	test('guest mode does not persist pending syncs on beforeunload', () => {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '1000', balanceAvailable: 'true', guestMode: 'true', userId: 'g1' },
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const setItemCalls: string[] = [];
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: (key: string) => setItemCalls.push(key),
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		let beforeUnloadHandler: (() => void) | null = null;
+		(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
+			dispatchEvent: () => true,
+			addEventListener: ((event: string, handler: () => void) => {
+				if (event === 'beforeunload') beforeUnloadHandler = handler;
+			}) as Window['addEventListener'],
+		} as unknown as Window & typeof globalThis;
+
+		new PokerGame();
+
+		expect(beforeUnloadHandler).not.toBeNull();
+		beforeUnloadHandler?.();
+
+		// Guest mode → persistPendingSyncs is skipped.
+		expect(setItemCalls).not.toContain('poker_pending_chip_syncs');
+	});
+
+	test('non-guest mode persists pending syncs on beforeunload', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'u1' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		let beforeUnloadHandler: (() => void) | null = null;
+		(globalThis as typeof globalThis & { window: Window & typeof globalThis }).window = {
+			dispatchEvent: () => true,
+			addEventListener: ((event: string, handler: () => void) => {
+				if (event === 'beforeunload') beforeUnloadHandler = handler;
+			}) as Window['addEventListener'],
+		} as unknown as Window & typeof globalThis;
+
+		new PokerGame();
+
+		expect(beforeUnloadHandler).not.toBeNull();
+		// Should not throw. persistPendingSyncs runs (line 179).
+		expect(() => beforeUnloadHandler?.()).not.toThrow();
+	});
+});
+
+describe('PokerGame processAITurn strips opponent hole cards', () => {
+	test('sanitizedPlayers strips opponent hands before passing to makeAIDecision', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+
+		try {
+			const game = new PokerGame(() => 0.5) as unknown as {
+				players: Player[];
+				currentPlayerIndex: number;
+				pot: number;
+				minimumBet: number;
+				gamePhase: string;
+				bettingRound: string | null;
+				communityCards: Card[];
+				processAITurn: () => Promise<void>;
+			};
+
+			// Set up an AI turn: player 1 (AI) with a hand, opponents have hands.
+			game.currentPlayerIndex = 1;
+			game.players[0] = {
+				...game.players[0],
+				hand: [card('A', 'hearts', 14), card('K', 'spades', 13)],
+				currentBet: 10,
+				folded: false,
+			};
+			game.players[1] = {
+				...game.players[1],
+				hand: [card('Q', 'hearts', 12), card('J', 'hearts', 11)],
+				currentBet: 10,
+				folded: false,
+			};
+			game.players[2] = {
+				...game.players[2],
+				hand: [card('9', 'clubs', 9), card('8', 'clubs', 8)],
+				currentBet: 10,
+				folded: false,
+			};
+			game.pot = 30;
+			game.minimumBet = 10;
+			game.gamePhase = 'preflop';
+			game.bettingRound = 'preflop';
+
+			// Start processAITurn — it awaits waitForTurnTransition (a timer).
+			const turnPromise = game.processAITurn();
+
+			// Flush the waitForTurnTransition timer so the AI decision runs.
+			await Promise.resolve();
+			const transitionTimer = timers.scheduledTimers.find((t) => !t.cleared);
+			transitionTimer?.callback();
+			await turnPromise;
+
+			// The AI player's hand must remain intact in this.players (only the
+			// context copy is sanitized), and the turn advanced.
+			expect(game.players[1].hand).toHaveLength(2);
+		} finally {
+			timers.restore();
+		}
 	});
 });

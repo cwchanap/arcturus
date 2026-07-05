@@ -199,4 +199,28 @@ describe('public-game-session', () => {
 		const b = createPublicGameSession({ id: 'user-b', chipBalance: 100 });
 		expect(a.clientUserId).not.toBe(b.clientUserId);
 	});
+
+	test('loadGuestBankroll falls back when localStorage.getItem throws', () => {
+		const originalGetItem = mockLocalStorage.getItem;
+		mockLocalStorage.getItem = mock(() => {
+			throw new Error('storage unavailable');
+		});
+		try {
+			expect(loadGuestBankroll('poker', 'anon-throw', 1000)).toBe(1000);
+		} finally {
+			mockLocalStorage.getItem = originalGetItem;
+		}
+	});
+
+	test('persistGuestBankroll swallows errors when localStorage.setItem throws', () => {
+		const originalSetItem = mockLocalStorage.setItem;
+		mockLocalStorage.setItem = mock(() => {
+			throw new Error('storage full');
+		});
+		try {
+			expect(() => persistGuestBankroll('poker', 'anon-throw', 500)).not.toThrow();
+		} finally {
+			mockLocalStorage.setItem = originalSetItem;
+		}
+	});
 });

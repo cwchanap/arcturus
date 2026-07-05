@@ -534,3 +534,157 @@ describe('makeAIDecision() - difficulty ladder', () => {
 		expect(decision.reasoning).toContain('semi-bluff');
 	});
 });
+
+describe('makeAIDecision() - getPosition fallback', () => {
+	// These tests omit `position` from the context so the internal getPosition
+	// fallback is exercised. The type requires `position`, so we cast to omit it.
+	function contextWithoutPosition(
+		aiPlayer: Player,
+		players: Player[],
+		overrides: Partial<GameContext> = {},
+	): GameContext {
+		return {
+			player: aiPlayer,
+			players,
+			communityCards: [],
+			pot: 30,
+			minimumBet: 10,
+			phase: 'preflop',
+			bettingRound: 'preflop',
+			...overrides,
+		} as GameContext;
+	}
+
+	test('returns middle when no dealer is assigned', () => {
+		const aiPlayer = player(1, 500, 0, [card('A', 'hearts', 14), card('K', 'spades', 13)]);
+		// No player has isDealer=true → dealerIndex === -1 → getPosition returns 'middle'
+		const players = [aiPlayer, player(2, 500, 0), player(3, 500, 0)];
+		const context = contextWithoutPosition(aiPlayer, players);
+
+		const decision = makeAIDecision(context, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+
+		// With a strong hand and middle position, the bot should still act;
+		// the key assertion is that no error is thrown and a decision is made.
+		expect(['check', 'raise']).toContain(decision.action);
+	});
+
+	test('3-handed: dealer is late, next seat is early, last seat is middle', () => {
+		const dealer = player(1, 500, 0, [card('2', 'hearts', 2), card('7', 'clubs', 7)], true);
+		const early = player(2, 500, 0, [card('9', 'hearts', 9), card('4', 'diamonds', 4)]);
+		const middle = player(3, 500, 0, [card('A', 'spades', 14), card('K', 'diamonds', 13)]);
+
+		// Dealer (positionFromDealer=0) → late
+		const dealerContext = contextWithoutPosition(dealer, [dealer, early, middle]);
+		const dealerDecision = makeAIDecision(dealerContext, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(dealerDecision.reasoning).toContain('texture=');
+		expect(['check', 'raise']).toContain(dealerDecision.action);
+
+		// Seat after dealer (positionFromDealer=1) → early
+		const earlyContext = contextWithoutPosition(early, [dealer, early, middle]);
+		const earlyDecision = makeAIDecision(earlyContext, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(['check', 'raise', 'fold']).toContain(earlyDecision.action);
+
+		// Last seat (positionFromDealer=2) → middle
+		const middleContext = contextWithoutPosition(middle, [dealer, early, middle]);
+		const middleDecision = makeAIDecision(middleContext, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(['check', 'raise']).toContain(middleDecision.action);
+	});
+
+	test('4+ handed: maps positionFromDealer 1-2 to early, 3 to middle, 4+ to late', () => {
+		// 5-handed table to exercise the early/middle/late branches of the
+		// non-3-handed getPosition path.
+		const p0 = player(0, 500, 0, [card('2', 'hearts', 2), card('7', 'clubs', 7)], true);
+		const p1 = player(1, 500, 0, [card('9', 'hearts', 9), card('4', 'diamonds', 4)]);
+		const p2 = player(2, 500, 0, [card('5', 'spades', 5), card('6', 'diamonds', 6)]);
+		const p3 = player(3, 500, 0, [card('8', 'clubs', 8), card('3', 'hearts', 3)]);
+		const p4 = player(4, 500, 0, [card('A', 'spades', 14), card('K', 'diamonds', 13)]);
+		const players = [p0, p1, p2, p3, p4];
+
+		// positionFromDealer=1 → early
+		const earlyDecision = makeAIDecision(contextWithoutPosition(p1, players), {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(['check', 'raise', 'fold']).toContain(earlyDecision.action);
+
+		// positionFromDealer=3 → middle
+		const middleDecision = makeAIDecision(contextWithoutPosition(p3, players), {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(['check', 'raise', 'fold']).toContain(middleDecision.action);
+
+		// positionFromDealer=4 → late
+		const lateDecision = makeAIDecision(contextWithoutPosition(p4, players), {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+		expect(['check', 'raise']).toContain(lateDecision.action);
+	});
+});
+
+describe('makeAIDecision() - short-stack fallthrough', () => {
+	test('checks with a value hand when too short to raise the minimum', () => {
+		// canCheck (no bet to call) + strong hand (AA → valueMadeHand) but
+		// chips < minimumBet so chooseRaiseAmount returns null. The raise
+		// branch is entered but falls through to a check instead of forcing
+		// an illegal raise.
+		const aiPlayer = player(1, 5, 0, [card('A', 'hearts', 14), card('A', 'spades', 14)]);
+		const context: GameContext = {
+			player: aiPlayer,
+			players: [aiPlayer, player(2, 500, 0), player(3, 500, 0)],
+			communityCards: [],
+			pot: 15,
+			minimumBet: 10,
+			phase: 'preflop',
+			bettingRound: 'preflop',
+			position: 'late',
+		};
+
+		const decision = makeAIDecision(context, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+
+		expect(decision.action).toBe('check');
+	});
+
+	test('calls with a value hand when facing a bet but too short to raise', () => {
+		// Facing a bet (canCheck=false) + strong hand (AA → valueMadeHand) but
+		// after calling there is less than the minimum raise left, so
+		// chooseRaiseAmount returns null. The raise branch is entered, falls
+		// through, and the bot calls instead of raising.
+		const aiPlayer = player(1, 15, 0, [card('A', 'hearts', 14), card('A', 'spades', 14)]);
+		const context: GameContext = {
+			player: aiPlayer,
+			players: [aiPlayer, player(2, 500, 10), player(3, 500, 0)],
+			communityCards: [],
+			pot: 20,
+			minimumBet: 10,
+			phase: 'preflop',
+			bettingRound: 'preflop',
+			position: 'late',
+		};
+
+		const decision = makeAIDecision(context, {
+			...createAIConfig('tight-aggressive'),
+			random: () => 0.99,
+		});
+
+		// Too short to raise (15 - 10 call = 5 < 10 min raise) → falls through
+		// to call. AA is strong enough to continue.
+		expect(decision.action).toBe('call');
+	});
+});

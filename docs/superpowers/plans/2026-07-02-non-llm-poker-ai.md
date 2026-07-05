@@ -18,7 +18,7 @@
 | Create | `src/lib/poker/aiDifficulty.test.ts`        | Unit tests for profile values and personality modifiers                     |
 | Create | `src/lib/poker/aiBoardTexture.ts`           | Pure board texture classification                                           |
 | Create | `src/lib/poker/aiBoardTexture.test.ts`      | Unit tests for dry/wet/paired/flush/straight pressure boards                |
-| Create | `src/lib/poker/aiEquity.ts`                 | Visible-information equity estimate and abstract unknown-card pool          |
+| Create | `src/lib/poker/aiEquity.ts`                 | Visible-information equity estimate (closed-form heuristic)                 |
 | Create | `src/lib/poker/aiEquity.test.ts`            | Unit tests for known-card exclusion, premium hands, draws, and pressure     |
 | Create | `src/lib/poker/aiBetSizing.ts`              | Stack-aware raise sizing helper                                             |
 | Create | `src/lib/poker/aiBetSizing.test.ts`         | Unit tests for legal and difficulty-sensitive raise amounts                 |
@@ -1729,7 +1729,7 @@ If no cleanup was needed, skip this commit.
 
 - Keep all AI helpers pure and browser-compatible. Do not introduce Node-only APIs or dependencies.
 - Do not use `process.env`; this feature does not need Worker environment bindings.
-- The AI may use an abstract unknown-card pool derived from a standard deck minus visible cards. It must not use the real shuffled deck order from `DeckManager`.
+- The AI must not use the real shuffled deck order from `DeckManager`. Equity is estimated via a closed-form heuristic over visible cards (made-hand strength + draw potential + texture/opponent penalties); no unknown-card sampler is used.
 - `PokerGame.ts` remains responsible for executing and validating legal actions.
 - The LLM path remains optional and should only change by passing difficulty into the existing non-LLM fallback.
 - Prefer deterministic tests with `random: () => 0.99` or `random: () => 0.01` where asserting specific bluff or non-bluff behavior.

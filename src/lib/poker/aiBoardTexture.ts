@@ -21,9 +21,19 @@ function hasStraightPressure(ranks: number[]): boolean {
 		(a, b) => a - b,
 	);
 
+	// Evaluate 3-rank and 4-rank windows independently. A connected 3-rank
+	// cluster within a 4-wide span (e.g. 2-3-4 on a 2-3-4-K board) already
+	// creates straight pressure even when an unrelated high card sits elsewhere
+	// on the board — a fixed 4-card slice would span to the high card and miss
+	// it. The 4-rank window check still catches tight 4-rank clusters (made
+	// straights / 8-out draws) that a 3-rank window alone wouldn't surface.
 	for (let i = 0; i < uniqueRanks.length; i++) {
-		const window = uniqueRanks.slice(i, i + 4);
-		if (window.length >= 3 && window[window.length - 1] - window[0] <= 4) {
+		const window3 = uniqueRanks.slice(i, i + 3);
+		if (window3.length === 3 && window3[window3.length - 1] - window3[0] <= 4) {
+			return true;
+		}
+		const window4 = uniqueRanks.slice(i, i + 4);
+		if (window4.length === 4 && window4[window4.length - 1] - window4[0] <= 4) {
 			return true;
 		}
 	}

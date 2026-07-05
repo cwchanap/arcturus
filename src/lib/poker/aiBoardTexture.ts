@@ -58,8 +58,16 @@ export function classifyBoardTexture(communityCards: Card[]): BoardTexture {
 
 	const maxSuitCount = Math.max(...suitCounts.values());
 	const paired = [...rankCounts.values()].some((count) => count >= 2);
-	const monotone = maxSuitCount >= 3;
+	// "Monotone" is strictly a flop term: all three cards the same suit. On
+	// turn/river a 3+ same-suit cluster is a flush draw / made flush, not a
+	// monotone board, so the public label is gated to the 3-card case.
+	const monotone = communityCards.length === 3 && maxSuitCount === 3;
 	const twoTone = maxSuitCount === 2;
+	// Internal pressure flag: any 3+ same-suit cluster drives flush pressure on
+	// every street (monotone flop, turn/river flush draw, or a board flush).
+	// Kept separate from the `monotone` label so flop-only semantics hold without
+	// dampening later-street flush pressure.
+	const flushBoard = maxSuitCount >= 3;
 	const flushDrawPossible = maxSuitCount >= 2;
 	const straightDrawPossible = hasStraightPressure(ranks);
 	const highCardCount = ranks.filter((rank) => rank >= 11).length;
@@ -72,6 +80,7 @@ export function classifyBoardTexture(communityCards: Card[]): BoardTexture {
 	const tags: string[] = [];
 	if (paired) tags.push('paired');
 	if (monotone) tags.push('monotone');
+	if (!monotone && flushBoard) tags.push('flush-draw');
 	if (!monotone && twoTone) tags.push('two-tone');
 	if (straightDrawPossible) tags.push('straight-pressure');
 	if (highCardCount >= 2) tags.push('high-card-heavy');
@@ -79,12 +88,13 @@ export function classifyBoardTexture(communityCards: Card[]): BoardTexture {
 	let pressure = 0.12;
 	if (paired) pressure += 0.12;
 	if (twoTone) pressure += 0.18;
-	// Monotone boards already enable a made flush / flush draw and are inherently
-	// wet. A bare monotone flop (e.g. 2♠-5♠-8♠) still lands in 'wet' territory,
-	// and an Ace- or King-high monotone board (e.g. A♠-8♠-3♠) carries a nut-flush
-	// threat that demands an extra boost so it never drops below 'wet'.
-	if (monotone) pressure += 0.45;
-	if (monotone && highCardCount >= 1) pressure += 0.1;
+	// A 3+ same-suit cluster (monotone flop or turn/river flush draw) already
+	// enables a made flush / flush draw and is inherently wet. A bare monotone
+	// flop (e.g. 2♠-5♠-8♠) still lands in 'wet' territory, and an Ace- or
+	// King-high monotone board (e.g. A♠-8♠-3♠) carries a nut-flush threat that
+	// demands an extra boost so it never drops below 'wet'.
+	if (flushBoard) pressure += 0.45;
+	if (flushBoard && highCardCount >= 1) pressure += 0.1;
 	if (straightDrawPossible) pressure += 0.25;
 	if (highCardCount >= 2) pressure += 0.08;
 	pressure += connectedness * 0.15;

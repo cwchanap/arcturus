@@ -34,5 +34,8 @@ export function chooseRaiseAmount(input: BetSizingInput): number | null {
 	const rawRaise = Math.max(context.minimumBet, Math.min(blindBased, potBased));
 	const rounded = roundToStep(rawRaise, context.minimumBet);
 
+	// Capping to affordableRaise may yield a value below the step size when
+	// short-stacked — this is intentional (a player can bet up to their whole
+	// stack even if it isn't a clean multiple of the blind).
 	return Math.min(rounded, affordableRaise);
 }

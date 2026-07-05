@@ -142,12 +142,6 @@ export class PokerGame {
 			);
 		}
 
-		try {
-			localStorage.removeItem(PENDING_SYNCS_STORAGE_KEY_PREFIX);
-		} catch {
-			// best effort — key may not exist
-		}
-
 		this.initPlayers();
 		// Guests restore their bankroll from localStorage, which may differ from
 		// the server-rendered #player-balance (default $1,000). Sync the DOM to

@@ -122,10 +122,10 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 		hasStraightFlush = ranksHaveStraight(flushRanks);
 	}
 
-	// Evaluate hand
+	// Evaluate hand (highest to lowest strength)
+	if (hasStraightFlush) return 0.99; // Straight flush
 	if (counts[0] === 4) return 0.95; // Four of a kind
 	if (counts[0] === 3 && counts[1] === 2) return 0.9; // Full house
-	if (hasStraightFlush) return 0.99; // Straight flush
 	if (hasFlush) return 0.85; // Flush
 	if (hasStraight) return 0.8; // Straight
 	if (counts[0] === 3) return 0.7; // Three of a kind

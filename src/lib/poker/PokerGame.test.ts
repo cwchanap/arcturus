@@ -780,6 +780,72 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		expect(elements['btn-rebuy']?.hidden).toBe(true);
 	});
 
+	test('guest syncChips keeps serverSyncedBalance in step with the persisted bankroll', () => {
+		// Regression: the guest branch of syncChips persisted the new chip count
+		// to localStorage but left serverSyncedBalance at the page-load baseline.
+		// A guest who busted from $1,000 to $0 was then silently revived by
+		// dealNewHand() (which uses getEffectiveServerBalance() for eliminated
+		// players), bypassing the game-over / rebuy path. Saving settings would
+		// also reset them to the stale baseline.
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '1000',
+				balanceAvailable: 'true',
+				guestMode: 'true',
+				userId: 'guest-sync',
+			},
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const storage: Record<string, string> = {};
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: (key: string, value: string) => {
+				storage[key] = value;
+			},
+			removeItem: (key: string) => {
+				delete storage[key];
+			},
+			clear: () => {
+				for (const k of Object.keys(storage)) delete storage[k];
+			},
+			key: () => null,
+			length: 0,
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			serverSyncedBalance: number;
+			isGuestMode: boolean;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+		};
+
+		// Guest loaded with the default $1,000 baseline.
+		expect(game.serverSyncedBalance).toBe(1000);
+
+		// Guest loses the whole stack.
+		game.players[0] = { ...game.players[0], chips: 0 };
+		game.syncChips('loss');
+
+		// The in-memory baseline must track the persisted bankroll so the next
+		// dealNewHand() sees an effective balance of $0 and routes to game-over.
+		expect(game.serverSyncedBalance).toBe(0);
+		expect(storage['poker-bankroll:guest-sync']).toBe('0');
+	});
+
 	test('ignores a stale auto-deal callback after a manual deal starts a fresh hand', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

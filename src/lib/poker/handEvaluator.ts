@@ -81,7 +81,7 @@ function ranksHaveStraight(ranks: number[]): boolean {
 
 /**
  * Evaluates postflop hand strength (0-1 scale)
- * Simplified evaluation - just counts pairs, trips, etc.
+ * Detects flushes, straights, straight flushes, and pair/trips/quads counts.
  */
 export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): number {
 	const allCards = [...hand, ...communityCards];

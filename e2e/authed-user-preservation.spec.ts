@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
  * Guards the authed-preservation contract: signed-in users must receive a
  * per-user opaque surrogate in data-user-id (never 'anonymous', never the raw
  * account id, never omitted). This is the test that would have caught the
- * regression where guestUserId=undefined for authed users caused all clients
+ * regression where clientUserId=undefined for authed users caused all clients
  * to resolve to 'anonymous', collapsing per-user settings isolation and
  * wiping the poker pending-sync journal on every page load.
  */

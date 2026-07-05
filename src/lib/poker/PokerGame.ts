@@ -102,7 +102,7 @@ export class PokerGame {
 	private turnTransitionToken = 0;
 	private dealSyncRetryCount = 0;
 	private isGuestMode = false;
-	private guestUserId = '';
+	private clientUserId = '';
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
 	constructor(aiRandom?: () => number) {
@@ -129,7 +129,7 @@ export class PokerGame {
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 
 		const userId = balanceEl?.dataset?.userId ?? '';
-		this.guestUserId = userId;
+		this.clientUserId = userId;
 		this.pendingSyncsStorageKey = userId
 			? `${PENDING_SYNCS_STORAGE_KEY_PREFIX}:${userId}`
 			: PENDING_SYNCS_STORAGE_KEY_PREFIX;
@@ -489,7 +489,7 @@ export class PokerGame {
 			if (this.isGuestMode) {
 				persistGuestBankroll(
 					PokerGame.GUEST_BANKROLL_GAME_KEY,
-					this.guestUserId,
+					this.clientUserId,
 					this.players[0]?.chips ?? this.serverSyncedBalance,
 				);
 			}
@@ -1324,7 +1324,7 @@ export class PokerGame {
 		this.serverSyncedBalance = DEFAULT_GUEST_GAME_BALANCE;
 		persistGuestBankroll(
 			PokerGame.GUEST_BANKROLL_GAME_KEY,
-			this.guestUserId,
+			this.clientUserId,
 			DEFAULT_GUEST_GAME_BALANCE,
 		);
 

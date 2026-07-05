@@ -61,6 +61,25 @@ export function evaluatePreflopHand(card1: Card, card2: Card): number {
 }
 
 /**
+ * Returns true if the given ranks contain a 5-card straight (including the
+ * A-2-3-4-5 wheel where the ace plays low). Used both for the overall hand
+ * and for verifying that a flush suit's cards actually form a straight flush.
+ */
+function ranksHaveStraight(ranks: number[]): boolean {
+	if (ranks.length < 5) return false;
+	const sorted = [...new Set(ranks)].sort((a, b) => b - a);
+	for (let i = 0; i <= sorted.length - 5; i++) {
+		if (sorted[i] - sorted[i + 4] === 4) return true;
+	}
+	// Wheel: A-2-3-4-5. Ace (14) plus 5-4-3-2.
+	const rankSet = new Set(sorted);
+	if (rankSet.has(14) && rankSet.has(5) && rankSet.has(4) && rankSet.has(3) && rankSet.has(2)) {
+		return true;
+	}
+	return false;
+}
+
+/**
  * Evaluates postflop hand strength (0-1 scale)
  * Simplified evaluation - just counts pairs, trips, etc.
  */
@@ -86,37 +105,27 @@ export function evaluatePostflopHand(hand: Card[], communityCards: Card[]): numb
 	// Check for flush
 	const hasFlush = maxSuitCount >= 5;
 
-	// Check for straight, including the A-2-3-4-5 wheel where the ace plays low.
-	const sortedValues = Object.keys(valueCounts)
-		.map(Number)
-		.sort((a, b) => b - a);
-	let hasStraight = false;
-	for (let i = 0; i <= sortedValues.length - 5; i++) {
-		if (sortedValues[i] - sortedValues[i + 4] === 4) {
-			hasStraight = true;
-			break;
-		}
-	}
-	// Wheel: A-2-3-4-5. Ace (14) plus 5-4-3-2.
-	if (
-		!hasStraight &&
-		valueCounts[14] &&
-		valueCounts[5] &&
-		valueCounts[4] &&
-		valueCounts[3] &&
-		valueCounts[2]
-	) {
-		hasStraight = true;
+	// Check for straight across all ranks.
+	const sortedValues = Object.keys(valueCounts).map(Number);
+	const hasStraight = ranksHaveStraight(sortedValues);
+
+	// A straight flush requires the straight to be in the flush suit.
+	// hasFlush && hasStraight can both be true when the flush and straight
+	// use different cards, so we verify the flush-suit ranks contain a
+	// straight before reporting a straight flush.
+	let hasStraightFlush = false;
+	if (hasFlush && hasStraight) {
+		const flushSuit = (Object.entries(suitCounts).find(([, count]) => count >= 5) ?? [
+			'',
+		])[0] as string;
+		const flushRanks = allCards.filter((c) => c.suit === flushSuit).map((c) => c.rank);
+		hasStraightFlush = ranksHaveStraight(flushRanks);
 	}
 
 	// Evaluate hand
 	if (counts[0] === 4) return 0.95; // Four of a kind
 	if (counts[0] === 3 && counts[1] === 2) return 0.9; // Full house
-	// Known simplification: hasFlush && hasStraight can be true when the flush
-	// and straight use different cards, so this over-reports straight flushes.
-	// Acceptable here — this is a heuristic equity scalar fed into aiEquity,
-	// not used at showdown (showdown uses the precise evaluator below).
-	if (hasFlush && hasStraight) return 0.99; // Straight flush
+	if (hasStraightFlush) return 0.99; // Straight flush
 	if (hasFlush) return 0.85; // Flush
 	if (hasStraight) return 0.8; // Straight
 	if (counts[0] === 3) return 0.7; // Three of a kind

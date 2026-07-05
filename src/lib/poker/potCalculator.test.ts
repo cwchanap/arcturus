@@ -132,12 +132,17 @@ describe('potCalculator', () => {
 				const minId = Math.min(...eligible.map((p) => p.id));
 				return eligible.filter((p) => p.id === minId);
 			};
-			const { awards, tierWinners } = resolveSidePotAwards(players, [], determiner);
+			const { awards, tierWinners, tierResults } = resolveSidePotAwards(players, [], determiner);
 			// Main pot 150 -> player 1; side pot 100 -> player 0 (lowest covering id).
 			expect(awards.get(1)).toBe(150);
 			expect(awards.get(0)).toBe(100);
 			expect(awards.has(2)).toBe(false);
 			expect(tierWinners.map((p) => p.id).sort()).toEqual([0, 1]);
+			// tierResults must keep the tiers separate so callers can distinguish
+			// side-pot-different-winners from a genuine split-pot tie.
+			expect(tierResults).toHaveLength(2);
+			expect(tierResults[0]).toEqual({ amount: 150, winners: [players[1]] });
+			expect(tierResults[1]).toEqual({ amount: 100, winners: [players[0]] });
 		});
 
 		test('short all-in cannot win chips from bets it did not cover', () => {

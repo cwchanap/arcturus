@@ -487,11 +487,14 @@ export class PokerGame {
 	private syncChips(outcome?: ChipSyncOutcome): void {
 		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
 			if (this.isGuestMode) {
-				persistGuestBankroll(
-					PokerGame.GUEST_BANKROLL_GAME_KEY,
-					this.clientUserId,
-					this.players[0]?.chips ?? this.serverSyncedBalance,
-				);
+				// Persist the new chip count and keep the in-memory baseline in
+				// step with it. Without this, dealNewHand() would use the stale
+				// page-load baseline via getEffectiveServerBalance() and silently
+				// revive a busted guest instead of routing to game-over/rebuy;
+				// saving settings would also reset them to the stale amount.
+				const persistedChips = Math.max(0, this.players[0]?.chips ?? this.serverSyncedBalance);
+				persistGuestBankroll(PokerGame.GUEST_BANKROLL_GAME_KEY, this.clientUserId, persistedChips);
+				this.serverSyncedBalance = persistedChips;
 			}
 			this.humanChipsBefore = 0;
 			return;

@@ -57,6 +57,7 @@ export {
 } from './player';
 
 // Pot calculator utilities
+export type { TierResult } from './potCalculator';
 export {
 	calculatePot,
 	calculateRoundPot,

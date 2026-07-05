@@ -4,7 +4,7 @@
  */
 
 import type { Card, Player, BettingRound, GameContext, GameSettings } from './types';
-import type { AIConfig, AIPersonality, AIDifficulty } from './index';
+import type { AIConfig, AIPersonality, AIDifficulty, TierResult } from './index';
 import {
 	BIG_BLIND,
 	createPlayer,
@@ -1194,6 +1194,34 @@ export class PokerGame {
 		btnRaise.disabled = humanPlayer.chips <= 0;
 	}
 
+	/**
+	 * Builds the showdown status message from per-tier results. Distinguishes
+	 * a genuine split-pot tie (multiple winners within one tier) from separate
+	 * winners of different tiers (e.g. short stack wins main, covering player
+	 * wins side), and reports each tier's amount instead of the total pot.
+	 */
+	private formatShowdownMessage(tierResults: TierResult[]): string {
+		if (tierResults.length === 0) return 'Showdown complete.';
+		if (tierResults.length === 1) {
+			const { amount, winners } = tierResults[0];
+			if (winners.length === 1) {
+				return `${winners[0].name} wins $${amount}! 🎉`;
+			}
+			const names = winners.map((w) => w.name).join(', ');
+			return `Tie! ${names} split the $${amount} pot 🤝`;
+		}
+		// Multiple tiers: label main vs side pots and list each tier's winner(s).
+		const parts = tierResults.map((tier, i) => {
+			const label = i === 0 ? 'Main pot' : `Side pot ${i}`;
+			if (tier.winners.length === 1) {
+				return `${label}: ${tier.winners[0].name} wins $${tier.amount}`;
+			}
+			const names = tier.winners.map((w) => w.name).join(' & ');
+			return `${label}: ${names} split $${tier.amount}`;
+		});
+		return parts.join(' | ');
+	}
+
 	private nextPhase() {
 		// Check if only one player remains (everyone else folded)
 		const activePlayers = getActivePlayers(this.players);
@@ -1246,7 +1274,7 @@ export class PokerGame {
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
 				// short all-in can only win up to the tiers they contributed to.
-				const { awards, tierWinners } = resolveSidePotAwards(
+				const { awards, tierWinners, tierResults } = resolveSidePotAwards(
 					this.players,
 					this.communityCards,
 					determineShowdownWinners,
@@ -1263,14 +1291,10 @@ export class PokerGame {
 					}
 				}
 
-				// Status message
-				if (tierWinners.length === 1) {
-					const winner = tierWinners[0];
-					this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
-				} else {
-					const winnerNames = tierWinners.map((w) => w.name).join(', ');
-					this.updateGameStatus(`Tie! ${winnerNames} split the $${this.pot} pot 🤝`);
-				}
+				// Status message. Distinguish a genuine split-pot tie (multiple
+				// winners within one tier) from separate winners of different
+				// tiers (e.g. short stack wins main, covering player wins side).
+				this.updateGameStatus(this.formatShowdownMessage(tierResults));
 
 				// Sync based on the human's net chip delta for the hand (accurate
 				// across side pots where the human may win some tiers and lose others)

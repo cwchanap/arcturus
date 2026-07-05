@@ -92,22 +92,39 @@ export function getMinimumBet(bigBlind: number, lastRaiseAmount: number): number
 export type WinnerDeterminer = (eligiblePlayers: Player[], communityCards: Card[]) => Player[];
 
 /**
+ * Per-tier showdown result. `winners` is the list of players who tied for
+ * THIS tier (length > 1 means a genuine split of `amount`); different tiers
+ * may have disjoint winners when a short all-in wins the main pot and a
+ * covering player wins the side pot.
+ */
+export interface TierResult {
+	amount: number;
+	winners: Player[];
+}
+
+/**
  * Resolves a showdown using side-pot eligibility. Each pot tier is awarded
  * only to the best hand(s) among the non-folded players eligible for that
  * tier, so a short all-in can never win chips from bets it did not cover.
  *
- * Returns a per-player award map (playerId -> chips to add) and the deduped
- * list of players who won at least one tier (for hand-reveal UI).
+ * Returns:
+ *  - `awards`: per-player chip map (playerId -> chips to add)
+ *  - `tierWinners`: deduped list of players who won at least one tier
+ *    (for hand-reveal UI highlighting)
+ *  - `tierResults`: one entry per resolved pot tier with its amount and
+ *    winners, so callers can distinguish a genuine split-pot tie (multiple
+ *    winners within one tier) from separate winners of different tiers.
  */
 export function resolveSidePotAwards(
 	players: Player[],
 	communityCards: Card[],
 	determineWinners: WinnerDeterminer,
-): { awards: Map<number, number>; tierWinners: Player[] } {
+): { awards: Map<number, number>; tierWinners: Player[]; tierResults: TierResult[] } {
 	const activePlayers = players.filter((p) => !p.folded);
 	const pots = calculateSidePots(players);
 	const awards = new Map<number, number>();
 	const tierWinners: Player[] = [];
+	const tierResults: TierResult[] = [];
 
 	for (const pot of pots) {
 		const eligible = activePlayers.filter((p) => pot.eligiblePlayerIds.includes(p.id));
@@ -116,11 +133,12 @@ export function resolveSidePotAwards(
 		for (const w of winners) {
 			if (!tierWinners.some((p) => p.id === w.id)) tierWinners.push(w);
 		}
+		tierResults.push({ amount: pot.amount, winners });
 		const distribution = distributePot(winners, pot.amount);
 		for (const [playerId, amount] of distribution.entries()) {
 			awards.set(playerId, (awards.get(playerId) ?? 0) + amount);
 		}
 	}
 
-	return { awards, tierWinners };
+	return { awards, tierWinners, tierResults };
 }

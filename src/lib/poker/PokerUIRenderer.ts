@@ -238,9 +238,9 @@ export class PokerUIRenderer {
 		const betEl = document.getElementById('current-bet');
 		const balanceEl = document.getElementById('player-balance');
 
-		if (potEl) potEl.textContent = `$${pot}`;
-		if (betEl) betEl.textContent = `$${humanPlayer.currentBet}`;
-		if (balanceEl) balanceEl.textContent = `$${humanPlayer.chips}`;
+		if (potEl) potEl.textContent = `$${pot.toLocaleString()}`;
+		if (betEl) betEl.textContent = `$${humanPlayer.currentBet.toLocaleString()}`;
+		if (balanceEl) balanceEl.textContent = `$${humanPlayer.chips.toLocaleString()}`;
 	}
 
 	public updateGameStatus(message: string, gamePhase: string, pot: number) {

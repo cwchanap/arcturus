@@ -36,8 +36,8 @@ export type PublicGameSession = {
  *
  * Collision expectation: 32-bit output means ~50% collision probability near
  * ~65k distinct user ids (birthday bound). Acceptable while the user base is
- * well below that scale; revisit if DOM/localStorage key collisions become
- * observable.
+ * well below that scale; TODO: revisit if DOM/localStorage key collisions
+ * become observable or the user base approaches that scale.
  */
 export function hashUserId(userId: string): string {
 	let h = 0x811c9dc5;

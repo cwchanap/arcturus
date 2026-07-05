@@ -30,7 +30,8 @@ class DecisionCache {
 		const handStr = sortedHand.map((c) => `${c.value}${c.suit[0]}`).join('');
 		const commStr = context.communityCards.map((c) => `${c.value}${c.suit[0]}`).join('');
 		const highestBet = getHighestBet(context.players);
-		return `${handStr}|${commStr}|${context.phase}|${highestBet}|${context.pot}`;
+		const opponentCount = context.players.length - 1;
+		return `${handStr}|${commStr}|${context.phase}|${highestBet}|${context.pot}|${context.position}|${opponentCount}`;
 	}
 
 	get(context: GameContext): AIDecision | null {

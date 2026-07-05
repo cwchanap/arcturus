@@ -632,9 +632,8 @@ export function initBlackjackClient(): void {
 		// Note: Settings are loaded async on page load. If the user clicks before that finishes,
 		// we should retry loading here instead of immediately showing the overlay.
 		if (!llmConfigured) {
-			// Potential race: repeated clicks before the first load resolves could start multiple
-			// concurrent loadLlmSettings() calls. Consider guarding with llmSettingsLoading (in-flight
-			// promise) so only one load runs at a time.
+			// Guard against repeated clicks racing the first load: reuse the in-flight
+			// llmSettingsLoading promise so only one loadLlmSettings() runs at a time.
 			const inFlight = llmSettingsLoading ?? loadLlmSettings();
 			if (!llmSettingsLoading) {
 				llmSettingsLoading = inFlight;

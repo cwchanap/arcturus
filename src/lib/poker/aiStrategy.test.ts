@@ -2,6 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import type { Card, GameContext, Player } from './types';
 import { makeAIDecision, createAIConfig } from './aiStrategy';
 
+// Deterministic linear-congruential PRNG so probabilistic tests are
+// reproducible instead of relying on Math.random (which caused flakiness
+// with only 10–20 iterations). Mirrors the seeded-random pattern used by
+// the difficulty-ladder tests below but produces a varied sequence so
+// statistical comparisons (tight vs loose, early vs late) still hold.
+function createSeededRandom(seed: number): () => number {
+	let state = seed % 0x100000000;
+	if (state <= 0) state += 0x100000000;
+	return () => {
+		state = (state * 1664525 + 1013904223) % 0x100000000;
+		return state / 0x100000000;
+	};
+}
+
 // Helper to create a card
 function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
@@ -87,8 +101,9 @@ describe('makeAIDecision() - preflop scenarios', () => {
 	});
 
 	test('loose-aggressive plays more hands than tight-aggressive', () => {
-		const looseConfig = createAIConfig('loose-aggressive');
-		const tightConfig = createAIConfig('tight-aggressive');
+		const random = createSeededRandom(42);
+		const looseConfig = { ...createAIConfig('loose-aggressive'), random };
+		const tightConfig = { ...createAIConfig('tight-aggressive'), random };
 
 		// Marginal hand: J-9 suited
 		const aiPlayer = player(1, 500, 0, [card('J', 'hearts', 11), card('9', 'hearts', 9)]);
@@ -201,7 +216,8 @@ describe('makeAIDecision() - postflop scenarios', () => {
 
 describe('makeAIDecision() - position influence', () => {
 	test('plays tighter in early position', () => {
-		const config = createAIConfig('tight-aggressive');
+		const random = createSeededRandom(7);
+		const config = { ...createAIConfig('tight-aggressive'), random };
 		// Marginal hand: A-T offsuit
 		const aiPlayer = player(1, 500, 0, [card('A', 'hearts', 14), card('10', 'clubs', 10)]);
 
@@ -242,8 +258,9 @@ describe('makeAIDecision() - position influence', () => {
 
 describe('makeAIDecision() - bet sizing', () => {
 	test('aggressive players bet larger amounts', () => {
-		const aggressiveConfig = createAIConfig('loose-aggressive');
-		const passiveConfig = createAIConfig('tight-passive');
+		const random = createSeededRandom(99);
+		const aggressiveConfig = { ...createAIConfig('loose-aggressive'), random };
+		const passiveConfig = { ...createAIConfig('tight-passive'), random };
 
 		const aiPlayer = player(1, 500, 0, [card('A', 'hearts', 14), card('A', 'spades', 14)]);
 		const context: GameContext = {
@@ -267,7 +284,8 @@ describe('makeAIDecision() - bet sizing', () => {
 	});
 
 	test('bet size increases with hand strength', () => {
-		const config = createAIConfig('tight-aggressive');
+		const random = createSeededRandom(123);
+		const config = { ...createAIConfig('tight-aggressive'), random };
 
 		// Very strong hand
 		const strongPlayer = player(1, 500, 0, [card('A', 'hearts', 14), card('A', 'spades', 14)]);

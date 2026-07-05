@@ -143,6 +143,10 @@ function getPosition(player: Player, players: Player[]): 'early' | 'middle' | 'l
 	const dealerIndex = players.findIndex((p) => p.isDealer);
 	const playerIndex = players.findIndex((p) => p.id === player.id);
 
+	// No dealer assigned — return a neutral middle position rather than
+	// letting the shifted modulo math silently assign an arbitrary seat.
+	if (dealerIndex === -1 || playerIndex === -1) return 'middle';
+
 	const positionFromDealer = (playerIndex - dealerIndex + players.length) % players.length;
 
 	if (positionFromDealer === 0) return 'late';

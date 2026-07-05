@@ -413,6 +413,41 @@ describe('evaluatePostflopHand()', () => {
 		const strength = evaluatePostflopHand(hand, community);
 		expect(strength).toBeGreaterThanOrEqual(0.8);
 	});
+
+	test('does not over-report straight flush when flush and straight use different cards', () => {
+		// Player holds 2h-9h. Board: 3h-4h-5h-6c-7c.
+		// Hearts flush ranks: 2,3,4,5,9 → no straight in the flush suit.
+		// Overall ranks: 2,3,4,5,6,7,9 → 3-4-5-6-7 straight (non-flush).
+		// hasFlush && hasStraight but NOT a straight flush → should report
+		// 0.85 (flush), not 0.99 (straight flush).
+		const hand = [hole('2', 'hearts'), hole('9', 'hearts')];
+		const community = [
+			hole('3', 'hearts'),
+			hole('4', 'hearts'),
+			hole('5', 'hearts'),
+			hole('6', 'clubs'),
+			hole('7', 'clubs'),
+		];
+
+		const strength = evaluatePostflopHand(hand, community);
+		expect(strength).toBe(0.85);
+	});
+
+	test('still detects a true straight flush', () => {
+		// Player holds 6h-7h. Board: 8h-9h-10h-2c-3c.
+		// Hearts flush ranks: 6,7,8,9,10 → straight flush.
+		const hand = [hole('6', 'hearts'), hole('7', 'hearts')];
+		const community = [
+			hole('8', 'hearts'),
+			hole('9', 'hearts'),
+			hole('10', 'hearts'),
+			hole('2', 'clubs'),
+			hole('3', 'clubs'),
+		];
+
+		const strength = evaluatePostflopHand(hand, community);
+		expect(strength).toBe(0.99);
+	});
 });
 
 describe('estimateDrawingOuts()', () => {

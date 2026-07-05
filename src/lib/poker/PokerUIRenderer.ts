@@ -37,7 +37,7 @@ export class PokerUIRenderer {
 		if (players[1]) {
 			const opponent1Chips = document.getElementById('opponent1-chips');
 			if (opponent1Chips) {
-				opponent1Chips.textContent = `$${players[1].chips}`;
+				opponent1Chips.textContent = `$${players[1].chips.toLocaleString()}`;
 			}
 			// Update folded state
 			this.updateFoldedState(1, players[1].folded);
@@ -45,7 +45,7 @@ export class PokerUIRenderer {
 		if (players[2]) {
 			const opponent2Chips = document.getElementById('opponent2-chips');
 			if (opponent2Chips) {
-				opponent2Chips.textContent = `$${players[2].chips}`;
+				opponent2Chips.textContent = `$${players[2].chips.toLocaleString()}`;
 			}
 			// Update folded state
 			this.updateFoldedState(2, players[2].folded);
@@ -119,11 +119,11 @@ export class PokerUIRenderer {
 				break;
 			case 'call':
 				badge.className += ' bg-[var(--deco-jade)] text-[var(--deco-obsidian)]';
-				badge.textContent = `✓ CALL $${amount || 0}`;
+				badge.textContent = `✓ CALL $${(amount || 0).toLocaleString()}`;
 				break;
 			case 'raise':
 				badge.className += ' bg-[var(--deco-brass)] text-[var(--deco-obsidian)]';
-				badge.textContent = `↑ RAISE $${amount || 0}`;
+				badge.textContent = `↑ RAISE $${(amount || 0).toLocaleString()}`;
 				break;
 			default:
 				badge.className += ' bg-[var(--deco-obsidian-3)] text-white';
@@ -249,7 +249,7 @@ export class PokerUIRenderer {
 
 		// Add phase and pot info to status message
 		const phaseLabel = gamePhase.charAt(0).toUpperCase() + gamePhase.slice(1);
-		const potInfo = pot > 0 ? ` | Pot: $${pot}` : '';
+		const potInfo = pot > 0 ? ` | Pot: $${pot.toLocaleString()}` : '';
 		statusEl.textContent = `[${phaseLabel}${potInfo}] ${message}`;
 	}
 }

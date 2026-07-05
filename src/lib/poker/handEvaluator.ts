@@ -165,28 +165,12 @@ export function estimateDrawingOuts(hand: Card[], communityCards: Card[]): numbe
 	let outs = 0;
 
 	// Detect an already-made straight so we don't count straight-draw outs
-	// behind a completed hand. Mirrors the check in evaluatePostflopHand.
+	// behind a completed hand. Shares the same helper as evaluatePostflopHand
+	// so the two code paths stay consistent.
 	const sortedValues = Object.keys(valueCounts)
 		.map(Number)
 		.sort((a, b) => b - a);
-	let hasStraight = false;
-	for (let i = 0; i <= sortedValues.length - 5; i++) {
-		if (sortedValues[i] - sortedValues[i + 4] === 4) {
-			hasStraight = true;
-			break;
-		}
-	}
-	// Wheel: A-2-3-4-5. Ace (14) plus 5-4-3-2.
-	if (
-		!hasStraight &&
-		valueCounts[14] &&
-		valueCounts[5] &&
-		valueCounts[4] &&
-		valueCounts[3] &&
-		valueCounts[2]
-	) {
-		hasStraight = true;
-	}
+	const hasStraight = ranksHaveStraight(sortedValues);
 
 	// Flush draw (4 of same suit). A made flush (5+) is naturally excluded
 	// since maxSuitCount would be >= 5, not === 4.

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { GameSettingsManager } from './GameSettingsManager';
 import { DEFAULT_SETTINGS } from './constants';
 
@@ -29,30 +29,25 @@ class MemoryStorage implements Storage {
 const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage;
 const originalWindow = (globalThis as { window?: unknown }).window;
 
-beforeAll(() => {
-	if (!originalLocalStorage) {
-		(globalThis as { localStorage: Storage }).localStorage = new MemoryStorage();
-	}
+// Install/uninstall the polyfill around every test so each gets a fresh empty
+// localStorage. This guarantees test isolation across the full suite (matches
+// the pattern in src/lib/blackjack/GameSettingsManager.test.ts).
+beforeEach(() => {
+	(globalThis as { localStorage: Storage }).localStorage = new MemoryStorage();
 	// Impl gates persistence on `typeof window !== 'undefined'`; simulate a browser env.
 	if (typeof originalWindow === 'undefined') {
 		(globalThis as { window: unknown }).window = {};
 	}
 });
 
-afterAll(() => {
+afterEach(() => {
 	if (!originalLocalStorage) {
 		delete (globalThis as { localStorage?: Storage }).localStorage;
+	} else {
+		(globalThis as { localStorage: Storage }).localStorage = originalLocalStorage;
 	}
 	if (typeof originalWindow === 'undefined') {
 		delete (globalThis as { window?: unknown }).window;
-	}
-});
-
-afterEach(() => {
-	try {
-		localStorage.removeItem(KEY);
-	} catch (_e) {
-		// ignore
 	}
 });
 

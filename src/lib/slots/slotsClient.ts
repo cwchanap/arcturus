@@ -14,15 +14,9 @@ import {
 	resolveSlotsSyncState,
 	shouldAbandonFollowUpSync,
 	getFollowUpBackoffDelayMs,
+	MAX_FOLLOW_UP_ATTEMPTS,
 } from './balance-sync-state';
 import type { SpinResult } from './types';
-
-function parseBalanceText(el: HTMLElement | null): number | null {
-	if (!el) return null;
-	const digits = el.textContent?.replace(/[^0-9]/g, '');
-	const n = digits ? Number(digits) : NaN;
-	return Number.isFinite(n) ? n : null;
-}
 
 export function initSlotsClient(): void {
 	if (typeof window === 'undefined') return;
@@ -36,12 +30,8 @@ export function initSlotsClient(): void {
 	const settingsMgr = new GameSettingsManager(clientUserId);
 	const renderer = new SlotsUIRenderer();
 
-	const initialFromDom = parseBalanceText(document.getElementById('chip-balance'));
-	const initialBalance =
-		loadGuestBankroll('slots', clientUserId, Number(root.dataset.initialBalance)) ||
-		initialFromDom ||
-		Number(root.dataset.initialBalance) ||
-		0;
+	const fallback = Number(root.dataset.initialBalance) || 0;
+	const initialBalance = isGuest ? loadGuestBankroll('slots', clientUserId, fallback) : fallback;
 
 	const game = new SlotsGame(initialBalance, settingsMgr.getSettings(), {
 		onBalanceUpdate: (balance) => {
@@ -181,6 +171,7 @@ export function initSlotsClient(): void {
 
 			if (response.status === 429) {
 				isSyncInProgress = false;
+				if (retryCount >= MAX_FOLLOW_UP_ATTEMPTS) return;
 				const retryAfter = Number(response.headers.get('Retry-After') ?? '2');
 				window.setTimeout(() => runSync(retryCount + 1), Math.min(retryAfter * 1000, 8000));
 				return;

@@ -89,13 +89,22 @@ describe('evaluateGrid', () => {
 });
 
 describe('payoutCalculator RTP', () => {
-	test('simulated RTP over 200k spins is within 88-100%', () => {
+	test('simulated RTP over 200k spins is within spec range (92-98%)', () => {
+		// mulberry32 is the spec-mandated PRNG for deterministic reel tests
+		// (see docs/superpowers/specs/2026-07-05-slots-game-design.md:139).
+		// A poor LCG skews the distribution enough to under-report RTP by ~4pp.
+		function mulberry32(seed: number): () => number {
+			let a = seed >>> 0;
+			return () => {
+				a |= 0;
+				a = (a + 0x6d2b79f5) | 0;
+				let t = Math.imul(a ^ (a >>> 15), 1 | a);
+				t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+				return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+			};
+		}
 		const reels = new ReelManager();
-		let seed = 12345;
-		const rng = () => {
-			seed = (seed * 1103515245 + 12345) & 0x7fffffff;
-			return seed / 0x7fffffff;
-		};
+		const rng = mulberry32(12345);
 		const BET = 5;
 		let totalBet = 0;
 		let totalPayout = 0;
@@ -105,7 +114,7 @@ describe('payoutCalculator RTP', () => {
 			totalPayout += evaluateGrid(grid, BET).totalPayout;
 		}
 		const rtp = totalPayout / totalBet;
-		expect(rtp).toBeGreaterThan(0.88);
-		expect(rtp).toBeLessThan(1.0);
+		expect(rtp).toBeGreaterThan(0.92);
+		expect(rtp).toBeLessThan(0.98);
 	});
 });

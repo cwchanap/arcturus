@@ -1,0 +1,268 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { BET_INCREMENTS, PAYTABLE, SYMBOL_ORDER, SYMBOLS } from '../../lib/slots/constants';
+
+const user = Astro.locals.user;
+const gameSession = createPublicGameSession(user);
+const initialBalance = gameSession.initialBalance;
+const clientUserId = gameSession.clientUserId;
+---
+
+<CasinoLayout title="Slots - Arcturus Casino">
+	<div
+		id="slots-root"
+		data-user-id={clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={initialBalance}
+		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+	>
+		<!-- Header -->
+		<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+			<div>
+				<a
+					href="/games"
+					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
+				>
+					← Back to Games
+				</a>
+				<h1 class="deco-section-title text-4xl">Slots</h1>
+				<p class="text-[var(--deco-muted)] text-sm mt-1">
+					100% free virtual chips — no real money.
+				</p>
+			</div>
+			<div
+				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+			>
+				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+				<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
+					{initialBalance.toLocaleString()}
+				</div>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+			<!-- Game table -->
+			<div class="lg:col-span-3">
+				<div class="felt-table rounded-3xl p-4 sm:p-6 mb-6 relative">
+					<div
+						id="game-status"
+						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] px-6 py-2 rounded-full border border-[var(--deco-brass)] z-10"
+					>
+						Place your bet
+					</div>
+
+					<div id="last-result" class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6">
+						Spin to play
+					</div>
+
+					<!-- Reel window -->
+					<div id="reel-window" class="grid grid-cols-5 gap-2 sm:gap-3 max-w-2xl mx-auto">
+						{
+							[0, 1, 2, 3, 4].map((reel) => (
+								<div class="reel flex flex-col gap-2" data-reel={reel}>
+									{[0, 1, 2].map((row) => (
+										<div
+											class="symbol-cell flex items-center justify-center rounded-lg bg-[var(--deco-obsidian)] border border-[var(--deco-line)] aspect-square text-3xl sm:text-5xl font-bold"
+											data-reel={reel}
+											data-row={row}
+										>
+											<span class="symbol-glyph">🍒</span>
+										</div>
+									))}
+								</div>
+							))
+						}
+					</div>
+
+					<div id="last-win" class="text-center mt-4 h-8 text-2xl font-bold"></div>
+				</div>
+
+				<!-- Bet controls -->
+				<div
+					class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 sm:p-6 border border-[var(--deco-line)]"
+				>
+					<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+						<span class="text-[var(--deco-muted)] text-sm">Bet per spin</span>
+						<span class="text-xl font-bold text-[var(--deco-brass)]" id="current-bet">1</span>
+					</div>
+					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips">
+						{
+							BET_INCREMENTS.map((amount, i) => (
+								<button
+									type="button"
+									class={`bet-chip rounded-full px-3 py-2 text-sm font-semibold border transition ${i === 0 ? 'selected' : ''}`}
+									data-bet={amount}
+									aria-pressed={i === 0 ? 'true' : 'false'}
+								>
+									{amount}
+								</button>
+							))
+						}
+					</div>
+					<button
+						type="button"
+						id="btn-spin"
+						class="btn-gold w-full py-4 text-lg font-bold rounded-xl"
+					>
+						Spin
+					</button>
+				</div>
+			</div>
+
+			<!-- Sidebar: recent spins + toggles -->
+			<div class="lg:col-span-1 space-y-4">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
+					<div class="text-sm text-[var(--deco-muted)] mb-2">Recent spins</div>
+					<div id="recent-spins" class="flex flex-wrap gap-1 min-h-[28px]"></div>
+				</div>
+				<div class="flex gap-2">
+					<button type="button" id="btn-paytable" class="deco-btn flex-1 py-2 rounded-lg text-sm">
+						Paytable
+					</button>
+					<button type="button" id="btn-settings" class="deco-btn flex-1 py-2 rounded-lg text-sm">
+						Settings
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Paytable panel -->
+		<div
+			id="paytable-panel"
+			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="deco-section-title text-2xl">Paytable</h2>
+					<button
+						type="button"
+						class="btn-paytable-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close paytable"
+					>
+						✕
+					</button>
+				</div>
+				<p class="text-[var(--deco-muted)] text-sm mb-4">
+					Payouts are per active line, left-to-right. 5 paylines: middle, top, bottom, V, Λ.
+				</p>
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="text-[var(--deco-muted)]">
+							<th class="text-left py-2">Symbol</th>
+							<th class="text-right py-2">3</th>
+							<th class="text-right py-2">4</th>
+							<th class="text-right py-2">5</th>
+						</tr>
+					</thead>
+					<tbody>
+						{
+							SYMBOL_ORDER.map((id) => (
+								<tr class="border-t border-[var(--deco-line)]">
+									<td class="py-2">
+										<span class="text-2xl mr-2">{SYMBOLS[id].glyph}</span>
+										<span class="text-[var(--deco-ivory-dim)]">{SYMBOLS[id].label}</span>
+									</td>
+									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][3]}</td>
+									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][4]}</td>
+									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][5]}</td>
+								</tr>
+							))
+						}
+					</tbody>
+				</table>
+				<p class="text-[var(--deco-muted)] text-xs mt-4">
+					Multipliers are per-line. Chip payout = multiplier × bet ÷ 5.
+				</p>
+			</div>
+		</div>
+
+		<!-- Settings panel -->
+		<div
+			id="settings-panel"
+			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-sm w-full p-6"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 class="deco-section-title text-2xl">Settings</h2>
+					<button
+						type="button"
+						class="btn-settings-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close settings"
+					>
+						✕
+					</button>
+				</div>
+				<label class="flex items-center justify-between py-2">
+					<span class="text-[var(--deco-ivory-dim)]">Spin speed</span>
+					<select
+						id="setting-spin-speed"
+						class="bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded px-2 py-1"
+					>
+						<option value="slow">Slow</option>
+						<option value="normal" selected>Normal</option>
+						<option value="fast">Fast</option>
+					</select>
+				</label>
+				<label class="flex items-center justify-between py-2">
+					<span class="text-[var(--deco-ivory-dim)]">Sound</span>
+					<input type="checkbox" id="setting-sound" checked />
+				</label>
+				<label class="flex items-center justify-between py-2">
+					<span class="text-[var(--deco-ivory-dim)]">Quick spin</span>
+					<input type="checkbox" id="setting-quick" />
+				</label>
+			</div>
+		</div>
+
+		<!-- Achievement toast -->
+		<div id="achievement-toast" class="hidden fixed bottom-6 right-6 z-50"></div>
+	</div>
+</CasinoLayout>
+
+<style is:global>
+	.bet-chip {
+		background: var(--deco-obsidian);
+		border-color: var(--deco-line);
+		color: var(--deco-ivory-dim);
+	}
+	.bet-chip.selected {
+		border-color: var(--deco-brass);
+		color: var(--deco-brass-bright);
+		transform: scale(1.08);
+		box-shadow: 0 0 12px color-mix(in srgb, var(--deco-brass) 45%, transparent);
+	}
+	.symbol-cell.win {
+		border-color: var(--deco-brass-bright);
+		box-shadow: 0 0 16px color-mix(in srgb, var(--deco-brass) 60%, transparent);
+		animation: win-pulse 0.8s ease-in-out infinite alternate;
+	}
+	.reel.spinning .symbol-glyph {
+		animation: spin-scroll 0.12s linear infinite;
+		opacity: 0.6;
+	}
+	@keyframes win-pulse {
+		from {
+			transform: scale(1);
+		}
+		to {
+			transform: scale(1.08);
+		}
+	}
+	@keyframes spin-scroll {
+		from {
+			transform: translateY(-6px);
+		}
+		to {
+			transform: translateY(6px);
+		}
+	}
+</style>
+
+<script>
+	// Slot client initialization — wired in Task 10 (slotsClient.ts)
+</script>

@@ -37,6 +37,7 @@ export function initSlotsClient(): void {
 		onBalanceUpdate: (balance) => {
 			renderer.renderBalance(balance);
 			if (!syncToServer) persistGuestBankroll('slots', clientUserId, balance);
+			updateSpinEnabled();
 		},
 		onRoundComplete: (result) => handleRoundComplete(result),
 		onError: (err) => {
@@ -53,13 +54,14 @@ export function initSlotsClient(): void {
 
 	renderer.renderBalance(game.getBalance());
 	renderer.renderBet(game.getBet());
-	renderer.setSpinEnabled(true);
+	updateSpinEnabled();
 
 	function selectBet(amount: number): void {
 		const clamped = Math.max(MIN_BET, Math.min(MAX_BET, Math.floor(amount)));
 		try {
 			game.setBet(clamped);
 			renderer.renderBet(clamped);
+			updateSpinEnabled();
 		} catch (_e) {
 			// ignore invalid selection
 		}
@@ -72,8 +74,15 @@ export function initSlotsClient(): void {
 	const spinBtn = document.getElementById('btn-spin') as HTMLButtonElement | null;
 	spinBtn?.addEventListener('click', () => doSpin());
 
+	function updateSpinEnabled(): void {
+		renderer.setSpinEnabled(game.canSpin());
+	}
+
 	function doSpin(): void {
-		if (!game.canSpin()) return;
+		if (!game.canSpin()) {
+			renderer.showStatus('Insufficient chips');
+			return;
+		}
 		const syncId =
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
@@ -92,7 +101,7 @@ export function initSlotsClient(): void {
 			renderer.renderResult(result);
 			renderer.showStatus(null);
 			renderer.renderRecent(game.getHistory());
-			renderer.setSpinEnabled(true);
+			updateSpinEnabled();
 		};
 
 		if (quickSpin) {

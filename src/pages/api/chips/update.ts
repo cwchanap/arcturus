@@ -401,6 +401,12 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		maxWin: MAX_CRAPS_SYNC_WIN_DELTA,
 		maxLoss: MAX_CRAPS_SYNC_LOSS_DELTA,
 	},
+	slots: {
+		// Top single-spin jackpot: seven 5-of-a-kind across up to 5 paylines
+		// at max bet 100 → 5 × (1000 × 100 / 5) = 100,000.
+		maxWin: 100000,
+		maxLoss: 10000,
+	},
 };
 
 // Minimum milliseconds between chip updates (rate limiting)

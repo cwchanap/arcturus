@@ -417,7 +417,8 @@ describe('constants', () => {
 		expect(GAME_TYPES).toContain('baccarat');
 		expect(GAME_TYPES).toContain('craps');
 		expect(GAME_TYPES).toContain('poker');
-		expect(GAME_TYPES.length).toBe(4);
+		expect(GAME_TYPES).toContain('slots');
+		expect(GAME_TYPES.length).toBe(5);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {
@@ -431,7 +432,9 @@ describe('constants', () => {
 	test('isValidGameType validates correctly', () => {
 		expect(isValidGameType('blackjack')).toBe(true);
 		expect(isValidGameType('baccarat')).toBe(true);
+		expect(isValidGameType('craps')).toBe(true);
 		expect(isValidGameType('poker')).toBe(true);
+		expect(isValidGameType('slots')).toBe(true);
 		expect(isValidGameType('roulette')).toBe(false);
 		expect(isValidGameType('')).toBe(false);
 		expect(isValidGameType(null as unknown as string)).toBe(false);

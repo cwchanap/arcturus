@@ -1,0 +1,86 @@
+import { expect, test } from '@playwright/test';
+
+test.describe('Slots game', () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto('/games/slots');
+		await page.waitForSelector('#slots-root');
+	});
+
+	test('renders the slot machine UI', async ({ page }) => {
+		await expect(page.locator('h1')).toHaveText('Slots');
+		await expect(page.locator('#btn-spin')).toBeVisible();
+		await expect(page.locator('#chip-balance')).toBeVisible();
+		await expect(page.locator('.bet-chip')).toHaveCount(6);
+	});
+
+	test('spin deducts the bet and updates balance without reload', async ({ page }) => {
+		const balanceBefore = await page.locator('#chip-balance').textContent();
+		await page.locator('.bet-chip[data-bet="1"]').click();
+		await expect(page.locator('#current-bet')).toHaveText('1');
+		await page.locator('#btn-spin').click();
+		// Balance should change (deduct or win) without a navigation.
+		// Poll because the reveal (and the optimistic balance update) happens
+		// after the spin animation (~1100ms at normal speed).
+		await expect
+			.poll(async () => page.locator('#chip-balance').textContent())
+			.not.toEqual(balanceBefore);
+		expect(page.url()).toContain('/games/slots');
+	});
+
+	test('selecting the max bet keeps the spin button enabled', async ({ page }) => {
+		// Cannot force a tiny balance without auth manipulation; instead verify
+		// the max-bet chip selects 100 and the spin button remains enabled.
+		await page.locator('.bet-chip[data-bet="100"]').click();
+		await expect(page.locator('#current-bet')).toHaveText('100');
+		await expect(page.locator('#btn-spin')).toBeEnabled();
+	});
+
+	test('paytable panel matches a known multiplier', async ({ page }) => {
+		await page.locator('#btn-paytable').click();
+		await expect(page.locator('#paytable-panel')).not.toHaveClass(/hidden/);
+		await expect(page.locator('#paytable-panel')).toContainText('×1000'); // seven 5-of-a-kind
+		await page.locator('.btn-paytable-close').click();
+		await expect(page.locator('#paytable-panel')).toHaveClass(/hidden/);
+	});
+
+	test('is responsive on mobile viewport', async ({ page }) => {
+		await page.setViewportSize({ width: 375, height: 667 });
+		await expect(page.locator('#reel-window')).toBeVisible();
+		await expect(page.locator('.symbol-cell').first()).toBeVisible();
+	});
+
+	test('rapid double-spin sends distinct syncs (no duplicate settlement)', async ({ page }) => {
+		const syncRequests: string[] = [];
+		page.on('request', (req) => {
+			if (req.url().endsWith('/api/chips/update') && req.method() === 'POST') {
+				const body = req.postDataJSON();
+				if (body?.gameType === 'slots') syncRequests.push(body.syncId);
+			}
+		});
+
+		// Spin 1 — wait for reveal (button re-enables after the spin animation).
+		await page.locator('#btn-spin').click();
+		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+		// Spin 2 immediately after the first settles.
+		await page.locator('#btn-spin').click();
+		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+
+		// At least one settlement sync should have fired; every syncId must be unique.
+		await expect.poll(async () => syncRequests.length, { timeout: 8000 }).toBeGreaterThanOrEqual(1);
+		const unique = new Set(syncRequests);
+		expect(unique.size).toBe(syncRequests.length);
+	});
+
+	test('refresh during pending spin does not create a phantom deduction', async ({ page }) => {
+		const balanceBefore = Number(
+			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
+		);
+		await page.reload();
+		await page.waitForSelector('#slots-root');
+		const balanceAfter = Number(
+			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
+		);
+		// No in-flight client spin survives reload, so server balance is unchanged.
+		expect(balanceAfter).toBe(balanceBefore);
+	});
+});

@@ -413,7 +413,7 @@ describe('chips update API', () => {
 		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
-			body: JSON.stringify({ delta: 10, gameType: 'slots' }),
+			body: JSON.stringify({ delta: 10, gameType: 'roulette' }),
 		});
 
 		const response = await POST({
@@ -429,7 +429,7 @@ describe('chips update API', () => {
 		resetMocks();
 		const POST = createHandler({
 			hasOwn: (target: object, key: PropertyKey) => {
-				if (target && typeof target === 'object' && key === 'slots') {
+				if (target && typeof target === 'object' && key === 'roulette') {
 					return true;
 				}
 				return Object.hasOwn(target, key);
@@ -437,7 +437,7 @@ describe('chips update API', () => {
 		});
 		const request = new Request('http://test.local', {
 			method: 'POST',
-			body: JSON.stringify({ delta: 10, gameType: 'slots' }),
+			body: JSON.stringify({ delta: 10, gameType: 'roulette' }),
 		});
 
 		const response = await POST({

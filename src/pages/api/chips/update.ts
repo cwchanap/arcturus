@@ -404,8 +404,12 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 	slots: {
 		// Top single-spin jackpot: seven 5-of-a-kind across up to 5 paylines
 		// at max bet 100 → 5 × (1000 × 100 / 5) = 100,000.
-		maxWin: 100000,
-		maxLoss: 10000,
+		// Coalesced syncs (quickSpin path) can batch multiple spins into one
+		// request, so the cap is sized at 5× the single-spin ceiling to avoid
+		// rejecting legitimate back-to-back jackpots.
+		maxWin: 500000,
+		// Single-spin max loss is the bet (100). 5× headroom for coalesced syncs.
+		maxLoss: 500,
 	},
 };
 

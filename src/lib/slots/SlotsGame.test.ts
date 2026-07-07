@@ -110,6 +110,24 @@ describe('SlotsGame duplicate-settlement protection', () => {
 		game.spin('sync-b');
 		expect(game.getBalance()).toBe(bal - 10);
 	});
+
+	test('replaying a non-latest syncId returns cached result without re-executing', () => {
+		const reels = new RiggedReels();
+		reels.force(losingGrid());
+		const game = new SlotsGame(1000, {}, {}, reels);
+		game.setBet(10);
+		const first = game.spin('sync-a');
+		const balanceAfterFirst = game.getBalance();
+		// A fresh spin with a new syncId (so lastSyncId is now 'sync-b')
+		reels.force(losingGrid());
+		game.spin('sync-b');
+		const balanceAfterSecond = game.getBalance();
+		// Replaying the earlier 'sync-a' must NOT re-deduct or re-credit
+		const replayed = game.spin('sync-a');
+		expect(replayed).toEqual(first);
+		expect(game.getBalance()).toBe(balanceAfterSecond);
+		expect(game.getBalance()).not.toBe(balanceAfterFirst);
+	});
 });
 
 describe('SlotsGame history', () => {

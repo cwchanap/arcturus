@@ -83,7 +83,7 @@ export class SlotsGame {
 		}
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);
-		if (cached && this.state.lastSyncId === syncId) {
+		if (cached) {
 			return cached;
 		}
 

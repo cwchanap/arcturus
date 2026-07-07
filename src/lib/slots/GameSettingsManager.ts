@@ -28,17 +28,6 @@ export class GameSettingsManager {
 		return this.getSettings();
 	}
 
-	getSpinDurationMs(): number {
-		switch (this.settings.spinSpeed) {
-			case 'slow':
-				return 1800;
-			case 'fast':
-				return 600;
-			default:
-				return 1100;
-		}
-	}
-
 	clearStorage(): void {
 		if (typeof window === 'undefined') return;
 		try {

@@ -104,7 +104,6 @@ export function initSlotsClient(): void {
 		const reveal = () => {
 			try {
 				const result = game.spin(syncId);
-				renderer.setSpinning(false);
 				renderer.renderGrid(result.grid);
 				if (result.lineWins.length > 0) renderer.highlightWins(result.lineWins);
 				renderer.renderResult(result);
@@ -112,6 +111,7 @@ export function initSlotsClient(): void {
 				renderer.renderRecent(game.getHistory());
 				updateSpinEnabled();
 			} finally {
+				renderer.setSpinning(false);
 				spinInFlight = false;
 			}
 		};

@@ -1379,8 +1379,13 @@ In `src/pages/api/chips/update.ts`, add a `slots` entry to the `GAME_LIMITS` obj
 	slots: {
 		// Top single-spin jackpot: seven 5-of-a-kind across up to 5 paylines
 		// at max bet 100 → 5 × (1000 × 100 / 5) = 100,000.
-		maxWin: 100000,
-		maxLoss: 10000,
+		// ChipSyncCoordinator coalesces rounds that complete while a sync is
+		// in-flight into one request, so maxWin is sized at 5× the single-spin
+		// ceiling (500,000) to avoid rejecting legitimate back-to-back jackpots.
+		// maxLoss is the single-spin max loss (the bet = 100); 5× headroom for
+		// coalesced syncs → 500.
+		maxWin: 500000,
+		maxLoss: 500,
 	},
 ```
 

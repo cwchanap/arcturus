@@ -57,7 +57,12 @@ export function subtractPendingStats(
 		winsIncrement: Math.max(0, current.winsIncrement - synced.winsIncrement),
 		lossesIncrement: Math.max(0, current.lossesIncrement - synced.lossesIncrement),
 		handsIncrement: Math.max(0, current.handsIncrement - synced.handsIncrement),
-		biggestWinCandidate: current.biggestWinCandidate,
+		// Reset biggestWinCandidate after subtracting the synced snapshot.
+		// Without this, a stale max from the synced batch leaks into the next
+		// sync and gets re-reported (inflating biggest-win stats / achievements).
+		// We cannot reconstruct the remaining rounds' biggest win without
+		// per-round tracking, so under-reporting is the safe trade-off.
+		biggestWinCandidate: undefined,
 	};
 }
 

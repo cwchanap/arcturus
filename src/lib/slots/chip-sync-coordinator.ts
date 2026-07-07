@@ -111,6 +111,11 @@ export class ChipSyncCoordinator {
 			});
 			const data = (await response.json().catch(() => ({}))) as {
 				balance?: number;
+				// Error responses (DELTA_EXCEEDS_LIMIT, BALANCE_MISMATCH) carry the
+				// server's authoritative balance under `currentBalance`, not `balance`.
+				// The success path uses `balance`. Read both so the rebase branch runs
+				// regardless of which response shape we receive.
+				currentBalance?: number;
 				previousBalance?: number;
 				error?: string;
 				newAchievements?: Array<{ name?: string; title?: string }>;
@@ -154,14 +159,17 @@ export class ChipSyncCoordinator {
 				return;
 			}
 
+			// Error responses carry the server balance as `currentBalance`; the
+			// success path uses `balance`. Fall back so both shapes rebase correctly.
+			const serverBalanceFromError = data.currentBalance ?? data.balance;
 			const resolution = resolveSlotsSyncState({
 				error: data.error,
-				hasServerBalance: typeof data.balance === 'number',
+				hasServerBalance: typeof serverBalanceFromError === 'number',
 			});
-			if (typeof data.balance === 'number') {
+			if (typeof serverBalanceFromError === 'number') {
 				const pendingDelta = this.deps.getGameBalance() - gameBalance;
-				this.serverSyncedBalance = data.balance;
-				this.deps.setGameBalance(data.balance + pendingDelta);
+				this.serverSyncedBalance = serverBalanceFromError;
+				this.deps.setGameBalance(serverBalanceFromError + pendingDelta);
 			}
 			this.pendingStats = resolution.clearPendingStats
 				? subtractPendingStats(this.pendingStats, snapshot)

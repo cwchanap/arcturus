@@ -5,7 +5,7 @@ import type { SpinResult, SymbolId } from './types';
 type FetchScript = Array<
 	| { kind: 'ok'; balance?: number; newAchievements?: Array<{ name?: string; title?: string }> }
 	| { kind: '429'; retryAfter?: number }
-	| { kind: 'error'; status?: number; error?: string; balance?: number }
+	| { kind: 'error'; status?: number; error?: string; currentBalance?: number }
 	| { kind: 'throw' }
 >;
 
@@ -68,7 +68,7 @@ function makeDeps(
 			return makeResponse({
 				ok: false,
 				status: step.status ?? 400,
-				body: { error: step.error, balance: step.balance },
+				body: { error: step.error, currentBalance: step.currentBalance },
 			});
 		},
 		setTimeoutImpl: (fn: () => void, ms: number) => {
@@ -349,7 +349,7 @@ describe('ChipSyncCoordinator', () => {
 	test('terminal server error (BALANCE_MISMATCH) clears pending stats and does not retry', async () => {
 		const ctx = makeDeps({
 			balance: 990,
-			script: [{ kind: 'error', status: 409, error: 'BALANCE_MISMATCH', balance: 1000 }],
+			script: [{ kind: 'error', status: 409, error: 'BALANCE_MISMATCH', currentBalance: 1000 }],
 		});
 		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
 		await coord.handleRoundComplete(makeSpinResult(-10));
@@ -372,5 +372,74 @@ describe('ChipSyncCoordinator', () => {
 		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
 		await coord.handleRoundComplete(makeSpinResult(100));
 		expect(ctx.getAchievements()).toEqual(['Big Winner', 'Lucky Streak']);
+	});
+
+	// Regression guard: drive the coordinator with real serialized Response objects
+	// (not the mock ChipSyncResponse shape) so field-name drift between the server's
+	// actual JSON and the coordinator's parser is caught at test time. The error path
+	// sends `currentBalance` (matching chips/update.ts DELTA_EXCEEDS_LIMIT /
+	// BALANCE_MISMATCH responses); the success path sends `balance`.
+	test('real Response: BALANCE_MISMATCH with currentBalance rebases client', async () => {
+		let balance = 990;
+		const deps = {
+			fetchImpl: async () =>
+				new Response(
+					JSON.stringify({
+						success: false,
+						error: 'BALANCE_MISMATCH',
+						message: 'Balance was modified concurrently. Please refresh and try again.',
+						currentBalance: 1000,
+					}),
+					{ status: 409, headers: { 'Content-Type': 'application/json' } },
+				) as unknown as ChipSyncResponse,
+			setTimeoutImpl: () => {},
+			getGameBalance: () => balance,
+			setGameBalance: (n: number) => {
+				balance = n;
+			},
+			onAchievement: () => {},
+			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
+			generateSyncRequestId: () => 'real-resp-sync-1',
+			endpoint: '/api/chips/update',
+		};
+		const coord = new ChipSyncCoordinator(deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(-10));
+		expect(coord.getServerSyncedBalance()).toBe(1000);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.isBusy()).toBe(false);
+	});
+
+	test('real Response: success with balance updates server-synced balance', async () => {
+		let balance = 1090;
+		const deps = {
+			fetchImpl: async () =>
+				new Response(
+					JSON.stringify({
+						success: true,
+						balance: 1090,
+						previousBalance: 1000,
+						delta: 90,
+						newAchievements: [],
+						warnings: [],
+					}),
+					{ status: 200, headers: { 'Content-Type': 'application/json' } },
+				) as unknown as ChipSyncResponse,
+			setTimeoutImpl: () => {},
+			getGameBalance: () => balance,
+			setGameBalance: (n: number) => {
+				balance = n;
+			},
+			onAchievement: () => {},
+			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
+			generateSyncRequestId: () => 'real-resp-sync-2',
+			endpoint: '/api/chips/update',
+		};
+		const coord = new ChipSyncCoordinator(deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(90));
+		expect(coord.getServerSyncedBalance()).toBe(1090);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.isBusy()).toBe(false);
 	});
 });

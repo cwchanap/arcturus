@@ -42,10 +42,10 @@ describe('balance-sync-state', () => {
 		expect(remainder.winsIncrement).toBe(0);
 		expect(remainder.lossesIncrement).toBe(1);
 		expect(remainder.handsIncrement).toBe(1);
-		expect(remainder.biggestWinCandidate).toBe(50);
+		expect(remainder.biggestWinCandidate).toBeUndefined();
 	});
 
-	test('subtractPendingStats clamps to zero and keeps biggestWinCandidate', () => {
+	test('subtractPendingStats clamps to zero and resets biggestWinCandidate', () => {
 		const p = { winsIncrement: 2, lossesIncrement: 1, handsIncrement: 3, biggestWinCandidate: 80 };
 		const synced = {
 			winsIncrement: 3,
@@ -57,7 +57,7 @@ describe('balance-sync-state', () => {
 		expect(remainder.winsIncrement).toBe(0);
 		expect(remainder.lossesIncrement).toBe(0);
 		expect(remainder.handsIncrement).toBe(0);
-		expect(remainder.biggestWinCandidate).toBe(80);
+		expect(remainder.biggestWinCandidate).toBeUndefined();
 	});
 
 	test('shouldAbandonFollowUpSync respects the attempt cap', () => {

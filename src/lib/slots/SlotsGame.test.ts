@@ -151,7 +151,9 @@ describe('SlotsGame events', () => {
 		const seen: string[] = [];
 		const events: Partial<SlotsGameEvents> = {
 			onSpinStart: () => seen.push('start'),
-			onRoundComplete: () => seen.push('complete'),
+			onRoundComplete: () => {
+				seen.push('complete');
+			},
 			onBalanceUpdate: () => seen.push('balance'),
 		};
 		const game = new SlotsGame(1000, {}, events, reels);

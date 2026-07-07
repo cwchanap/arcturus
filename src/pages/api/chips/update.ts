@@ -768,40 +768,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 		const { maxWin, maxLoss } = limits;
 
-		// Asymmetric delta validation:
-		// - Losses (negative delta) allowed up to maxLoss
-		// - Wins (positive delta) capped at maxWin
-		if (delta > 0 && delta > maxWin) {
-			console.warn(
-				`[CHIP_AUDIT] User ${redactUserId(userId)} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
-			);
-			return new Response(
-				JSON.stringify({
-					success: false,
-					error: 'DELTA_EXCEEDS_LIMIT',
-					message: `Win amount exceeds maximum allowed for ${gameType} (${maxWin})`,
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			);
-		}
-
-		if (delta < 0 && Math.abs(delta) > maxLoss) {
-			return new Response(
-				JSON.stringify({
-					success: false,
-					error: 'DELTA_EXCEEDS_LIMIT',
-					message: `Loss amount exceeds maximum allowed for ${gameType} (${maxLoss})`,
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				},
-			);
-		}
-
 		// Enforce per-game caps on statsDelta to prevent stats inflation within craps.
 		// Non-craps games are already rejected above; these caps bound the craps residual
 		// risk where delta and statsDelta can legitimately differ due to unsettled wagers.
@@ -935,6 +901,47 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			const rawHeldChips = currentRow.heldChips;
 			const heldChips = Number.isFinite(rawHeldChips) ? Math.trunc(rawHeldChips) : 0;
 			const needsRepair = rawServerBalance !== serverBalance;
+
+			// Asymmetric delta validation:
+			// - Losses (negative delta) allowed up to maxLoss
+			// - Wins (positive delta) capped at maxWin
+			// Performed after the DB read so the response can carry currentBalance,
+			// letting ChipSyncCoordinator's hasServerBalance branch rebase and self-heal
+			// (otherwise a rejected delta leaves serverSyncedBalance stale and every
+			// subsequent sync re-trips the limit, permanently desyncing the client).
+			if (delta > 0 && delta > maxWin) {
+				console.warn(
+					`[CHIP_AUDIT] User ${redactUserId(userId)} attempted win of ${delta} in ${gameType}, capped at ${maxWin}`,
+				);
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'DELTA_EXCEEDS_LIMIT',
+						message: `Win amount exceeds maximum allowed for ${gameType} (${maxWin})`,
+						currentBalance: serverBalance,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
+			if (delta < 0 && Math.abs(delta) > maxLoss) {
+				return new Response(
+					JSON.stringify({
+						success: false,
+						error: 'DELTA_EXCEEDS_LIMIT',
+						message: `Loss amount exceeds maximum allowed for ${gameType} (${maxLoss})`,
+						currentBalance: serverBalance,
+					}),
+					{
+						status: 400,
+						headers: { 'Content-Type': 'application/json' },
+					},
+				);
+			}
+
 			const shouldRecordStats = outcome !== undefined && validOutcomes.includes(outcome as string);
 
 			const resolvedHandCount = typeof handCount === 'number' ? handCount : 1;

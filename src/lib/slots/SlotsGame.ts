@@ -58,7 +58,6 @@ export class SlotsGame {
 
 	canSpin(): boolean {
 		return (
-			this.state.phase !== 'spinning' &&
 			this.state.phase !== 'error' &&
 			this.state.balance >= this.state.bet &&
 			this.state.bet >= MIN_BET
@@ -94,7 +93,6 @@ export class SlotsGame {
 			throw this.error('INSUFFICIENT_BALANCE', 'Not enough chips to spin');
 		}
 
-		this.state.phase = 'spinning';
 		this.state.balance -= bet;
 		this.emitBalance();
 		this.events.onSpinStart?.(bet);
@@ -120,11 +118,9 @@ export class SlotsGame {
 			this.state.history.length = MAX_HISTORY;
 		}
 		this.state.lastSyncId = syncId;
-		this.state.phase = 'settled';
 		this.events.onReelsReady?.(grid);
 		this.events.onRoundComplete?.(result);
 		this.emitBalance();
-		this.state.phase = 'idle';
 		return result;
 	}
 

@@ -51,6 +51,10 @@ export function initSlotsClient(): void {
 					onAchievement: (title) => renderer.showAchievement(title),
 					onRateLimitGiveUp: () =>
 						renderer.showStatus('Chip sync paused (rate limited). Balance will update shortly.'),
+					onNetworkErrorGiveUp: () =>
+						renderer.showStatus(
+							'Chip sync paused (network error). Balance reverted to last synced value.',
+						),
 					generateSyncRequestId: () =>
 						`slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
 					endpoint: '/api/chips/update',

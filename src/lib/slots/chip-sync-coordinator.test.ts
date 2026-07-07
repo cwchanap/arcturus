@@ -31,6 +31,7 @@ function makeDeps(
 		script: FetchScript;
 		onAchievement: (title: string) => void;
 		onRateLimitGiveUp: () => void;
+		onNetworkErrorGiveUp: () => void;
 	}>,
 ) {
 	let balance = overrides?.balance ?? 1000;
@@ -40,6 +41,7 @@ function makeDeps(
 	const scheduled: Array<{ fn: () => void; ms: number }> = [];
 	const achievements: string[] = [];
 	let giveUpCount = 0;
+	let networkGiveUpCount = 0;
 
 	const deps = {
 		fetchImpl: async (
@@ -84,6 +86,10 @@ function makeDeps(
 			giveUpCount++;
 			overrides?.onRateLimitGiveUp?.();
 		},
+		onNetworkErrorGiveUp: () => {
+			networkGiveUpCount++;
+			overrides?.onNetworkErrorGiveUp?.();
+		},
 		generateSyncRequestId: () => `test-sync-${fetchCalls.length}`,
 		endpoint: '/api/chips/update',
 	};
@@ -95,6 +101,7 @@ function makeDeps(
 		getScheduled: () => scheduled,
 		getAchievements: () => achievements,
 		getGiveUpCount: () => giveUpCount,
+		getNetworkGiveUpCount: () => networkGiveUpCount,
 		runScheduled: async (index = 0) => await scheduled[index].fn(),
 		runAllScheduled: async () => {
 			// Run scheduled callbacks in order; new ones appended during runs execute too.
@@ -139,6 +146,21 @@ describe('ChipSyncCoordinator', () => {
 		await coord.runSync();
 		expect(ctx.getFetchCalls()).toHaveLength(0);
 		expect(coord.isBusy()).toBe(false);
+	});
+
+	test('zero-delta round (push) still flushes hand stats', async () => {
+		const ctx = makeDeps({
+			balance: 1000,
+			script: [{ kind: 'ok', balance: 1000 }],
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(0));
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(ctx.getFetchCalls()[0].body.delta).toBe(0);
+		expect(ctx.getFetchCalls()[0].body.handCount).toBe(1);
+		expect(ctx.getFetchCalls()[0].body.outcome).toBe('push');
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.getServerSyncedBalance()).toBe(1000);
 	});
 
 	test('429 retries up to MAX_FOLLOW_UP_ATTEMPTS then gives up with user notice', async () => {
@@ -214,6 +236,7 @@ describe('ChipSyncCoordinator', () => {
 			},
 			onAchievement: () => {},
 			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
 			generateSyncRequestId: () => `test-sync-${fetchCalls.length}`,
 			endpoint: '/api/chips/update',
 		};
@@ -259,6 +282,7 @@ describe('ChipSyncCoordinator', () => {
 			},
 			onAchievement: () => {},
 			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
 			generateSyncRequestId: () => `test-sync-${fetchCalls.length}`,
 			endpoint: '/api/chips/update',
 		};
@@ -296,7 +320,7 @@ describe('ChipSyncCoordinator', () => {
 		expect(coord.isBusy()).toBe(false);
 	});
 
-	test('network error give-up rolls back game balance to server state', async () => {
+	test('network error give-up rolls back game balance to server state and notifies user', async () => {
 		const ctx = makeDeps({
 			balance: 990,
 			script: [{ kind: 'throw' }, { kind: 'throw' }, { kind: 'throw' }, { kind: 'throw' }],
@@ -318,6 +342,7 @@ describe('ChipSyncCoordinator', () => {
 		await ctx.runScheduled(2);
 		expect(ctx.getScheduled()).toHaveLength(3);
 		expect(ctx.getBalance()).toBe(1000);
+		expect(ctx.getNetworkGiveUpCount()).toBe(1);
 		expect(coord.isBusy()).toBe(false);
 	});
 

@@ -55,8 +55,7 @@ export type SlotsErrorCode =
 	| 'BET_BELOW_MIN'
 	| 'BET_ABOVE_MAX'
 	| 'INSUFFICIENT_BALANCE'
-	| 'INVALID_BET'
-	| 'SPIN_IN_PROGRESS';
+	| 'INVALID_BET';
 
 export interface SlotsError {
 	code: SlotsErrorCode;

@@ -92,7 +92,11 @@ export function initSlotsClient(): void {
 	}
 
 	function doSpin(): void {
-		if (spinInFlight || !game.canSpin()) {
+		if (spinInFlight) {
+			renderer.showStatus('Spinning…');
+			return;
+		}
+		if (!game.canSpin()) {
 			renderer.showStatus('Insufficient chips');
 			return;
 		}

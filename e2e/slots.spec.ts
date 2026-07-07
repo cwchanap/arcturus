@@ -49,7 +49,9 @@ test.describe('Slots game', () => {
 		await expect(page.locator('.symbol-cell').first()).toBeVisible();
 	});
 
-	test('rapid double-spin sends distinct syncs (no duplicate settlement)', async ({ page }) => {
+	test('rapid double-spin sends distinct client syncIds (no client-side reuse)', async ({
+		page,
+	}) => {
 		const syncRequests: string[] = [];
 		page.on('request', (req) => {
 			if (req.url().endsWith('/api/chips/update') && req.method() === 'POST') {

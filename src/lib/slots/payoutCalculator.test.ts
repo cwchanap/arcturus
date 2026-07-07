@@ -44,7 +44,7 @@ describe('linePayout', () => {
 });
 
 describe('evaluateGrid', () => {
-	test('a full middle row of sevens wins all 5 lines (jackpot)', () => {
+	test('a full middle row of lemons wins payline 0 (5-of-a-kind)', () => {
 		const grid: ReelGrid = [
 			['seven', 'lemon', 'cherry'],
 			['seven', 'lemon', 'cherry'],

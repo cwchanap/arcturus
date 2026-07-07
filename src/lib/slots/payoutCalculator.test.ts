@@ -83,38 +83,65 @@ describe('evaluateGrid', () => {
 			['a', 'b', 'c'],
 			['a', 'b', 'c'],
 		] as unknown as ReelGrid;
-		expect(extractLine(grid, PAYLINES[0])).toEqual(['b', 'b', 'b', 'b', 'b']);
-		expect(extractLine(grid, PAYLINES[3])).toEqual(['a', 'b', 'c', 'b', 'a']);
+		expect(extractLine(grid, PAYLINES[0])).toEqual([
+			'b',
+			'b',
+			'b',
+			'b',
+			'b',
+		] as unknown as SymbolId[]);
+		expect(extractLine(grid, PAYLINES[3])).toEqual([
+			'a',
+			'b',
+			'c',
+			'b',
+			'a',
+		] as unknown as SymbolId[]);
 	});
 });
 
 describe('payoutCalculator RTP', () => {
-	test('simulated RTP over 200k spins is within spec range (92-98%)', () => {
-		// mulberry32 is the spec-mandated PRNG for deterministic reel tests
-		// (see docs/superpowers/specs/2026-07-05-slots-game-design.md:139).
-		// A poor LCG skews the distribution enough to under-report RTP by ~4pp.
-		function mulberry32(seed: number): () => number {
-			let a = seed >>> 0;
-			return () => {
-				a |= 0;
-				a = (a + 0x6d2b79f5) | 0;
-				let t = Math.imul(a ^ (a >>> 15), 1 | a);
-				t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-				return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-			};
-		}
+	// mulberry32 is the spec-mandated PRNG for deterministic reel tests
+	// (see docs/superpowers/specs/2026-07-05-slots-game-design.md:139).
+	// A poor LCG skews the distribution enough to under-report RTP by ~4pp.
+	function mulberry32(seed: number): () => number {
+		let a = seed >>> 0;
+		return () => {
+			a |= 0;
+			a = (a + 0x6d2b79f5) | 0;
+			let t = Math.imul(a ^ (a >>> 15), 1 | a);
+			t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		};
+	}
+
+	function simulateRtp(seed: number, spins = 200_000, bet = 5): number {
 		const reels = new ReelManager();
-		const rng = mulberry32(12345);
-		const BET = 5;
+		const rng = mulberry32(seed);
 		let totalBet = 0;
 		let totalPayout = 0;
-		for (let i = 0; i < 200_000; i++) {
+		for (let i = 0; i < spins; i++) {
 			const grid = reels.spin(rng);
-			totalBet += BET;
-			totalPayout += evaluateGrid(grid, BET).totalPayout;
+			totalBet += bet;
+			totalPayout += evaluateGrid(grid, bet).totalPayout;
 		}
-		const rtp = totalPayout / totalBet;
+		return totalPayout / totalBet;
+	}
+
+	test('simulated RTP over 200k spins is within spec range (92-98%)', () => {
+		const rtp = simulateRtp(12345);
 		expect(rtp).toBeGreaterThan(0.92);
 		expect(rtp).toBeLessThan(0.98);
+	});
+
+	// Multiple seeds guard against a single-seed fluke where one PRNG stream
+	// happens to land inside the band while a different stream would not.
+	test('RTP stays within spec across multiple seeds', () => {
+		const seeds = [1, 42, 12345, 999999, 0xdeadbeef];
+		for (const seed of seeds) {
+			const rtp = simulateRtp(seed);
+			expect(rtp).toBeGreaterThan(0.92);
+			expect(rtp).toBeLessThan(0.98);
+		}
 	});
 });

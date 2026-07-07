@@ -50,9 +50,9 @@ export class SlotsGame {
 	}
 
 	setBet(bet: number): void {
-		if (!Number.isFinite(bet)) throw this.error('INVALID_BET', 'Bet must be a finite number');
-		if (bet < MIN_BET) throw this.error('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
-		if (bet > MAX_BET) throw this.error('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
+		if (!Number.isFinite(bet)) this.fail('INVALID_BET', 'Bet must be a finite number');
+		if (bet < MIN_BET) this.fail('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
+		if (bet > MAX_BET) this.fail('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
 		this.state.bet = Math.floor(bet);
 	}
 
@@ -78,7 +78,7 @@ export class SlotsGame {
 
 	spin(syncId: string): SpinResult {
 		if (!syncId || typeof syncId !== 'string') {
-			throw this.error('INVALID_BET', 'syncId is required');
+			this.fail('INVALID_BET', 'syncId is required');
 		}
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);
@@ -87,10 +87,10 @@ export class SlotsGame {
 		}
 
 		const bet = this.state.bet;
-		if (bet < MIN_BET) throw this.error('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
-		if (bet > MAX_BET) throw this.error('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
+		if (bet < MIN_BET) this.fail('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
+		if (bet > MAX_BET) this.fail('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
 		if (bet > this.state.balance) {
-			throw this.error('INSUFFICIENT_BALANCE', 'Not enough chips to spin');
+			this.fail('INSUFFICIENT_BALANCE', 'Not enough chips to spin');
 		}
 
 		this.state.balance -= bet;
@@ -134,10 +134,17 @@ export class SlotsGame {
 		);
 	}
 
-	private error(code: import('./types').SlotsErrorCode, message: string): Error {
+	private buildError(code: import('./types').SlotsErrorCode, message: string): Error {
 		const e = new Error(`[${code}] ${message}`);
 		(e as Error & { code: string }).code = code;
-		this.events.onError?.({ code, message });
 		return e;
+	}
+
+	// Notifies the UI (onError) then throws. Kept separate from buildError so
+	// the side effect is explicit at the throw site rather than hidden inside
+	// an Error-builder that callers might invoke without intending to notify.
+	private fail(code: import('./types').SlotsErrorCode, message: string): never {
+		this.events.onError?.({ code, message });
+		throw this.buildError(code, message);
 	}
 }

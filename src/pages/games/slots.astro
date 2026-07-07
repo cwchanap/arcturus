@@ -12,6 +12,7 @@ const clientUserId = gameSession.clientUserId;
 <CasinoLayout title="Slots - Arcturus Casino">
 	<div
 		id="slots-root"
+		data-testid="slots-root"
 		data-user-id={clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
@@ -35,7 +36,11 @@ const clientUserId = gameSession.clientUserId;
 				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 			>
 				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
-				<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
+				<div
+					class="text-2xl font-bold text-[var(--deco-brass)]"
+					id="chip-balance"
+					data-testid="chip-balance"
+				>
 					{initialBalance.toLocaleString()}
 				</div>
 			</div>
@@ -47,17 +52,26 @@ const clientUserId = gameSession.clientUserId;
 				<div class="felt-table rounded-3xl p-4 sm:p-6 mb-6 relative">
 					<div
 						id="game-status"
+						data-testid="game-status"
 						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] px-6 py-2 rounded-full border border-[var(--deco-brass)] z-10"
 					>
 						Place your bet
 					</div>
 
-					<div id="last-result" class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6">
+					<div
+						id="last-result"
+						data-testid="last-result"
+						class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6"
+					>
 						Spin to play
 					</div>
 
 					<!-- Reel window -->
-					<div id="reel-window" class="grid grid-cols-5 gap-2 sm:gap-3 max-w-2xl mx-auto">
+					<div
+						id="reel-window"
+						data-testid="reel-window"
+						class="grid grid-cols-5 gap-2 sm:gap-3 max-w-2xl mx-auto"
+					>
 						{
 							[0, 1, 2, 3, 4].map((reel) => (
 								<div class="reel flex flex-col gap-2" data-reel={reel}>
@@ -75,7 +89,8 @@ const clientUserId = gameSession.clientUserId;
 						}
 					</div>
 
-					<div id="last-win" class="text-center mt-4 h-8 text-2xl font-bold"></div>
+					<div id="last-win" data-testid="last-win" class="text-center mt-4 h-8 text-2xl font-bold">
+					</div>
 				</div>
 
 				<!-- Bet controls -->
@@ -84,9 +99,13 @@ const clientUserId = gameSession.clientUserId;
 				>
 					<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
 						<span class="text-[var(--deco-muted)] text-sm">Bet per spin</span>
-						<span class="text-xl font-bold text-[var(--deco-brass)]" id="current-bet">1</span>
+						<span
+							class="text-xl font-bold text-[var(--deco-brass)]"
+							id="current-bet"
+							data-testid="current-bet">1</span
+						>
 					</div>
-					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips">
+					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips" data-testid="bet-chips">
 						{
 							BET_INCREMENTS.map((amount, i) => (
 								<button
@@ -103,6 +122,7 @@ const clientUserId = gameSession.clientUserId;
 					<button
 						type="button"
 						id="btn-spin"
+						data-testid="btn-spin"
 						class="btn-gold w-full py-4 text-lg font-bold rounded-xl"
 					>
 						Spin
@@ -114,13 +134,28 @@ const clientUserId = gameSession.clientUserId;
 			<div class="lg:col-span-1 space-y-4">
 				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
 					<div class="text-sm text-[var(--deco-muted)] mb-2">Recent spins</div>
-					<div id="recent-spins" class="flex flex-wrap gap-1 min-h-[28px]"></div>
+					<div
+						id="recent-spins"
+						data-testid="recent-spins"
+						class="flex flex-wrap gap-1 min-h-[28px]"
+					>
+					</div>
 				</div>
 				<div class="flex gap-2">
-					<button type="button" id="btn-paytable" class="deco-btn flex-1 py-2 rounded-lg text-sm">
+					<button
+						type="button"
+						id="btn-paytable"
+						data-testid="btn-paytable"
+						class="deco-btn flex-1 py-2 rounded-lg text-sm"
+					>
 						Paytable
 					</button>
-					<button type="button" id="btn-settings" class="deco-btn flex-1 py-2 rounded-lg text-sm">
+					<button
+						type="button"
+						id="btn-settings"
+						data-testid="btn-settings"
+						class="deco-btn flex-1 py-2 rounded-lg text-sm"
+					>
 						Settings
 					</button>
 				</div>
@@ -130,6 +165,7 @@ const clientUserId = gameSession.clientUserId;
 		<!-- Paytable panel -->
 		<div
 			id="paytable-panel"
+			data-testid="paytable-panel"
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div
@@ -182,6 +218,7 @@ const clientUserId = gameSession.clientUserId;
 		<!-- Settings panel -->
 		<div
 			id="settings-panel"
+			data-testid="settings-panel"
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div
@@ -220,7 +257,12 @@ const clientUserId = gameSession.clientUserId;
 		</div>
 
 		<!-- Achievement toast -->
-		<div id="achievement-toast" class="hidden fixed bottom-6 right-6 z-50"></div>
+		<div
+			id="achievement-toast"
+			data-testid="achievement-toast"
+			class="hidden fixed bottom-6 right-6 z-50"
+		>
+		</div>
 	</div>
 </CasinoLayout>
 

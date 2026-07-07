@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ChipSyncCoordinator, type ChipSyncResponse } from './chip-sync-coordinator';
-import type { SpinResult } from './types';
+import type { SpinResult, SymbolId } from './types';
 
 type FetchScript = Array<
 	| { kind: 'ok'; balance?: number; newAchievements?: Array<{ name?: string; title?: string }> }
@@ -115,7 +115,7 @@ function makeDeps(
 function makeSpinResult(netDelta: number, syncId = 'spin-1'): SpinResult {
 	return {
 		bet: 10,
-		grid: [['cherry', 'cherry', 'cherry'] as unknown as string[]],
+		grid: [['cherry', 'cherry', 'cherry'] as SymbolId[]],
 		payout: Math.max(0, 10 + netDelta),
 		netDelta,
 		timestamp: Date.now(),

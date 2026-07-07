@@ -743,6 +743,7 @@ describe('chips update API', () => {
 
 	test('rejects win exceeding game limit', async () => {
 		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
 		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -756,6 +757,7 @@ describe('chips update API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(400);
 		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(body.currentBalance).toBe(1000);
 	});
 
 	test('rate limits repeated updates', async () => {
@@ -779,6 +781,7 @@ describe('chips update API', () => {
 
 	test('rejects loss exceeding game limit', async () => {
 		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 5000 });
 		const POST = createHandler();
 		const request = new Request('http://test.local', {
 			method: 'POST',
@@ -792,6 +795,7 @@ describe('chips update API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(400);
 		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(body.currentBalance).toBe(5000);
 	});
 
 	test('rejects non-integer previousBalance', async () => {

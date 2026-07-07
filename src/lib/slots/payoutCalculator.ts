@@ -1,6 +1,11 @@
 import { NUM_PAYLINES, PAYLINES, PAYTABLE } from './constants';
 import type { LineWin, ReelGrid, SpinEvaluation, SymbolId } from './types';
 
+// Payout multipliers in PAYTABLE are tuned for ~95% RTP, verified by the
+// simulation test in payoutCalculator.test.ts. There is no runtime RTP guard
+// here; the authoritative per-request win/loss cap lives in chips/update.ts
+// (GAME_LIMITS.slots).
+
 export function evaluateLine(
 	line: SymbolId[],
 ): { symbol: SymbolId; count: 3 | 4 | 5; multiplier: number } | null {
@@ -13,7 +18,7 @@ export function evaluateLine(
 	}
 	if (count < 3) return null;
 	const tier = PAYTABLE[first];
-	const key = (count > 5 ? 5 : count) as 3 | 4 | 5;
+	const key = count as 3 | 4 | 5;
 	return { symbol: first, count: key, multiplier: tier[key] };
 }
 

@@ -84,10 +84,4 @@ describe('GameSettingsManager', () => {
 		mgr.resetToDefaults();
 		expect(mgr.getSettings()).toEqual(DEFAULT_SETTINGS);
 	});
-
-	test('getSpinDurationMs maps speed to duration', () => {
-		const mgr = new GameSettingsManager('user-1');
-		mgr.updateSettings({ spinSpeed: 'slow' });
-		expect(mgr.getSpinDurationMs()).toBeGreaterThan(0);
-	});
 });

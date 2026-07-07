@@ -49,6 +49,18 @@ export function addPendingStats(
 	};
 }
 
+export function subtractPendingStats(
+	current: SlotsPendingStats,
+	synced: SlotsPendingStats,
+): SlotsPendingStats {
+	return {
+		winsIncrement: Math.max(0, current.winsIncrement - synced.winsIncrement),
+		lossesIncrement: Math.max(0, current.lossesIncrement - synced.lossesIncrement),
+		handsIncrement: Math.max(0, current.handsIncrement - synced.handsIncrement),
+		biggestWinCandidate: current.biggestWinCandidate,
+	};
+}
+
 export function shouldAbandonFollowUpSync(
 	attempts: number,
 	maxAttempts: number = MAX_FOLLOW_UP_ATTEMPTS,

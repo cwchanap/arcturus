@@ -8,14 +8,7 @@ import { MAX_BET, MIN_BET } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { SlotsGame } from './SlotsGame';
 import { SlotsUIRenderer } from './SlotsUIRenderer';
-import {
-	addPendingStats,
-	createPendingStats,
-	resolveSlotsSyncState,
-	shouldAbandonFollowUpSync,
-	getFollowUpBackoffDelayMs,
-	MAX_FOLLOW_UP_ATTEMPTS,
-} from './balance-sync-state';
+import { ChipSyncCoordinator } from './chip-sync-coordinator';
 import type { SpinResult } from './types';
 
 export function initSlotsClient(): void {
@@ -46,11 +39,25 @@ export function initSlotsClient(): void {
 		},
 	});
 
-	let serverSyncedBalance = initialBalance;
-	let isSyncInProgress = false;
-	let syncPending = false;
-	let followUpAttempts = 0;
-	let pendingStats = createPendingStats();
+	let spinInFlight = false;
+
+	const syncCoordinator = syncToServer
+		? new ChipSyncCoordinator(
+				{
+					fetchImpl: (url, init) => fetch(url, init as RequestInit),
+					setTimeoutImpl: (fn, ms) => window.setTimeout(fn, ms),
+					getGameBalance: () => game.getBalance(),
+					setGameBalance: (balance) => game.setBalance(balance),
+					onAchievement: (title) => renderer.showAchievement(title),
+					onRateLimitGiveUp: () =>
+						renderer.showStatus('Chip sync paused (rate limited). Balance will update shortly.'),
+					generateSyncRequestId: () =>
+						`slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+					endpoint: '/api/chips/update',
+				},
+				initialBalance,
+			)
+		: null;
 
 	renderer.renderBalance(game.getBalance());
 	renderer.renderBet(game.getBet());
@@ -79,10 +86,11 @@ export function initSlotsClient(): void {
 	}
 
 	function doSpin(): void {
-		if (!game.canSpin()) {
+		if (spinInFlight || !game.canSpin()) {
 			renderer.showStatus('Insufficient chips');
 			return;
 		}
+		spinInFlight = true;
 		const syncId =
 			typeof crypto !== 'undefined' && 'randomUUID' in crypto
 				? crypto.randomUUID()
@@ -94,14 +102,18 @@ export function initSlotsClient(): void {
 
 		const quickSpin = settingsMgr.getSettings().quickSpin;
 		const reveal = () => {
-			const result = game.spin(syncId);
-			renderer.setSpinning(false);
-			renderer.renderGrid(result.grid);
-			if (result.lineWins.length > 0) renderer.highlightWins(result.lineWins);
-			renderer.renderResult(result);
-			renderer.showStatus(null);
-			renderer.renderRecent(game.getHistory());
-			updateSpinEnabled();
+			try {
+				const result = game.spin(syncId);
+				renderer.setSpinning(false);
+				renderer.renderGrid(result.grid);
+				if (result.lineWins.length > 0) renderer.highlightWins(result.lineWins);
+				renderer.renderResult(result);
+				renderer.showStatus(null);
+				renderer.renderRecent(game.getHistory());
+				updateSpinEnabled();
+			} finally {
+				spinInFlight = false;
+			}
 		};
 
 		if (quickSpin) {
@@ -112,102 +124,8 @@ export function initSlotsClient(): void {
 	}
 
 	async function handleRoundComplete(result: SpinResult): Promise<void> {
-		if (!syncToServer) return;
-		const isWin = result.netDelta > 0;
-		const isLoss = result.netDelta < 0;
-		pendingStats = addPendingStats(pendingStats, isWin ? 1 : 0, isLoss ? 1 : 0, 1, result.netDelta);
-		if (isSyncInProgress) {
-			syncPending = true;
-			return;
-		}
-		await runSync();
-	}
-
-	async function runSync(retryCount = 0): Promise<void> {
-		isSyncInProgress = true;
-		const gameBalance = game.getBalance();
-		const deltaForRequest = gameBalance - serverSyncedBalance;
-		if (deltaForRequest === 0 && retryCount === 0) {
-			isSyncInProgress = false;
-			return;
-		}
-		const snapshot = { ...pendingStats };
-		const outcome: 'win' | 'loss' | 'push' =
-			deltaForRequest > 0 ? 'win' : deltaForRequest < 0 ? 'loss' : 'push';
-
-		try {
-			const response = await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					delta: deltaForRequest,
-					gameType: 'slots',
-					previousBalance: serverSyncedBalance,
-					outcome,
-					handCount: snapshot.handsIncrement || 1,
-					winsIncrement: snapshot.winsIncrement || undefined,
-					lossesIncrement: snapshot.lossesIncrement || undefined,
-					biggestWinCandidate: snapshot.biggestWinCandidate,
-					syncId: `slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-				}),
-			});
-			const data = (await response.json().catch(() => ({}))) as {
-				balance?: number;
-				previousBalance?: number;
-				error?: string;
-				newAchievements?: Array<{ name?: string; title?: string }>;
-			};
-
-			if (response.ok) {
-				if (typeof data.balance === 'number') {
-					serverSyncedBalance = data.balance;
-					game.setBalance(data.balance);
-				}
-				pendingStats = createPendingStats();
-				if (data.newAchievements?.length) {
-					for (const a of data.newAchievements) {
-						renderer.showAchievement(a.title ?? a.name ?? 'Achievement unlocked!');
-					}
-				}
-				isSyncInProgress = false;
-				if (syncPending) {
-					syncPending = false;
-					followUpAttempts = 0;
-					await runSync();
-				}
-				return;
-			}
-
-			if (response.status === 429) {
-				isSyncInProgress = false;
-				if (retryCount >= MAX_FOLLOW_UP_ATTEMPTS) return;
-				const retryAfter = Number(response.headers.get('Retry-After') ?? '2');
-				window.setTimeout(() => runSync(retryCount + 1), Math.min(retryAfter * 1000, 8000));
-				return;
-			}
-
-			const resolution = resolveSlotsSyncState({
-				error: data.error,
-				hasServerBalance: typeof data.balance === 'number',
-			});
-			if (typeof data.balance === 'number') {
-				serverSyncedBalance = data.balance;
-				game.setBalance(data.balance);
-			}
-			pendingStats = resolution.clearPendingStats ? createPendingStats() : pendingStats;
-			isSyncInProgress = false;
-			if (resolution.syncPending && !shouldAbandonFollowUpSync(followUpAttempts)) {
-				followUpAttempts++;
-				window.setTimeout(() => runSync(0), getFollowUpBackoffDelayMs(followUpAttempts));
-			}
-		} catch (_e) {
-			isSyncInProgress = false;
-			game.setBalance(serverSyncedBalance);
-			if (!shouldAbandonFollowUpSync(followUpAttempts)) {
-				followUpAttempts++;
-				window.setTimeout(() => runSync(0), getFollowUpBackoffDelayMs(followUpAttempts));
-			}
-		}
+		if (!syncCoordinator) return;
+		await syncCoordinator.handleRoundComplete(result);
 	}
 
 	// Settings panel wiring
@@ -251,7 +169,8 @@ export function initSlotsClient(): void {
 	document.addEventListener('keydown', (e) => {
 		if ((e.key === ' ' || e.key === 'Enter') && game.canSpin()) {
 			const target = e.target as HTMLElement;
-			if (target.tagName === 'INPUT' || target.tagName === 'SELECT') return;
+			if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON')
+				return;
 			e.preventDefault();
 			doSpin();
 		}

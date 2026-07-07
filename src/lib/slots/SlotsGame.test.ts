@@ -118,7 +118,7 @@ describe('SlotsGame duplicate-settlement protection', () => {
 		game.setBet(10);
 		const first = game.spin('sync-a');
 		const balanceAfterFirst = game.getBalance();
-		// A fresh spin with a new syncId (so lastSyncId is now 'sync-b')
+		// A fresh spin with a new syncId
 		reels.force(losingGrid());
 		game.spin('sync-b');
 		const balanceAfterSecond = game.getBalance();

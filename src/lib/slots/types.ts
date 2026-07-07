@@ -10,11 +10,6 @@ export interface SymbolDef {
 /** Grid indexed as [reel][row]; 5 reels × 3 rows. */
 export type ReelGrid = SymbolId[][];
 
-// 'spinning'/'settled' were removed: spin() is synchronous, so phase never
-// persists as anything but 'idle' between calls. The real concurrency guard
-// is `spinInFlight` in slotsClient.ts. 'error' remains as a future lock state.
-export type GamePhase = 'idle' | 'error';
-
 export interface LineWin {
 	paylineIndex: number;
 	symbol: SymbolId;
@@ -48,14 +43,12 @@ export interface SlotSettings {
 }
 
 export interface SlotsGameState {
-	phase: GamePhase;
 	balance: number;
 	bet: number;
 	grid: ReelGrid;
 	lastEvaluation: SpinEvaluation | null;
 	history: SpinResult[];
 	settings: SlotSettings;
-	lastSyncId: string | null;
 }
 
 export type SlotsErrorCode =

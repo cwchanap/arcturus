@@ -56,7 +56,9 @@ export function initSlotsClient(): void {
 							'Chip sync paused (network error). Balance reverted to last synced value.',
 						),
 					generateSyncRequestId: () =>
-						`slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+						typeof crypto !== 'undefined' && 'randomUUID' in crypto
+							? crypto.randomUUID()
+							: `slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
 					endpoint: '/api/chips/update',
 				},
 				initialBalance,

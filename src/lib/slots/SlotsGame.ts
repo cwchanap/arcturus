@@ -17,14 +17,12 @@ export class SlotsGame {
 		this.reels = reels;
 		this.events = events;
 		this.state = {
-			phase: 'idle',
 			balance: Math.max(0, Math.floor(initialBalance)),
 			bet: MIN_BET,
 			grid: this.emptyGrid(),
 			lastEvaluation: null,
 			history: [],
 			settings: { ...DEFAULT_SETTINGS, ...settings },
-			lastSyncId: null,
 		};
 	}
 
@@ -57,11 +55,7 @@ export class SlotsGame {
 	}
 
 	canSpin(): boolean {
-		return (
-			this.state.phase !== 'error' &&
-			this.state.balance >= this.state.bet &&
-			this.state.bet >= MIN_BET
-		);
+		return this.state.balance >= this.state.bet && this.state.bet >= MIN_BET;
 	}
 
 	getHistory(): SpinResult[] {
@@ -117,7 +111,6 @@ export class SlotsGame {
 		if (this.state.history.length > MAX_HISTORY) {
 			this.state.history.length = MAX_HISTORY;
 		}
-		this.state.lastSyncId = syncId;
 		this.events.onReelsReady?.(grid);
 		this.events.onRoundComplete?.(result);
 		this.emitBalance();

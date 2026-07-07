@@ -27,6 +27,7 @@ export type ChipSyncDeps = {
 	setGameBalance: (balance: number) => void;
 	onAchievement: (title: string) => void;
 	onRateLimitGiveUp: () => void;
+	onNetworkErrorGiveUp: () => void;
 	generateSyncRequestId: () => string;
 	endpoint: string;
 };
@@ -80,7 +81,11 @@ export class ChipSyncCoordinator {
 		this.isSyncInProgress = true;
 		const gameBalance = this.deps.getGameBalance();
 		const deltaForRequest = gameBalance - this.serverSyncedBalance;
-		if (deltaForRequest === 0 && retryCount === 0) {
+		// A zero delta with no pending stats is a true no-op. But a round whose
+		// netDelta is 0 (a push) still increments handsIncrement — we must send
+		// the request so the hand is recorded, otherwise closing the tab drops
+		// win/loss/leaderboard stats (balance is already correct).
+		if (deltaForRequest === 0 && retryCount === 0 && this.pendingStats.handsIncrement === 0) {
 			this.isSyncInProgress = false;
 			return;
 		}
@@ -179,6 +184,7 @@ export class ChipSyncCoordinator {
 				);
 			} else {
 				this.deps.setGameBalance(this.serverSyncedBalance);
+				this.deps.onNetworkErrorGiveUp();
 			}
 		}
 	}

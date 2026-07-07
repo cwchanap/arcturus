@@ -24,23 +24,23 @@
 
 ## File Structure
 
-| File                                     | Responsibility                                                                                                                           |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/lib/slots/types.ts`                 | All TypeScript interfaces/unions (SymbolId, ReelGrid, SpinResult, GamePhase, SlotSettings, SlotsGameState, SlotsGameEvents, error types) |
-| `src/lib/slots/constants.ts`             | Single source of truth: symbols, weights, paylines, paytable, bet limits, DEFAULT_SETTINGS, MAX_HISTORY, spin durations                  |
-| `src/lib/slots/ReelManager.ts`           | Weighted RNG producing a 5×3 ReelGrid (pure, injectable RNG)                                                                             |
-| `src/lib/slots/payoutCalculator.ts`      | Pure: evaluateLine, extractLine, evaluateGrid (line wins + total payout)                                                                 |
-| `src/lib/slots/SlotsGame.ts`             | State machine: balance, bet, spin (atomic + idempotent), history ring buffer, event callbacks                                            |
-| `src/lib/slots/GameSettingsManager.ts`   | localStorage persistence for SlotSettings (per clientUserId)                                                                             |
-| `src/lib/slots/balance-sync-state.ts`    | Pending-stats + retry/backoff helpers (adapted from baccarat)                                                                            |
-| `src/lib/slots/SlotsUIRenderer.ts`       | DOM updates: reels, balance, buttons, win highlight, paytable panel                                                                      |
-| `src/lib/slots/slotsClient.ts`           | `initSlotsClient()`: wire DOM + game + chip sync (the page `<script>` entrypoint)                                                        |
-| `src/lib/slots/index.ts`                 | Barrel exports                                                                                                                           |
-| `src/pages/games/slots.astro`            | Page: guest preamble, `#slots-root`, UI shell, `<script>` init                                                                           |
-| `src/lib/game-stats/constants.ts` (edit) | Add `'slots'` to GAME_TYPES / labels / icons                                                                                             |
-| `src/pages/api/chips/update.ts` (edit)   | Add `slots` to GAME_LIMITS                                                                                                               |
-| `src/pages/index.astro` (edit)           | Add `featured: true` to Slots lobby entry                                                                                                |
-| `e2e/slots.spec.ts`                      | Playwright E2E (desktop + mobile, spin, paytable, duplicate-settlement)                                                                  |
+| File                                     | Responsibility                                                                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/slots/types.ts`                 | All TypeScript interfaces/unions (SymbolId, ReelGrid, SpinResult, SlotSettings, SlotsGameState, SlotsGameEvents, error types) |
+| `src/lib/slots/constants.ts`             | Single source of truth: symbols, weights, paylines, paytable, bet limits, DEFAULT_SETTINGS, MAX_HISTORY, spin durations       |
+| `src/lib/slots/ReelManager.ts`           | Weighted RNG producing a 5×3 ReelGrid (pure, injectable RNG)                                                                  |
+| `src/lib/slots/payoutCalculator.ts`      | Pure: evaluateLine, extractLine, evaluateGrid (line wins + total payout)                                                      |
+| `src/lib/slots/SlotsGame.ts`             | State machine: balance, bet, spin (atomic + idempotent), history ring buffer, event callbacks                                 |
+| `src/lib/slots/GameSettingsManager.ts`   | localStorage persistence for SlotSettings (per clientUserId)                                                                  |
+| `src/lib/slots/balance-sync-state.ts`    | Pending-stats + retry/backoff helpers (adapted from baccarat)                                                                 |
+| `src/lib/slots/SlotsUIRenderer.ts`       | DOM updates: reels, balance, buttons, win highlight, paytable panel                                                           |
+| `src/lib/slots/slotsClient.ts`           | `initSlotsClient()`: wire DOM + game + chip sync (the page `<script>` entrypoint)                                             |
+| `src/lib/slots/index.ts`                 | Barrel exports                                                                                                                |
+| `src/pages/games/slots.astro`            | Page: guest preamble, `#slots-root`, UI shell, `<script>` init                                                                |
+| `src/lib/game-stats/constants.ts` (edit) | Add `'slots'` to GAME_TYPES / labels / icons                                                                                  |
+| `src/pages/api/chips/update.ts` (edit)   | Add `slots` to GAME_LIMITS                                                                                                    |
+| `src/pages/index.astro` (edit)           | Add `featured: true` to Slots lobby entry                                                                                     |
+| `e2e/slots.spec.ts`                      | Playwright E2E (desktop + mobile, spin, paytable, duplicate-settlement)                                                       |
 
 ---
 
@@ -54,7 +54,9 @@
 
 **Interfaces:**
 
-- Produces: `SymbolId`, `SymbolDef`, `ReelGrid`, `GamePhase`, `LineWin`, `SpinEvaluation`, `SpinResult`, `SpinSpeed`, `SlotSettings`, `SlotsGameState`, `SlotsErrorCode`, `SlotsError`, `SlotsGameEvents`; constants `NUM_REELS`, `NUM_ROWS`, `NUM_PAYLINES`, `SYMBOLS`, `SYMBOL_ORDER`, `PAYLINES`, `PAYTABLE`, `MIN_BET`, `MAX_BET`, `BET_INCREMENTS`, `MAX_HISTORY`, `DEFAULT_SETTINGS`, `getSpinDurationMs`.
+- Produces: `SymbolId`, `SymbolDef`, `ReelGrid`, `LineWin`, `SpinEvaluation`, `SpinResult`, `SpinSpeed`, `SlotSettings`, `SlotsGameState`, `SlotsErrorCode`, `SlotsError`, `SlotsGameEvents`; constants `NUM_REELS`, `NUM_ROWS`, `NUM_PAYLINES`, `SYMBOLS`, `SYMBOL_ORDER`, `PAYLINES`, `PAYTABLE`, `MIN_BET`, `MAX_BET`, `BET_INCREMENTS`, `MAX_HISTORY`, `DEFAULT_SETTINGS`, `getSpinDurationMs`.
+
+> **Implementation deviation (HPA-124):** `GamePhase` and the `phase` state machine were dropped. The client tracks in-flight spins with a `spinInFlight` boolean flag instead, and `canSpin()` checks only balance/bet. `lastSyncId` was also removed; dedup is now purely history-based. `SPIN_IN_PROGRESS` error code was removed as dead (never thrown). `soundEnabled` remains in the type/settings but has no audio implementation — kept as a forward-compatible toggle.
 
 - [ ] **Step 1: Write the failing test** — `src/lib/slots/constants.test.ts`
 
@@ -149,8 +151,6 @@ export interface SymbolDef {
 /** Grid indexed as [reel][row]; 5 reels × 3 rows. */
 export type ReelGrid = SymbolId[][];
 
-export type GamePhase = 'idle' | 'spinning' | 'settled' | 'error';
-
 export interface LineWin {
 	paylineIndex: number;
 	symbol: SymbolId;
@@ -184,22 +184,19 @@ export interface SlotSettings {
 }
 
 export interface SlotsGameState {
-	phase: GamePhase;
 	balance: number;
 	bet: number;
 	grid: ReelGrid;
 	lastEvaluation: SpinEvaluation | null;
 	history: SpinResult[];
 	settings: SlotSettings;
-	lastSyncId: string | null;
 }
 
 export type SlotsErrorCode =
 	| 'BET_BELOW_MIN'
 	| 'BET_ABOVE_MAX'
 	| 'INSUFFICIENT_BALANCE'
-	| 'INVALID_BET'
-	| 'SPIN_IN_PROGRESS';
+	| 'INVALID_BET';
 
 export interface SlotsError {
 	code: SlotsErrorCode;
@@ -827,14 +824,12 @@ export class SlotsGame {
 		this.reels = reels;
 		this.events = events;
 		this.state = {
-			phase: 'idle',
 			balance: Math.max(0, Math.floor(initialBalance)),
 			bet: MIN_BET,
 			grid: this.emptyGrid(),
 			lastEvaluation: null,
 			history: [],
 			settings: { ...DEFAULT_SETTINGS, ...settings },
-			lastSyncId: null,
 		};
 	}
 
@@ -867,12 +862,7 @@ export class SlotsGame {
 	}
 
 	canSpin(): boolean {
-		return (
-			this.state.phase !== 'spinning' &&
-			this.state.phase !== 'error' &&
-			this.state.balance >= this.state.bet &&
-			this.state.bet >= MIN_BET
-		);
+		return this.state.balance >= this.state.bet && this.state.bet >= MIN_BET;
 	}
 
 	getHistory(): SpinResult[] {
@@ -893,7 +883,7 @@ export class SlotsGame {
 		}
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);
-		if (cached && this.state.lastSyncId === syncId) {
+		if (cached) {
 			return cached;
 		}
 
@@ -904,7 +894,6 @@ export class SlotsGame {
 			throw this.error('INSUFFICIENT_BALANCE', 'Not enough chips to spin');
 		}
 
-		this.state.phase = 'spinning';
 		this.state.balance -= bet;
 		this.emitBalance();
 		this.events.onSpinStart?.(bet);
@@ -929,12 +918,9 @@ export class SlotsGame {
 		if (this.state.history.length > MAX_HISTORY) {
 			this.state.history.length = MAX_HISTORY;
 		}
-		this.state.lastSyncId = syncId;
-		this.state.phase = 'settled';
 		this.events.onReelsReady?.(grid);
 		this.events.onRoundComplete?.(result);
 		this.emitBalance();
-		this.state.phase = 'idle';
 		return result;
 	}
 

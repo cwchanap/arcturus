@@ -18,7 +18,7 @@ export function evaluateLine(
 	}
 	if (count < 3) return null;
 	const tier = PAYTABLE[first];
-	const key = count as 3 | 4 | 5;
+	const key = Math.min(count, 5) as 3 | 4 | 5;
 	return { symbol: first, count: key, multiplier: tier[key] };
 }
 

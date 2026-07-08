@@ -462,4 +462,42 @@ describe('SlotsUIRenderer', () => {
 		expect(fx.toast.textContent).toBe('Big win!');
 		expect(fx.toast.hasClass('hidden')).toBe(false);
 	});
+
+	test('showAchievement clears the previous hide timer so a newer toast is not hidden early', () => {
+		const timers: Array<() => void> = [];
+		const originalSetTimeout = globalThis.setTimeout;
+		const originalClearTimeout = globalThis.clearTimeout;
+		const cleared: number[] = [];
+		let timerIdCounter = 0;
+
+		(globalThis as any).setTimeout = (fn: () => void) => {
+			const id = ++timerIdCounter;
+			timers[id] = fn;
+			return id;
+		};
+		(globalThis as any).clearTimeout = (id: number) => {
+			cleared.push(id);
+			delete timers[id];
+		};
+
+		try {
+			const r = new SlotsUIRenderer();
+			r.showAchievement('First!');
+			r.showAchievement('Second!');
+
+			// The first timer must have been cleared so it can't hide the
+			// second toast early.
+			expect(cleared).toContain(1);
+			expect(fx.toast.textContent).toBe('Second!');
+			expect(fx.toast.hasClass('hidden')).toBe(false);
+
+			// Firing the first timer (if it were still active) should not
+			// exist anymore — only the second timer should fire.
+			timers[2]?.();
+			expect(fx.toast.hasClass('hidden')).toBe(true);
+		} finally {
+			(globalThis as any).setTimeout = originalSetTimeout;
+			(globalThis as any).clearTimeout = originalClearTimeout;
+		}
+	});
 });

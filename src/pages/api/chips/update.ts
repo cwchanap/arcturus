@@ -408,8 +408,13 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		// in-flight into one request, so the cap is sized at 5× the single-spin
 		// ceiling to avoid rejecting legitimate back-to-back jackpots.
 		maxWin: 500000,
-		// Single-spin max loss is the bet (100). 5× headroom for coalesced syncs.
-		maxLoss: 500,
+		// Single-spin max loss is the bet (100). With Quick spin enabled, spins
+		// are synchronous and a player can complete many rounds during the
+		// coalescing window (2s rate limit + RTT + retries). 100× headroom
+		// covers ~100 coalesced max-bet losses — far more than a human can
+		// click in that window — while staying well below maxWin so the
+		// attack surface is not meaningfully widened.
+		maxLoss: 10000,
 	},
 };
 

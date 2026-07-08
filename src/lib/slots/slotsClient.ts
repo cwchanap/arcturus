@@ -74,6 +74,11 @@ export function initSlotsClient(): void {
 	updateSpinEnabled();
 
 	function selectBet(amount: number): void {
+		// Freeze bet while a spin is in-flight. The spin reads game.bet at
+		// reveal time (deferred via setTimeout for non-quick spins), so
+		// allowing a bet change between click and reveal would settle the
+		// already-started spin for a different stake than the player saw.
+		if (spinInFlight) return;
 		const clamped = Math.max(MIN_BET, Math.min(MAX_BET, Math.floor(amount)));
 		try {
 			game.setBet(clamped);

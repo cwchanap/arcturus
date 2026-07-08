@@ -90,7 +90,7 @@ export class SlotsGame {
 
 	spin(syncId: string): SpinResult {
 		if (!syncId || typeof syncId !== 'string') {
-			this.fail('INVALID_BET', 'syncId is required');
+			this.fail('INVALID_SYNC_ID', 'syncId is required');
 		}
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);

@@ -60,6 +60,10 @@ export function initSlotsClient(): void {
 							? crypto.randomUUID()
 							: `slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
 					endpoint: '/api/chips/update',
+					sendBeaconImpl:
+						typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function'
+							? (url, body) => navigator.sendBeacon(url, body)
+							: undefined,
 				},
 				initialBalance,
 			)

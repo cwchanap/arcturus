@@ -99,7 +99,7 @@ export class SlotsUIRenderer {
 		const el = document.getElementById('recent-spins');
 		if (!el) return;
 		const recent = history.slice(0, MAX_HISTORY);
-		el.innerHTML = '';
+		el.replaceChildren();
 		for (const h of recent) {
 			const dot = document.createElement('span');
 			dot.className = 'px-2 py-1 rounded text-xs font-semibold';

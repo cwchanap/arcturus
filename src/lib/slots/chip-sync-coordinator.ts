@@ -30,6 +30,12 @@ export type ChipSyncDeps = {
 	onNetworkErrorGiveUp: () => void;
 	generateSyncRequestId: () => string;
 	endpoint: string;
+	// Best-effort fire-and-forget transport for unload-time stat flushing.
+	// sendBeacon sends cookies (same-origin) so the auth session carries; the
+	// response is unavailable, so this is only used to avoid dropping
+	// pending win/loss/hand stats when the user closes the tab after a 429
+	// give-up. Optional — when absent the give-up just drops pending stats.
+	sendBeaconImpl?: (url: string, body: string) => boolean;
 };
 
 const RATE_LIMIT_RETRY_CAP_MS = 8000;
@@ -148,6 +154,7 @@ export class ChipSyncCoordinator {
 				if (retryCount >= MAX_FOLLOW_UP_ATTEMPTS) {
 					this.isSyncInProgress = false;
 					console.warn('[slots] chip sync gave up after 429 rate-limit retries; balance may drift');
+					this.flushPendingStatsViaBeacon();
 					this.deps.onRateLimitGiveUp();
 					return;
 				}
@@ -198,8 +205,47 @@ export class ChipSyncCoordinator {
 			} else {
 				this.isSyncInProgress = false;
 				this.deps.setGameBalance(this.serverSyncedBalance);
+				// After the revert, getGameBalance() === serverSyncedBalance so
+				// the beacon sends delta=0 with the pending stats — the server
+				// records the win/loss/hand aggregates without applying a
+				// balance change the client has already discarded. Sending the
+				// beacon before the revert would apply a delta the client threw
+				// away, causing drift.
+				this.flushPendingStatsViaBeacon();
 				this.deps.onNetworkErrorGiveUp();
 			}
+		}
+	}
+
+	// Best-effort unload-time flush of pending win/loss/hand stats when the
+	// normal fetch loop has given up due to repeated 429s. sendBeacon carries
+	// session cookies (same-origin) so the request is authenticated, but the
+	// response is unavailable — we clear pending stats optimistically. If the
+	// beacon also fails (e.g. server still rate-limiting), the stats are lost,
+	// which is the same outcome as not flushing; the balance is unaffected
+	// because the 429 branch never applied a server-side delta.
+	private flushPendingStatsViaBeacon(): void {
+		if (!this.deps.sendBeaconImpl) return;
+		if (this.pendingStats.handsIncrement === 0) return;
+		const deltaForRequest = this.deps.getGameBalance() - this.serverSyncedBalance;
+		const outcome: 'win' | 'loss' | 'push' =
+			deltaForRequest > 0 ? 'win' : deltaForRequest < 0 ? 'loss' : 'push';
+		const body = JSON.stringify({
+			delta: deltaForRequest,
+			gameType: 'slots',
+			previousBalance: this.serverSyncedBalance,
+			outcome,
+			handCount: this.pendingStats.handsIncrement || 1,
+			winsIncrement: this.pendingStats.winsIncrement || undefined,
+			lossesIncrement: this.pendingStats.lossesIncrement || undefined,
+			biggestWinCandidate: this.pendingStats.biggestWinCandidate,
+			syncId: this.deps.generateSyncRequestId(),
+		});
+		try {
+			this.deps.sendBeaconImpl(this.deps.endpoint, body);
+			this.pendingStats = createPendingStats();
+		} catch (_e) {
+			// sendBeacon throwing is unexpected; leave pending stats as-is.
 		}
 	}
 }

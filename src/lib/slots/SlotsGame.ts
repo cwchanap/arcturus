@@ -48,9 +48,12 @@ export class SlotsGame {
 	}
 
 	setBet(bet: number): void {
-		if (!Number.isFinite(bet)) this.fail('INVALID_BET', 'Bet must be a finite number');
-		if (bet < MIN_BET) this.fail('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
-		if (bet > MAX_BET) this.fail('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
+		// setBet is a programmatic setter (selectBet clamps before calling),
+		// so validation failures are caller bugs — throw without emitting
+		// onError, otherwise the toast leaks even when the caller swallows.
+		if (!Number.isFinite(bet)) throw this.buildError('INVALID_BET', 'Bet must be a finite number');
+		if (bet < MIN_BET) throw this.buildError('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
+		if (bet > MAX_BET) throw this.buildError('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
 		this.state.bet = Math.floor(bet);
 	}
 
@@ -89,7 +92,6 @@ export class SlotsGame {
 
 		this.state.balance -= bet;
 		this.emitBalance();
-		this.events.onSpinStart?.(bet);
 
 		const grid = this.reels.spin();
 		const evaluation = evaluateGrid(grid, bet);

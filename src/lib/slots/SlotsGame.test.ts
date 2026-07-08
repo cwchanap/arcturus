@@ -145,12 +145,11 @@ describe('SlotsGame history', () => {
 });
 
 describe('SlotsGame events', () => {
-	test('emits onBalanceUpdate, onSpinStart, onRoundComplete', () => {
+	test('emits onBalanceUpdate, onRoundComplete', () => {
 		const reels = new RiggedReels();
 		reels.force(losingGrid());
 		const seen: string[] = [];
 		const events: Partial<SlotsGameEvents> = {
-			onSpinStart: () => seen.push('start'),
 			onRoundComplete: () => {
 				seen.push('complete');
 			},
@@ -159,7 +158,6 @@ describe('SlotsGame events', () => {
 		const game = new SlotsGame(1000, {}, events, reels);
 		game.setBet(10);
 		game.spin('sync-ev');
-		expect(seen).toContain('start');
 		expect(seen).toContain('complete');
 		expect(seen.filter((s) => s === 'balance').length).toBeGreaterThan(0);
 	});

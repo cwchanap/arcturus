@@ -13,6 +13,13 @@ export type SlotsSyncResolution = {
 export const MAX_FOLLOW_UP_ATTEMPTS = 3;
 const MAX_FOLLOW_UP_BACKOFF_MS = 8000;
 
+// Maximum rounds the server accepts in a single chip-sync request.
+// Must match MAX_HAND_COUNT in src/pages/api/chips/update.ts (currently
+// MAX_CRAPS_SYNC_HANDS_PER_REQUEST). The coordinator splits pending rounds
+// into batches of at most this size so coalesced Quick Spin rounds are never
+// rejected with INVALID_HAND_COUNT.
+export const MAX_SLOTS_SYNC_HANDS_PER_REQUEST = 100;
+
 const NON_RETRIABLE_ERRORS = [
 	'DELTA_EXCEEDS_LIMIT',
 	'INSUFFICIENT_BALANCE',
@@ -63,6 +70,30 @@ export function subtractPendingStats(
 		// We cannot reconstruct the remaining rounds' biggest win without
 		// per-round tracking, so under-reporting is the safe trade-off.
 		biggestWinCandidate: undefined,
+	};
+}
+
+// Compute aggregate pending stats from a list of per-round net deltas.
+// Used by the coordinator to derive the stats for a batch slice when splitting
+// pending rounds across multiple sync requests. Mirrors the per-round logic in
+// addPendingStats (win = delta > 0, loss = delta < 0, biggestWin = max positive).
+export function computeSlotsBatchStats(roundDeltas: readonly number[]): SlotsPendingStats {
+	let winsIncrement = 0;
+	let lossesIncrement = 0;
+	let biggestWinCandidate: number | undefined;
+	for (const delta of roundDeltas) {
+		if (delta > 0) {
+			winsIncrement++;
+			biggestWinCandidate = Math.max(biggestWinCandidate ?? 0, delta);
+		} else if (delta < 0) {
+			lossesIncrement++;
+		}
+	}
+	return {
+		winsIncrement,
+		lossesIncrement,
+		handsIncrement: roundDeltas.length,
+		biggestWinCandidate,
 	};
 }
 

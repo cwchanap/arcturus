@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ChipSyncCoordinator, type ChipSyncResponse } from './chip-sync-coordinator';
+import { MAX_SLOTS_SYNC_HANDS_PER_REQUEST } from './balance-sync-state';
 import type { SpinResult, SymbolId } from './types';
 
 type FetchScript = Array<
@@ -605,6 +606,165 @@ describe('ChipSyncCoordinator', () => {
 		expect(coord.getServerSyncedBalance()).toBe(1000);
 		expect(warnSpy.called).toBe(true);
 		warnSpy.restore();
+	});
+
+	// Regression: when >100 rounds coalesce during a slow/retrying sync, the
+	// coordinator must split them across multiple requests so the server never
+	// rejects with INVALID_HAND_COUNT (handCount > 100).
+	test('splits >100 coalesced rounds across multiple syncs, each capped at MAX_HANDS', async () => {
+		let serverBalance = 1000;
+		let balance = 1000;
+		const fetchCalls: Array<Record<string, unknown>> = [];
+		let fetchIndex = 0;
+		const scheduled: Array<{ fn: () => void; ms: number }> = [];
+		const deps = {
+			fetchImpl: async (
+				_url: string,
+				init: { method: string; headers: Record<string, string>; body: string },
+			) => {
+				const body = JSON.parse(init.body) as Record<string, unknown>;
+				fetchCalls.push(body);
+				fetchIndex++;
+				if (fetchIndex === 1) {
+					// First sync → 429, schedule retry.
+					return makeResponse({ ok: false, status: 429, body: {}, retryAfter: '0' });
+				}
+				serverBalance += body.delta as number;
+				return makeResponse({ ok: true, status: 200, body: { balance: serverBalance } });
+			},
+			setTimeoutImpl: (fn: () => void, ms: number) => scheduled.push({ fn, ms }),
+			getGameBalance: () => balance,
+			setGameBalance: (n: number) => {
+				balance = n;
+			},
+			onAchievement: () => {},
+			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
+			generateSyncRequestId: () => `split-sync-${fetchCalls.length}`,
+			endpoint: '/api/chips/update',
+		};
+		const coord = new ChipSyncCoordinator(deps, 1000);
+
+		// spin-0 triggers the first sync → 429 → retry scheduled.
+		balance = 1010;
+		await coord.handleRoundComplete(makeSpinResult(10, 'spin-0'));
+		expect(fetchCalls).toHaveLength(1);
+		expect(scheduled).toHaveLength(1);
+		expect(coord.isBusy()).toBe(true);
+
+		// 150 more rounds coalesce during the retry wait (151 total pending).
+		for (let i = 1; i <= 150; i++) {
+			const delta = i % 2 === 0 ? 5 : -3;
+			balance += delta;
+			await coord.handleRoundComplete(makeSpinResult(delta, `spin-${i}`));
+		}
+		expect(fetchCalls).toHaveLength(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(151);
+
+		// Fire the retry → splits 151 rounds into 100 + 51.
+		await scheduled[0].fn();
+		expect(fetchCalls).toHaveLength(3);
+		expect(fetchCalls[1].handCount).toBe(MAX_SLOTS_SYNC_HANDS_PER_REQUEST);
+		expect(fetchCalls[2].handCount).toBe(51);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.isBusy()).toBe(false);
+
+		// Deltas across the two split batches sum to the total net delta.
+		const splitTotal = (fetchCalls[1].delta as number) + (fetchCalls[2].delta as number);
+		expect(splitTotal).toBe(balance - 1000);
+		expect(coord.getServerSyncedBalance()).toBe(serverBalance);
+	});
+
+	test('split batches carry per-batch biggestWinCandidate for achievement tracking', async () => {
+		let serverBalance = 1000;
+		let balance = 1000;
+		const fetchCalls: Array<Record<string, unknown>> = [];
+		let fetchIndex = 0;
+		const scheduled: Array<{ fn: () => void; ms: number }> = [];
+		const deps = {
+			fetchImpl: async (
+				_url: string,
+				init: { method: string; headers: Record<string, string>; body: string },
+			) => {
+				const body = JSON.parse(init.body) as Record<string, unknown>;
+				fetchCalls.push(body);
+				fetchIndex++;
+				if (fetchIndex === 1) {
+					return makeResponse({ ok: false, status: 429, body: {}, retryAfter: '0' });
+				}
+				serverBalance += body.delta as number;
+				return makeResponse({ ok: true, status: 200, body: { balance: serverBalance } });
+			},
+			setTimeoutImpl: (fn: () => void, ms: number) => scheduled.push({ fn, ms }),
+			getGameBalance: () => balance,
+			setGameBalance: (n: number) => {
+				balance = n;
+			},
+			onAchievement: () => {},
+			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
+			generateSyncRequestId: () => `bwin-sync-${fetchCalls.length}`,
+			endpoint: '/api/chips/update',
+		};
+		const coord = new ChipSyncCoordinator(deps, 1000);
+
+		// spin-0 triggers the first sync → 429.
+		balance = 1005;
+		await coord.handleRoundComplete(makeSpinResult(5, 'spin-0'));
+
+		// 99 more wins of 2 (rounds 1-99), then 21 losses of -1 (rounds 100-120).
+		// First batch (100 rounds: spin-0 + 99 wins) — biggestWin is 5.
+		// Second batch (21 losses) — no win, biggestWinCandidate undefined.
+		for (let i = 1; i <= 99; i++) {
+			balance += 2;
+			await coord.handleRoundComplete(makeSpinResult(2, `win-${i}`));
+		}
+		for (let i = 1; i <= 21; i++) {
+			balance -= 1;
+			await coord.handleRoundComplete(makeSpinResult(-1, `loss-${i}`));
+		}
+		expect(coord.getPendingStats().handsIncrement).toBe(121);
+
+		await scheduled[0].fn();
+		expect(fetchCalls).toHaveLength(3);
+		// First split batch (100 rounds: spin-0 + 99 wins) — biggestWin is 5.
+		expect(fetchCalls[1].handCount).toBe(MAX_SLOTS_SYNC_HANDS_PER_REQUEST);
+		expect(fetchCalls[1].biggestWinCandidate).toBe(5);
+		// Second split batch (21 losses) — no win, biggestWinCandidate undefined.
+		expect(fetchCalls[2].handCount).toBe(21);
+		expect(fetchCalls[2].biggestWinCandidate).toBeUndefined();
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+	});
+
+	test('beacon caps handCount at MAX_SLOTS_SYNC_HANDS_PER_REQUEST on 429 give-up', async () => {
+		const ctx = makeDeps({
+			balance: 1000,
+			script: [
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+			],
+			sendBeacon: () => true,
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+
+		// spin-0 triggers the first sync → 429.
+		await coord.handleRoundComplete(makeSpinResult(10, 'spin-0'));
+		// 150 more rounds coalesce during retries (151 total).
+		for (let i = 1; i <= 150; i++) {
+			await coord.handleRoundComplete(makeSpinResult(-1, `spin-${i}`));
+		}
+		// Run all scheduled retries → all 429 → give-up → beacon flush.
+		await ctx.runAllScheduled();
+
+		expect(ctx.getGiveUpCount()).toBe(1);
+		const beacons = ctx.getBeaconCalls();
+		expect(beacons).toHaveLength(1);
+		expect(beacons[0].body.handCount).toBe(MAX_SLOTS_SYNC_HANDS_PER_REQUEST);
+		expect(beacons[0].body.winsIncrement).toBe(1);
+		expect(beacons[0].body.lossesIncrement).toBe(99);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
 	});
 });
 

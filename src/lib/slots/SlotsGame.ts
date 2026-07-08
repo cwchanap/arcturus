@@ -77,7 +77,7 @@ export class SlotsGame {
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);
 		if (cached) {
-			return cached;
+			return { ...cached, grid: cached.grid.map((c) => [...c]) };
 		}
 
 		const bet = this.state.bet;
@@ -111,10 +111,9 @@ export class SlotsGame {
 		if (this.state.history.length > MAX_HISTORY) {
 			this.state.history.length = MAX_HISTORY;
 		}
-		this.events.onReelsReady?.(grid);
 		this.events.onRoundComplete?.(result);
 		this.emitBalance();
-		return result;
+		return { ...result, grid: result.grid.map((c) => [...c]) };
 	}
 
 	private emitBalance(): void {

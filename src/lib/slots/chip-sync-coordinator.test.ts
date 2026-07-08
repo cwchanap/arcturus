@@ -442,4 +442,67 @@ describe('ChipSyncCoordinator', () => {
 		expect(coord.getPendingStats().handsIncrement).toBe(0);
 		expect(coord.isBusy()).toBe(false);
 	});
+
+	// Regression guard: during a 429 retry wait, a new round's
+	// handleRoundComplete must coalesce (set syncPending) rather than
+	// calling runSync directly — otherwise the scheduled retry and the
+	// new round's fetch run concurrently, causing balance drift.
+	test('new round during 429 retry wait coalesces instead of racing', async () => {
+		const ctx = makeDeps({
+			balance: 990,
+			script: [
+				{ kind: '429', retryAfter: 0 },
+				{ kind: 'ok', balance: 985 },
+			],
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+
+		await coord.handleRoundComplete(makeSpinResult(-10, 'spin-1'));
+		// 429 received → retry scheduled, coordinator still busy.
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(ctx.getScheduled()).toHaveLength(1);
+		expect(coord.isBusy()).toBe(true);
+
+		// Spin 2 arrives during the retry wait.
+		ctx.deps.getGameBalance = () => 985;
+		await coord.handleRoundComplete(makeSpinResult(-5, 'spin-2'));
+		// Must NOT have fired a second fetch — spin-2 coalesces.
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(2);
+
+		// Retry fires → succeeds → flushes coalesced spin-2 stats.
+		await ctx.runScheduled(0);
+		expect(ctx.getFetchCalls()).toHaveLength(2);
+		// The retry's delta covers both rounds: -10 + -5 = -15.
+		expect(ctx.getFetchCalls()[1].body.delta).toBe(-15);
+		expect(ctx.getFetchCalls()[1].body.handCount).toBe(2);
+		expect(coord.getServerSyncedBalance()).toBe(985);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.isBusy()).toBe(false);
+	});
+
+	// Regression guard: same race but via the network-error catch path.
+	test('new round during network-error retry wait coalesces instead of racing', async () => {
+		const ctx = makeDeps({
+			balance: 990,
+			script: [{ kind: 'throw' }, { kind: 'ok', balance: 985 }],
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+
+		await coord.handleRoundComplete(makeSpinResult(-10, 'spin-1'));
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(ctx.getScheduled()).toHaveLength(1);
+		expect(coord.isBusy()).toBe(true);
+
+		ctx.deps.getGameBalance = () => 985;
+		await coord.handleRoundComplete(makeSpinResult(-5, 'spin-2'));
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(2);
+
+		await ctx.runScheduled(0);
+		expect(ctx.getFetchCalls()).toHaveLength(2);
+		expect(ctx.getFetchCalls()[1].body.delta).toBe(-15);
+		expect(coord.getServerSyncedBalance()).toBe(985);
+		expect(coord.isBusy()).toBe(false);
+	});
 });

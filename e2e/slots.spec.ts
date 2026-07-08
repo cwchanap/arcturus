@@ -60,12 +60,30 @@ test.describe('Slots game', () => {
 			}
 		});
 
+		// Stall the first chip sync so the coordinator stays in-flight when
+		// spin 2 fires. This deterministically exercises the coalescing path
+		// (handleRoundComplete → isBusy → syncPending) rather than relying on
+		// timing between the button re-enable and the sync fetch.
+		let resolveFirstSync: () => void = () => {};
+		await page.route('**/api/chips/update', async (route) => {
+			if (syncRequests.length === 0) {
+				await new Promise<void>((resolve) => {
+					resolveFirstSync = resolve;
+				});
+			}
+			await route.continue();
+		});
+
 		// Spin 1 — wait for reveal (button re-enables after the spin animation).
 		await page.locator('#btn-spin').click();
 		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
-		// Spin 2 immediately after the first settles.
+		// Spin 2 immediately after the first settles. Sync 1 is still in-flight
+		// (stalled by the route handler), so the coordinator must coalesce.
 		await page.locator('#btn-spin').click();
 		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+
+		// Release the stalled sync so both rounds can settle.
+		resolveFirstSync();
 
 		// At least one settlement sync should have fired; every syncId must be unique.
 		await expect.poll(async () => syncRequests.length, { timeout: 8000 }).toBeGreaterThanOrEqual(1);
@@ -77,12 +95,17 @@ test.describe('Slots game', () => {
 		const balanceBefore = Number(
 			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
 		);
+
+		// Start a spin, then reload before the reveal fires. The client-side
+		// optimistic deduction never reaches the server (no chip sync for an
+		// incomplete spin), so the server balance must be unchanged on reload.
+		await page.locator('#btn-spin').click();
 		await page.reload();
 		await page.waitForSelector('#slots-root');
+
 		const balanceAfter = Number(
 			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
 		);
-		// No in-flight client spin survives reload, so server balance is unchanged.
 		expect(balanceAfter).toBe(balanceBefore);
 	});
 });

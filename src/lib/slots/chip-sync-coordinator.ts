@@ -39,6 +39,7 @@ export class ChipSyncCoordinator {
 	private serverSyncedBalance: number;
 	private isSyncInProgress = false;
 	private syncPending = false;
+	private pendingRetryTimer = false;
 	private followUpAttempts = 0;
 	private pendingStats: SlotsPendingStats = createPendingStats();
 	private readonly deps: ChipSyncDeps;
@@ -57,7 +58,7 @@ export class ChipSyncCoordinator {
 	}
 
 	isBusy(): boolean {
-		return this.isSyncInProgress;
+		return this.isSyncInProgress || this.pendingRetryTimer;
 	}
 
 	handleRoundComplete(result: SpinResult): Promise<void> {
@@ -70,7 +71,7 @@ export class ChipSyncCoordinator {
 			1,
 			result.netDelta,
 		);
-		if (this.isSyncInProgress) {
+		if (this.isBusy()) {
 			this.syncPending = true;
 			return Promise.resolve();
 		}
@@ -78,6 +79,7 @@ export class ChipSyncCoordinator {
 	}
 
 	async runSync(retryCount = 0): Promise<void> {
+		this.pendingRetryTimer = false;
 		this.isSyncInProgress = true;
 		const gameBalance = this.deps.getGameBalance();
 		const deltaForRequest = gameBalance - this.serverSyncedBalance;
@@ -143,8 +145,8 @@ export class ChipSyncCoordinator {
 			}
 
 			if (response.status === 429) {
-				this.isSyncInProgress = false;
 				if (retryCount >= MAX_FOLLOW_UP_ATTEMPTS) {
+					this.isSyncInProgress = false;
 					console.warn('[slots] chip sync gave up after 429 rate-limit retries; balance may drift');
 					this.deps.onRateLimitGiveUp();
 					return;
@@ -152,6 +154,7 @@ export class ChipSyncCoordinator {
 				const retryAfter = Number(
 					response.headers.get('Retry-After') ?? DEFAULT_RETRY_AFTER_SECONDS,
 				);
+				this.pendingRetryTimer = true;
 				this.deps.setTimeoutImpl(
 					() => this.runSync(retryCount + 1),
 					Math.min(retryAfter * 1000, RATE_LIMIT_RETRY_CAP_MS),
@@ -174,23 +177,26 @@ export class ChipSyncCoordinator {
 			this.pendingStats = resolution.clearPendingStats
 				? subtractPendingStats(this.pendingStats, snapshot)
 				: this.pendingStats;
-			this.isSyncInProgress = false;
 			if (resolution.syncPending && !shouldAbandonFollowUpSync(this.followUpAttempts)) {
 				this.followUpAttempts++;
-				this.deps.setTimeoutImpl(
-					() => this.runSync(0),
-					getFollowUpBackoffDelayMs(this.followUpAttempts),
-				);
-			}
-		} catch (_e) {
-			this.isSyncInProgress = false;
-			if (!shouldAbandonFollowUpSync(this.followUpAttempts)) {
-				this.followUpAttempts++;
+				this.pendingRetryTimer = true;
 				this.deps.setTimeoutImpl(
 					() => this.runSync(0),
 					getFollowUpBackoffDelayMs(this.followUpAttempts),
 				);
 			} else {
+				this.isSyncInProgress = false;
+			}
+		} catch (_e) {
+			if (!shouldAbandonFollowUpSync(this.followUpAttempts)) {
+				this.followUpAttempts++;
+				this.pendingRetryTimer = true;
+				this.deps.setTimeoutImpl(
+					() => this.runSync(0),
+					getFollowUpBackoffDelayMs(this.followUpAttempts),
+				);
+			} else {
+				this.isSyncInProgress = false;
 				this.deps.setGameBalance(this.serverSyncedBalance);
 				this.deps.onNetworkErrorGiveUp();
 			}

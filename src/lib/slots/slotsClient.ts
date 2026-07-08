@@ -32,7 +32,7 @@ export function initSlotsClient(): void {
 			if (!syncToServer) persistGuestBankroll('slots', clientUserId, balance);
 			updateSpinEnabled();
 		},
-		onRoundComplete: (result) => handleRoundComplete(result),
+		onRoundComplete: (result) => handleRoundCompleteSafe(result),
 		onError: (err) => {
 			renderer.showStatus(err.message);
 			renderer.setSpinEnabled(true);
@@ -142,6 +142,15 @@ export function initSlotsClient(): void {
 		await syncCoordinator.handleRoundComplete(result);
 	}
 
+	// onRoundComplete is typed as void (fire-and-forget), so rejections from
+	// the async handler would become unhandled Promise rejections. Catch here
+	// to prevent silent chip-economy failures from crashing the page.
+	function handleRoundCompleteSafe(result: SpinResult): void {
+		handleRoundComplete(result).catch((e) => {
+			console.error('[slots] chip sync failed:', e);
+		});
+	}
+
 	// Settings panel wiring
 	const settingsPanel = document.getElementById('settings-panel');
 	document.getElementById('btn-settings')?.addEventListener('click', () => {
@@ -179,9 +188,26 @@ export function initSlotsClient(): void {
 		paytablePanel?.classList.add('hidden');
 	});
 
-	// Keyboard: Space/Enter to spin
+	function isAnyModalOpen(): boolean {
+		return (
+			!paytablePanel?.classList.contains('hidden') || !settingsPanel?.classList.contains('hidden')
+		);
+	}
+
+	// Keyboard: Escape closes modals; Space/Enter spins (but not behind modals)
 	document.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape') {
+			if (!paytablePanel?.classList.contains('hidden')) {
+				paytablePanel?.classList.add('hidden');
+				return;
+			}
+			if (!settingsPanel?.classList.contains('hidden')) {
+				settingsPanel?.classList.add('hidden');
+				return;
+			}
+		}
 		if ((e.key === ' ' || e.key === 'Enter') && game.canSpin()) {
+			if (isAnyModalOpen()) return;
 			const target = e.target as HTMLElement;
 			if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON')
 				return;
@@ -189,4 +215,12 @@ export function initSlotsClient(): void {
 			doSpin();
 		}
 	});
+
+	// Rage-quit beacon: flush pending win/loss/hand stats when the user closes
+	// the tab or navigates away mid-session. Skipped for guests (no server sync).
+	if (syncToServer && syncCoordinator) {
+		window.addEventListener('pagehide', () => {
+			syncCoordinator.flushPendingStatsOnUnload();
+		});
+	}
 }

@@ -586,4 +586,40 @@ describe('ChipSyncCoordinator', () => {
 		expect(coord.getServerSyncedBalance()).toBe(985);
 		expect(coord.isBusy()).toBe(false);
 	});
+
+	// Regression: 200 OK without a balance field is an unexpected server
+	// response. The coordinator should warn (observability) and still clear
+	// pending stats (the server returned OK, so it processed them).
+	test('200 OK without balance field warns and clears pending stats', async () => {
+		const warnSpy = jestSpyConsoleWarn();
+		const ctx = makeDeps({
+			balance: 1090,
+			script: [{ kind: 'ok' }], // no balance field
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(90));
+
+		expect(ctx.getFetchCalls()).toHaveLength(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		// serverSyncedBalance not updated (no balance to rebase from)
+		expect(coord.getServerSyncedBalance()).toBe(1000);
+		expect(warnSpy.called).toBe(true);
+		warnSpy.restore();
+	});
 });
+
+function jestSpyConsoleWarn(): { called: boolean; restore: () => void } {
+	const original = console.warn;
+	let called = false;
+	console.warn = (..._args: unknown[]) => {
+		called = true;
+	};
+	return {
+		get called() {
+			return called;
+		},
+		restore: () => {
+			console.warn = original;
+		},
+	};
+}

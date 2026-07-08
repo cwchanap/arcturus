@@ -67,6 +67,15 @@ export class ChipSyncCoordinator {
 		return this.isSyncInProgress || this.pendingRetryTimer;
 	}
 
+	// Best-effort flush of pending win/loss/hand stats when the user closes
+	// the tab or navigates away. Exposed so the client can wire it to the
+	// pagehide event. Safe to call even if a sync is in-flight — the in-flight
+	// fetch may still settle, but the beacon ensures stats are not lost if it
+	// doesn't. No-op when there are no pending stats or no sendBeacon impl.
+	flushPendingStatsOnUnload(): void {
+		this.flushPendingStatsViaBeacon();
+	}
+
 	handleRoundComplete(result: SpinResult): Promise<void> {
 		const isWin = result.netDelta > 0;
 		const isLoss = result.netDelta < 0;
@@ -134,6 +143,12 @@ export class ChipSyncCoordinator {
 					const pendingDelta = this.deps.getGameBalance() - gameBalance;
 					this.serverSyncedBalance = data.balance;
 					this.deps.setGameBalance(data.balance + pendingDelta);
+				} else {
+					// 200 OK without a balance field is an unexpected server response.
+					// The balance axis self-heals on the next sync (delta is computed
+					// from gameBalance - serverSyncedBalance), but this indicates a
+					// server-side issue worth surfacing.
+					console.warn('[slots] chip sync returned 200 OK without a balance field');
 				}
 				this.pendingStats = subtractPendingStats(this.pendingStats, snapshot);
 				if (data.newAchievements?.length) {

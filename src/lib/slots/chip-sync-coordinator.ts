@@ -1,11 +1,10 @@
 import {
-	addPendingStats,
-	createPendingStats,
+	computeSlotsBatchStats,
 	getFollowUpBackoffDelayMs,
 	MAX_FOLLOW_UP_ATTEMPTS,
+	MAX_SLOTS_SYNC_HANDS_PER_REQUEST,
 	resolveSlotsSyncState,
 	shouldAbandonFollowUpSync,
-	subtractPendingStats,
 	type SlotsPendingStats,
 } from './balance-sync-state';
 import type { SpinResult } from './types';
@@ -47,7 +46,12 @@ export class ChipSyncCoordinator {
 	private syncPending = false;
 	private pendingRetryTimer = false;
 	private followUpAttempts = 0;
-	private pendingStats: SlotsPendingStats = createPendingStats();
+	// Per-round net deltas for rounds completed but not yet acknowledged by the
+	// server. Source of truth for pending stats — the aggregate (wins/losses/
+	// hands/biggestWin) is derived via computeSlotsBatchStats. Tracking per-round
+	// allows splitting oversized batches at MAX_SLOTS_SYNC_HANDS_PER_REQUEST so
+	// the server never rejects coalesced Quick Spin rounds with INVALID_HAND_COUNT.
+	private pendingRoundDeltas: number[] = [];
 	private readonly deps: ChipSyncDeps;
 
 	constructor(deps: ChipSyncDeps, initialServerSyncedBalance: number) {
@@ -60,7 +64,7 @@ export class ChipSyncCoordinator {
 	}
 
 	getPendingStats(): SlotsPendingStats {
-		return { ...this.pendingStats };
+		return computeSlotsBatchStats(this.pendingRoundDeltas);
 	}
 
 	isBusy(): boolean {
@@ -77,15 +81,7 @@ export class ChipSyncCoordinator {
 	}
 
 	handleRoundComplete(result: SpinResult): Promise<void> {
-		const isWin = result.netDelta > 0;
-		const isLoss = result.netDelta < 0;
-		this.pendingStats = addPendingStats(
-			this.pendingStats,
-			isWin ? 1 : 0,
-			isLoss ? 1 : 0,
-			1,
-			result.netDelta,
-		);
+		this.pendingRoundDeltas.push(result.netDelta);
 		if (this.isBusy()) {
 			this.syncPending = true;
 			return Promise.resolve();
@@ -96,17 +92,25 @@ export class ChipSyncCoordinator {
 	async runSync(retryCount = 0): Promise<void> {
 		this.pendingRetryTimer = false;
 		this.isSyncInProgress = true;
-		const gameBalance = this.deps.getGameBalance();
-		const deltaForRequest = gameBalance - this.serverSyncedBalance;
-		// A zero delta with no pending stats is a true no-op. But a round whose
-		// netDelta is 0 (a push) still increments handsIncrement — we must send
-		// the request so the hand is recorded, otherwise closing the tab drops
-		// win/loss/leaderboard stats (balance is already correct).
-		if (deltaForRequest === 0 && retryCount === 0 && this.pendingStats.handsIncrement === 0) {
+		// No pending rounds means nothing to sync — the balance invariant
+		// (gameBalance === serverSyncedBalance + sum(pendingRoundDeltas)) holds
+		// by construction, so a zero-length array implies delta 0 as well.
+		// A round whose netDelta is 0 (a push) still appears in the array, so
+		// the request is sent and the hand is recorded rather than dropped.
+		if (this.pendingRoundDeltas.length === 0) {
 			this.isSyncInProgress = false;
 			return;
 		}
-		const snapshot = { ...this.pendingStats };
+		// Cap the batch at the server's per-request hand limit. Rounds beyond
+		// the cap remain in pendingRoundDeltas and are synced in a follow-up
+		// request after this batch succeeds. The delta sent is the sum of the
+		// batch's per-round deltas (not gameBalance - serverSyncedBalance, which
+		// includes rounds beyond the batch), so the server applies only this
+		// batch's balance change.
+		const batchDeltas = this.pendingRoundDeltas.slice(0, MAX_SLOTS_SYNC_HANDS_PER_REQUEST);
+		const batchLength = batchDeltas.length;
+		const deltaForRequest = batchDeltas.reduce((sum, d) => sum + d, 0);
+		const snapshot = computeSlotsBatchStats(batchDeltas);
 		const outcome: 'win' | 'loss' | 'push' =
 			deltaForRequest > 0 ? 'win' : deltaForRequest < 0 ? 'loss' : 'push';
 
@@ -139,25 +143,29 @@ export class ChipSyncCoordinator {
 			};
 
 			if (response.ok) {
+				// Remove the synced batch. New rounds that arrived during the
+				// await were appended after the batch, so they remain pending.
+				this.pendingRoundDeltas.splice(0, batchLength);
 				if (typeof data.balance === 'number') {
-					const pendingDelta = this.deps.getGameBalance() - gameBalance;
+					const remainingDelta = this.pendingRoundDeltas.reduce((sum, d) => sum + d, 0);
 					this.serverSyncedBalance = data.balance;
-					this.deps.setGameBalance(data.balance + pendingDelta);
+					this.deps.setGameBalance(data.balance + remainingDelta);
 				} else {
 					// 200 OK without a balance field is an unexpected server response.
 					// The balance axis self-heals on the next sync (delta is computed
-					// from gameBalance - serverSyncedBalance), but this indicates a
+					// from the remaining pending rounds), but this indicates a
 					// server-side issue worth surfacing.
 					console.warn('[slots] chip sync returned 200 OK without a balance field');
 				}
-				this.pendingStats = subtractPendingStats(this.pendingStats, snapshot);
 				if (data.newAchievements?.length) {
 					for (const a of data.newAchievements) {
 						this.deps.onAchievement(a.title ?? a.name ?? 'Achievement unlocked!');
 					}
 				}
 				this.isSyncInProgress = false;
-				if (this.syncPending) {
+				// Trigger a follow-up if new rounds arrived during the sync OR if
+				// this was a partial batch (remaining rounds from the split).
+				if (this.syncPending || this.pendingRoundDeltas.length > 0) {
 					this.syncPending = false;
 					this.followUpAttempts = 0;
 					await this.runSync();
@@ -191,14 +199,17 @@ export class ChipSyncCoordinator {
 				error: data.error,
 				hasServerBalance: typeof serverBalanceFromError === 'number',
 			});
-			if (typeof serverBalanceFromError === 'number') {
-				const pendingDelta = this.deps.getGameBalance() - gameBalance;
-				this.serverSyncedBalance = serverBalanceFromError;
-				this.deps.setGameBalance(serverBalanceFromError + pendingDelta);
+			if (resolution.clearPendingStats) {
+				// Server gave an authoritative balance or a non-retriable error —
+				// abandon the batch. Concurrent rounds that arrived during the
+				// await remain pending in pendingRoundDeltas.
+				this.pendingRoundDeltas.splice(0, batchLength);
 			}
-			this.pendingStats = resolution.clearPendingStats
-				? subtractPendingStats(this.pendingStats, snapshot)
-				: this.pendingStats;
+			if (typeof serverBalanceFromError === 'number') {
+				const remainingDelta = this.pendingRoundDeltas.reduce((sum, d) => sum + d, 0);
+				this.serverSyncedBalance = serverBalanceFromError;
+				this.deps.setGameBalance(serverBalanceFromError + remainingDelta);
+			}
 			if (resolution.syncPending && !shouldAbandonFollowUpSync(this.followUpAttempts)) {
 				this.followUpAttempts++;
 				this.pendingRetryTimer = true;
@@ -241,7 +252,17 @@ export class ChipSyncCoordinator {
 	// because the 429 branch never applied a server-side delta.
 	private flushPendingStatsViaBeacon(): void {
 		if (!this.deps.sendBeaconImpl) return;
-		if (this.pendingStats.handsIncrement === 0) return;
+		if (this.pendingRoundDeltas.length === 0) return;
+		// Cap at MAX_HANDS — the server rejects handCount > MAX. The beacon is
+		// fire-and-forget so we cannot split and retry; rounds beyond the cap
+		// are lost (same outcome as the server rejecting an oversized batch).
+		const batchDeltas = this.pendingRoundDeltas.slice(0, MAX_SLOTS_SYNC_HANDS_PER_REQUEST);
+		const snapshot = computeSlotsBatchStats(batchDeltas);
+		// Use the actual balance delta (gameBalance - serverSyncedBalance), not
+		// the batch sum. On the network-error give-up path the balance is
+		// reverted to serverSyncedBalance before this call, so delta=0 and only
+		// hand stats are recorded. On the 429 give-up path the balance is
+		// unreverted, so the full pending delta is sent.
 		const deltaForRequest = this.deps.getGameBalance() - this.serverSyncedBalance;
 		const outcome: 'win' | 'loss' | 'push' =
 			deltaForRequest > 0 ? 'win' : deltaForRequest < 0 ? 'loss' : 'push';
@@ -250,17 +271,19 @@ export class ChipSyncCoordinator {
 			gameType: 'slots',
 			previousBalance: this.serverSyncedBalance,
 			outcome,
-			handCount: this.pendingStats.handsIncrement || 1,
-			winsIncrement: this.pendingStats.winsIncrement || undefined,
-			lossesIncrement: this.pendingStats.lossesIncrement || undefined,
-			biggestWinCandidate: this.pendingStats.biggestWinCandidate,
+			handCount: snapshot.handsIncrement || 1,
+			winsIncrement: snapshot.winsIncrement || undefined,
+			lossesIncrement: snapshot.lossesIncrement || undefined,
+			biggestWinCandidate: snapshot.biggestWinCandidate,
 			syncId: this.deps.generateSyncRequestId(),
 		});
 		try {
 			this.deps.sendBeaconImpl(this.deps.endpoint, body);
-			this.pendingStats = createPendingStats();
+			// Clear all pending — the beacon is best-effort and we cannot retry.
+			// Overflow beyond the cap is lost (no response to act on).
+			this.pendingRoundDeltas = [];
 		} catch (_e) {
-			// sendBeacon throwing is unexpected; leave pending stats as-is.
+			// sendBeacon throwing is unexpected; leave pending rounds as-is.
 		}
 	}
 }

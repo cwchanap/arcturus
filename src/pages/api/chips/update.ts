@@ -107,6 +107,16 @@ type ChipSyncBatchParams = {
 };
 
 export const BATCHED_GAME_TYPES = new Set(['craps']);
+// Games that coalesce multiple rounds into one sync AND track the per-round
+// biggest win client-side. For these, the server trusts the client-provided
+// biggestWinCandidate even when handCount > MAX_SPLIT_HANDS, because the
+// client correctly tracks the max win across all rounds in the batch.
+// Separate from BATCHED_GAME_TYPES (which gates statsDelta acceptance):
+// slots batches biggest-win stats but does NOT use statsDelta, so it belongs
+// here but not in BATCHED_GAME_TYPES — adding it to BATCHED_GAME_TYPES would
+// open the statsDelta leaderboard-inflation attack vector (delta:-5,
+// statsDelta:50000) documented below.
+export const BIGGEST_WIN_BATCHED_GAME_TYPES = new Set(['craps', 'slots']);
 const MAX_HAND_COUNT = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 export function getRowsAffected(result: RowsAffectedResult): number {
@@ -291,9 +301,10 @@ export function determineBiggestWinCandidate({
 	// Maximum realistic split hands in a single round (e.g., blackjack: split aces can resplit)
 	const MAX_SPLIT_HANDS = 4;
 
-	// Games that batch multiple rounds into a single sync (e.g., craps with rate limiting)
-	// For these games, we trust the client-provided biggestWinCandidate even with handCount > 4
-	const isBatchedGame = gameType !== undefined && BATCHED_GAME_TYPES.has(gameType);
+	// Games that batch multiple rounds into a single sync (e.g., craps with rate
+	// limiting, slots with coalesced Quick Spin rounds). For these games, we trust
+	// the client-provided biggestWinCandidate even with handCount > MAX_SPLIT_HANDS.
+	const isBatchedGame = gameType !== undefined && BIGGEST_WIN_BATCHED_GAME_TYPES.has(gameType);
 
 	// Split-hand round with wins - use client-provided biggestWinCandidate
 	// Heuristic: handCount <= MAX_SPLIT_HANDS indicates a split round, not aggregated sync
@@ -308,9 +319,10 @@ export function determineBiggestWinCandidate({
 		return biggestWinCandidate;
 	}
 
-	// Batched game (e.g., craps) with wins - use client-provided biggestWinCandidate
-	// These games batch multiple rounds together due to rate limiting, so handCount > 4 is normal
-	// The client correctly tracks the biggest win across all rounds in the batch
+	// Batched game (e.g., craps, slots) with wins - use client-provided biggestWinCandidate
+	// These games batch multiple rounds together due to rate limiting / coalescing, so
+	// handCount > 4 is normal. The client correctly tracks the biggest win across all
+	// rounds in the batch.
 	if (
 		isBatchedGame &&
 		typeof biggestWinCandidate === 'number' &&

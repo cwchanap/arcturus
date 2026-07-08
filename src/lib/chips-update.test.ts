@@ -269,6 +269,63 @@ describe('Biggest Win Candidate Logic', () => {
 
 			expect(result).toBe(200);
 		});
+
+		it('should use biggestWinCandidate for slots with handCount > 4 (coalesced Quick Spin rounds)', () => {
+			// Slots coalesces rounds that complete while a sync is in-flight.
+			// handCount=10 means 10 spins were batched; client tracks the max win.
+			const result = determineBiggestWinCandidate({
+				delta: 500,
+				biggestWinCandidate: 150,
+				winsIncrement: 6,
+				lossesIncrement: 4,
+				handCount: 10,
+				gameType: 'slots',
+			});
+
+			expect(result).toBe(150);
+		});
+
+		it('should use biggestWinCandidate for slots win offset by losses (negative net delta)', () => {
+			// A big single-spin win partially offset by later losses — net delta is
+			// negative but the individual win should still count for achievements.
+			const result = determineBiggestWinCandidate({
+				delta: -30,
+				biggestWinCandidate: 120,
+				winsIncrement: 1,
+				lossesIncrement: 3,
+				handCount: 4,
+				gameType: 'slots',
+			});
+
+			expect(result).toBe(120);
+		});
+
+		it('should cap biggestWinCandidate to delta for pure-win slots batch (no losses)', () => {
+			// Without losses, the biggest single win cannot exceed the net delta.
+			const result = determineBiggestWinCandidate({
+				delta: 200,
+				biggestWinCandidate: 500,
+				winsIncrement: 2,
+				lossesIncrement: 0,
+				handCount: 5,
+				gameType: 'slots',
+			});
+
+			expect(result).toBe(200);
+		});
+
+		it('should return null for slots batch with no wins', () => {
+			const result = determineBiggestWinCandidate({
+				delta: -300,
+				biggestWinCandidate: 0,
+				winsIncrement: 0,
+				lossesIncrement: 5,
+				handCount: 5,
+				gameType: 'slots',
+			});
+
+			expect(result).toBeNull();
+		});
 	});
 
 	describe('Edge cases', () => {

@@ -9,6 +9,7 @@ import {
 import type { LineWin, ReelGrid, SpinResult, SlotSettings } from './types';
 
 export class SlotsUIRenderer {
+	private achievementHideTimer: ReturnType<typeof setTimeout> | null = null;
 	setSpinEnabled(enabled: boolean): void {
 		const btn = document.getElementById('btn-spin') as HTMLButtonElement | null;
 		if (btn) btn.disabled = !enabled;
@@ -126,6 +127,14 @@ export class SlotsUIRenderer {
 		if (!toast) return;
 		toast.textContent = text;
 		toast.classList.remove('hidden');
-		setTimeout(() => toast.classList.add('hidden'), 4000);
+		// Clear the previous hide timer so a newer achievement isn't hidden
+		// early by the older timer firing.
+		if (this.achievementHideTimer !== null) {
+			clearTimeout(this.achievementHideTimer);
+		}
+		this.achievementHideTimer = setTimeout(() => {
+			toast.classList.add('hidden');
+			this.achievementHideTimer = null;
+		}, 4000);
 	}
 }

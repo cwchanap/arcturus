@@ -798,6 +798,53 @@ describe('chips update API', () => {
 		expect(body.currentBalance).toBe(5000);
 	});
 
+	test('accepts coalesced slots loss within the enlarged cap', async () => {
+		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 20000 });
+		const POST = createHandler();
+		// 50 coalesced max-bet (100) losing spins = -5000. The old cap (500)
+		// would reject this; the new cap (10000) must accept it.
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: -5000,
+				gameType: 'slots',
+				previousBalance: 20000,
+				outcome: 'loss',
+				handCount: 50,
+				lossesIncrement: 50,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-slots-coalesce' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.success).toBe(true);
+		expect(body.balance).toBe(15000);
+	});
+
+	test('rejects slots loss exceeding the enlarged cap', async () => {
+		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 50000 });
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: -10001, gameType: 'slots' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-slots-overcap' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(body.currentBalance).toBe(50000);
+	});
+
 	test('rejects non-integer previousBalance', async () => {
 		resetMocks();
 		const POST = createHandler();

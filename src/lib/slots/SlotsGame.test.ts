@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { SlotsGame } from './SlotsGame';
 import { ReelManager } from './ReelManager';
 import { MAX_BET, MAX_HISTORY, MIN_BET, NUM_REELS, NUM_ROWS, PAYTABLE } from './constants';
-import type { ReelGrid, SlotsGameEvents } from './types';
+import type { LineWin, ReelGrid, SlotsGameEvents, SymbolId } from './types';
 
 class RiggedReels extends ReelManager {
 	private forced: ReelGrid | null = null;
@@ -160,5 +160,101 @@ describe('SlotsGame events', () => {
 		game.spin('sync-ev');
 		expect(seen).toContain('complete');
 		expect(seen.filter((s) => s === 'balance').length).toBeGreaterThan(0);
+	});
+});
+
+describe('SlotsGame lineWins isolation', () => {
+	// Regression: lineWins was aliased by reference between history, lastEvaluation,
+	// onRoundComplete payload, and the spin() return value. Mutating any one
+	// corrupted the others. All must be independent copies.
+	function jackpotGrid(): ReelGrid {
+		return Array.from({ length: NUM_REELS }, () => ['seven', 'seven', 'seven'] as SymbolId[]);
+	}
+
+	test('spin() return lineWins is a copy — mutating it does not affect history', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		const game = new SlotsGame(10000, {}, {}, reels);
+		game.setBet(10);
+		const result = game.spin('sync-iso-1');
+		expect(result.lineWins.length).toBeGreaterThan(0);
+		result.lineWins.push({
+			paylineIndex: 99,
+			symbol: 'cherry',
+			count: 3,
+			multiplier: 1,
+			payout: 999,
+		});
+		const history = game.getHistory();
+		expect(history[0].lineWins.length).not.toBe(result.lineWins.length);
+		expect(history[0].lineWins.some((w) => w.paylineIndex === 99)).toBe(false);
+	});
+
+	test('getHistory() lineWins is a copy — mutating it does not affect internal state', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		const game = new SlotsGame(10000, {}, {}, reels);
+		game.setBet(10);
+		game.spin('sync-iso-2');
+		const hist1 = game.getHistory();
+		hist1[0].lineWins.length = 0;
+		const hist2 = game.getHistory();
+		expect(hist2[0].lineWins.length).toBeGreaterThan(0);
+	});
+
+	test('getState() history lineWins is a copy — mutating does not affect internal state', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		const game = new SlotsGame(10000, {}, {}, reels);
+		game.setBet(10);
+		game.spin('sync-iso-3');
+		const state1 = game.getState();
+		state1.history[0].lineWins.length = 0;
+		const state2 = game.getState();
+		expect(state2.history[0].lineWins.length).toBeGreaterThan(0);
+	});
+
+	test('getState() lastEvaluation lineWins is a copy — mutating does not affect internal state', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		const game = new SlotsGame(10000, {}, {}, reels);
+		game.setBet(10);
+		game.spin('sync-iso-4');
+		const state1 = game.getState();
+		expect(state1.lastEvaluation).not.toBeNull();
+		state1.lastEvaluation!.lineWins.length = 0;
+		const state2 = game.getState();
+		expect(state2.lastEvaluation!.lineWins.length).toBeGreaterThan(0);
+	});
+
+	test('onRoundComplete payload lineWins is a copy — mutating does not affect history', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		let payloadLineWins: LineWin[] | null = null;
+		const events: Partial<SlotsGameEvents> = {
+			onRoundComplete: (result) => {
+				payloadLineWins = result.lineWins;
+			},
+		};
+		const game = new SlotsGame(10000, {}, events, reels);
+		game.setBet(10);
+		game.spin('sync-iso-5');
+		expect(payloadLineWins).not.toBeNull();
+		expect(payloadLineWins!.length).toBeGreaterThan(0);
+		payloadLineWins!.length = 0;
+		const history = game.getHistory();
+		expect(history[0].lineWins.length).toBeGreaterThan(0);
+	});
+
+	test('cached spin (same syncId) returns a fresh lineWins copy each call', () => {
+		const reels = new RiggedReels();
+		reels.force(jackpotGrid());
+		const game = new SlotsGame(10000, {}, {}, reels);
+		game.setBet(10);
+		const first = game.spin('sync-iso-6');
+		const second = game.spin('sync-iso-6');
+		expect(first.lineWins).not.toBe(second.lineWins);
+		second.lineWins.length = 0;
+		expect(first.lineWins.length).toBeGreaterThan(0);
 	});
 });

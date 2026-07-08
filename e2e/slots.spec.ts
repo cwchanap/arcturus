@@ -64,9 +64,17 @@ test.describe('Slots game', () => {
 		// spin 2 fires. This deterministically exercises the coalescing path
 		// (handleRoundComplete → isBusy → syncPending) rather than relying on
 		// timing between the button re-enable and the sync fetch.
+		//
+		// NOTE: page.on('request') fires BEFORE the route handler (Playwright
+		// emits the 'request' event when the page issues the request, then route
+		// handlers intercept). So we can't gate the stall on syncRequests.length
+		// — it would already be 1 inside the route handler. Instead, use a flag
+		// set inside the route handler itself.
+		let firstRequestIntercepted = false;
 		let resolveFirstSync: () => void = () => {};
 		await page.route('**/api/chips/update', async (route) => {
-			if (syncRequests.length === 0) {
+			if (!firstRequestIntercepted) {
+				firstRequestIntercepted = true;
 				await new Promise<void>((resolve) => {
 					resolveFirstSync = resolve;
 				});
@@ -85,8 +93,10 @@ test.describe('Slots game', () => {
 		// Release the stalled sync so both rounds can settle.
 		resolveFirstSync();
 
-		// At least one settlement sync should have fired; every syncId must be unique.
-		await expect.poll(async () => syncRequests.length, { timeout: 8000 }).toBeGreaterThanOrEqual(1);
+		// Coalescing should produce 2 syncs: sync 1 (stalled) then sync 2
+		// (flushed from syncPending after sync 1 completes). Every syncId
+		// must be unique.
+		await expect.poll(async () => syncRequests.length, { timeout: 8000 }).toBeGreaterThanOrEqual(2);
 		const unique = new Set(syncRequests);
 		expect(unique.size).toBe(syncRequests.length);
 	});

@@ -30,7 +30,18 @@ export class SlotsGame {
 		return {
 			...this.state,
 			grid: this.state.grid.map((col) => [...col]),
-			history: this.state.history.map((h) => ({ ...h, grid: h.grid.map((c) => [...c]) })),
+			lastEvaluation: this.state.lastEvaluation
+				? {
+						...this.state.lastEvaluation,
+						grid: this.state.lastEvaluation.grid.map((c) => [...c]),
+						lineWins: this.state.lastEvaluation.lineWins.map((w) => ({ ...w })),
+					}
+				: null,
+			history: this.state.history.map((h) => ({
+				...h,
+				grid: h.grid.map((c) => [...c]),
+				lineWins: h.lineWins.map((w) => ({ ...w })),
+			})),
 		};
 	}
 
@@ -62,7 +73,11 @@ export class SlotsGame {
 	}
 
 	getHistory(): SpinResult[] {
-		return this.state.history.map((h) => ({ ...h, grid: h.grid.map((c) => [...c]) }));
+		return this.state.history.map((h) => ({
+			...h,
+			grid: h.grid.map((c) => [...c]),
+			lineWins: h.lineWins.map((w) => ({ ...w })),
+		}));
 	}
 
 	updateSettings(updates: Partial<SlotSettings>): void {
@@ -80,7 +95,11 @@ export class SlotsGame {
 
 		const cached = this.state.history.find((h) => h.syncId === syncId);
 		if (cached) {
-			return { ...cached, grid: cached.grid.map((c) => [...c]) };
+			return {
+				...cached,
+				grid: cached.grid.map((c) => [...c]),
+				lineWins: cached.lineWins.map((w) => ({ ...w })),
+			};
 		}
 
 		const bet = this.state.bet;
@@ -106,16 +125,24 @@ export class SlotsGame {
 			netDelta: evaluation.totalPayout - bet,
 			timestamp: Date.now(),
 			syncId,
-			lineWins: evaluation.lineWins,
+			lineWins: evaluation.lineWins.map((w) => ({ ...w })),
 		};
 
 		this.state.history.unshift(result);
 		if (this.state.history.length > MAX_HISTORY) {
 			this.state.history.length = MAX_HISTORY;
 		}
-		this.events.onRoundComplete?.(result);
+		this.events.onRoundComplete?.({
+			...result,
+			grid: result.grid.map((c) => [...c]),
+			lineWins: result.lineWins.map((w) => ({ ...w })),
+		});
 		this.emitBalance();
-		return { ...result, grid: result.grid.map((c) => [...c]) };
+		return {
+			...result,
+			grid: result.grid.map((c) => [...c]),
+			lineWins: result.lineWins.map((w) => ({ ...w })),
+		};
 	}
 
 	private emitBalance(): void {

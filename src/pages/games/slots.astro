@@ -61,6 +61,8 @@ const clientUserId = gameSession.clientUserId;
 					<div
 						id="last-result"
 						data-testid="last-result"
+						role="status"
+						aria-live="polite"
 						class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6"
 					>
 						Spin to play
@@ -89,7 +91,13 @@ const clientUserId = gameSession.clientUserId;
 						}
 					</div>
 
-					<div id="last-win" data-testid="last-win" class="text-center mt-4 h-8 text-2xl font-bold">
+					<div
+						id="last-win"
+						data-testid="last-win"
+						role="status"
+						aria-live="polite"
+						class="text-center mt-4 h-8 text-2xl font-bold"
+					>
 					</div>
 				</div>
 
@@ -166,6 +174,9 @@ const clientUserId = gameSession.clientUserId;
 		<div
 			id="paytable-panel"
 			data-testid="paytable-panel"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Paytable"
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div
@@ -219,6 +230,9 @@ const clientUserId = gameSession.clientUserId;
 		<div
 			id="settings-panel"
 			data-testid="settings-panel"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Settings"
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div

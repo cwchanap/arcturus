@@ -31,23 +31,24 @@ and blackjack.
 ```
 src/pages/games/slots.astro              # Page: guest preamble, #slots-root, UI shell, <script> init
 src/lib/slots/
-├── types.ts                  # Symbol, ReelGrid, SpinResult, GamePhase, SlotSettings, SlotsGameState, SlotsGameEvents
+├── types.ts                  # Symbol, ReelGrid, SpinResult, SlotSettings, SlotsGameState, SlotsGameEvents
 ├── constants.ts              # Symbols, weights, paylines, paytable, bet limits, DEFAULT_SETTINGS, MAX_HISTORY
 ├── ReelManager.ts            # Weighted RNG spin → 5×3 ReelGrid
 ├── payoutCalculator.ts       # Pure: evaluate grid against paylines → line wins + total payout
-├── SlotsGame.ts              # State machine: idle/spinning/settled/error, balance, history, event callbacks
+├── SlotsGame.ts              # State holder: balance, bet, history, event callbacks (no phase field)
 ├── SlotsUIRenderer.ts        # DOM updates: reels, balance, buttons, win highlight, paytable panel
 ├── GameSettingsManager.ts    # localStorage 'arcturus:slots:settings:<clientUserId>'
 ├── balance-sync-state.ts     # Pending-stats + retry/backoff helpers (adapted from baccarat's)
+├── chip-sync-coordinator.ts  # ChipSyncCoordinator: coalesces rounds, retries 429/network, sendBeacon flush on give-up
 ├── slotsClient.ts            # initSlotsClient(): wire DOM + game + chip sync (the <script> entrypoint)
 ├── index.ts                  # Barrel exports
-└── *.test.ts                 # One per pure module (ReelManager, payoutCalculator, SlotsGame, GameSettingsManager)
+└── *.test.ts                 # One per pure module (ReelManager, payoutCalculator, SlotsGame, GameSettingsManager, ChipSyncCoordinator)
 ```
 
 ### Integration touchpoints (existing files)
 
 - `src/pages/api/chips/update.ts` — add `slots` to `GAME_LIMITS`:
-  `{ maxWin: 100000, maxLoss: 10000 }`.
+  `{ maxWin: 500000, maxLoss: 500 }` (see "maxWin guardrail" below for the rationale).
 - `src/lib/game-stats/constants.ts` — add `'slots'` to `GAME_TYPES`, `GAME_TYPE_LABELS`,
   `GAME_TYPE_ICONS` so stats/leaderboards include slots.
 - `src/pages/index.astro` — add `featured: true` to the existing Slots entry (route already
@@ -154,77 +155,134 @@ pure math on a supplied grid.
 
 ### SlotsGame
 
-State machine with event callbacks (baccarat's event pattern).
+State holder with event callbacks (baccarat's event pattern, minus the phase field —
+animation/interaction state lives in the client and renderer, not the game state).
 
 ```ts
-type GamePhase = 'idle' | 'spinning' | 'settled' | 'error';
-
 interface SlotsGameState {
   balance: number;
-  phase: GamePhase;
   bet: number;
   grid: SymbolId[][];
   lastEvaluation: SpinEvaluation | null;
   history: SpinResult[];      // ring buffer, cap MAX_HISTORY = 20
   settings: SlotSettings;
-  lastSyncId: string | null;
 }
 ```
 
-- `placeBet(amount)` — validates `amount ≥ MIN_BET`, `amount ≤ balance`, `amount ≤ MAX_BET`;
-  throws on violation. Sets the active bet.
-- `spin(syncId)` — **idempotency guard**: if `state.lastSyncId === syncId` and the phase is
-  already `settled`, re-return the cached result without re-deducting or re-crediting. This is
-  the refresh/retry-during-a-spin protection. Otherwise deduct the bet, set phase `spinning`,
+- `setBet(amount)` — validates `amount ≥ MIN_BET`, `amount ≤ MAX_BET`; throws on violation.
+  This is a programmatic setter: it throws **without** emitting `onError`, because callers
+  (`selectBet`) clamp first and swallow validation throws — emitting `onError` would leak a
+  spurious toast even when the caller recovers. `spin()` is the user-initiated path and still
+  uses the `onError`-emitting `fail()` helper.
+- `spin(syncId)` — **idempotency guard**: if a result with `syncId` already exists in
+  `state.history`, re-return the cached result without re-deducting or re-crediting. This is
+  the refresh/retry-during-a-spin protection (history-scoped, not a single `lastSyncId` field,
+  so a re-driven stale syncId cannot double-settle even after intervening spins). Otherwise
+  validate `bet ≤ balance` (emits `INSUFFICIENT_BALANCE` via `onError`), deduct the bet,
   generate the grid via ReelManager, evaluate, credit the payout, push to history, and emit
   `onRoundComplete`.
-- Balance never goes negative: `placeBet` rejects when `bet > balance`; payout only ever adds.
+- Balance never goes negative: `spin` rejects when `bet > balance`; payout only ever adds.
 
-Events emitted: `onSpinStart`, `onReelsReady(grid)`, `onRoundComplete(result)`,
-`onBalanceUpdate(balance)`, `onError`.
+Events emitted: `onRoundComplete(result)`, `onBalanceUpdate(balance)`, `onError`.
+
+> **Deviation note (HPA-124):** the original plan listed `onSpinStart(bet)` and
+> `onReelsReady(grid)` events. Both were dropped as YAGNI — the client drives reel animation
+> directly via `renderer.setSpinning(true/false)` around the `spin()` call, and no sound or
+> animation consumer ever wired either event. `onReelsReady` was also redundant: the grid is
+> available synchronously on the `SpinResult` returned by `spin()`.
 
 This game class is the client trust boundary. The server's `/api/chips/update` independently
-enforces `maxWin`/`maxLoss` caps, `syncId` idempotency via the `chip_sync_receipt` table
-(primary key `(userId, syncId)`), rate limits, and optimistic locking — so even though the client
-picks the outcome, settlement is gated.
+enforces `maxWin`/`maxLoss` caps, per-request `syncId` idempotency via the `chip_sync_receipt`
+table (primary key `(userId, syncId)`), rate limits, and optimistic locking — so even though the
+client picks the outcome, settlement is gated.
 
 ## Chip Sync
 
-On `onRoundComplete`, `slotsClient.ts` computes
-`delta = payout - bet` and
-`outcome = payout > bet ? 'win' : payout === bet ? 'push' : 'loss'`, then (for authenticated
-users only) POSTs to `/api/chips/update`:
+On `onRoundComplete`, `ChipSyncCoordinator` (instantiated by `slotsClient.ts`) computes
+`delta = gameBalance - serverSyncedBalance` and
+`outcome = delta > 0 ? 'win' : delta < 0 ? 'loss' : 'push'`, then (for authenticated users only)
+POSTs to `/api/chips/update`:
 
 ```jsonc
 {
-  "delta": "<payout - bet>",
+  "delta": "<gameBalance - serverSyncedBalance>",
   "gameType": "slots",
   "outcome": "win" | "loss" | "push",
-  "handCount": 1,
+  "handCount": "<pendingStats.handsIncrement || 1>",
+  "winsIncrement": "<pendingStats.winsIncrement || undefined>",
+  "lossesIncrement": "<pendingStats.lossesIncrement || undefined>",
+  "biggestWinCandidate": "<pendingStats.biggestWinCandidate>",
   "previousBalance": "<serverSyncedBalance>",
-  "syncId": "<crypto.randomUUID()>"
+  "syncId": "<fresh per-request crypto.randomUUID()>"
 }
 ```
 
-This mirrors baccarat's proven flow, adapted via `balance-sync-state.ts`:
+This mirrors baccarat's proven flow, adapted via `balance-sync-state.ts` and encapsulated in
+`ChipSyncCoordinator`:
 
 - **Guest mode:** no sync; `persistGuestBankroll('slots', clientUserId, balance)` writes to
   localStorage. Only authenticated users hit the server.
-- **Concurrency:** an `isSyncInProgress` flag prevents overlapping requests.
-- **Rate-limit retry:** on HTTP 429, read `Retry-After`, schedule up to 3 retries, and release
-  the lock first.
+- **Concurrency:** an `isSyncInProgress` flag prevents overlapping requests; rounds completing
+  while a sync is in-flight set `syncPending` and are coalesced into the next sync (their
+  `pendingStats` accumulate, so a single request carries the aggregated delta + hand counts).
+- **Rate-limit retry:** on HTTP 429, read `Retry-After`, schedule up to
+  `MAX_FOLLOW_UP_ATTEMPTS` (3) retries capped at 8s.
 - **Follow-up sync:** if another spin settles while a sync is in flight, queue a follow-up with
   exponential backoff (max 3 attempts).
-- **Error recovery:** on `BALANCE_MISMATCH` or any error carrying `currentBalance`, rebase via
-  `game.setBalance(serverBalance)`; on network error, revert to `serverSyncedBalance`.
+- **Error recovery:** on `BALANCE_MISMATCH` / `DELTA_EXCEEDS_LIMIT` / any error carrying
+  `currentBalance`, rebase via `game.setBalance(serverBalance + pendingDelta)`; on network
+  error, revert to `serverSyncedBalance` and notify via `onNetworkErrorGiveUp`.
+- **429 give-up stat flush:** if all 3 retries 429, the coordinator calls
+  `onRateLimitGiveUp()` (UI shows "sync paused — balance will update shortly") **and** fires a
+  best-effort `navigator.sendBeacon` with the pending stats + delta so a rage-quit does not
+  drop win/loss/hand/leaderboard aggregates. sendBeacon carries session cookies (same-origin)
+  so the request is authenticated; the response is unavailable, so `pendingStats` are cleared
+  optimistically. If the beacon also fails the stats are lost — the same outcome as not
+  flushing, and the balance is unaffected (the 429 branch never applied a server-side delta).
+- **Network-error give-up stat flush:** symmetric with the 429 case. After reverting the client
+  balance to `serverSyncedBalance`, the coordinator fires the same beacon — but with `delta=0`
+  (the revert zeroed `gameBalance - serverSyncedBalance`). The server records the pending
+  win/loss/hand aggregates without applying a balance change the client has already discarded.
+  The beacon is fired *after* the revert by design: firing before would send the pending delta,
+  the server would apply it, and the client (now at `serverSyncedBalance`) would drift.
 
-### Duplicate-settlement protection
+### Duplicate-settlement protection (two-tier syncId)
 
-The `syncId` is generated per spin and passed into `game.spin(syncId)` so both the client guard
-and the server `chip_sync_receipt` table protect against duplicate settlement. A page refresh
-mid-spin leaves no phantom deduction client-side (the bet is only deducted synchronously inside
-`spin()`), and the server only ever credits a settled spin's delta once because of the `syncId`
-plus the receipt primary key.
+There are **two independent syncId layers**, by design:
+
+1. **Per-spin syncId (client dedup).** `slotsClient.ts` generates a UUID per spin and passes it
+   into `game.spin(syncId)`. `SlotsGame` checks `state.history` for a matching `syncId` and, if
+   present, returns the cached `SpinResult` without re-deducting or re-crediting. This protects
+   against a re-driven stale spin (e.g. a retry callback firing twice) double-settling
+   client-side. The per-spin syncId is stored on the `SpinResult` for traceability but is **not**
+   sent to the server.
+
+2. **Per-request syncId (server receipt).** `ChipSyncCoordinator` generates a *fresh* UUID per
+   sync request via `generateSyncRequestId()`. The server stores it in `chip_sync_receipt`
+   (primary key `(userId, syncId)`). Because a single sync request can coalesce multiple spins,
+   a 1:1 mapping between per-spin syncIds and server receipts would either force one request
+   per spin (defeating coalescing) or require the server to accept an array of syncIds. The
+   per-request model keeps the server schema simple and the coalescing intact: the server
+   credits the aggregated delta exactly once per request receipt.
+
+A page refresh mid-spin leaves no phantom deduction client-side (the bet is only deducted
+synchronously inside `spin()`), and the server only ever credits a settled batch's delta once
+because of the per-request `syncId` plus the receipt primary key.
+
+### maxWin guardrail (500,000)
+
+`GAME_LIMITS.slots = { maxWin: 500000, maxLoss: 500 }`. The single-spin jackpot ceiling is
+100,000 (seven 5-of-a-kind across up to 5 paylines at max bet 100). The coordinator coalesces
+rounds that complete while a sync is in-flight into one request, so the cap is sized at 5× the
+single-spin ceiling to avoid rejecting legitimate back-to-back jackpots.
+
+A malicious client forging rapid quickSpins could coalesce >5 max jackpots into one sync and
+exceed the cap. The server responds `DELTA_EXCEEDS_LIMIT` with `currentBalance`; the coordinator
+rebases the client to the server's authoritative balance and shows a "sync paused" toast. This
+is **not exploitable** — the server cap is exactly what prevents the exploit, and the coordinator
+self-heals. The toast is a minor UX wart on an adversarial code path, accepted as the trade-off
+for keeping the server-side exploit cap at 5× rather than raising it (which would weaken
+protection for all players).
 
 ## History
 
@@ -276,15 +334,16 @@ classic anticipation. The in-page `#chip-balance` updates instantly from `onBala
 
 ### Animation states
 
-Driven by `GamePhase`:
+Driven by the client's `spinInFlight` flag + `renderer.setSpinning()` (no `GamePhase` field on
+`SlotsGameState`; animation/interaction state is UI-only):
 
-| Phase | Visual |
+| State | Visual |
 |-------|--------|
-| `idle` | SPIN enabled, bet selectable |
-| `spinning` | reels animating, SPIN and bet disabled |
-| `settled` + win | reels stopped, winning cells and lines pulse gold, "WIN +N" banner |
-| `settled` + no win | reels stopped, subdued "No win" |
-| `error` | toast "Spin failed — retry", bet refunded, SPIN re-enabled |
+| idle | SPIN enabled, bet selectable |
+| spinning | reels animating, SPIN and bet disabled |
+| settled + win | reels stopped, winning cells and lines pulse gold, "WIN +N" banner |
+| settled + no win | reels stopped, subdued "No win" |
+| error | toast "Spin failed — retry", bet refunded, SPIN re-enabled |
 
 ### Paytable panel
 
@@ -329,7 +388,10 @@ Playwright, reusing `e2e/.auth/user.json`:
 
 - Desktop and mobile viewports (responsiveness).
 - Spin with bet = 1; assert balance drops by 1 then updates after settle, with no full reload.
-- Bet above balance is blocked; SPIN is disabled.
+- Bet above balance is blocked; SPIN is disabled. *(Softened in implementation: the E2E cannot
+  force a tiny auth'd balance without auth manipulation, so the test asserts the max-bet chip
+  selects 100 and SPIN stays enabled. The insufficient-balance rejection itself is covered by
+  the `SlotsGame` unit test for `INSUFFICIENT_BALANCE`.)*
 - Open the paytable; assert it shows a known multiplier.
 - Rapid double-spin during animation → no duplicate settlement (a single sync request per
   `syncId`).

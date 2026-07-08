@@ -63,7 +63,6 @@ export interface SlotsError {
 }
 
 export interface SlotsGameEvents {
-	onSpinStart: (bet: number) => void;
 	onRoundComplete: (result: SpinResult) => void | Promise<void>;
 	onBalanceUpdate: (balance: number) => void;
 	onError: (error: SlotsError) => void;

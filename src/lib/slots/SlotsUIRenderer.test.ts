@@ -65,6 +65,15 @@ class FakeElement {
 		return child;
 	}
 
+	replaceChildren(...children: FakeElement[]): void {
+		for (const c of this.children) c.parent = null;
+		this.children = [];
+		for (const c of children) {
+			this.children.push(c);
+			c.parent = this;
+		}
+	}
+
 	hasClass(c: string) {
 		return this.classes.has(c);
 	}

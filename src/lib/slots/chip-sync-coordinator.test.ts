@@ -32,6 +32,7 @@ function makeDeps(
 		onAchievement: (title: string) => void;
 		onRateLimitGiveUp: () => void;
 		onNetworkErrorGiveUp: () => void;
+		sendBeacon: (url: string, body: string) => boolean;
 	}>,
 ) {
 	let balance = overrides?.balance ?? 1000;
@@ -42,6 +43,7 @@ function makeDeps(
 	const achievements: string[] = [];
 	let giveUpCount = 0;
 	let networkGiveUpCount = 0;
+	const beaconCalls: Array<{ url: string; body: Record<string, unknown> }> = [];
 
 	const deps = {
 		fetchImpl: async (
@@ -92,6 +94,12 @@ function makeDeps(
 		},
 		generateSyncRequestId: () => `test-sync-${fetchCalls.length}`,
 		endpoint: '/api/chips/update',
+		sendBeaconImpl: overrides?.sendBeacon
+			? (url: string, body: string) => {
+					beaconCalls.push({ url, body: JSON.parse(body) as Record<string, unknown> });
+					return overrides!.sendBeacon!(url, body);
+				}
+			: undefined,
 	};
 
 	return {
@@ -102,6 +110,7 @@ function makeDeps(
 		getAchievements: () => achievements,
 		getGiveUpCount: () => giveUpCount,
 		getNetworkGiveUpCount: () => networkGiveUpCount,
+		getBeaconCalls: () => beaconCalls,
 		runScheduled: async (index = 0) => await scheduled[index].fn(),
 		runAllScheduled: async () => {
 			// Run scheduled callbacks in order; new ones appended during runs execute too.
@@ -192,6 +201,54 @@ describe('ChipSyncCoordinator', () => {
 		expect(ctx.getScheduled()).toHaveLength(3);
 		expect(ctx.getGiveUpCount()).toBe(1);
 		expect(coord.isBusy()).toBe(false);
+	});
+
+	test('429 give-up flushes pending stats via sendBeacon and clears them', async () => {
+		const ctx = makeDeps({
+			balance: 1090,
+			script: [
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+			],
+			sendBeacon: () => true,
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(90));
+		await ctx.runScheduled(0);
+		await ctx.runScheduled(1);
+		await ctx.runScheduled(2);
+
+		expect(ctx.getGiveUpCount()).toBe(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		const beacons = ctx.getBeaconCalls();
+		expect(beacons).toHaveLength(1);
+		expect(beacons[0].body.gameType).toBe('slots');
+		expect(beacons[0].body.delta).toBe(90);
+		expect(beacons[0].body.handCount).toBe(1);
+	});
+
+	test('429 give-up without sendBeacon dep drops pending stats (graceful)', async () => {
+		const ctx = makeDeps({
+			balance: 1090,
+			script: [
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+				{ kind: '429', retryAfter: 0 },
+			],
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(90));
+		await ctx.runScheduled(0);
+		await ctx.runScheduled(1);
+		await ctx.runScheduled(2);
+
+		expect(ctx.getGiveUpCount()).toBe(1);
+		expect(ctx.getBeaconCalls()).toHaveLength(0);
+		// pendingStats remain unflushed — same as pre-beacon behavior.
+		expect(coord.getPendingStats().handsIncrement).toBe(1);
 	});
 
 	test('429 then success resolves without give-up', async () => {
@@ -344,6 +401,30 @@ describe('ChipSyncCoordinator', () => {
 		expect(ctx.getBalance()).toBe(1000);
 		expect(ctx.getNetworkGiveUpCount()).toBe(1);
 		expect(coord.isBusy()).toBe(false);
+	});
+
+	test('network error give-up flushes pending stats via sendBeacon with delta=0 after revert', async () => {
+		const ctx = makeDeps({
+			balance: 1090,
+			script: [{ kind: 'throw' }, { kind: 'throw' }, { kind: 'throw' }, { kind: 'throw' }],
+			sendBeacon: () => true,
+		});
+		const coord = new ChipSyncCoordinator(ctx.deps, 1000);
+		await coord.handleRoundComplete(makeSpinResult(90));
+
+		await ctx.runScheduled(0);
+		await ctx.runScheduled(1);
+		await ctx.runScheduled(2);
+
+		expect(ctx.getNetworkGiveUpCount()).toBe(1);
+		// Balance reverted to server-synced value before the beacon fires.
+		expect(ctx.getBalance()).toBe(1000);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		const beacons = ctx.getBeaconCalls();
+		expect(beacons).toHaveLength(1);
+		expect(beacons[0].body.delta).toBe(0);
+		expect(beacons[0].body.handCount).toBe(1);
+		expect(beacons[0].body.winsIncrement).toBe(1);
 	});
 
 	test('terminal server error (BALANCE_MISMATCH) clears pending stats and does not retry', async () => {

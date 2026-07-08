@@ -56,7 +56,7 @@
 
 - Produces: `SymbolId`, `SymbolDef`, `ReelGrid`, `LineWin`, `SpinEvaluation`, `SpinResult`, `SpinSpeed`, `SlotSettings`, `SlotsGameState`, `SlotsErrorCode`, `SlotsError`, `SlotsGameEvents`; constants `NUM_REELS`, `NUM_ROWS`, `NUM_PAYLINES`, `SYMBOLS`, `SYMBOL_ORDER`, `PAYLINES`, `PAYTABLE`, `MIN_BET`, `MAX_BET`, `BET_INCREMENTS`, `MAX_HISTORY`, `DEFAULT_SETTINGS`, `getSpinDurationMs`.
 
-> **Implementation deviation (HPA-124):** `GamePhase` and the `phase` state machine were dropped. The client tracks in-flight spins with a `spinInFlight` boolean flag instead, and `canSpin()` checks only balance/bet. `lastSyncId` was also removed; dedup is now purely history-based. `SPIN_IN_PROGRESS` error code was removed as dead (never thrown). `soundEnabled` remains in the type/settings but has no audio implementation — kept as a forward-compatible toggle.
+> **Implementation deviation (HPA-124):** `GamePhase` and the `phase` state machine were dropped. The client tracks in-flight spins with a `spinInFlight` boolean flag instead, and `canSpin()` checks only balance/bet. `lastSyncId` was also removed; dedup is now purely history-based. `SPIN_IN_PROGRESS` error code was removed as dead (never thrown). `soundEnabled` remains in the type/settings but has no audio implementation — kept as a forward-compatible toggle. The `onSpinStart(bet)` and `onReelsReady(grid)` events were dropped as YAGNI — no UI consumer ever wired them; the client drives reel animation directly via `renderer.setSpinning()` around the `spin()` call, and the grid is available synchronously on the returned `SpinResult`. `setBet()` throws without emitting `onError` (it is a programmatic setter; `selectBet` clamps and swallows validation throws, so emitting `onError` would leak a spurious toast); only `spin()` uses the `onError`-emitting `fail()` helper.
 
 - [ ] **Step 1: Write the failing test** — `src/lib/slots/constants.test.ts`
 
@@ -204,8 +204,6 @@ export interface SlotsError {
 }
 
 export interface SlotsGameEvents {
-	onSpinStart: (bet: number) => void;
-	onReelsReady: (grid: ReelGrid) => void;
 	onRoundComplete: (result: SpinResult) => void;
 	onBalanceUpdate: (balance: number) => void;
 	onError: (error: SlotsError) => void;
@@ -778,19 +776,17 @@ describe('SlotsGame history', () => {
 });
 
 describe('SlotsGame events', () => {
-	test('emits onBalanceUpdate, onSpinStart, onRoundComplete', () => {
+	test('emits onBalanceUpdate, onRoundComplete', () => {
 		const reels = new RiggedReels();
 		reels.force(losingGrid());
 		const seen: string[] = [];
 		const events: Partial<SlotsGameEvents> = {
-			onSpinStart: () => seen.push('start'),
 			onRoundComplete: () => seen.push('complete'),
 			onBalanceUpdate: () => seen.push('balance'),
 		};
 		const game = new SlotsGame(1000, {}, events, reels);
 		game.setBet(10);
 		game.spin('sync-ev');
-		expect(seen).toContain('start');
 		expect(seen).toContain('complete');
 		expect(seen.filter((s) => s === 'balance').length).toBeGreaterThan(0);
 	});
@@ -896,7 +892,6 @@ export class SlotsGame {
 
 		this.state.balance -= bet;
 		this.emitBalance();
-		this.events.onSpinStart?.(bet);
 
 		const grid = this.reels.spin();
 		const evaluation = evaluateGrid(grid, bet);
@@ -918,7 +913,6 @@ export class SlotsGame {
 		if (this.state.history.length > MAX_HISTORY) {
 			this.state.history.length = MAX_HISTORY;
 		}
-		this.events.onReelsReady?.(grid);
 		this.events.onRoundComplete?.(result);
 		this.emitBalance();
 		return result;

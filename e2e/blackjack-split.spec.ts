@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
 import { ensureLoggedIn } from './auth-helpers';
-import { bootstrapTestUser } from './bootstrap-auth';
+import { createIsolatedPage } from './isolated-page';
 
 async function openBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
@@ -37,18 +37,12 @@ async function refreshBlackjack(page: Page) {
 	throw new Error('Failed to refresh blackjack page: redirected to /signin');
 }
 
-async function createIsolatedBlackjackPage(browser: Browser, baseURL?: string) {
-	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
-	const page = await context.newPage();
-	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
-		email: `bj-split-sync-${nonce}@arcturus.local`,
-		name: `BJ Split Sync ${nonce}`,
+const createIsolatedBlackjackPage = (browser: Browser, baseURL?: string) =>
+	createIsolatedPage(browser, baseURL, {
+		emailPrefix: 'bj-split-sync',
+		namePrefix: 'BJ Split Sync',
+		navigate: gotoBlackjack,
 	});
-	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
-	await gotoBlackjack(page);
-	return { context, page };
-}
 
 async function ensureMinimumBalance(page: Page, minimumBalance: number) {
 	const maxAttempts = 5;

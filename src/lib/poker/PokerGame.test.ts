@@ -2473,6 +2473,7 @@ describe('PokerGame human call all-in via UI', () => {
 			currentPlayerIndex: number;
 			isProcessingAction: boolean;
 			pot: number;
+			processAITurn: () => Promise<void>;
 		};
 
 		// Human's turn, facing a bet larger than their stack.
@@ -2480,6 +2481,9 @@ describe('PokerGame human call all-in via UI', () => {
 		game.players[0] = { ...game.players[0], chips: 30, currentBet: 0, folded: false };
 		game.players[1] = { ...game.players[1], currentBet: 100, folded: false };
 		game.players[2] = { ...game.players[2], currentBet: 100, folded: false };
+
+		// Prevent the async AI turn from leaking out of this test.
+		game.processAITurn = async () => {};
 
 		elements['btn-call'].click();
 

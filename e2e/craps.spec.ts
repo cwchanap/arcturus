@@ -1,25 +1,17 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
-import { bootstrapTestUser } from './bootstrap-auth';
+import { createIsolatedPage } from './isolated-page';
 
 async function gotoCraps(page: Page) {
 	await page.goto('/games/craps', { waitUntil: 'networkidle' });
 }
 
-async function createIsolatedCrapsPage(browser: Browser, baseURL?: string) {
-	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
-	const page = await context.newPage();
-	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
-		email: `craps-sync-${nonce}@arcturus.local`,
-		name: `Craps Sync ${nonce}`,
+const createIsolatedCrapsPage = (browser: Browser, baseURL?: string) =>
+	createIsolatedPage(browser, baseURL, {
+		emailPrefix: 'craps-sync',
+		namePrefix: 'Craps Sync',
+		navigate: gotoCraps,
 	});
-	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
-	await gotoCraps(page);
-
-	return { context, page };
-}
 
 function parseBalance(text: string): number {
 	const normalized = text.replace(/,/g, '');

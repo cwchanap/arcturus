@@ -1,19 +1,15 @@
 import { test, expect } from '@playwright/test';
-import type { Browser } from '@playwright/test';
-import { bootstrapTestUser } from './bootstrap-auth';
+import type { Browser, Page } from '@playwright/test';
+import { createIsolatedPage } from './isolated-page';
 
-async function createIsolatedPokerPage(browser: Browser, baseURL?: string) {
-	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
-	const page = await context.newPage();
-	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
-		email: `poker-sync-${nonce}@arcturus.local`,
-		name: `Poker Sync ${nonce}`,
+const createIsolatedPokerPage = (browser: Browser, baseURL?: string) =>
+	createIsolatedPage(browser, baseURL, {
+		emailPrefix: 'poker-sync',
+		namePrefix: 'Poker Sync',
+		navigate: async (page: Page) => {
+			await page.goto('/games/poker', { waitUntil: 'networkidle' });
+		},
 	});
-	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
-	await page.goto('/games/poker', { waitUntil: 'networkidle' });
-	return { context, page };
-}
 
 test.describe('Poker turn flow smoke test', () => {
 	test('deal, human action, AI acts, next phase continues', async ({ browser, baseURL }) => {

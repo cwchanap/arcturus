@@ -440,6 +440,82 @@ describe('ChipSyncCoordinator', () => {
 		expect(coord.getServerSyncedBalance()).toBe(1000);
 	});
 
+	// Regression: when a concurrent round arrives during an in-flight sync that
+	// the server rejects with an authoritative balance (BALANCE_MISMATCH +
+	// currentBalance), the failed batch is cleared and the balance rebased, but
+	// the remaining round must still be flushed via a follow-up. Without it, a
+	// completed second spin sits in pendingRoundDeltas with the coordinator idle,
+	// only persisting on the next spin or unload beacon.
+	test('BALANCE_MISMATCH with a concurrent round schedules a follow-up to flush the remaining delta', async () => {
+		let resolveFirst: (r: ChipSyncResponse) => void = () => {};
+		const firstResponse = new Promise<ChipSyncResponse>((res) => {
+			resolveFirst = res;
+		});
+		let balance = 1040;
+		const fetchCalls: Array<Record<string, unknown>> = [];
+		const scheduled: Array<{ fn: () => void; ms: number }> = [];
+		const deps = {
+			fetchImpl: async (
+				_url: string,
+				init: { method: string; headers: Record<string, string>; body: string },
+			) => {
+				fetchCalls.push(JSON.parse(init.body) as Record<string, unknown>);
+				if (fetchCalls.length === 1) return firstResponse;
+				// Follow-up for the remaining round 2 succeeds.
+				return makeResponse({ ok: true, status: 200, body: { balance: 1050 } });
+			},
+			setTimeoutImpl: (fn: () => void, ms: number) => scheduled.push({ fn, ms }),
+			getGameBalance: () => balance,
+			setGameBalance: (n: number) => {
+				balance = n;
+			},
+			onAchievement: () => {},
+			onRateLimitGiveUp: () => {},
+			onNetworkErrorGiveUp: () => {},
+			generateSyncRequestId: () => `test-sync-${fetchCalls.length}`,
+			endpoint: '/api/chips/update',
+		};
+		const coord = new ChipSyncCoordinator(deps, 1000);
+
+		// Spin 1 (loss) triggers the first sync; it stays in-flight.
+		const first = coord.handleRoundComplete(makeSpinResult(-10, 'spin-1'));
+		expect(coord.isBusy()).toBe(true);
+
+		// Spin 2 (win) completes while sync 1 is in-flight → coalesces.
+		balance = 1050;
+		await coord.handleRoundComplete(makeSpinResult(50, 'spin-2'));
+		expect(fetchCalls).toHaveLength(1);
+		expect(coord.getPendingStats().handsIncrement).toBe(2);
+
+		// Server rejects spin-1's batch with an authoritative balance.
+		resolveFirst(
+			makeResponse({
+				ok: false,
+				status: 409,
+				body: { error: 'BALANCE_MISMATCH', currentBalance: 1000 },
+			}),
+		);
+		await first;
+
+		// Failed batch (-10) cleared, balance rebased to server's view + remaining
+		// round's delta (1000 + 50), and a follow-up is scheduled (not left idle).
+		expect(coord.getServerSyncedBalance()).toBe(1000);
+		expect(balance).toBe(1050);
+		expect(scheduled).toHaveLength(1);
+		expect(coord.isBusy()).toBe(true);
+		// Round 2 is still pending until the follow-up runs.
+		expect(coord.getPendingStats().handsIncrement).toBe(1);
+
+		// Follow-up flushes the remaining round 2 delta.
+		await scheduled[0].fn();
+		expect(fetchCalls).toHaveLength(2);
+		expect(fetchCalls[1].delta).toBe(50);
+		expect(fetchCalls[1].handCount).toBe(1);
+		expect(coord.getServerSyncedBalance()).toBe(1050);
+		expect(coord.getPendingStats().handsIncrement).toBe(0);
+		expect(coord.isBusy()).toBe(false);
+	});
+
 	test('achievements from a successful sync are forwarded', async () => {
 		const ctx = makeDeps({
 			balance: 1100,

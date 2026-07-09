@@ -210,7 +210,21 @@ export class ChipSyncCoordinator {
 				this.serverSyncedBalance = serverBalanceFromError;
 				this.deps.setGameBalance(serverBalanceFromError + remainingDelta);
 			}
-			if (resolution.syncPending && !shouldAbandonFollowUpSync(this.followUpAttempts)) {
+			// The failed batch was cleared above when clearPendingStats is set (server
+			// gave an authoritative balance or a non-retriable error). However,
+			// concurrent rounds that arrived during the await — or remaining rounds
+			// from a partial-batch split — are still in pendingRoundDeltas. The
+			// resolution flags syncPending=false on an authoritative-balance rebase,
+			// so without a follow-up those rounds would sit un-persisted until the
+			// next spin or the unload beacon (a completed second spin can appear in
+			// the UI without being synced if the player stops there). Mirror the
+			// success path: flush whenever pending rounds remain, gated by the retry
+			// cap to bound the loop.
+			const hasRemainingRounds = this.pendingRoundDeltas.length > 0;
+			if (
+				(resolution.syncPending || hasRemainingRounds) &&
+				!shouldAbandonFollowUpSync(this.followUpAttempts)
+			) {
 				this.followUpAttempts++;
 				this.pendingRetryTimer = true;
 				this.deps.setTimeoutImpl(

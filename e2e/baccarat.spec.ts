@@ -1,8 +1,30 @@
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+import { bootstrapTestUser } from './bootstrap-auth';
 
 async function gotoBaccarat(page: Page) {
 	await page.goto('/games/baccarat', { waitUntil: 'networkidle' });
+}
+
+// The stateful chip-sync tests below mutate per-user server state (chip balance
+// + the 2s `/api/chips/update` rate limit). They would race with each other and
+// with every other spec file that shares the single authenticated E2E user when
+// `fullyParallel` runs multiple workers. Each gets a freshly-bootstrapped user
+// (mirrors slots.spec.ts' createIsolatedSlotsPage) so it owns its rate-limit
+// budget and balance. Read-only UI tests keep using the shared fixture page.
+async function createIsolatedBaccaratPage(browser: Browser, baseURL?: string) {
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
+	const page = await context.newPage();
+	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
+		email: `baccarat-sync-${nonce}@arcturus.local`,
+		name: `Baccarat Sync ${nonce}`,
+	});
+	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
+	await gotoBaccarat(page);
+
+	return { context, page };
 }
 
 // Phase 3: Basic Baccarat Round (US1)
@@ -47,40 +69,45 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await expect(dealButton).toBeEnabled();
 	});
 
-	test('should complete a full round with player bet', async ({ page }) => {
-		await gotoBaccarat(page);
+	test('should complete a full round with player bet', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBaccaratPage(browser, baseURL);
+		try {
+			await gotoBaccarat(page);
 
-		// Get initial balance
-		const balanceText = await page.locator('#chip-balance').textContent();
-		const initialBalance = parseInt(balanceText?.replace(/[$,]/g, '') || '1000');
+			// Get initial balance
+			const balanceText = await page.locator('#chip-balance').textContent();
+			const initialBalance = parseInt(balanceText?.replace(/[$,]/g, '') || '1000');
 
-		// Select $50 chip
-		await page.click('.chip-select[data-amount="50"]');
+			// Select $50 chip
+			await page.click('.chip-select[data-amount="50"]');
 
-		// Place bet on player
-		await page.click('[data-bet-type="player"]');
+			// Place bet on player
+			await page.click('[data-bet-type="player"]');
 
-		// Click deal
-		await page.click('#deal-button');
+			// Click deal
+			await page.click('#deal-button');
 
-		// Wait for round result to appear
-		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
+			// Wait for round result to appear
+			await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
 
-		// Check result shows winner
-		const resultText = await page.locator('.result-winner').textContent();
-		expect(resultText).toMatch(/Player Wins!|Banker Wins!|Tie!/);
+			// Check result shows winner
+			const resultText = await page.locator('.result-winner').textContent();
+			expect(resultText).toMatch(/Player Wins!|Banker Wins!|Tie!/);
 
-		// Check scores are displayed
-		await expect(page.locator('.result-scores')).toContainText('Player:');
-		await expect(page.locator('.result-scores')).toContainText('Banker:');
+			// Check scores are displayed
+			await expect(page.locator('.result-scores')).toContainText('Player:');
+			await expect(page.locator('.result-scores')).toContainText('Banker:');
 
-		// Balance may stay the same on tie; only assert change on decisive outcomes
-		const newBalanceText = await page.locator('#chip-balance').textContent();
-		const newBalance = parseInt(newBalanceText?.replace(/[$,]/g, '') || '0');
-		if (resultText?.includes('Tie')) {
-			expect(newBalance).toBe(initialBalance);
-		} else {
-			expect(newBalance).not.toBe(initialBalance);
+			// Balance may stay the same on tie; only assert change on decisive outcomes
+			const newBalanceText = await page.locator('#chip-balance').textContent();
+			const newBalance = parseInt(newBalanceText?.replace(/[$,]/g, '') || '0');
+			if (resultText?.includes('Tie')) {
+				expect(newBalance).toBe(initialBalance);
+			} else {
+				expect(newBalance).not.toBe(initialBalance);
+			}
+		} finally {
+			await context.close();
 		}
 	});
 
@@ -118,45 +145,55 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await expect(page.locator('#deal-button')).toBeDisabled();
 	});
 
-	test('should start new round after result', async ({ page }) => {
-		await gotoBaccarat(page);
+	test('should start new round after result', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBaccaratPage(browser, baseURL);
+		try {
+			await gotoBaccarat(page);
 
-		// Play a round
-		const chip = page.locator('.chip-select[data-amount="10"]');
-		await chip.click();
-		await expect(chip).toHaveClass(/selected/);
+			// Play a round
+			const chip = page.locator('.chip-select[data-amount="10"]');
+			await chip.click();
+			await expect(chip).toHaveClass(/selected/);
 
-		await page.click('[data-bet-type="banker"]');
-		await page.click('#deal-button');
-		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
+			await page.click('[data-bet-type="banker"]');
+			await page.click('#deal-button');
+			await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
 
-		// Click new round button
-		await page.click('#new-round-button');
+			// Click new round button
+			await page.click('#new-round-button');
 
-		// Check result is hidden
-		await expect(page.locator('#round-result')).toBeHidden();
+			// Check result is hidden
+			await expect(page.locator('#round-result')).toBeHidden();
 
-		// Check we can place new bets
-		await expect(page.locator('#deal-button')).toBeDisabled();
+			// Check we can place new bets
+			await expect(page.locator('#deal-button')).toBeDisabled();
 
-		await chip.click();
-		await expect(chip).toHaveClass(/selected/);
+			await chip.click();
+			await expect(chip).toHaveClass(/selected/);
 
-		await page.click('[data-bet-type="player"]');
-		await expect(page.locator('#deal-button')).toBeEnabled();
+			await page.click('[data-bet-type="player"]');
+			await expect(page.locator('#deal-button')).toBeEnabled();
+		} finally {
+			await context.close();
+		}
 	});
 
-	test('should update scoreboard after round', async ({ page }) => {
-		await gotoBaccarat(page);
+	test('should update scoreboard after round', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBaccaratPage(browser, baseURL);
+		try {
+			await gotoBaccarat(page);
 
-		// Play a round
-		await page.click('.chip-select[data-amount="10"]');
-		await page.click('[data-bet-type="player"]');
-		await page.click('#deal-button');
-		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
+			// Play a round
+			await page.click('.chip-select[data-amount="10"]');
+			await page.click('[data-bet-type="player"]');
+			await page.click('#deal-button');
+			await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
 
-		// Check scoreboard has an entry
-		await expect(page.locator('#scoreboard .scoreboard-dot')).toHaveCount(1);
+			// Check scoreboard has an entry
+			await expect(page.locator('#scoreboard .scoreboard-dot')).toHaveCount(1);
+		} finally {
+			await context.close();
+		}
 	});
 });
 
@@ -204,22 +241,27 @@ test.describe('Baccarat Game - Side Bets', () => {
 		await expect(bankerBet).toHaveClass(/bet-area-active/);
 	});
 
-	test('should complete round with side bet', async ({ page }) => {
-		await gotoBaccarat(page);
+	test('should complete round with side bet', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBaccaratPage(browser, baseURL);
+		try {
+			await gotoBaccarat(page);
 
-		// Select $50 chip for deterministic bet amounts
-		await page.click('.chip-select[data-amount="50"]');
+			// Select $50 chip for deterministic bet amounts
+			await page.click('.chip-select[data-amount="50"]');
 
-		// Place main bet and side bet
-		await page.click('[data-bet-type="player"]');
-		await page.click('[data-bet-type="playerPair"]');
+			// Place main bet and side bet
+			await page.click('[data-bet-type="player"]');
+			await page.click('[data-bet-type="playerPair"]');
 
-		// Deal
-		await page.click('#deal-button');
-		await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
+			// Deal
+			await page.click('#deal-button');
+			await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
 
-		// Check results show both bet outcomes
-		await expect(page.locator('.result-bets')).toContainText('Player');
-		await expect(page.locator('.result-bets')).toContainText('P. Pair');
+			// Check results show both bet outcomes
+			await expect(page.locator('.result-bets')).toContainText('Player');
+			await expect(page.locator('.result-bets')).toContainText('P. Pair');
+		} finally {
+			await context.close();
+		}
 	});
 });

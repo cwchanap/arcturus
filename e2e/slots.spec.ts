@@ -1,4 +1,32 @@
 import { expect, test } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+import { bootstrapTestUser } from './bootstrap-auth';
+
+async function gotoSlots(page: Page) {
+	await page.goto('/games/slots', { waitUntil: 'networkidle' });
+	await page.waitForSelector('#slots-root');
+}
+
+// The stateful chip-sync tests below mutate per-user server state (chip balance
+// + the 2s `/api/chips/update` rate limit). They would race with each other and
+// with every other spec file that shares the single authenticated E2E user when
+// `fullyParallel` runs multiple workers. Each gets a freshly-bootstrapped user
+// (mirrors craps.spec.ts' createIsolatedCrapsPage) so it owns its rate-limit
+// budget and balance. Read-only UI tests keep using the shared fixture page.
+async function createIsolatedSlotsPage(browser: Browser, baseURL?: string) {
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
+	const page = await context.newPage();
+	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
+		email: `slots-sync-${nonce}@arcturus.local`,
+		name: `Slots Sync ${nonce}`,
+	});
+	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
+	await gotoSlots(page);
+
+	return { context, page };
+}
 
 test.describe('Slots game', () => {
 	test.beforeEach(async ({ page }) => {
@@ -13,18 +41,23 @@ test.describe('Slots game', () => {
 		await expect(page.locator('.bet-chip')).toHaveCount(6);
 	});
 
-	test('spin deducts the bet and updates balance without reload', async ({ page }) => {
-		const balanceBefore = await page.locator('#chip-balance').textContent();
-		await page.locator('.bet-chip[data-bet="1"]').click();
-		await expect(page.locator('#current-bet')).toHaveText('1');
-		await page.locator('#btn-spin').click();
-		// Balance should change (deduct or win) without a navigation.
-		// Poll because the reveal (and the optimistic balance update) happens
-		// after the spin animation (~1100ms at normal speed).
-		await expect
-			.poll(async () => page.locator('#chip-balance').textContent())
-			.not.toEqual(balanceBefore);
-		expect(page.url()).toContain('/games/slots');
+	test('spin deducts the bet and updates balance without reload', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedSlotsPage(browser, baseURL);
+		try {
+			const balanceBefore = await page.locator('#chip-balance').textContent();
+			await page.locator('.bet-chip[data-bet="1"]').click();
+			await expect(page.locator('#current-bet')).toHaveText('1');
+			await page.locator('#btn-spin').click();
+			// Balance should change (deduct or win) without a navigation.
+			// Poll because the reveal (and the optimistic balance update) happens
+			// after the spin animation (~1100ms at normal speed).
+			await expect
+				.poll(async () => page.locator('#chip-balance').textContent())
+				.not.toEqual(balanceBefore);
+			expect(page.url()).toContain('/games/slots');
+		} finally {
+			await context.close();
+		}
 	});
 
 	test('selecting the max bet keeps the spin button enabled', async ({ page }) => {
@@ -50,72 +83,88 @@ test.describe('Slots game', () => {
 	});
 
 	test('rapid double-spin sends distinct client syncIds (no client-side reuse)', async ({
-		page,
+		browser,
+		baseURL,
 	}) => {
-		const syncRequests: string[] = [];
-		page.on('request', (req) => {
-			if (req.url().endsWith('/api/chips/update') && req.method() === 'POST') {
-				const body = req.postDataJSON();
-				if (body?.gameType === 'slots') syncRequests.push(body.syncId);
-			}
-		});
+		const { context, page } = await createIsolatedSlotsPage(browser, baseURL);
+		try {
+			const syncRequests: string[] = [];
+			page.on('request', (req) => {
+				if (req.url().endsWith('/api/chips/update') && req.method() === 'POST') {
+					const body = req.postDataJSON();
+					if (body?.gameType === 'slots') syncRequests.push(body.syncId);
+				}
+			});
 
-		// Stall the first chip sync so the coordinator stays in-flight when
-		// spin 2 fires. This deterministically exercises the coalescing path
-		// (handleRoundComplete → isBusy → syncPending) rather than relying on
-		// timing between the button re-enable and the sync fetch.
-		//
-		// NOTE: page.on('request') fires BEFORE the route handler (Playwright
-		// emits the 'request' event when the page issues the request, then route
-		// handlers intercept). So we can't gate the stall on syncRequests.length
-		// — it would already be 1 inside the route handler. Instead, use a flag
-		// set inside the route handler itself.
-		let firstRequestIntercepted = false;
-		let resolveFirstSync: () => void = () => {};
-		await page.route('**/api/chips/update', async (route) => {
-			if (!firstRequestIntercepted) {
-				firstRequestIntercepted = true;
-				await new Promise<void>((resolve) => {
-					resolveFirstSync = resolve;
-				});
-			}
-			await route.continue();
-		});
+			// Stall the first chip sync so the coordinator stays in-flight when
+			// spin 2 fires. This deterministically exercises the coalescing path
+			// (handleRoundComplete → isBusy → syncPending) rather than relying on
+			// timing between the button re-enable and the sync fetch.
+			//
+			// NOTE: page.on('request') fires BEFORE the route handler (Playwright
+			// emits the 'request' event when the page issues the request, then route
+			// handlers intercept). So we can't gate the stall on syncRequests.length
+			// — it would already be 1 inside the route handler. Instead, use a flag
+			// set inside the route handler itself.
+			let firstRequestIntercepted = false;
+			let resolveFirstSync: () => void = () => {};
+			await page.route('**/api/chips/update', async (route) => {
+				if (!firstRequestIntercepted) {
+					firstRequestIntercepted = true;
+					await new Promise<void>((resolve) => {
+						resolveFirstSync = resolve;
+					});
+				}
+				await route.continue();
+			});
 
-		// Spin 1 — wait for reveal (button re-enables after the spin animation).
-		await page.locator('#btn-spin').click();
-		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
-		// Spin 2 immediately after the first settles. Sync 1 is still in-flight
-		// (stalled by the route handler), so the coordinator must coalesce.
-		await page.locator('#btn-spin').click();
-		await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+			// Spin 1 — wait for reveal (button re-enables after the spin animation).
+			await page.locator('#btn-spin').click();
+			await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+			// Spin 2 immediately after the first settles. Sync 1 is still in-flight
+			// (stalled by the route handler), so the coordinator must coalesce.
+			await page.locator('#btn-spin').click();
+			await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
 
-		// Release the stalled sync so both rounds can settle.
-		resolveFirstSync();
+			// Release the stalled sync so both rounds can settle.
+			resolveFirstSync();
 
-		// Coalescing should produce 2 syncs: sync 1 (stalled) then sync 2
-		// (flushed from syncPending after sync 1 completes). Every syncId
-		// must be unique.
-		await expect.poll(async () => syncRequests.length, { timeout: 8000 }).toBeGreaterThanOrEqual(2);
-		const unique = new Set(syncRequests);
-		expect(unique.size).toBe(syncRequests.length);
+			// Coalescing should produce 2 syncs: sync 1 (stalled) then sync 2
+			// (flushed from syncPending after sync 1 completes). Every syncId
+			// must be unique.
+			await expect
+				.poll(async () => syncRequests.length, { timeout: 8000 })
+				.toBeGreaterThanOrEqual(2);
+			const unique = new Set(syncRequests);
+			expect(unique.size).toBe(syncRequests.length);
+		} finally {
+			await context.close();
+		}
 	});
 
-	test('refresh during pending spin does not create a phantom deduction', async ({ page }) => {
-		const balanceBefore = Number(
-			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
-		);
+	test('refresh during pending spin does not create a phantom deduction', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedSlotsPage(browser, baseURL);
+		try {
+			const balanceBefore = Number(
+				(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
+			);
 
-		// Start a spin, then reload before the reveal fires. The client-side
-		// optimistic deduction never reaches the server (no chip sync for an
-		// incomplete spin), so the server balance must be unchanged on reload.
-		await page.locator('#btn-spin').click();
-		await page.reload();
-		await page.waitForSelector('#slots-root');
+			// Start a spin, then reload before the reveal fires. The client-side
+			// optimistic deduction never reaches the server (no chip sync for an
+			// incomplete spin), so the server balance must be unchanged on reload.
+			await page.locator('#btn-spin').click();
+			await page.reload();
+			await page.waitForSelector('#slots-root');
 
-		const balanceAfter = Number(
-			(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
-		);
-		expect(balanceAfter).toBe(balanceBefore);
+			const balanceAfter = Number(
+				(await page.locator('#chip-balance').textContent())?.replace(/[^0-9]/g, ''),
+			);
+			expect(balanceAfter).toBe(balanceBefore);
+		} finally {
+			await context.close();
+		}
 	});
 });

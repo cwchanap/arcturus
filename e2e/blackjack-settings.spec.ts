@@ -1,8 +1,30 @@
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+import { bootstrapTestUser } from './bootstrap-auth';
 
 async function gotoBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
+}
+
+// The stateful chip-sync tests below mutate per-user server state (chip balance
+// + the 2s `/api/chips/update` rate limit). They would race with each other and
+// with every other spec file that shares the single authenticated E2E user when
+// `fullyParallel` runs multiple workers. Each gets a freshly-bootstrapped user
+// (mirrors slots.spec.ts' createIsolatedSlotsPage) so it owns its rate-limit
+// budget and balance. Read-only UI tests keep using the shared fixture page.
+async function createIsolatedBlackjackPage(browser: Browser, baseURL?: string) {
+	const context = await browser.newContext({ baseURL: baseURL ?? 'http://localhost:2000' });
+	const page = await context.newPage();
+	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+	await bootstrapTestUser(context, baseURL ?? 'http://localhost:2000', {
+		email: `bj-settings-sync-${nonce}@arcturus.local`,
+		name: `BJ Settings Sync ${nonce}`,
+	});
+	await page.goto(baseURL ?? 'http://localhost:2000', { waitUntil: 'domcontentloaded' });
+	await gotoBlackjack(page);
+
+	return { context, page };
 }
 
 async function openSettingsPanel(page: Page) {
@@ -78,39 +100,47 @@ test.describe('Blackjack Game Settings', () => {
 		await expect(controls.useLlm).not.toBeChecked();
 	});
 
-	test('bet limits from settings are enforced', async ({ page }) => {
-		await gotoBlackjack(page);
-		await openSettingsPanel(page);
+	test('bet limits from settings are enforced', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
+		try {
+			await openSettingsPanel(page);
 
-		const controls = getSettingsControls(page);
+			const controls = getSettingsControls(page);
 
-		await controls.minBet.fill('50');
-		await controls.maxBet.fill('200');
-		await controls.saveButton.click();
+			await controls.minBet.fill('50');
+			await controls.maxBet.fill('200');
+			await controls.saveButton.click();
 
-		// Invalid low bet should be rejected with clear status message
-		await page.fill('#bet-amount', '10');
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await expect(page.locator('#game-status')).toContainText('Bet must be between $50 and $200');
+			// Invalid low bet should be rejected with clear status message
+			await page.fill('#bet-amount', '10');
+			await page.getByRole('button', { name: 'Deal' }).click();
+			await expect(page.locator('#game-status')).toContainText('Bet must be between $50 and $200');
 
-		// Valid bet within limits should start the round
-		await page.fill('#bet-amount', '100');
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await expect(page.locator('#game-controls')).toBeVisible();
+			// Valid bet within limits should start the round
+			await page.fill('#bet-amount', '100');
+			await page.getByRole('button', { name: 'Deal' }).click();
+			await expect(page.locator('#game-controls')).toBeVisible();
+		} finally {
+			await context.close();
+		}
 	});
 
-	test('LLM toggle can disable AI Rival without overlay', async ({ page }) => {
-		await gotoBlackjack(page);
-		await dealHand(page, 50);
+	test('LLM toggle can disable AI Rival without overlay', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
+		try {
+			await dealHand(page, 50);
 
-		const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
-		await expect(aiButton).toBeEnabled();
-		await aiButton.click();
+			const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
+			await expect(aiButton).toBeEnabled();
+			await aiButton.click();
 
-		// With default settings.useLLM = false, AI Rival should be gated by settings
-		await expect(page.locator('#game-status')).toContainText(
-			'AI Rival is disabled in game settings.',
-		);
-		await expect(page.locator('#llm-config-overlay')).toBeHidden();
+			// With default settings.useLLM = false, AI Rival should be gated by settings
+			await expect(page.locator('#game-status')).toContainText(
+				'AI Rival is disabled in game settings.',
+			);
+			await expect(page.locator('#llm-config-overlay')).toBeHidden();
+		} finally {
+			await context.close();
+		}
 	});
 });

@@ -6,13 +6,13 @@
 
 ## Overview
 
-Implement a playable European roulette game at `/games/roulette` with a server-authoritative spin endpoint, clear betting, reliable chip settlement via the existing `/api/chips/update` pipeline, and a CSS/SVG animated wheel.
+Implement a playable European roulette game at `/games/roulette` with a server-randomized spin endpoint, clear betting, reliable chip settlement via the existing `/api/chips/update` pipeline, and a CSS/SVG animated wheel.
 
 ## Key Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Winning number resolution | Server-side spin endpoint | Issue requires client not determine the number; first server-authoritative game in the codebase |
+| Winning number resolution | Server-randomized spin endpoint | Issue requires client not determine the number; first game with a server-side outcome endpoint. Settlement still trusts client delta (same security posture as other games) |
 | Spin idempotency | Stateless random + client localStorage persistence | Simplest server; chip idempotency handled by existing `syncId` + `chip_sync_receipt` system |
 | Bet model | Discriminated union by `BetType` | Extensible — adding split/street/corner/line later adds variants + evaluator cases without architecture change |
 | Chip accounting | Deduct at spin, credit at settle | Matches issue requirement and existing games' upfront-deduction convention |
@@ -28,6 +28,7 @@ src/lib/roulette/
 ├── betEvaluator.ts       # Pure: doesBetWin(bet, winningNumber), evaluateBets(bets, winningNumber)
 ├── RouletteGame.ts       # State machine: placeBet, removeBet, clearBets, spin, settle
 ├── RouletteUIRenderer.ts # DOM updates: wheel, betting table, chip stacks, balance, messages
+├── rouletteClient.ts     # Client integration: DOM event wiring, chip sync, session persistence
 ├── GameSettingsManager.ts # LocalStorage: animation speed, sound, last selected chip
 ├── index.ts              # Re-exports
 ├── betEvaluator.test.ts  # Unit tests for all bet types, 0-handling, payouts
@@ -37,6 +38,15 @@ src/pages/games/roulette.astro   # Game page (CasinoLayout, session, script)
 src/pages/api/roulette/spin.ts   # Server endpoint: validate + generate winning number
 e2e/roulette.spec.ts             # E2E: place bets, spin, verify settlement, responsive
 ```
+
+**`rouletteClient.ts` responsibilities** (matches the pattern of `blackjackClient.ts`, `baccaratClient.ts`, `slotsClient.ts`):
+- Read `data-*` attributes from the page root element (`data-user-id`, `data-guest-mode`, `data-initial-balance`)
+- Instantiate `RouletteGame` with the correct initial balance (guest bankroll from `loadGuestBankroll` or server balance)
+- Wire DOM events (chip selection, table clicks, spin/clear/new-round buttons) to `RouletteGame` methods
+- Drive `RouletteUIRenderer` updates on state changes
+- Run `syncBalance()` after each settled round — with rate-limit/retry handling (see Chip Sync section)
+- Persist/restore session state to localStorage for refresh protection
+- Handle achievement toast events
 
 **Architectural rules:**
 - `betEvaluator.ts` is pure (no class, no DOM) — testable in Bun
@@ -49,7 +59,8 @@ e2e/roulette.spec.ts             # E2E: place bets, spin, verify settlement, res
 
 1. `src/lib/game-stats/constants.ts` — add `'roulette'` to `GAME_TYPES`, `GAME_TYPE_LABELS`, `GAME_TYPE_ICONS`
 2. `src/pages/api/chips/update.ts` — add `roulette` entry to `GAME_LIMITS`
-3. `src/pages/index.astro` — already has the Roulette game card (no change needed)
+3. `src/db/schema.ts` — update stale `gameStats` table comment (pre-existing, includes `'roulette'` while we're here)
+4. `src/pages/index.astro` — already has the Roulette game card (no change needed)
 
 ## Bet Model
 
@@ -270,6 +281,12 @@ Player clicks Spin
   +- 7. On success: clear localStorage round state
 
 REFRESH SCENARIOS:
+  - During 'betting' (before spin): localStorage has { phase:'betting', activeBets }
+    -> On reload: restore active bets to the table
+    -> Bets were never deducted from balance (deduction happens at spin)
+    -> Balance is server-authoritative (authenticated) or localStorage (guest)
+    -> Safe: no void needed, player just resumes where they left off
+
   - During 'spinning' (step 2-4): localStorage has { phase:'spinning', syncId, bets }
     -> On reload: restore bets, but no chip sync happened -> balance is server-authoritative
     -> Bets are voided gracefully, player keeps their chips
@@ -300,6 +317,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	//    - Total <= MAX_TOTAL_BET (5000)
 	//    - At least one bet
 	//    - Straight targets are 0-36, dozen/column targets are 0-2
+	//    - Outside bet types (red/black/odd/even/low/high) must NOT carry a target;
+	//      if present, reject (400) to prevent ambiguous payloads
 
 	// 4. Generate winning number (unbiased)
 	const buf = new Uint8Array(1);
@@ -326,6 +345,40 @@ The endpoint is **stateless** — no D1/KV writes. It validates constraints and 
 
 ## Chip Sync Integration
 
+### Guest mode wiring
+
+The page follows the exact pattern used by blackjack/baccarat/craps/slots. The `.astro` frontmatter uses `createPublicGameSession(user)` to produce `initialBalance`, `clientUserId`, `guestModeValue`, and `balanceAvailableValue`. These are rendered as `data-*` attributes on the root element:
+
+```astro
+---
+import { createPublicGameSession } from '../../lib/public-game-session';
+const user = Astro.locals.user;
+const gameSession = createPublicGameSession(user);
+const initialBalance = gameSession.initialBalance;
+const clientUserId = gameSession.clientUserId;
+---
+<CasinoLayout title="Roulette - Arcturus Casino">
+	<div
+		id="roulette-root"
+		data-user-id={clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={initialBalance}
+	>
+```
+
+The client (`rouletteClient.ts`) reads these attributes and uses the shared helpers from `public-game-session.ts`:
+
+- `isGuestModeValue(root.dataset.guestMode)` — determines guest vs authenticated mode
+- `loadGuestBankroll('roulette', userId, initialBalance)` — restores guest balance from localStorage on page load
+- `persistGuestBankroll('roulette', userId, balance)` — saves guest balance after each round
+- `shouldSyncAccountChips({ isGuestMode })` — gates whether to call `/api/chips/update` (guests never sync)
+
+### Spin endpoint: guest skip
+
+Guests skip the spin endpoint entirely and generate the number locally with the same unbiased algorithm (`crypto.getRandomValues` with rejection sampling). This matches how all other games handle guests — no server calls, localStorage-only balance.
+
+### Sync flow (authenticated mode)
+
 After settlement, the client syncs via the existing endpoint:
 
 ```typescript
@@ -340,6 +393,19 @@ POST /api/chips/update
 ```
 
 Roulette uses `handCount: 1` (one spin = one round) and does not use `statsDelta` or batching.
+
+### Sync retry and reconciliation
+
+Roulette follows the **baccarat sync pattern** (simpler than craps — no batching, no `statsDelta`, no `pendingRollSyncs` coalescing). The `syncBalance()` function in `rouletteClient.ts` handles:
+
+- **`RATE_LIMITED` (429)**: retry after the `Retry-After` header delay (or 2s default)
+- **`BALANCE_MISMATCH` (409)**: rebase `lastSyncedBalance` to the server's `currentBalance`, keep the pending sync for retry
+- **`DELTA_EXCEEDS_LIMIT` (400)**: unrecoverable — log error, clear pending sync, show user message (matches craps' unrecoverable 4xx path)
+- **5xx server errors**: exponential backoff retry (base 2s, max 30s)
+- **Network errors** (`TypeError` from `fetch`): exponential backoff retry
+- **Success**: apply server-authoritative balance via `game.setBalance(serverBalance)`, clear pending round from localStorage, dispatch achievement toast if `newAchievements` returned
+
+The pending round state (including `syncId` and full `SpinResult`) is persisted to localStorage until the chip sync succeeds. On page refresh, if a settled-but-unsynced round exists, `rouletteClient.ts` retries the sync with the same `syncId` — the `chip_sync_receipt` idempotency check ensures no double-credit.
 
 ### Changes to existing files
 
@@ -374,6 +440,8 @@ export const GAME_TYPE_ICONS = {
 ```
 
 No changes to `/api/chips/update.ts` logic itself — the existing `syncId` + `chip_sync_receipt` idempotency, `GAME_LIMITS` validation, and achievement checking all work as-is for roulette.
+
+**3. `src/db/schema.ts`** — the `gameStats` table has a stale comment at `schema.ts:118` listing only `'poker' | 'blackjack' | 'baccarat'`. This is pre-existing (not introduced by this spec) but should be updated to include `'craps' | 'slots' | 'roulette'` while we're touching the game type registries.
 
 ## UI Design
 
@@ -411,9 +479,18 @@ The wheel is a **static SVG** with 37 pocket segments (red, black, green for 0),
 The pocket angle for each number is derived from its position in `WHEEL_ORDER`:
 
 ```typescript
+const SEGMENT = 360 / 37; // degrees per pocket
 const pocketIndex = WHEEL_ORDER.indexOf(winningNumber);
-const pocketAngle = -(pocketIndex * (360 / 37)); // negative = clockwise
-const targetRotation = 1800 + pocketAngle; // 5 full turns + land on pocket
+const pocketAngle = -(pocketIndex * SEGMENT); // negative = clockwise
+
+// CRITICAL: use cumulative rotation, not absolute. CSS transitions take the
+// shortest path between two rotation values, so an absolute target would cause
+// the wheel to spin backwards on the 2nd+ spin (e.g. from 2140deg back to 1820deg).
+// Instead, always add 5 full turns forward from the current rotation.
+const currentRotation = wheelEl.dataset.rotation ?? 0;
+const targetRotation = Number(currentRotation) + 1800 + pocketAngle;
+wheelEl.style.transform = `rotate(${targetRotation}deg)`;
+wheelEl.dataset.rotation = String(targetRotation);
 ```
 
 A fixed pointer/marker at the top of the wheel indicates the result.
@@ -468,6 +545,36 @@ Collapsible section at the bottom with bet type explanations and payout table:
 | Column | 2:1 | 2:1 column button |
 
 Plus a note: *"0 is green. Outside bets lose when 0 hits."*
+
+### `data-testid` inventory
+
+Stable selectors for E2E tests:
+
+| Test ID | Element |
+|---|---|
+| `roulette-root` | Page root container |
+| `roulette-wheel` | Wheel SVG container |
+| `wheel-result` | Winning number display |
+| `betting-table` | Betting table container |
+| `position-{type}-{target}` | Each bettable position (e.g. `position-straight-17`, `position-red`, `position-dozen-1`, `position-column-0`) |
+| `chip-{value}` | Chip denomination selector buttons (e.g. `chip-1`, `chip-5`, `chip-100`) |
+| `active-bets` | Active bets sidebar container |
+| `active-bet-{id}` | Individual active bet entry |
+| `total-bet` | Total bet display |
+| `chip-balance` | Chip balance display |
+| `spin-button` | Spin button |
+| `clear-bets-button` | Clear bets button |
+| `new-round-button` | New round button (settled phase) |
+| `rules-panel` | Rules/help panel container |
+| `rules-toggle` | Rules panel expand/collapse button |
+
+### Accessibility
+
+- **Wheel result**: `aria-live="polite"` on the `wheel-result` element so screen readers announce the winning number after each spin
+- **Betting table**: keyboard-navigable grid (`role="grid"`, `role="gridcell"`), Enter/Space to place a bet on the focused cell
+- **Chip selectors**: standard `<button>` elements, focusable, `aria-pressed` to indicate selected denomination
+- **Phase announcements**: `aria-live="polite"` region for phase transitions ("Betting open", "No more bets", "17 Red")
+- **Spin/clear buttons**: `aria-disabled` when action unavailable; `aria-busy` on the table during spin
 
 ## Testing Strategy
 

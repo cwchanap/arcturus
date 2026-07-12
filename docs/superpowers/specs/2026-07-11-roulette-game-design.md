@@ -6,18 +6,19 @@
 
 ## Overview
 
-Implement a playable European roulette game at `/games/roulette` with a server-randomized spin endpoint, clear betting, reliable chip settlement via the existing `/api/chips/update` pipeline, and a CSS/SVG animated wheel.
+Implement a playable European roulette game at `/games/roulette` with a server-side atomic settlement endpoint, clear betting, reliable chip settlement, and a CSS/SVG animated wheel. The spin endpoint deducts the wager, generates the winning number, computes payouts, credits winnings, writes the receipt, and records stats — all in one atomic D1 batch before revealing the result to the client. This eliminates the selective-settlement exploit where a player could abandon losing spins by refreshing.
 
 ## Key Design Decisions
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Winning number resolution | Server-randomized spin endpoint | Issue requires client not determine the number; first game with a server-side outcome endpoint. Settlement still trusts client delta (same security posture as other games) |
-| Spin idempotency | Stateless random + client localStorage persistence | Simplest server; chip idempotency handled by existing `syncId` + `chip_sync_receipt` system |
+| Winning number resolution | Server-side atomic settlement | Spin endpoint deducts wager + generates number + computes payout + credits balance + writes receipt in one atomic D1 batch. Result committed before client sees it — eliminates selective-settlement exploit |
+| Spin idempotency | `roulette_round` table (composite PK: userId + syncId) | If client refreshes mid-spin, retry with same syncId returns stored result. Settlement is already committed server-side |
 | Bet model | Discriminated union by `BetType` | Extensible — adding split/street/corner/line later adds variants + evaluator cases without architecture change |
-| Chip accounting | Deduct at spin, credit at settle | Matches issue requirement and existing games' upfront-deduction convention |
-| Server validation depth | Validate constraints only; client computes payouts | Server generates number + validates limits; client uses pure `betEvaluator` functions for settlement |
+| Chip accounting | Deduct at placement, settle at spin | Bets deducted immediately when placed (like craps). Spin endpoint verifies total and settles atomically. Maintains balance invariant naturally |
+| Server validation depth | Server computes full settlement | Server runs `betEvaluator` (shared code) to compute payouts. Client never supplies a delta — it applies the server-returned `newBalance` |
 | Wheel visual | Animated CSS/SVG wheel | Polished but manageable; guaranteed landing on correct pocket via computed rotation |
+| Separate chip sync call | Not needed for roulette | Spin endpoint handles everything `/api/chips/update` would do (balance, receipt, stats, achievements). Guest mode bypasses server entirely |
 
 ## Module Structure
 
@@ -44,8 +45,9 @@ e2e/roulette.spec.ts             # E2E: place bets, spin, verify settlement, res
 - Instantiate `RouletteGame` with the correct initial balance (guest bankroll from `loadGuestBankroll` or server balance)
 - Wire DOM events (chip selection, table clicks, spin/clear/new-round buttons) to `RouletteGame` methods
 - Drive `RouletteUIRenderer` updates on state changes
-- Run `syncBalance()` after each settled round — with rate-limit/retry handling (see Chip Sync section)
-- Persist/restore session state to localStorage for refresh protection
+- Authenticated mode: call `/api/roulette/spin` and apply server-returned `newBalance` (no separate chip sync)
+- Guest mode: settlement is entirely local (generate number + evaluate bets + credit balance)
+- Persist/restore session state to localStorage for refresh protection (betting bets, spinning syncId, settled result)
 - Handle achievement toast events
 
 **Architectural rules:**
@@ -55,12 +57,13 @@ e2e/roulette.spec.ts             # E2E: place bets, spin, verify settlement, res
 - No LLM module for MVP (issue doesn't require it; structure allows adding later)
 - The spin endpoint is a thin Worker handler: authenticate, validate constraints, return `crypto.getRandomValues()` result. Chip mutation stays in the existing `/api/chips/update` pipeline
 
-### Integration touchpoints (minimal changes to existing files)
+### Integration touchpoints (changes to existing files)
 
 1. `src/lib/game-stats/constants.ts` — add `'roulette'` to `GAME_TYPES`, `GAME_TYPE_LABELS`, `GAME_TYPE_ICONS`
-2. `src/pages/api/chips/update.ts` — add `roulette` entry to `GAME_LIMITS`
-3. `src/db/schema.ts` — update stale `gameStats` table comment (pre-existing, includes `'roulette'` while we're here)
-4. `src/pages/index.astro` — already has the Roulette game card (no change needed)
+2. `src/pages/api/chips/update.ts` — add `roulette` entry to `GAME_LIMITS` (used by spin endpoint for validation)
+3. `src/db/schema.ts` — add `roulette_round` table definition + update stale `gameStats` table comment (pre-existing, include `'roulette'` while we're here)
+4. New migration: `drizzle/` SQL for `roulette_round` table
+5. `src/pages/index.astro` — already has the Roulette game card (no change needed)
 
 ## Bet Model
 
@@ -217,41 +220,53 @@ function columnIndexToMod3(index: number): number {
 ```typescript
 export class RouletteGame {
 	private state: RouletteGameState;
-	private lastSyncedBalance: number;
 
-	// --- Betting ---
+	// --- Betting (deducts immediately, like craps) ---
 	canPlaceBet(type: BetType, amount: number, target?: number): { ok: boolean; error?: string }
-		// Validates: amount >= MIN_BET, amount <= balance,
+		// Validates: amount >= MIN_BET, amount <= chipBalance (remaining),
 		// cumulative position total <= MAX_BET_PER_POSITION,
 		// total bets <= MAX_TOTAL_BET
+		// Because placeBet deducts immediately, chipBalance already reflects
+		// prior bets — no separate "committed total" tracking needed.
 
 	placeBet(type: BetType, amount: number, target?: number): { success: boolean; error?: string }
-		// Creates bet with UUID, pushes to activeBets
-		// Does NOT deduct from balance yet (deduction at spin)
+		// Validates via canPlaceBet, then:
+		// - If existing bet on same position (type+target): adds amount to it
+		// - Otherwise: creates new bet with UUID
+		// - Deducts amount from chipBalance IMMEDIATELY
+		// This maintains the balance invariant: chipBalance always reflects
+		// available (uncommitted) chips.
 
 	removeBet(betId: string): { success: boolean; error?: string }
 		// Removes bet from activeBets
-		// Does NOT credit balance (was never deducted)
+		// Refunds bet.amount back to chipBalance
 
 	clearBets(): void
-		// Clears all activeBets
+		// Refunds all activeBets to chipBalance, clears the list
 
-	// --- Spin ---
+	// --- Spin (authenticated: delegates to server; guest: local) ---
 	async spin(): Promise<SpinResult>
 		// 1. Validate: at least one bet, phase === 'betting'
 		// 2. Generate syncId (crypto.randomUUID())
-		// 3. Deduct totalBet from balance: state.chipBalance -= totalBet
-		// 4. Persist round state to localStorage (phase: 'spinning', syncId, bets)
-		// 5. POST /api/roulette/spin { syncId, totalBet, bets }
-		//    (Guests skip this step and generate locally)
-		// 6. Receive { winningNumber }
-		// 7. Call settle(winningNumber)
-		// 8. Persist round state to localStorage (phase: 'settled', full SpinResult)
-		// 9. Trigger syncBalance() -- async, non-blocking
+		// 3. snapshot bets + totalBet (bets already deducted at placement)
+		// 4. Set phase = 'spinning'
+		// 5. Persist { phase:'spinning', syncId, bets } -> localStorage
+		// 6. AUTHENTICATED:
+		//    POST /api/roulette/spin { syncId, bets, totalBet }
+		//    Server settles atomically (see Spin Endpoint section)
+		//    Response: { winningNumber, newBalance, netDelta, results, syncId, newAchievements }
+		//    Apply server-authoritative balance: this.setBalance(newBalance)
+		//    GUEST:
+		//    Generate winningNumber locally (crypto.getRandomValues)
+		//    Settle locally using evaluateBets()
+		//    Credit totalPayout to chipBalance
+		// 7. Set phase = 'settled', record in roundHistory
+		// 8. Persist { phase:'settled', spinResult } -> localStorage
+		// 9. Dispatch achievement events (authenticated only)
 		// 10. Return SpinResult
 
-	// --- Settlement ---
-	private settle(winningNumber: number): SpinResult
+	// --- Settlement (guest mode only; authenticated mode uses server result) ---
+	private settleGuest(winningNumber: number): SpinResult
 		// evaluateBets(activeBets, winningNumber)
 		// Credit totalPayout to balance
 		// Move to roundHistory (last 20)
@@ -260,90 +275,223 @@ export class RouletteGame {
 	// --- State management ---
 	getState(): Readonly<RouletteGameState>
 	getBalance(): number
-	setBalance(n: number): void  // Server reconciliation
+	setBalance(n: number): void  // Apply server-authoritative balance
 	restoreState(snapshot): boolean  // From localStorage on page load
 }
-```
 
 ### Round flow with refresh protection
 
+The spin endpoint settles **atomically** — deduct wager, generate number, compute payout, credit balance, write receipt, record stats, all in one D1 batch. The result is committed **before** the response reaches the client. This eliminates the selective-settlement window entirely.
+
 ```
-Player clicks Spin
+Player clicks Spin (authenticated)
   |
-  +- 1. Deduct totalBet locally
-  +- 2. Persist { phase:'spinning', syncId, bets, totalBet } -> localStorage
-  +- 3. POST /api/roulette/spin { syncId, totalBet, bets }
-  |     +- Server: auth check, validate constraints, generate number, return it
-  +- 4. settle(winningNumber) -> credit winnings
-  +- 5. Persist { phase:'settled', spinResult } -> localStorage
-  +- 6. POST /api/chips/update { delta: netDelta, gameType:'roulette', syncId, ... }
-  |     +- Server: syncId idempotency via chip_sync_receipt, GAME_LIMITS check
-  +- 7. On success: clear localStorage round state
+  +- 1. syncId = crypto.randomUUID()
+  +- 2. Persist { phase:'spinning', syncId, bets } -> localStorage
+  +- 3. POST /api/roulette/spin { syncId, bets, totalBet }
+  |     +- Server (atomic D1 batch):
+  |     |   a. Idempotency check: syncId in roulette_round?
+  |     |      YES -> return stored result (replay after refresh)
+  |     |      NO  -> continue
+  |     |   b. Load chipBalance from user table
+  |     |   c. Verify totalBet <= chipBalance
+  |     |   d. Generate winningNumber (crypto.getRandomValues)
+  |     |   e. Evaluate bets -> totalPayout, netDelta (shared betEvaluator)
+  |     |   f. Verify netDelta within GAME_LIMITS
+  |     |   g. Compute newBalance = chipBalance - totalBet + totalPayout
+  |     |   h. D1 batch:
+  |     |      - INSERT roulette_round (syncId, userId, winningNumber, bets, settlement)
+  |     |      - UPDATE user SET chipBalance = newBalance (optimistic lock)
+  |     |      - INSERT chip_sync_receipt
+  |     |      - UPSERT game_stats
+  |     |   i. Check achievements
+  |     |   j. Return { winningNumber, newBalance, netDelta, results, newAchievements }
+  +- 4. Apply server-authoritative balance: game.setBalance(newBalance)
+  +- 5. Animate wheel to winningNumber
+  +- 6. Set phase = 'settled', persist spinResult -> localStorage
+  +- 7. Dispatch achievement toast if newAchievements
+
+Player clicks Spin (guest)
+  |
+  +- Same flow but steps 3-4 replaced with:
+  |   Generate winningNumber locally, settle via evaluateBets, credit balance
+  +- No server calls, no sync needed
+
+NO SEPARATE CHIP SYNC CALL — the spin endpoint IS the settlement.
 
 REFRESH SCENARIOS:
   - During 'betting' (before spin): localStorage has { phase:'betting', activeBets }
-    -> On reload: restore active bets to the table
-    -> Bets were never deducted from balance (deduction happens at spin)
-    -> Balance is server-authoritative (authenticated) or localStorage (guest)
-    -> Safe: no void needed, player just resumes where they left off
+    -> Restore bets. Bets were deducted at placement, so balance is correct.
+    -> Safe: player resumes where they left off.
 
-  - During 'spinning' (step 2-4): localStorage has { phase:'spinning', syncId, bets }
-    -> On reload: restore bets, but no chip sync happened -> balance is server-authoritative
-    -> Bets are voided gracefully, player keeps their chips
-    -> Show "Round interrupted" message, return to betting phase
+  - During 'spinning' (request in flight): localStorage has { phase:'spinning', syncId, bets }
+    -> On reload: re-POST /api/roulette/spin with SAME syncId
+    -> Server: syncId already in roulette_round -> return stored result
+    -> Client applies result, displays it
+    -> If the original request never reached the server (e.g. network failure):
+       server processes it fresh and settles. Either way: correct outcome.
+    -> NO selective-settlement possible: if the server settled a loss, the
+       retry returns that loss. The player cannot void it.
 
-  - During 'settled' (step 5-7): localStorage has { phase:'settled', spinResult }
-    -> On reload: restore result display, retry chip sync with same syncId
-    -> /api/chips/update idempotency ensures no double-credit
+  - During 'settled' (response received): localStorage has { phase:'settled', spinResult }
+    -> Restore result display. Balance already applied. No further action needed.
+
+  - 'New Round' button: immediately available after settled phase.
+    No sync queue to wait on — settlement was synchronous and committed.
 ```
 
-The key insight: chips are only mutated by `/api/chips/update`, which has its own `syncId` + `chip_sync_receipt` idempotency. The spin endpoint never touches chips. So the only window where a refresh matters is between deducting locally and syncing — and in that window, the server balance is untouched, so voiding the round is safe.
+## Spin Endpoint — Atomic Settlement (`src/pages/api/roulette/spin.ts`)
 
-## Spin Endpoint (`src/pages/api/roulette/spin.ts`)
+The spin endpoint is the **sole settlement path** for authenticated roulette. It deducts the wager, generates the winning number, computes payouts, credits the balance, writes the receipt, and records stats — all in one atomic D1 batch. The client never supplies a delta; it applies the server-returned `newBalance`.
+
+### New table: `roulette_round`
+
+```sql
+CREATE TABLE roulette_round (
+    syncId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    winningNumber INTEGER NOT NULL,
+    betsJson TEXT NOT NULL,        -- JSON-serialized bet list (for audit/debug)
+    totalBet INTEGER NOT NULL,
+    totalPayout INTEGER NOT NULL,
+    netDelta INTEGER NOT NULL,
+    previousBalance INTEGER NOT NULL,
+    newBalance INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    PRIMARY KEY (userId, syncId)
+);
+```
+
+Composite PK `(userId, syncId)` provides idempotency: replaying a spin with the same syncId returns the stored result.
+
+### Endpoint flow
 
 ```typescript
 export const POST: APIRoute = async ({ request, locals }) => {
-	// 1. Auth check -- must be logged in
+	// 1. Auth check
 	if (!locals.user) return new Response('Unauthorized', { status: 401 });
 
 	// 2. Parse + validate body
-	// Validate: syncId (string, matches /^[A-Za-z0-9_-]{1,128}$/),
-	//           totalBet (integer >= 1, <= MAX_TOTAL_BET),
-	//           bets (array of valid RouletteBet objects, each amount >= MIN_BET)
+	// syncId: string, /^[A-Za-z0-9_-]{1,128}$/
+	// bets: array of valid RouletteBet objects
+	// totalBet: integer >= 1, <= MAX_TOTAL_BET
+	// Each bet: amount >= MIN_BET, valid type, valid target for type
+	// Outside bet types must NOT carry a target (reject 400 if present)
+	// Per-position cumulative <= MAX_BET_PER_POSITION
 
-	// 3. Validate bet constraints (mirror of client-side rules)
-	//    - Each bet amount >= MIN_BET (1)
-	//    - Per-position cumulative <= MAX_BET_PER_POSITION (500)
-	//    - Total <= MAX_TOTAL_BET (5000)
-	//    - At least one bet
-	//    - Straight targets are 0-36, dozen/column targets are 0-2
-	//    - Outside bet types (red/black/odd/even/low/high) must NOT carry a target;
-	//      if present, reject (400) to prevent ambiguous payloads
+	// 3. Idempotency check — if syncId exists, return stored result
+	const existing = await d1.prepare(
+		'SELECT winningNumber, newBalance, netDelta, betsJson, previousBalance FROM roulette_round WHERE userId = ? AND syncId = ?'
+	).bind(userId, body.syncId).first();
 
-	// 4. Generate winning number (unbiased)
+	if (existing) {
+		// Replay after refresh — return the same result
+		return json({ ...existing, syncId: body.syncId, timestamp: ... });
+	}
+
+	// 4. Load chipBalance from user table
+	const userRow = await d1.prepare(
+		'SELECT chipBalance, heldChips FROM user WHERE id = ?'
+	).bind(userId).first();
+
+	// Reject if MP escrow active (heldChips > 0) — same as /api/chips/update
+	if (userRow.heldChips > 0) return json({ error: 'MP_ESCROW_ACTIVE' }, 409);
+
+	const previousBalance = Math.trunc(userRow.chipBalance);
+
+	// 5. Verify totalBet <= chipBalance
+	if (body.totalBet > previousBalance) {
+		return json({ error: 'INSUFFICIENT_BALANCE', currentBalance: previousBalance }, 400);
+	}
+
+	// 6. Rate limit (same 2s rule as /api/chips/update)
+	// Use the same lastUpdateByUser map
+
+	// 7. Generate winning number (unbiased)
 	const buf = new Uint8Array(1);
-	const LIMIT = 222; // 37 * 6 = 222, largest multiple of 37 under 256
-	do {
-		crypto.getRandomValues(buf);
-	} while (buf[0] >= LIMIT);
+	const LIMIT = 222; // 37 * 6, largest multiple of 37 under 256
+	do { crypto.getRandomValues(buf); } while (buf[0] >= LIMIT);
 	const winningNumber = buf[0] % 37;
 
-	// 5. Return result (no chip mutation)
-	return new Response(JSON.stringify({
+	// 8. Evaluate bets using shared betEvaluator (same code as client)
+	const results = evaluateBets(body.bets, winningNumber);
+	const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
+	const netDelta = totalPayout - body.totalBet;
+
+	// 9. Verify netDelta within GAME_LIMITS
+	const limits = GAME_LIMITS.roulette;
+	if (netDelta > limits.maxWin || Math.abs(netDelta) > limits.maxLoss) {
+		return json({ error: 'DELTA_EXCEEDS_LIMIT' }, 400);
+	}
+
+	// 10. Compute new balance
+	const newBalance = previousBalance + netDelta;
+	if (newBalance < 0) return json({ error: 'INSUFFICIENT_BALANCE' }, 400);
+
+	// 11. Atomic D1 batch
+	const nowSeconds = Math.trunc(Date.now() / 1000);
+	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
+	await d1.batch([
+		// Persist round result (idempotency record)
+		d1.prepare(
+			'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).bind(body.syncId, userId, winningNumber, JSON.stringify(body.bets), body.totalBet, totalPayout, netDelta, previousBalance, newBalance, nowSeconds),
+
+		// Update balance (optimistic lock on previousBalance)
+		d1.prepare(
+			'UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?'
+		).bind(newBalance, nowSeconds, userId, previousBalance),
+
+		// Write chip_sync_receipt (same schema as existing)
+		d1.prepare(
+			'INSERT INTO chip_sync_receipt (...) VALUES (...)'
+		).bind(userId, body.syncId, 'roulette', previousBalance, newBalance, netDelta, ...),
+
+		// Record game stats (same UPSERT as existing)
+		d1.prepare(
+			'INSERT INTO game_stats (...) VALUES (...) ON CONFLICT(userId, gameType) DO UPDATE SET ...'
+		).bind(userId, 'roulette', ...),
+	]);
+
+	// 12. Check achievements (same function as /api/chips/update)
+	const newAchievements = await checkAndGrantAchievements(db, userId, newBalance, {
+		recentWinAmount: netDelta > 0 ? netDelta : undefined,
+		gameType: 'roulette',
+	});
+
+	// 13. Return full result
+	return json({
 		winningNumber,
+		newBalance,
+		previousBalance,
+		netDelta,
+		results,
 		syncId: body.syncId,
-		timestamp: Date.now(),
-	}), { headers: { 'content-type': 'application/json' } });
+		newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+	});
 };
 ```
 
-The endpoint is **stateless** — no D1/KV writes. It validates constraints and returns a random number. The `syncId` is echoed back so the client can correlate request/response.
+**Why this design:**
+- **No selective settlement**: The wager is deducted and the result is committed in the same atomic batch, before the response leaves the server. The client cannot void a loss.
+- **No separate chip sync**: The spin endpoint handles everything `/api/chips/update` would do. The client applies `newBalance` directly.
+- **No sync queue**: Settlement is synchronous and committed. "New Round" is immediately available after the response. No async retries, no FIFO coordinator, no concurrent-round conflicts.
+- **Idempotent**: Refresh mid-spin retries with the same syncId. Server returns the stored result from `roulette_round`.
+- **Shared evaluator**: The `betEvaluator.ts` pure functions run identically on client (for guest mode + result display) and server (for settlement). No drift.
 
-**Guest mode:** guests skip the spin endpoint entirely and generate the number locally with `crypto.getRandomValues()` (same algorithm). This matches how all other games handle guests — no server calls, localStorage-only balance.
+**Unbiased random:** `crypto.getRandomValues(new Uint8Array(1))` returns 0–255. Rejection sampling with limit 222 (37 x 6, the largest multiple of 37 under 256) eliminates modular bias.
 
-**Unbiased random:** `crypto.getRandomValues(new Uint8Array(1))` returns 0–255. Using rejection sampling with limit 222 (37 x 6, the largest multiple of 37 under 256) eliminates modular bias.
+**Guest mode:** Guests skip the spin endpoint entirely and generate the number locally with the same unbiased algorithm. This is safe because guests have no server-side balance to exploit — their balance is localStorage-only. The settlement code path (`evaluateBets` → credit payout) runs identically in the client for both modes.
 
-## Chip Sync Integration
+## Settlement Architecture
+
+### Why no separate chip sync call
+
+Roulette's spin endpoint handles settlement atomically — it does what `/api/chips/update` does for other games (balance update, receipt, stats, achievements) but in the same request that generates the winning number. This is necessary because:
+
+1. **Security**: The wager must be deducted before the result is revealed, preventing selective-settlement exploits
+2. **Simplicity**: No async sync queue, no retry coordination, no concurrent-round conflicts
+3. **Consistency**: The client applies the server-authoritative `newBalance` directly
 
 ### Guest mode wiring
 
@@ -371,45 +519,12 @@ The client (`rouletteClient.ts`) reads these attributes and uses the shared help
 - `isGuestModeValue(root.dataset.guestMode)` — determines guest vs authenticated mode
 - `loadGuestBankroll('roulette', userId, initialBalance)` — restores guest balance from localStorage on page load
 - `persistGuestBankroll('roulette', userId, balance)` — saves guest balance after each round
-- `shouldSyncAccountChips({ isGuestMode })` — gates whether to call `/api/chips/update` (guests never sync)
-
-### Spin endpoint: guest skip
-
-Guests skip the spin endpoint entirely and generate the number locally with the same unbiased algorithm (`crypto.getRandomValues` with rejection sampling). This matches how all other games handle guests — no server calls, localStorage-only balance.
-
-### Sync flow (authenticated mode)
-
-After settlement, the client syncs via the existing endpoint:
-
-```typescript
-POST /api/chips/update
-{
-	delta: netDelta,           // totalPayout - totalBet
-	gameType: 'roulette',
-	syncId: spinResult.syncId,
-	previousBalance: lastSyncedBalance,
-	outcome: netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push'
-}
-```
-
-Roulette uses `handCount: 1` (one spin = one round) and does not use `statsDelta` or batching.
-
-### Sync retry and reconciliation
-
-Roulette follows the **baccarat sync pattern** (simpler than craps — no batching, no `statsDelta`, no `pendingRollSyncs` coalescing). The `syncBalance()` function in `rouletteClient.ts` handles:
-
-- **`RATE_LIMITED` (429)**: retry after the `Retry-After` header delay (or 2s default)
-- **`BALANCE_MISMATCH` (409)**: rebase `lastSyncedBalance` to the server's `currentBalance`, keep the pending sync for retry
-- **`DELTA_EXCEEDS_LIMIT` (400)**: unrecoverable — log error, clear pending sync, show user message (matches craps' unrecoverable 4xx path)
-- **5xx server errors**: exponential backoff retry (base 2s, max 30s)
-- **Network errors** (`TypeError` from `fetch`): exponential backoff retry
-- **Success**: apply server-authoritative balance via `game.setBalance(serverBalance)`, clear pending round from localStorage, dispatch achievement toast if `newAchievements` returned
-
-The pending round state (including `syncId` and full `SpinResult`) is persisted to localStorage until the chip sync succeeds. On page refresh, if a settled-but-unsynced round exists, `rouletteClient.ts` retries the sync with the same `syncId` — the `chip_sync_receipt` idempotency check ensures no double-credit.
+- Guest mode: all settlement is local (generate number + evaluate bets + credit balance), no server calls
+- Authenticated mode: settlement is server-side via the spin endpoint
 
 ### Changes to existing files
 
-**1. `src/pages/api/chips/update.ts`** — add to `GAME_LIMITS`:
+**1. `src/pages/api/chips/update.ts`** — add to `GAME_LIMITS` (imported by spin endpoint):
 
 ```typescript
 roulette: {
@@ -435,13 +550,13 @@ export const GAME_TYPE_LABELS = {
 
 export const GAME_TYPE_ICONS = {
 	// ...existing...
-	roulette: '\u{1F3AB}', // 🎫 ticket/admission — closest available roulette emoji
+	roulette: '\u{1F3AB}', // ticket emoji
 };
 ```
 
-No changes to `/api/chips/update.ts` logic itself — the existing `syncId` + `chip_sync_receipt` idempotency, `GAME_LIMITS` validation, and achievement checking all work as-is for roulette.
+**3. `src/db/schema.ts`** — add `roulette_round` table definition + update stale `gameStats` table comment.
 
-**3. `src/db/schema.ts`** — the `gameStats` table has a stale comment at `schema.ts:118` listing only `'poker' | 'blackjack' | 'baccarat'`. This is pre-existing (not introduced by this spec) but should be updated to include `'craps' | 'slots' | 'roulette'` while we're touching the game type registries.
+**4. New Drizzle migration** for the `roulette_round` table.
 
 ## UI Design
 
@@ -481,14 +596,21 @@ The pocket angle for each number is derived from its position in `WHEEL_ORDER`:
 ```typescript
 const SEGMENT = 360 / 37; // degrees per pocket
 const pocketIndex = WHEEL_ORDER.indexOf(winningNumber);
-const pocketAngle = -(pocketIndex * SEGMENT); // negative = clockwise
+const desiredAngle = -(pocketIndex * SEGMENT); // absolute target orientation (0 to -360)
 
-// CRITICAL: use cumulative rotation, not absolute. CSS transitions take the
-// shortest path between two rotation values, so an absolute target would cause
-// the wheel to spin backwards on the 2nd+ spin (e.g. from 2140deg back to 1820deg).
-// Instead, always add 5 full turns forward from the current rotation.
-const currentRotation = wheelEl.dataset.rotation ?? 0;
-const targetRotation = Number(currentRotation) + 1800 + pocketAngle;
+// CRITICAL: compute forward delta from current orientation to desired orientation.
+// Simply adding pocketAngle to the prior absolute rotation compounds the prior
+// pocket offset — after outcomes A then B, the final orientation would be
+// angle(A) + angle(B) instead of angle(B).
+const currentRotation = Number(wheelEl.dataset.rotation ?? 0);
+const currentAngle = currentRotation % 360;
+
+// Forward delta, normalized to [0, 360) so the wheel always spins clockwise
+let forwardDelta = desiredAngle - currentAngle;
+while (forwardDelta < 0) forwardDelta += 360;
+
+// 5 full turns + forward delta, accumulated from current rotation
+const targetRotation = currentRotation + 5 * 360 + forwardDelta;
 wheelEl.style.transform = `rotate(${targetRotation}deg)`;
 wheelEl.dataset.rotation = String(targetRotation);
 ```
@@ -594,26 +716,32 @@ Stable selectors for E2E tests:
 
 **`RouletteGame.test.ts`** — state management and validation:
 - `canPlaceBet`: rejects below min (0), rejects above balance, rejects above per-position max, rejects above total max
-- `placeBet`: creates bet with valid UUID, amount matches
-- `removeBet`: returns correct bet, balance unaffected (bets not deducted until spin)
-- `clearBets`: clears all, balance unaffected
+- `placeBet`: creates bet with valid UUID, amount matches, **balance decreases by amount**
+- `placeBet` accumulation: clicking same position twice adds to existing bet, balance decreases by the additional amount
+- `removeBet`: returns correct bet, **balance increases by refund**
+- `clearBets`: clears all, **balance increases by sum of all bets**
 - `spin` phase enforcement: can't spin with no bets, can't spin twice
+- **Balance invariant**: placing multiple bets can never make balance negative
 - **Duplicate settlement protection**: settling twice with same winning number doesn't double-credit
 - `restoreState`: round-trip serialize/deserialize preserves all fields, rejects corrupted data
-- Guest vs authenticated: spin endpoint call skipped for guests
+- Guest mode: settlement runs locally via `evaluateBets`
 
 ### Integration tests
 
 **Spin endpoint tests:**
 - Returns 401 without auth
 - Returns 400 for invalid body (missing syncId, bad bets, totalBet < 1)
-- Returns winningNumber 0-36
+- Returns winningNumber 0–36
 - syncId echoed back
 - Rejects totalBet > MAX_TOTAL_BET
-
-**Chip sync tests:**
-- Roulette gameType accepted in GAME_LIMITS
-- Roulette win/loss/push syncs work with syncId idempotency
+- **Idempotency**: same syncId returns same result (no double-settlement)
+- **Balance updated**: user.chipBalance reflects the net delta after spin
+- **Receipt written**: chip_sync_receipt row exists with correct fields
+- **Stats recorded**: game_stats row exists for roulette
+- **Insufficient balance**: rejects when totalBet > chipBalance
+- **MP escrow**: rejects when heldChips > 0
+- **GAME_LIMITS**: rejects when netDelta exceeds maxWin/maxLoss
+- **Outside bet target**: rejects when red/black/etc. carry a target field
 
 ### E2E tests (`e2e/roulette.spec.ts`)
 
@@ -633,11 +761,12 @@ Following the established Playwright pattern with shared auth state:
 | `/games/roulette` shows complete UI | E2E basic flow |
 | Place/remove/clear bets | Unit (RouletteGame) + E2E |
 | Min bet / max balance validation | Unit (canPlaceBet) |
-| Deduct total bet once | Unit (spin method) |
-| Credit payout once | Unit (settle) |
+| Deduct total bet once | Unit (placeBet deducts at placement) |
+| Credit payout once | Integration (spin endpoint atomic settlement) |
 | Wheel matches winning number | E2E visual check |
 | Outside bets lose on 0 | Unit (betEvaluator, 0 cases) |
-| No duplicate settlement | Unit (restoreState) + chip sync idempotency tests |
+| No duplicate settlement | Integration (spin endpoint idempotency via roulette_round) |
+| Server-side resolution (not client-determined) | Integration (spin endpoint generates number) |
 | Unit tests for all bet types | betEvaluator.test.ts |
 | Responsive layout | E2E responsive test |
 

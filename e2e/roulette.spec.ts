@@ -189,6 +189,8 @@ test.describe('Roulette — Bet Placement', () => {
 	});
 });
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Roulette — Game Flow', () => {
 	test.beforeEach(async ({ page }) => {
 		await gotoRouletteFresh(page);

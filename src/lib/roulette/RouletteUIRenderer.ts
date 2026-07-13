@@ -115,6 +115,10 @@ export class RouletteUIRenderer {
 		this.renderBetResults(spinResult.results);
 	}
 
+	clearResult(): void {
+		this.resultEl.textContent = '';
+	}
+
 	private renderNetDelta(netDelta: number): void {
 		const el = document.getElementById('net-delta');
 		if (!el) return;

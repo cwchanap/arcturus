@@ -5,7 +5,7 @@
 /**
  * Valid game type identifiers (must match database values and chip update validation)
  */
-export const GAME_TYPES = ['blackjack', 'baccarat', 'craps', 'poker', 'slots'] as const;
+export const GAME_TYPES = ['blackjack', 'baccarat', 'craps', 'poker', 'slots', 'roulette'] as const;
 
 /**
  * Valid ranking metrics for game leaderboards
@@ -31,6 +31,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	craps: 'Craps',
 	poker: 'Poker',
 	slots: 'Slots',
+	roulette: 'Roulette',
 };
 
 /**
@@ -42,6 +43,7 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	craps: '🎲',
 	poker: '♠️',
 	slots: '🎰',
+	roulette: '\u{1F3AB}',
 };
 
 /**

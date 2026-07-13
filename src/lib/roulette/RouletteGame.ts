@@ -1,10 +1,18 @@
-import { DEFAULT_SETTINGS, MAX_BET_PER_POSITION, MAX_TOTAL_BET, MIN_BET } from './constants';
+import {
+	DEFAULT_SETTINGS,
+	MAX_BET_PER_POSITION,
+	MAX_ROUND_HISTORY,
+	MAX_TOTAL_BET,
+	MIN_BET,
+} from './constants';
+import { evaluateBets } from './betEvaluator';
 import type {
 	BetType,
 	RouletteBet,
 	RouletteGameConfig,
 	RouletteGameState,
 	RouletteSettings,
+	SpinResult,
 } from './types';
 
 function newBetId(): string {
@@ -145,5 +153,109 @@ export class RouletteGame {
 			this.state.chipBalance += bet.amount;
 		}
 		this.state.activeBets = [];
+	}
+
+	newRound(): void {
+		this.state.phase = 'betting';
+		this.state.activeBets = [];
+	}
+
+	beginSpin(): RouletteBet[] {
+		if (this.state.phase !== 'betting') {
+			throw new Error('Cannot spin outside betting phase');
+		}
+		if (this.state.activeBets.length === 0) {
+			throw new Error('No bets placed');
+		}
+		const bets = this.state.activeBets.map((b) => ({ ...b }));
+		this.state.phase = 'spinning';
+		return bets;
+	}
+
+	applySettlement(spinResult: SpinResult): void {
+		this.state.chipBalance = spinResult.results.reduce(
+			(s, r) => s + (r.won ? r.payout : 0),
+			Math.max(0, this.state.chipBalance),
+		);
+		if (spinResult.newBalance !== undefined) {
+			this.state.chipBalance = spinResult.newBalance;
+		}
+		this.state.phase = 'settled';
+		this.state.activeBets = [];
+		this.state.lastSpin = spinResult;
+		this.state.roundHistory.unshift(spinResult);
+		if (this.state.roundHistory.length > MAX_ROUND_HISTORY) {
+			this.state.roundHistory.length = MAX_ROUND_HISTORY;
+		}
+	}
+
+	spinGuest(winningNumber: number): SpinResult {
+		if (this.state.phase !== 'betting') {
+			throw new Error('Cannot spin outside betting phase');
+		}
+		if (this.state.activeBets.length === 0) {
+			throw new Error('No bets placed');
+		}
+		if (winningNumber < 0 || winningNumber > 36 || !Number.isInteger(winningNumber)) {
+			throw new Error('Invalid winning number');
+		}
+
+		this.state.phase = 'spinning';
+
+		const bets = this.state.activeBets.map((b) => ({ ...b }));
+		const totalBet = bets.reduce((s, b) => s + b.amount, 0);
+		const results = evaluateBets(bets, winningNumber);
+		const totalPayout = results.reduce((s, r) => s + r.payout, 0);
+
+		this.state.chipBalance += totalPayout;
+		this.state.phase = 'settled';
+		this.state.activeBets = [];
+
+		const spinResult: SpinResult = {
+			winningNumber,
+			bets,
+			totalBet,
+			totalPayout,
+			netDelta: totalPayout - totalBet,
+			results,
+			timestamp: Date.now(),
+			syncId: '',
+		};
+
+		this.state.lastSpin = spinResult;
+		this.state.roundHistory.unshift(spinResult);
+		if (this.state.roundHistory.length > MAX_ROUND_HISTORY) {
+			this.state.roundHistory.length = MAX_ROUND_HISTORY;
+		}
+
+		return spinResult;
+	}
+
+	restoreState(snapshot: unknown): boolean {
+		if (!snapshot || typeof snapshot !== 'object') return false;
+		const s = snapshot as Partial<RouletteGameState>;
+		if (s.phase !== 'betting' && s.phase !== 'spinning' && s.phase !== 'settled') return false;
+		if (
+			typeof s.chipBalance !== 'number' ||
+			!Number.isInteger(s.chipBalance) ||
+			s.chipBalance < 0
+		) {
+			return false;
+		}
+		if (!Array.isArray(s.activeBets)) return false;
+
+		this.state = {
+			phase: s.phase,
+			activeBets: s.activeBets.map((b) => ({ ...b })),
+			chipBalance: s.chipBalance,
+			selectedChipAmount:
+				typeof s.selectedChipAmount === 'number'
+					? s.selectedChipAmount
+					: this.state.selectedChipAmount,
+			lastSpin: s.lastSpin ? { ...s.lastSpin } : null,
+			roundHistory: Array.isArray(s.roundHistory) ? s.roundHistory.map((r) => ({ ...r })) : [],
+			settings: sanitizeSettings(s.settings),
+		};
+		return true;
 	}
 }

@@ -128,3 +128,100 @@ describe('RouletteGame — betting', () => {
 		});
 	});
 });
+
+describe('RouletteGame — spin & settle (guest mode)', () => {
+	function newGame(balance = 1000) {
+		return new RouletteGame({ initialBalance: balance });
+	}
+
+	describe('spin (guest mode — local settlement)', () => {
+		it('rejects spin with no bets', () => {
+			const game = newGame();
+			expect(() => game.spinGuest(17)).toThrow();
+		});
+
+		it('rejects spin during spinning phase', () => {
+			const game = newGame();
+			game.placeBet('red', 50);
+			game.spinGuest(17);
+			expect(() => game.spinGuest(17)).toThrow();
+		});
+
+		it('deducts total bet and credits payout on settle', () => {
+			const game = newGame(1000);
+			game.placeBet('straight', 10, 17);
+			const result = game.spinGuest(17);
+			expect(result.winningNumber).toBe(17);
+			expect(result.totalBet).toBe(10);
+			expect(result.totalPayout).toBe(360);
+			expect(result.netDelta).toBe(350);
+			expect(game.getBalance()).toBe(1350); // 1000 - 10 (placeBet) + 360 (settle)
+		});
+
+		it('sets phase to settled after spin', () => {
+			const game = newGame();
+			game.placeBet('red', 10);
+			game.spinGuest(1);
+			expect(game.getState().phase).toBe('settled');
+		});
+
+		it('clears active bets after spin', () => {
+			const game = newGame();
+			game.placeBet('red', 10);
+			game.placeBet('straight', 5, 17);
+			game.spinGuest(1);
+			expect(game.getState().activeBets).toHaveLength(0);
+		});
+
+		it('records spin in roundHistory', () => {
+			const game = newGame();
+			game.placeBet('red', 10);
+			game.spinGuest(1);
+			expect(game.getState().roundHistory).toHaveLength(1);
+			expect(game.getState().lastSpin).toBeTruthy();
+		});
+
+		it('caps roundHistory at MAX_ROUND_HISTORY', () => {
+			const game = newGame(100000);
+			for (let i = 0; i < 25; i++) {
+				game.placeBet('red', 10);
+				game.spinGuest(1);
+				game.newRound();
+			}
+			expect(game.getState().roundHistory.length).toBeLessThanOrEqual(20);
+		});
+	});
+
+	describe('newRound', () => {
+		it('resets phase to betting', () => {
+			const game = newGame();
+			game.placeBet('red', 10);
+			game.spinGuest(1);
+			game.newRound();
+			expect(game.getState().phase).toBe('betting');
+		});
+	});
+
+	describe('restoreState', () => {
+		it('round-trips state through serialization', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.placeBet('straight', 25, 17);
+			const snapshot = game.getState();
+			const json = JSON.parse(JSON.stringify(snapshot));
+
+			const game2 = newGame(0);
+			expect(game2.restoreState(json)).toBe(true);
+			expect(game2.getBalance()).toBe(925);
+			expect(game2.getState().activeBets).toHaveLength(2);
+			expect(game2.getState().phase).toBe('betting');
+		});
+
+		it('rejects corrupted data', () => {
+			const game = newGame();
+			expect(game.restoreState(null)).toBe(false);
+			expect(game.restoreState({})).toBe(false);
+			expect(game.restoreState({ phase: 'invalid' })).toBe(false);
+		});
+	});
+});

@@ -1,0 +1,324 @@
+import type { APIRoute } from 'astro';
+import { createDb } from '../../../lib/db';
+import { user } from '../../../db/schema';
+import { eq } from 'drizzle-orm';
+import { evaluateBets } from '../../../lib/roulette/betEvaluator';
+import { MAX_BET_PER_POSITION, MAX_TOTAL_BET, MIN_BET } from '../../../lib/roulette/constants';
+import type { BetType, RouletteBet } from '../../../lib/roulette/types';
+import {
+	recordGameRound,
+	type GameType,
+	type GameRoundOutcome,
+} from '../../../lib/game-stats/game-stats';
+import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
+import { redactUserId } from '../../../lib/achievements/achievement-repository';
+import { isValidGameType } from '../../../lib/game-stats/constants';
+
+const VALID_OUTSIDE_BET_TYPES = new Set<BetType>(['red', 'black', 'odd', 'even', 'low', 'high']);
+const VALID_TARGET_BET_TYPES = new Set<BetType>(['straight', 'dozen', 'column']);
+const SYNC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+function isValidBet(b: unknown): b is RouletteBet {
+	if (!b || typeof b !== 'object') return false;
+	const bet = b as Record<string, unknown>;
+	if (typeof bet.id !== 'string' || !bet.id) return false;
+	if (typeof bet.type !== 'string') return false;
+	const type = bet.type as BetType;
+	if (!VALID_OUTSIDE_BET_TYPES.has(type) && !VALID_TARGET_BET_TYPES.has(type)) {
+		return false;
+	}
+	if (typeof bet.amount !== 'number' || !Number.isInteger(bet.amount) || bet.amount < MIN_BET) {
+		return false;
+	}
+	if (VALID_OUTSIDE_BET_TYPES.has(type) && bet.target !== undefined) {
+		return false;
+	}
+	if (type === 'straight') {
+		if (
+			typeof bet.target !== 'number' ||
+			!Number.isInteger(bet.target) ||
+			bet.target < 0 ||
+			bet.target > 36
+		) {
+			return false;
+		}
+	}
+	if (type === 'dozen' || type === 'column') {
+		if (typeof bet.target !== 'number' || ![0, 1, 2].includes(bet.target)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+function generateWinningNumber(): number {
+	const buf = new Uint8Array(1);
+	const LIMIT = 222;
+	do {
+		crypto.getRandomValues(buf);
+	} while (buf[0] >= LIMIT);
+	return buf[0] % 37;
+}
+
+const ROULETTE_MAX_WIN = 50000;
+const ROULETTE_MAX_LOSS = 10000;
+const MIN_UPDATE_INTERVAL_MS = 2000;
+const lastUpdateByUser = new Map<string, number>();
+
+export const POST: APIRoute = async ({ request, locals }) => {
+	if (!locals.user) {
+		return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const userId = locals.user.id;
+	const now = Date.now();
+
+	let body: {
+		syncId?: unknown;
+		bets?: unknown;
+		totalBet?: unknown;
+	};
+	try {
+		body = await request.json();
+	} catch {
+		return new Response(JSON.stringify({ error: 'INVALID_JSON' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const { syncId, bets: rawBets, totalBet: _rawTotalBet } = body;
+
+	if (typeof syncId !== 'string' || !SYNC_ID_RE.test(syncId)) {
+		return new Response(JSON.stringify({ error: 'INVALID_SYNC_ID' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	if (!Array.isArray(rawBets) || rawBets.length === 0) {
+		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const bets = rawBets.filter(isValidBet);
+	if (bets.length !== rawBets.length) {
+		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const totalBet = bets.reduce((sum, b) => sum + b.amount, 0);
+	if (totalBet < MIN_BET || totalBet > MAX_TOTAL_BET) {
+		return new Response(JSON.stringify({ error: 'INVALID_TOTAL_BET' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const positionTotals = new Map<string, number>();
+	for (const bet of bets) {
+		const key = `${bet.type}:${bet.target ?? 'none'}`;
+		positionTotals.set(key, (positionTotals.get(key) ?? 0) + bet.amount);
+	}
+	for (const total of positionTotals.values()) {
+		if (total > MAX_BET_PER_POSITION) {
+			return new Response(JSON.stringify({ error: 'POSITION_LIMIT_EXCEEDED' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+	}
+
+	const dbBinding = locals.runtime?.env?.DB;
+	if (!dbBinding) {
+		return new Response(JSON.stringify({ error: 'DATABASE_UNAVAILABLE' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const existing = await dbBinding
+		.prepare(
+			'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson FROM roulette_round WHERE userId = ? AND syncId = ?',
+		)
+		.bind(userId, syncId)
+		.first();
+
+	if (existing) {
+		return new Response(
+			JSON.stringify({
+				winningNumber: existing.winningNumber,
+				newBalance: existing.newBalance,
+				previousBalance: existing.previousBalance,
+				netDelta: existing.netDelta,
+				results: evaluateBets(
+					JSON.parse(existing.betsJson as string),
+					existing.winningNumber as number,
+				),
+				syncId,
+				newAchievements: undefined,
+			}),
+			{ headers: { 'Content-Type': 'application/json' } },
+		);
+	}
+
+	const db = createDb(dbBinding);
+	const [userRow] = await db
+		.select({ chipBalance: user.chipBalance, heldChips: user.heldChips })
+		.from(user)
+		.where(eq(user.id, userId))
+		.limit(1);
+
+	if (!userRow) {
+		return new Response(JSON.stringify({ error: 'USER_NOT_FOUND' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const heldChips = Math.trunc(userRow.heldChips ?? 0);
+	if (heldChips > 0) {
+		return new Response(JSON.stringify({ error: 'MP_ESCROW_ACTIVE' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const previousBalance = Math.trunc(userRow.chipBalance);
+	if (totalBet > previousBalance) {
+		return new Response(
+			JSON.stringify({ error: 'INSUFFICIENT_BALANCE', currentBalance: previousBalance }),
+			{ status: 400, headers: { 'Content-Type': 'application/json' } },
+		);
+	}
+
+	const lastUpdate = lastUpdateByUser.get(userId) ?? 0;
+	if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+		const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+		return new Response(
+			JSON.stringify({ error: 'RATE_LIMITED', message: `Please wait ${waitTime}s` }),
+			{
+				status: 429,
+				headers: { 'Content-Type': 'application/json', 'Retry-After': String(waitTime) },
+			},
+		);
+	}
+
+	const winningNumber = generateWinningNumber();
+	const results = evaluateBets(bets, winningNumber);
+	const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
+	const netDelta = totalPayout - totalBet;
+
+	if (netDelta > ROULETTE_MAX_WIN || Math.abs(netDelta) > ROULETTE_MAX_LOSS) {
+		console.warn(`[ROULETTE_AUDIT] User ${redactUserId(userId)} delta ${netDelta} exceeds limits`);
+		return new Response(JSON.stringify({ error: 'DELTA_EXCEEDS_LIMIT' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const newBalance = previousBalance + netDelta;
+	if (newBalance < 0) {
+		return new Response(JSON.stringify({ error: 'INSUFFICIENT_BALANCE' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const nowSeconds = Math.trunc(now / 1000);
+	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
+
+	await dbBinding.batch([
+		dbBinding
+			.prepare(
+				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			)
+			.bind(
+				syncId,
+				userId,
+				winningNumber,
+				JSON.stringify(bets),
+				totalBet,
+				totalPayout,
+				netDelta,
+				previousBalance,
+				newBalance,
+				nowSeconds,
+			),
+		dbBinding
+			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
+			.bind(newBalance, nowSeconds, userId, previousBalance),
+		dbBinding
+			.prepare(
+				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+			)
+			.bind(
+				userId,
+				syncId,
+				'roulette',
+				previousBalance,
+				newBalance,
+				netDelta,
+				netDelta,
+				outcome,
+				1,
+				netDelta > 0 ? 1 : 0,
+				netDelta < 0 ? 1 : 0,
+				netDelta > 0 ? netDelta : 0,
+				null,
+				null,
+				nowSeconds,
+			),
+	]);
+
+	lastUpdateByUser.set(userId, now);
+
+	if (netDelta > 0) {
+		console.warn(
+			`[CHIP_AUDIT] User ${redactUserId(userId)} won ${netDelta} in roulette: ${previousBalance} -> ${newBalance}`,
+		);
+	}
+
+	let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+	try {
+		if (isValidGameType('roulette')) {
+			await recordGameRound(db, userId, {
+				gameType: 'roulette' as GameType,
+				outcome: outcome as GameRoundOutcome,
+				chipDelta: netDelta,
+				handCount: 1,
+				winsIncrement: netDelta > 0 ? 1 : 0,
+				lossesIncrement: netDelta < 0 ? 1 : 0,
+				biggestWinCandidate: netDelta > 0 ? netDelta : undefined,
+			});
+
+			const earned = await checkAndGrantAchievements(db, userId, newBalance, {
+				recentWinAmount: netDelta > 0 ? netDelta : undefined,
+				gameType: 'roulette' as GameType,
+			});
+			newAchievements = earned.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
+		}
+	} catch (statsError) {
+		console.error('[ROULETTE] Stats/achievement error:', statsError);
+	}
+
+	return new Response(
+		JSON.stringify({
+			winningNumber,
+			newBalance,
+			previousBalance,
+			netDelta,
+			results,
+			syncId,
+			newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+		}),
+		{ headers: { 'Content-Type': 'application/json' } },
+	);
+};

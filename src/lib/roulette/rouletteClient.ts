@@ -159,7 +159,8 @@ export function initRouletteClient(): void {
 			}, 4000);
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
-			game.newRound(); // Reset to betting phase
+			game.clearBets();
+			game.newRound();
 			showMessage('Spin failed. Please try again.', 'error');
 			ui.update(game.getState());
 			persistSession();
@@ -214,7 +215,11 @@ function restoreSession(game: RouletteGame, key: string): void {
 	try {
 		const raw = localStorage.getItem(key);
 		if (raw) {
-			game.restoreState(JSON.parse(raw));
+			const parsed = JSON.parse(raw);
+			if (parsed && typeof parsed === 'object' && parsed.phase === 'spinning') {
+				return;
+			}
+			game.restoreState(parsed);
 		}
 	} catch {
 		// ignore corrupted session

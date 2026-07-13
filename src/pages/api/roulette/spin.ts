@@ -235,7 +235,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const nowSeconds = Math.trunc(now / 1000);
 	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
 
-	await dbBinding.batch([
+	const batchResults = await dbBinding.batch([
 		dbBinding
 			.prepare(
 				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -277,6 +277,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				nowSeconds,
 			),
 	]);
+
+	const updateResult = batchResults[1] as { meta?: { changes?: number } } | null;
+	if ((updateResult?.meta?.changes ?? 0) === 0) {
+		return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
 
 	lastUpdateByUser.set(userId, now);
 

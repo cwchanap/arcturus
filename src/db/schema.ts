@@ -115,7 +115,7 @@ export const gameStats = sqliteTable(
 		userId: text('userId')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat'
+		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat' | 'craps' | 'slots' | 'roulette'
 
 		// Core statistics
 		totalWins: integer('totalWins').notNull().default(0),
@@ -173,3 +173,24 @@ export const mpMembership = sqliteTable('mp_membership', {
 	roomCode: text('roomCode').notNull(),
 	joinedAt: integer('joinedAt', { mode: 'timestamp' }).notNull(),
 });
+
+export const rouletteRound = sqliteTable(
+	'roulette_round',
+	{
+		syncId: text('syncId').notNull(),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		winningNumber: integer('winningNumber').notNull(),
+		betsJson: text('betsJson').notNull(),
+		totalBet: integer('totalBet').notNull(),
+		totalPayout: integer('totalPayout').notNull(),
+		netDelta: integer('netDelta').notNull(),
+		previousBalance: integer('previousBalance').notNull(),
+		newBalance: integer('newBalance').notNull(),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.syncId] }),
+	}),
+);

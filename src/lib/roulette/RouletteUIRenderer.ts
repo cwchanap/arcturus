@@ -12,6 +12,7 @@ export class RouletteUIRenderer {
 	private newRoundBtn: HTMLButtonElement;
 	private phaseEl: HTMLElement;
 	private wheelRotation = 0;
+	private achievementHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor() {
 		this.wheelEl = document.getElementById('roulette-wheel')!;
@@ -109,6 +110,62 @@ export class RouletteUIRenderer {
 		const color = n === 0 ? 'Green' : RED_NUMBERS.has(n) ? 'Red' : 'Black';
 		this.resultEl.textContent = `${n} ${color}`;
 		this.resultEl.setAttribute('aria-label', `Winning number: ${n} ${color}`);
+
+		this.renderNetDelta(spinResult.netDelta);
+		this.renderBetResults(spinResult.results);
+	}
+
+	private renderNetDelta(netDelta: number): void {
+		const el = document.getElementById('net-delta');
+		if (!el) return;
+		if (netDelta > 0) {
+			el.textContent = `+${netDelta.toLocaleString()}`;
+			el.style.color = 'var(--deco-jade)';
+		} else if (netDelta < 0) {
+			el.textContent = netDelta.toLocaleString();
+			el.style.color = 'var(--deco-oxblood-bright)';
+		} else {
+			el.textContent = '0';
+			el.style.color = 'var(--deco-muted)';
+		}
+	}
+
+	private renderBetResults(results: SpinResult['results']): void {
+		const el = document.getElementById('bet-results');
+		if (!el) return;
+		el.replaceChildren();
+		for (const r of results) {
+			const row = document.createElement('div');
+			row.className = 'flex items-center justify-between py-1 text-sm';
+			const label = this.betLabel(r.bet);
+			if (r.won) {
+				row.innerHTML = `<span>${label}</span><span style="color: var(--deco-jade)">+${r.payout.toLocaleString()}</span>`;
+			} else {
+				row.innerHTML = `<span class="opacity-60">${label}</span><span style="color: var(--deco-oxblood-bright)">-${r.bet.amount.toLocaleString()}</span>`;
+			}
+			el.appendChild(row);
+		}
+	}
+
+	clearBettingHighlights(): void {
+		document.querySelectorAll('.bet-chip-marker').forEach((el) => el.remove());
+		document.querySelectorAll('[data-bet-position]').forEach((el) => {
+			el.classList.remove('bet-active');
+		});
+	}
+
+	showAchievement(achievement: { name: string; description: string }): void {
+		const toast = document.getElementById('achievement-toast');
+		if (!toast) return;
+		toast.textContent = `${achievement.name}: ${achievement.description}`;
+		toast.classList.remove('hidden');
+		if (this.achievementHideTimer !== null) {
+			clearTimeout(this.achievementHideTimer);
+		}
+		this.achievementHideTimer = setTimeout(() => {
+			toast.classList.add('hidden');
+			this.achievementHideTimer = null;
+		}, 4000);
 	}
 
 	getSelectedChipAmount(): number {

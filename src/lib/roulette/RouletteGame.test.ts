@@ -101,6 +101,18 @@ describe('RouletteGame — betting', () => {
 			const result = game.removeBet('nonexistent');
 			expect(result.success).toBe(false);
 		});
+
+		it('rejects removal during spinning phase', () => {
+			const game = newGame(1000);
+			const result = game.placeBet('red', 50);
+			const betId = result.bet!.id;
+			game.beginSpin();
+			const balanceBefore = game.getBalance();
+			const removeResult = game.removeBet(betId);
+			expect(removeResult.success).toBe(false);
+			expect(game.getBalance()).toBe(balanceBefore);
+			expect(game.getState().activeBets).toHaveLength(1);
+		});
 	});
 
 	describe('clearBets', () => {
@@ -112,6 +124,17 @@ describe('RouletteGame — betting', () => {
 			game.clearBets();
 			expect(game.getBalance()).toBe(1000);
 			expect(game.getState().activeBets).toHaveLength(0);
+		});
+
+		it('does nothing outside the betting phase', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			const balanceBefore = game.getBalance();
+			const betsBefore = game.getState().activeBets.length;
+			game.clearBets();
+			expect(game.getBalance()).toBe(balanceBefore);
+			expect(game.getState().activeBets).toHaveLength(betsBefore);
 		});
 	});
 
@@ -198,6 +221,17 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			game.placeBet('red', 10);
 			game.spinGuest(1);
 			game.newRound();
+			expect(game.getState().phase).toBe('betting');
+		});
+
+		it('refunds active bets into chipBalance before clearing', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.placeBet('straight', 25, 17);
+			expect(game.getBalance()).toBe(925);
+			game.newRound();
+			expect(game.getBalance()).toBe(1000);
+			expect(game.getState().activeBets).toHaveLength(0);
 			expect(game.getState().phase).toBe('betting');
 		});
 	});

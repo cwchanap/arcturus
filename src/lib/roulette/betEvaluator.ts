@@ -24,10 +24,14 @@ export function doesBetWin(bet: RouletteBet, winningNumber: number): boolean {
 			return winningNumber >= 1 && winningNumber <= 18;
 		case 'high':
 			return winningNumber >= 19 && winningNumber <= 36;
-		case 'dozen':
-			return Math.ceil(winningNumber / 12) === bet.target! + 1;
-		case 'column':
-			return winningNumber % 3 === columnIndexToMod3(bet.target!);
+		case 'dozen': {
+			if (bet.target === undefined) return false;
+			return Math.ceil(winningNumber / 12) === bet.target + 1;
+		}
+		case 'column': {
+			if (bet.target === undefined) return false;
+			return winningNumber % 3 === columnIndexToMod3(bet.target);
+		}
 		default:
 			return false;
 	}

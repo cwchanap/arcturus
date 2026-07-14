@@ -7,12 +7,12 @@ export class RouletteUIRenderer {
 	private balanceEl: HTMLElement;
 	private totalBetEl: HTMLElement;
 	private activeBetsEl: HTMLElement;
+	private roundHistoryEl: HTMLElement;
 	private spinBtn: HTMLButtonElement;
 	private clearBtn: HTMLButtonElement;
 	private newRoundBtn: HTMLButtonElement;
 	private phaseEl: HTMLElement;
 	private wheelRotation = 0;
-	private achievementHideTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor() {
 		this.wheelEl = document.getElementById('roulette-wheel')!;
@@ -20,6 +20,7 @@ export class RouletteUIRenderer {
 		this.balanceEl = document.getElementById('chip-balance')!;
 		this.totalBetEl = document.getElementById('total-bet')!;
 		this.activeBetsEl = document.getElementById('active-bets')!;
+		this.roundHistoryEl = document.getElementById('round-history')!;
 		this.spinBtn = document.getElementById('spin-button') as HTMLButtonElement;
 		this.clearBtn = document.getElementById('clear-bets-button') as HTMLButtonElement;
 		this.newRoundBtn = document.getElementById('new-round-button') as HTMLButtonElement;
@@ -32,6 +33,7 @@ export class RouletteUIRenderer {
 		this.totalBetEl.textContent = `$${totalBet.toLocaleString()}`;
 
 		this.renderActiveBets(state.activeBets);
+		this.renderRoundHistory(state.roundHistory);
 
 		const canSpin = state.activeBets.length > 0 && state.phase === 'betting';
 		this.spinBtn.disabled = !canSpin;
@@ -60,14 +62,40 @@ export class RouletteUIRenderer {
 	}
 
 	private renderActiveBets(bets: RouletteBet[]): void {
-		this.activeBetsEl.innerHTML = '';
+		this.activeBetsEl.replaceChildren();
 		for (const bet of bets) {
 			const div = document.createElement('div');
 			div.id = `active-bet-${bet.id}`;
 			div.className = 'flex items-center justify-between py-1 text-sm';
 			const label = this.betLabel(bet);
-			div.innerHTML = `<span>${label}</span><span class="text-[var(--deco-brass)]">$${bet.amount}</span>`;
+			const labelSpan = document.createElement('span');
+			labelSpan.textContent = label;
+			const amountSpan = document.createElement('span');
+			amountSpan.className = 'text-[var(--deco-brass)]';
+			amountSpan.textContent = `$${bet.amount}`;
+			div.appendChild(labelSpan);
+			div.appendChild(amountSpan);
 			this.activeBetsEl.appendChild(div);
+		}
+	}
+
+	private renderRoundHistory(history: SpinResult[]): void {
+		this.roundHistoryEl.replaceChildren();
+		if (history.length === 0) {
+			const placeholder = document.createElement('span');
+			placeholder.className = 'text-[var(--deco-muted)] text-xs';
+			placeholder.textContent = 'No rounds yet';
+			this.roundHistoryEl.appendChild(placeholder);
+			return;
+		}
+		for (const spin of history.slice(0, 10)) {
+			const n = spin.winningNumber;
+			const badge = document.createElement('span');
+			badge.className = `round-badge ${
+				n === 0 ? 'round-green' : RED_NUMBERS.has(n) ? 'round-red' : 'round-black'
+			}`;
+			badge.textContent = String(n);
+			this.roundHistoryEl.appendChild(badge);
 		}
 	}
 
@@ -88,9 +116,9 @@ export class RouletteUIRenderer {
 			case 'high':
 				return '19–36';
 			case 'dozen':
-				return `${['1st', '2nd', '3rd'][bet.target!]} 12`;
+				return `${['1st', '2nd', '3rd'][bet.target ?? 0]} 12`;
 			case 'column':
-				return `Column ${bet.target! + 1}`;
+				return `Column ${(bet.target ?? 0) + 1}`;
 		}
 	}
 
@@ -142,11 +170,21 @@ export class RouletteUIRenderer {
 			const row = document.createElement('div');
 			row.className = 'flex items-center justify-between py-1 text-sm';
 			const label = this.betLabel(r.bet);
+			const labelSpan = document.createElement('span');
+			labelSpan.textContent = label;
+			const valueSpan = document.createElement('span');
 			if (r.won) {
-				row.innerHTML = `<span>${label}</span><span style="color: var(--deco-jade)">+${r.payout.toLocaleString()}</span>`;
+				labelSpan.textContent = label;
+				valueSpan.style.color = 'var(--deco-jade)';
+				valueSpan.textContent = `+${r.payout.toLocaleString()}`;
 			} else {
-				row.innerHTML = `<span class="opacity-60">${label}</span><span style="color: var(--deco-oxblood-bright)">-${r.bet.amount.toLocaleString()}</span>`;
+				labelSpan.className = 'opacity-60';
+				labelSpan.textContent = label;
+				valueSpan.style.color = 'var(--deco-oxblood-bright)';
+				valueSpan.textContent = `-${r.bet.amount.toLocaleString()}`;
 			}
+			row.appendChild(labelSpan);
+			row.appendChild(valueSpan);
 			el.appendChild(row);
 		}
 	}
@@ -158,24 +196,10 @@ export class RouletteUIRenderer {
 		});
 	}
 
-	showAchievement(achievement: { name: string; description: string }): void {
-		const toast = document.getElementById('achievement-toast');
-		if (!toast) return;
-		toast.textContent = `${achievement.name}: ${achievement.description}`;
-		toast.classList.remove('hidden');
-		if (this.achievementHideTimer !== null) {
-			clearTimeout(this.achievementHideTimer);
-		}
-		this.achievementHideTimer = setTimeout(() => {
-			toast.classList.add('hidden');
-			this.achievementHideTimer = null;
-		}, 4000);
-	}
-
 	getSelectedChipAmount(): number {
 		const selected = document.querySelector('.chip-select.selected') as HTMLElement | null;
 		if (selected) return Number(selected.dataset.amount);
-		return 5;
+		return 1;
 	}
 
 	setSelectedChip(amount: number): void {

@@ -167,6 +167,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								<div
 									id="net-delta"
 									data-testid="net-delta"
+									aria-live="polite"
 									class="text-2xl font-bold text-[var(--deco-muted)]"
 								>
 									0
@@ -176,7 +177,13 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm min-h-[20px]">
 							Select a chip, place your bets, then spin!
 						</div>
-						<div id="bet-results" data-testid="bet-results" class="mt-2 space-y-0.5"></div>
+						<div
+							id="bet-results"
+							data-testid="bet-results"
+							aria-live="polite"
+							class="mt-2 space-y-0.5"
+						>
+						</div>
 					</div>
 				</div>
 
@@ -188,6 +195,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						<div
 							data-bet-type="straight"
 							data-bet-target="0"
+							role="button"
+							tabindex="0"
 							class="bet-cell rounded-l-lg flex items-center justify-center text-white font-bold text-lg px-2"
 							style="background-color: #0a7a3a; min-height: 120px;"
 						>
@@ -201,6 +210,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 									<div
 										data-bet-type="straight"
 										data-bet-target={String(n)}
+										role="button"
+										tabindex="0"
 										class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded-sm"
 										style={`background-color: ${pocketBg(n)};`}
 									>
@@ -217,6 +228,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 									<div
 										data-bet-type="column"
 										data-bet-target={String(ci)}
+										role="button"
+										tabindex="0"
 										class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-xs rounded-r-sm px-2"
 										style="background-color: rgba(255,255,255,0.05);"
 									>
@@ -238,6 +251,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								<div
 									data-bet-type="dozen"
 									data-bet-target={d.target}
+									role="button"
+									tabindex="0"
 									class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 									style="background-color: rgba(255,255,255,0.04);"
 								>
@@ -251,6 +266,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 					<div class="grid grid-cols-6 gap-1">
 						<div
 							data-bet-type="low"
+							role="button"
+							tabindex="0"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
@@ -258,6 +277,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div
 							data-bet-type="even"
+							role="button"
+							tabindex="0"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
@@ -265,6 +288,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div
 							data-bet-type="red"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
 							style="background-color: #b91c1c;"
 						>
@@ -272,6 +297,8 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div
 							data-bet-type="black"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
 							style="background-color: #171717;"
 						>
@@ -279,6 +306,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div
 							data-bet-type="odd"
+							role="button"
+							tabindex="0"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
@@ -286,6 +317,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div
 							data-bet-type="high"
+							role="button"
+							tabindex="0"
+							role="button"
+							tabindex="0"
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
@@ -302,7 +337,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							{
 								CHIP_DENOMINATIONS.map((amount, i) => (
 									<button
-										class="chip-select hover:scale-110 transition-transform"
+										class={`chip-select hover:scale-110 transition-transform${i === 0 ? ' selected' : ''}`}
 										data-amount={amount}
 										data-testid={`chip-${amount}`}
 										aria-pressed={i === 0 ? 'true' : 'false'}

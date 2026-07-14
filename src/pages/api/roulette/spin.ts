@@ -60,6 +60,18 @@ function generateWinningNumber(): number {
 	return buf[0] % 37;
 }
 
+function canonicalizeBets(bets: RouletteBet[]): string {
+	return JSON.stringify(
+		bets
+			.map((b) => ({ type: b.type, amount: b.amount, target: b.target ?? null }))
+			.sort((a, b) => {
+				if (a.type !== b.type) return a.type < b.type ? -1 : 1;
+				if (a.target !== b.target) return (a.target ?? -1) - (b.target ?? -1);
+				return a.amount - b.amount;
+			}),
+	);
+}
+
 const ROULETTE_MAX_WIN = 50000;
 const ROULETTE_MAX_LOSS = 10000;
 const MIN_UPDATE_INTERVAL_MS = 2000;
@@ -146,22 +158,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const existing = await dbBinding
 		.prepare(
-			'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson FROM roulette_round WHERE userId = ? AND syncId = ?',
+			'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson, totalBet FROM roulette_round WHERE userId = ? AND syncId = ?',
 		)
 		.bind(userId, syncId)
 		.first();
 
 	if (existing) {
+		const storedBets = JSON.parse(existing.betsJson as string) as RouletteBet[];
+		const storedCanonical = canonicalizeBets(storedBets);
+		const requestCanonical = canonicalizeBets(bets);
+		if (storedCanonical !== requestCanonical || existing.totalBet !== totalBet) {
+			return new Response(JSON.stringify({ error: 'SYNC_ID_REUSE_MISMATCH' }), {
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
 		return new Response(
 			JSON.stringify({
 				winningNumber: existing.winningNumber,
 				newBalance: existing.newBalance,
 				previousBalance: existing.previousBalance,
 				netDelta: existing.netDelta,
-				results: evaluateBets(
-					JSON.parse(existing.betsJson as string),
-					existing.winningNumber as number,
-				),
+				results: evaluateBets(storedBets, existing.winningNumber as number),
 				syncId,
 				newAchievements: undefined,
 			}),
@@ -216,7 +234,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
 	const netDelta = totalPayout - totalBet;
 
-	if (netDelta > ROULETTE_MAX_WIN || Math.abs(netDelta) > ROULETTE_MAX_LOSS) {
+	if (netDelta > ROULETTE_MAX_WIN || (netDelta < 0 && Math.abs(netDelta) > ROULETTE_MAX_LOSS)) {
 		console.warn(`[ROULETTE_AUDIT] User ${redactUserId(userId)} delta ${netDelta} exceeds limits`);
 		return new Response(JSON.stringify({ error: 'DELTA_EXCEEDS_LIMIT' }), {
 			status: 400,
@@ -237,8 +255,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const batchResults = await dbBinding.batch([
 		dbBinding
+			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
+			.bind(newBalance, nowSeconds, userId, previousBalance),
+		dbBinding
 			.prepare(
-				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
 			)
 			.bind(
 				syncId,
@@ -253,11 +274,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				nowSeconds,
 			),
 		dbBinding
-			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
-			.bind(newBalance, nowSeconds, userId, previousBalance),
-		dbBinding
 			.prepare(
-				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
 			)
 			.bind(
 				userId,
@@ -278,7 +296,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			),
 	]);
 
-	const updateResult = batchResults[1] as { meta?: { changes?: number } } | null;
+	const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
 	if ((updateResult?.meta?.changes ?? 0) === 0) {
 		return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
 			status: 409,

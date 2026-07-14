@@ -1,5 +1,6 @@
 import { RouletteGame } from './RouletteGame';
 import { RouletteUIRenderer } from './RouletteUIRenderer';
+import { CHIP_DENOMINATIONS } from './constants';
 import type { BetType, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
 import {
@@ -27,7 +28,16 @@ export function initRouletteClient(): void {
 	const ui = new RouletteUIRenderer();
 	const sessionKey = `roulette-session:${userId}`;
 
-	restoreSession(game, sessionKey);
+	// Only restore session in guest mode — authenticated users must use
+	// the server-provided balance as authoritative.
+	if (isGuestMode) {
+		restoreSession(game, sessionKey);
+		// Sync the UI chip selection to the restored state value.
+		const restoredChip = game.getSelectedChipAmount();
+		if (CHIP_DENOMINATIONS.includes(restoredChip as (typeof CHIP_DENOMINATIONS)[number])) {
+			ui.setSelectedChip(restoredChip);
+		}
+	}
 	ui.update(game.getState());
 
 	function persistSession(): void {
@@ -46,17 +56,18 @@ export function initRouletteClient(): void {
 		persistSession();
 	}
 
-	// Chip selection
+	// Chip selection — sync both UI and game state
 	document.querySelectorAll('.chip-select').forEach((btn) => {
 		btn.addEventListener('click', () => {
 			const amount = Number((btn as HTMLElement).dataset.amount);
 			ui.setSelectedChip(amount);
+			game.setSelectedChipAmount(amount);
 		});
 	});
 
-	// Betting table clicks
+	// Betting table — click and keyboard activation
 	document.querySelectorAll<HTMLElement>('[data-bet-type]').forEach((el) => {
-		el.addEventListener('click', () => {
+		const placeBetFromCell = () => {
 			if (game.getState().phase !== 'betting') return;
 			const type = el.dataset.betType as BetType;
 			const target = el.dataset.betTarget !== undefined ? Number(el.dataset.betTarget) : undefined;
@@ -66,6 +77,14 @@ export function initRouletteClient(): void {
 				showMessage(result.error ?? 'Cannot place bet', 'error');
 			}
 			updateAndPersist();
+		};
+
+		el.addEventListener('click', placeBetFromCell);
+		el.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				placeBetFromCell();
+			}
 		});
 	});
 
@@ -104,11 +123,7 @@ export function initRouletteClient(): void {
 				ui.update(game.getState());
 				persistSession();
 
-				const response = await fetch('/api/roulette/spin', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ syncId, bets, totalBet }),
-				});
+				const response = await fetchSpin(syncId, bets, totalBet);
 
 				if (!response.ok) {
 					const err = (await response.json().catch(() => ({}))) as { error?: string };
@@ -151,15 +166,86 @@ export function initRouletteClient(): void {
 				spinResult.syncId = syncId;
 			}
 
+			// Persist the completed settlement immediately, before the animation
+			// timeout, so a tab close during the 4s animation doesn't lose state.
+			persistSession();
+
 			ui.animateWheel(spinResult.winningNumber);
 			setTimeout(() => {
 				ui.showResult(spinResult);
 				ui.update(game.getState());
-				persistSession();
 			}, 4000);
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
-			game.clearBets();
+			// If the server may have processed the spin (network error or 5xx),
+			// retry the same syncId once to leverage endpoint idempotency before
+			// abandoning the attempt.
+			const isRetriable =
+				err instanceof TypeError || (err instanceof Error && err.message.startsWith('HTTP 5'));
+			if (
+				isRetriable &&
+				shouldSyncAccountChips({ isGuestMode }) &&
+				game.getState().phase === 'spinning'
+			) {
+				try {
+					const bets = game.getState().activeBets;
+					const totalBet = bets.reduce((s, b) => s + b.amount, 0);
+					const retryResponse = await fetchSpin(syncId, bets, totalBet);
+					if (retryResponse.ok) {
+						const data = (await retryResponse.json()) as {
+							winningNumber: number;
+							netDelta: number;
+							results: SpinResult['results'];
+							newBalance: number;
+							newAchievements?: Array<{ id: string; name: string; icon: string }>;
+						};
+						const retryResult: SpinResult = {
+							winningNumber: data.winningNumber,
+							bets,
+							totalBet,
+							totalPayout: data.netDelta + totalBet,
+							netDelta: data.netDelta,
+							results: data.results,
+							timestamp: Date.now(),
+							syncId,
+							newBalance: data.newBalance,
+						};
+						game.setBalance(data.newBalance);
+						game.applySettlement(retryResult);
+						if (data.newAchievements?.length) {
+							window.dispatchEvent(
+								new CustomEvent('achievement-earned', {
+									detail: { achievements: data.newAchievements },
+								}),
+							);
+						}
+						persistSession();
+						ui.animateWheel(retryResult.winningNumber);
+						setTimeout(() => {
+							ui.showResult(retryResult);
+							ui.update(game.getState());
+						}, 4000);
+						return;
+					}
+				} catch (retryErr) {
+					console.error('[ROULETTE] Retry also failed:', retryErr);
+				}
+			}
+			// Re-fetch authoritative server balance before resetting, so we
+			// don't abandon a committed spin's balance change.
+			if (shouldSyncAccountChips({ isGuestMode })) {
+				try {
+					const balResp = await fetch('/api/chips/balance');
+					if (balResp.ok) {
+						const balData = (await balResp.json()) as { balance?: number };
+						if (typeof balData.balance === 'number') {
+							game.setBalance(balData.balance);
+						}
+					}
+				} catch {
+					// ignore — fall through to reset with whatever balance we have
+				}
+			}
 			game.newRound();
 			showMessage('Spin failed. Please try again.', 'error');
 			ui.update(game.getState());
@@ -200,6 +286,18 @@ export function initRouletteClient(): void {
 			}, 3000);
 		}
 	}
+}
+
+async function fetchSpin(
+	syncId: string,
+	bets: SpinResult['bets'],
+	totalBet: number,
+): Promise<Response> {
+	return fetch('/api/roulette/spin', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ syncId, bets, totalBet }),
+	});
 }
 
 function generateLocalWinningNumber(): number {

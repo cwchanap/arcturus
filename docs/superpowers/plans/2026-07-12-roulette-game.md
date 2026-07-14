@@ -807,6 +807,9 @@ export class RouletteGame {
 	}
 
 	removeBet(betId: string): { success: boolean; error?: string } {
+		if (this.state.phase !== 'betting') {
+			return { success: false, error: 'Cannot remove bets outside betting phase' };
+		}
 		const idx = this.state.activeBets.findIndex((b) => b.id === betId);
 		if (idx === -1) return { success: false, error: 'Bet not found' };
 		this.state.chipBalance += this.state.activeBets[idx].amount;
@@ -815,6 +818,7 @@ export class RouletteGame {
 	}
 
 	clearBets(): void {
+		if (this.state.phase !== 'betting') return;
 		for (const bet of this.state.activeBets) {
 			this.state.chipBalance += bet.amount;
 		}
@@ -966,8 +970,11 @@ Add these methods to the `RouletteGame` class (inside the class body, after `cle
 
 ```typescript
 	newRound(): void {
-		this.state.phase = 'betting';
+		for (const bet of this.state.activeBets) {
+			this.state.chipBalance += bet.amount;
+		}
 		this.state.activeBets = [];
+		this.state.phase = 'betting';
 	}
 
 	beginSpin(): RouletteBet[] {
@@ -1537,7 +1544,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
 	const netDelta = totalPayout - totalBet;
 
-	if (netDelta > ROULETTE_MAX_WIN || Math.abs(netDelta) > ROULETTE_MAX_LOSS) {
+	if (netDelta > ROULETTE_MAX_WIN || (netDelta < 0 && Math.abs(netDelta) > ROULETTE_MAX_LOSS)) {
 		console.warn(`[ROULETTE_AUDIT] User ${redactUserId(userId)} delta ${netDelta} exceeds limits`);
 		return new Response(JSON.stringify({ error: 'DELTA_EXCEEDS_LIMIT' }), {
 			status: 400,
@@ -1556,10 +1563,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	const nowSeconds = Math.trunc(now / 1000);
 	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
 
-	await dbBinding.batch([
+	const batchResults = await dbBinding.batch([
+		dbBinding
+			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
+			.bind(newBalance, nowSeconds, userId, previousBalance),
 		dbBinding
 			.prepare(
-				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
 			)
 			.bind(
 				syncId,
@@ -1574,11 +1584,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				nowSeconds,
 			),
 		dbBinding
-			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
-			.bind(newBalance, nowSeconds, userId, previousBalance),
-		dbBinding
 			.prepare(
-				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
 			)
 			.bind(
 				userId,
@@ -1598,6 +1605,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				nowSeconds,
 			),
 	]);
+
+	const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
+	if ((updateResult?.meta?.changes ?? 0) === 0) {
+		return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
 
 	lastUpdateByUser.set(userId, now);
 

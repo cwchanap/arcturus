@@ -225,6 +225,16 @@ export class RouletteGame {
 		this.state.phase = 'betting';
 	}
 
+	// Clear active bets WITHOUT refunding them into the balance.
+	// Use this when the balance has been reset from an authoritative source
+	// (e.g. server balance re-fetch after a failed spin). Refunding on top of
+	// an authoritative balance would double-count chips that only ever left
+	// the client, never the server — see C1 chip-inflation exploit.
+	discardActiveBets(): void {
+		this.state.activeBets = [];
+		this.state.phase = 'betting';
+	}
+
 	beginSpin(): RouletteBet[] {
 		if (this.state.phase !== 'betting') {
 			throw new Error('Cannot spin outside betting phase');

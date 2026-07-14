@@ -237,6 +237,39 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 		});
 	});
 
+	describe('discardActiveBets', () => {
+		it('clears active bets and resets phase WITHOUT refunding', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 500);
+			expect(game.getBalance()).toBe(500);
+			game.beginSpin();
+			expect(game.getState().phase).toBe('spinning');
+			game.discardActiveBets();
+			expect(game.getState().activeBets).toHaveLength(0);
+			expect(game.getState().phase).toBe('betting');
+			// Balance must NOT include the refunded 500 — the caller is
+			// expected to have set an authoritative balance already.
+			expect(game.getBalance()).toBe(500);
+		});
+
+		it('does not inflate balance when caller adopts server balance first (C1 regression)', () => {
+			// Repro: balance 1000 -> bet 500 -> spin fails (429) -> server
+			// balance re-fetched as 999 (server never settled) -> must NOT
+			// refund the 500 on top of the adopted 999.
+			const game = newGame(1000);
+			game.placeBet('red', 500);
+			expect(game.getBalance()).toBe(500);
+			game.beginSpin();
+			// Caller adopts authoritative server balance.
+			game.setBalance(999);
+			// Caller discards (not refunds) the bets.
+			game.discardActiveBets();
+			expect(game.getBalance()).toBe(999);
+			expect(game.getState().activeBets).toHaveLength(0);
+			expect(game.getState().phase).toBe('betting');
+		});
+	});
+
 	describe('applySettlement', () => {
 		it('sets chipBalance to server-provided newBalance', () => {
 			const game = newGame(1000);

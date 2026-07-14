@@ -238,13 +238,10 @@ export class RouletteGame {
 	}
 
 	applySettlement(spinResult: SpinResult): void {
-		this.state.chipBalance = spinResult.results.reduce(
-			(s, r) => s + (r.won ? r.payout : 0),
-			Math.max(0, this.state.chipBalance),
-		);
-		if (spinResult.newBalance !== undefined) {
-			this.state.chipBalance = spinResult.newBalance;
+		if (spinResult.newBalance === undefined) {
+			throw new Error('applySettlement requires server-provided newBalance');
 		}
+		this.state.chipBalance = spinResult.newBalance;
 		this.state.phase = 'settled';
 		this.state.activeBets = [];
 		this.state.lastSpin = spinResult;

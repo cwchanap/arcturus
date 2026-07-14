@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { RouletteGame } from './RouletteGame';
 import { MIN_BET, MAX_BET_PER_POSITION, MAX_TOTAL_BET } from './constants';
+import type { SpinResult } from './types';
 
 describe('RouletteGame — betting', () => {
 	function newGame(balance = 1000) {
@@ -233,6 +234,68 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game.getBalance()).toBe(1000);
 			expect(game.getState().activeBets).toHaveLength(0);
 			expect(game.getState().phase).toBe('betting');
+		});
+	});
+
+	describe('applySettlement', () => {
+		it('sets chipBalance to server-provided newBalance', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			const spinResult: SpinResult = {
+				winningNumber: 1,
+				bets: [],
+				totalBet: 50,
+				totalPayout: 100,
+				netDelta: 50,
+				results: [],
+				timestamp: Date.now(),
+				syncId: 'test-sync',
+				newBalance: 1050,
+			};
+			game.applySettlement(spinResult);
+			expect(game.getBalance()).toBe(1050);
+			expect(game.getState().phase).toBe('settled');
+			expect(game.getState().activeBets).toHaveLength(0);
+		});
+
+		it('throws when newBalance is undefined', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			const spinResult: SpinResult = {
+				winningNumber: 1,
+				bets: [],
+				totalBet: 50,
+				totalPayout: 100,
+				netDelta: 50,
+				results: [],
+				timestamp: Date.now(),
+				syncId: 'test-sync',
+			};
+			expect(() => game.applySettlement(spinResult)).toThrow(
+				'applySettlement requires server-provided newBalance',
+			);
+		});
+
+		it('records spin in roundHistory and lastSpin', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			const spinResult: SpinResult = {
+				winningNumber: 1,
+				bets: [],
+				totalBet: 50,
+				totalPayout: 100,
+				netDelta: 50,
+				results: [],
+				timestamp: Date.now(),
+				syncId: 'test-sync',
+				newBalance: 1050,
+			};
+			game.applySettlement(spinResult);
+			expect(game.getState().lastSpin).toBe(spinResult);
+			expect(game.getState().roundHistory).toHaveLength(1);
 		});
 	});
 

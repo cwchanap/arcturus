@@ -41,9 +41,8 @@ export function initRouletteClient(): void {
 	ui.update(game.getState());
 
 	function persistSession(): void {
-		if (isGuestMode) {
-			persistGuestBankroll(gameKey, userId, game.getBalance());
-		}
+		if (!isGuestMode) return;
+		persistGuestBankroll(gameKey, userId, game.getBalance());
 		try {
 			localStorage.setItem(sessionKey, JSON.stringify(game.getState()));
 		} catch {

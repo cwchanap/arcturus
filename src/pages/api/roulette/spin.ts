@@ -5,11 +5,7 @@ import { eq } from 'drizzle-orm';
 import { evaluateBets } from '../../../lib/roulette/betEvaluator';
 import { MAX_BET_PER_POSITION, MAX_TOTAL_BET, MIN_BET } from '../../../lib/roulette/constants';
 import type { BetType, RouletteBet } from '../../../lib/roulette/types';
-import {
-	recordGameRound,
-	type GameType,
-	type GameRoundOutcome,
-} from '../../../lib/game-stats/game-stats';
+import { type GameType } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
 import { redactUserId } from '../../../lib/achievements/achievement-repository';
 import { isValidGameType } from '../../../lib/game-stats/constants';
@@ -252,8 +248,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	const nowSeconds = Math.trunc(now / 1000);
 	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
+	const winsIncrement = netDelta > 0 ? 1 : 0;
+	const lossesIncrement = netDelta < 0 ? 1 : 0;
+	const biggestWinCandidate = netDelta > 0 ? netDelta : null;
+	const shouldRecordStats = isValidGameType('roulette');
 
-	const batchResults = await dbBinding.batch([
+	const batchStatements: D1PreparedStatement[] = [
 		dbBinding
 			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
 			.bind(newBalance, nowSeconds, userId, previousBalance),
@@ -275,7 +275,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			),
 		dbBinding
 			.prepare(
-				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
+				'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ?, ? WHERE changes() = 1',
 			)
 			.bind(
 				userId,
@@ -287,14 +287,41 @@ export const POST: APIRoute = async ({ request, locals }) => {
 				netDelta,
 				outcome,
 				1,
-				netDelta > 0 ? 1 : 0,
-				netDelta < 0 ? 1 : 0,
+				winsIncrement,
+				lossesIncrement,
 				netDelta > 0 ? netDelta : 0,
-				null,
+				newBalance,
+				newBalance,
+				userId,
 				null,
 				nowSeconds,
 			),
-	]);
+	];
+
+	if (shouldRecordStats) {
+		batchStatements.push(
+			dbBinding
+				.prepare(
+					'INSERT INTO game_stats (userId, gameType, totalWins, totalLosses, handsPlayed, biggestWin, netProfit, updatedAt) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1 ON CONFLICT(userId, gameType) DO UPDATE SET totalWins = game_stats.totalWins + excluded.totalWins, totalLosses = game_stats.totalLosses + excluded.totalLosses, handsPlayed = game_stats.handsPlayed + excluded.handsPlayed, biggestWin = CASE WHEN ? IS NULL THEN game_stats.biggestWin WHEN ? > 0 AND ? > game_stats.biggestWin THEN ? ELSE game_stats.biggestWin END, netProfit = game_stats.netProfit + excluded.netProfit, updatedAt = excluded.updatedAt',
+				)
+				.bind(
+					userId,
+					'roulette',
+					winsIncrement,
+					lossesIncrement,
+					1,
+					Math.max(biggestWinCandidate ?? 0, 0),
+					netDelta,
+					nowSeconds,
+					biggestWinCandidate,
+					biggestWinCandidate,
+					biggestWinCandidate,
+					biggestWinCandidate,
+				),
+		);
+	}
+
+	const batchResults = await dbBinding.batch(batchStatements);
 
 	const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
 	if ((updateResult?.meta?.changes ?? 0) === 0) {
@@ -314,17 +341,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
 	try {
-		if (isValidGameType('roulette')) {
-			await recordGameRound(db, userId, {
-				gameType: 'roulette' as GameType,
-				outcome: outcome as GameRoundOutcome,
-				chipDelta: netDelta,
-				handCount: 1,
-				winsIncrement: netDelta > 0 ? 1 : 0,
-				lossesIncrement: netDelta < 0 ? 1 : 0,
-				biggestWinCandidate: netDelta > 0 ? netDelta : undefined,
-			});
-
+		if (shouldRecordStats) {
 			const earned = await checkAndGrantAchievements(db, userId, newBalance, {
 				recentWinAmount: netDelta > 0 ? netDelta : undefined,
 				gameType: 'roulette' as GameType,

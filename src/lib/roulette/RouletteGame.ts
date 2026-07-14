@@ -37,6 +37,56 @@ function positionKey(type: BetType, target?: number): string {
 	return `${type}:${target ?? 'none'}`;
 }
 
+const VALID_BET_TYPES = new Set<BetType>([
+	'straight',
+	'red',
+	'black',
+	'odd',
+	'even',
+	'low',
+	'high',
+	'dozen',
+	'column',
+]);
+const OUTSIDE_BET_TYPES = new Set<BetType>(['red', 'black', 'odd', 'even', 'low', 'high']);
+
+function isPositiveInteger(n: unknown): n is number {
+	return typeof n === 'number' && Number.isInteger(n) && n > 0;
+}
+
+function sanitizeBet(bet: unknown): RouletteBet | null {
+	if (!bet || typeof bet !== 'object') return null;
+	const candidate = bet as Partial<RouletteBet>;
+	if (typeof candidate.id !== 'string' || !candidate.id) return null;
+	if (typeof candidate.type !== 'string' || !VALID_BET_TYPES.has(candidate.type as BetType)) {
+		return null;
+	}
+	const type = candidate.type as BetType;
+	if (!isPositiveInteger(candidate.amount)) return null;
+	if (OUTSIDE_BET_TYPES.has(type) && candidate.target !== undefined) return null;
+	if (type === 'straight') {
+		if (
+			typeof candidate.target !== 'number' ||
+			!Number.isInteger(candidate.target) ||
+			candidate.target < 0 ||
+			candidate.target > 36
+		) {
+			return null;
+		}
+	}
+	if (type === 'dozen' || type === 'column') {
+		if (typeof candidate.target !== 'number' || ![0, 1, 2].includes(candidate.target)) {
+			return null;
+		}
+	}
+	return {
+		id: candidate.id,
+		type,
+		amount: candidate.amount,
+		...(candidate.target !== undefined ? { target: candidate.target } : {}),
+	};
+}
+
 export class RouletteGame {
 	private state: RouletteGameState;
 
@@ -259,9 +309,13 @@ export class RouletteGame {
 		}
 		if (!Array.isArray(s.activeBets)) return false;
 
+		const sanitizedBets = s.activeBets
+			.map((b) => sanitizeBet(b))
+			.filter((b): b is RouletteBet => b !== null);
+
 		this.state = {
 			phase: s.phase,
-			activeBets: s.activeBets.map((b) => ({ ...b })),
+			activeBets: sanitizedBets,
 			chipBalance: s.chipBalance,
 			selectedChipAmount:
 				typeof s.selectedChipAmount === 'number'

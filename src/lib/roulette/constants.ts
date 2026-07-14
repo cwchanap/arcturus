@@ -32,6 +32,10 @@ export const MAX_BET_PER_POSITION = 500;
 export const MAX_TOTAL_BET = 5000;
 export const MAX_ROUND_HISTORY = 20;
 
+// Wheel spin animation duration in milliseconds. Must match the CSS
+// transition duration in src/pages/games/roulette.astro (SPIN_ANIMATION_MS / 1000).
+export const SPIN_ANIMATION_MS = 4000;
+
 export const DEFAULT_SETTINGS: RouletteSettings = {
 	animationSpeed: 'normal',
 	soundEnabled: true,

@@ -1,6 +1,6 @@
 import { RouletteGame } from './RouletteGame';
 import { RouletteUIRenderer } from './RouletteUIRenderer';
-import { CHIP_DENOMINATIONS } from './constants';
+import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
 import type { BetType, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
 import {
@@ -173,7 +173,7 @@ export function initRouletteClient(): void {
 			setTimeout(() => {
 				ui.showResult(spinResult);
 				ui.update(game.getState());
-			}, 4000);
+			}, SPIN_ANIMATION_MS);
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
 			// If the server may have processed the spin (network error or 5xx),
@@ -223,7 +223,7 @@ export function initRouletteClient(): void {
 						setTimeout(() => {
 							ui.showResult(retryResult);
 							ui.update(game.getState());
-						}, 4000);
+						}, SPIN_ANIMATION_MS);
 						return;
 					}
 				} catch (retryErr) {
@@ -232,6 +232,7 @@ export function initRouletteClient(): void {
 			}
 			// Re-fetch authoritative server balance before resetting, so we
 			// don't abandon a committed spin's balance change.
+			let serverBalanceAdopted = false;
 			if (shouldSyncAccountChips({ isGuestMode })) {
 				try {
 					const balResp = await fetch('/api/chips/balance');
@@ -239,13 +240,24 @@ export function initRouletteClient(): void {
 						const balData = (await balResp.json()) as { balance?: number };
 						if (typeof balData.balance === 'number') {
 							game.setBalance(balData.balance);
+							serverBalanceAdopted = true;
 						}
 					}
 				} catch {
 					// ignore — fall through to reset with whatever balance we have
 				}
 			}
-			game.newRound();
+			// When the authoritative server balance was adopted, discard the
+			// active bets WITHOUT refunding — the server balance already
+			// reflects the true state, and refunding client-side bets on top
+			// of it would create chips from nothing (C1 chip-inflation exploit).
+			// When we could NOT reach the server, fall back to newRound() which
+			// refunds the bets (server provably didn't settle if unreachable).
+			if (serverBalanceAdopted) {
+				game.discardActiveBets();
+			} else {
+				game.newRound();
+			}
 			showMessage('Spin failed. Please try again.', 'error');
 			ui.update(game.getState());
 			persistSession();

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Database } from '../db';
 import type { AchievementDefinition } from '../achievements/types';
+import { checkAndGrantAchievements } from '../achievements/achievements';
 import { createPostHandler } from '../../pages/api/roulette/spin';
 import { evaluateBets } from './betEvaluator';
 import type { RouletteBet } from './types';
@@ -13,12 +14,9 @@ const mockAchievement: AchievementDefinition = {
 	icon: '🌟',
 };
 
-const mockCheckAndGrantAchievements = Object.assign(
-	async (..._args: unknown[]) => [mockAchievement] as unknown[],
-	{
-		impl: async (..._args: unknown[]) => [mockAchievement] as unknown[],
-	},
-);
+const mockCheckAndGrantAchievements: typeof checkAndGrantAchievements = async () => [
+	mockAchievement,
+];
 
 function createMockDb({
 	chipBalance = 1000,
@@ -262,7 +260,7 @@ function createHandler(
 		updateChanges?: number;
 		existingRound?: MockRound | null;
 		existingReceipt?: MockReceipt | null;
-		checkAndGrantAchievements?: typeof mockCheckAndGrantAchievements;
+		checkAndGrantAchievements?: typeof checkAndGrantAchievements;
 	} = {},
 ) {
 	const {
@@ -656,10 +654,10 @@ describe('roulette spin API', () => {
 	});
 
 	test('does not persist achievement payload when no achievements earned', async () => {
-		const noAchievements = async (..._args: unknown[]) => [];
+		const noAchievements: typeof checkAndGrantAchievements = async () => [];
 		const { handler, mock } = createHandler({
 			winningNumber: 17,
-			checkAndGrantAchievements: noAchievements as any,
+			checkAndGrantAchievements: noAchievements,
 		});
 		const bets = [makeBet('straight', 10, 17)];
 		const request = new Request('http://test.local', {

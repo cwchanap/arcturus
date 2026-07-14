@@ -63,6 +63,13 @@ export class RouletteUIRenderer {
 
 	private renderActiveBets(bets: RouletteBet[]): void {
 		this.activeBetsEl.replaceChildren();
+		if (bets.length === 0) {
+			const placeholder = document.createElement('span');
+			placeholder.className = 'text-[var(--deco-muted)] text-xs';
+			placeholder.textContent = 'No bets placed';
+			this.activeBetsEl.appendChild(placeholder);
+			return;
+		}
 		for (const bet of bets) {
 			const div = document.createElement('div');
 			div.id = `active-bet-${bet.id}`;
@@ -174,12 +181,10 @@ export class RouletteUIRenderer {
 			labelSpan.textContent = label;
 			const valueSpan = document.createElement('span');
 			if (r.won) {
-				labelSpan.textContent = label;
 				valueSpan.style.color = 'var(--deco-jade)';
 				valueSpan.textContent = `+${r.payout.toLocaleString()}`;
 			} else {
 				labelSpan.className = 'opacity-60';
-				labelSpan.textContent = label;
 				valueSpan.style.color = 'var(--deco-oxblood-bright)';
 				valueSpan.textContent = `-${r.bet.amount.toLocaleString()}`;
 			}
@@ -187,13 +192,6 @@ export class RouletteUIRenderer {
 			row.appendChild(valueSpan);
 			el.appendChild(row);
 		}
-	}
-
-	clearBettingHighlights(): void {
-		document.querySelectorAll('.bet-chip-marker').forEach((el) => el.remove());
-		document.querySelectorAll('[data-bet-position]').forEach((el) => {
-			el.classList.remove('bet-active');
-		});
 	}
 
 	getSelectedChipAmount(): number {

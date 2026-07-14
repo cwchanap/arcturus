@@ -51,7 +51,7 @@ async function ensureMinimumBalance(page: Page, minimumBalance: number): Promise
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
 						delta,
-						gameType: 'roulette',
+						gameType: 'blackjack',
 						previousBalance,
 					}),
 				});
@@ -189,9 +189,9 @@ test.describe('Roulette — Bet Placement', () => {
 	});
 });
 
-test.describe.configure({ mode: 'serial' });
-
 test.describe('Roulette — Game Flow', () => {
+	test.describe.configure({ mode: 'serial' });
+
 	test.beforeEach(async ({ page }) => {
 		await gotoRouletteFresh(page);
 		await ensureMinimumBalance(page, 25);
@@ -227,6 +227,55 @@ test.describe('Roulette — Game Flow', () => {
 		await page.getByTestId('spin-button').click();
 
 		await expect(page.getByTestId('bet-results')).not.toBeEmpty({ timeout: 15000 });
+	});
+
+	test('winning bet shows positive payout and net delta', async ({ page }) => {
+		await page.route('**/api/roulette/spin', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					winningNumber: 1,
+					netDelta: 25,
+					results: [{ bet: { id: 'test', type: 'red', amount: 25 }, won: true, payout: 50 }],
+					newBalance: 1025,
+				}),
+			});
+		});
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await page.getByTestId('spin-button').click();
+
+		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+		await expect(page.locator('#wheel-result')).toContainText('1');
+		await expect(page.locator('#net-delta')).toContainText('+');
+		await expect(page.getByTestId('bet-results')).toContainText('Red');
+		await expect(page.getByTestId('bet-results')).toContainText('+');
+	});
+
+	test('losing bet shows negative net delta and lost bet result', async ({ page }) => {
+		await page.route('**/api/roulette/spin', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					winningNumber: 2,
+					netDelta: -25,
+					results: [{ bet: { id: 'test', type: 'red', amount: 25 }, won: false, payout: 0 }],
+					newBalance: 975,
+				}),
+			});
+		});
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await page.getByTestId('spin-button').click();
+
+		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+		await expect(page.locator('#wheel-result')).toContainText('2');
+		await expect(page.locator('#net-delta')).toContainText('-');
+		await expect(page.getByTestId('bet-results')).toContainText('Red');
 	});
 });
 

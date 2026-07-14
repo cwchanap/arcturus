@@ -49,7 +49,7 @@ export class RouletteGame {
 			phase: 'betting',
 			activeBets: [],
 			chipBalance: balance,
-			selectedChipAmount: 5,
+			selectedChipAmount: 1,
 			lastSpin: null,
 			roundHistory: [],
 			settings: sanitizeSettings(config.settings),
@@ -70,6 +70,14 @@ export class RouletteGame {
 
 	setBalance(n: number): void {
 		this.state.chipBalance = Math.max(0, Math.trunc(n));
+	}
+
+	setSelectedChipAmount(amount: number): void {
+		this.state.selectedChipAmount = amount;
+	}
+
+	getSelectedChipAmount(): number {
+		return this.state.selectedChipAmount;
 	}
 
 	private getExistingPositionAmount(type: BetType, target?: number): number {
@@ -141,6 +149,9 @@ export class RouletteGame {
 	}
 
 	removeBet(betId: string): { success: boolean; error?: string } {
+		if (this.state.phase !== 'betting') {
+			return { success: false, error: 'Cannot remove bets outside betting phase' };
+		}
 		const idx = this.state.activeBets.findIndex((b) => b.id === betId);
 		if (idx === -1) return { success: false, error: 'Bet not found' };
 		this.state.chipBalance += this.state.activeBets[idx].amount;
@@ -149,6 +160,7 @@ export class RouletteGame {
 	}
 
 	clearBets(): void {
+		if (this.state.phase !== 'betting') return;
 		for (const bet of this.state.activeBets) {
 			this.state.chipBalance += bet.amount;
 		}
@@ -156,8 +168,11 @@ export class RouletteGame {
 	}
 
 	newRound(): void {
-		this.state.phase = 'betting';
+		for (const bet of this.state.activeBets) {
+			this.state.chipBalance += bet.amount;
+		}
 		this.state.activeBets = [];
+		this.state.phase = 'betting';
 	}
 
 	beginSpin(): RouletteBet[] {

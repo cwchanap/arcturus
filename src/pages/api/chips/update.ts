@@ -428,10 +428,9 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		// attack surface is not meaningfully widened.
 		maxLoss: 10000,
 	},
-	roulette: {
-		maxWin: 50000,
-		maxLoss: 10000,
-	},
+	// NOTE: roulette is intentionally NOT listed here. Roulette is server-settled
+	// via /api/roulette/spin and must not be updatable through this client-
+	// authoritative chip-update endpoint.
 };
 
 // Minimum milliseconds between chip updates (rate limiting)

@@ -10,11 +10,15 @@ export class GameSettingsManager {
 		this.settings = this.load();
 	}
 
-	private validate(raw: unknown): RouletteSettings {
-		const s: RouletteSettings = { ...DEFAULT_SETTINGS };
+	private validate(raw: unknown, baseline: RouletteSettings = DEFAULT_SETTINGS): RouletteSettings {
+		const s: RouletteSettings = { ...baseline };
 		if (!raw || typeof raw !== 'object') return s;
 		const p = raw as Partial<RouletteSettings>;
-		if (p.animationSpeed === 'slow' || p.animationSpeed === 'fast') {
+		if (
+			p.animationSpeed === 'slow' ||
+			p.animationSpeed === 'fast' ||
+			p.animationSpeed === 'normal'
+		) {
 			s.animationSpeed = p.animationSpeed;
 		}
 		if (typeof p.soundEnabled === 'boolean') s.soundEnabled = p.soundEnabled;
@@ -46,7 +50,7 @@ export class GameSettingsManager {
 	}
 
 	updateSettings(updates: Partial<RouletteSettings>): RouletteSettings {
-		this.settings = this.validate({ ...this.settings, ...updates });
+		this.settings = this.validate({ ...this.settings, ...updates }, this.settings);
 		this.save();
 		return this.getSettings();
 	}

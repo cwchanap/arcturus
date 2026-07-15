@@ -809,4 +809,39 @@ describe('roulette spin API', () => {
 		expect(rateMap.has('fresh-0')).toBe(true);
 		expect(rateMap.has('user-evict')).toBe(true);
 	});
+
+	test('rate limit map enforces hard cap when all entries are fresh', async () => {
+		const rateMap = new Map<string, number>();
+		const now = Date.now();
+		// 10000 fresh entries — all within the 2s rate-limit window (timestamps
+		// span 0..999ms) so stale eviction removes none. The hard-cap eviction
+		// must then remove the oldest entries to stay at the cap.
+		for (let i = 0; i < 10000; i++) {
+			rateMap.set(`user-${i}`, now - (i % 1000));
+		}
+		expect(rateMap.size).toBe(10000);
+		const { handler, mock } = createHandler({
+			lastUpdateByUser: rateMap,
+			winningNumber: 0,
+		});
+		const bets = [makeBet('red', 10)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'hardcap-sync', bets }),
+		});
+		await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-hardcap' }, dbBinding: mock.binding }),
+		} as any);
+		// After set: 10001 entries. Stale eviction removes none (all fresh).
+		// Hard-cap eviction removes 1 oldest entry to get back to 10000.
+		expect(rateMap.size).toBe(10000);
+		// The new user must survive.
+		expect(rateMap.has('user-hardcap')).toBe(true);
+		// Exactly one of the original entries was evicted.
+		const originalSurvivors = Array.from({ length: 10000 }, (_, i) => `user-${i}`).filter((u) =>
+			rateMap.has(u),
+		);
+		expect(originalSurvivors.length).toBe(9999);
+	});
 });

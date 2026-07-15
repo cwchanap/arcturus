@@ -39,3 +39,10 @@ new_classes = ["Arcturus"]
 #   wrangler secret put WORKER_ORIGIN
 [vars]
 GOOGLE_CLIENT_ID = "333977657035-o0bc5n6k1ac7nvah4u64meoereojvie8.apps.googleusercontent.com"
+
+# Cron Triggers — runs the scheduled() handler in src/worker.ts.
+# Hourly global retention cleanup for roulette_round and chip_sync_receipt
+# (30-day retention). Replaces the former inline per-user cleanup that
+# left one-off users' expired rows uncleaned.
+[triggers]
+crons = ["0 * * * *"]

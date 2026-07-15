@@ -49,6 +49,7 @@ export const chipSyncReceipt = sqliteTable(
 	(table) => ({
 		pk: primaryKey({ columns: [table.userId, table.syncId] }),
 		userCreatedIdx: index('chip_sync_receipt_user_created_idx').on(table.userId, table.createdAt),
+		createdIdx: index('chip_sync_receipt_created_idx').on(table.createdAt),
 	}),
 );
 
@@ -192,5 +193,6 @@ export const rouletteRound = sqliteTable(
 	},
 	(table) => ({
 		pk: primaryKey({ columns: [table.userId, table.syncId] }),
+		createdIdx: index('roulette_round_created_idx').on(table.createdAt),
 	}),
 );

@@ -380,5 +380,68 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game.restoreState({})).toBe(false);
 			expect(game.restoreState({ phase: 'invalid' })).toBe(false);
 		});
+
+		it('discards corrupt lastSpin instead of replaying it', () => {
+			const game = newGame(1000);
+			// A syntactically valid but empty lastSpin object must not
+			// reach showResult — it would pass undefined to renderBetResults.
+			expect(
+				game.restoreState({
+					phase: 'settled',
+					chipBalance: 1000,
+					activeBets: [],
+					lastSpin: {},
+				}),
+			).toBe(true);
+			expect(game.getState().lastSpin).toBeNull();
+		});
+
+		it('discards lastSpin with invalid winningNumber', () => {
+			const game = newGame(1000);
+			expect(
+				game.restoreState({
+					phase: 'settled',
+					chipBalance: 1000,
+					activeBets: [],
+					lastSpin: {
+						winningNumber: 99,
+						bets: [],
+						totalBet: 0,
+						totalPayout: 0,
+						netDelta: 0,
+						results: [],
+						timestamp: Date.now(),
+						syncId: 's1',
+					},
+				}),
+			).toBe(true);
+			expect(game.getState().lastSpin).toBeNull();
+		});
+
+		it('preserves valid lastSpin through restoreState', () => {
+			const game = newGame(1000);
+			const validSpin: SpinResult = {
+				winningNumber: 17,
+				bets: [{ id: 'b1', type: 'straight', amount: 50, target: 17 }],
+				totalBet: 50,
+				totalPayout: 1750,
+				netDelta: 1700,
+				results: [
+					{ bet: { id: 'b1', type: 'straight', amount: 50, target: 17 }, won: true, payout: 1750 },
+				],
+				timestamp: Date.now(),
+				syncId: 'sync-1',
+			};
+			expect(
+				game.restoreState({
+					phase: 'settled',
+					chipBalance: 2700,
+					activeBets: [],
+					lastSpin: validSpin,
+				}),
+			).toBe(true);
+			expect(game.getState().lastSpin).not.toBeNull();
+			expect(game.getState().lastSpin?.winningNumber).toBe(17);
+		});
 	});
 });

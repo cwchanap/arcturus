@@ -5,6 +5,7 @@
 import { App } from 'astro/app';
 import { handle } from '@astrojs/cloudflare/handler';
 import { Arcturus as ArcturusDO } from './server/mp/arcturus';
+import { runRetentionCleanup } from './server/cleanup';
 
 interface AstroManifest {
 	[key: string]: unknown;
@@ -12,6 +13,7 @@ interface AstroManifest {
 
 interface WorkerEnv {
 	[key: string]: unknown;
+	DB?: D1Database;
 }
 
 export function createExports(manifest: AstroManifest) {
@@ -29,5 +31,18 @@ export function createExports(manifest: AstroManifest) {
 			context,
 		);
 	};
-	return { default: { fetch }, Arcturus: ArcturusDO };
+	// Cron Trigger handler — runs global retention cleanup for roulette_round
+	// and chip_sync_receipt. See wrangler.toml [triggers] crons.
+	const scheduled = async (
+		_controller: ScheduledController,
+		env: WorkerEnv,
+		_ctx: ExecutionContext,
+	): Promise<void> => {
+		if (!env.DB) {
+			console.warn('[SCHEDULED] DB binding unavailable, skipping cleanup');
+			return;
+		}
+		await runRetentionCleanup(env.DB);
+	};
+	return { default: { fetch, scheduled }, Arcturus: ArcturusDO };
 }

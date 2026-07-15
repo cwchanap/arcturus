@@ -1,17 +1,10 @@
-import {
-	DEFAULT_SETTINGS,
-	MAX_BET_PER_POSITION,
-	MAX_ROUND_HISTORY,
-	MAX_TOTAL_BET,
-	MIN_BET,
-} from './constants';
+import { MAX_BET_PER_POSITION, MAX_ROUND_HISTORY, MAX_TOTAL_BET, MIN_BET } from './constants';
 import { evaluateBets } from './betEvaluator';
 import type {
 	BetType,
 	RouletteBet,
 	RouletteGameConfig,
 	RouletteGameState,
-	RouletteSettings,
 	SpinResult,
 } from './types';
 
@@ -20,17 +13,6 @@ function newBetId(): string {
 		return globalThis.crypto.randomUUID();
 	}
 	return `bet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function sanitizeSettings(input?: Partial<RouletteSettings>): RouletteSettings {
-	const merged = { ...DEFAULT_SETTINGS, ...input };
-	return {
-		animationSpeed:
-			merged.animationSpeed === 'slow' || merged.animationSpeed === 'fast'
-				? merged.animationSpeed
-				: 'normal',
-		soundEnabled: typeof merged.soundEnabled === 'boolean' ? merged.soundEnabled : true,
-	};
 }
 
 function positionKey(type: BetType, target?: number): string {
@@ -102,7 +84,6 @@ export class RouletteGame {
 			selectedChipAmount: 1,
 			lastSpin: null,
 			roundHistory: [],
-			settings: sanitizeSettings(config.settings),
 		};
 	}
 
@@ -330,7 +311,6 @@ export class RouletteGame {
 					: this.state.selectedChipAmount,
 			lastSpin: s.lastSpin ? { ...s.lastSpin } : null,
 			roundHistory: Array.isArray(s.roundHistory) ? s.roundHistory.map((r) => ({ ...r })) : [],
-			settings: sanitizeSettings(s.settings),
 		};
 		return true;
 	}

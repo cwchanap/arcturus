@@ -43,15 +43,8 @@ export interface RouletteGameState {
 	selectedChipAmount: number;
 	lastSpin: SpinResult | null;
 	roundHistory: SpinResult[];
-	settings: RouletteSettings;
-}
-
-export interface RouletteSettings {
-	animationSpeed: 'slow' | 'normal' | 'fast';
-	soundEnabled: boolean;
 }
 
 export interface RouletteGameConfig {
 	initialBalance: number;
-	settings?: Partial<RouletteSettings>;
 }

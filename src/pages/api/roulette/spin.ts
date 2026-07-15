@@ -3,7 +3,13 @@ import { createDb } from '../../../lib/db';
 import { user } from '../../../db/schema';
 import { eq } from 'drizzle-orm';
 import { evaluateBets } from '../../../lib/roulette/betEvaluator';
-import { MAX_BET_PER_POSITION, MAX_TOTAL_BET, MIN_BET } from '../../../lib/roulette/constants';
+import {
+	MAX_BET_PER_POSITION,
+	MAX_TOTAL_BET,
+	MIN_BET,
+	ROULETTE_MAX_LOSS,
+	ROULETTE_MAX_WIN,
+} from '../../../lib/roulette/constants';
 import type { BetType, RouletteBet } from '../../../lib/roulette/types';
 import { type GameType } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
@@ -68,10 +74,11 @@ export function canonicalizeBets(bets: RouletteBet[]): string {
 	);
 }
 
-const ROULETTE_MAX_WIN = 50000;
-const ROULETTE_MAX_LOSS = 10000;
 const MIN_UPDATE_INTERVAL_MS = 2000;
 const MAX_RATE_LIMIT_MAP_SIZE = 10000;
+// Per-isolate rate-limit map. Cloudflare Workers may run multiple isolates,
+// so this is a best-effort throttle, not a hard guarantee. Matches the
+// pattern in src/pages/api/chips/update.ts.
 const lastUpdateByUser = new Map<string, number>();
 
 type PostHandlerDeps = {
@@ -358,7 +365,24 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		const batchResults = await dbBinding.batch(batchStatements);
+		let batchResults: Awaited<ReturnType<typeof dbBinding.batch>>;
+		try {
+			batchResults = await dbBinding.batch(batchStatements);
+		} catch (batchError) {
+			// A concurrent request with the same syncId may have committed
+			// between our existence check and the batch, causing a PRIMARY KEY
+			// violation on roulette_round. D1 batch is atomic so this rolls
+			// back cleanly. Return 409 so the client retries via idempotency
+			// and picks up the stored result.
+			console.warn(
+				`[ROULETTE] Batch failed for user ${redactUserId(userId)} syncId ${syncId}:`,
+				batchError,
+			);
+			return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
 
 		const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
 		if ((updateResult?.meta?.changes ?? 0) === 0) {

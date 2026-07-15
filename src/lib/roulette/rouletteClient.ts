@@ -73,7 +73,7 @@ export function initRouletteClient(): void {
 			const amount = ui.getSelectedChipAmount();
 			const result = game.placeBet(type, amount, target);
 			if (!result.success) {
-				showMessage(result.error ?? 'Cannot place bet', 'error');
+				showMessage(result.error ?? 'Cannot place bet');
 			}
 			updateAndPersist();
 		};
@@ -148,7 +148,6 @@ export function initRouletteClient(): void {
 					newBalance: data.newBalance,
 				};
 
-				game.setBalance(data.newBalance);
 				game.applySettlement(spinResult);
 
 				if (data.newAchievements?.length) {
@@ -209,7 +208,6 @@ export function initRouletteClient(): void {
 							syncId,
 							newBalance: data.newBalance,
 						};
-						game.setBalance(data.newBalance);
 						game.applySettlement(retryResult);
 						if (data.newAchievements?.length) {
 							window.dispatchEvent(
@@ -258,7 +256,7 @@ export function initRouletteClient(): void {
 			} else {
 				game.newRound();
 			}
-			showMessage('Spin failed. Please try again.', 'error');
+			showMessage('Spin failed. Please try again.');
 			ui.update(game.getState());
 			persistSession();
 		}
@@ -288,7 +286,7 @@ export function initRouletteClient(): void {
 		});
 	}
 
-	function showMessage(msg: string, _type: string): void {
+	function showMessage(msg: string): void {
 		const el = document.getElementById('game-message');
 		if (el) {
 			el.textContent = msg;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { RouletteGame } from './RouletteGame';
-import { MIN_BET, MAX_BET_PER_POSITION, MAX_TOTAL_BET } from './constants';
+import { MIN_BET, MAX_BET_PER_POSITION, MAX_BETS, MAX_TOTAL_BET } from './constants';
 import type { SpinResult } from './types';
 
 describe('RouletteGame — betting', () => {
@@ -41,6 +41,33 @@ describe('RouletteGame — betting', () => {
 				game.placeBet('straight', 500, i + 1);
 			}
 			expect(game.canPlaceBet('straight', 1, 20).ok).toBe(false);
+		});
+
+		it('rejects new position when active bet count reaches MAX_BETS', () => {
+			const game = newGame(100000);
+			// Pre-populate MAX_BETS distinct positions via restoreState,
+			// since the client merges same-position bets (max 49 distinct
+			// positions exist, less than MAX_BETS=64).
+			const bets = Array.from({ length: MAX_BETS }, (_, i) => ({
+				id: `pre-bet-${i}`,
+				type: 'straight' as const,
+				amount: 1,
+				target: i % 37,
+			}));
+			game.restoreState({
+				phase: 'betting',
+				activeBets: bets,
+				chipBalance: 100000 - MAX_BETS,
+				selectedChipAmount: 1,
+				lastSpin: null,
+				roundHistory: [],
+			});
+			// Same position — should still be allowed (merge, not new entry)
+			expect(game.canPlaceBet('straight', 1, 0).ok).toBe(true);
+			// New position — should be rejected
+			const result = game.canPlaceBet('red', 1);
+			expect(result.ok).toBe(false);
+			expect(result.error).toContain('Max');
 		});
 	});
 

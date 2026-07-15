@@ -152,6 +152,14 @@ export class RouletteUIRenderer {
 
 	clearResult(): void {
 		this.resultEl.textContent = '';
+		this.resultEl.removeAttribute('aria-label');
+		const netDeltaEl = document.getElementById('net-delta');
+		if (netDeltaEl) {
+			netDeltaEl.textContent = '';
+			netDeltaEl.style.color = '';
+		}
+		const betResultsEl = document.getElementById('bet-results');
+		if (betResultsEl) betResultsEl.replaceChildren();
 	}
 
 	private renderNetDelta(netDelta: number): void {

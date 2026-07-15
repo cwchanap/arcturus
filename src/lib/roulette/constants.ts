@@ -31,6 +31,7 @@ export const MIN_BET = 1;
 export const MAX_BET_PER_POSITION = 500;
 export const MAX_TOTAL_BET = 5000;
 export const MAX_ROUND_HISTORY = 20;
+export const MAX_BETS = 64;
 
 // Audit safety limits for net delta per spin. These are unreachable under
 // normal play (MAX_TOTAL_BET=5000 caps actual loss; max straight payout is

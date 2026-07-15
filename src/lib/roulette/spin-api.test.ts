@@ -383,6 +383,83 @@ describe('roulette spin API', () => {
 		expect(body.error).toBe('INVALID_BETS');
 	});
 
+	test('rejects when total bet exceeds MAX_TOTAL_BET', async () => {
+		const { handler } = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				syncId: 'test-sync',
+				bets: [makeBet('red', 5001)],
+			}),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-maxtotal' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_TOTAL_BET');
+	});
+
+	test('rejects when per-position total exceeds MAX_BET_PER_POSITION', async () => {
+		const { handler } = createHandler();
+		const bets = [makeBet('red', 300), makeBet('red', 300)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-maxpos' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('POSITION_LIMIT_EXCEEDED');
+	});
+
+	test('rejects when bet count exceeds MAX_BETS', async () => {
+		const { handler } = createHandler();
+		const bets = Array.from({ length: 65 }, (_, i) => makeBet('red', 1, undefined));
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-toomany' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('TOO_MANY_BETS');
+	});
+
+	test('returns 500 on corrupted betsJson during replay', async () => {
+		const existingRound: MockRound = {
+			userId: 'user-corrupt',
+			syncId: 'corrupt-sync',
+			winningNumber: 17,
+			betsJson: '{not valid json',
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+		};
+		const { handler, mock } = createHandler({ existingRound });
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'corrupt-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-corrupt' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(500);
+		expect(body.error).toBe('CORRUPTED_ROUND_DATA');
+	});
+
 	test('rejects when database binding is missing', async () => {
 		const { handler } = createHandler();
 		const request = new Request('http://test.local', {
@@ -676,11 +753,16 @@ describe('roulette spin API', () => {
 		expect(receipt!.achievementPayload).toBeNull();
 	});
 
-	test('rate limit map evicts when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {
+	test('rate limit map evicts stale entries when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {
 		const rateMap = new Map<string, number>();
-		// Fill the map to just under the limit
-		for (let i = 0; i < 10000; i++) {
-			rateMap.set(`user-${i}`, Date.now());
+		const now = Date.now();
+		// 5000 stale entries (older than the 2s rate-limit window)
+		for (let i = 0; i < 5000; i++) {
+			rateMap.set(`stale-${i}`, now - 5000);
+		}
+		// 5000 fresh entries (within the rate-limit window)
+		for (let i = 0; i < 5000; i++) {
+			rateMap.set(`fresh-${i}`, now);
 		}
 		expect(rateMap.size).toBe(10000);
 		const { handler, mock } = createHandler({
@@ -696,7 +778,11 @@ describe('roulette spin API', () => {
 			request,
 			locals: createLocals({ user: { id: 'user-evict' }, dbBinding: mock.binding }),
 		} as any);
-		// After the spin: set adds 1 (10001), then clear() fires (0)
-		expect(rateMap.size).toBe(0);
+		// After the spin: set adds 1 (10001), triggering eviction.
+		// Stale entries are removed; fresh entries + the new user remain.
+		expect(rateMap.size).toBe(5001);
+		expect(rateMap.has('stale-0')).toBe(false);
+		expect(rateMap.has('fresh-0')).toBe(true);
+		expect(rateMap.has('user-evict')).toBe(true);
 	});
 });

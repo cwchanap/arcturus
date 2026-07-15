@@ -3,6 +3,7 @@ import { RouletteUIRenderer } from './RouletteUIRenderer';
 import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
 import type { BetType, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 import {
 	isGuestModeValue,
 	loadGuestBankroll,
@@ -10,6 +11,12 @@ import {
 	shouldSyncAccountChips,
 	GUEST_CLIENT_USER_ID,
 } from '../public-game-session';
+
+// Abort the spin request if the server hasn't responded within this window.
+// A hung fetch would otherwise leave the UI stuck in the 'spinning' phase
+// indefinitely — the retry logic only fires on thrown errors (TypeError /
+// SpinHttpError), not on a request that never settles.
+const SPIN_FETCH_TIMEOUT_MS = 15000;
 
 // Preserves the HTTP status from a non-ok spin response so the retry
 // logic can decide retriability by status code (409, 5xx) rather than
@@ -29,8 +36,11 @@ class SpinHttpError extends Error {
 // same syncId returns the stored result via idempotency. 5xx means the
 // server errored mid-processing — retrying is safe for the same reason.
 // TypeError means the network failed before a response arrived.
+// AbortError means the fetch timed out (fetchWithTimeout) — the server
+// may have processed the spin even though we never got the response.
 function isRetriableSpinError(err: unknown): boolean {
 	if (err instanceof TypeError) return true;
+	if (err instanceof DOMException && err.name === 'AbortError') return true;
 	if (err instanceof SpinHttpError) return err.status === 409 || err.status >= 500;
 	return false;
 }
@@ -135,6 +145,13 @@ export function initRouletteClient(): void {
 				? crypto.randomUUID()
 				: `spin-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+		// Tracks whether we ever received a 2xx response from the spin
+		// endpoint. If the body fails to parse after a 2xx, the server
+		// likely committed the round — we must NOT refund the bets
+		// client-side (that would inflate the display balance on top of
+		// the server's already-updated balance). See C1 chip-inflation.
+		let receivedOkResponse = false;
+
 		try {
 			let spinResult: SpinResult;
 
@@ -152,6 +169,10 @@ export function initRouletteClient(): void {
 					const err = (await response.json().catch(() => ({}))) as { error?: string };
 					throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
 				}
+
+				// Mark that the server accepted the spin — even if the body
+				// fails to parse below, the round was likely committed.
+				receivedOkResponse = true;
 
 				const data = (await response.json()) as {
 					winningNumber: number;
@@ -205,10 +226,11 @@ export function initRouletteClient(): void {
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
 			// If the server may have processed the spin (network error, 409
-			// concurrent modification, or 5xx), retry the same syncId once to
-			// leverage endpoint idempotency before abandoning the attempt.
+			// concurrent modification, 5xx, or a 2xx with an unparseable
+			// body), retry the same syncId once to leverage endpoint
+			// idempotency before abandoning the attempt.
 			if (
-				isRetriableSpinError(err) &&
+				(isRetriableSpinError(err) || receivedOkResponse) &&
 				shouldSyncAccountChips({ isGuestMode }) &&
 				game.getState().phase === 'spinning'
 			) {
@@ -217,6 +239,7 @@ export function initRouletteClient(): void {
 					const totalBet = bets.reduce((s, b) => s + b.amount, 0);
 					const retryResponse = await fetchSpin(syncId, bets, totalBet);
 					if (retryResponse.ok) {
+						receivedOkResponse = true;
 						const data = (await retryResponse.json()) as {
 							winningNumber: number;
 							netDelta: number;
@@ -272,15 +295,21 @@ export function initRouletteClient(): void {
 					// ignore — fall through to reset with whatever balance we have
 				}
 			}
-			// When the authoritative server balance was adopted, discard the
+			// When the authoritative server balance was adopted OR we received
+			// a 2xx response (server likely committed the round), discard the
 			// active bets WITHOUT refunding — the server balance already
 			// reflects the true state, and refunding client-side bets on top
 			// of it would create chips from nothing (C1 chip-inflation exploit).
-			// When we could NOT reach the server, fall back to newRound() which
-			// refunds the bets (server provably didn't settle if unreachable).
-			if (serverBalanceAdopted) {
+			// Only refund via newRound() when the server was provably
+			// unreachable AND we never got a 2xx (server provably didn't
+			// settle).
+			if (serverBalanceAdopted || receivedOkResponse) {
 				game.discardActiveBets();
-				showMessage('Spin result unclear — balance synced from server.');
+				showMessage(
+					serverBalanceAdopted
+						? 'Spin result unclear — balance synced from server.'
+						: 'Spin result unclear — please refresh your balance.',
+				);
 			} else {
 				game.newRound();
 				showMessage('Spin failed. Please try again.');
@@ -330,11 +359,15 @@ async function fetchSpin(
 	bets: SpinResult['bets'],
 	totalBet: number,
 ): Promise<Response> {
-	return fetch('/api/roulette/spin', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ syncId, bets, totalBet }),
-	});
+	return fetchWithTimeout(
+		'/api/roulette/spin',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ syncId, bets, totalBet }),
+		},
+		SPIN_FETCH_TIMEOUT_MS,
+	);
 }
 
 function generateLocalWinningNumber(): number {

@@ -1,5 +1,12 @@
 # Roulette Game Implementation Plan
 
+> **Implementation Deviation Note (2026-07-14):** `GameSettingsManager.ts` was
+> planned (Task 5) but **dropped during implementation** — roulette has no
+> user-configurable settings, so the module was unnecessary. All references to
+> `GameSettingsManager` in this plan (file structure, Task 5, client
+> integration) are stale and were not implemented. The `index.ts` re-export
+> and `rouletteClient.ts` import were likewise omitted.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement a playable European roulette game at `/games/roulette` with server-side atomic settlement, animated CSS/SVG wheel, and full chip/achievement integration.

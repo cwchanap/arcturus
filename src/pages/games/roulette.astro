@@ -230,10 +230,13 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 										data-bet-target={String(ci)}
 										role="button"
 										tabindex="0"
-										class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-xs rounded-r-sm px-2"
+										class="bet-cell flex flex-col items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-xs rounded-r-sm px-2"
 										style="background-color: rgba(255,255,255,0.05);"
 									>
-										2:1
+										<span class="text-[10px] text-[var(--deco-muted)]">
+											{['1st', '2nd', '3rd'][ci]}
+										</span>
+										<span>2:1</span>
 									</div>
 								))
 							}

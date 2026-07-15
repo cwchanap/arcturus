@@ -442,6 +442,17 @@ const MIN_UPDATE_INTERVAL_MS = 2000; // 2 seconds between updates
 const MAX_RATE_LIMIT_MAP_SIZE = 10000;
 const lastUpdateByUser = new Map<string, number>();
 
+// Amortized cleanup for chip_sync_receipt. Without this, every chip sync
+// inserts a row that is never deleted, causing unbounded table growth.
+// We delete rows older than RETENTION_DAYS for the current user, but only
+// once per CLEANUP_INTERVAL_MS per isolate to avoid adding a delete query
+// to every chip update. Per-user scoping leverages the
+// chip_sync_receipt_user_created_idx index for efficiency.
+const RETENTION_DAYS = 30;
+const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour per isolate
+let lastCleanupAt = 0;
+
 type PostHandlerDeps = {
 	createDb: typeof createDb;
 	recordGameRound: typeof recordGameRound;
@@ -1423,6 +1434,23 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			lastUpdateByUserImpl.set(userId, now);
 			if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
 				lastUpdateByUserImpl.clear();
+			}
+
+			// Amortized cleanup: delete old chip_sync_receipt rows for this
+			// user at most once per CLEANUP_INTERVAL_MS per isolate.
+			// Non-critical — failures are logged and swallowed so they don't
+			// affect the chip update response.
+			if (now - lastCleanupAt > CLEANUP_INTERVAL_MS) {
+				lastCleanupAt = now;
+				const retentionCutoff = Math.trunc((now - RETENTION_MS) / 1000);
+				try {
+					await dbBinding
+						.prepare('DELETE FROM chip_sync_receipt WHERE userId = ? AND createdAt < ?')
+						.bind(userId, retentionCutoff)
+						.run();
+				} catch (cleanupError) {
+					console.warn('[CHIP_SYNC] Periodic cleanup failed:', cleanupError);
+				}
 			}
 
 			// Audit log for wins (positive deltas) to help detect exploitation patterns

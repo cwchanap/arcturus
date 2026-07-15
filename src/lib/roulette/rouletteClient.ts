@@ -80,6 +80,14 @@ export function initRouletteClient(): void {
 	}
 	ui.update(game.getState());
 
+	// If a settled round was restored from session, replay the result
+	// display — ui.update() alone does not populate the winning number,
+	// net delta, or bet-results sections.
+	const restoredState = game.getState();
+	if (restoredState.phase === 'settled' && restoredState.lastSpin) {
+		ui.showResult(restoredState.lastSpin);
+	}
+
 	function persistSession(): void {
 		if (!isGuestMode) return;
 		persistGuestBankroll(gameKey, userId, game.getBalance());

@@ -408,8 +408,23 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				`[ROULETTE] Batch failed for user ${redactUserId(userId)} syncId ${syncId}:`,
 				batchError,
 			);
-			return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
-				status: 409,
+			const errMsg = batchError instanceof Error ? batchError.message : String(batchError);
+			// Only the expected optimistic-lock race (PRIMARY KEY / UNIQUE
+			// constraint violation from a concurrent same-syncId insert) is a
+			// retriable 409. Schema, service, or other unexpected failures are
+			// server errors — reporting them as 409 would mask the real cause
+			// and the client would retry an idempotent conflict that doesn't
+			// exist.
+			const isConstraintViolation =
+				errMsg.includes('UNIQUE constraint failed') || errMsg.includes('PRIMARY KEY');
+			if (isConstraintViolation) {
+				return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
+					status: 409,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
+			return new Response(JSON.stringify({ error: 'BATCH_FAILED' }), {
+				status: 500,
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}

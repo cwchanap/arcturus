@@ -162,6 +162,11 @@ export function initRouletteClient(): void {
 				const winningNumber = generateLocalWinningNumber();
 				spinResult = game.spinGuest(winningNumber);
 				spinResult.syncId = syncId;
+				// Update UI immediately so the table reflects the 'settled'
+				// phase and updated balance during the 4s wheel animation,
+				// rather than showing stale 'betting' state that looks
+				// actionable.
+				ui.update(game.getState());
 			}
 
 			// Persist the completed settlement immediately, before the animation
@@ -253,10 +258,11 @@ export function initRouletteClient(): void {
 			// refunds the bets (server provably didn't settle if unreachable).
 			if (serverBalanceAdopted) {
 				game.discardActiveBets();
+				showMessage('Spin result unclear — balance synced from server.');
 			} else {
 				game.newRound();
+				showMessage('Spin failed. Please try again.');
 			}
-			showMessage('Spin failed. Please try again.');
 			ui.update(game.getState());
 			persistSession();
 		}

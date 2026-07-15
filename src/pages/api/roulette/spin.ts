@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { evaluateBets } from '../../../lib/roulette/betEvaluator';
 import {
 	MAX_BET_PER_POSITION,
+	MAX_BETS,
 	MAX_TOTAL_BET,
 	MIN_BET,
 	ROULETTE_MAX_LOSS,
@@ -139,6 +140,13 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			});
 		}
 
+		if (rawBets.length > MAX_BETS) {
+			return new Response(JSON.stringify({ error: 'TOO_MANY_BETS' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
 		const bets = rawBets.filter(isValidBet);
 		if (bets.length !== rawBets.length) {
 			return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
@@ -185,7 +193,18 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			.first();
 
 		if (existing) {
-			const storedBets = JSON.parse(existing.betsJson as string) as RouletteBet[];
+			let storedBets: RouletteBet[];
+			try {
+				storedBets = JSON.parse(existing.betsJson as string) as RouletteBet[];
+			} catch {
+				console.warn(
+					`[ROULETTE] Corrupted betsJson for user ${redactUserId(userId)} syncId ${syncId}`,
+				);
+				return new Response(JSON.stringify({ error: 'CORRUPTED_ROUND_DATA' }), {
+					status: 500,
+					headers: { 'Content-Type': 'application/json' },
+				});
+			}
 			const storedCanonical = canonicalizeBets(storedBets);
 			const requestCanonical = canonicalizeBets(bets);
 			if (storedCanonical !== requestCanonical || existing.totalBet !== totalBet) {
@@ -225,6 +244,21 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
+		// Rate-limit check — fail-fast before the user row DB read. Placed
+		// after the idempotency existence check so that replays of already-
+		// settled spins still return the cached result without being blocked.
+		const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
+		if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+			const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+			return new Response(
+				JSON.stringify({ error: 'RATE_LIMITED', message: `Please wait ${waitTime}s` }),
+				{
+					status: 429,
+					headers: { 'Content-Type': 'application/json', 'Retry-After': String(waitTime) },
+				},
+			);
+		}
+
 		const db = createDbImpl(dbBinding);
 		const [userRow] = await db
 			.select({ chipBalance: user.chipBalance, heldChips: user.heldChips })
@@ -255,18 +289,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			);
 		}
 
-		const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
-		if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
-			const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
-			return new Response(
-				JSON.stringify({ error: 'RATE_LIMITED', message: `Please wait ${waitTime}s` }),
-				{
-					status: 429,
-					headers: { 'Content-Type': 'application/json', 'Retry-After': String(waitTime) },
-				},
-			);
-		}
-
 		const winningNumber = generateWinningNumberImpl();
 		const results = evaluateBetsImpl(bets, winningNumber);
 		const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
@@ -283,12 +305,6 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		}
 
 		const newBalance = previousBalance + netDelta;
-		if (newBalance < 0) {
-			return new Response(JSON.stringify({ error: 'INSUFFICIENT_BALANCE' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
 
 		const nowSeconds = Math.trunc(now / 1000);
 		const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
@@ -394,7 +410,13 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 		lastUpdateByUserImpl.set(userId, now);
 		if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
-			lastUpdateByUserImpl.clear();
+			// Evict stale entries (older than the rate-limit window) instead
+			// of clearing the entire map, so active rate limits survive the
+			// cleanup and users can't bypass the throttle en masse.
+			const cutoff = now - MIN_UPDATE_INTERVAL_MS;
+			for (const [u, t] of lastUpdateByUserImpl) {
+				if (t < cutoff) lastUpdateByUserImpl.delete(u);
+			}
 		}
 
 		if (netDelta > 0) {

@@ -82,17 +82,6 @@ const MAX_RATE_LIMIT_MAP_SIZE = 10000;
 // pattern in src/pages/api/chips/update.ts.
 const lastUpdateByUser = new Map<string, number>();
 
-// Amortized cleanup for roulette_round and chip_sync_receipt. Without this,
-// every spin inserts a row that is never deleted, causing unbounded table
-// growth. We delete rows older than RETENTION_DAYS for the current user,
-// but only once per CLEANUP_INTERVAL_MS per isolate to avoid adding a
-// delete query to every spin request. Per-user scoping leverages the PK
-// (userId, syncId) so the delete uses the PK prefix efficiently.
-const RETENTION_DAYS = 30;
-const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
-const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour per isolate
-let lastCleanupAt = 0;
-
 type PostHandlerDeps = {
 	createDb: typeof createDb;
 	checkAndGrantAchievements: typeof checkAndGrantAchievements;
@@ -130,6 +119,13 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			body = await request.json();
 		} catch {
 			return new Response(JSON.stringify({ error: 'INVALID_JSON' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+
+		if (!body || typeof body !== 'object' || Array.isArray(body)) {
+			return new Response(JSON.stringify({ error: 'INVALID_REQUEST_BODY' }), {
 				status: 400,
 				headers: { 'Content-Type': 'application/json' },
 			});
@@ -435,28 +431,21 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			for (const [u, t] of lastUpdateByUserImpl) {
 				if (t < cutoff) lastUpdateByUserImpl.delete(u);
 			}
-		}
-
-		// Amortized cleanup: delete old roulette_round and chip_sync_receipt
-		// rows for this user at most once per CLEANUP_INTERVAL_MS per isolate.
-		// Non-critical — failures are logged and swallowed so they don't
-		// affect the spin response.
-		if (now - lastCleanupAt > CLEANUP_INTERVAL_MS) {
-			lastCleanupAt = now;
-			const retentionCutoff = Math.trunc((now - RETENTION_MS) / 1000);
-			try {
-				await dbBinding
-					.prepare('DELETE FROM roulette_round WHERE userId = ? AND createdAt < ?')
-					.bind(userId, retentionCutoff)
-					.run();
-				await dbBinding
-					.prepare('DELETE FROM chip_sync_receipt WHERE userId = ? AND createdAt < ?')
-					.bind(userId, retentionCutoff)
-					.run();
-			} catch (cleanupError) {
-				console.warn('[ROULETTE] Periodic cleanup failed:', cleanupError);
+			// If all entries are still fresh (sustained unique-user traffic),
+			// evict the oldest entries by timestamp to enforce a hard cap on
+			// isolate memory regardless of traffic patterns.
+			if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
+				const sorted = [...lastUpdateByUserImpl.entries()].sort((a, b) => a[1] - b[1]);
+				const toRemove = sorted.length - MAX_RATE_LIMIT_MAP_SIZE;
+				for (let i = 0; i < toRemove; i++) {
+					lastUpdateByUserImpl.delete(sorted[i][0]);
+				}
 			}
 		}
+
+		// Retention cleanup for roulette_round and chip_sync_receipt is now
+		// handled by the Cron Trigger scheduled() handler in src/worker.ts.
+		// See wrangler.toml [triggers] crons and src/server/cleanup.ts.
 
 		if (netDelta > 0) {
 			console.warn(

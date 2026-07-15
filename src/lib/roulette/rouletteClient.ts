@@ -68,15 +68,16 @@ export function initRouletteClient(): void {
 	// the timer fires, overwriting the new round's state.
 	let pendingResultTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// Only restore session in guest mode — authenticated users must use
-	// the server-provided balance as authoritative.
-	if (isGuestMode) {
-		restoreSession(game, sessionKey);
-		// Sync the UI chip selection to the restored state value.
-		const restoredChip = game.getSelectedChipAmount();
-		if (CHIP_DENOMINATIONS.includes(restoredChip as (typeof CHIP_DENOMINATIONS)[number])) {
-			ui.setSelectedChip(restoredChip);
-		}
+	// Restore session for both guest and authenticated users. For auth
+	// users, the server-provided initialBalance is authoritative — we
+	// override the persisted balance after restore so the display always
+	// matches the server. The persisted phase/bets/lastSpin let the UI
+	// show the last round's result without an automatic server retry.
+	restoreSession(game, sessionKey, isGuestMode ? undefined : initialBalance);
+	// Sync the UI chip selection to the restored state value.
+	const restoredChip = game.getSelectedChipAmount();
+	if (CHIP_DENOMINATIONS.includes(restoredChip as (typeof CHIP_DENOMINATIONS)[number])) {
+		ui.setSelectedChip(restoredChip);
 	}
 	ui.update(game.getState());
 
@@ -84,13 +85,22 @@ export function initRouletteClient(): void {
 	// display — ui.update() alone does not populate the winning number,
 	// net delta, or bet-results sections.
 	const restoredState = game.getState();
-	if (restoredState.phase === 'settled' && restoredState.lastSpin) {
+	if (
+		restoredState.phase === 'settled' &&
+		restoredState.lastSpin &&
+		typeof restoredState.lastSpin.winningNumber === 'number' &&
+		Array.isArray(restoredState.lastSpin.results)
+	) {
 		ui.showResult(restoredState.lastSpin);
 	}
 
 	function persistSession(): void {
-		if (!isGuestMode) return;
-		persistGuestBankroll(gameKey, userId, game.getBalance());
+		// Guest bankroll is persisted separately for guest mode. For auth
+		// users, the balance is server-authoritative and not persisted here
+		// — restoreSession overrides it with the server-provided value.
+		if (isGuestMode) {
+			persistGuestBankroll(gameKey, userId, game.getBalance());
+		}
 		try {
 			localStorage.setItem(sessionKey, JSON.stringify(game.getState()));
 		} catch {
@@ -393,15 +403,29 @@ function generateLocalWinningNumber(): number {
 	return buf[0] % 37;
 }
 
-function restoreSession(game: RouletteGame, key: string): void {
+function restoreSession(game: RouletteGame, key: string, balanceOverride?: number): void {
 	try {
 		const raw = localStorage.getItem(key);
 		if (raw) {
 			const parsed = JSON.parse(raw);
-			if (parsed && typeof parsed === 'object' && parsed.phase === 'spinning') {
-				return;
+			if (!parsed || typeof parsed !== 'object') return;
+			const phase = parsed.phase;
+			// An in-flight spin can't be replayed without a server call.
+			// Skip restore — the server-authoritative balance (for auth
+			// users) or the guest bankroll will be used as the starting
+			// point, and the user can start a new round.
+			if (phase === 'spinning') return;
+			// For auth users (balanceOverride provided), only restore the
+			// 'settled' phase. Restoring 'betting' with active bets would
+			// let the user refund bets that were never submitted to the
+			// server (the server balance wasn't deducted), inflating chips.
+			// 'settled' has no active bets and the balance is overridden
+			// with the server value, so it's safe.
+			if (balanceOverride !== undefined && phase !== 'settled') return;
+			if (game.restoreState(parsed) && balanceOverride !== undefined) {
+				// Auth users: server-provided balance is authoritative.
+				game.setBalance(balanceOverride);
 			}
-			game.restoreState(parsed);
 		}
 	} catch {
 		// ignore corrupted session

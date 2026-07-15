@@ -7,6 +7,7 @@ import {
 } from './constants';
 import { evaluateBets } from './betEvaluator';
 import type {
+	BetResult,
 	BetType,
 	RouletteBet,
 	RouletteGameConfig,
@@ -72,6 +73,53 @@ function sanitizeBet(bet: unknown): RouletteBet | null {
 		type,
 		amount: candidate.amount,
 		...(candidate.target !== undefined ? { target: candidate.target } : {}),
+	};
+}
+
+function sanitizeBetResult(b: unknown): BetResult | null {
+	if (!b || typeof b !== 'object') return null;
+	const c = b as Partial<BetResult>;
+	const bet = sanitizeBet(c.bet);
+	if (!bet) return null;
+	if (typeof c.won !== 'boolean') return null;
+	if (typeof c.payout !== 'number' || !Number.isInteger(c.payout) || c.payout < 0) return null;
+	return { bet, won: c.won, payout: c.payout };
+}
+
+function sanitizeSpinResult(spin: unknown): SpinResult | null {
+	if (!spin || typeof spin !== 'object') return null;
+	const s = spin as Partial<SpinResult>;
+	if (
+		typeof s.winningNumber !== 'number' ||
+		!Number.isInteger(s.winningNumber) ||
+		s.winningNumber < 0 ||
+		s.winningNumber > 36
+	) {
+		return null;
+	}
+	if (!Array.isArray(s.bets)) return null;
+	const bets = s.bets.map(sanitizeBet).filter((b): b is RouletteBet => b !== null);
+	if (bets.length !== s.bets.length) return null;
+	if (typeof s.totalBet !== 'number' || !Number.isInteger(s.totalBet)) return null;
+	if (typeof s.totalPayout !== 'number' || !Number.isInteger(s.totalPayout)) return null;
+	if (typeof s.netDelta !== 'number' || !Number.isInteger(s.netDelta)) return null;
+	if (!Array.isArray(s.results)) return null;
+	const results = s.results.map(sanitizeBetResult).filter((r): r is BetResult => r !== null);
+	if (results.length !== s.results.length) return null;
+	if (typeof s.timestamp !== 'number' || !Number.isFinite(s.timestamp)) return null;
+	if (typeof s.syncId !== 'string') return null;
+	return {
+		winningNumber: s.winningNumber,
+		bets,
+		totalBet: s.totalBet,
+		totalPayout: s.totalPayout,
+		netDelta: s.netDelta,
+		results,
+		timestamp: s.timestamp,
+		syncId: s.syncId,
+		...(typeof s.newBalance === 'number' && Number.isInteger(s.newBalance)
+			? { newBalance: s.newBalance }
+			: {}),
 	};
 }
 
@@ -321,8 +369,12 @@ export class RouletteGame {
 				typeof s.selectedChipAmount === 'number'
 					? s.selectedChipAmount
 					: this.state.selectedChipAmount,
-			lastSpin: s.lastSpin ? { ...s.lastSpin } : null,
-			roundHistory: Array.isArray(s.roundHistory) ? s.roundHistory.map((r) => ({ ...r })) : [],
+			lastSpin: s.lastSpin ? sanitizeSpinResult(s.lastSpin) : null,
+			roundHistory: Array.isArray(s.roundHistory)
+				? s.roundHistory
+						.map((r) => sanitizeSpinResult(r))
+						.filter((r): r is SpinResult => r !== null)
+				: [],
 		};
 		return true;
 	}

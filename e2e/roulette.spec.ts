@@ -277,6 +277,44 @@ test.describe('Roulette — Game Flow', () => {
 		await expect(page.locator('#net-delta')).toContainText('-');
 		await expect(page.getByTestId('bet-results')).toContainText('Red');
 	});
+
+	test('real spin keeps displayed balance in sync with server newBalance', async ({ page }) => {
+		// No route mock — this hits the real /api/roulette/spin endpoint.
+		// Verifies browser-level balance integrity: the displayed balance
+		// after settlement must equal the server-provided newBalance, and
+		// the net change must equal the server-provided netDelta.
+		await ensureMinimumBalance(page, 50);
+
+		const balanceBefore = parseBalance(await page.locator('#chip-balance').innerText());
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+
+		// Capture the real spin response without mocking it.
+		const spinResponsePromise = page.waitForResponse(
+			(resp) => resp.url().includes('/api/roulette/spin') && resp.status() === 200,
+		);
+		await page.getByTestId('spin-button').click();
+		const spinResponse = await spinResponsePromise;
+		const spinData = (await spinResponse.json()) as {
+			winningNumber: number;
+			netDelta: number;
+			newBalance: number;
+		};
+
+		// Wait for settlement to complete and UI to update.
+		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+
+		const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
+
+		// The displayed balance after settlement must match the server's
+		// authoritative newBalance exactly.
+		expect(balanceAfter).toBe(spinData.newBalance);
+
+		// The net change from before-bet to after-settlement must equal
+		// the server's netDelta (payout - bet).
+		expect(balanceAfter - balanceBefore).toBe(spinData.netDelta);
+	});
 });
 
 test.describe('Roulette — Clear Bets Sync', () => {

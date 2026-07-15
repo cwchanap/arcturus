@@ -11,6 +11,30 @@ import {
 	GUEST_CLIENT_USER_ID,
 } from '../public-game-session';
 
+// Preserves the HTTP status from a non-ok spin response so the retry
+// logic can decide retriability by status code (409, 5xx) rather than
+// fragile message-prefix matching.
+class SpinHttpError extends Error {
+	readonly status: number;
+	constructor(status: number, error: string) {
+		super(error);
+		this.name = 'SpinHttpError';
+		this.status = status;
+	}
+}
+
+// A spin attempt is retriable when the server may have committed the
+// round but we didn't receive the result. 409 CONCURRENT_MODIFICATION
+// means a concurrent same-syncId request committed — retrying with the
+// same syncId returns the stored result via idempotency. 5xx means the
+// server errored mid-processing — retrying is safe for the same reason.
+// TypeError means the network failed before a response arrived.
+function isRetriableSpinError(err: unknown): boolean {
+	if (err instanceof TypeError) return true;
+	if (err instanceof SpinHttpError) return err.status === 409 || err.status >= 500;
+	return false;
+}
+
 export function initRouletteClient(): void {
 	const root = document.getElementById('roulette-root');
 	if (!root) throw new Error('roulette-root not found');
@@ -126,7 +150,7 @@ export function initRouletteClient(): void {
 
 				if (!response.ok) {
 					const err = (await response.json().catch(() => ({}))) as { error?: string };
-					throw new Error(err.error ?? `HTTP ${response.status}`);
+					throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
 				}
 
 				const data = (await response.json()) as {
@@ -180,13 +204,11 @@ export function initRouletteClient(): void {
 			}, SPIN_ANIMATION_MS);
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
-			// If the server may have processed the spin (network error or 5xx),
-			// retry the same syncId once to leverage endpoint idempotency before
-			// abandoning the attempt.
-			const isRetriable =
-				err instanceof TypeError || (err instanceof Error && err.message.startsWith('HTTP 5'));
+			// If the server may have processed the spin (network error, 409
+			// concurrent modification, or 5xx), retry the same syncId once to
+			// leverage endpoint idempotency before abandoning the attempt.
 			if (
-				isRetriable &&
+				isRetriableSpinError(err) &&
 				shouldSyncAccountChips({ isGuestMode }) &&
 				game.getState().phase === 'spinning'
 			) {

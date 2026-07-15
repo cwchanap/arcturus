@@ -42,7 +42,6 @@ CREATE:
 MODIFY:
   src/db/schema.ts                           # Add rouletteRound table, fix stale gameStats comment
   src/lib/game-stats/constants.ts            # Add 'roulette' to GAME_TYPES, LABELS, ICONS
-  src/pages/api/chips/update.ts              # Add 'roulette' to GAME_LIMITS
   drizzle/0009_*.sql                         # Auto-generated migration for roulette_round
 ```
 
@@ -1282,16 +1281,15 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 };
 ```
 
-- [ ] **Step 2: Add `roulette` to `GAME_LIMITS` in `chips/update.ts`**
+- [ ] **Step 2: Do NOT add `roulette` to `GAME_LIMITS` in `chips/update.ts`**
 
-In the `GAME_LIMITS` object (around line 391), add after the `slots` entry:
-
-```typescript
-	roulette: {
-		maxWin: 50000,
-		maxLoss: 10000,
-	},
-```
+Roulette is server-settled via `/api/roulette/spin` with its own
+`ROULETTE_MAX_WIN` / `ROULETTE_MAX_LOSS` audit limits (see
+`src/lib/roulette/constants.ts`). The `chips/update.ts` endpoint is
+client-authoritative and must NOT accept `roulette` as a `gameType` —
+doing so would allow direct chip manipulation bypassing the server-side
+settlement. The `GAME_LIMITS` object in `chips/update.ts` intentionally
+excludes `roulette` (see the comment at the end of the object).
 
 - [ ] **Step 3: Verify type-checking and lint**
 
@@ -1304,8 +1302,8 @@ Expected: 0 warnings
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/lib/game-stats/constants.ts src/pages/api/chips/update.ts
-git commit -m "feat(roulette): register game type in constants and GAME_LIMITS"
+git add src/lib/game-stats/constants.ts
+git commit -m "feat(roulette): register game type in constants"
 ```
 
 ---
@@ -1318,7 +1316,7 @@ git commit -m "feat(roulette): register game type in constants and GAME_LIMITS"
 
 **Interfaces:**
 
-- Consumes: `evaluateBets` from `src/lib/roulette/betEvaluator.ts`, `GAME_LIMITS` from `chips/update.ts`, `recordGameRound` + `checkAndGrantAchievements`
+- Consumes: `evaluateBets` from `src/lib/roulette/betEvaluator.ts`, `ROULETTE_MAX_WIN` / `ROULETTE_MAX_LOSS` from `src/lib/roulette/constants.ts`, `checkAndGrantAchievements`
 - Produces: `POST /api/roulette/spin` handler
 
 - [ ] **Step 1: Create the spin endpoint**

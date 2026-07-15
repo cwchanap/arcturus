@@ -1,4 +1,10 @@
-import { MAX_BET_PER_POSITION, MAX_ROUND_HISTORY, MAX_TOTAL_BET, MIN_BET } from './constants';
+import {
+	MAX_BET_PER_POSITION,
+	MAX_BETS,
+	MAX_ROUND_HISTORY,
+	MAX_TOTAL_BET,
+	MIN_BET,
+} from './constants';
 import { evaluateBets } from './betEvaluator';
 import type {
 	BetType,
@@ -135,6 +141,12 @@ export class RouletteGame {
 				ok: false,
 				error: `Max ${MAX_BET_PER_POSITION} per position (${MAX_BET_PER_POSITION - existingPosition} remaining)`,
 			};
+		}
+		// Only enforce the bet-count cap when this creates a new position.
+		// Merging into an existing position doesn't increase the array length.
+		const isNewPosition = existingPosition === 0;
+		if (isNewPosition && this.state.activeBets.length >= MAX_BETS) {
+			return { ok: false, error: `Max ${MAX_BETS} bets per spin` };
 		}
 		const totalAfter = this.getTotalBet() + amount;
 		if (totalAfter > MAX_TOTAL_BET) {

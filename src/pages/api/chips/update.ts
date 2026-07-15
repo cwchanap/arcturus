@@ -1433,7 +1433,14 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 
 			lastUpdateByUserImpl.set(userId, now);
 			if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
-				lastUpdateByUserImpl.clear();
+				// Evict stale entries (older than the rate-limit window) instead
+				// of clearing the entire map, so active rate limits survive the
+				// cleanup and users can't bypass the throttle en masse. Matches
+				// the pattern in src/pages/api/roulette/spin.ts.
+				const cutoff = now - MIN_UPDATE_INTERVAL_MS;
+				for (const [u, t] of lastUpdateByUserImpl) {
+					if (t < cutoff) lastUpdateByUserImpl.delete(u);
+				}
 			}
 
 			// Amortized cleanup: delete old chip_sync_receipt rows for this

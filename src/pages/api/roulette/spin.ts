@@ -292,7 +292,14 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			});
 		}
 
-		const previousBalance = Math.trunc(userRow.chipBalance);
+		const rawChipBalance = userRow.chipBalance;
+		const previousBalance = Number.isFinite(rawChipBalance) ? Math.trunc(rawChipBalance) : 0;
+		// Use the raw (possibly fractional) stored value as the optimistic-lock
+		// match value when it differs from the truncated balance. If the stored
+		// balance is e.g. 1000.5, binding the truncated 1000 in the WHERE clause
+		// would never match, causing every spin to return CONCURRENT_MODIFICATION.
+		// The UPDATE still writes the integer newBalance, repairing the fraction.
+		const lockedBalance = rawChipBalance !== previousBalance ? rawChipBalance : previousBalance;
 		if (totalBet > previousBalance) {
 			return new Response(
 				JSON.stringify({ error: 'INSUFFICIENT_BALANCE', currentBalance: previousBalance }),
@@ -327,7 +334,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 		const batchStatements: D1PreparedStatement[] = [
 			dbBinding
 				.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
-				.bind(newBalance, nowSeconds, userId, previousBalance),
+				.bind(newBalance, nowSeconds, userId, lockedBalance),
 			dbBinding
 				.prepare(
 					'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',

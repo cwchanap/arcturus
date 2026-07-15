@@ -538,6 +538,30 @@ describe('roulette spin API', () => {
 		expect(body.error).toBe('CONCURRENT_MODIFICATION');
 	});
 
+	test('repairs fractional stored balance instead of failing with CONCURRENT_MODIFICATION', async () => {
+		// A fractional chipBalance (e.g. 1000.5) must use the raw value as the
+		// optimistic-lock match value. Binding the truncated 1000 would never
+		// match the stored 1000.5, causing every spin to return 409.
+		const { handler, mock } = createHandler({
+			chipBalance: 1000.5,
+			winningNumber: 0,
+		});
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-fractional' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.previousBalance).toBe(1000);
+		expect(body.newBalance).toBe(950);
+		expect(mock.getCurrentChipBalance()).toBe(950);
+	});
+
 	test('processes a successful spin with a loss', async () => {
 		const { handler, mock } = createHandler({ winningNumber: 0 });
 		const bets = [makeBet('red', 50)];

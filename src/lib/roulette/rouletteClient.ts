@@ -62,6 +62,12 @@ export function initRouletteClient(): void {
 	const ui = new RouletteUIRenderer();
 	const sessionKey = `roulette-session:${userId}`;
 
+	// Tracks the pending spin-result timer so it can be cancelled when a
+	// new round starts. Without this, a user who clicks New Round during
+	// the 4s wheel animation would see the stale result re-rendered after
+	// the timer fires, overwriting the new round's state.
+	let pendingResultTimer: ReturnType<typeof setTimeout> | null = null;
+
 	// Only restore session in guest mode — authenticated users must use
 	// the server-provided balance as authoritative.
 	if (isGuestMode) {
@@ -219,7 +225,8 @@ export function initRouletteClient(): void {
 			persistSession();
 
 			ui.animateWheel(spinResult.winningNumber);
-			setTimeout(() => {
+			pendingResultTimer = setTimeout(() => {
+				pendingResultTimer = null;
 				ui.showResult(spinResult);
 				ui.update(game.getState());
 			}, SPIN_ANIMATION_MS);
@@ -268,7 +275,8 @@ export function initRouletteClient(): void {
 						}
 						persistSession();
 						ui.animateWheel(retryResult.winningNumber);
-						setTimeout(() => {
+						pendingResultTimer = setTimeout(() => {
+							pendingResultTimer = null;
 							ui.showResult(retryResult);
 							ui.update(game.getState());
 						}, SPIN_ANIMATION_MS);
@@ -295,25 +303,19 @@ export function initRouletteClient(): void {
 					// ignore — fall through to reset with whatever balance we have
 				}
 			}
-			// When the authoritative server balance was adopted OR we received
-			// a 2xx response (server likely committed the round), discard the
-			// active bets WITHOUT refunding — the server balance already
-			// reflects the true state, and refunding client-side bets on top
-			// of it would create chips from nothing (C1 chip-inflation exploit).
-			// Only refund via newRound() when the server was provably
-			// unreachable AND we never got a 2xx (server provably didn't
-			// settle).
-			if (serverBalanceAdopted || receivedOkResponse) {
-				game.discardActiveBets();
-				showMessage(
-					serverBalanceAdopted
-						? 'Spin result unclear — balance synced from server.'
-						: 'Spin result unclear — please refresh your balance.',
-				);
-			} else {
-				game.newRound();
-				showMessage('Spin failed. Please try again.');
-			}
+			// We cannot prove the server didn't commit the round: a timeout
+			// (AbortError) or network failure (TypeError) may still have reached
+			// the Worker, and both the retry and balance refresh failed. Refunding
+			// bets via newRound() would inflate the display balance on top of a
+			// potentially-committed server settlement. Discard without refund and
+			// ask the user to refresh — the server-authoritative balance on reload
+			// is always correct.
+			game.discardActiveBets();
+			showMessage(
+				serverBalanceAdopted
+					? 'Spin result unclear — balance synced from server.'
+					: 'Spin result unclear — please refresh the page.',
+			);
 			ui.update(game.getState());
 			persistSession();
 		}
@@ -321,6 +323,10 @@ export function initRouletteClient(): void {
 
 	// New round
 	document.getElementById('new-round-button')?.addEventListener('click', () => {
+		if (pendingResultTimer !== null) {
+			clearTimeout(pendingResultTimer);
+			pendingResultTimer = null;
+		}
 		game.newRound();
 		ui.clearResult();
 		updateAndPersist();

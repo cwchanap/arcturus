@@ -1,4 +1,4 @@
-import type { BetType, RouletteSettings } from './types';
+import type { BetType } from './types';
 
 export const WHEEL_ORDER = [
 	0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14,
@@ -32,11 +32,12 @@ export const MAX_BET_PER_POSITION = 500;
 export const MAX_TOTAL_BET = 5000;
 export const MAX_ROUND_HISTORY = 20;
 
+// Audit safety limits for net delta per spin. These are unreachable under
+// normal play (MAX_TOTAL_BET=5000 caps actual loss; max straight payout is
+// 17500) but act as a backstop against logic bugs or tampering.
+export const ROULETTE_MAX_WIN = 50000;
+export const ROULETTE_MAX_LOSS = 10000;
+
 // Wheel spin animation duration in milliseconds. Must match the CSS
 // transition duration in src/pages/games/roulette.astro (SPIN_ANIMATION_MS / 1000).
 export const SPIN_ANIMATION_MS = 4000;
-
-export const DEFAULT_SETTINGS: RouletteSettings = {
-	animationSpeed: 'normal',
-	soundEnabled: true,
-};

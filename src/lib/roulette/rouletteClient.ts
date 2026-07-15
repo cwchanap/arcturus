@@ -3,7 +3,6 @@ import { RouletteUIRenderer } from './RouletteUIRenderer';
 import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
 import type { BetType, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
-import { fetchWithTimeout } from '../fetch-with-timeout';
 import {
 	isGuestModeValue,
 	loadGuestBankroll,
@@ -187,44 +186,47 @@ export function initRouletteClient(): void {
 				ui.update(game.getState());
 				persistSession();
 
-				const response = await fetchSpin(syncId, bets, totalBet);
+				const { response, done } = await fetchSpin(syncId, bets, totalBet);
+				try {
+					if (!response.ok) {
+						const err = (await response.json().catch(() => ({}))) as { error?: string };
+						throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
+					}
 
-				if (!response.ok) {
-					const err = (await response.json().catch(() => ({}))) as { error?: string };
-					throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
-				}
+					// Mark that the server accepted the spin — even if the body
+					// fails to parse below, the round was likely committed.
+					receivedOkResponse = true;
 
-				// Mark that the server accepted the spin — even if the body
-				// fails to parse below, the round was likely committed.
-				receivedOkResponse = true;
+					const data = (await response.json()) as {
+						winningNumber: number;
+						netDelta: number;
+						results: SpinResult['results'];
+						newBalance: number;
+						newAchievements?: Array<{ id: string; name: string; icon: string }>;
+					};
+					spinResult = {
+						winningNumber: data.winningNumber,
+						bets,
+						totalBet,
+						totalPayout: data.netDelta + totalBet,
+						netDelta: data.netDelta,
+						results: data.results,
+						timestamp: Date.now(),
+						syncId,
+						newBalance: data.newBalance,
+					};
 
-				const data = (await response.json()) as {
-					winningNumber: number;
-					netDelta: number;
-					results: SpinResult['results'];
-					newBalance: number;
-					newAchievements?: Array<{ id: string; name: string; icon: string }>;
-				};
-				spinResult = {
-					winningNumber: data.winningNumber,
-					bets,
-					totalBet,
-					totalPayout: data.netDelta + totalBet,
-					netDelta: data.netDelta,
-					results: data.results,
-					timestamp: Date.now(),
-					syncId,
-					newBalance: data.newBalance,
-				};
+					game.applySettlement(spinResult);
 
-				game.applySettlement(spinResult);
-
-				if (data.newAchievements?.length) {
-					window.dispatchEvent(
-						new CustomEvent('achievement-earned', {
-							detail: { achievements: data.newAchievements },
-						}),
-					);
+					if (data.newAchievements?.length) {
+						window.dispatchEvent(
+							new CustomEvent('achievement-earned', {
+								detail: { achievements: data.newAchievements },
+							}),
+						);
+					}
+				} finally {
+					done();
 				}
 			} else {
 				// Guest: local settlement (spinGuest handles begin+settle internally)
@@ -262,43 +264,51 @@ export function initRouletteClient(): void {
 				try {
 					const bets = game.getState().activeBets;
 					const totalBet = bets.reduce((s, b) => s + b.amount, 0);
-					const retryResponse = await fetchSpin(syncId, bets, totalBet);
-					if (retryResponse.ok) {
-						receivedOkResponse = true;
-						const data = (await retryResponse.json()) as {
-							winningNumber: number;
-							netDelta: number;
-							results: SpinResult['results'];
-							newBalance: number;
-							newAchievements?: Array<{ id: string; name: string; icon: string }>;
-						};
-						const retryResult: SpinResult = {
-							winningNumber: data.winningNumber,
-							bets,
-							totalBet,
-							totalPayout: data.netDelta + totalBet,
-							netDelta: data.netDelta,
-							results: data.results,
-							timestamp: Date.now(),
-							syncId,
-							newBalance: data.newBalance,
-						};
-						game.applySettlement(retryResult);
-						if (data.newAchievements?.length) {
-							window.dispatchEvent(
-								new CustomEvent('achievement-earned', {
-									detail: { achievements: data.newAchievements },
-								}),
-							);
+					const { response: retryResponse, done: retryDone } = await fetchSpin(
+						syncId,
+						bets,
+						totalBet,
+					);
+					try {
+						if (retryResponse.ok) {
+							receivedOkResponse = true;
+							const data = (await retryResponse.json()) as {
+								winningNumber: number;
+								netDelta: number;
+								results: SpinResult['results'];
+								newBalance: number;
+								newAchievements?: Array<{ id: string; name: string; icon: string }>;
+							};
+							const retryResult: SpinResult = {
+								winningNumber: data.winningNumber,
+								bets,
+								totalBet,
+								totalPayout: data.netDelta + totalBet,
+								netDelta: data.netDelta,
+								results: data.results,
+								timestamp: Date.now(),
+								syncId,
+								newBalance: data.newBalance,
+							};
+							game.applySettlement(retryResult);
+							if (data.newAchievements?.length) {
+								window.dispatchEvent(
+									new CustomEvent('achievement-earned', {
+										detail: { achievements: data.newAchievements },
+									}),
+								);
+							}
+							persistSession();
+							ui.animateWheel(retryResult.winningNumber);
+							pendingResultTimer = setTimeout(() => {
+								pendingResultTimer = null;
+								ui.showResult(retryResult);
+								ui.update(game.getState());
+							}, SPIN_ANIMATION_MS);
+							return;
 						}
-						persistSession();
-						ui.animateWheel(retryResult.winningNumber);
-						pendingResultTimer = setTimeout(() => {
-							pendingResultTimer = null;
-							ui.showResult(retryResult);
-							ui.update(game.getState());
-						}, SPIN_ANIMATION_MS);
-						return;
+					} finally {
+						retryDone();
 					}
 				} catch (retryErr) {
 					console.error('[ROULETTE] Retry also failed:', retryErr);
@@ -382,16 +392,26 @@ async function fetchSpin(
 	syncId: string,
 	bets: SpinResult['bets'],
 	totalBet: number,
-): Promise<Response> {
-	return fetchWithTimeout(
-		'/api/roulette/spin',
-		{
+): Promise<{ response: Response; done: () => void }> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), SPIN_FETCH_TIMEOUT_MS);
+	try {
+		const response = await fetch('/api/roulette/spin', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ syncId, bets, totalBet }),
-		},
-		SPIN_FETCH_TIMEOUT_MS,
-	);
+			signal: controller.signal,
+		});
+		// Return a `done` callback so the caller clears the timer only
+		// after the response body has been fully read. If the server sends
+		// headers but stalls the body, the abort fires during
+		// response.json() and the caller's catch block runs — retry and
+		// cleanup proceed instead of hanging the UI in 'spinning'.
+		return { response, done: () => clearTimeout(timer) };
+	} catch (err) {
+		clearTimeout(timer);
+		throw err;
+	}
 }
 
 function generateLocalWinningNumber(): number {

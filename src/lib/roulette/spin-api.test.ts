@@ -67,12 +67,14 @@ function createMockDbBinding({
 	updateChanges = 1,
 	existingRound = null as MockRound | null,
 	existingReceipt = null as MockReceipt | null,
+	batchError = null as Error | null,
 }: {
 	chipBalance?: number;
 	heldChips?: number;
 	updateChanges?: number;
 	existingRound?: MockRound | null;
 	existingReceipt?: MockReceipt | null;
+	batchError?: Error | null;
 } = {}) {
 	let currentChipBalance = chipBalance;
 	const rounds = new Map<string, MockRound>();
@@ -129,6 +131,7 @@ function createMockDbBinding({
 			};
 		},
 		async batch(statements: Array<{ sql: string; args: unknown[] }>) {
+			if (batchError) throw batchError;
 			let previousChanges = 0;
 			const results: Array<{ meta: { changes: number } }> = [];
 
@@ -261,6 +264,7 @@ function createHandler(
 		existingRound?: MockRound | null;
 		existingReceipt?: MockReceipt | null;
 		checkAndGrantAchievements?: typeof checkAndGrantAchievements;
+		batchError?: Error | null;
 	} = {},
 ) {
 	const {
@@ -270,6 +274,7 @@ function createHandler(
 		updateChanges = 1,
 		existingRound = null,
 		existingReceipt = null,
+		batchError = null,
 	} = options;
 	const mock = createMockDbBinding({
 		chipBalance,
@@ -277,6 +282,7 @@ function createHandler(
 		updateChanges,
 		existingRound,
 		existingReceipt,
+		batchError,
 	});
 	const handler = createPostHandler({
 		createDb: () => mock.db,
@@ -536,6 +542,40 @@ describe('roulette spin API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(409);
 		expect(body.error).toBe('CONCURRENT_MODIFICATION');
+	});
+
+	test('returns 409 when batch throws a PRIMARY KEY constraint violation', async () => {
+		const { handler, mock } = createHandler({
+			batchError: new Error('UNIQUE constraint failed: roulette_round.primaryKey'),
+		});
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-pk' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('CONCURRENT_MODIFICATION');
+	});
+
+	test('returns 500 when batch throws an unexpected (non-constraint) error', async () => {
+		const { handler, mock } = createHandler({
+			batchError: new Error('D1 service unavailable'),
+		});
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-batchfail' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(500);
+		expect(body.error).toBe('BATCH_FAILED');
 	});
 
 	test('repairs fractional stored balance instead of failing with CONCURRENT_MODIFICATION', async () => {

@@ -33,7 +33,7 @@ export const GET: APIRoute = async ({ locals }) => {
 		});
 	}
 
-	return new Response(JSON.stringify({ balance: userRow.chipBalance }), {
+	return new Response(JSON.stringify({ balance: Math.trunc(userRow.chipBalance) }), {
 		headers: { 'Content-Type': 'application/json' },
 	});
 };

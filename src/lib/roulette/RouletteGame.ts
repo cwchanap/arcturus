@@ -271,6 +271,11 @@ export class RouletteGame {
 	}
 
 	newRound(): void {
+		// During 'spinning', bets are committed server-side (the spin request
+		// is in flight). Refunding them here would inflate the displayed
+		// balance on top of a potentially-committed settlement — the same
+		// C1 chip-inflation exploit discardActiveBets() exists to avoid.
+		if (this.state.phase === 'spinning') return;
 		for (const bet of this.state.activeBets) {
 			this.state.chipBalance += bet.amount;
 		}

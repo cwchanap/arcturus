@@ -16,6 +16,11 @@ import {
 // indefinitely — the retry logic only fires on thrown errors (TypeError /
 // SpinHttpError), not on a request that never settles.
 const SPIN_FETCH_TIMEOUT_MS = 15000;
+// Same rationale as the spin timeout: a balance-recovery fetch that never
+// settles would hang the reset flow indefinitely (the surrounding catch only
+// fires on thrown errors). The balance endpoint should resolve far faster
+// than a spin, but we keep the same ceiling for consistency.
+const BALANCE_FETCH_TIMEOUT_MS = 15000;
 
 // Preserves the HTTP status from a non-ok spin response so the retry
 // logic can decide retriability by status code (409, 5xx) rather than
@@ -181,17 +186,10 @@ export function initRouletteClient(): void {
 			// then discard without refunding (same rationale as the main
 			// spin error path).
 			let serverBalanceAdopted = false;
-			try {
-				const balResp = await fetch('/api/chips/balance');
-				if (balResp.ok) {
-					const balData = (await balResp.json()) as { balance?: number };
-					if (typeof balData.balance === 'number') {
-						game.setBalance(balData.balance);
-						serverBalanceAdopted = true;
-					}
-				}
-			} catch {
-				// ignore — fall through with whatever balance we have
+			const serverBalance = await fetchBalance();
+			if (serverBalance !== null) {
+				game.setBalance(serverBalance);
+				serverBalanceAdopted = true;
 			}
 			game.discardActiveBets();
 			showMessage(
@@ -415,17 +413,10 @@ export function initRouletteClient(): void {
 			// don't abandon a committed spin's balance change.
 			let serverBalanceAdopted = false;
 			if (shouldSyncAccountChips({ isGuestMode })) {
-				try {
-					const balResp = await fetch('/api/chips/balance');
-					if (balResp.ok) {
-						const balData = (await balResp.json()) as { balance?: number };
-						if (typeof balData.balance === 'number') {
-							game.setBalance(balData.balance);
-							serverBalanceAdopted = true;
-						}
-					}
-				} catch {
-					// ignore — fall through to reset with whatever balance we have
+				const serverBalance = await fetchBalance();
+				if (serverBalance !== null) {
+					game.setBalance(serverBalance);
+					serverBalanceAdopted = true;
 				}
 			}
 			// We cannot prove the server didn't commit the round: a timeout
@@ -508,6 +499,26 @@ async function fetchSpin(
 	} catch (err) {
 		clearTimeout(timer);
 		throw err;
+	}
+}
+
+// Balance-recovery fetch with the same AbortController-based timeout as
+// fetchSpin. Reads the body inside the try so a stalled body still aborts
+// during response.json(); the finally clears the timer after the body is
+// fully consumed. Returns null on any failure (timeout, network, bad body)
+// so the caller falls through to reset with whatever balance it already has.
+async function fetchBalance(): Promise<number | null> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), BALANCE_FETCH_TIMEOUT_MS);
+	try {
+		const response = await fetch('/api/chips/balance', { signal: controller.signal });
+		if (!response.ok) return null;
+		const balData = (await response.json()) as { balance?: number };
+		return typeof balData.balance === 'number' ? balData.balance : null;
+	} catch {
+		return null;
+	} finally {
+		clearTimeout(timer);
 	}
 }
 

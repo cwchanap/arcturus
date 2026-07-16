@@ -4,6 +4,13 @@ import type { AchievementDefinition } from '../achievements/types';
 import { checkAndGrantAchievements } from '../achievements/achievements';
 import { createPostHandler } from '../../pages/api/roulette/spin';
 import { evaluateBets } from './betEvaluator';
+import {
+	isSpinCascadeGatedSql,
+	SPIN_INSERT_RECEIPT_SQL,
+	SPIN_INSERT_ROUND_SQL,
+	SPIN_UPDATE_USER_SQL,
+	SPIN_UPSERT_STATS_SQL,
+} from './spin-batch-sql';
 import type { RouletteBet } from './types';
 
 const mockAchievement: AchievementDefinition = {
@@ -136,7 +143,9 @@ function createMockDbBinding({
 			const results: Array<{ meta: { changes: number } }> = [];
 
 			for (const statement of statements) {
-				if (statement.sql.startsWith('UPDATE user SET chipBalance = ?')) {
+				// Match production SQL constants (exact) so the mock fails closed
+				// if cascade gates are removed or statements drift.
+				if (statement.sql === SPIN_UPDATE_USER_SQL) {
 					const [nextBalance, _updatedAt, _userId, matchedBalanceValue] = statement.args as [
 						number,
 						number,
@@ -153,8 +162,12 @@ function createMockDbBinding({
 					}
 					continue;
 				}
-				if (statement.sql.startsWith('INSERT INTO roulette_round')) {
-					if (previousChanges === 1) {
+				// Cascade inserts only apply when the production SQL still
+				// gates on `WHERE changes() = 1`. Without the gate, a concurrent
+				// balance change would still insert phantom rows — the mock
+				// must not simulate cascade success for ungated SQL.
+				if (statement.sql === SPIN_INSERT_ROUND_SQL) {
+					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
 						const [
 							syncId,
 							userId,
@@ -193,8 +206,8 @@ function createMockDbBinding({
 					}
 					continue;
 				}
-				if (statement.sql.startsWith('INSERT INTO chip_sync_receipt')) {
-					if (previousChanges === 1) {
+				if (statement.sql === SPIN_INSERT_RECEIPT_SQL) {
+					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
 						const [userId, syncId] = statement.args as [string, string];
 						receipts.set(`${userId}:${syncId}`, {
 							userId,
@@ -207,8 +220,8 @@ function createMockDbBinding({
 					}
 					continue;
 				}
-				if (statement.sql.startsWith('INSERT INTO game_stats')) {
-					if (previousChanges === 1) {
+				if (statement.sql === SPIN_UPSERT_STATS_SQL) {
+					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
 						results.push({ meta: { changes: 1 } });
 					} else {
 						results.push({ meta: { changes: 0 } });
@@ -299,6 +312,15 @@ function createHandler(
 }
 
 describe('roulette spin API', () => {
+	test('cascade SQL constants gate inserts on changes() = 1', () => {
+		// Guard: if the production gates are dropped, mocks that only match
+		// statement prefixes would still simulate cascade success.
+		expect(isSpinCascadeGatedSql(SPIN_INSERT_ROUND_SQL)).toBe(true);
+		expect(isSpinCascadeGatedSql(SPIN_INSERT_RECEIPT_SQL)).toBe(true);
+		expect(isSpinCascadeGatedSql(SPIN_UPSERT_STATS_SQL)).toBe(true);
+		expect(SPIN_UPDATE_USER_SQL).toContain('chipBalance = ?');
+	});
+
 	test('rejects unauthenticated requests', async () => {
 		const { handler } = createHandler();
 		const request = new Request('http://test.local', {

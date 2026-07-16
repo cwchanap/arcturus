@@ -135,7 +135,7 @@ export class RouletteGame {
 			phase: 'betting',
 			activeBets: [],
 			chipBalance: balance,
-			selectedChipAmount: 1,
+			selectedChipAmount: 5,
 			lastSpin: null,
 			roundHistory: [],
 		};
@@ -293,6 +293,16 @@ export class RouletteGame {
 	// the client, never the server — see C1 chip-inflation exploit.
 	discardActiveBets(): void {
 		this.state.activeBets = [];
+		this.state.phase = 'betting';
+		this.clearPendingSyncId();
+	}
+
+	// Return to betting after a spin that never committed (rate limit, MP
+	// escrow, validation errors). Keeps active bets and the client balance
+	// as-is so the player can re-spin the same layout. Clears pendingSyncId
+	// so a reload does not re-submit a request the server rejected.
+	abortSpin(): void {
+		if (this.state.phase !== 'spinning') return;
 		this.state.phase = 'betting';
 		this.clearPendingSyncId();
 	}

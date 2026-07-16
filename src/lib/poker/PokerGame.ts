@@ -402,9 +402,14 @@ export class PokerGame {
 					// legacy entries are discarded rather than replayed.
 					const createdAt = entry.createdAt;
 					if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) {
+						console.warn(
+							'[CHIP_SYNC] Dropping legacy persisted pending sync (no createdAt):',
+							entry.syncId,
+						);
 						continue;
 					}
 					if (now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
+						console.warn('[CHIP_SYNC] Dropping expired persisted pending sync:', entry.syncId);
 						continue;
 					}
 					const restoredEntry: PendingChipSync = {

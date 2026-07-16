@@ -389,17 +389,20 @@ export class PokerGame {
 					typeof entry.delta === 'number' &&
 					Number.isInteger(entry.delta)
 				) {
-					// Migrate legacy entries written before the TTL fix: a
-					// missing createdAt does not prove the server committed
-					// (the receipt may not exist), so dropping would silently
-					// lose a queued chip/stats delta — especially a win.
-					// Stamp createdAt = now to give the entry a fresh
-					// PENDING_SYNC_MAX_AGE_MS window; the server's
-					// idempotency receipt (RETENTION_DAYS) deduplicates if
-					// the update already committed.
-					let createdAt = entry.createdAt;
+					// Drop legacy entries written before the TTL fix: a missing
+					// createdAt gives no bound on how long the entry has sat in
+					// localStorage. If the server already committed it (response
+					// lost / client crashed before clearing storage) more than
+					// RETENTION_DAYS ago, runRetentionCleanup will have reaped
+					// the idempotency receipt, so replaying the same syncId
+					// would re-apply the delta (double-spend). We cannot
+					// distinguish "never committed" from "committed long ago"
+					// without a timestamp, and creating chips out of thin air
+					// is a worse failure than losing a stale pending win, so
+					// legacy entries are discarded rather than replayed.
+					const createdAt = entry.createdAt;
 					if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) {
-						createdAt = now;
+						continue;
 					}
 					if (now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
 						continue;

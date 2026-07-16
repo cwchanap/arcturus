@@ -30,9 +30,17 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 		console.warn('[CLEANUP] Failed to delete expired roulette_round rows:', error);
 	}
 	try {
+		// Exclude poker_mp receipts: multiplayer settlement retries
+		// /api/mp/settle indefinitely (every 30s while the room is frozen)
+		// using chip_sync_receipt as its idempotency record. Deleting a
+		// settled hand's receipt while the DO can still retry would let a
+		// late retry re-apply the delta (heldChips is already 0), double-
+		// settling the hand. Roulette (7d client TTL) and single-player
+		// poker (MAX_RETRIES=3) have bounded retry lifecycles, so their
+		// receipts remain safe to reap at RETENTION_DAYS.
 		await dbBinding
-			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ?')
-			.bind(retentionCutoff)
+			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType != ?')
+			.bind(retentionCutoff, 'poker_mp')
 			.run();
 	} catch (error) {
 		console.warn('[CLEANUP] Failed to delete expired chip_sync_receipt rows:', error);

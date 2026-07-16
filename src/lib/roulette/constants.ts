@@ -42,3 +42,11 @@ export const ROULETTE_MAX_LOSS = 10000;
 // Wheel spin animation duration in milliseconds. Must match the CSS
 // transition duration in src/pages/games/roulette.astro (SPIN_ANIMATION_MS / 1000).
 export const SPIN_ANIMATION_MS = 4000;
+
+// Client-side TTL for persisted in-flight spin snapshots. Must be shorter than
+// the server-side retention window (RETENTION_DAYS = 30 in src/server/cleanup.ts)
+// so a stale snapshot is dropped before its roulette_round idempotency row is
+// deleted. Without this, a spin that committed server-side but whose response
+// was lost could be re-submitted after cleanup as a fresh spin, double-deducting
+// the bet.
+export const PENDING_SPIN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

@@ -171,10 +171,12 @@ export class RouletteGame {
 
 	setPendingSyncId(syncId: string): void {
 		this.state.pendingSyncId = syncId;
+		this.state.pendingSyncCreatedAt = Date.now();
 	}
 
 	private clearPendingSyncId(): void {
 		this.state.pendingSyncId = undefined;
+		this.state.pendingSyncCreatedAt = undefined;
 	}
 
 	private getExistingPositionAmount(type: BetType, target?: number): number {
@@ -403,6 +405,12 @@ export class RouletteGame {
 			pendingSyncId:
 				s.phase === 'spinning' && typeof s.pendingSyncId === 'string' && s.pendingSyncId.length > 0
 					? s.pendingSyncId
+					: undefined,
+			pendingSyncCreatedAt:
+				s.phase === 'spinning' &&
+				typeof s.pendingSyncCreatedAt === 'number' &&
+				Number.isFinite(s.pendingSyncCreatedAt)
+					? s.pendingSyncCreatedAt
 					: undefined,
 		};
 		return true;

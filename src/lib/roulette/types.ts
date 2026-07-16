@@ -48,6 +48,12 @@ export interface RouletteGameState {
 	// re-submit the same syncId to leverage the server's idempotency
 	// replay, recovering the committed result instead of discarding it.
 	pendingSyncId?: string;
+	// Epoch ms when pendingSyncId was set. Used to expire stale in-flight
+	// snapshots before the server's roulette_round idempotency row is
+	// deleted by retention cleanup (see src/server/cleanup.ts). Without
+	// this, a snapshot whose round row was cleaned up would be re-submitted
+	// as a fresh spin, double-deducting the bet.
+	pendingSyncCreatedAt?: number;
 }
 
 export interface RouletteGameConfig {

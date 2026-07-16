@@ -2636,3 +2636,144 @@ describe('PokerGame processAITurn strips opponent hole cards', () => {
 		}
 	});
 });
+
+describe('PokerGame pending sync TTL', () => {
+	test('drops pending syncs older than the TTL on load', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'ttl-user' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const staleEntry = {
+			syncId: 'stale-sync-id',
+			previousBalance: 500,
+			delta: 100,
+			createdAt: Date.now() - 8 * 24 * 60 * 60 * 1000, // 8 days ago > 7-day TTL
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) =>
+				key === 'arcturus_poker_pending_syncs:ttl-user' ? JSON.stringify([staleEntry]) : null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			pendingChipSyncs: Array<Record<string, unknown>>;
+		};
+
+		expect(game.pendingChipSyncs).toHaveLength(0);
+	});
+
+	test('drops pending syncs without a createdAt timestamp (pre-TTL snapshots)', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'ttl-user2' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		// No createdAt field — simulates a snapshot from before the TTL fix.
+		const legacyEntry = {
+			syncId: 'legacy-sync-id',
+			previousBalance: 500,
+			delta: 100,
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) =>
+				key === 'arcturus_poker_pending_syncs:ttl-user2' ? JSON.stringify([legacyEntry]) : null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			pendingChipSyncs: Array<Record<string, unknown>>;
+		};
+
+		expect(game.pendingChipSyncs).toHaveLength(0);
+	});
+
+	test('loads fresh pending syncs within the TTL', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'ttl-user3' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const freshEntry = {
+			syncId: 'fresh-sync-id',
+			previousBalance: 500,
+			delta: 100,
+			createdAt: Date.now(), // fresh
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) =>
+				key === 'arcturus_poker_pending_syncs:ttl-user3' ? JSON.stringify([freshEntry]) : null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 600 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			pendingChipSyncs: Array<Record<string, unknown>>;
+		};
+
+		expect(game.pendingChipSyncs).toHaveLength(1);
+		expect(game.pendingChipSyncs[0].syncId).toBe('fresh-sync-id');
+	});
+});

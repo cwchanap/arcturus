@@ -25,22 +25,19 @@
 
 import { describe, expect, test, afterAll, beforeAll } from 'bun:test';
 import { Miniflare } from 'miniflare';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 let mf: Miniflare | null = null;
 let db: Awaited<ReturnType<typeof mf.getD1Database>> | null = null;
 
-const MIGRATION_FILES = [
-	'0000_powerful_wrecking_crew.sql',
-	'0003_marvelous_sasquatch.sql',
-	'0004_wide_vin_gonzales.sql',
-	'0005_silent_chip_sync_receipts.sql',
-	'0006_refresh_receipt_rank_snapshots.sql',
-	'0007_replay_sync_achievement_payload.sql',
-	'0008_last_living_lightning.sql',
-	'0009_lonely_dark_phoenix.sql',
-];
+const MIGRATIONS_DIR = join(process.cwd(), 'drizzle');
+// Discover all migration files dynamically so future migrations are covered
+// without manual list updates. Drizzle prefixes files with NNNN_, so lexical
+// sort yields correct application order.
+const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
+	.filter((f) => f.endsWith('.sql'))
+	.sort();
 
 async function applyMigrations(d1: Awaited<ReturnType<typeof mf.getD1Database>>): Promise<void> {
 	const migrationsDir = join(process.cwd(), 'drizzle');

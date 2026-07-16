@@ -208,7 +208,11 @@ function createMockDbBinding({
 					continue;
 				}
 				if (statement.sql.startsWith('INSERT INTO game_stats')) {
-					results.push({ meta: { changes: 1 } });
+					if (previousChanges === 1) {
+						results.push({ meta: { changes: 1 } });
+					} else {
+						results.push({ meta: { changes: 0 } });
+					}
 					continue;
 				}
 				throw new Error(`Unexpected batch SQL: ${statement.sql}`);

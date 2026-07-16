@@ -207,7 +207,7 @@ export class RouletteUIRenderer {
 	getSelectedChipAmount(): number {
 		const selected = document.querySelector('.chip-select.selected') as HTMLElement | null;
 		if (selected) return Number(selected.dataset.amount);
-		return 1;
+		return 5;
 	}
 
 	setSelectedChip(amount: number): void {

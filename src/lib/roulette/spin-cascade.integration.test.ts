@@ -5,8 +5,8 @@
  *
  * The spin endpoint (src/pages/api/roulette/spin.ts) uses a D1 batch of 4
  * statements:
- *   1. UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ?
- *      (optimistic lock — only matches if balance hasn't changed)
+ *   1. UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ? AND heldChips = 0
+ *      (optimistic lock — only matches if balance hasn't changed AND no MP escrow)
  *   2. INSERT INTO roulette_round ... SELECT ... WHERE changes() = 1
  *   3. INSERT INTO chip_sync_receipt ... SELECT ... WHERE changes() = 1
  *   4. INSERT INTO game_stats ... SELECT ... WHERE changes() = 1
@@ -418,5 +418,119 @@ describe('Roulette spin optimistic-lock cascade (Miniflare D1 integration)', () 
 			.first<{ overallRank: number }>();
 		expect(receipt).not.toBeNull();
 		expect(receipt!.overallRank).toBe(3);
+	});
+
+	test('heldChips > 0 blocks the UPDATE atomically (TOCTOU defense)', async () => {
+		// Insert a user with heldChips > 0 (simulating an MP escrow that
+		// was activated between the pre-batch SELECT and the batch UPDATE).
+		// The `AND heldChips = 0` clause in SPIN_UPDATE_USER_SQL must cause
+		// the UPDATE to match 0 rows, skipping all cascade inserts.
+		const userId = 'user-escrow-toctou';
+		await insertUser(db!, userId, 1000);
+		// Set heldChips after insert to simulate a concurrent escrow
+		await db!.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, userId).run();
+
+		const results = await buildSpinBatch(db!, {
+			userId,
+			syncId: 'escrow-toctou-1',
+			winningNumber: 17,
+			betsJson: JSON.stringify([{ type: 'straight', amount: 10, target: 17 }]),
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+			nowSeconds: 6000,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 350,
+		});
+
+		// UPDATE matched 0 rows because heldChips != 0
+		expect(results[0].meta.changes).toBe(0);
+		// All cascade inserts skipped
+		expect(results[1].meta.changes).toBe(0);
+		expect(results[2].meta.changes).toBe(0);
+		expect(results[3].meta.changes).toBe(0);
+
+		// Balance unchanged
+		const userRow = await db!
+			.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
+			.bind(userId)
+			.first<{ chipBalance: number; heldChips: number }>();
+		expect(userRow?.chipBalance).toBe(1000);
+		expect(userRow?.heldChips).toBe(500);
+
+		// No round or receipt inserted
+		const roundRow = await db!
+			.prepare('SELECT 1 FROM roulette_round WHERE userId = ? AND syncId = ?')
+			.bind(userId, 'escrow-toctou-1')
+			.first();
+		expect(roundRow).toBeNull();
+		const receiptRow = await db!
+			.prepare('SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
+			.bind(userId, 'escrow-toctou-1')
+			.first();
+		expect(receiptRow).toBeNull();
+	});
+
+	test('duplicate (userId, syncId) insert fails with PRIMARY KEY violation', async () => {
+		// Verify that real D1 enforces the PRIMARY KEY on roulette_round
+		// (userId, syncId) — the idempotency guarantee that prevents
+		// double-settlement when a concurrent request races with a replay.
+		const userId = 'user-dup-pk';
+		await insertUser(db!, userId, 1000);
+
+		// First insert succeeds
+		await buildSpinBatch(db!, {
+			userId,
+			syncId: 'dup-pk-sync',
+			winningNumber: 17,
+			betsJson: JSON.stringify([{ type: 'straight', amount: 10, target: 17 }]),
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+			nowSeconds: 7000,
+			winsIncrement: 1,
+			lossesIncrement: 0,
+			biggestWinCandidate: 350,
+		});
+
+		// Second insert with the same (userId, syncId) must fail.
+		// In production, the spin endpoint catches this and returns 409
+		// CONCURRENT_MODIFICATION so the client retries via idempotency.
+		await expect(
+			buildSpinBatch(db!, {
+				userId,
+				syncId: 'dup-pk-sync',
+				winningNumber: 0,
+				betsJson: JSON.stringify([{ type: 'red', amount: 50 }]),
+				totalBet: 50,
+				totalPayout: 0,
+				netDelta: -50,
+				previousBalance: 1350,
+				newBalance: 1300,
+				nowSeconds: 8000,
+				winsIncrement: 0,
+				lossesIncrement: 1,
+				biggestWinCandidate: null,
+			}),
+		).rejects.toThrow();
+
+		// Verify only one round row exists for this syncId
+		const roundCount = await db!
+			.prepare('SELECT COUNT(*) as count FROM roulette_round WHERE userId = ? AND syncId = ?')
+			.bind(userId, 'dup-pk-sync')
+			.first<{ count: number }>();
+		expect(roundCount?.count).toBe(1);
+
+		// The first spin's result should be the one stored (winningNumber 17)
+		const roundRow = await db!
+			.prepare('SELECT winningNumber FROM roulette_round WHERE userId = ? AND syncId = ?')
+			.bind(userId, 'dup-pk-sync')
+			.first<{ winningNumber: number }>();
+		expect(roundRow?.winningNumber).toBe(17);
 	});
 });

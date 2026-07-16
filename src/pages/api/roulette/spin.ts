@@ -282,6 +282,51 @@ async function handleSpinRequest(
 			} catch {
 				// ignore corrupted payload
 			}
+		} else if (isValidGameType('roulette')) {
+			// Achievement payload is null — the batch committed but the
+			// Worker was evicted before achievement grant/persist. Re-run
+			// achievement resolution (idempotent — already-granted
+			// achievements are skipped) and persist the result, mirroring
+			// the replay path in src/pages/api/chips/update.ts.
+			try {
+				const replayDb = createDbImpl(dbBinding);
+				const netDelta = existing.netDelta as number;
+				const earned = await checkAndGrantAchievementsImpl(
+					replayDb,
+					userId,
+					existing.newBalance as number,
+					{
+						recentWinAmount: netDelta > 0 ? netDelta : undefined,
+						gameType: 'roulette' as GameType,
+					},
+				);
+				replayedAchievements = earned.map((a) => ({
+					id: a.id,
+					name: a.name,
+					icon: a.icon,
+				}));
+				if (replayedAchievements.length > 0) {
+					try {
+						await dbBinding
+							.prepare(
+								'UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?',
+							)
+							.bind(
+								JSON.stringify({ newAchievements: replayedAchievements, warnings: [] }),
+								userId,
+								syncId,
+							)
+							.run();
+					} catch (receiptPayloadError) {
+						console.error(
+							'[ROULETTE] Failed to persist replayed achievement payload:',
+							receiptPayloadError,
+						);
+					}
+				}
+			} catch (replayAchievementError) {
+				console.error('[ROULETTE] Replay achievement resolution error:', replayAchievementError);
+			}
 		}
 		return new Response(
 			JSON.stringify({
@@ -291,7 +336,10 @@ async function handleSpinRequest(
 				netDelta: existing.netDelta,
 				results: evaluateBetsImpl(storedBets, existing.winningNumber as number),
 				syncId,
-				newAchievements: replayedAchievements,
+				newAchievements:
+					replayedAchievements && replayedAchievements.length > 0
+						? replayedAchievements
+						: undefined,
 			}),
 			{ headers: { 'Content-Type': 'application/json' } },
 		);

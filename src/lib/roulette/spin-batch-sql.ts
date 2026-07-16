@@ -14,7 +14,7 @@
  * Statements 2–4 only run when statement 1 matched a row (`changes() = 1`).
  */
 export const SPIN_UPDATE_USER_SQL =
-	'UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?';
+	'UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ? AND heldChips = 0';
 
 export const SPIN_INSERT_ROUND_SQL =
 	'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1';

@@ -389,22 +389,26 @@ export class PokerGame {
 					typeof entry.delta === 'number' &&
 					Number.isInteger(entry.delta)
 				) {
-					// Drop entries without a createdAt timestamp (pre-TTL snapshots)
-					// or older than PENDING_SYNC_MAX_AGE_MS. A stale snapshot whose
-					// server-side idempotency receipt has been cleaned up would be
-					// replayed as a fresh update, double-applying the delta.
-					if (
-						typeof entry.createdAt !== 'number' ||
-						!Number.isFinite(entry.createdAt) ||
-						now - entry.createdAt > PENDING_SYNC_MAX_AGE_MS
-					) {
+					// Migrate legacy entries written before the TTL fix: a
+					// missing createdAt does not prove the server committed
+					// (the receipt may not exist), so dropping would silently
+					// lose a queued chip/stats delta — especially a win.
+					// Stamp createdAt = now to give the entry a fresh
+					// PENDING_SYNC_MAX_AGE_MS window; the server's
+					// idempotency receipt (RETENTION_DAYS) deduplicates if
+					// the update already committed.
+					let createdAt = entry.createdAt;
+					if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) {
+						createdAt = now;
+					}
+					if (now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
 						continue;
 					}
 					const restoredEntry: PendingChipSync = {
 						syncId: entry.syncId,
 						previousBalance: entry.previousBalance,
 						delta: entry.delta,
-						createdAt: entry.createdAt,
+						createdAt,
 					};
 					if (typeof entry.outcome === 'string' && VALID_CHIP_SYNC_OUTCOMES.has(entry.outcome)) {
 						restoredEntry.outcome = entry.outcome as ChipSyncOutcome;
@@ -581,6 +585,24 @@ export class PokerGame {
 			const MAX_RETRIES = 3;
 
 			while (this.pendingChipSyncs.length > 0) {
+				// Enforce the age limit before every in-memory retry, not just
+				// on load. A sync whose response was lost stays queued and is
+				// retried indefinitely; once the server's idempotency receipt
+				// is cleaned up (RETENTION_DAYS in src/server/cleanup.ts), a
+				// late retry would re-apply the same delta. Dropping an
+				// expired entry here matches the load-time TTL behavior.
+				const head = this.pendingChipSyncs[0];
+				if (
+					typeof head.createdAt === 'number' &&
+					Number.isFinite(head.createdAt) &&
+					Date.now() - head.createdAt > PENDING_SYNC_MAX_AGE_MS
+				) {
+					console.warn('[CHIP_SYNC] Dropping expired in-memory pending sync:', head.syncId);
+					this.pendingChipSyncs.shift();
+					retryCount = 0;
+					continue;
+				}
+
 				const result = await this.sendChipSync(this.pendingChipSyncs[0]);
 
 				if (result === 'synced') {

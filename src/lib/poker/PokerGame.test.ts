@@ -2684,7 +2684,7 @@ describe('PokerGame pending sync TTL', () => {
 		expect(game.pendingChipSyncs).toHaveLength(0);
 	});
 
-	test('drops pending syncs without a createdAt timestamp (pre-TTL snapshots)', () => {
+	test('migrates pending syncs without a createdAt timestamp (pre-TTL snapshots)', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -2696,6 +2696,9 @@ describe('PokerGame pending sync TTL', () => {
 		};
 
 		// No createdAt field — simulates a snapshot from before the TTL fix.
+		// A missing timestamp does not prove the server committed, so the
+		// entry is migrated with createdAt = now and given a fresh TTL
+		// window rather than dropped.
 		const legacyEntry = {
 			syncId: 'legacy-sync-id',
 			previousBalance: 500,
@@ -2719,7 +2722,7 @@ describe('PokerGame pending sync TTL', () => {
 				if (url === '/api/profile/llm-settings') {
 					return { ok: true, status: 200, json: async () => ({ settings: null }) };
 				}
-				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+				return { ok: true, status: 200, json: async () => ({ balance: 600 }) };
 			},
 		) as unknown as typeof fetch;
 
@@ -2727,7 +2730,9 @@ describe('PokerGame pending sync TTL', () => {
 			pendingChipSyncs: Array<Record<string, unknown>>;
 		};
 
-		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(game.pendingChipSyncs).toHaveLength(1);
+		expect(game.pendingChipSyncs[0].syncId).toBe('legacy-sync-id');
+		expect(typeof game.pendingChipSyncs[0].createdAt).toBe('number');
 	});
 
 	test('loads fresh pending syncs within the TTL', () => {

@@ -419,21 +419,29 @@ export function initRouletteClient(): void {
 					serverBalanceAdopted = true;
 				}
 			}
-			// We cannot prove the server didn't commit the round: a timeout
-			// (AbortError) or network failure (TypeError) may still have reached
-			// the Worker, and both the retry and balance refresh failed. Refunding
-			// bets via newRound() would inflate the display balance on top of a
-			// potentially-committed server settlement. Discard without refund and
-			// ask the user to refresh — the server-authoritative balance on reload
-			// is always correct.
-			game.discardActiveBets();
-			showMessage(
-				serverBalanceAdopted
-					? 'Spin result unclear — balance synced from server.'
-					: 'Spin result unclear — please refresh the page.',
-			);
-			ui.update(game.getState());
-			persistSession();
+			if (serverBalanceAdopted) {
+				// Authoritative balance confirms the server's view of the round.
+				// Discard the active bets without refunding (the server balance
+				// already reflects any committed settlement) and return to
+				// betting. The result UI is lost, but the balance is correct.
+				game.discardActiveBets();
+				showMessage('Spin result unclear — balance synced from server.');
+				ui.update(game.getState());
+				persistSession();
+			} else {
+				// Neither the retry nor the balance refresh succeeded, so we
+				// cannot prove whether the Worker committed the round. Clearing
+				// the pending sync here would strip the pendingSyncId, leaving a
+				// later refresh with no way to replay the round — the user would
+				// lose the winning number, result, and any achievements if the
+				// spin did commit. Retain the spinning snapshot (pendingSyncId +
+				// active bets intact) so the next reload re-submits via
+				// recoverPendingSpin and the server's idempotency replay resolves
+				// it. The user stays on the spinning screen until they refresh.
+				showMessage('Spin result unclear — please refresh the page.');
+				ui.update(game.getState());
+				persistSession();
+			}
 		}
 	});
 

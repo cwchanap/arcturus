@@ -408,7 +408,7 @@ export class PokerGame {
 						);
 						continue;
 					}
-					if (now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
+					if (createdAt > now || now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
 						console.warn('[CHIP_SYNC] Dropping expired persisted pending sync:', entry.syncId);
 						continue;
 					}
@@ -603,7 +603,7 @@ export class PokerGame {
 				if (
 					typeof head.createdAt === 'number' &&
 					Number.isFinite(head.createdAt) &&
-					Date.now() - head.createdAt > PENDING_SYNC_MAX_AGE_MS
+					(head.createdAt > Date.now() || Date.now() - head.createdAt > PENDING_SYNC_MAX_AGE_MS)
 				) {
 					console.warn('[CHIP_SYNC] Dropping expired in-memory pending sync:', head.syncId);
 					this.pendingChipSyncs.shift();

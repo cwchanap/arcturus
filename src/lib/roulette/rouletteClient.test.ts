@@ -103,6 +103,20 @@ describe('restoreSession — pending spin TTL', () => {
 		expect(result).not.toBeNull();
 		expect(result?.syncId).toBe('boundary-sync-id');
 	});
+
+	it('drops a snapshot with a future pendingSyncCreatedAt', () => {
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const key = 'roulette-session:user1';
+		// A future timestamp (corrupted localStorage / clock correction) must
+		// never satisfy the TTL — otherwise retention cleanup of the matching
+		// roulette_round row would let recovery re-settle it as a fresh spin.
+		const futureCreatedAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+		storage[key] = JSON.stringify(makeSpinningSnapshot('future-sync-id', futureCreatedAt));
+
+		const result = restoreSession(game, key, 1000);
+
+		expect(result).toBeNull();
+	});
 });
 
 describe('RouletteUIRenderer — column labels', () => {

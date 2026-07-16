@@ -2781,4 +2781,53 @@ describe('PokerGame pending sync TTL', () => {
 		expect(game.pendingChipSyncs).toHaveLength(1);
 		expect(game.pendingChipSyncs[0].syncId).toBe('fresh-sync-id');
 	});
+
+	test('drops pending syncs with a future createdAt timestamp on load', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'ttl-user4' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		// A future timestamp (corrupted localStorage / clock correction) must
+		// never satisfy the TTL — otherwise retention cleanup of the server's
+		// idempotency receipt would let a later retry re-apply the delta.
+		const futureEntry = {
+			syncId: 'future-sync-id',
+			previousBalance: 500,
+			delta: 100,
+			createdAt: Date.now() + 8 * 24 * 60 * 60 * 1000, // 8 days in the future
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) =>
+				key === 'arcturus_poker_pending_syncs:ttl-user4' ? JSON.stringify([futureEntry]) : null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 600 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			pendingChipSyncs: Array<Record<string, unknown>>;
+		};
+
+		expect(game.pendingChipSyncs).toHaveLength(0);
+	});
 });

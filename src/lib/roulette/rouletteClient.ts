@@ -584,6 +584,7 @@ export function restoreSession(
 				if (
 					typeof parsed.pendingSyncCreatedAt !== 'number' ||
 					!Number.isFinite(parsed.pendingSyncCreatedAt) ||
+					parsed.pendingSyncCreatedAt > Date.now() ||
 					Date.now() - parsed.pendingSyncCreatedAt > PENDING_SPIN_MAX_AGE_MS
 				) {
 					return null;

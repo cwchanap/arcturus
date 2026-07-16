@@ -1,6 +1,10 @@
 import type { BetResult, RouletteBet } from './types';
 import { BLACK_NUMBERS, PAYOUT_MULTIPLIERS, RED_NUMBERS } from './constants';
 
+// bet.target for 'column' is the visual row index on the betting layout,
+// not the traditional column number (see RouletteUIRenderer: target 0 = top
+// row = 3,6,…,36; target 1 = middle = 2,5,…,35; target 2 = bottom = 1,4,…,34).
+// Maps each row index to the n%3 remainder shared by all numbers in that row.
 export function columnIndexToMod3(index: number): number {
 	return [0, 2, 1][index];
 }

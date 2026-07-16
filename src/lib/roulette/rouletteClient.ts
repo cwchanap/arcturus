@@ -183,7 +183,18 @@ export function initRouletteClient(): void {
 			} finally {
 				done();
 			}
-		} catch {
+		} catch (err) {
+			// Server definitively rejected the recovery re-submit without
+			// committing (rate limit, MP escrow, validation). Preserve the
+			// bet layout so the player can re-spin the same layout, matching
+			// the main spin error path's isNonCommittedSpinRejection branch.
+			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
+				game.abortSpin();
+				showMessage(messageForSpinRejection(err));
+				ui.update(game.getState());
+				persistSession();
+				return;
+			}
 			// Recovery failed — re-fetch the authoritative balance so we
 			// don't abandon a potentially-committed spin's balance change,
 			// then discard without refunding (same rationale as the main

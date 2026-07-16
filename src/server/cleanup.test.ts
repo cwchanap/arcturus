@@ -41,7 +41,16 @@ describe('runRetentionCleanup', () => {
 		await runRetentionCleanup(binding);
 		expect(calls).toHaveLength(2);
 		expect(calls[0].sql).toBe('DELETE FROM roulette_round WHERE createdAt < ?');
-		expect(calls[1].sql).toBe('DELETE FROM chip_sync_receipt WHERE createdAt < ?');
+		expect(calls[1].sql).toBe(
+			'DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType != ?',
+		);
+	});
+
+	test('excludes poker_mp receipts from the chip_sync_receipt delete', async () => {
+		const { binding, calls } = createMockDbBinding();
+		await runRetentionCleanup(binding);
+		const receiptCall = calls[1];
+		expect(receiptCall.args[1]).toBe('poker_mp');
 	});
 
 	test('uses a retention cutoff of 30 days in seconds', async () => {

@@ -2684,7 +2684,7 @@ describe('PokerGame pending sync TTL', () => {
 		expect(game.pendingChipSyncs).toHaveLength(0);
 	});
 
-	test('migrates pending syncs without a createdAt timestamp (pre-TTL snapshots)', () => {
+	test('drops pending syncs without a createdAt timestamp (pre-TTL snapshots)', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
@@ -2696,9 +2696,11 @@ describe('PokerGame pending sync TTL', () => {
 		};
 
 		// No createdAt field — simulates a snapshot from before the TTL fix.
-		// A missing timestamp does not prove the server committed, so the
-		// entry is migrated with createdAt = now and given a fresh TTL
-		// window rather than dropped.
+		// A missing timestamp gives no bound on how long the entry sat in
+		// localStorage; if the server already committed it more than
+		// RETENTION_DAYS ago the idempotency receipt is gone, so replaying
+		// would double-apply the delta. Legacy entries are dropped rather
+		// than replayed.
 		const legacyEntry = {
 			syncId: 'legacy-sync-id',
 			previousBalance: 500,
@@ -2730,9 +2732,7 @@ describe('PokerGame pending sync TTL', () => {
 			pendingChipSyncs: Array<Record<string, unknown>>;
 		};
 
-		expect(game.pendingChipSyncs).toHaveLength(1);
-		expect(game.pendingChipSyncs[0].syncId).toBe('legacy-sync-id');
-		expect(typeof game.pendingChipSyncs[0].createdAt).toBe('number');
+		expect(game.pendingChipSyncs).toHaveLength(0);
 	});
 
 	test('loads fresh pending syncs within the TTL', () => {

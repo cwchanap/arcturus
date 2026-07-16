@@ -507,5 +507,73 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game2.getState().phase).toBe('spinning');
 			expect(game2.getPendingSyncId()).toBe('roundtrip-sync-id');
 		});
+
+		it('setPendingSyncId records pendingSyncCreatedAt', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			const before = Date.now();
+			game.setPendingSyncId('sync-with-timestamp');
+			const after = Date.now();
+			expect(game.getState().pendingSyncCreatedAt).toBeGreaterThanOrEqual(before);
+			expect(game.getState().pendingSyncCreatedAt).toBeLessThanOrEqual(after);
+		});
+
+		it('preserves pendingSyncCreatedAt when restoring spinning phase', () => {
+			const game = newGame(1000);
+			const createdAt = Date.now() - 1000;
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 925,
+					activeBets: [{ id: 'b1', type: 'red' as const, amount: 50 }],
+					pendingSyncId: 'abc-123-def',
+					pendingSyncCreatedAt: createdAt,
+				}),
+			).toBe(true);
+			expect(game.getState().pendingSyncCreatedAt).toBe(createdAt);
+		});
+
+		it('drops pendingSyncCreatedAt when restoring non-spinning phase', () => {
+			const game = newGame(1000);
+			expect(
+				game.restoreState({
+					phase: 'settled',
+					chipBalance: 1000,
+					activeBets: [],
+					pendingSyncId: 'stale-id',
+					pendingSyncCreatedAt: Date.now(),
+				}),
+			).toBe(true);
+			expect(game.getState().pendingSyncCreatedAt).toBeUndefined();
+		});
+
+		it('drops invalid pendingSyncCreatedAt when restoring spinning phase', () => {
+			const game = newGame(1000);
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 950,
+					activeBets: [{ id: 'b1', type: 'red' as const, amount: 50 }],
+					pendingSyncId: 'valid-id',
+					pendingSyncCreatedAt: 'not-a-number',
+				}),
+			).toBe(true);
+			expect(game.getState().pendingSyncCreatedAt).toBeUndefined();
+		});
+
+		it('round-trips pendingSyncCreatedAt through JSON serialization', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			game.setPendingSyncId('roundtrip-ts-id');
+			const createdAt = game.getState().pendingSyncCreatedAt;
+			const snapshot = JSON.parse(JSON.stringify(game.getState()));
+
+			const game2 = newGame(0);
+			expect(game2.restoreState(snapshot)).toBe(true);
+			expect(game2.getState().phase).toBe('spinning');
+			expect(game2.getState().pendingSyncCreatedAt).toBe(createdAt);
+		});
 	});
 });

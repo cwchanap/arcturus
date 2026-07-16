@@ -1,6 +1,6 @@
 import { RouletteGame } from './RouletteGame';
 import { RouletteUIRenderer } from './RouletteUIRenderer';
-import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
+import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS, PENDING_SPIN_MAX_AGE_MS } from './constants';
 import type { BetType, RouletteBet, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
 import {
@@ -533,7 +533,7 @@ function generateLocalWinningNumber(): number {
 
 type SpinRecoveryInfo = { syncId: string; bets: RouletteBet[] };
 
-function restoreSession(
+export function restoreSession(
 	game: RouletteGame,
 	key: string,
 	balanceOverride?: number,
@@ -564,6 +564,19 @@ function restoreSession(
 					!parsed.pendingSyncId ||
 					!Array.isArray(parsed.activeBets) ||
 					parsed.activeBets.length === 0
+				) {
+					return null;
+				}
+				// Expire stale in-flight snapshots before re-submitting. If the
+				// server's roulette_round row for this syncId has already been
+				// deleted by retention cleanup (see src/server/cleanup.ts),
+				// re-submitting would process the spin as fresh and double-deduct
+				// the bet. Dropping the snapshot here lets the server balance
+				// (which already reflects the committed result) drive the start.
+				if (
+					typeof parsed.pendingSyncCreatedAt !== 'number' ||
+					!Number.isFinite(parsed.pendingSyncCreatedAt) ||
+					Date.now() - parsed.pendingSyncCreatedAt > PENDING_SPIN_MAX_AGE_MS
 				) {
 					return null;
 				}

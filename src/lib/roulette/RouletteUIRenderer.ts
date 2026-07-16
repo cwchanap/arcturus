@@ -125,7 +125,9 @@ export class RouletteUIRenderer {
 			case 'dozen':
 				return `${['1st', '2nd', '3rd'][bet.target ?? 0]} 12`;
 			case 'column':
-				return `Column ${(bet.target ?? 0) + 1}`;
+				// target 0 = top row (3,6,…,36) = 3rd column;
+				// target 2 = bottom row (1,4,…,34) = 1st column.
+				return `Column ${3 - (bet.target ?? 0)}`;
 		}
 	}
 

@@ -46,6 +46,13 @@ const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
 const CHIP_SYNC_RETRY_DELAY_MS = 2000;
 const PENDING_SYNCS_STORAGE_KEY_PREFIX = 'arcturus_poker_pending_syncs';
 const MAX_DEAL_SYNC_RETRIES = 10;
+// Client-side TTL for persisted pending chip syncs. Must be shorter than the
+// server-side retention window (RETENTION_DAYS = 30 in src/server/cleanup.ts)
+// so that a stale snapshot is dropped before its idempotency receipt row is
+// deleted. Without this, a sync that committed server-side but whose response
+// was lost could be replayed after cleanup as a fresh update, double-applying
+// the delta.
+const PENDING_SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 type PendingChipSync = {
 	syncId: string;
@@ -53,6 +60,7 @@ type PendingChipSync = {
 	delta: number;
 	outcome?: ChipSyncOutcome;
 	biggestWinCandidate?: number;
+	createdAt: number;
 };
 
 type EarnedAchievement = {
@@ -370,6 +378,7 @@ export class PokerGame {
 			const parsed = JSON.parse(raw);
 			if (!Array.isArray(parsed) || parsed.length === 0) return;
 			const SYNC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+			const now = Date.now();
 			const restored: PendingChipSync[] = [];
 			for (const entry of parsed) {
 				if (
@@ -380,10 +389,22 @@ export class PokerGame {
 					typeof entry.delta === 'number' &&
 					Number.isInteger(entry.delta)
 				) {
+					// Drop entries without a createdAt timestamp (pre-TTL snapshots)
+					// or older than PENDING_SYNC_MAX_AGE_MS. A stale snapshot whose
+					// server-side idempotency receipt has been cleaned up would be
+					// replayed as a fresh update, double-applying the delta.
+					if (
+						typeof entry.createdAt !== 'number' ||
+						!Number.isFinite(entry.createdAt) ||
+						now - entry.createdAt > PENDING_SYNC_MAX_AGE_MS
+					) {
+						continue;
+					}
 					const restoredEntry: PendingChipSync = {
 						syncId: entry.syncId,
 						previousBalance: entry.previousBalance,
 						delta: entry.delta,
+						createdAt: entry.createdAt,
 					};
 					if (typeof entry.outcome === 'string' && VALID_CHIP_SYNC_OUTCOMES.has(entry.outcome)) {
 						restoredEntry.outcome = entry.outcome as ChipSyncOutcome;
@@ -400,6 +421,9 @@ export class PokerGame {
 			}
 			if (restored.length > 0) {
 				this.pendingChipSyncs = restored;
+			} else {
+				// All entries were stale/invalid — clear the orphaned storage.
+				localStorage.removeItem(this.pendingSyncsStorageKey);
 			}
 		} catch {
 			// Corrupted data — ignore
@@ -515,6 +539,7 @@ export class PokerGame {
 			syncId: this.createChipSyncId(),
 			previousBalance: this.getEffectiveServerBalance(),
 			delta,
+			createdAt: Date.now(),
 		};
 		if (outcome !== undefined) {
 			pendingSync.outcome = outcome;

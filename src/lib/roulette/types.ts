@@ -43,6 +43,11 @@ export interface RouletteGameState {
 	selectedChipAmount: number;
 	lastSpin: SpinResult | null;
 	roundHistory: SpinResult[];
+	// Set when phase === 'spinning' and a server spin request is in
+	// flight. Persisted so that a page reload during the spin can
+	// re-submit the same syncId to leverage the server's idempotency
+	// replay, recovering the committed result instead of discarding it.
+	pendingSyncId?: string;
 }
 
 export interface RouletteGameConfig {

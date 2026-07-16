@@ -443,5 +443,69 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game.getState().lastSpin).not.toBeNull();
 			expect(game.getState().lastSpin?.winningNumber).toBe(17);
 		});
+
+		it('preserves pendingSyncId when restoring spinning phase', () => {
+			const game = newGame(1000);
+			const bets = [
+				{ id: 'b1', type: 'red' as const, amount: 50 },
+				{ id: 'b2', type: 'straight' as const, amount: 25, target: 17 },
+			];
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 925,
+					activeBets: bets,
+					selectedChipAmount: 25,
+					lastSpin: null,
+					roundHistory: [],
+					pendingSyncId: 'abc-123-def',
+				}),
+			).toBe(true);
+			expect(game.getState().phase).toBe('spinning');
+			expect(game.getPendingSyncId()).toBe('abc-123-def');
+			expect(game.getState().activeBets).toHaveLength(2);
+		});
+
+		it('drops pendingSyncId when restoring non-spinning phase', () => {
+			const game = newGame(1000);
+			// A settled snapshot with a stale pendingSyncId (e.g. from an
+			// older buggy persistence) must not carry it into the restored
+			// state — applySettlement/newRound already clear it.
+			expect(
+				game.restoreState({
+					phase: 'settled',
+					chipBalance: 1000,
+					activeBets: [],
+					pendingSyncId: 'stale-id',
+				}),
+			).toBe(true);
+			expect(game.getPendingSyncId()).toBeUndefined();
+		});
+
+		it('drops invalid pendingSyncId when restoring spinning phase', () => {
+			const game = newGame(1000);
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 950,
+					activeBets: [{ id: 'b1', type: 'red' as const, amount: 50 }],
+					pendingSyncId: '',
+				}),
+			).toBe(true);
+			expect(game.getPendingSyncId()).toBeUndefined();
+		});
+
+		it('round-trips pendingSyncId through JSON serialization', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 50);
+			game.beginSpin();
+			game.setPendingSyncId('roundtrip-sync-id');
+			const snapshot = JSON.parse(JSON.stringify(game.getState()));
+
+			const game2 = newGame(0);
+			expect(game2.restoreState(snapshot)).toBe(true);
+			expect(game2.getState().phase).toBe('spinning');
+			expect(game2.getPendingSyncId()).toBe('roundtrip-sync-id');
+		});
 	});
 });

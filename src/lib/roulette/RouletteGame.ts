@@ -165,6 +165,18 @@ export class RouletteGame {
 		return this.state.selectedChipAmount;
 	}
 
+	getPendingSyncId(): string | undefined {
+		return this.state.pendingSyncId;
+	}
+
+	setPendingSyncId(syncId: string): void {
+		this.state.pendingSyncId = syncId;
+	}
+
+	private clearPendingSyncId(): void {
+		this.state.pendingSyncId = undefined;
+	}
+
 	private getExistingPositionAmount(type: BetType, target?: number): number {
 		const key = positionKey(type, target);
 		return this.state.activeBets
@@ -264,6 +276,7 @@ export class RouletteGame {
 		}
 		this.state.activeBets = [];
 		this.state.phase = 'betting';
+		this.clearPendingSyncId();
 	}
 
 	// Clear active bets WITHOUT refunding them into the balance.
@@ -274,6 +287,7 @@ export class RouletteGame {
 	discardActiveBets(): void {
 		this.state.activeBets = [];
 		this.state.phase = 'betting';
+		this.clearPendingSyncId();
 	}
 
 	beginSpin(): RouletteBet[] {
@@ -295,6 +309,7 @@ export class RouletteGame {
 		this.state.chipBalance = spinResult.newBalance;
 		this.state.phase = 'settled';
 		this.state.activeBets = [];
+		this.clearPendingSyncId();
 		this.state.lastSpin = spinResult;
 		this.state.roundHistory.unshift(spinResult);
 		if (this.state.roundHistory.length > MAX_ROUND_HISTORY) {
@@ -323,6 +338,7 @@ export class RouletteGame {
 		this.state.chipBalance += totalPayout;
 		this.state.phase = 'settled';
 		this.state.activeBets = [];
+		this.clearPendingSyncId();
 
 		const spinResult: SpinResult = {
 			winningNumber,
@@ -375,6 +391,14 @@ export class RouletteGame {
 						.map((r) => sanitizeSpinResult(r))
 						.filter((r): r is SpinResult => r !== null)
 				: [],
+			// Only restore pendingSyncId during the spinning phase — other
+			// phases have already cleared it via applySettlement/newRound/
+			// discardActiveBets, and a stale value in the snapshot should
+			// not survive into a non-spinning state.
+			pendingSyncId:
+				s.phase === 'spinning' && typeof s.pendingSyncId === 'string' && s.pendingSyncId.length > 0
+					? s.pendingSyncId
+					: undefined,
 		};
 		return true;
 	}

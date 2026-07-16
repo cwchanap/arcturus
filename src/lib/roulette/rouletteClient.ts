@@ -1,7 +1,7 @@
 import { RouletteGame } from './RouletteGame';
 import { RouletteUIRenderer } from './RouletteUIRenderer';
 import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
-import type { BetType, SpinResult } from './types';
+import type { BetType, RouletteBet, SpinResult } from './types';
 import { initAchievementToast } from '../achievement-toast';
 import {
 	isGuestModeValue,
@@ -72,7 +72,10 @@ export function initRouletteClient(): void {
 	// override the persisted balance after restore so the display always
 	// matches the server. The persisted phase/bets/lastSpin let the UI
 	// show the last round's result without an automatic server retry.
-	restoreSession(game, sessionKey, isGuestMode ? undefined : initialBalance);
+	// When a spin was in flight at reload time, restoreSession returns
+	// recovery info (syncId + bets) so we can re-submit via the server's
+	// idempotency replay below.
+	const spinRecovery = restoreSession(game, sessionKey, isGuestMode ? undefined : initialBalance);
 	// Sync the UI chip selection to the restored state value.
 	const restoredChip = game.getSelectedChipAmount();
 	if (CHIP_DENOMINATIONS.includes(restoredChip as (typeof CHIP_DENOMINATIONS)[number])) {
@@ -93,6 +96,16 @@ export function initRouletteClient(): void {
 		ui.showResult(restoredState.lastSpin);
 	}
 
+	// Re-submit an in-flight spin that was interrupted by a page reload.
+	// If the Worker already committed the round, the server's idempotency
+	// replay returns the stored result; if the original request was lost,
+	// the server processes it fresh. Either way the server's balance is
+	// authoritative. Fired asynchronously so the UI can paint the spinning
+	// state first, giving the user visual feedback during recovery.
+	if (spinRecovery) {
+		void recoverPendingSpin(spinRecovery.syncId, spinRecovery.bets);
+	}
+
 	function persistSession(): void {
 		// Guest bankroll is persisted separately for guest mode. For auth
 		// users, the balance is server-authoritative and not persisted here
@@ -110,6 +123,85 @@ export function initRouletteClient(): void {
 	function updateAndPersist(): void {
 		ui.update(game.getState());
 		persistSession();
+	}
+
+	// Re-submit a spin whose request was interrupted by a page reload.
+	// The persisted syncId lets the server deduplicate via idempotency:
+	// if the round already committed, the server replays the stored
+	// result; if the original request never arrived, it processes the
+	// round fresh. The server's newBalance is authoritative either way.
+	async function recoverPendingSpin(syncId: string, bets: RouletteBet[]): Promise<void> {
+		const totalBet = bets.reduce((s, b) => s + b.amount, 0);
+		try {
+			const { response, done } = await fetchSpin(syncId, bets, totalBet);
+			try {
+				if (!response.ok) {
+					const err = (await response.json().catch(() => ({}))) as { error?: string };
+					throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
+				}
+				const data = (await response.json()) as {
+					winningNumber: number;
+					netDelta: number;
+					results: SpinResult['results'];
+					newBalance: number;
+					newAchievements?: Array<{ id: string; name: string; icon: string }>;
+				};
+				const spinResult: SpinResult = {
+					winningNumber: data.winningNumber,
+					bets,
+					totalBet,
+					totalPayout: data.netDelta + totalBet,
+					netDelta: data.netDelta,
+					results: data.results,
+					timestamp: Date.now(),
+					syncId,
+					newBalance: data.newBalance,
+				};
+				game.applySettlement(spinResult);
+				if (data.newAchievements?.length) {
+					window.dispatchEvent(
+						new CustomEvent('achievement-earned', {
+							detail: { achievements: data.newAchievements },
+						}),
+					);
+				}
+				persistSession();
+				ui.animateWheel(spinResult.winningNumber);
+				pendingResultTimer = setTimeout(() => {
+					pendingResultTimer = null;
+					ui.showResult(spinResult);
+					ui.update(game.getState());
+				}, SPIN_ANIMATION_MS);
+			} finally {
+				done();
+			}
+		} catch {
+			// Recovery failed — re-fetch the authoritative balance so we
+			// don't abandon a potentially-committed spin's balance change,
+			// then discard without refunding (same rationale as the main
+			// spin error path).
+			let serverBalanceAdopted = false;
+			try {
+				const balResp = await fetch('/api/chips/balance');
+				if (balResp.ok) {
+					const balData = (await balResp.json()) as { balance?: number };
+					if (typeof balData.balance === 'number') {
+						game.setBalance(balData.balance);
+						serverBalanceAdopted = true;
+					}
+				}
+			} catch {
+				// ignore — fall through with whatever balance we have
+			}
+			game.discardActiveBets();
+			showMessage(
+				serverBalanceAdopted
+					? 'Spin result unclear — balance synced from server.'
+					: 'Spin result unclear — please refresh the page.',
+			);
+			ui.update(game.getState());
+			persistSession();
+		}
 	}
 
 	// Chip selection — sync both UI and game state
@@ -182,6 +274,11 @@ export function initRouletteClient(): void {
 				// Authenticated: server-side settlement
 				// beginSpin validates + locks the table (phase -> 'spinning')
 				const bets = game.beginSpin();
+				// Store the syncId in game state so it survives a page
+				// reload during the in-flight request — the persisted
+				// snapshot lets restoreSession re-submit via the server's
+				// idempotency replay to recover the committed result.
+				game.setPendingSyncId(syncId);
 				const totalBet = bets.reduce((s, b) => s + b.amount, 0);
 				ui.update(game.getState());
 				persistSession();
@@ -423,31 +520,65 @@ function generateLocalWinningNumber(): number {
 	return buf[0] % 37;
 }
 
-function restoreSession(game: RouletteGame, key: string, balanceOverride?: number): void {
+type SpinRecoveryInfo = { syncId: string; bets: RouletteBet[] };
+
+function restoreSession(
+	game: RouletteGame,
+	key: string,
+	balanceOverride?: number,
+): SpinRecoveryInfo | null {
 	try {
 		const raw = localStorage.getItem(key);
 		if (raw) {
 			const parsed = JSON.parse(raw);
-			if (!parsed || typeof parsed !== 'object') return;
+			if (!parsed || typeof parsed !== 'object') return null;
 			const phase = parsed.phase;
-			// An in-flight spin can't be replayed without a server call.
-			// Skip restore — the server-authoritative balance (for auth
-			// users) or the guest bankroll will be used as the starting
-			// point, and the user can start a new round.
-			if (phase === 'spinning') return;
+			if (phase !== 'betting' && phase !== 'spinning' && phase !== 'settled') return null;
+
+			// In-flight spin recovery (auth users only): restore the
+			// spinning state — including pendingSyncId and active bets —
+			// so the caller can re-submit via the server's idempotency
+			// replay. If the Worker committed the round before the reload,
+			// the replay returns the stored result; if the original
+			// request was lost, the server processes it fresh. Either way
+			// the server's newBalance is authoritative.
+			if (phase === 'spinning') {
+				// Guest mode has no server to recover from — the guest
+				// bankroll drives the starting balance.
+				if (balanceOverride === undefined) return null;
+				// Without a pendingSyncId or bets we can't re-submit —
+				// discard and let the server balance drive the start.
+				if (
+					typeof parsed.pendingSyncId !== 'string' ||
+					!parsed.pendingSyncId ||
+					!Array.isArray(parsed.activeBets) ||
+					parsed.activeBets.length === 0
+				) {
+					return null;
+				}
+				if (!game.restoreState(parsed)) return null;
+				game.setBalance(balanceOverride);
+				return {
+					syncId: parsed.pendingSyncId,
+					bets: game.getState().activeBets.map((b) => ({ ...b })),
+				};
+			}
+
 			// For auth users (balanceOverride provided), only restore the
 			// 'settled' phase. Restoring 'betting' with active bets would
 			// let the user refund bets that were never submitted to the
 			// server (the server balance wasn't deducted), inflating chips.
 			// 'settled' has no active bets and the balance is overridden
 			// with the server value, so it's safe.
-			if (balanceOverride !== undefined && phase !== 'settled') return;
+			if (balanceOverride !== undefined && phase !== 'settled') return null;
 			if (game.restoreState(parsed) && balanceOverride !== undefined) {
 				// Auth users: server-provided balance is authoritative.
 				game.setBalance(balanceOverride);
 			}
+			return null;
 		}
 	} catch {
 		// ignore corrupted session
 	}
+	return null;
 }

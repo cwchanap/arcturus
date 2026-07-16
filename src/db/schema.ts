@@ -189,6 +189,8 @@ export const rouletteRound = sqliteTable(
 		netDelta: integer('netDelta').notNull(),
 		previousBalance: integer('previousBalance').notNull(),
 		newBalance: integer('newBalance').notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL writers
+		// (spin endpoint) must bind Math.trunc(Date.now() / 1000).
 		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	},
 	(table) => ({

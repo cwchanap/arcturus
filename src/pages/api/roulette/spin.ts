@@ -11,6 +11,12 @@ import {
 	ROULETTE_MAX_LOSS,
 	ROULETTE_MAX_WIN,
 } from '../../../lib/roulette/constants';
+import {
+	SPIN_INSERT_RECEIPT_SQL,
+	SPIN_INSERT_ROUND_SQL,
+	SPIN_UPDATE_USER_SQL,
+	SPIN_UPSERT_STATS_SQL,
+} from '../../../lib/roulette/spin-batch-sql';
 import type { BetType, RouletteBet } from '../../../lib/roulette/types';
 import { type GameType } from '../../../lib/game-stats/game-stats';
 import { checkAndGrantAchievements } from '../../../lib/achievements/achievements';
@@ -100,413 +106,444 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 	} = overrides;
 
 	return (async ({ request, locals }) => {
-		if (!locals.user) {
-			return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
-				status: 401,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const userId = locals.user.id;
-		const now = Date.now();
-
-		let body: {
-			syncId?: unknown;
-			bets?: unknown;
-			totalBet?: unknown;
-		};
 		try {
-			body = await request.json();
+			return await handleSpinRequest(request, locals, {
+				createDbImpl,
+				checkAndGrantAchievementsImpl,
+				evaluateBetsImpl,
+				generateWinningNumberImpl,
+				lastUpdateByUserImpl,
+			});
+		} catch (error) {
+			// Catch-all so unexpected throws (DB binding gaps, programming
+			// errors) surface as a structured 500 instead of an unhandled
+			// Worker exception with an empty body.
+			console.error('[ROULETTE] Unhandled spin error:', error);
+			return new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), {
+				status: 500,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+	}) as APIRoute;
+}
+
+type SpinHandlerDeps = {
+	createDbImpl: typeof createDb;
+	checkAndGrantAchievementsImpl: typeof checkAndGrantAchievements;
+	evaluateBetsImpl: typeof evaluateBets;
+	generateWinningNumberImpl: () => number;
+	lastUpdateByUserImpl: Map<string, number>;
+};
+
+async function handleSpinRequest(
+	request: Request,
+	locals: App.Locals,
+	{
+		createDbImpl,
+		checkAndGrantAchievementsImpl,
+		evaluateBetsImpl,
+		generateWinningNumberImpl,
+		lastUpdateByUserImpl,
+	}: SpinHandlerDeps,
+): Promise<Response> {
+	if (!locals.user) {
+		return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
+			status: 401,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const userId = locals.user.id;
+	const now = Date.now();
+
+	let body: {
+		syncId?: unknown;
+		bets?: unknown;
+		totalBet?: unknown;
+	};
+	try {
+		body = await request.json();
+	} catch {
+		return new Response(JSON.stringify({ error: 'INVALID_JSON' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	if (!body || typeof body !== 'object' || Array.isArray(body)) {
+		return new Response(JSON.stringify({ error: 'INVALID_REQUEST_BODY' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const { syncId, bets: rawBets, totalBet: _rawTotalBet } = body;
+
+	if (typeof syncId !== 'string' || !SYNC_ID_RE.test(syncId)) {
+		return new Response(JSON.stringify({ error: 'INVALID_SYNC_ID' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	if (!Array.isArray(rawBets) || rawBets.length === 0) {
+		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	if (rawBets.length > MAX_BETS) {
+		return new Response(JSON.stringify({ error: 'TOO_MANY_BETS' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const bets = rawBets.filter(isValidBet);
+	if (bets.length !== rawBets.length) {
+		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const totalBet = bets.reduce((sum, b) => sum + b.amount, 0);
+	if (totalBet < MIN_BET || totalBet > MAX_TOTAL_BET) {
+		return new Response(JSON.stringify({ error: 'INVALID_TOTAL_BET' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const positionTotals = new Map<string, number>();
+	for (const bet of bets) {
+		const key = `${bet.type}:${bet.target ?? 'none'}`;
+		positionTotals.set(key, (positionTotals.get(key) ?? 0) + bet.amount);
+	}
+	for (const total of positionTotals.values()) {
+		if (total > MAX_BET_PER_POSITION) {
+			return new Response(JSON.stringify({ error: 'POSITION_LIMIT_EXCEEDED' }), {
+				status: 400,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+	}
+
+	const dbBinding = locals.runtime?.env?.DB;
+	if (!dbBinding) {
+		return new Response(JSON.stringify({ error: 'DATABASE_UNAVAILABLE' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const existing = await dbBinding
+		.prepare(
+			'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson, totalBet FROM roulette_round WHERE userId = ? AND syncId = ?',
+		)
+		.bind(userId, syncId)
+		.first();
+
+	if (existing) {
+		let storedBets: RouletteBet[];
+		try {
+			storedBets = JSON.parse(existing.betsJson as string) as RouletteBet[];
 		} catch {
-			return new Response(JSON.stringify({ error: 'INVALID_JSON' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		if (!body || typeof body !== 'object' || Array.isArray(body)) {
-			return new Response(JSON.stringify({ error: 'INVALID_REQUEST_BODY' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const { syncId, bets: rawBets, totalBet: _rawTotalBet } = body;
-
-		if (typeof syncId !== 'string' || !SYNC_ID_RE.test(syncId)) {
-			return new Response(JSON.stringify({ error: 'INVALID_SYNC_ID' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		if (!Array.isArray(rawBets) || rawBets.length === 0) {
-			return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		if (rawBets.length > MAX_BETS) {
-			return new Response(JSON.stringify({ error: 'TOO_MANY_BETS' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const bets = rawBets.filter(isValidBet);
-		if (bets.length !== rawBets.length) {
-			return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const totalBet = bets.reduce((sum, b) => sum + b.amount, 0);
-		if (totalBet < MIN_BET || totalBet > MAX_TOTAL_BET) {
-			return new Response(JSON.stringify({ error: 'INVALID_TOTAL_BET' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const positionTotals = new Map<string, number>();
-		for (const bet of bets) {
-			const key = `${bet.type}:${bet.target ?? 'none'}`;
-			positionTotals.set(key, (positionTotals.get(key) ?? 0) + bet.amount);
-		}
-		for (const total of positionTotals.values()) {
-			if (total > MAX_BET_PER_POSITION) {
-				return new Response(JSON.stringify({ error: 'POSITION_LIMIT_EXCEEDED' }), {
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-		}
-
-		const dbBinding = locals.runtime?.env?.DB;
-		if (!dbBinding) {
-			return new Response(JSON.stringify({ error: 'DATABASE_UNAVAILABLE' }), {
+			console.warn(
+				`[ROULETTE] Corrupted betsJson for user ${redactUserId(userId)} syncId ${syncId}`,
+			);
+			return new Response(JSON.stringify({ error: 'CORRUPTED_ROUND_DATA' }), {
 				status: 500,
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}
-
-		const existing = await dbBinding
-			.prepare(
-				'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson, totalBet FROM roulette_round WHERE userId = ? AND syncId = ?',
-			)
-			.bind(userId, syncId)
-			.first();
-
-		if (existing) {
-			let storedBets: RouletteBet[];
-			try {
-				storedBets = JSON.parse(existing.betsJson as string) as RouletteBet[];
-			} catch {
-				console.warn(
-					`[ROULETTE] Corrupted betsJson for user ${redactUserId(userId)} syncId ${syncId}`,
-				);
-				return new Response(JSON.stringify({ error: 'CORRUPTED_ROUND_DATA' }), {
-					status: 500,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-			const storedCanonical = canonicalizeBets(storedBets);
-			const requestCanonical = canonicalizeBets(bets);
-			if (storedCanonical !== requestCanonical || existing.totalBet !== totalBet) {
-				return new Response(JSON.stringify({ error: 'SYNC_ID_REUSE_MISMATCH' }), {
-					status: 409,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-			const receipt = await dbBinding
-				.prepare('SELECT achievementPayload FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
-				.bind(userId, syncId)
-				.first<{ achievementPayload: string | null }>();
-			let replayedAchievements: Array<{ id: string; name: string; icon: string }> | undefined;
-			if (receipt?.achievementPayload) {
-				try {
-					const parsed = JSON.parse(receipt.achievementPayload) as {
-						newAchievements?: Array<{ id: string; name: string; icon: string }>;
-					};
-					if (Array.isArray(parsed.newAchievements) && parsed.newAchievements.length > 0) {
-						replayedAchievements = parsed.newAchievements;
-					}
-				} catch {
-					// ignore corrupted payload
-				}
-			}
-			return new Response(
-				JSON.stringify({
-					winningNumber: existing.winningNumber,
-					newBalance: existing.newBalance,
-					previousBalance: existing.previousBalance,
-					netDelta: existing.netDelta,
-					results: evaluateBetsImpl(storedBets, existing.winningNumber as number),
-					syncId,
-					newAchievements: replayedAchievements,
-				}),
-				{ headers: { 'Content-Type': 'application/json' } },
-			);
-		}
-
-		// Rate-limit check — fail-fast before the user row DB read. Placed
-		// after the idempotency existence check so that replays of already-
-		// settled spins still return the cached result without being blocked.
-		const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
-		if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
-			const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
-			return new Response(
-				JSON.stringify({ error: 'RATE_LIMITED', message: `Please wait ${waitTime}s` }),
-				{
-					status: 429,
-					headers: { 'Content-Type': 'application/json', 'Retry-After': String(waitTime) },
-				},
-			);
-		}
-
-		const db = createDbImpl(dbBinding);
-		const [userRow] = await db
-			.select({ chipBalance: user.chipBalance, heldChips: user.heldChips })
-			.from(user)
-			.where(eq(user.id, userId))
-			.limit(1);
-
-		if (!userRow) {
-			return new Response(JSON.stringify({ error: 'USER_NOT_FOUND' }), {
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const heldChips = Math.trunc(userRow.heldChips ?? 0);
-		if (heldChips > 0) {
-			return new Response(JSON.stringify({ error: 'MP_ESCROW_ACTIVE' }), {
+		const storedCanonical = canonicalizeBets(storedBets);
+		const requestCanonical = canonicalizeBets(bets);
+		if (storedCanonical !== requestCanonical || existing.totalBet !== totalBet) {
+			return new Response(JSON.stringify({ error: 'SYNC_ID_REUSE_MISMATCH' }), {
 				status: 409,
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}
-
-		const rawChipBalance = userRow.chipBalance;
-		const previousBalance = Number.isFinite(rawChipBalance) ? Math.trunc(rawChipBalance) : 0;
-		// Use the raw (possibly fractional) stored value as the optimistic-lock
-		// match value when it differs from the truncated balance. If the stored
-		// balance is e.g. 1000.5, binding the truncated 1000 in the WHERE clause
-		// would never match, causing every spin to return CONCURRENT_MODIFICATION.
-		// The UPDATE still writes the integer newBalance, repairing the fraction.
-		const lockedBalance = rawChipBalance !== previousBalance ? rawChipBalance : previousBalance;
-		if (totalBet > previousBalance) {
-			return new Response(
-				JSON.stringify({ error: 'INSUFFICIENT_BALANCE', currentBalance: previousBalance }),
-				{ status: 400, headers: { 'Content-Type': 'application/json' } },
-			);
+		const receipt = await dbBinding
+			.prepare('SELECT achievementPayload FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
+			.bind(userId, syncId)
+			.first<{ achievementPayload: string | null }>();
+		let replayedAchievements: Array<{ id: string; name: string; icon: string }> | undefined;
+		if (receipt?.achievementPayload) {
+			try {
+				const parsed = JSON.parse(receipt.achievementPayload) as {
+					newAchievements?: Array<{ id: string; name: string; icon: string }>;
+				};
+				if (Array.isArray(parsed.newAchievements) && parsed.newAchievements.length > 0) {
+					replayedAchievements = parsed.newAchievements;
+				}
+			} catch {
+				// ignore corrupted payload
+			}
 		}
+		return new Response(
+			JSON.stringify({
+				winningNumber: existing.winningNumber,
+				newBalance: existing.newBalance,
+				previousBalance: existing.previousBalance,
+				netDelta: existing.netDelta,
+				results: evaluateBetsImpl(storedBets, existing.winningNumber as number),
+				syncId,
+				newAchievements: replayedAchievements,
+			}),
+			{ headers: { 'Content-Type': 'application/json' } },
+		);
+	}
 
-		const winningNumber = generateWinningNumberImpl();
-		const results = evaluateBetsImpl(bets, winningNumber);
-		const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
-		const netDelta = totalPayout - totalBet;
+	// Rate-limit check — fail-fast before the user row DB read. Placed
+	// after the idempotency existence check so that replays of already-
+	// settled spins still return the cached result without being blocked.
+	const lastUpdate = lastUpdateByUserImpl.get(userId) ?? 0;
+	if (now - lastUpdate < MIN_UPDATE_INTERVAL_MS) {
+		const waitTime = Math.ceil((MIN_UPDATE_INTERVAL_MS - (now - lastUpdate)) / 1000);
+		return new Response(
+			JSON.stringify({ error: 'RATE_LIMITED', message: `Please wait ${waitTime}s` }),
+			{
+				status: 429,
+				headers: { 'Content-Type': 'application/json', 'Retry-After': String(waitTime) },
+			},
+		);
+	}
 
-		if (netDelta > ROULETTE_MAX_WIN || (netDelta < 0 && Math.abs(netDelta) > ROULETTE_MAX_LOSS)) {
-			console.warn(
-				`[ROULETTE_AUDIT] User ${redactUserId(userId)} delta ${netDelta} exceeds limits`,
-			);
-			return new Response(JSON.stringify({ error: 'DELTA_EXCEEDS_LIMIT' }), {
-				status: 400,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
+	const db = createDbImpl(dbBinding);
+	const [userRow] = await db
+		.select({ chipBalance: user.chipBalance, heldChips: user.heldChips })
+		.from(user)
+		.where(eq(user.id, userId))
+		.limit(1);
 
-		const newBalance = previousBalance + netDelta;
+	if (!userRow) {
+		return new Response(JSON.stringify({ error: 'USER_NOT_FOUND' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
 
-		const nowSeconds = Math.trunc(now / 1000);
-		const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
-		const winsIncrement = netDelta > 0 ? 1 : 0;
-		const lossesIncrement = netDelta < 0 ? 1 : 0;
-		const biggestWinCandidate = netDelta > 0 ? netDelta : null;
-		const shouldRecordStats = isValidGameType('roulette');
+	const heldChips = Math.trunc(userRow.heldChips ?? 0);
+	if (heldChips > 0) {
+		return new Response(JSON.stringify({ error: 'MP_ESCROW_ACTIVE' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
 
-		const batchStatements: D1PreparedStatement[] = [
+	const rawChipBalance = userRow.chipBalance;
+	const previousBalance = Number.isFinite(rawChipBalance) ? Math.trunc(rawChipBalance) : 0;
+	// Use the raw (possibly fractional) stored value as the optimistic-lock
+	// match value when it differs from the truncated balance. If the stored
+	// balance is e.g. 1000.5, binding the truncated 1000 in the WHERE clause
+	// would never match, causing every spin to return CONCURRENT_MODIFICATION.
+	// The UPDATE still writes the integer newBalance, repairing the fraction.
+	const lockedBalance = rawChipBalance !== previousBalance ? rawChipBalance : previousBalance;
+	if (totalBet > previousBalance) {
+		return new Response(
+			JSON.stringify({ error: 'INSUFFICIENT_BALANCE', currentBalance: previousBalance }),
+			{ status: 400, headers: { 'Content-Type': 'application/json' } },
+		);
+	}
+
+	const winningNumber = generateWinningNumberImpl();
+	const results = evaluateBetsImpl(bets, winningNumber);
+	const totalPayout = results.reduce((sum, r) => sum + r.payout, 0);
+	const netDelta = totalPayout - totalBet;
+
+	if (netDelta > ROULETTE_MAX_WIN || (netDelta < 0 && Math.abs(netDelta) > ROULETTE_MAX_LOSS)) {
+		console.warn(`[ROULETTE_AUDIT] User ${redactUserId(userId)} delta ${netDelta} exceeds limits`);
+		return new Response(JSON.stringify({ error: 'DELTA_EXCEEDS_LIMIT' }), {
+			status: 400,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	const newBalance = previousBalance + netDelta;
+
+	const nowSeconds = Math.trunc(now / 1000);
+	const outcome = netDelta > 0 ? 'win' : netDelta < 0 ? 'loss' : 'push';
+	const winsIncrement = netDelta > 0 ? 1 : 0;
+	const lossesIncrement = netDelta < 0 ? 1 : 0;
+	const biggestWinCandidate = netDelta > 0 ? netDelta : null;
+	const shouldRecordStats = isValidGameType('roulette');
+
+	// nowSeconds is unix epoch seconds — matches Drizzle integer({ mode: 'timestamp' })
+	// storage for user.updatedAt / roulette_round.createdAt / chip_sync_receipt.createdAt.
+	const batchStatements: D1PreparedStatement[] = [
+		dbBinding.prepare(SPIN_UPDATE_USER_SQL).bind(newBalance, nowSeconds, userId, lockedBalance),
+		dbBinding
+			.prepare(SPIN_INSERT_ROUND_SQL)
+			.bind(
+				syncId,
+				userId,
+				winningNumber,
+				JSON.stringify(bets),
+				totalBet,
+				totalPayout,
+				netDelta,
+				previousBalance,
+				newBalance,
+				nowSeconds,
+			),
+		dbBinding
+			.prepare(SPIN_INSERT_RECEIPT_SQL)
+			.bind(
+				userId,
+				syncId,
+				'roulette',
+				previousBalance,
+				newBalance,
+				netDelta,
+				netDelta,
+				outcome,
+				1,
+				winsIncrement,
+				lossesIncrement,
+				netDelta > 0 ? netDelta : 0,
+				newBalance,
+				newBalance,
+				userId,
+				null,
+				nowSeconds,
+			),
+	];
+
+	if (shouldRecordStats) {
+		batchStatements.push(
 			dbBinding
-				.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?')
-				.bind(newBalance, nowSeconds, userId, lockedBalance),
-			dbBinding
-				.prepare(
-					'INSERT INTO roulette_round (syncId, userId, winningNumber, betsJson, totalBet, totalPayout, netDelta, previousBalance, newBalance, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1',
-				)
+				.prepare(SPIN_UPSERT_STATS_SQL)
 				.bind(
-					syncId,
 					userId,
-					winningNumber,
-					JSON.stringify(bets),
-					totalBet,
-					totalPayout,
-					netDelta,
-					previousBalance,
-					newBalance,
-					nowSeconds,
-				),
-			dbBinding
-				.prepare(
-					'INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, achievementPayload, createdAt) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ?, ? WHERE changes() = 1',
-				)
-				.bind(
-					userId,
-					syncId,
 					'roulette',
-					previousBalance,
-					newBalance,
-					netDelta,
-					netDelta,
-					outcome,
-					1,
 					winsIncrement,
 					lossesIncrement,
-					netDelta > 0 ? netDelta : 0,
-					newBalance,
-					newBalance,
-					userId,
-					null,
+					1,
+					Math.max(biggestWinCandidate ?? 0, 0),
+					netDelta,
 					nowSeconds,
+					biggestWinCandidate,
+					biggestWinCandidate,
+					biggestWinCandidate,
+					biggestWinCandidate,
 				),
-		];
+		);
+	}
 
-		if (shouldRecordStats) {
-			batchStatements.push(
-				dbBinding
-					.prepare(
-						'INSERT INTO game_stats (userId, gameType, totalWins, totalLosses, handsPlayed, biggestWin, netProfit, updatedAt) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1 ON CONFLICT(userId, gameType) DO UPDATE SET totalWins = game_stats.totalWins + excluded.totalWins, totalLosses = game_stats.totalLosses + excluded.totalLosses, handsPlayed = game_stats.handsPlayed + excluded.handsPlayed, biggestWin = CASE WHEN ? IS NULL THEN game_stats.biggestWin WHEN ? > 0 AND ? > game_stats.biggestWin THEN ? ELSE game_stats.biggestWin END, netProfit = game_stats.netProfit + excluded.netProfit, updatedAt = excluded.updatedAt',
-					)
-					.bind(
-						userId,
-						'roulette',
-						winsIncrement,
-						lossesIncrement,
-						1,
-						Math.max(biggestWinCandidate ?? 0, 0),
-						netDelta,
-						nowSeconds,
-						biggestWinCandidate,
-						biggestWinCandidate,
-						biggestWinCandidate,
-						biggestWinCandidate,
-					),
-			);
-		}
-
-		let batchResults: Awaited<ReturnType<typeof dbBinding.batch>>;
-		try {
-			batchResults = await dbBinding.batch(batchStatements);
-		} catch (batchError) {
-			// A concurrent request with the same syncId may have committed
-			// between our existence check and the batch, causing a PRIMARY KEY
-			// violation on roulette_round. D1 batch is atomic so this rolls
-			// back cleanly. Return 409 so the client retries via idempotency
-			// and picks up the stored result.
-			console.warn(
-				`[ROULETTE] Batch failed for user ${redactUserId(userId)} syncId ${syncId}:`,
-				batchError,
-			);
-			const errMsg = batchError instanceof Error ? batchError.message : String(batchError);
-			// Only the expected optimistic-lock race (PRIMARY KEY / UNIQUE
-			// constraint violation from a concurrent same-syncId insert) is a
-			// retriable 409. Schema, service, or other unexpected failures are
-			// server errors — reporting them as 409 would mask the real cause
-			// and the client would retry an idempotent conflict that doesn't
-			// exist.
-			const isConstraintViolation =
-				errMsg.includes('UNIQUE constraint failed') || errMsg.includes('PRIMARY KEY');
-			if (isConstraintViolation) {
-				return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
-					status: 409,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-			return new Response(JSON.stringify({ error: 'BATCH_FAILED' }), {
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-
-		const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
-		if ((updateResult?.meta?.changes ?? 0) === 0) {
+	let batchResults: Awaited<ReturnType<typeof dbBinding.batch>>;
+	try {
+		batchResults = await dbBinding.batch(batchStatements);
+	} catch (batchError) {
+		// A concurrent request with the same syncId may have committed
+		// between our existence check and the batch, causing a PRIMARY KEY
+		// violation on roulette_round. D1 batch is atomic so this rolls
+		// back cleanly. Return 409 so the client retries via idempotency
+		// and picks up the stored result.
+		console.warn(
+			`[ROULETTE] Batch failed for user ${redactUserId(userId)} syncId ${syncId}:`,
+			batchError,
+		);
+		const errMsg = batchError instanceof Error ? batchError.message : String(batchError);
+		// Only the expected optimistic-lock race (PRIMARY KEY / UNIQUE
+		// constraint violation from a concurrent same-syncId insert) is a
+		// retriable 409. Schema, service, or other unexpected failures are
+		// server errors — reporting them as 409 would mask the real cause
+		// and the client would retry an idempotent conflict that doesn't
+		// exist.
+		const isConstraintViolation =
+			errMsg.includes('UNIQUE constraint failed') || errMsg.includes('PRIMARY KEY');
+		if (isConstraintViolation) {
 			return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
 				status: 409,
 				headers: { 'Content-Type': 'application/json' },
 			});
 		}
+		return new Response(JSON.stringify({ error: 'BATCH_FAILED' }), {
+			status: 500,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
 
-		lastUpdateByUserImpl.set(userId, now);
+	const updateResult = batchResults[0] as { meta?: { changes?: number } } | null;
+	if ((updateResult?.meta?.changes ?? 0) === 0) {
+		return new Response(JSON.stringify({ error: 'CONCURRENT_MODIFICATION' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
+	lastUpdateByUserImpl.set(userId, now);
+	if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
+		// Evict stale entries (older than the rate-limit window) instead
+		// of clearing the entire map, so active rate limits survive the
+		// cleanup and users can't bypass the throttle en masse.
+		const cutoff = now - MIN_UPDATE_INTERVAL_MS;
+		for (const [u, t] of lastUpdateByUserImpl) {
+			if (t < cutoff) lastUpdateByUserImpl.delete(u);
+		}
+		// If all entries are still fresh (sustained unique-user traffic),
+		// evict the oldest entries by timestamp to enforce a hard cap on
+		// isolate memory regardless of traffic patterns.
 		if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
-			// Evict stale entries (older than the rate-limit window) instead
-			// of clearing the entire map, so active rate limits survive the
-			// cleanup and users can't bypass the throttle en masse.
-			const cutoff = now - MIN_UPDATE_INTERVAL_MS;
-			for (const [u, t] of lastUpdateByUserImpl) {
-				if (t < cutoff) lastUpdateByUserImpl.delete(u);
-			}
-			// If all entries are still fresh (sustained unique-user traffic),
-			// evict the oldest entries by timestamp to enforce a hard cap on
-			// isolate memory regardless of traffic patterns.
-			if (lastUpdateByUserImpl.size > MAX_RATE_LIMIT_MAP_SIZE) {
-				const sorted = [...lastUpdateByUserImpl.entries()].sort((a, b) => a[1] - b[1]);
-				const toRemove = sorted.length - MAX_RATE_LIMIT_MAP_SIZE;
-				for (let i = 0; i < toRemove; i++) {
-					lastUpdateByUserImpl.delete(sorted[i][0]);
-				}
+			const sorted = [...lastUpdateByUserImpl.entries()].sort((a, b) => a[1] - b[1]);
+			const toRemove = sorted.length - MAX_RATE_LIMIT_MAP_SIZE;
+			for (let i = 0; i < toRemove; i++) {
+				lastUpdateByUserImpl.delete(sorted[i][0]);
 			}
 		}
+	}
 
-		// Retention cleanup for roulette_round and chip_sync_receipt is now
-		// handled by the Cron Trigger scheduled() handler in src/worker.ts.
-		// See wrangler.toml [triggers] crons and src/server/cleanup.ts.
+	// Retention cleanup for roulette_round and chip_sync_receipt is now
+	// handled by the Cron Trigger scheduled() handler in src/worker.ts.
+	// See wrangler.toml [triggers] crons and src/server/cleanup.ts.
 
-		if (netDelta > 0) {
-			console.warn(
-				`[CHIP_AUDIT] User ${redactUserId(userId)} won ${netDelta} in roulette: ${previousBalance} -> ${newBalance}`,
-			);
-		}
-
-		let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
-		try {
-			if (shouldRecordStats) {
-				const earned = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
-					recentWinAmount: netDelta > 0 ? netDelta : undefined,
-					gameType: 'roulette' as GameType,
-				});
-				newAchievements = earned.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
-			}
-		} catch (statsError) {
-			console.error('[ROULETTE] Stats/achievement error:', statsError);
-		}
-
-		if (newAchievements.length > 0) {
-			try {
-				await dbBinding
-					.prepare(
-						'UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?',
-					)
-					.bind(JSON.stringify({ newAchievements, warnings: [] }), userId, syncId)
-					.run();
-			} catch (receiptPayloadError) {
-				console.error('[ROULETTE] Failed to persist achievement payload:', receiptPayloadError);
-			}
-		}
-
-		return new Response(
-			JSON.stringify({
-				winningNumber,
-				newBalance,
-				previousBalance,
-				netDelta,
-				results,
-				syncId,
-				newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
-			}),
-			{ headers: { 'Content-Type': 'application/json' } },
+	if (netDelta > 0) {
+		console.warn(
+			`[CHIP_AUDIT] User ${redactUserId(userId)} won ${netDelta} in roulette: ${previousBalance} -> ${newBalance}`,
 		);
-	}) as APIRoute;
+	}
+
+	let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+	try {
+		if (shouldRecordStats) {
+			const earned = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
+				recentWinAmount: netDelta > 0 ? netDelta : undefined,
+				gameType: 'roulette' as GameType,
+			});
+			newAchievements = earned.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
+		}
+	} catch (statsError) {
+		console.error('[ROULETTE] Stats/achievement error:', statsError);
+	}
+
+	if (newAchievements.length > 0) {
+		try {
+			await dbBinding
+				.prepare(
+					'UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?',
+				)
+				.bind(JSON.stringify({ newAchievements, warnings: [] }), userId, syncId)
+				.run();
+		} catch (receiptPayloadError) {
+			console.error('[ROULETTE] Failed to persist achievement payload:', receiptPayloadError);
+		}
+	}
+
+	return new Response(
+		JSON.stringify({
+			winningNumber,
+			newBalance,
+			previousBalance,
+			netDelta,
+			results,
+			syncId,
+			newAchievements: newAchievements.length > 0 ? newAchievements : undefined,
+		}),
+		{ headers: { 'Content-Type': 'application/json' } },
+	);
 }
 
 export const POST: APIRoute = createPostHandler();

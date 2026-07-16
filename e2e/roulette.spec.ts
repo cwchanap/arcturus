@@ -116,6 +116,9 @@ test.describe('Roulette — Initial State', () => {
 	});
 
 	test('rules panel shows payout table', async ({ page }) => {
+		// Panel starts collapsed behind the #rules-toggle control.
+		await expect(page.locator('#rules-panel')).toBeHidden();
+		await page.getByTestId('rules-toggle').click();
 		await expect(page.locator('#rules-panel')).toBeVisible();
 		await expect(page.locator('#rules-panel')).toContainText('35:1');
 		await expect(page.locator('#rules-panel')).toContainText('2:1');

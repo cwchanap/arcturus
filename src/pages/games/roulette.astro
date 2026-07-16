@@ -332,10 +332,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							{
 								CHIP_DENOMINATIONS.map((amount, i) => (
 									<button
-										class={`chip-select hover:scale-110 transition-transform${i === 0 ? ' selected' : ''}`}
+										class={`chip-select hover:scale-110 transition-transform${amount === 5 ? ' selected' : ''}`}
 										data-amount={amount}
 										data-testid={`chip-${amount}`}
-										aria-pressed={i === 0 ? 'true' : 'false'}
+										aria-pressed={amount === 5 ? 'true' : 'false'}
 									>
 										<PokerChip value={amount} color={chipColors[i]} />
 									</button>
@@ -408,40 +408,49 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 				</div>
 
 				<!-- Rules / Payouts -->
-				<div
-					id="rules-panel"
-					class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]"
-				>
-					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Payouts
-					</h3>
-					<div class="space-y-1 text-xs">
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Straight (single)</span>
-							<span class="text-[var(--deco-muted)]">35:1</span>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+					<button
+						id="rules-toggle"
+						type="button"
+						data-testid="rules-toggle"
+						aria-expanded="false"
+						aria-controls="rules-panel"
+						class="flex w-full items-center justify-between text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider"
+					>
+						<span>Payouts</span>
+						<span id="rules-toggle-icon" aria-hidden="true">▸</span>
+					</button>
+					<div id="rules-panel" hidden class="mt-3">
+						<div class="space-y-1 text-xs">
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">Straight (single)</span>
+								<span class="text-[var(--deco-muted)]">35:1</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">Red / Black</span>
+								<span class="text-[var(--deco-muted)]">1:1</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">Odd / Even</span>
+								<span class="text-[var(--deco-muted)]">1:1</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">1-18 / 19-36</span>
+								<span class="text-[var(--deco-muted)]">1:1</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">Dozens</span>
+								<span class="text-[var(--deco-muted)]">2:1</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-[var(--deco-ivory-dim)]">Columns</span>
+								<span class="text-[var(--deco-muted)]">2:1</span>
+							</div>
 						</div>
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Red / Black</span>
-							<span class="text-[var(--deco-muted)]">1:1</span>
-						</div>
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Odd / Even</span>
-							<span class="text-[var(--deco-muted)]">1:1</span>
-						</div>
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">1-18 / 19-36</span>
-							<span class="text-[var(--deco-muted)]">1:1</span>
-						</div>
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Dozens</span>
-							<span class="text-[var(--deco-muted)]">2:1</span>
-						</div>
-						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Columns</span>
-							<span class="text-[var(--deco-muted)]">2:1</span>
-						</div>
+						<p class="text-[var(--deco-muted)] text-xs mt-3">
+							Single-zero wheel · house edge 2.7%.
+						</p>
 					</div>
-					<p class="text-[var(--deco-muted)] text-xs mt-3">Single-zero wheel · house edge 2.7%.</p>
 				</div>
 			</div>
 			<!-- /sidebar -->

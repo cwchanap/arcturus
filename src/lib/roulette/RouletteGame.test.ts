@@ -280,8 +280,8 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 		});
 
 		it('does not inflate balance when caller adopts server balance first (C1 regression)', () => {
-			// Repro: balance 1000 -> bet 500 -> spin fails (429) -> server
-			// balance re-fetched as 999 (server never settled) -> must NOT
+			// Repro: balance 1000 -> bet 500 -> spin fails with uncertain
+			// outcome -> server balance re-fetched as 999 -> must NOT
 			// refund the 500 on top of the adopted 999.
 			const game = newGame(1000);
 			game.placeBet('red', 500);
@@ -294,6 +294,34 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game.getBalance()).toBe(999);
 			expect(game.getState().activeBets).toHaveLength(0);
 			expect(game.getState().phase).toBe('betting');
+		});
+	});
+
+	describe('abortSpin', () => {
+		it('returns to betting with bets preserved for re-spin (429 / escrow path)', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 500);
+			expect(game.getBalance()).toBe(500);
+			game.beginSpin();
+			game.setPendingSyncId('rate-limited-sync');
+			expect(game.getState().phase).toBe('spinning');
+			expect(game.getPendingSyncId()).toBe('rate-limited-sync');
+
+			game.abortSpin();
+
+			expect(game.getState().phase).toBe('betting');
+			expect(game.getState().activeBets).toHaveLength(1);
+			expect(game.getState().activeBets[0].amount).toBe(500);
+			expect(game.getBalance()).toBe(500);
+			expect(game.getPendingSyncId()).toBeUndefined();
+		});
+
+		it('is a no-op outside spinning phase', () => {
+			const game = newGame(1000);
+			game.placeBet('red', 100);
+			game.abortSpin();
+			expect(game.getState().phase).toBe('betting');
+			expect(game.getState().activeBets).toHaveLength(1);
 		});
 	});
 

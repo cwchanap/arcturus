@@ -22,9 +22,9 @@ const SPIN_FETCH_TIMEOUT_MS = 15000;
 // than a spin, but we keep the same ceiling for consistency.
 const BALANCE_FETCH_TIMEOUT_MS = 15000;
 
-// Preserves the HTTP status from a non-ok spin response so the retry
-// logic can decide retriability by status code (409, 5xx) rather than
-// fragile message-prefix matching.
+// Preserves the HTTP status (+ error code) from a non-ok spin response so
+// retry logic can decide retriability by status/code rather than fragile
+// message-prefix matching.
 class SpinHttpError extends Error {
 	readonly status: number;
 	constructor(status: number, error: string) {
@@ -35,9 +35,10 @@ class SpinHttpError extends Error {
 }
 
 // A spin attempt is retriable when the server may have committed the
-// round but we didn't receive the result. 409 CONCURRENT_MODIFICATION
-// means a concurrent same-syncId request committed — retrying with the
-// same syncId returns the stored result via idempotency. 5xx means the
+// round but we didn't receive the result. Only 409 CONCURRENT_MODIFICATION
+// is retriable among 409s — retrying with the same syncId returns the
+// stored result via idempotency. Other 409s (MP_ESCROW_ACTIVE,
+// SYNC_ID_REUSE_MISMATCH) can never succeed on retry. 5xx means the
 // server errored mid-processing — retrying is safe for the same reason.
 // TypeError means the network failed before a response arrived.
 // AbortError means the fetch timed out (fetchWithTimeout) — the server
@@ -45,8 +46,40 @@ class SpinHttpError extends Error {
 function isRetriableSpinError(err: unknown): boolean {
 	if (err instanceof TypeError) return true;
 	if (err instanceof DOMException && err.name === 'AbortError') return true;
-	if (err instanceof SpinHttpError) return err.status === 409 || err.status >= 500;
+	if (err instanceof SpinHttpError) {
+		if (err.status >= 500) return true;
+		if (err.status === 409) return err.message === 'CONCURRENT_MODIFICATION';
+		return false;
+	}
 	return false;
+}
+
+// Definitive client rejections: the server did not commit the spin.
+// Restore betting with bets intact instead of discarding or retrying.
+function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError {
+	if (!(err instanceof SpinHttpError)) return false;
+	if (err.status === 429) return true;
+	if (err.status === 400 || err.status === 401 || err.status === 403) return true;
+	// Non-retriable 409s: escrow lock, syncId reuse with different bets.
+	if (err.status === 409 && err.message !== 'CONCURRENT_MODIFICATION') return true;
+	return false;
+}
+
+function messageForSpinRejection(err: SpinHttpError): string {
+	switch (err.message) {
+		case 'MP_ESCROW_ACTIVE':
+			return 'Chips locked in multiplayer poker — finish or leave the table first.';
+		case 'RATE_LIMITED':
+			return 'Please wait a moment before spinning again.';
+		case 'INSUFFICIENT_BALANCE':
+			return 'Insufficient chips for this spin.';
+		case 'SYNC_ID_REUSE_MISMATCH':
+			return 'Spin conflict — adjust bets and try again.';
+		default:
+			return err.message.startsWith('HTTP ')
+				? 'Spin rejected — please try again.'
+				: `Spin rejected: ${err.message}`;
+	}
 }
 
 export function initRouletteClient(): void {
@@ -312,6 +345,12 @@ export function initRouletteClient(): void {
 					};
 
 					game.applySettlement(spinResult);
+					// Mirror the guest path: refresh the UI immediately so the
+					// table reflects the 'settled' phase, updated balance, and
+					// cleared active bets during the 4s wheel animation, rather
+					// than showing the stale 'spinning' state with the pre-spin
+					// balance and bets.
+					ui.update(game.getState());
 
 					if (data.newAchievements?.length) {
 						window.dispatchEvent(
@@ -347,6 +386,16 @@ export function initRouletteClient(): void {
 			}, SPIN_ANIMATION_MS);
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
+			// Server definitively rejected the spin without committing (rate
+			// limit, MP escrow, validation). Do not retry and do not discard
+			// bets — restore betting so the player can re-spin the same layout.
+			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
+				game.abortSpin();
+				showMessage(messageForSpinRejection(err));
+				ui.update(game.getState());
+				persistSession();
+				return;
+			}
 			// If the server may have processed the spin (network error, 409
 			// concurrent modification, 5xx, or a 2xx with an unparseable
 			// body), retry the same syncId once to leverage endpoint
@@ -402,6 +451,24 @@ export function initRouletteClient(): void {
 							}, SPIN_ANIMATION_MS);
 							return;
 						}
+						// Retry got a definitive rejection (e.g. MP escrow after
+						// a retriable first error). Abort with bets preserved.
+						if (!retryResponse.ok) {
+							const retryBody = (await retryResponse.json().catch(() => ({}))) as {
+								error?: string;
+							};
+							const retryErr = new SpinHttpError(
+								retryResponse.status,
+								retryBody.error ?? `HTTP ${retryResponse.status}`,
+							);
+							if (isNonCommittedSpinRejection(retryErr)) {
+								game.abortSpin();
+								showMessage(messageForSpinRejection(retryErr));
+								ui.update(game.getState());
+								persistSession();
+								return;
+							}
+						}
 					} finally {
 						retryDone();
 					}
@@ -454,6 +521,20 @@ export function initRouletteClient(): void {
 		game.newRound();
 		ui.clearResult();
 		updateAndPersist();
+	});
+
+	// Collapsible rules/payouts panel. Toggles the #rules-panel
+	// visibility and mirrors the expanded state onto aria-expanded
+	// + the indicator icon for screen-reader and visual feedback.
+	const rulesToggle = document.getElementById('rules-toggle');
+	const rulesPanel = document.getElementById('rules-panel');
+	const rulesToggleIcon = document.getElementById('rules-toggle-icon');
+	rulesToggle?.addEventListener('click', () => {
+		if (!rulesPanel) return;
+		const expanded = rulesToggle.getAttribute('aria-expanded') === 'true';
+		rulesToggle.setAttribute('aria-expanded', String(!expanded));
+		rulesPanel.hidden = expanded;
+		if (rulesToggleIcon) rulesToggleIcon.textContent = expanded ? '▸' : '▾';
 	});
 
 	// Achievement toast

@@ -84,6 +84,7 @@ function createMockDbBinding({
 	batchError?: Error | null;
 } = {}) {
 	let currentChipBalance = chipBalance;
+	const currentHeldChips = heldChips;
 	const rounds = new Map<string, MockRound>();
 	const receipts = new Map<string, MockReceipt>();
 	if (existingRound) {
@@ -152,7 +153,11 @@ function createMockDbBinding({
 						string,
 						number,
 					];
-					if (updateChanges > 0 && currentChipBalance === matchedBalanceValue) {
+					if (
+						updateChanges > 0 &&
+						currentChipBalance === matchedBalanceValue &&
+						currentHeldChips === 0
+					) {
 						currentChipBalance = nextBalance;
 						previousChanges = 1;
 						results.push({ meta: { changes: 1 } });
@@ -238,6 +243,7 @@ function createMockDbBinding({
 		binding: binding as unknown as D1Database,
 		db,
 		getCurrentChipBalance: () => currentChipBalance,
+		getCurrentHeldChips: () => currentHeldChips,
 		rounds,
 		receipts,
 	};
@@ -281,6 +287,7 @@ function createHandler(
 		existingRound?: MockRound | null;
 		existingReceipt?: MockReceipt | null;
 		checkAndGrantAchievements?: typeof checkAndGrantAchievements;
+		evaluateBets?: typeof evaluateBets;
 		batchError?: Error | null;
 	} = {},
 ) {
@@ -304,7 +311,7 @@ function createHandler(
 	const handler = createPostHandler({
 		createDb: () => mock.db,
 		checkAndGrantAchievements: options.checkAndGrantAchievements ?? mockCheckAndGrantAchievements,
-		evaluateBets,
+		evaluateBets: options.evaluateBets ?? evaluateBets,
 		generateWinningNumber: () => winningNumber,
 		lastUpdateByUser: options.lastUpdateByUser ?? new Map(),
 	});
@@ -319,6 +326,7 @@ describe('roulette spin API', () => {
 		expect(isSpinCascadeGatedSql(SPIN_INSERT_RECEIPT_SQL)).toBe(true);
 		expect(isSpinCascadeGatedSql(SPIN_UPSERT_STATS_SQL)).toBe(true);
 		expect(SPIN_UPDATE_USER_SQL).toContain('chipBalance = ?');
+		expect(SPIN_UPDATE_USER_SQL).toContain('heldChips = 0');
 	});
 
 	test('rejects unauthenticated requests', async () => {
@@ -463,6 +471,48 @@ describe('roulette spin API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(400);
 		expect(body.error).toBe('TOO_MANY_BETS');
+	});
+
+	test('rejects outside bet with a target (red + target)', async () => {
+		const { handler } = createHandler();
+		const bets = [{ id: 'bet-1', type: 'red', amount: 10, target: 5 }];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-outside-target' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_BETS');
+	});
+
+	test('rejects when net delta exceeds ROULETTE_MAX_WIN backstop', async () => {
+		// Simulate a logic bug / tampering where evaluateBets returns an
+		// impossibly large payout. The DELTA_EXCEEDS_LIMIT backstop must
+		// reject the spin before it reaches the batch.
+		const mockEvaluateBets: typeof evaluateBets = (_bets, _winningNumber) => {
+			const bet = _bets[0];
+			return [{ bet, won: true, payout: 999_999 }];
+		};
+		const { handler, mock } = createHandler({
+			chipBalance: 1_000_000,
+			evaluateBets: mockEvaluateBets,
+		});
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-delta-win' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
 	});
 
 	test('returns 500 on corrupted betsJson during replay', async () => {
@@ -782,7 +832,7 @@ describe('roulette spin API', () => {
 		expect(body.newAchievements[0].id).toBe('rising_star');
 	});
 
-	test('replay with null achievement payload returns undefined achievements', async () => {
+	test('replay with null achievement payload re-grants achievements and persists result', async () => {
 		const existingReceipt: MockReceipt = {
 			userId: 'user-replay-null',
 			syncId: 'replay-null-sync',
@@ -812,6 +862,57 @@ describe('roulette spin API', () => {
 			request,
 			locals: createLocals({
 				user: { id: 'user-replay-null' },
+				dbBinding: mock.binding,
+			}),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		// Achievement payload was null → re-ran checkAndGrantAchievements
+		// (idempotent) and returned the re-granted achievements.
+		expect(body.newAchievements).toBeDefined();
+		expect(body.newAchievements).toHaveLength(1);
+		expect(body.newAchievements[0].id).toBe('rising_star');
+		// Persisted to the receipt
+		const receipt = mock.receipts.get('user-replay-null:replay-null-sync');
+		expect(receipt).toBeDefined();
+		expect(receipt!.achievementPayload).not.toBeNull();
+		const payload = JSON.parse(receipt!.achievementPayload!);
+		expect(payload.newAchievements).toHaveLength(1);
+		expect(payload.newAchievements[0].id).toBe('rising_star');
+	});
+
+	test('replay with null achievement payload and no achievements earned returns undefined', async () => {
+		const noAchievements: typeof checkAndGrantAchievements = async () => [];
+		const existingReceipt: MockReceipt = {
+			userId: 'user-replay-null-empty',
+			syncId: 'replay-null-empty-sync',
+			achievementPayload: null,
+		};
+		const existingRound: MockRound = {
+			userId: 'user-replay-null-empty',
+			syncId: 'replay-null-empty-sync',
+			winningNumber: 0,
+			betsJson: JSON.stringify([makeBet('red', 50)]),
+			totalBet: 50,
+			totalPayout: 0,
+			netDelta: -50,
+			previousBalance: 1000,
+			newBalance: 950,
+		};
+		const { handler, mock } = createHandler({
+			existingRound,
+			existingReceipt,
+			checkAndGrantAchievements: noAchievements,
+		});
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-null-empty-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({
+				user: { id: 'user-replay-null-empty' },
 				dbBinding: mock.binding,
 			}),
 		} as any);

@@ -160,6 +160,22 @@ function matchesSelector(el: MockElement, selector: string): boolean {
 		const classes = selector.split('.').filter(Boolean);
 		return classes.every((c) => el.classList._tokens.has(c));
 	}
+	// Attribute selectors targeting data-* attributes:
+	//   [data-bet-type]            → presence (attribute exists)
+	//   [data-bet-type="straight"] → value equality
+	// Resolves from either the raw `attributes` map or the camelCased `dataset`.
+	const dataAttrMatch = selector.match(/^\[data-([a-z0-9-]+)(?:="([^"]*)")?\]$/i);
+	if (dataAttrMatch) {
+		const suffix = dataAttrMatch[1].toLowerCase();
+		const expected = dataAttrMatch[2];
+		const attrName = `data-${suffix}`;
+		const datasetKey = suffix.replace(/-([a-z0-9])/gi, (_, c) => c.toUpperCase());
+		const present = attrName in el.attributes || datasetKey in el.dataset;
+		if (!present) return false;
+		if (expected === undefined) return true;
+		const value = el.attributes[attrName] ?? el.dataset[datasetKey];
+		return value === expected;
+	}
 	return false;
 }
 

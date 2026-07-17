@@ -26,11 +26,16 @@ import { isValidGameType } from '../../../lib/game-stats/constants';
 const VALID_OUTSIDE_BET_TYPES = new Set<BetType>(['red', 'black', 'odd', 'even', 'low', 'high']);
 const VALID_TARGET_BET_TYPES = new Set<BetType>(['straight', 'dozen', 'column']);
 const SYNC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+// Bet IDs are client-generated UUIDs (36 chars) or short fallback IDs.
+// Cap length/character class so an authenticated caller cannot persist
+// arbitrarily large IDs in roulette_round.betsJson (up to MAX_BETS=64
+// per spin), which would bloat D1 rows and be re-parsed on every replay.
+const BET_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 
 export function isValidBet(b: unknown): b is RouletteBet {
 	if (!b || typeof b !== 'object') return false;
 	const bet = b as Record<string, unknown>;
-	if (typeof bet.id !== 'string' || !bet.id) return false;
+	if (typeof bet.id !== 'string' || !BET_ID_RE.test(bet.id)) return false;
 	if (typeof bet.type !== 'string') return false;
 	const type = bet.type as BetType;
 	if (!VALID_OUTSIDE_BET_TYPES.has(type) && !VALID_TARGET_BET_TYPES.has(type)) {

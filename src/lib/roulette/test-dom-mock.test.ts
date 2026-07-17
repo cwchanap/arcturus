@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
 	attachToBody,
 	installMockDocument,
@@ -14,13 +14,20 @@ import {
 } from './test-dom-mock';
 
 // Save originals so afterEach can restore them — prevents leakage into
-// subsequent test files (e.g. Miniflare integration tests).
+// subsequent test files (e.g. Miniflare integration tests). document/window/
+// localStorage are undefined in the Bun test runtime but the mock installs
+// replace globalThis.* and would leak without explicit restoration.
 const REAL_TIMERS = {
 	setTimeout: globalThis.setTimeout,
 	clearTimeout: globalThis.clearTimeout,
 };
 const REAL_FETCH = globalThis.fetch;
 const REAL_CRYPTO = globalThis.crypto;
+const REAL_DOCUMENT = (globalThis as { document?: unknown }).document;
+const REAL_WINDOW = (globalThis as { window?: unknown }).window;
+const REAL_LOCAL_STORAGE = (globalThis as { localStorage?: unknown }).localStorage;
+const REAL_CUSTOM_EVENT = (globalThis as { CustomEvent?: unknown }).CustomEvent;
+const REAL_HTML_BUTTON_ELEMENT = (globalThis as { HTMLButtonElement?: unknown }).HTMLButtonElement;
 
 afterEach(() => {
 	(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = REAL_TIMERS.setTimeout;
@@ -28,9 +35,19 @@ afterEach(() => {
 		REAL_TIMERS.clearTimeout;
 	(globalThis as unknown as { fetch: typeof fetch }).fetch = REAL_FETCH;
 	(globalThis as typeof globalThis & { crypto: typeof crypto }).crypto = REAL_CRYPTO;
+	(globalThis as { document?: unknown }).document = REAL_DOCUMENT;
+	(globalThis as { window?: unknown }).window = REAL_WINDOW;
+	(globalThis as { localStorage?: unknown }).localStorage = REAL_LOCAL_STORAGE;
+	(globalThis as { CustomEvent?: unknown }).CustomEvent = REAL_CUSTOM_EVENT;
+	(globalThis as { HTMLButtonElement?: unknown }).HTMLButtonElement = REAL_HTML_BUTTON_ELEMENT;
 });
 
-installMockDocument();
+// Re-install a fresh mock document before each test so the afterEach cleanup
+// (which restores globalThis.document to its real value) does not break tests
+// that rely on a DOM being present without calling installMockDocument itself.
+beforeEach(() => {
+	installMockDocument();
+});
 
 function body(): MockElement {
 	return (globalThis as unknown as { document: { body: MockElement } }).document.body;

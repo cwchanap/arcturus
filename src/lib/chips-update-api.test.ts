@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Database } from '../lib/db';
 import type { AchievementDefinition } from '../lib/achievements/types';
-import { createPostHandler } from '../pages/api/chips/update';
+import { createPostHandler, MAX_RATE_LIMIT_MAP_SIZE } from '../pages/api/chips/update';
 
 const mockCreateDb = Object.assign(
 	(dbBinding: unknown) => {
@@ -2420,6 +2420,9 @@ describe('chips update API', () => {
 
 		// After the request, the map should be at or below the cap
 		// (stale eviction does nothing since all are fresh, so hard cap kicks in)
-		expect(rateLimitMap.size).toBeLessThanOrEqual(10001);
+		expect(rateLimitMap.size).toBeLessThanOrEqual(MAX_RATE_LIMIT_MAP_SIZE);
+		// The new user's entry must survive eviction — it has the newest
+		// timestamp, so the oldest-first hard-cap eviction keeps it.
+		expect(rateLimitMap.has('new-user-hardcap')).toBe(true);
 	});
 });

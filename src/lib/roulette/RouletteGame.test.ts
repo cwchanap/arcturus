@@ -681,12 +681,19 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 
 describe('RouletteGame — bet ID generation', () => {
 	it('uses crypto.randomUUID when available', () => {
-		const game = new RouletteGame({ initialBalance: 1000 });
-		const result = game.placeBet('red', 50);
-		expect(result.success).toBe(true);
-		// crypto.randomUUID returns a string (mock may not be UUID-format)
-		expect(typeof result.bet?.id).toBe('string');
-		expect(result.bet?.id.length).toBeGreaterThan(0);
+		const originalCrypto = globalThis.crypto;
+		try {
+			(globalThis as { crypto: unknown }).crypto = {
+				...originalCrypto,
+				randomUUID: () => 'marker-uuid-123',
+			};
+			const game = new RouletteGame({ initialBalance: 1000 });
+			const result = game.placeBet('red', 50);
+			expect(result.success).toBe(true);
+			expect(result.bet?.id).toBe('marker-uuid-123');
+		} finally {
+			(globalThis as { crypto: unknown }).crypto = originalCrypto;
+		}
 	});
 
 	it('falls back to timestamp-based ID when crypto.randomUUID is unavailable', () => {

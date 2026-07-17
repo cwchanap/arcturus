@@ -439,7 +439,7 @@ const MIN_UPDATE_INTERVAL_MS = 2000; // 2 seconds between updates
 
 // In-memory rate limit store (per-user last update timestamp)
 // Note: This resets on worker restart; for production, use KV or D1
-const MAX_RATE_LIMIT_MAP_SIZE = 10000;
+export const MAX_RATE_LIMIT_MAP_SIZE = 10000;
 const lastUpdateByUser = new Map<string, number>();
 
 type PostHandlerDeps = {

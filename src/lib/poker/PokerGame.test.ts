@@ -2851,16 +2851,16 @@ describe('PokerGame pending sync TTL', () => {
 			length: 0,
 		};
 
-		const balanceFetchUrls: string[] = [];
+		const requestedUrls: string[] = [];
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
 			async (input: string | URL | Request) => {
 				const url =
 					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				requestedUrls.push(url);
 				if (url === '/api/profile/llm-settings') {
 					return { ok: true, status: 200, json: async () => ({ settings: null }) };
 				}
 				if (url === '/api/chips/balance') {
-					balanceFetchUrls.push(url);
 					return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
 				}
 				// /api/chips/update should NOT be called — the expired sync is
@@ -2896,7 +2896,10 @@ describe('PokerGame pending sync TTL', () => {
 		await game.flushChipSyncQueue();
 
 		expect(game.pendingChipSyncs).toHaveLength(0);
-		expect(balanceFetchUrls).toContain('/api/chips/balance');
+		expect(requestedUrls).toContain('/api/chips/balance');
+		// The expired sync is dropped before it can be re-sent, so the
+		// authoritative balance fetch is the only chip endpoint hit.
+		expect(requestedUrls).not.toContain('/api/chips/update');
 		// The authoritative server balance (500) replaces the inflated local
 		// balance (550) — the unconfirmed +50 delta is discarded.
 		expect(game.serverSyncedBalance).toBe(500);
@@ -2924,10 +2927,12 @@ describe('PokerGame pending sync TTL', () => {
 			length: 0,
 		};
 
+		const requestedUrls: string[] = [];
 		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
 			async (input: string | URL | Request) => {
 				const url =
 					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				requestedUrls.push(url);
 				if (url === '/api/profile/llm-settings') {
 					return { ok: true, status: 200, json: async () => ({ settings: null }) };
 				}
@@ -2967,5 +2972,8 @@ describe('PokerGame pending sync TTL', () => {
 		// Play is blocked — the deal button is disabled and the user is
 		// told to refresh, since the balance cannot be trusted.
 		expect(game.hasServerSyncedBalance).toBe(false);
+		// Even when balance recovery fails, the expired sync must never be
+		// re-sent to /api/chips/update — it is dropped before sendChipSync.
+		expect(requestedUrls).not.toContain('/api/chips/update');
 	});
 });

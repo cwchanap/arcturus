@@ -736,6 +736,39 @@ describe('roulette spin API', () => {
 		expect(mock.getCurrentChipBalance()).toBe(950);
 	});
 
+	test('strips unvalidated bet properties before persisting betsJson', async () => {
+		// A valid bet carrying an arbitrary large property must not have that
+		// property persisted into roulette_round.betsJson. isValidBet is a
+		// type guard that keeps the original object, so the handler must
+		// normalize accepted bets to known fields ({id,type,amount,target?}).
+		const { handler, mock } = createHandler({ winningNumber: 0 });
+		const bloatedBet = {
+			id: 'bet-red-none-50',
+			type: 'red',
+			amount: 50,
+			// Arbitrary caller-supplied properties that would bloat D1 rows
+			// and replay parsing if persisted alongside the known fields.
+			junk: 'x'.repeat(5000),
+			nested: { deep: { payload: 'y'.repeat(5000) } },
+		};
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets: [bloatedBet] }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-bloat' }, dbBinding: mock.binding }),
+		} as any);
+		expect(response.status).toBe(200);
+		const stored = mock.rounds.get('user-bloat:test-sync');
+		expect(stored).toBeDefined();
+		const persisted = JSON.parse(stored!.betsJson) as RouletteBet[];
+		expect(persisted).toHaveLength(1);
+		expect(persisted[0]).toEqual({ id: 'bet-red-none-50', type: 'red', amount: 50 });
+		// The persisted betsJson must be far smaller than the bloated input.
+		expect(stored!.betsJson.length).toBeLessThan(200);
+	});
+
 	test('processes a successful spin with a win', async () => {
 		const { handler, mock } = createHandler({ winningNumber: 17 });
 		const bets = [makeBet('straight', 10, 17)];

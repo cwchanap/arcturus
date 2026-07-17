@@ -76,6 +76,28 @@ function sanitizeBet(bet: unknown): RouletteBet | null {
 	};
 }
 
+// Enforce the same aggregate limits the server applies in
+// src/pages/api/roulette/spin.ts (count, per-position, total) plus the
+// per-bet minimum. Used by restoreState to reject tampered snapshots that
+// pass per-bet sanitizeBet checks but violate table limits. Mirrors the
+// runtime guards in canPlaceBet so a restored layout is always legal.
+function areBetsWithinLimits(bets: RouletteBet[]): boolean {
+	if (bets.length > MAX_BETS) return false;
+	const positionTotals = new Map<string, number>();
+	let total = 0;
+	for (const bet of bets) {
+		if (bet.amount < MIN_BET) return false;
+		total += bet.amount;
+		const key = positionKey(bet.type, bet.target);
+		positionTotals.set(key, (positionTotals.get(key) ?? 0) + bet.amount);
+	}
+	if (total > MAX_TOTAL_BET) return false;
+	for (const positionTotal of positionTotals.values()) {
+		if (positionTotal > MAX_BET_PER_POSITION) return false;
+	}
+	return true;
+}
+
 function sanitizeBetResult(b: unknown): BetResult | null {
 	if (!b || typeof b !== 'object') return null;
 	const c = b as Partial<BetResult>;
@@ -393,6 +415,16 @@ export class RouletteGame {
 		const sanitizedBets = s.activeBets
 			.map((b) => sanitizeBet(b))
 			.filter((b): b is RouletteBet => b !== null);
+		// sanitizeBet only checks per-bet field types/ranges. A tampered
+		// `spinning` snapshot can carry bets that pass per-bet validation but
+		// violate aggregate limits (count, per-position, total). The server
+		// would reject such a re-submit with a non-committed 400 (no
+		// currentBalance), and the client's recovery else-branch subtracts
+		// the oversized total (clamping the balance to 0) while abortSpin
+		// preserves the bets — refunding them via Clear then inflates the
+		// bankroll. Reject the snapshot here so the caller falls back to the
+		// authoritative server balance instead of restoring an illegal layout.
+		if (!areBetsWithinLimits(sanitizedBets)) return false;
 
 		this.state = {
 			phase: s.phase,

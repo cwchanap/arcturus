@@ -603,6 +603,79 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 			expect(game2.getState().phase).toBe('spinning');
 			expect(game2.getState().pendingSyncCreatedAt).toBe(createdAt);
 		});
+
+		it('rejects a spinning snapshot whose total bet exceeds MAX_TOTAL_BET', () => {
+			// Chip-inflation exploit: a tampered spinning snapshot with an
+			// oversized stake passes per-bet sanitizeBet checks but the server
+			// rejects the re-submit with a non-committed 400 (no
+			// currentBalance). The client then subtracts the oversized total
+			// (clamping balance to 0) and abortSpin preserves the bets, so
+			// Clear refunds the oversized stake and inflates the bankroll.
+			// restoreState must reject the snapshot up front.
+			const game = newGame(1000);
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 1000,
+					activeBets: [
+						{ id: 'b1', type: 'straight' as const, amount: MAX_TOTAL_BET + 1, target: 0 },
+					],
+					pendingSyncId: 'exploit-sync',
+				}),
+			).toBe(false);
+		});
+
+		it('rejects a spinning snapshot whose per-position total exceeds MAX_BET_PER_POSITION', () => {
+			const game = newGame(100000);
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 100000,
+					activeBets: [
+						{ id: 'b1', type: 'straight' as const, amount: MAX_BET_PER_POSITION, target: 0 },
+						{ id: 'b2', type: 'straight' as const, amount: 1, target: 0 },
+					],
+					pendingSyncId: 'exploit-sync',
+				}),
+			).toBe(false);
+		});
+
+		it('rejects a spinning snapshot with more than MAX_BETS bets', () => {
+			const game = newGame(100000);
+			const bets = Array.from({ length: MAX_BETS + 1 }, (_, i) => ({
+				id: `b-${i}`,
+				type: 'straight' as const,
+				amount: 1,
+				target: i % 37,
+			}));
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 100000,
+					activeBets: bets,
+					pendingSyncId: 'exploit-sync',
+				}),
+			).toBe(false);
+		});
+
+		it('accepts a spinning snapshot whose bets are exactly at table limits', () => {
+			const game = newGame(100000);
+			const bets = Array.from({ length: MAX_BETS }, (_, i) => ({
+				id: `b-${i}`,
+				type: 'straight' as const,
+				amount: 1,
+				target: i % 37,
+			}));
+			expect(
+				game.restoreState({
+					phase: 'spinning',
+					chipBalance: 100000 - MAX_BETS,
+					activeBets: bets,
+					pendingSyncId: 'ok-sync',
+				}),
+			).toBe(true);
+			expect(game.getState().activeBets).toHaveLength(MAX_BETS);
+		});
 	});
 });
 

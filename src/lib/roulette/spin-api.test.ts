@@ -595,7 +595,7 @@ describe('roulette spin API', () => {
 	});
 
 	test('rejects when MP escrow is active (heldChips > 0)', async () => {
-		const { handler, mock } = createHandler({ heldChips: 500 });
+		const { handler, mock } = createHandler({ heldChips: 500, chipBalance: 800 });
 		const request = new Request('http://test.local', {
 			method: 'POST',
 			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
@@ -607,6 +607,9 @@ describe('roulette spin API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(409);
 		expect(body.error).toBe('MP_ESCROW_ACTIVE');
+		// Authoritative spendable balance is returned so the client can
+		// adopt it instead of preserving a stale local balance/bet layout.
+		expect(body.currentBalance).toBe(800);
 	});
 
 	test('rejects when total bet exceeds balance', async () => {

@@ -404,15 +404,20 @@ async function handleSpinRequest(
 	}
 
 	const heldChips = Math.trunc(userRow.heldChips ?? 0);
-	if (heldChips > 0) {
-		return new Response(JSON.stringify({ error: 'MP_ESCROW_ACTIVE' }), {
-			status: 409,
-			headers: { 'Content-Type': 'application/json' },
-		});
-	}
-
 	const rawChipBalance = userRow.chipBalance;
 	const previousBalance = Number.isFinite(rawChipBalance) ? Math.trunc(rawChipBalance) : 0;
+	if (heldChips > 0) {
+		// Include the authoritative spendable balance so the client can adopt
+		// it instead of preserving a stale local balance/bet layout while
+		// chips are locked in multiplayer poker escrow.
+		return new Response(
+			JSON.stringify({ error: 'MP_ESCROW_ACTIVE', currentBalance: previousBalance }),
+			{
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+			},
+		);
+	}
 	// Use the raw (possibly fractional) stored value as the optimistic-lock
 	// match value when it differs from the truncated balance. If the stored
 	// balance is e.g. 1000.5, binding the truncated 1000 in the WHERE clause

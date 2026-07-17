@@ -40,7 +40,7 @@ import {
 	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from '../public-game-session';
-import { fetchWithTimeout } from '../fetch-with-timeout';
+import { fetchJsonWithTimeout } from '../fetch-with-timeout';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
@@ -585,13 +585,18 @@ export class PokerGame {
 	// through to the refresh-required fallback.
 	private async fetchServerBalance(): Promise<number | null> {
 		try {
-			const response = await fetchWithTimeout(
+			// Use fetchJsonWithTimeout so the abort timer stays armed across
+			// the body read, not just the headers. fetchWithTimeout clears its
+			// timer once fetch() resolves, so a /api/chips/balance response
+			// that returns headers but stalls while writing the body would
+			// leave response.json() pending forever — the pending-sync flush
+			// would never reach the rebase or refresh fallback.
+			const { response, data } = await fetchJsonWithTimeout<{ balance?: number }>(
 				'/api/chips/balance',
 				{ method: 'GET' },
 				BALANCE_FETCH_TIMEOUT_MS,
 			);
 			if (!response.ok) return null;
-			const data = (await response.json()) as { balance?: number };
 			return typeof data.balance === 'number' ? data.balance : null;
 		} catch {
 			return null;

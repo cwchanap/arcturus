@@ -44,3 +44,44 @@ export async function fetchWithTimeout(
 		if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
 	}
 }
+
+/**
+ * Fetch a URL and parse its response body as JSON, all under a single
+ * abort-controlled timeout.
+ *
+ * `fetchWithTimeout` clears its abort timer once `fetch()` resolves (i.e. once
+ * headers are received). A caller's subsequent `response.json()` reads the
+ * body stream AFTER the timer has been cleared, so a server that returns
+ * headers but stalls while writing the body can leave the body read pending
+ * forever — the caller never reaches its fallback. This helper keeps the
+ * abort controller active across both the fetch and the body parse, so a
+ * stalled body aborts after `timeoutMs` and the caller can fall through to
+ * its recovery/refresh path. Rejects with an `AbortError` on timeout.
+ */
+export async function fetchJsonWithTimeout<T = unknown>(
+	url: string,
+	init: RequestInit,
+	timeoutMs: number,
+): Promise<{ response: Response; data: T }> {
+	const controller = new AbortController();
+	const callerSignal = init.signal;
+	const onCallerAbort = () => controller.abort(callerSignal?.reason);
+	if (callerSignal) {
+		if (callerSignal.aborted) {
+			controller.abort(callerSignal.reason);
+		} else {
+			callerSignal.addEventListener('abort', onCallerAbort, { once: true });
+		}
+	}
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		const response = await fetch(url, { ...init, signal: controller.signal });
+		// Read the body while the timer is still armed so a stalled body
+		// stream aborts instead of hanging forever.
+		const data = (await response.json()) as T;
+		return { response, data };
+	} finally {
+		clearTimeout(timer);
+		if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
+	}
+}

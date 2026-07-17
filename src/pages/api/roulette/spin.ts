@@ -65,6 +65,27 @@ export function isValidBet(b: unknown): b is RouletteBet {
 	return true;
 }
 
+// Reconstruct a bet from only the known fields. `isValidBet` is a type guard
+// that keeps the original object, so `filter(isValidBet)` would otherwise
+// retain arbitrary caller-supplied properties (e.g. a large blob) and
+// `JSON.stringify(bets)` would persist them into roulette_round.betsJson,
+// inflating D1 rows and replay parsing. Normalizing to {id,type,amount,target?}
+// enforces the storage-bloat guard the BET_ID_RE cap intends.
+export function normalizeBet(b: unknown): RouletteBet | null {
+	if (!isValidBet(b)) return null;
+	const bet = b as Record<string, unknown>;
+	const type = bet.type as BetType;
+	const normalized: RouletteBet = {
+		id: bet.id as string,
+		type,
+		amount: bet.amount as number,
+	};
+	if (bet.target !== undefined) {
+		normalized.target = bet.target as number;
+	}
+	return normalized;
+}
+
 export function generateWinningNumber(): number {
 	const buf = new Uint8Array(1);
 	const LIMIT = 222;
@@ -205,13 +226,16 @@ async function handleSpinRequest(
 		});
 	}
 
-	const bets = rawBets.filter(isValidBet);
-	if (bets.length !== rawBets.length) {
+	const normalized = rawBets.map(normalizeBet);
+	if (normalized.some((b) => b === null) || normalized.length !== rawBets.length) {
 		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
 			status: 400,
 			headers: { 'Content-Type': 'application/json' },
 		});
 	}
+	// normalizeBet reconstructs each bet from only the known fields, so
+	// arbitrary caller-supplied properties are dropped before persistence.
+	const bets = normalized as RouletteBet[];
 
 	const totalBet = bets.reduce((sum, b) => sum + b.amount, 0);
 	if (totalBet < MIN_BET || totalBet > MAX_TOTAL_BET) {

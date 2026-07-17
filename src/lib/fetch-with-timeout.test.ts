@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test, spyOn } from 'bun:test';
-import { fetchWithTimeout } from './fetch-with-timeout';
+import { fetchJsonWithTimeout, fetchWithTimeout } from './fetch-with-timeout';
 
 describe('fetchWithTimeout', () => {
 	test('passes the merged signal to fetch and returns the response on success', async () => {
@@ -200,6 +200,113 @@ describe('fetchWithTimeout', () => {
 		await expect(
 			fetchWithTimeout('https://example.com', { signal: caller.signal }, 10),
 		).rejects.toThrow('aborted');
+		const abortAddCalls = addSpy.mock.calls.filter((c) => c[0] === 'abort');
+		expect(abortAddCalls).toHaveLength(1);
+		const addedListener = abortAddCalls[0][1];
+		expect(removeSpy).toHaveBeenCalledWith('abort', addedListener);
+		removeSpy.mockRestore();
+		addSpy.mockRestore();
+		fetchSpy.mockRestore();
+	});
+});
+
+describe('fetchJsonWithTimeout', () => {
+	test('returns the parsed JSON body and response on success', async () => {
+		const okResponse = new Response(JSON.stringify({ balance: 1234 }), {
+			status: 200,
+			headers: { 'Content-Type': 'application/json' },
+		});
+		const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(okResponse);
+
+		const { response, data } = await fetchJsonWithTimeout<{ balance: number }>(
+			'https://example.com',
+			{ method: 'GET' },
+			5000,
+		);
+
+		expect(response).toBe(okResponse);
+		expect(data.balance).toBe(1234);
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		fetchSpy.mockRestore();
+	});
+
+	test('aborts when the body stream stalls past the timeout', async () => {
+		// Regression: fetchWithTimeout clears its timer once fetch() resolves,
+		// so a response that returns headers but never produces a body would
+		// leave response.json() pending forever. fetchJsonWithTimeout must
+		// keep the abort controller armed across the body read so a stalled
+		// body aborts and the caller can fall through to its fallback.
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((resolve) => {
+					// Resolve immediately with headers, but the body stream
+					// never emits chunks and never closes. When the abort
+					// fires, error the stream controller so the pending
+					// response.json() read rejects (a real fetch ties the body
+					// stream to the signal; this mock emulates that).
+					const neverClosingBody = new ReadableStream<Uint8Array>({
+						start(streamController) {
+							init?.signal?.addEventListener('abort', () => {
+								streamController.error(new DOMException('aborted', 'AbortError'));
+							});
+						},
+					});
+					resolve(new Response(neverClosingBody, { status: 200 }));
+				}),
+		);
+
+		await expect(
+			fetchJsonWithTimeout('https://example.com', { method: 'GET' }, 20),
+		).rejects.toThrow();
+		fetchSpy.mockRestore();
+	});
+
+	test('aborts after the timeout when fetch itself stalls', async () => {
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () => {
+						reject(new DOMException('aborted', 'AbortError'));
+					});
+				}),
+		);
+
+		await expect(fetchJsonWithTimeout('https://example.com', {}, 10)).rejects.toThrow('aborted');
+		fetchSpy.mockRestore();
+	});
+
+	test('propagates an already-aborted caller signal immediately', async () => {
+		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
+			(_url: string, init?: RequestInit) =>
+				new Promise((_resolve, reject) => {
+					if (init?.signal?.aborted) {
+						reject(new DOMException('aborted', 'AbortError'));
+						return;
+					}
+					init?.signal?.addEventListener('abort', () => {
+						reject(new DOMException('aborted', 'AbortError'));
+					});
+				}),
+		);
+
+		const caller = new AbortController();
+		caller.abort();
+
+		await expect(
+			fetchJsonWithTimeout('https://example.com', { signal: caller.signal }, 5000),
+		).rejects.toThrow('aborted');
+		fetchSpy.mockRestore();
+	});
+
+	test('removes the caller-signal abort listener after a successful body read', async () => {
+		const okResponse = new Response(JSON.stringify({ ok: true }), { status: 200 });
+		const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(okResponse);
+
+		const caller = new AbortController();
+		const addSpy = spyOn(caller.signal, 'addEventListener');
+		const removeSpy = spyOn(caller.signal, 'removeEventListener');
+		await fetchJsonWithTimeout('https://example.com', { signal: caller.signal }, 5000);
+
 		const abortAddCalls = addSpy.mock.calls.filter((c) => c[0] === 'abort');
 		expect(abortAddCalls).toHaveLength(1);
 		const addedListener = abortAddCalls[0][1];

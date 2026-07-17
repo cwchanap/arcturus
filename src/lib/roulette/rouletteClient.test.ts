@@ -117,6 +117,26 @@ describe('restoreSession — pending spin TTL', () => {
 
 		expect(result).toBeNull();
 	});
+
+	it('sets balance to balanceOverride after restoring a spinning snapshot', () => {
+		// restoreSession sets the balance to the server-provided balanceOverride
+		// (the server's current balance at reload time). The caller is responsible
+		// for rebasing against the active stake before abortSpin/preserving bets.
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const key = 'roulette-session:user1';
+		// Snapshot has chipBalance 950 (1000 - 50 bet), but balanceOverride is 1000
+		storage[key] = JSON.stringify(makeSpinningSnapshot('sync-1', Date.now(), 950));
+
+		const result = restoreSession(game, key, 1000);
+
+		expect(result).not.toBeNull();
+		// After restore, balance should be the server's balanceOverride (1000),
+		// not the snapshot's chipBalance (950). The caller rebases by subtracting
+		// totalBet before abortSpin so refunding bets doesn't inflate.
+		expect(game.getBalance()).toBe(1000);
+		expect(game.getState().activeBets).toHaveLength(1);
+		expect(game.getState().activeBets[0].amount).toBe(50);
+	});
 });
 
 describe('RouletteUIRenderer — column labels', () => {

@@ -12,13 +12,17 @@
 
 // Preserves the HTTP status (+ error code) from a non-ok spin response so
 // retry logic can decide retriability by status/code rather than fragile
-// message-prefix matching.
+// message-prefix matching. `currentBalance` carries the server-provided
+// authoritative balance from INSUFFICIENT_BALANCE responses so the client
+// can adopt it instead of keeping a stale local balance.
 export class SpinHttpError extends Error {
 	readonly status: number;
-	constructor(status: number, error: string) {
+	readonly currentBalance?: number;
+	constructor(status: number, error: string, currentBalance?: number) {
 		super(error);
 		this.name = 'SpinHttpError';
 		this.status = status;
+		this.currentBalance = currentBalance;
 	}
 }
 

@@ -14,6 +14,7 @@ export class MockElement {
 	innerHTML = '';
 	hidden = false;
 	disabled = false;
+	isConnected = true;
 	dataset: Record<string, string> = {};
 	style: Record<string, string> = {};
 	attributes: Record<string, string> = {};
@@ -319,10 +320,23 @@ export function installMockTimers(): TimerMock {
 			for (const e of snapshot) e.handler();
 		},
 	};
+	const originalSetTimeout = globalThis.setTimeout;
+	const originalClearTimeout = globalThis.clearTimeout;
 	(globalThis as unknown as { setTimeout: typeof timerMock.setTimeout }).setTimeout =
 		timerMock.setTimeout as unknown as typeof setTimeout;
 	(globalThis as unknown as { clearTimeout: typeof timerMock.clearTimeout }).clearTimeout =
 		timerMock.clearTimeout as unknown as typeof clearTimeout;
+	// Attach restore so callers (or afterEach) can revert to real timers,
+	// preventing leakage into tests that need real timers (e.g. Miniflare).
+	(
+		timerMock as TimerMock & {
+			restore: () => void;
+		}
+	).restore = () => {
+		(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = originalSetTimeout;
+		(globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout =
+			originalClearTimeout;
+	};
 	return timerMock;
 }
 

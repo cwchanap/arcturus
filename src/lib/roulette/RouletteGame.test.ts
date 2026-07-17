@@ -605,3 +605,30 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 		});
 	});
 });
+
+describe('RouletteGame — bet ID generation', () => {
+	it('uses crypto.randomUUID when available', () => {
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const result = game.placeBet('red', 50);
+		expect(result.success).toBe(true);
+		// crypto.randomUUID returns a string (mock may not be UUID-format)
+		expect(typeof result.bet?.id).toBe('string');
+		expect(result.bet?.id.length).toBeGreaterThan(0);
+	});
+
+	it('falls back to timestamp-based ID when crypto.randomUUID is unavailable', () => {
+		const originalCrypto = globalThis.crypto;
+		try {
+			// Replace crypto with an object that has no randomUUID
+			(globalThis as { crypto: unknown }).crypto = {
+				getRandomValues: originalCrypto.getRandomValues,
+			};
+			const game = new RouletteGame({ initialBalance: 1000 });
+			const result = game.placeBet('red', 50);
+			expect(result.success).toBe(true);
+			expect(result.bet?.id).toMatch(/^bet-\d+-[a-z0-9]+$/);
+		} finally {
+			(globalThis as { crypto: unknown }).crypto = originalCrypto;
+		}
+	});
+});

@@ -2304,4 +2304,122 @@ describe('chips update API', () => {
 		expect(response.status).toBe(200);
 		expect(updatePayloadCalled).toBe(false);
 	});
+
+	test('rejects array body with INVALID_REQUEST_BODY (body must be a JSON object)', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify([1, 2, 3]),
+			headers: { 'Content-Type': 'application/json' },
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-array' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_REQUEST_BODY');
+		expect(body.message).toContain('JSON object');
+	});
+
+	test('rejects primitive body (string) with INVALID_REQUEST_BODY', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify('just a string'),
+			headers: { 'Content-Type': 'application/json' },
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-string' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_REQUEST_BODY');
+		expect(body.message).toContain('JSON object');
+	});
+
+	test('rejects primitive body (number) with INVALID_REQUEST_BODY', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify(42),
+			headers: { 'Content-Type': 'application/json' },
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-number' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_REQUEST_BODY');
+	});
+
+	test('rate limit map evicts stale entries when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {
+		resetMocks();
+		// The eviction logic runs AFTER a successful request sets the user's
+		// timestamp. So we need a user NOT in the map (passes rate limit)
+		// plus enough stale entries to exceed the cap.
+		const now = Date.now();
+		const rateLimitMap = new Map<string, number>();
+		// Add 10001 stale entries (older than MIN_UPDATE_INTERVAL_MS = 2000ms)
+		for (let i = 0; i < 10001; i++) {
+			rateLimitMap.set(`stale-user-${i}`, now - 5000);
+		}
+		// The test user is NOT in the map, so the request passes rate limiting
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const POST = createHandler({ lastUpdateByUser: rateLimitMap });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-evict-test', chipBalance: 1000 } }),
+		} as any);
+
+		// Request should succeed (user was not rate limited)
+		expect(response.status).toBe(200);
+		// After the request, stale entries should have been evicted
+		// The map should now be small (only fresh entries + the new one)
+		expect(rateLimitMap.size).toBeLessThan(10001);
+		expect(rateLimitMap.has('stale-user-0')).toBe(false);
+		expect(rateLimitMap.has('user-evict-test')).toBe(true);
+	});
+
+	test('rate limit map enforces hard cap when all entries are fresh', async () => {
+		resetMocks();
+		const now = Date.now();
+		const rateLimitMap = new Map<string, number>();
+		// Add 10005 fresh entries (all within the rate-limit window)
+		for (let i = 0; i < 10005; i++) {
+			rateLimitMap.set(`fresh-user-${i}`, now - 100);
+		}
+
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const POST = createHandler({ lastUpdateByUser: rateLimitMap });
+
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 10, gameType: 'blackjack' }),
+		});
+
+		await POST({
+			request,
+			locals: createLocals({ user: { id: 'new-user-hardcap', chipBalance: 1000 } }),
+		} as any);
+
+		// After the request, the map should be at or below the cap
+		// (stale eviction does nothing since all are fresh, so hard cap kicks in)
+		expect(rateLimitMap.size).toBeLessThanOrEqual(10001);
+	});
 });

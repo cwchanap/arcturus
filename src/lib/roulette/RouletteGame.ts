@@ -415,6 +415,13 @@ export class RouletteGame {
 		const sanitizedBets = s.activeBets
 			.map((b) => sanitizeBet(b))
 			.filter((b): b is RouletteBet => b !== null);
+		// If sanitization dropped any bet, the snapshot is partially corrupt.
+		// Restoring the surviving subset could silently change the staked total
+		// and bypass the aggregate-limit check below (a tampered layout might
+		// pass once its offending bets are stripped). Reject outright so the
+		// caller falls back to the authoritative server balance instead of
+		// restoring a layout the player never actually placed.
+		if (sanitizedBets.length !== s.activeBets.length) return false;
 		// sanitizeBet only checks per-bet field types/ranges. A tampered
 		// `spinning` snapshot can carry bets that pass per-bet validation but
 		// violate aggregate limits (count, per-position, total). The server

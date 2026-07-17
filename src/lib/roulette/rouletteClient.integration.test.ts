@@ -28,6 +28,11 @@ const REAL_TIMERS = {
 };
 const REAL_FETCH = globalThis.fetch;
 const REAL_CRYPTO = globalThis.crypto;
+const REAL_DOCUMENT = (globalThis as { document?: unknown }).document;
+const REAL_WINDOW = (globalThis as { window?: unknown }).window;
+const REAL_LOCAL_STORAGE = (globalThis as { localStorage?: unknown }).localStorage;
+const REAL_CUSTOM_EVENT = (globalThis as { CustomEvent?: unknown }).CustomEvent;
+const REAL_HTML_BUTTON_ELEMENT = (globalThis as { HTMLButtonElement?: unknown }).HTMLButtonElement;
 
 afterEach(() => {
 	(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = REAL_TIMERS.setTimeout;
@@ -35,6 +40,11 @@ afterEach(() => {
 		REAL_TIMERS.clearTimeout;
 	(globalThis as unknown as { fetch: typeof fetch }).fetch = REAL_FETCH;
 	(globalThis as typeof globalThis & { crypto: typeof crypto }).crypto = REAL_CRYPTO;
+	(globalThis as { document?: unknown }).document = REAL_DOCUMENT;
+	(globalThis as { window?: unknown }).window = REAL_WINDOW;
+	(globalThis as { localStorage?: unknown }).localStorage = REAL_LOCAL_STORAGE;
+	(globalThis as { CustomEvent?: unknown }).CustomEvent = REAL_CUSTOM_EVENT;
+	(globalThis as { HTMLButtonElement?: unknown }).HTMLButtonElement = REAL_HTML_BUTTON_ELEMENT;
 });
 
 // All element IDs that RouletteUIRenderer + initRouletteClient touch.
@@ -358,12 +368,15 @@ describe('initRouletteClient — auth mode spin success', () => {
 	it('dispatches achievement-earned event when server returns achievements', async () => {
 		const s = setup({ guestMode: false });
 		s.fetchMock.impl = () => makeFetchResponse(200, spinResponseWithAchievements());
+		const captured: Array<{ achievements: unknown }> = [];
+		s.win.addEventListener('achievement-earned', (e) => {
+			captured.push((e as { detail: { achievements: unknown } }).detail);
+		});
 		s.betCells.straight.dispatchEvent(new MockEvent('click'));
 		s.spinBtn.dispatchEvent(new MockEvent('click'));
 		await flush();
-		const listeners = s.win.listeners['achievement-earned'];
-		expect(listeners).toBeDefined();
-		expect(listeners.size).toBeGreaterThan(0);
+		expect(captured).toHaveLength(1);
+		expect(captured[0].achievements).toEqual([{ id: 'a1', name: 'High Roller', icon: '🏆' }]);
 	});
 
 	it('persists session after successful spin', async () => {
@@ -626,7 +639,19 @@ describe('initRouletteClient — auth mode spin ambiguous (2xx + unparseable bod
 		let callCount = 0;
 		s.fetchMock.impl = () => {
 			callCount++;
-			if (callCount === 1) return makeFetchResponse(200, { unexpected: 'body' });
+			if (callCount === 1) {
+				// 2xx with a body that cannot be parsed as JSON — simulates a
+				// truncated/garbled payload where response.json() rejects, the
+				// real "unparseable body" path the retry guard defends.
+				return {
+					ok: true,
+					status: 200,
+					_json: null,
+					json: async () => {
+						throw new SyntaxError('Unexpected token in JSON');
+					},
+				};
+			}
 			return makeFetchResponse(200, spinResponseBody(17, -10, 990));
 		};
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
@@ -669,9 +694,14 @@ describe('initRouletteClient — pending spin recovery', () => {
 			session: makeSpinningSnapshot('recovery-sync-id'),
 			fetchImpl: () => makeFetchResponse(200, spinResponseWithAchievements()),
 		});
+		const captured: Array<{ achievements: unknown }> = [];
+		s.win.addEventListener('achievement-earned', (e) => {
+			captured.push((e as { detail: { achievements: unknown } }).detail);
+		});
 		await flush();
 		expect(s.balanceEl.textContent).toContain('1,350');
-		expect(s.win.listeners['achievement-earned']).toBeDefined();
+		expect(captured).toHaveLength(1);
+		expect(captured[0].achievements).toEqual([{ id: 'a1', name: 'High Roller', icon: '🏆' }]);
 	});
 
 	it('recovery non-committed rejection without currentBalance → rebase + abortSpin', async () => {

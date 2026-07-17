@@ -2830,4 +2830,142 @@ describe('PokerGame pending sync TTL', () => {
 
 		expect(game.pendingChipSyncs).toHaveLength(0);
 	});
+
+	test('reconciles players[0].chips with server balance when dropping an expired in-memory sync', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'expire-user1' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		const balanceFetchUrls: string[] = [];
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				if (url === '/api/chips/balance') {
+					balanceFetchUrls.push(url);
+					return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+				}
+				// /api/chips/update should NOT be called — the expired sync is
+				// dropped before sendChipSync runs.
+				return { ok: true, status: 200, json: async () => ({ balance: 999 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			hasServerSyncedBalance: boolean;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			flushChipSyncQueue: () => Promise<void>;
+		};
+
+		// Simulate a pending sync with an expired createdAt (8 days old).
+		// The local balance (550) includes the unconfirmed +50 delta.
+		game.humanChipsBefore = 0;
+		game.serverSyncedBalance = 500;
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.pendingChipSyncs = [
+			{
+				syncId: 'expired-sync-id',
+				previousBalance: 500,
+				delta: 50,
+				createdAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+			},
+		];
+
+		await game.flushChipSyncQueue();
+
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		expect(balanceFetchUrls).toContain('/api/chips/balance');
+		// The authoritative server balance (500) replaces the inflated local
+		// balance (550) — the unconfirmed +50 delta is discarded.
+		expect(game.serverSyncedBalance).toBe(500);
+		expect(game.players[0].chips).toBe(500);
+		expect(game.hasServerSyncedBalance).toBe(true);
+	});
+
+	test('blocks play when balance fetch fails after dropping an expired in-memory sync', async () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'expire-user2' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				if (url === '/api/profile/llm-settings') {
+					return { ok: true, status: 200, json: async () => ({ settings: null }) };
+				}
+				if (url === '/api/chips/balance') {
+					// Balance fetch fails — cannot recover authoritative balance.
+					return { ok: false, status: 500, json: async () => ({}) };
+				}
+				return { ok: true, status: 200, json: async () => ({ balance: 999 }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			humanChipsBefore: number;
+			serverSyncedBalance: number;
+			pendingChipSyncs: Array<Record<string, unknown>>;
+			hasServerSyncedBalance: boolean;
+			syncChips: (outcome: 'win' | 'loss' | 'push') => void;
+			flushChipSyncQueue: () => Promise<void>;
+		};
+
+		game.humanChipsBefore = 0;
+		game.serverSyncedBalance = 500;
+		game.players[0] = { ...game.players[0], chips: 550 };
+		game.pendingChipSyncs = [
+			{
+				syncId: 'expired-sync-id2',
+				previousBalance: 500,
+				delta: 50,
+				createdAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+			},
+		];
+
+		await game.flushChipSyncQueue();
+
+		expect(game.pendingChipSyncs).toHaveLength(0);
+		// Play is blocked — the deal button is disabled and the user is
+		// told to refresh, since the balance cannot be trusted.
+		expect(game.hasServerSyncedBalance).toBe(false);
+	});
 });

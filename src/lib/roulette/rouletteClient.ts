@@ -173,6 +173,11 @@ export function initRouletteClient(): void {
 					newBalance: data.newBalance,
 				};
 				game.applySettlement(spinResult);
+				// Mirror the main spin path: refresh the UI immediately so the
+				// table reflects the recovered 'settled' phase, updated balance,
+				// and cleared active bets during the 4s wheel animation, rather
+				// than showing the stale 'spinning' state.
+				ui.update(game.getState());
 				if (data.newAchievements?.length) {
 					window.dispatchEvent(
 						new CustomEvent('achievement-earned', {
@@ -402,12 +407,28 @@ export function initRouletteClient(): void {
 			// limit, MP escrow, validation). Do not retry and do not discard
 			// bets — restore betting so the player can re-spin the same layout.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
-				if (typeof err.currentBalance === 'number') {
+				if (err.message === 'INSUFFICIENT_BALANCE') {
+					// Fetch the authoritative account balance from the server
+					// rather than relying on the snapshot in the spin rejection.
+					// The spin response's currentBalance reflects the balance at
+					// spin-processing time; a fresh /api/chips/balance fetch is
+					// more current (another tab/game may have changed it since).
+					// On success, adopt the balance and discard the invalid bets
+					// without refunding. On failure, fall back to abortSpin so
+					// the player can re-place bets within their actual limit.
+					const serverBalance = await fetchBalance();
+					if (serverBalance !== null) {
+						game.setBalance(serverBalance);
+						game.discardActiveBets();
+					} else {
+						game.abortSpin();
+					}
+				} else if (typeof err.currentBalance === 'number') {
 					// Server provided an authoritative balance (e.g.
-					// INSUFFICIENT_BALANCE). The local balance is stale (another
-					// tab/game lowered it after bets were placed). Discard the
-					// invalid bets and adopt the server balance so the user can
-					// re-place bets within their actual limit.
+					// MP_ESCROW_ACTIVE with currentBalance). The local balance is
+					// stale (another tab/game lowered it after bets were placed).
+					// Discard the invalid bets and adopt the server balance so the
+					// user can re-place bets within their actual limit.
 					game.setBalance(err.currentBalance);
 					game.discardActiveBets();
 				} else {
@@ -716,9 +737,16 @@ export function restoreSession(
 			// 'settled' phase. Restoring 'betting' with active bets would
 			// let the user refund bets that were never submitted to the
 			// server (the server balance wasn't deducted), inflating chips.
-			// 'settled' has no active bets and the balance is overridden
-			// with the server value, so it's safe.
+			// 'settled' should have no active bets — a non-empty array means
+			// the snapshot is corrupted or tampered. Reject it rather than
+			// restoring bets that could be refunded on top of the server
+			// balance, inflating chips.
 			if (balanceOverride !== undefined && phase !== 'settled') return null;
+			if (balanceOverride !== undefined && phase === 'settled') {
+				if (!Array.isArray(parsed.activeBets) || parsed.activeBets.length > 0) {
+					return null;
+				}
+			}
 			if (game.restoreState(parsed) && balanceOverride !== undefined) {
 				// Auth users: server-provided balance is authoritative.
 				game.setBalance(balanceOverride);

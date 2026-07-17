@@ -137,6 +137,68 @@ describe('restoreSession — pending spin TTL', () => {
 		expect(game.getState().activeBets).toHaveLength(1);
 		expect(game.getState().activeBets[0].amount).toBe(50);
 	});
+
+	it('rejects a settled snapshot with active bets for auth users', () => {
+		// A settled snapshot should never have active bets. If it does,
+		// the snapshot is corrupted or tampered — restoring it would let
+		// the user refund bets on top of the server balance, inflating chips.
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const key = 'roulette-session:user1';
+		const corruptedSnapshot = {
+			phase: 'settled',
+			chipBalance: 950,
+			activeBets: [{ id: 'b1', type: 'red', amount: 50 }],
+			selectedChipAmount: 25,
+			lastSpin: null,
+			roundHistory: [],
+		};
+		storage[key] = JSON.stringify(corruptedSnapshot);
+
+		const result = restoreSession(game, key, 1000);
+
+		expect(result).toBeNull();
+		expect(game.getState().activeBets).toHaveLength(0);
+		expect(game.getBalance()).toBe(1000);
+	});
+
+	it('rejects a settled snapshot with a non-array activeBets for auth users', () => {
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const key = 'roulette-session:user1';
+		const corruptedSnapshot = {
+			phase: 'settled',
+			chipBalance: 1000,
+			activeBets: 'not-an-array',
+			selectedChipAmount: 25,
+			lastSpin: null,
+			roundHistory: [],
+		};
+		storage[key] = JSON.stringify(corruptedSnapshot);
+
+		const result = restoreSession(game, key, 1000);
+
+		expect(result).toBeNull();
+	});
+
+	it('restores a valid settled snapshot with empty activeBets for auth users', () => {
+		const game = new RouletteGame({ initialBalance: 1000 });
+		const key = 'roulette-session:user1';
+		const validSnapshot = {
+			phase: 'settled',
+			chipBalance: 950,
+			activeBets: [],
+			selectedChipAmount: 25,
+			lastSpin: null,
+			roundHistory: [],
+		};
+		storage[key] = JSON.stringify(validSnapshot);
+
+		const result = restoreSession(game, key, 1200);
+
+		expect(result).toBeNull();
+		expect(game.getBalance()).toBe(1200);
+		expect(game.getState().phase).toBe('settled');
+		expect(game.getState().activeBets).toHaveLength(0);
+	});
 });
 
 describe('RouletteUIRenderer — column labels', () => {

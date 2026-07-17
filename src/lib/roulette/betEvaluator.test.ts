@@ -230,3 +230,12 @@ describe('evaluateBets', () => {
 		expect(totalPayout - totalBet).toBe(400); // net gain
 	});
 });
+
+describe('doesBetWin — unknown bet types', () => {
+	it('returns false for an unknown/invalid bet type', () => {
+		const unknownBet = makeBet('red' as RouletteBet['type'], 10);
+		// Cast to an invalid type to trigger the default case
+		(unknownBet as { type: string }).type = 'unknown-type';
+		expect(doesBetWin(unknownBet as RouletteBet, 17)).toBe(false);
+	});
+});

@@ -1048,4 +1048,342 @@ describe('roulette spin API', () => {
 		);
 		expect(originalSurvivors.length).toBe(9999);
 	});
+
+	test('rejects array body with INVALID_REQUEST_BODY', async () => {
+		const { handler } = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify([{ syncId: 'test-sync', bets: [makeBet('red', 10)] }]),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-array' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_REQUEST_BODY');
+	});
+
+	test('rejects primitive body (string) with INVALID_REQUEST_BODY', async () => {
+		const { handler } = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify('just a string'),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-string' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_REQUEST_BODY');
+	});
+
+	test('returns 500 when user not found in database', async () => {
+		// Create a mock DB that returns an empty user array
+		const mockDb = {
+			select: () => ({
+				from: () => ({
+					where: () => ({
+						limit: () => Promise.resolve([]),
+					}),
+				}),
+			}),
+		} as unknown as Database;
+		const handler = createPostHandler({
+			createDb: () => mockDb,
+			checkAndGrantAchievements: mockCheckAndGrantAchievements,
+			evaluateBets,
+			generateWinningNumber: () => 17,
+			lastUpdateByUser: new Map(),
+		});
+		const bets = [makeBet('red', 10)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		// Use a dummy binding — the existence check returns null from first()
+		const dummyBinding = {
+			prepare() {
+				return {
+					bind() {
+						return {
+							first: async () => null,
+						};
+					},
+				};
+			},
+			async batch() {
+				return [];
+			},
+		} as unknown as D1Database;
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-missing' }, dbBinding: dummyBinding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(500);
+		expect(body.error).toBe('USER_NOT_FOUND');
+	});
+
+	test('rejects when net delta exceeds ROULETTE_MAX_LOSS backstop', async () => {
+		// Simulate an impossibly large loss that exceeds ROULETTE_MAX_LOSS.
+		const mockEvaluateBets: typeof evaluateBets = (_bets, _winningNumber) => {
+			const bet = _bets[0];
+			// payout of -999_999 → netDelta = -999_999 - 10 = -1_000_009
+			return [{ bet, won: false, payout: -999_999 }];
+		};
+		const { handler, mock } = createHandler({
+			chipBalance: 1_000_000,
+			evaluateBets: mockEvaluateBets,
+		});
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-delta-loss' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+	});
+
+	test('ignores corrupted achievement payload during replay', async () => {
+		const existingRound: MockRound = {
+			userId: 'user-corrupt-payload',
+			syncId: 'corrupt-payload-sync',
+			winningNumber: 17,
+			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+		};
+		const existingReceipt: MockReceipt = {
+			userId: 'user-corrupt-payload',
+			syncId: 'corrupt-payload-sync',
+			achievementPayload: '{not valid json',
+		};
+		const { handler, mock } = createHandler({ existingRound, existingReceipt });
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'corrupt-payload-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({
+				user: { id: 'user-corrupt-payload' },
+				dbBinding: mock.binding,
+			}),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		// Corrupted payload is ignored — no achievements returned
+		expect(body.newAchievements).toBeUndefined();
+	});
+
+	test('logs error when replay achievement resolution fails (null payload)', async () => {
+		const existingRound: MockRound = {
+			userId: 'user-replay-throw',
+			syncId: 'replay-throw-sync',
+			winningNumber: 0,
+			betsJson: JSON.stringify([makeBet('red', 50)]),
+			totalBet: 50,
+			totalPayout: 0,
+			netDelta: -50,
+			previousBalance: 1000,
+			newBalance: 950,
+		};
+		const existingReceipt: MockReceipt = {
+			userId: 'user-replay-throw',
+			syncId: 'replay-throw-sync',
+			achievementPayload: null,
+		};
+		const throwingCheckAndGrant: typeof checkAndGrantAchievements = async () => {
+			throw new Error('Achievement service unavailable');
+		};
+		const { handler, mock } = createHandler({
+			existingRound,
+			existingReceipt,
+			checkAndGrantAchievements: throwingCheckAndGrant,
+		});
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-throw-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({
+				user: { id: 'user-replay-throw' },
+				dbBinding: mock.binding,
+			}),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		// Error is logged but response still succeeds
+		expect(body.newAchievements).toBeUndefined();
+	});
+
+	test('logs error when failing to persist replayed achievement payload', async () => {
+		const existingRound: MockRound = {
+			userId: 'user-replay-persist-fail',
+			syncId: 'replay-persist-fail-sync',
+			winningNumber: 17,
+			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+		};
+		const existingReceipt: MockReceipt = {
+			userId: 'user-replay-persist-fail',
+			syncId: 'replay-persist-fail-sync',
+			achievementPayload: null,
+		};
+		// The mock binding's run() for UPDATE achievementPayload will
+		// throw to simulate a persist error
+		const { handler, mock } = createHandler({
+			existingRound,
+			existingReceipt,
+		});
+		// Override the binding's run to throw for the UPDATE query
+		const originalPrepare = mock.binding.prepare;
+		mock.binding = {
+			...mock.binding,
+			prepare(sql: string) {
+				const result = originalPrepare.call(this, sql);
+				if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload')) {
+					return {
+						...result,
+						bind(...args: unknown[]) {
+							return {
+								...result.bind(...args),
+								run: async () => {
+									throw new Error('D1 write failed');
+								},
+							};
+						},
+					};
+				}
+				return result;
+			},
+		} as unknown as D1Database;
+
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-persist-fail-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({
+				user: { id: 'user-replay-persist-fail' },
+				dbBinding: mock.binding,
+			}),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		// Achievements are still returned even though persist failed
+		expect(body.newAchievements).toBeDefined();
+	});
+
+	test('logs error when checkAndGrantAchievements throws on fresh spin', async () => {
+		const throwingCheckAndGrant: typeof checkAndGrantAchievements = async () => {
+			throw new Error('Achievement service unavailable');
+		};
+		const { handler, mock } = createHandler({
+			winningNumber: 17,
+			checkAndGrantAchievements: throwingCheckAndGrant,
+		});
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-stats-error' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		// Spin still succeeds — achievement error is logged but not fatal
+		expect(response.status).toBe(200);
+		expect(body.newAchievements).toBeUndefined();
+	});
+
+	test('logs error when failing to persist achievement payload on fresh spin', async () => {
+		const { handler, mock } = createHandler({ winningNumber: 17 });
+		// Override the binding's run to throw for the UPDATE achievementPayload query
+		const originalPrepare = mock.binding.prepare;
+		mock.binding = {
+			...mock.binding,
+			prepare(sql: string) {
+				const result = originalPrepare.call(this, sql);
+				if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload')) {
+					return {
+						...result,
+						bind(...args: unknown[]) {
+							return {
+								...result.bind(...args),
+								run: async () => {
+									throw new Error('D1 write failed');
+								},
+							};
+						},
+					};
+				}
+				return result;
+			},
+		} as unknown as D1Database;
+
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-payload-error' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		// Spin still succeeds — persist error is logged but not fatal
+		expect(response.status).toBe(200);
+		// Achievements are still returned in the response
+		expect(body.newAchievements).toBeDefined();
+	});
+
+	test('returns INTERNAL_ERROR for unexpected exceptions in top-level catch', async () => {
+		// Force an unexpected error by making generateWinningNumber throw.
+		// This happens after the user row check, inside the try block of
+		// handleSpinRequest, which is wrapped by the top-level catch in
+		// createPostHandler.
+		const mock = createMockDbBinding({ chipBalance: 1000 });
+		const handler = createPostHandler({
+			createDb: () => mock.db,
+			checkAndGrantAchievements: mockCheckAndGrantAchievements,
+			evaluateBets,
+			generateWinningNumber: () => {
+				throw new Error('Random number generator failed');
+			},
+			lastUpdateByUser: new Map(),
+		});
+		const bets = [makeBet('red', 10)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'test-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-internal-error' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(500);
+		expect(body.error).toBe('INTERNAL_ERROR');
+	});
 });

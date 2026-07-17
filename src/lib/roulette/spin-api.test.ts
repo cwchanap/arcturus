@@ -423,6 +423,43 @@ describe('roulette spin API', () => {
 		expect(body.error).toBe('INVALID_BETS');
 	});
 
+	test('rejects bet ID exceeding length/character limit', async () => {
+		const { handler } = createHandler();
+		const oversizedId = 'a'.repeat(129);
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				syncId: 'test-sync',
+				bets: [{ id: oversizedId, type: 'red', amount: 10 }],
+			}),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-betid-toolong' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_BETS');
+	});
+
+	test('rejects bet ID with disallowed characters', async () => {
+		const { handler } = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				syncId: 'test-sync',
+				bets: [{ id: 'bet with spaces!', type: 'red', amount: 10 }],
+			}),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-betid-badchars' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('INVALID_BETS');
+	});
+
 	test('rejects when total bet exceeds MAX_TOTAL_BET', async () => {
 		const { handler } = createHandler();
 		const request = new Request('http://test.local', {

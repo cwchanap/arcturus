@@ -14,6 +14,17 @@ describe('SpinHttpError', () => {
 		expect(err.name).toBe('SpinHttpError');
 		expect(err instanceof Error).toBe(true);
 	});
+
+	it('preserves currentBalance when provided', () => {
+		const err = new SpinHttpError(400, 'INSUFFICIENT_BALANCE', 400);
+		expect(err.status).toBe(400);
+		expect(err.currentBalance).toBe(400);
+	});
+
+	it('defaults currentBalance to undefined when not provided', () => {
+		const err = new SpinHttpError(429, 'RATE_LIMITED');
+		expect(err.currentBalance).toBeUndefined();
+	});
 });
 
 describe('isRetriableSpinError', () => {

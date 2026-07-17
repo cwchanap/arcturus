@@ -144,8 +144,15 @@ export function initRouletteClient(): void {
 			const { response, done } = await fetchSpin(syncId, bets, totalBet);
 			try {
 				if (!response.ok) {
-					const err = (await response.json().catch(() => ({}))) as { error?: string };
-					throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
+					const err = (await response.json().catch(() => ({}))) as {
+						error?: string;
+						currentBalance?: number;
+					};
+					throw new SpinHttpError(
+						response.status,
+						err.error ?? `HTTP ${response.status}`,
+						typeof err.currentBalance === 'number' ? err.currentBalance : undefined,
+					);
 				}
 				const data = (await response.json()) as {
 					winningNumber: number;
@@ -189,7 +196,24 @@ export function initRouletteClient(): void {
 			// bet layout so the player can re-spin the same layout, matching
 			// the main spin error path's isNonCommittedSpinRejection branch.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
-				game.abortSpin();
+				if (typeof err.currentBalance === 'number') {
+					// Server provided an authoritative balance (e.g.
+					// INSUFFICIENT_BALANCE). The bets are invalid for this
+					// balance, so discard them and adopt the server balance
+					// so the user can re-place bets within their actual limit.
+					game.setBalance(err.currentBalance);
+					game.discardActiveBets();
+				} else {
+					// Rebase the restored balance against the active stake.
+					// restoreSession set the balance to the server's pre-spin
+					// balance (balanceOverride), but the active bets were
+					// already deducted locally before the reload. Without
+					// rebasing, refunding the bets (via clearBets/removeBet/
+					// newRound) would inflate the balance by totalBet on top
+					// of the server's balance.
+					game.setBalance(game.getBalance() - totalBet);
+					game.abortSpin();
+				}
 				showMessage(messageForSpinRejection(err));
 				ui.update(game.getState());
 				persistSession();
@@ -298,8 +322,15 @@ export function initRouletteClient(): void {
 				const { response, done } = await fetchSpin(syncId, bets, totalBet);
 				try {
 					if (!response.ok) {
-						const err = (await response.json().catch(() => ({}))) as { error?: string };
-						throw new SpinHttpError(response.status, err.error ?? `HTTP ${response.status}`);
+						const err = (await response.json().catch(() => ({}))) as {
+							error?: string;
+							currentBalance?: number;
+						};
+						throw new SpinHttpError(
+							response.status,
+							err.error ?? `HTTP ${response.status}`,
+							typeof err.currentBalance === 'number' ? err.currentBalance : undefined,
+						);
 					}
 
 					// Mark that the server accepted the spin — even if the body
@@ -371,7 +402,17 @@ export function initRouletteClient(): void {
 			// limit, MP escrow, validation). Do not retry and do not discard
 			// bets — restore betting so the player can re-spin the same layout.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
-				game.abortSpin();
+				if (typeof err.currentBalance === 'number') {
+					// Server provided an authoritative balance (e.g.
+					// INSUFFICIENT_BALANCE). The local balance is stale (another
+					// tab/game lowered it after bets were placed). Discard the
+					// invalid bets and adopt the server balance so the user can
+					// re-place bets within their actual limit.
+					game.setBalance(err.currentBalance);
+					game.discardActiveBets();
+				} else {
+					game.abortSpin();
+				}
 				showMessage(messageForSpinRejection(err));
 				ui.update(game.getState());
 				persistSession();
@@ -437,13 +478,20 @@ export function initRouletteClient(): void {
 						if (!retryResponse.ok) {
 							const retryBody = (await retryResponse.json().catch(() => ({}))) as {
 								error?: string;
+								currentBalance?: number;
 							};
 							const retryErr = new SpinHttpError(
 								retryResponse.status,
 								retryBody.error ?? `HTTP ${retryResponse.status}`,
+								typeof retryBody.currentBalance === 'number' ? retryBody.currentBalance : undefined,
 							);
 							if (isNonCommittedSpinRejection(retryErr)) {
-								game.abortSpin();
+								if (typeof retryErr.currentBalance === 'number') {
+									game.setBalance(retryErr.currentBalance);
+									game.discardActiveBets();
+								} else {
+									game.abortSpin();
+								}
 								showMessage(messageForSpinRejection(retryErr));
 								ui.update(game.getState());
 								persistSession();

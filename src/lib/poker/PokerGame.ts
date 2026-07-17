@@ -40,6 +40,7 @@ import {
 	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from '../public-game-session';
+import { fetchWithTimeout } from '../fetch-with-timeout';
 
 type ChipSyncOutcome = 'win' | 'loss' | 'push';
 const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
@@ -53,6 +54,10 @@ const MAX_DEAL_SYNC_RETRIES = 10;
 // was lost could be replayed after cleanup as a fresh update, double-applying
 // the delta.
 const PENDING_SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+// Timeout for the balance-recovery fetch when an expired pending sync is
+// dropped. A hung fetch would leave the chip-sync flush loop stuck; the
+// abort ensures we fall through to the refresh-required fallback.
+const BALANCE_FETCH_TIMEOUT_MS = 15000;
 
 type PendingChipSync = {
 	syncId: string;
@@ -575,6 +580,36 @@ export class PokerGame {
 		this.syncChips('loss');
 	}
 
+	// Fetch the authoritative chip balance from the server. Returns null
+	// on any failure (timeout, network, bad body) so the caller can fall
+	// through to the refresh-required fallback.
+	private async fetchServerBalance(): Promise<number | null> {
+		try {
+			const response = await fetchWithTimeout(
+				'/api/chips/balance',
+				{ method: 'GET' },
+				BALANCE_FETCH_TIMEOUT_MS,
+			);
+			if (!response.ok) return null;
+			const data = (await response.json()) as { balance?: number };
+			return typeof data.balance === 'number' ? data.balance : null;
+		} catch {
+			return null;
+		}
+	}
+
+	// Block further play when the authoritative server balance cannot be
+	// recovered. Disables the deal button and shows a refresh-required
+	// message, matching the constructor's hasServerSyncedBalance guard.
+	private blockPlayForRefresh(): void {
+		this.hasServerSyncedBalance = false;
+		const dealButton = document.getElementById('btn-deal') as HTMLButtonElement | null;
+		if (dealButton) {
+			dealButton.disabled = true;
+		}
+		this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+	}
+
 	private async flushChipSyncQueue(): Promise<void> {
 		if (this.pendingChipSyncs.length === 0) {
 			this.cancelPendingChipSyncRetry();
@@ -608,7 +643,21 @@ export class PokerGame {
 					console.warn('[CHIP_SYNC] Dropping expired in-memory pending sync:', head.syncId);
 					this.pendingChipSyncs.shift();
 					retryCount = 0;
-					continue;
+					// Reconcile players[0].chips with the authoritative server
+					// balance. The dropped sync's delta was never confirmed, so
+					// the local balance may be inflated/deflated. If the balance
+					// cannot be recovered, block further play and require a
+					// refresh instead of continuing with an untrustworthy balance.
+					const recoveredBalance = await this.fetchServerBalance();
+					if (recoveredBalance !== null) {
+						this.rebaseHumanTableBalance(recoveredBalance);
+						continue;
+					}
+					console.error(
+						'[CHIP_SYNC] Failed to recover server balance after dropping expired sync. Blocking play.',
+					);
+					this.blockPlayForRefresh();
+					break;
 				}
 
 				const result = await this.sendChipSync(this.pendingChipSyncs[0]);

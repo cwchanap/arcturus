@@ -124,6 +124,8 @@ describe('isNonCommittedSpinRejection', () => {
 			'CONCURRENT_MODIFICATION',
 			'409 concurrent modification (retriable — may have committed)',
 		],
+		[409, 'UNKNOWN_NEW_409_CODE', '409 unknown code (ambiguous — not classified as non-committed)'],
+		[409, 'HTTP 409', '409 generic HTTP message (ambiguous — not classified as non-committed)'],
 	];
 
 	for (const [status, code, desc] of nonRejectionCases) {
@@ -178,6 +180,7 @@ describe('error classification mutual exclusivity', () => {
 		[409, 'CONCURRENT_MODIFICATION'],
 		[409, 'MP_ESCROW_ACTIVE'],
 		[409, 'SYNC_ID_REUSE_MISMATCH'],
+		[409, 'UNKNOWN_NEW_409_CODE'],
 		[429, 'RATE_LIMITED'],
 		[500, 'INTERNAL_ERROR'],
 		[502, 'HTTP 502'],

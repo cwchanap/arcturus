@@ -48,12 +48,19 @@ export function isRetriableSpinError(err: unknown): boolean {
 
 // Definitive client rejections: the server did not commit the spin.
 // Restore betting with bets intact instead of discarding or retrying.
+// Only known pre-commit 409 error codes are classified as rejections;
+// an unknown 409 message is treated as ambiguous (may have committed)
+// so the caller falls through to retry / balance recovery instead of
+// discarding bets.
+const NON_COMMITTED_409_CODES = new Set(['MP_ESCROW_ACTIVE', 'SYNC_ID_REUSE_MISMATCH']);
+
 export function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError {
 	if (!(err instanceof SpinHttpError)) return false;
 	if (err.status === 429) return true;
 	if (err.status === 400 || err.status === 401 || err.status === 403) return true;
 	// Non-retriable 409s: escrow lock, syncId reuse with different bets.
-	if (err.status === 409 && err.message !== 'CONCURRENT_MODIFICATION') return true;
+	// Unknown 409 codes are NOT classified — they may have committed.
+	if (err.status === 409 && NON_COMMITTED_409_CODES.has(err.message)) return true;
 	return false;
 }
 

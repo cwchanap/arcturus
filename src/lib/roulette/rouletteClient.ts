@@ -414,11 +414,19 @@ export function initRouletteClient(): void {
 					// spin-processing time; a fresh /api/chips/balance fetch is
 					// more current (another tab/game may have changed it since).
 					// On success, adopt the balance and discard the invalid bets
-					// without refunding. On failure, fall back to abortSpin so
-					// the player can re-place bets within their actual limit.
+					// without refunding. On failure, adopt the spin response's
+					// currentBalance (always present for INSUFFICIENT_BALANCE)
+					// and discard the bets — this is closer to the truth than
+					// the stale local balance, and discarding prevents Clear
+					// from displaying a balance higher than the server's. Only
+					// fall back to abortSpin when no server balance is available
+					// at all.
 					const serverBalance = await fetchBalance();
 					if (serverBalance !== null) {
 						game.setBalance(serverBalance);
+						game.discardActiveBets();
+					} else if (typeof err.currentBalance === 'number') {
+						game.setBalance(err.currentBalance);
 						game.discardActiveBets();
 					} else {
 						game.abortSpin();

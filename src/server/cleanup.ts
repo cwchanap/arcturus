@@ -35,12 +35,16 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 		// using chip_sync_receipt as its idempotency record. Deleting a
 		// settled hand's receipt while the DO can still retry would let a
 		// late retry re-apply the delta (heldChips is already 0), double-
-		// settling the hand. Roulette (7d client TTL) and single-player
-		// poker (MAX_RETRIES=3) have bounded retry lifecycles, so their
-		// receipts remain safe to reap at RETENTION_DAYS.
+		// settling the hand. Roulette receipts are also excluded: the spin
+		// endpoint uses chip_sync_receipt as an idempotency tombstone when
+		// roulette_round rows have been reaped (see spin.ts). Without the
+		// receipt, a replay of an old committed syncId after cleanup would
+		// be treated as a fresh spin and double-settle. Single-player poker
+		// (MAX_RETRIES=3) has a bounded retry lifecycle, so its receipts
+		// remain safe to reap at RETENTION_DAYS.
 		await dbBinding
-			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType != ?')
-			.bind(retentionCutoff, 'poker_mp')
+			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN (?, ?)')
+			.bind(retentionCutoff, 'poker_mp', 'roulette')
 			.run();
 	} catch (error) {
 		console.warn('[CLEANUP] Failed to delete expired chip_sync_receipt rows:', error);

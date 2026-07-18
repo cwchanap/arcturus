@@ -113,6 +113,10 @@ function createMockDbBinding({
 								const [userId, syncId] = args as [string, string];
 								return (rounds.get(`${userId}:${syncId}`) ?? null) as T | null;
 							}
+							if (sql.startsWith('SELECT 1 FROM chip_sync_receipt')) {
+								const [userId, syncId, _gameType] = args as [string, string, string];
+								return receipts.has(`${userId}:${syncId}`) ? ({ '1': 1 } as T) : (null as T | null);
+							}
 							if (sql.startsWith('SELECT achievementPayload FROM chip_sync_receipt')) {
 								const [userId, syncId] = args as [string, string];
 								return (receipts.get(`${userId}:${syncId}`) ?? null) as T | null;
@@ -1077,6 +1081,43 @@ describe('roulette spin API', () => {
 		expect(receipt!.achievementPayload).not.toBeNull();
 		const payload = JSON.parse(receipt!.achievementPayload!);
 		expect(payload.newAchievements).toEqual([]);
+	});
+
+	test('rejects replay with SYNC_ID_REPLAY_EXPIRED when round is reaped but receipt survives', async () => {
+		// Simulates the post-cleanup scenario: roulette_round was deleted
+		// by retention cleanup, but chip_sync_receipt survives as the
+		// idempotency tombstone (see src/server/cleanup.ts). Replaying the
+		// same syncId must NOT create a fresh random settlement — the
+		// server rejects with 409 SYNC_ID_REPLAY_EXPIRED.
+		const existingReceipt: MockReceipt = {
+			userId: 'user-tombstone',
+			syncId: 'tombstone-sync',
+			achievementPayload: null,
+		};
+		const { handler, mock } = createHandler({
+			winningNumber: 17,
+			existingReceipt,
+		});
+		// No existingRound — simulates the round being reaped by cleanup.
+		expect(mock.rounds.has('user-tombstone:tombstone-sync')).toBe(false);
+		expect(mock.receipts.has('user-tombstone:tombstone-sync')).toBe(true);
+
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'tombstone-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-tombstone' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('SYNC_ID_REPLAY_EXPIRED');
+		// No fresh settlement was created — round still absent.
+		expect(mock.rounds.has('user-tombstone:tombstone-sync')).toBe(false);
+		// Balance unchanged — no batch was executed.
+		expect(mock.getCurrentChipBalance()).toBe(1000);
 	});
 
 	test('rate limit map evicts stale entries when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {

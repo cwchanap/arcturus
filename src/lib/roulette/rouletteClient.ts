@@ -138,6 +138,85 @@ export function initRouletteClient(): void {
 	// if the round already committed, the server replays the stored
 	// result; if the original request never arrived, it processes the
 	// round fresh. The server's newBalance is authoritative either way.
+	// Apply a successful spin response (recovery or retry) — builds the
+	// SpinResult, updates game state, dispatches achievements, persists,
+	// and kicks off the wheel animation + deferred result display.
+	// Extracted so the recovery path and its retry share one implementation
+	// instead of triplicating the settlement logic.
+	function applyRecoverySettlement(
+		data: {
+			winningNumber: number;
+			netDelta: number;
+			results: SpinResult['results'];
+			newBalance: number;
+			newAchievements?: Array<{ id: string; name: string; icon: string }>;
+		},
+		syncId: string,
+		bets: RouletteBet[],
+		totalBet: number,
+	): void {
+		const spinResult: SpinResult = {
+			winningNumber: data.winningNumber,
+			bets,
+			totalBet,
+			totalPayout: data.netDelta + totalBet,
+			netDelta: data.netDelta,
+			results: data.results,
+			timestamp: Date.now(),
+			syncId,
+			newBalance: data.newBalance,
+		};
+		game.applySettlement(spinResult);
+		// Mirror the main spin path: refresh the UI immediately so the
+		// table reflects the recovered 'settled' phase, updated balance,
+		// and cleared active bets during the 4s wheel animation, rather
+		// than showing the stale 'spinning' state.
+		ui.update(game.getState());
+		if (data.newAchievements?.length) {
+			window.dispatchEvent(
+				new CustomEvent('achievement-earned', {
+					detail: { achievements: data.newAchievements },
+				}),
+			);
+		}
+		persistSession();
+		ui.animateWheel(spinResult.winningNumber);
+		pendingResultTimer = setTimeout(() => {
+			pendingResultTimer = null;
+			ui.showResult(spinResult);
+			ui.update(game.getState());
+		}, SPIN_ANIMATION_MS);
+	}
+
+	// Handle a definitive non-committed rejection (rate limit, MP escrow,
+	// validation, expired replay) during recovery. Mirrors the main spin
+	// path's isNonCommittedSpinRejection branch: adopt server balance if
+	// provided (bets are invalid for it), otherwise rebase + abortSpin to
+	// preserve the bet layout for re-spinning.
+	function handleRecoveryRejection(err: SpinHttpError, totalBet: number): void {
+		if (typeof err.currentBalance === 'number') {
+			// Server provided an authoritative balance (e.g.
+			// INSUFFICIENT_BALANCE). The bets are invalid for this
+			// balance, so discard them and adopt the server balance
+			// so the user can re-place bets within their actual limit.
+			game.setBalance(err.currentBalance);
+			game.discardActiveBets();
+		} else {
+			// Rebase the restored balance against the active stake.
+			// restoreSession set the balance to the server's pre-spin
+			// balance (balanceOverride), but the active bets were
+			// already deducted locally before the reload. Without
+			// rebasing, refunding the bets (via clearBets/removeBet/
+			// newRound) would inflate the balance by totalBet on top
+			// of the server's balance.
+			game.setBalance(game.getBalance() - totalBet);
+			game.abortSpin();
+		}
+		showMessage(messageForSpinRejection(err));
+		ui.update(game.getState());
+		persistSession();
+	}
+
 	async function recoverPendingSpin(syncId: string, bets: RouletteBet[]): Promise<void> {
 		const totalBet = bets.reduce((s, b) => s + b.amount, 0);
 		try {
@@ -161,37 +240,7 @@ export function initRouletteClient(): void {
 					newBalance: number;
 					newAchievements?: Array<{ id: string; name: string; icon: string }>;
 				};
-				const spinResult: SpinResult = {
-					winningNumber: data.winningNumber,
-					bets,
-					totalBet,
-					totalPayout: data.netDelta + totalBet,
-					netDelta: data.netDelta,
-					results: data.results,
-					timestamp: Date.now(),
-					syncId,
-					newBalance: data.newBalance,
-				};
-				game.applySettlement(spinResult);
-				// Mirror the main spin path: refresh the UI immediately so the
-				// table reflects the recovered 'settled' phase, updated balance,
-				// and cleared active bets during the 4s wheel animation, rather
-				// than showing the stale 'spinning' state.
-				ui.update(game.getState());
-				if (data.newAchievements?.length) {
-					window.dispatchEvent(
-						new CustomEvent('achievement-earned', {
-							detail: { achievements: data.newAchievements },
-						}),
-					);
-				}
-				persistSession();
-				ui.animateWheel(spinResult.winningNumber);
-				pendingResultTimer = setTimeout(() => {
-					pendingResultTimer = null;
-					ui.showResult(spinResult);
-					ui.update(game.getState());
-				}, SPIN_ANIMATION_MS);
+				applyRecoverySettlement(data, syncId, bets, totalBet);
 			} finally {
 				done();
 			}
@@ -201,40 +250,72 @@ export function initRouletteClient(): void {
 			// bet layout so the player can re-spin the same layout, matching
 			// the main spin error path's isNonCommittedSpinRejection branch.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
-				if (typeof err.currentBalance === 'number') {
-					// Server provided an authoritative balance (e.g.
-					// INSUFFICIENT_BALANCE). The bets are invalid for this
-					// balance, so discard them and adopt the server balance
-					// so the user can re-place bets within their actual limit.
-					game.setBalance(err.currentBalance);
-					game.discardActiveBets();
-				} else {
-					// Rebase the restored balance against the active stake.
-					// restoreSession set the balance to the server's pre-spin
-					// balance (balanceOverride), but the active bets were
-					// already deducted locally before the reload. Without
-					// rebasing, refunding the bets (via clearBets/removeBet/
-					// newRound) would inflate the balance by totalBet on top
-					// of the server's balance.
-					game.setBalance(game.getBalance() - totalBet);
-					game.abortSpin();
-				}
-				showMessage(messageForSpinRejection(err));
-				ui.update(game.getState());
-				persistSession();
+				handleRecoveryRejection(err, totalBet);
 				return;
 			}
-			// Recovery failed — re-fetch the authoritative balance so we
-			// don't abandon a potentially-committed spin's balance change,
-			// then discard without refunding (same rationale as the main
-			// spin error path).
+			// If the server may have processed the spin (network error, 409
+			// concurrent modification, 5xx, or timeout), retry the same
+			// syncId once to leverage endpoint idempotency before abandoning
+			// the attempt — mirroring the main spin path's retry branch.
+			if (isRetriableSpinError(err) && game.getState().phase === 'spinning') {
+				try {
+					const { response: retryResponse, done: retryDone } = await fetchSpin(
+						syncId,
+						bets,
+						totalBet,
+					);
+					try {
+						if (retryResponse.ok) {
+							const retryData = (await retryResponse.json()) as {
+								winningNumber: number;
+								netDelta: number;
+								results: SpinResult['results'];
+								newBalance: number;
+								newAchievements?: Array<{ id: string; name: string; icon: string }>;
+							};
+							applyRecoverySettlement(retryData, syncId, bets, totalBet);
+							return;
+						}
+						// Retry got a definitive rejection (e.g. MP escrow
+						// after a retriable first error). Handle with bets
+						// preserved/discarded per the rejection's balance.
+						const retryBody = (await retryResponse.json().catch(() => ({}))) as {
+							error?: string;
+							currentBalance?: number;
+						};
+						const retryErr = new SpinHttpError(
+							retryResponse.status,
+							retryBody.error ?? `HTTP ${retryResponse.status}`,
+							typeof retryBody.currentBalance === 'number' ? retryBody.currentBalance : undefined,
+						);
+						if (isNonCommittedSpinRejection(retryErr)) {
+							handleRecoveryRejection(retryErr, totalBet);
+							return;
+						}
+					} finally {
+						retryDone();
+					}
+				} catch (retryErr) {
+					console.error('[ROULETTE] Recovery retry also failed:', retryErr);
+				}
+			}
+			// Recovery (and retry, if attempted) failed — re-fetch the
+			// authoritative balance so we don't abandon a potentially-
+			// committed spin's balance change. Mirrors the main spin path's
+			// balance-recovery branch: only discard bets if the balance
+			// fetch succeeds (the server balance already reflects any
+			// committed settlement). If the balance fetch also fails, retain
+			// the spinning snapshot (pendingSyncId + active bets intact) so
+			// the next reload can re-submit via idempotency replay — clearing
+			// the only replay key here would permanently lose the winning
+			// number and achievement payload if the spin did commit.
 			let serverBalanceAdopted = false;
 			const serverBalance = await fetchBalance();
 			if (serverBalance !== null) {
 				game.setBalance(serverBalance);
 				serverBalanceAdopted = true;
+				game.discardActiveBets();
 			}
-			game.discardActiveBets();
 			showMessage(
 				serverBalanceAdopted
 					? 'Spin result unclear — balance synced from server.'

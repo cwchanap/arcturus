@@ -954,7 +954,7 @@ describe('roulette spin API', () => {
 		expect(payload.newAchievements[0].id).toBe('rising_star');
 	});
 
-	test('replay with null achievement payload and no achievements earned returns undefined', async () => {
+	test('replay with null achievement payload and no achievements earned returns undefined and persists empty payload', async () => {
 		const noAchievements: typeof checkAndGrantAchievements = async () => [];
 		const existingReceipt: MockReceipt = {
 			userId: 'user-replay-null-empty',
@@ -992,9 +992,66 @@ describe('roulette spin API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(200);
 		expect(body.newAchievements).toBeUndefined();
+		// Empty payload is persisted so subsequent replays skip the check.
+		const receipt = mock.receipts.get('user-replay-null-empty:replay-null-empty-sync');
+		expect(receipt).toBeDefined();
+		expect(receipt!.achievementPayload).not.toBeNull();
+		const payload = JSON.parse(receipt!.achievementPayload!);
+		expect(payload.newAchievements).toEqual([]);
 	});
 
-	test('does not persist achievement payload when no achievements earned', async () => {
+	test('replay with cached empty achievement payload skips checkAndGrantAchievements', async () => {
+		// A receipt already carries an explicit empty payload from a prior
+		// spin/replay. The replay must NOT re-invoke checkAndGrantAchievements
+		// (which would bypass the rate limit and repeat achievement DB work).
+		let calls = 0;
+		const spyCheckAndGrant: typeof checkAndGrantAchievements = async () => {
+			calls++;
+			return [{ id: 'should_not_run', name: 'Should Not Run', icon: 'x' }] as any;
+		};
+		const existingReceipt: MockReceipt = {
+			userId: 'user-replay-empty-cache',
+			syncId: 'replay-empty-cache-sync',
+			achievementPayload: JSON.stringify({ newAchievements: [], warnings: [] }),
+		};
+		const existingRound: MockRound = {
+			userId: 'user-replay-empty-cache',
+			syncId: 'replay-empty-cache-sync',
+			winningNumber: 0,
+			betsJson: JSON.stringify([makeBet('red', 50)]),
+			totalBet: 50,
+			totalPayout: 0,
+			netDelta: -50,
+			previousBalance: 1000,
+			newBalance: 950,
+		};
+		const { handler, mock } = createHandler({
+			existingRound,
+			existingReceipt,
+			checkAndGrantAchievements: spyCheckAndGrant,
+		});
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-empty-cache-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({
+				user: { id: 'user-replay-empty-cache' },
+				dbBinding: mock.binding,
+			}),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.newAchievements).toBeUndefined();
+		expect(calls).toBe(0);
+		// Payload unchanged — no re-persist needed.
+		const receipt = mock.receipts.get('user-replay-empty-cache:replay-empty-cache-sync');
+		expect(receipt!.achievementPayload).toBe(JSON.stringify({ newAchievements: [], warnings: [] }));
+	});
+
+	test('persists empty achievement payload when no achievements earned', async () => {
 		const noAchievements: typeof checkAndGrantAchievements = async () => [];
 		const { handler, mock } = createHandler({
 			winningNumber: 17,
@@ -1014,7 +1071,12 @@ describe('roulette spin API', () => {
 		expect(body.newAchievements).toBeUndefined();
 		const receipt = mock.receipts.get('user-no-achv:no-achv-sync');
 		expect(receipt).toBeDefined();
-		expect(receipt!.achievementPayload).toBeNull();
+		// An explicit empty payload is persisted so replays of this syncId
+		// (which bypass the rate limit) read the cached result instead of
+		// re-running checkAndGrantAchievements on every replay.
+		expect(receipt!.achievementPayload).not.toBeNull();
+		const payload = JSON.parse(receipt!.achievementPayload!);
+		expect(payload.newAchievements).toEqual([]);
 	});
 
 	test('rate limit map evicts stale entries when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {

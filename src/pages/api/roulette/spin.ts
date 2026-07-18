@@ -316,7 +316,10 @@ async function handleSpinRequest(
 			// Worker was evicted before achievement grant/persist. Re-run
 			// achievement resolution (idempotent — already-granted
 			// achievements are skipped) and persist the result, mirroring
-			// the replay path in src/pages/api/chips/update.ts.
+			// the replay path in src/pages/api/chips/update.ts. Persist the
+			// result even when no achievements were earned, so subsequent
+			// replays of this syncId (which bypass the rate limit) read the
+			// cached result instead of re-running the check on every replay.
 			try {
 				const replayDb = createDbImpl(dbBinding);
 				const netDelta = existing.netDelta as number;
@@ -334,24 +337,22 @@ async function handleSpinRequest(
 					name: a.name,
 					icon: a.icon,
 				}));
-				if (replayedAchievements.length > 0) {
-					try {
-						await dbBinding
-							.prepare(
-								'UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?',
-							)
-							.bind(
-								JSON.stringify({ newAchievements: replayedAchievements, warnings: [] }),
-								userId,
-								syncId,
-							)
-							.run();
-					} catch (receiptPayloadError) {
-						console.error(
-							'[ROULETTE] Failed to persist replayed achievement payload:',
-							receiptPayloadError,
-						);
-					}
+				try {
+					await dbBinding
+						.prepare(
+							'UPDATE chip_sync_receipt SET achievementPayload = ? WHERE userId = ? AND syncId = ?',
+						)
+						.bind(
+							JSON.stringify({ newAchievements: replayedAchievements, warnings: [] }),
+							userId,
+							syncId,
+						)
+						.run();
+				} catch (receiptPayloadError) {
+					console.error(
+						'[ROULETTE] Failed to persist replayed achievement payload:',
+						receiptPayloadError,
+					);
 				}
 			} catch (replayAchievementError) {
 				console.error('[ROULETTE] Replay achievement resolution error:', replayAchievementError);
@@ -589,6 +590,7 @@ async function handleSpinRequest(
 	}
 
 	let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+	let achievementsResolved = false;
 	try {
 		if (shouldRecordStats) {
 			const earned = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
@@ -596,12 +598,19 @@ async function handleSpinRequest(
 				gameType: 'roulette' as GameType,
 			});
 			newAchievements = earned.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
+			achievementsResolved = true;
 		}
 	} catch (statsError) {
 		console.error('[ROULETTE] Stats/achievement error:', statsError);
 	}
 
-	if (newAchievements.length > 0) {
+	// Persist the achievement payload whenever the check completed — even
+	// when no achievements were earned — so that replays of this syncId
+	// (which bypass the rate limit via the existing-round branch) read the
+	// cached result instead of re-running checkAndGrantAchievements and
+	// repeating the achievement DB work on every replay. A NULL payload is
+	// only left when the check threw, so a replay can retry resolution.
+	if (achievementsResolved) {
 		try {
 			await dbBinding
 				.prepare(

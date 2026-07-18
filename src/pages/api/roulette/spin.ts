@@ -377,20 +377,35 @@ async function handleSpinRequest(
 
 	// Idempotency tombstone: if roulette_round was reaped by retention
 	// cleanup but chip_sync_receipt survives (see src/server/cleanup.ts —
-	// roulette receipts are excluded from deletion), this syncId was
-	// already committed. Reject instead of creating a fresh random
-	// settlement — an authenticated caller can bypass the client-side
-	// 7-day localStorage TTL by POSTing directly, so the server must not
-	// treat an expired syncId as a new spin. No currentBalance is returned
-	// because the receipt's historical balance may be stale (other
-	// games/spins since); the client falls through to its balance-recovery
-	// branch and fetches the authoritative current balance.
+	// roulette receipts are reaped on a longer bounded schedule), this
+	// syncId was already committed. Reject instead of creating a fresh
+	// random settlement — an authenticated caller can bypass the
+	// client-side 7-day localStorage TTL by POSTing directly, so the
+	// server must not treat an expired syncId as a new spin. No
+	// currentBalance is returned because the receipt's historical balance
+	// may be stale (other games/spins since); the client falls through to
+	// its balance-recovery branch and fetches the authoritative current
+	// balance.
+	//
+	// The chip_sync_receipt PK is (userId, syncId) without gameType, so a
+	// receipt may exist for a *different* game using the same syncId. That
+	// is a permanent collision — the spin batch can never commit (PK
+	// violation on every attempt), so returning CONCURRENT_MODIFICATION
+	// would make the client retry an idempotent conflict that can never
+	// resolve. Detect the collision here and return a definitive
+	// non-retriable mismatch instead.
 	const tombstone = await dbBinding
-		.prepare('SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ? AND gameType = ?')
-		.bind(userId, syncId, 'roulette')
-		.first();
+		.prepare('SELECT gameType FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
+		.bind(userId, syncId)
+		.first<{ gameType: string }>();
 	if (tombstone) {
-		return new Response(JSON.stringify({ error: 'SYNC_ID_REPLAY_EXPIRED' }), {
+		if (tombstone.gameType === 'roulette') {
+			return new Response(JSON.stringify({ error: 'SYNC_ID_REPLAY_EXPIRED' }), {
+				status: 409,
+				headers: { 'Content-Type': 'application/json' },
+			});
+		}
+		return new Response(JSON.stringify({ error: 'SYNC_ID_REUSE_MISMATCH' }), {
 			status: 409,
 			headers: { 'Content-Type': 'application/json' },
 		});

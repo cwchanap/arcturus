@@ -66,6 +66,11 @@ interface MockReceipt {
 	userId: string;
 	syncId: string;
 	achievementPayload: string | null;
+	// Defaults to 'roulette'. Set to another game type to simulate a
+	// cross-game (userId, syncId) PK collision — the spin endpoint must
+	// return SYNC_ID_REUSE_MISMATCH instead of looping on a retriable
+	// CONCURRENT_MODIFICATION that can never commit.
+	gameType?: string;
 }
 
 function createMockDbBinding({
@@ -113,9 +118,11 @@ function createMockDbBinding({
 								const [userId, syncId] = args as [string, string];
 								return (rounds.get(`${userId}:${syncId}`) ?? null) as T | null;
 							}
-							if (sql.startsWith('SELECT 1 FROM chip_sync_receipt')) {
-								const [userId, syncId, _gameType] = args as [string, string, string];
-								return receipts.has(`${userId}:${syncId}`) ? ({ '1': 1 } as T) : (null as T | null);
+							if (sql.startsWith('SELECT gameType FROM chip_sync_receipt')) {
+								const [userId, syncId] = args as [string, string];
+								const receipt = receipts.get(`${userId}:${syncId}`);
+								if (!receipt) return null as T | null;
+								return { gameType: receipt.gameType ?? 'roulette' } as T;
 							}
 							if (sql.startsWith('SELECT achievementPayload FROM chip_sync_receipt')) {
 								const [userId, syncId] = args as [string, string];
@@ -1116,6 +1123,46 @@ describe('roulette spin API', () => {
 		expect(body.error).toBe('SYNC_ID_REPLAY_EXPIRED');
 		// No fresh settlement was created — round still absent.
 		expect(mock.rounds.has('user-tombstone:tombstone-sync')).toBe(false);
+		// Balance unchanged — no batch was executed.
+		expect(mock.getCurrentChipBalance()).toBe(1000);
+	});
+
+	test('rejects cross-game receipt collision with SYNC_ID_REUSE_MISMATCH, not retriable CONCURRENT_MODIFICATION', async () => {
+		// The chip_sync_receipt PK is (userId, syncId) without gameType.
+		// If another game (e.g. poker) already used this syncId, the
+		// roulette spin batch can never commit — every attempt raises a
+		// PRIMARY KEY violation. Returning CONCURRENT_MODIFICATION would
+		// make the client retry an idempotent conflict that can never
+		// resolve (no roulette round or roulette tombstone will ever
+		// exist). The endpoint must detect the cross-game receipt and
+		// return a definitive non-retriable mismatch instead.
+		const existingReceipt: MockReceipt = {
+			userId: 'user-cross-game',
+			syncId: 'cross-game-sync',
+			achievementPayload: null,
+			gameType: 'poker',
+		};
+		const { handler, mock } = createHandler({
+			winningNumber: 17,
+			existingReceipt,
+		});
+		// No roulette round exists for this syncId.
+		expect(mock.rounds.has('user-cross-game:cross-game-sync')).toBe(false);
+
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'cross-game-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-cross-game' }, dbBinding: mock.binding }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(409);
+		expect(body.error).toBe('SYNC_ID_REUSE_MISMATCH');
+		// No fresh settlement was created.
+		expect(mock.rounds.has('user-cross-game:cross-game-sync')).toBe(false);
 		// Balance unchanged — no batch was executed.
 		expect(mock.getCurrentChipBalance()).toBe(1000);
 	});

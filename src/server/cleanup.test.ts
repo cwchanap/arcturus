@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { runRetentionCleanup, RETENTION_DAYS } from './cleanup';
+import { runRetentionCleanup, RETENTION_DAYS, ROULETTE_RECEIPT_RETENTION_DAYS } from './cleanup';
 
 interface PreparedCall {
 	sql: string;
@@ -10,7 +10,12 @@ function createMockDbBinding() {
 	const calls: PreparedCall[] = [];
 	const runResults: Record<string, { meta: { changes: number } }> = {
 		'DELETE FROM roulette_round': { meta: { changes: 5 } },
-		'DELETE FROM chip_sync_receipt': { meta: { changes: 3 } },
+		'DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN': {
+			meta: { changes: 3 },
+		},
+		'DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType = ?': {
+			meta: { changes: 2 },
+		},
 	};
 	const binding = {
 		prepare(sql: string) {
@@ -36,17 +41,18 @@ function createMockDbBinding() {
 }
 
 describe('runRetentionCleanup', () => {
-	test('deletes from both roulette_round and chip_sync_receipt', async () => {
+	test('deletes from roulette_round and both chip_sync_receipt passes', async () => {
 		const { binding, calls } = createMockDbBinding();
 		await runRetentionCleanup(binding);
-		expect(calls).toHaveLength(2);
+		expect(calls).toHaveLength(3);
 		expect(calls[0].sql).toBe('DELETE FROM roulette_round WHERE createdAt < ?');
 		expect(calls[1].sql).toBe(
 			'DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN (?, ?)',
 		);
+		expect(calls[2].sql).toBe('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType = ?');
 	});
 
-	test('excludes poker_mp and roulette receipts from the chip_sync_receipt delete', async () => {
+	test('excludes poker_mp and roulette receipts from the 30-day chip_sync_receipt delete', async () => {
 		const { binding, calls } = createMockDbBinding();
 		await runRetentionCleanup(binding);
 		const receiptCall = calls[1];
@@ -54,7 +60,28 @@ describe('runRetentionCleanup', () => {
 		expect(receiptCall.args[2]).toBe('roulette');
 	});
 
-	test('uses a retention cutoff of 30 days in seconds', async () => {
+	test('reaps roulette receipts on the longer bounded schedule', async () => {
+		const { binding, calls } = createMockDbBinding();
+		await runRetentionCleanup(binding);
+		const rouletteReceiptCall = calls[2];
+		expect(rouletteReceiptCall.args[1]).toBe('roulette');
+		const before = Math.trunc(
+			(Date.now() - ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000,
+		);
+		const after = Math.trunc(
+			(Date.now() - ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000,
+		);
+		expect(rouletteReceiptCall.args[0]).toBeGreaterThanOrEqual(before);
+		expect(rouletteReceiptCall.args[0]).toBeLessThanOrEqual(after);
+	});
+
+	test('roulette receipt retention window is longer than the round retention window', async () => {
+		// Tombstones must outlive roulette_round rows so a replay after
+		// round reaping is still rejected.
+		expect(ROULETTE_RECEIPT_RETENTION_DAYS).toBeGreaterThan(RETENTION_DAYS);
+	});
+
+	test('uses a retention cutoff of 30 days in seconds for round and non-roulette receipts', async () => {
 		const { binding, calls } = createMockDbBinding();
 		const before = Math.trunc((Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000);
 		await runRetentionCleanup(binding);
@@ -67,6 +94,7 @@ describe('runRetentionCleanup', () => {
 
 	test('swallows errors from roulette_round delete and still cleans chip_sync_receipt', async () => {
 		let receiptDeleted = false;
+		let rouletteReceiptDeleted = false;
 		const binding = {
 			prepare(sql: string) {
 				return {
@@ -75,6 +103,10 @@ describe('runRetentionCleanup', () => {
 							run: async () => {
 								if (sql.startsWith('DELETE FROM roulette_round')) {
 									throw new Error('D1 error');
+								}
+								if (sql.includes('gameType = ?')) {
+									rouletteReceiptDeleted = true;
+									return { meta: { changes: 1 } };
 								}
 								receiptDeleted = true;
 								return { meta: { changes: 1 } };
@@ -86,20 +118,58 @@ describe('runRetentionCleanup', () => {
 		} as unknown as D1Database;
 		await runRetentionCleanup(binding);
 		expect(receiptDeleted).toBe(true);
+		expect(rouletteReceiptDeleted).toBe(true);
 	});
 
-	test('swallows errors from chip_sync_receipt delete', async () => {
-		let rouletteDeleted = false;
+	test('swallows errors from the 30-day chip_sync_receipt delete and still runs the roulette pass', async () => {
+		let rouletteRoundDeleted = false;
+		let rouletteReceiptDeleted = false;
 		const binding = {
 			prepare(sql: string) {
 				return {
 					bind() {
 						return {
 							run: async () => {
-								if (sql.startsWith('DELETE FROM chip_sync_receipt')) {
+								if (sql.startsWith('DELETE FROM roulette_round')) {
+									rouletteRoundDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								if (sql.includes('gameType NOT IN')) {
 									throw new Error('D1 error');
 								}
-								rouletteDeleted = true;
+								if (sql.includes('gameType = ?')) {
+									rouletteReceiptDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		await runRetentionCleanup(binding);
+		expect(rouletteRoundDeleted).toBe(true);
+		expect(rouletteReceiptDeleted).toBe(true);
+	});
+
+	test('swallows errors from the roulette receipt delete', async () => {
+		let rouletteRoundDeleted = false;
+		let receiptDeleted = false;
+		const binding = {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return {
+							run: async () => {
+								if (sql.startsWith('DELETE FROM roulette_round')) {
+									rouletteRoundDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								if (sql.includes('gameType = ?')) {
+									throw new Error('D1 error');
+								}
+								receiptDeleted = true;
 								return { meta: { changes: 1 } };
 							},
 						};
@@ -108,6 +178,7 @@ describe('runRetentionCleanup', () => {
 			},
 		} as unknown as D1Database;
 		await runRetentionCleanup(binding);
-		expect(rouletteDeleted).toBe(true);
+		expect(rouletteRoundDeleted).toBe(true);
+		expect(receiptDeleted).toBe(true);
 	});
 });

@@ -29,6 +29,13 @@ export class RouletteUIRenderer {
 
 	update(state: RouletteGameState): void {
 		this.balanceEl.textContent = `$${state.chipBalance.toLocaleString()}`;
+		// Keep the shared AppLayout header balance pill(s) in sync. The
+		// roulette page's #chip-balance uses "$X,XXX" format while the
+		// header [data-chip-balance] uses "X,XXX chips" — update both so
+		// a win/loss doesn't leave the header stale until page reload.
+		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
+			el.textContent = `${state.chipBalance.toLocaleString()} chips`;
+		});
 		const totalBet = state.activeBets.reduce((s, b) => s + b.amount, 0);
 		this.totalBetEl.textContent = `$${totalBet.toLocaleString()}`;
 

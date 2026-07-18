@@ -417,6 +417,23 @@ describe('initRouletteClient — auth mode spin rejections (non-committed)', () 
 		expect(s.gameMessage.textContent).toContain('wait');
 	});
 
+	it('discards bets on 429 rate limit when server balance < totalBet', async () => {
+		// Another tab/game reduced the account balance below the stake
+		// during the in-flight spin. Preserving the bets would let Clear
+		// refund totalBet on top of the stale local balance, displaying
+		// chips not in the account.
+		const s = setup({ guestMode: false });
+		s.fetchMock.impl = (url) => {
+			if (url === '/api/chips/balance') return makeFetchResponse(200, { balance: 3 });
+			return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+		};
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+		expect(s.balanceEl.textContent).toContain('3');
+		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
+	});
+
 	it('adopts server balance and discards bets on INSUFFICIENT_BALANCE', async () => {
 		const s = setup({ guestMode: false });
 		s.fetchMock.impl = (url) => {
@@ -714,6 +731,41 @@ describe('initRouletteClient — pending spin recovery', () => {
 		expect(s.spinBtn.hidden).toBe(false);
 		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
 		expect(s.gameMessage.textContent).toContain('wait');
+	});
+
+	it('recovery rejection without currentBalance → discards bets when server balance < totalBet', async () => {
+		// Another tab/game reduced the account balance below the restored
+		// stake. Preserving the bets would let Clear refund totalBet into
+		// chips not in the account (setBalance clamps the rebase to 0).
+		const s = setup({
+			guestMode: false,
+			initialBalance: 5,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/chips/balance') return makeFetchResponse(200, { balance: 5 });
+				return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+			},
+		});
+		await flush();
+		expect(s.balanceEl.textContent).toContain('5');
+		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
+	});
+
+	it('recovery rejection without currentBalance → discards bets when balance fetch fails and restored balance < totalBet', async () => {
+		// Balance fetch fails, but the restored balance (balanceOverride)
+		// is already below totalBet — guard with it rather than preserving
+		// unaffordable bets.
+		const s = setup({
+			guestMode: false,
+			initialBalance: 5,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/chips/balance') return makeFetchResponse(500, {});
+				return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+			},
+		});
+		await flush();
+		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 
 	it('recovery non-committed rejection with currentBalance → discard bets', async () => {

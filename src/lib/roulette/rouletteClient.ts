@@ -193,7 +193,7 @@ export function initRouletteClient(): void {
 	// path's isNonCommittedSpinRejection branch: adopt server balance if
 	// provided (bets are invalid for it), otherwise rebase + abortSpin to
 	// preserve the bet layout for re-spinning.
-	function handleRecoveryRejection(err: SpinHttpError, totalBet: number): void {
+	async function handleRecoveryRejection(err: SpinHttpError, totalBet: number): Promise<void> {
 		if (typeof err.currentBalance === 'number') {
 			// Server provided an authoritative balance (e.g.
 			// INSUFFICIENT_BALANCE). The bets are invalid for this
@@ -202,15 +202,31 @@ export function initRouletteClient(): void {
 			game.setBalance(err.currentBalance);
 			game.discardActiveBets();
 		} else {
-			// Rebase the restored balance against the active stake.
-			// restoreSession set the balance to the server's pre-spin
-			// balance (balanceOverride), but the active bets were
-			// already deducted locally before the reload. Without
-			// rebasing, refunding the bets (via clearBets/removeBet/
-			// newRound) would inflate the balance by totalBet on top
-			// of the server's balance.
-			game.setBalance(game.getBalance() - totalBet);
-			game.abortSpin();
+			// No server balance in the rejection. The restored balance
+			// (balanceOverride from page load) may be stale — another
+			// tab/game could have reduced it below totalBet. Fetch a
+			// fresh authoritative balance; if it can't cover the bets,
+			// discard them rather than preserving a layout the player
+			// can't afford (setBalance clamps the rebase to 0 while
+			// abortSpin keeps the bets, so Clear would refund the full
+			// stake and display chips not in the account). If the fetch
+			// fails, guard with the restored balance instead.
+			const serverBalance = await fetchBalance();
+			const effectiveBalance = serverBalance !== null ? serverBalance : game.getBalance();
+			if (effectiveBalance < totalBet) {
+				if (serverBalance !== null) game.setBalance(serverBalance);
+				game.discardActiveBets();
+			} else {
+				// Rebase the restored balance against the active stake.
+				// restoreSession set the balance to the server's pre-spin
+				// balance (balanceOverride), but the active bets were
+				// already deducted locally before the reload. Without
+				// rebasing, refunding the bets (via clearBets/removeBet/
+				// newRound) would inflate the balance by totalBet on top
+				// of the server's balance.
+				game.setBalance(effectiveBalance - totalBet);
+				game.abortSpin();
+			}
 		}
 		showMessage(messageForSpinRejection(err));
 		ui.update(game.getState());
@@ -250,7 +266,7 @@ export function initRouletteClient(): void {
 			// bet layout so the player can re-spin the same layout, matching
 			// the main spin error path's isNonCommittedSpinRejection branch.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
-				handleRecoveryRejection(err, totalBet);
+				await handleRecoveryRejection(err, totalBet);
 				return;
 			}
 			// If the server may have processed the spin (network error, 409
@@ -289,7 +305,7 @@ export function initRouletteClient(): void {
 							typeof retryBody.currentBalance === 'number' ? retryBody.currentBalance : undefined,
 						);
 						if (isNonCommittedSpinRejection(retryErr)) {
-							handleRecoveryRejection(retryErr, totalBet);
+							await handleRecoveryRejection(retryErr, totalBet);
 							return;
 						}
 					} finally {
@@ -521,7 +537,32 @@ export function initRouletteClient(): void {
 					game.setBalance(err.currentBalance);
 					game.discardActiveBets();
 				} else {
-					game.abortSpin();
+					// No currentBalance in the rejection. The local balance
+					// (already deducted by beginSpin) may be stale — another
+					// tab/game could have reduced the server balance during
+					// the in-flight spin. Fetch a fresh authoritative balance;
+					// if it can't cover the bets, discard them rather than
+					// preserving a layout the player can't afford (Clear would
+					// refund totalBet on top of the stale local balance,
+					// displaying chips not in the account). If the fetch fails,
+					// fall back to abortSpin — the next spin attempt will hit
+					// INSUFFICIENT_BALANCE and correct the balance.
+					const activeBets = game.getState().activeBets;
+					const totalBet = activeBets.reduce((s, b) => s + b.amount, 0);
+					const serverBalance = await fetchBalance();
+					if (serverBalance !== null && serverBalance < totalBet) {
+						game.setBalance(serverBalance);
+						game.discardActiveBets();
+					} else {
+						if (serverBalance !== null) {
+							// Rebase to the server balance minus the local deduction
+							// that beginSpin already applied, so refunding via Clear
+							// restores to the server balance rather than inflating
+							// above it.
+							game.setBalance(serverBalance - totalBet);
+						}
+						game.abortSpin();
+					}
 				}
 				showMessage(messageForSpinRejection(err));
 				ui.update(game.getState());

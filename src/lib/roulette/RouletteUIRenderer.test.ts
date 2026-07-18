@@ -75,6 +75,17 @@ describe('RouletteUIRenderer — update', () => {
 		expect(setup.elements['total-bet'].textContent).toBe('$1,250');
 	});
 
+	it('syncs the shared header [data-chip-balance] pill in "N chips" format', () => {
+		const headerPill = new MockElement('span');
+		headerPill.dataset.chipBalance = '';
+		attachToBody(headerPill);
+		const renderer = new RouletteUIRenderer();
+		renderer.update(makeState({ chipBalance: 7500 }));
+
+		expect(setup.elements['chip-balance'].textContent).toBe('$7,500');
+		expect(headerPill.textContent).toBe('7,500 chips');
+	});
+
 	it('enables spin only when bets exist and phase is betting', () => {
 		const renderer = new RouletteUIRenderer();
 		renderer.update(makeState({ phase: 'betting', activeBets: [] }));

@@ -743,7 +743,12 @@ describe('initRouletteClient — pending spin recovery', () => {
 		expect(s.gameMessage.textContent).toContain('balance synced');
 	});
 
-	it('recovery failure → balance recovery fails → refresh message', async () => {
+	it('recovery failure → balance recovery fails → retains spinning snapshot', async () => {
+		// When both the retry and the balance fetch fail, the recovery path
+		// must NOT discardActiveBets — clearing the pendingSyncId would
+		// strip the only replay key, permanently losing the winning number
+		// and achievement payload if the spin did commit. The snapshot is
+		// retained so the next reload re-submits via idempotency replay.
 		const s = setup({
 			guestMode: false,
 			session: makeSpinningSnapshot('recovery-sync-id'),
@@ -754,6 +759,93 @@ describe('initRouletteClient — pending spin recovery', () => {
 		});
 		await flush();
 		expect(s.gameMessage.textContent).toContain('refresh');
+		// Bets retained — not discarded — so a reload can replay the syncId.
+		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
+		const stored = JSON.parse(s.storage.getItem('roulette-session:user1') ?? '{}');
+		expect(stored.phase).toBe('spinning');
+		expect(stored.pendingSyncId).toBe('recovery-sync-id');
+	});
+
+	it('recovery retries on 500 and succeeds', async () => {
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					if (spinCallCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
+					return makeFetchResponse(200, spinResponseBody(17, -10, 990));
+				}
+				return makeFetchResponse(200, { balance: 990 });
+			},
+		});
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(s.balanceEl.textContent).toContain('990');
+	});
+
+	it('recovery retries on 409 CONCURRENT_MODIFICATION and succeeds', async () => {
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					if (spinCallCount === 1)
+						return makeFetchResponse(409, { error: 'CONCURRENT_MODIFICATION' });
+					return makeFetchResponse(200, spinResponseBody(17, -10, 990));
+				}
+				return makeFetchResponse(200, { balance: 990 });
+			},
+		});
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(s.balanceEl.textContent).toContain('990');
+	});
+
+	it('recovery retry gets non-committed rejection → preserves bets', async () => {
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					if (spinCallCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
+					return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+				}
+				return makeFetchResponse(200, { balance: 990 });
+			},
+		});
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.spinBtn.hidden).toBe(false);
+		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
+		expect(s.gameMessage.textContent).toContain('wait');
+	});
+
+	it('recovery retry gets non-committed rejection with currentBalance → discards bets', async () => {
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					if (spinCallCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
+					return makeFetchResponse(409, { error: 'MP_ESCROW_ACTIVE', currentBalance: 600 });
+				}
+				return makeFetchResponse(200, { balance: 600 });
+			},
+		});
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.balanceEl.textContent).toContain('600');
+		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 });
 

@@ -375,6 +375,27 @@ async function handleSpinRequest(
 		);
 	}
 
+	// Idempotency tombstone: if roulette_round was reaped by retention
+	// cleanup but chip_sync_receipt survives (see src/server/cleanup.ts —
+	// roulette receipts are excluded from deletion), this syncId was
+	// already committed. Reject instead of creating a fresh random
+	// settlement — an authenticated caller can bypass the client-side
+	// 7-day localStorage TTL by POSTing directly, so the server must not
+	// treat an expired syncId as a new spin. No currentBalance is returned
+	// because the receipt's historical balance may be stale (other
+	// games/spins since); the client falls through to its balance-recovery
+	// branch and fetches the authoritative current balance.
+	const tombstone = await dbBinding
+		.prepare('SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ? AND gameType = ?')
+		.bind(userId, syncId, 'roulette')
+		.first();
+	if (tombstone) {
+		return new Response(JSON.stringify({ error: 'SYNC_ID_REPLAY_EXPIRED' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+
 	// Rate-limit check — fail-fast before the user row DB read. Placed
 	// after the idempotency existence check so that replays of already-
 	// settled spins still return the cached result without being blocked.

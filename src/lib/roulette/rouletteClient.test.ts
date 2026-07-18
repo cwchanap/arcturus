@@ -174,9 +174,30 @@ describe('restoreSession — pending spin TTL', () => {
 		};
 		storage[key] = JSON.stringify(corruptedSnapshot);
 
+		// Capture pre-restore state so we can prove the rejection left the
+		// game untouched. A valid settled snapshot also returns null, so the
+		// null result alone does not distinguish rejection from a no-op
+		// restore — the snapshot's selectedChipAmount (25) would have leaked
+		// in had restoreState run.
+		const beforeState = game.getState();
+		const beforeBalance = game.getBalance();
+
 		const result = restoreSession(game, key, 1000);
 
 		expect(result).toBeNull();
+		const afterState = game.getState();
+		expect(afterState.phase).toBe(beforeState.phase);
+		expect(afterState.phase).toBe('betting');
+		expect(game.getBalance()).toBe(beforeBalance);
+		expect(game.getBalance()).toBe(1000);
+		expect(afterState.activeBets).toEqual(beforeState.activeBets);
+		expect(afterState.activeBets).toHaveLength(0);
+		expect(afterState.selectedChipAmount).toBe(beforeState.selectedChipAmount);
+		expect(afterState.selectedChipAmount).toBe(5);
+		expect(afterState.lastSpin).toBe(beforeState.lastSpin);
+		expect(afterState.lastSpin).toBeNull();
+		expect(afterState.roundHistory).toEqual(beforeState.roundHistory);
+		expect(afterState.roundHistory).toEqual([]);
 	});
 
 	it('restores a valid settled snapshot with empty activeBets for auth users', () => {

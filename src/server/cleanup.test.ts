@@ -62,12 +62,16 @@ describe('runRetentionCleanup', () => {
 
 	test('reaps roulette receipts on the longer bounded schedule', async () => {
 		const { binding, calls } = createMockDbBinding();
-		await runRetentionCleanup(binding);
-		const rouletteReceiptCall = calls[2];
-		expect(rouletteReceiptCall.args[1]).toBe('roulette');
+		// Capture the lower cutoff before cleanup runs so the bound is
+		// meaningful — computing both before/after the call makes the
+		// assertion trivially true since the two timestamps are nearly
+		// identical.
 		const before = Math.trunc(
 			(Date.now() - ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000,
 		);
+		await runRetentionCleanup(binding);
+		const rouletteReceiptCall = calls[2];
+		expect(rouletteReceiptCall.args[1]).toBe('roulette');
 		const after = Math.trunc(
 			(Date.now() - ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000,
 		);

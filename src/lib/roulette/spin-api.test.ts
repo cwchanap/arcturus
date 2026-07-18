@@ -66,6 +66,11 @@ interface MockReceipt {
 	userId: string;
 	syncId: string;
 	achievementPayload: string | null;
+	// Settlement-time leaderboard rank captured by SPIN_INSERT_RECEIPT_SQL.
+	// Defaults to 1 (single-user leaderboard). Set to a specific value to
+	// verify the spin handler passes the stored rank to achievement
+	// resolution instead of re-fetching the current rank.
+	overallRank?: number | null;
 	// Defaults to 'roulette'. Set to another game type to simulate a
 	// cross-game (userId, syncId) PK collision — the spin endpoint must
 	// return SYNC_ID_REUSE_MISMATCH instead of looping on a retriable
@@ -124,9 +129,15 @@ function createMockDbBinding({
 								if (!receipt) return null as T | null;
 								return { gameType: receipt.gameType ?? 'roulette' } as T;
 							}
-							if (sql.startsWith('SELECT achievementPayload FROM chip_sync_receipt')) {
+							if (sql.startsWith('SELECT achievementPayload, overallRank FROM chip_sync_receipt')) {
 								const [userId, syncId] = args as [string, string];
 								return (receipts.get(`${userId}:${syncId}`) ?? null) as T | null;
+							}
+							if (sql.startsWith('SELECT overallRank FROM chip_sync_receipt')) {
+								const [userId, syncId] = args as [string, string];
+								const receipt = receipts.get(`${userId}:${syncId}`);
+								if (!receipt) return null as T | null;
+								return { overallRank: receipt.overallRank ?? null } as T;
 							}
 							throw new Error(`Unexpected first() query: ${sql}`);
 						},
@@ -229,6 +240,10 @@ function createMockDbBinding({
 							userId,
 							syncId,
 							achievementPayload: null,
+							// Mirrors the production SQL subquery: a single-user
+							// leaderboard yields rank 1. Tests that need a
+							// different rank set it via existingReceipt.
+							overallRank: 1,
 						});
 						results.push({ meta: { changes: 1 } });
 					} else {
@@ -871,6 +886,82 @@ describe('roulette spin API', () => {
 		const payload = JSON.parse(receipt!.achievementPayload!);
 		expect(payload.newAchievements).toHaveLength(1);
 		expect(payload.newAchievements[0].id).toBe('rising_star');
+	});
+
+	test('passes settlement-time overallRank to checkAndGrantAchievements on fresh spin', async () => {
+		// The receipt's overallRank is captured by SPIN_INSERT_RECEIPT_SQL's leaderboard
+		// subquery at settlement time. A concurrent balance update between the batch and
+		// the achievement check must not re-fetch a different rank — the result is cached
+		// in achievementPayload, so the wrong rank would be sticky. Verify the handler
+		// reads the stored rank and passes it through.
+		let capturedOptions: { overallRank?: number | null } | undefined;
+		const capturingCheck: typeof checkAndGrantAchievements = async (_db, _uid, _bal, options) => {
+			capturedOptions = options;
+			return [mockAchievement];
+		};
+		const { handler, mock } = createHandler({
+			winningNumber: 17,
+			checkAndGrantAchievements: capturingCheck,
+		});
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'rank-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-rank' }, dbBinding: mock.binding }),
+		} as any);
+		expect(response.status).toBe(200);
+		expect(capturedOptions?.overallRank).toBe(1);
+		const receipt = mock.receipts.get('user-rank:rank-sync');
+		expect(receipt).toBeDefined();
+		expect(receipt!.overallRank).toBe(1);
+	});
+
+	test('passes stored overallRank to checkAndGrantAchievements on null-payload replay', async () => {
+		// Replay path: the receipt exists with a null achievementPayload and a
+		// settlement-time overallRank. The handler must pass the stored rank to
+		// checkAndGrantAchievementsImpl instead of letting it re-fetch the current
+		// rank (which could differ from the settlement-time rank).
+		let capturedOptions: { overallRank?: number | null } | undefined;
+		const capturingCheck: typeof checkAndGrantAchievements = async (_db, _uid, _bal, options) => {
+			capturedOptions = options;
+			return [mockAchievement];
+		};
+		const existingReceipt: MockReceipt = {
+			userId: 'user-replay-rank',
+			syncId: 'replay-rank-sync',
+			achievementPayload: null,
+			overallRank: 7,
+		};
+		const existingRound: MockRound = {
+			userId: 'user-replay-rank',
+			syncId: 'replay-rank-sync',
+			winningNumber: 0,
+			betsJson: JSON.stringify([makeBet('red', 50)]),
+			totalBet: 50,
+			totalPayout: 0,
+			netDelta: -50,
+			previousBalance: 1000,
+			newBalance: 950,
+		};
+		const { handler, mock } = createHandler({
+			existingRound,
+			existingReceipt,
+			checkAndGrantAchievements: capturingCheck,
+		});
+		const bets = [makeBet('red', 50)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-rank-sync', bets }),
+		});
+		const response = await handler({
+			request,
+			locals: createLocals({ user: { id: 'user-replay-rank' }, dbBinding: mock.binding }),
+		} as any);
+		expect(response.status).toBe(200);
+		expect(capturedOptions?.overallRank).toBe(7);
 	});
 
 	test('replays achievements from persisted receipt payload', async () => {

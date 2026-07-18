@@ -217,6 +217,35 @@ describe('initRouletteClient — guest mode', () => {
 		expect(s.chipSelects[1].classList.contains('selected')).toBe(false);
 	});
 
+	it('persists selected chip denomination to session on click', () => {
+		// Without persisting the chip selection, a reload before any other
+		// action restores the default chip (5) instead of the player's pick.
+		const s = setup({ guestMode: true, userId: 'user-chip-persist' });
+		s.chipSelects[3].dispatchEvent(new MockEvent('click')); // 25
+		const raw = s.storage.getItem('roulette-session:user-chip-persist');
+		expect(raw).not.toBeNull();
+		const parsed = JSON.parse(raw!) as { selectedChipAmount: number };
+		expect(parsed.selectedChipAmount).toBe(25);
+	});
+
+	it('restores persisted chip denomination on re-init', () => {
+		// Simulate a reload: seed localStorage with a session snapshot that
+		// carries selectedChipAmount=25, then re-init. The UI should reflect
+		// the restored chip, not fall back to the default 5.
+		const session = {
+			phase: 'betting',
+			activeBets: [],
+			chipBalance: 1000,
+			selectedChipAmount: 25,
+			lastSpin: null,
+			roundHistory: [],
+			pendingSyncId: null,
+		};
+		const s = setup({ guestMode: true, userId: 'user-chip-restore', session });
+		expect(s.chipSelects[3].classList.contains('selected')).toBe(true);
+		expect(s.chipSelects[1].classList.contains('selected')).toBe(false);
+	});
+
 	it('places a bet via table cell click', () => {
 		const s = setup({ guestMode: true });
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
@@ -524,10 +553,34 @@ describe('initRouletteClient — auth mode spin retry', () => {
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
 		s.spinBtn.dispatchEvent(new MockEvent('click'));
 		await flush();
-		s.timers.flush(); // retry path defers ui.update to result timer
+		s.timers.flush(); // flush the wheel-animation timer to render the result
 		expect(s.fetchMock.calls).toHaveLength(2);
 		expect(s.newRoundBtn.hidden).toBe(false);
 		expect(s.balanceEl.textContent).toContain('990');
+	});
+
+	it('refreshes UI immediately after a successful retry (before animation timer)', async () => {
+		// The retry path must update the renderer as soon as the settlement is
+		// applied, mirroring the normal and recovery paths. During the 4s wheel
+		// animation the DOM should already reflect the 'settled' phase, updated
+		// balance, and cleared active bets — not the stale 'spinning' state.
+		const s = setup({ guestMode: false });
+		let callCount = 0;
+		s.fetchMock.impl = () => {
+			callCount++;
+			if (callCount === 1) throw new TypeError('fetch failed');
+			return makeFetchResponse(200, spinResponseBody(17, -10, 990));
+		};
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+		// BEFORE flushing the animation timer — the UI must already show the
+		// settled balance and phase, not the pre-spin spinning state.
+		expect(s.balanceEl.textContent).toContain('990');
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(betEntries(s.activeBetsEl).length).toBe(0);
+		s.timers.flush();
+		expect(s.fetchMock.calls).toHaveLength(2);
 	});
 
 	it('retries on 500 server error and succeeds', async () => {

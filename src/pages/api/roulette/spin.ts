@@ -296,9 +296,11 @@ async function handleSpinRequest(
 			});
 		}
 		const receipt = await dbBinding
-			.prepare('SELECT achievementPayload FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
+			.prepare(
+				'SELECT achievementPayload, overallRank FROM chip_sync_receipt WHERE userId = ? AND syncId = ?',
+			)
 			.bind(userId, syncId)
-			.first<{ achievementPayload: string | null }>();
+			.first<{ achievementPayload: string | null; overallRank: number | null }>();
 		let replayedAchievements: Array<{ id: string; name: string; icon: string }> | undefined;
 		if (receipt?.achievementPayload) {
 			try {
@@ -330,6 +332,7 @@ async function handleSpinRequest(
 					{
 						recentWinAmount: netDelta > 0 ? netDelta : undefined,
 						gameType: 'roulette' as GameType,
+						overallRank: receipt?.overallRank ?? null,
 					},
 				);
 				replayedAchievements = earned.map((a) => ({
@@ -629,9 +632,27 @@ async function handleSpinRequest(
 	let achievementsResolved = false;
 	try {
 		if (shouldRecordStats) {
+			// Read the settlement-time overallRank captured by SPIN_INSERT_RECEIPT_SQL's
+			// leaderboard subquery. Passing this (instead of letting
+			// checkAndGrantAchievementsImpl re-fetch the current rank) prevents a
+			// concurrent balance update from granting or missing rank-based achievements
+			// for the wrong settlement — the result is cached in achievementPayload, so
+			// the wrong rank would be sticky. Mirrors /api/chips/update's
+			// achievementReceipt?.overallRank path.
+			let settlementOverallRank: number | null = null;
+			try {
+				const settledReceipt = await dbBinding
+					.prepare('SELECT overallRank FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
+					.bind(userId, syncId)
+					.first<{ overallRank: number | null }>();
+				settlementOverallRank = settledReceipt?.overallRank ?? null;
+			} catch (rankFetchError) {
+				console.error('[ROULETTE] Failed to read settlement overallRank:', rankFetchError);
+			}
 			const earned = await checkAndGrantAchievementsImpl(db, userId, newBalance, {
 				recentWinAmount: netDelta > 0 ? netDelta : undefined,
 				gameType: 'roulette' as GameType,
+				overallRank: settlementOverallRank,
 			});
 			newAchievements = earned.map((a) => ({ id: a.id, name: a.name, icon: a.icon }));
 			achievementsResolved = true;

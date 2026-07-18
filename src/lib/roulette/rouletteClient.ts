@@ -342,12 +342,15 @@ export function initRouletteClient(): void {
 		}
 	}
 
-	// Chip selection — sync both UI and game state
+	// Chip selection — sync both UI and game state. Persist after
+	// changing so a reload before any other action restores the player's
+	// pick instead of falling back to the default denomination.
 	document.querySelectorAll('.chip-select').forEach((btn) => {
 		btn.addEventListener('click', () => {
 			const amount = Number((btn as HTMLElement).dataset.amount);
 			ui.setSelectedChip(amount);
 			game.setSelectedChipAmount(amount);
+			persistSession();
 		});
 	});
 
@@ -596,32 +599,14 @@ export function initRouletteClient(): void {
 								newBalance: number;
 								newAchievements?: Array<{ id: string; name: string; icon: string }>;
 							};
-							const retryResult: SpinResult = {
-								winningNumber: data.winningNumber,
-								bets,
-								totalBet,
-								totalPayout: data.netDelta + totalBet,
-								netDelta: data.netDelta,
-								results: data.results,
-								timestamp: Date.now(),
-								syncId,
-								newBalance: data.newBalance,
-							};
-							game.applySettlement(retryResult);
-							if (data.newAchievements?.length) {
-								window.dispatchEvent(
-									new CustomEvent('achievement-earned', {
-										detail: { achievements: data.newAchievements },
-									}),
-								);
-							}
-							persistSession();
-							ui.animateWheel(retryResult.winningNumber);
-							pendingResultTimer = setTimeout(() => {
-								pendingResultTimer = null;
-								ui.showResult(retryResult);
-								ui.update(game.getState());
-							}, SPIN_ANIMATION_MS);
+							// Reuse the shared settlement helper so the retry path
+							// refreshes the UI immediately (showing the 'settled'
+							// phase, updated balance, and cleared bets during the 4s
+							// wheel animation), matching the normal and recovery
+							// paths. The previous inline duplicate deferred ui.update
+							// to the result timer, leaving stale spinning state on
+							// screen during the animation.
+							applyRecoverySettlement(data, syncId, bets, totalBet);
 							return;
 						}
 						// Retry got a definitive rejection (e.g. MP escrow after

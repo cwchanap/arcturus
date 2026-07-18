@@ -608,6 +608,50 @@ describe('initRouletteClient — auth mode spin retry', () => {
 		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 
+	it('retry gets non-committed rejection without currentBalance, server balance < totalBet → discards bets', async () => {
+		// Another tab/game reduced the account balance below the stake
+		// during the in-flight spin. The retry receives a definitive
+		// rejection (e.g. 429) without currentBalance. Preserving the bets
+		// would let Clear refund totalBet on top of the stale local balance,
+		// displaying chips the account does not have. Mirror the initial
+		// rejection path: fetch the authoritative balance and discard the
+		// unaffordable bets.
+		const s = setup({ guestMode: false });
+		let callCount = 0;
+		s.fetchMock.impl = (url) => {
+			if (url === '/api/chips/balance') return makeFetchResponse(200, { balance: 3 });
+			callCount++;
+			if (callCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
+			return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+		};
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+		expect(s.balanceEl.textContent).toContain('3');
+		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
+	});
+
+	it('retry gets non-committed rejection without currentBalance, server balance covers bets → preserves bets rebased to server', async () => {
+		// Server balance covers the stake. Preserve the bets so the player
+		// can re-spin the same layout, but rebase the local balance to
+		// serverBalance - totalBet so a later Clear refunds back to the
+		// server balance rather than inflating above it.
+		const s = setup({ guestMode: false });
+		let callCount = 0;
+		s.fetchMock.impl = (url) => {
+			if (url === '/api/chips/balance') return makeFetchResponse(200, { balance: 800 });
+			callCount++;
+			if (callCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
+			return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+		};
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+		// serverBalance(800) - totalBet(5) = 795
+		expect(s.balanceEl.textContent).toContain('795');
+		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
+	});
+
 	it('retry fails with retriable error → balance recovery succeeds', async () => {
 		const s = setup({ guestMode: false });
 		s.fetchMock.impl = (url) => {

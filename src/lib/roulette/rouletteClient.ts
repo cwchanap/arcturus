@@ -641,7 +641,36 @@ export function initRouletteClient(): void {
 									game.setBalance(retryErr.currentBalance);
 									game.discardActiveBets();
 								} else {
-									game.abortSpin();
+									// No currentBalance in the retry rejection. The
+									// local balance (already deducted by beginSpin)
+									// may be stale — another tab/game could have
+									// reduced the server balance during the in-flight
+									// spin. Mirror the initial rejection path: fetch
+									// a fresh authoritative balance; if it can't
+									// cover the bets, discard them rather than
+									// preserving a layout the player can't afford
+									// (Clear would refund totalBet on top of the
+									// stale local balance, displaying chips not in
+									// the account). If the fetch fails, fall back to
+									// abortSpin — the next spin attempt will hit
+									// INSUFFICIENT_BALANCE and correct the balance.
+									const retryBets = game.getState().activeBets;
+									const retryTotalBet = retryBets.reduce((s, b) => s + b.amount, 0);
+									const retryServerBalance = await fetchBalance();
+									if (retryServerBalance !== null && retryServerBalance < retryTotalBet) {
+										game.setBalance(retryServerBalance);
+										game.discardActiveBets();
+									} else {
+										if (retryServerBalance !== null) {
+											// Rebase to the server balance minus the
+											// local deduction that beginSpin already
+											// applied, so refunding via Clear
+											// restores to the server balance rather
+											// than inflating above it.
+											game.setBalance(retryServerBalance - retryTotalBet);
+										}
+										game.abortSpin();
+									}
 								}
 								showMessage(messageForSpinRejection(retryErr));
 								ui.update(game.getState());

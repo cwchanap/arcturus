@@ -824,6 +824,11 @@ describe('initRouletteClient — pending spin recovery', () => {
 			session: makeSpinningSnapshot('recovery-sync-id'),
 			fetchImpl: () => makeFetchResponse(429, { error: 'RATE_LIMITED' }),
 		});
+		// 429 on recovery triggers a retry past the rate-limit window.
+		// Flush timers to fire the retry delay, then flush microtasks so
+		// the retry + handleRecoveryRejection completes.
+		await flush();
+		s.timers.flush();
 		await flush();
 		expect(s.spinBtn.hidden).toBe(false);
 		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
@@ -844,6 +849,8 @@ describe('initRouletteClient — pending spin recovery', () => {
 			},
 		});
 		await flush();
+		s.timers.flush();
+		await flush();
 		expect(s.balanceEl.textContent).toContain('5');
 		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
@@ -862,6 +869,8 @@ describe('initRouletteClient — pending spin recovery', () => {
 			},
 		});
 		await flush();
+		s.timers.flush();
+		await flush();
 		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 
@@ -875,6 +884,64 @@ describe('initRouletteClient — pending spin recovery', () => {
 		await flush();
 		expect(s.balanceEl.textContent).toContain('850');
 		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
+	});
+
+	it('recovery 429 then retry succeeds (committed-spin race) → settles with cached result', async () => {
+		// The original in-flight spin committed and set the rate-limit
+		// timestamp, but the recovery re-submit's idempotency SELECT raced
+		// with the commit and found nothing — so the server returns 429.
+		// The recovery path waits out the rate-limit window and retries;
+		// the retry's idempotency check now finds the committed row and
+		// returns the cached result. Without the 429-retry, the recovery
+		// would treat 429 as a non-committed rejection and abandon the
+		// committed spin's result/achievement.
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					if (spinCallCount === 1) {
+						return makeFetchResponse(429, { error: 'RATE_LIMITED' }, { 'Retry-After': '2' });
+					}
+					return makeFetchResponse(200, spinResponseBody(17, 350, 1350));
+				}
+				return makeFetchResponse(200, { balance: 1350 });
+			},
+		});
+		await flush();
+		s.timers.flush();
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(s.balanceEl.textContent).toContain('1,350');
+	});
+
+	it('recovery 429 then retry gets second 429 → treats as non-committed rejection', async () => {
+		// Both the first attempt and the retry get 429 — the spin genuinely
+		// didn't commit (the rate limit was set by a different spin). The
+		// retry's 429 is a definitive non-committed rejection, so the
+		// recovery path preserves the bets for re-spinning.
+		let spinCallCount = 0;
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: (url) => {
+				if (url === '/api/roulette/spin') {
+					spinCallCount++;
+					return makeFetchResponse(429, { error: 'RATE_LIMITED' });
+				}
+				return makeFetchResponse(200, { balance: 990 });
+			},
+		});
+		await flush();
+		s.timers.flush();
+		await flush();
+		expect(spinCallCount).toBe(2);
+		expect(s.spinBtn.hidden).toBe(false);
+		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
+		expect(s.gameMessage.textContent).toContain('wait');
 	});
 
 	it('recovery failure → balance recovery succeeds', async () => {

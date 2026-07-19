@@ -15,6 +15,7 @@ import {
 	isRetriableSpinError,
 	isNonCommittedSpinRejection,
 	messageForSpinRejection,
+	parseRetryAfterMs,
 } from './spin-error-classification';
 
 // Abort the spin request if the server hasn't responded within this window.
@@ -233,6 +234,44 @@ export function initRouletteClient(): void {
 		persistSession();
 	}
 
+	// Apply a non-committed rejection's balance correction for the main
+	// spin and retry paths when the rejection is NOT the INSUFFICIENT_BALANCE
+	// special case (which always discards because the server explicitly said
+	// the balance is insufficient). Shared by the initial rejection branch
+	// and the retry's rejection branch so the two cannot drift on the
+	// chip-safety-critical "no currentBalance" flow.
+	//
+	// If the rejection carries an authoritative currentBalance, adopt it and
+	// discard the invalid bets. Otherwise fetch a fresh balance; if it can't
+	// cover the active stake, discard the bets (Clear would refund chips not
+	// in the account), else rebase the local balance against the stake and
+	// abortSpin to preserve the bet layout for re-spinning. If the fetch
+	// fails, fall back to abortSpin — the next spin attempt will hit
+	// INSUFFICIENT_BALANCE and correct the balance.
+	async function applyRejectionBalanceCorrection(err: SpinHttpError): Promise<void> {
+		if (typeof err.currentBalance === 'number') {
+			game.setBalance(err.currentBalance);
+			game.discardActiveBets();
+			return;
+		}
+		const activeBets = game.getState().activeBets;
+		const totalBet = activeBets.reduce((s, b) => s + b.amount, 0);
+		const serverBalance = await fetchBalance();
+		if (serverBalance !== null && serverBalance < totalBet) {
+			game.setBalance(serverBalance);
+			game.discardActiveBets();
+		} else {
+			if (serverBalance !== null) {
+				// Rebase to the server balance minus the local deduction
+				// that beginSpin already applied, so refunding via Clear
+				// restores to the server balance rather than inflating
+				// above it.
+				game.setBalance(serverBalance - totalBet);
+			}
+			game.abortSpin();
+		}
+	}
+
 	async function recoverPendingSpin(syncId: string, bets: RouletteBet[]): Promise<void> {
 		const totalBet = bets.reduce((s, b) => s + b.amount, 0);
 		try {
@@ -247,6 +286,7 @@ export function initRouletteClient(): void {
 						response.status,
 						err.error ?? `HTTP ${response.status}`,
 						typeof err.currentBalance === 'number' ? err.currentBalance : undefined,
+						parseRetryAfterMs(response.headers.get('Retry-After')),
 					);
 				}
 				const data = (await response.json()) as {
@@ -261,11 +301,78 @@ export function initRouletteClient(): void {
 				done();
 			}
 		} catch (err) {
+			// 429 on recovery is ambiguous: the original in-flight spin may
+			// have committed and set the rate-limit timestamp (the recovery
+			// re-submit's idempotency SELECT raced with the original's
+			// commit). Treat 429 as retriable here — wait out the Retry-After
+			// window and retry once. If the original committed, the retry's
+			// idempotency check finds the row and returns the cached result;
+			// if not, the retry either processes fresh or gets another 429
+			// (genuinely rate-limited by another spin), which then falls
+			// through to handleRecoveryRejection. This prevents abandoning a
+			// committed spin's result/achievement on the recovery path.
+			let retried429 = false;
+			if (
+				err instanceof SpinHttpError &&
+				err.status === 429 &&
+				game.getState().phase === 'spinning'
+			) {
+				retried429 = true;
+				const waitMs = err.retryAfterMs ?? 2000;
+				await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+				try {
+					const { response: retryResponse, done: retryDone } = await fetchSpin(
+						syncId,
+						bets,
+						totalBet,
+					);
+					try {
+						if (retryResponse.ok) {
+							const retryData = (await retryResponse.json()) as {
+								winningNumber: number;
+								netDelta: number;
+								results: SpinResult['results'];
+								newBalance: number;
+								newAchievements?: Array<{ id: string; name: string; icon: string }>;
+							};
+							applyRecoverySettlement(retryData, syncId, bets, totalBet);
+							return;
+						}
+						// Retry got a non-ok response. If it's still 429 or
+						// another non-committed rejection, the spin genuinely
+						// didn't commit — handle with bets preserved/discarded.
+						const retryBody = (await retryResponse.json().catch(() => ({}))) as {
+							error?: string;
+							currentBalance?: number;
+						};
+						const retryErr = new SpinHttpError(
+							retryResponse.status,
+							retryBody.error ?? `HTTP ${retryResponse.status}`,
+							typeof retryBody.currentBalance === 'number' ? retryBody.currentBalance : undefined,
+						);
+						if (isNonCommittedSpinRejection(retryErr)) {
+							await handleRecoveryRejection(retryErr, totalBet);
+							return;
+						}
+					} finally {
+						retryDone();
+					}
+				} catch (retryErr) {
+					console.error('[ROULETTE] Recovery 429 retry also failed:', retryErr);
+				}
+				// If the 429 retry didn't settle or definitively reject,
+				// fall through to the balance-recovery branch below (skip
+				// the original err's classification checks — we already
+				// retried past the 429, and the retry's non-ok response
+				// wasn't a non-committed rejection, so the original 429 is
+				// no longer the actionable error).
+			}
 			// Server definitively rejected the recovery re-submit without
-			// committing (rate limit, MP escrow, validation). Preserve the
-			// bet layout so the player can re-spin the same layout, matching
-			// the main spin error path's isNonCommittedSpinRejection branch.
-			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
+			// committing (MP escrow, validation). Preserve the bet layout so
+			// the player can re-spin the same layout, matching the main spin
+			// error path's isNonCommittedSpinRejection branch. Skipped when
+			// the 429 retry was attempted — the original 429 is stale.
+			if (!retried429 && isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
 				await handleRecoveryRejection(err, totalBet);
 				return;
 			}
@@ -273,7 +380,9 @@ export function initRouletteClient(): void {
 			// concurrent modification, 5xx, or timeout), retry the same
 			// syncId once to leverage endpoint idempotency before abandoning
 			// the attempt — mirroring the main spin path's retry branch.
-			if (isRetriableSpinError(err) && game.getState().phase === 'spinning') {
+			// Skipped when the 429 retry was attempted to avoid a double
+			// retry on the same recovery.
+			if (!retried429 && isRetriableSpinError(err) && game.getState().phase === 'spinning') {
 				try {
 					const { response: retryResponse, done: retryDone } = await fetchSpin(
 						syncId,
@@ -531,41 +640,11 @@ export function initRouletteClient(): void {
 					} else {
 						game.abortSpin();
 					}
-				} else if (typeof err.currentBalance === 'number') {
-					// Server provided an authoritative balance (e.g.
-					// MP_ESCROW_ACTIVE with currentBalance). The local balance is
-					// stale (another tab/game lowered it after bets were placed).
-					// Discard the invalid bets and adopt the server balance so the
-					// user can re-place bets within their actual limit.
-					game.setBalance(err.currentBalance);
-					game.discardActiveBets();
 				} else {
-					// No currentBalance in the rejection. The local balance
-					// (already deducted by beginSpin) may be stale — another
-					// tab/game could have reduced the server balance during
-					// the in-flight spin. Fetch a fresh authoritative balance;
-					// if it can't cover the bets, discard them rather than
-					// preserving a layout the player can't afford (Clear would
-					// refund totalBet on top of the stale local balance,
-					// displaying chips not in the account). If the fetch fails,
-					// fall back to abortSpin — the next spin attempt will hit
-					// INSUFFICIENT_BALANCE and correct the balance.
-					const activeBets = game.getState().activeBets;
-					const totalBet = activeBets.reduce((s, b) => s + b.amount, 0);
-					const serverBalance = await fetchBalance();
-					if (serverBalance !== null && serverBalance < totalBet) {
-						game.setBalance(serverBalance);
-						game.discardActiveBets();
-					} else {
-						if (serverBalance !== null) {
-							// Rebase to the server balance minus the local deduction
-							// that beginSpin already applied, so refunding via Clear
-							// restores to the server balance rather than inflating
-							// above it.
-							game.setBalance(serverBalance - totalBet);
-						}
-						game.abortSpin();
-					}
+					// All other non-committed rejections (RATE_LIMITED,
+					// MP_ESCROW_ACTIVE, validation, etc.) share one balance-
+					// correction flow — see applyRejectionBalanceCorrection.
+					await applyRejectionBalanceCorrection(err);
 				}
 				showMessage(messageForSpinRejection(err));
 				ui.update(game.getState());
@@ -622,41 +701,10 @@ export function initRouletteClient(): void {
 								typeof retryBody.currentBalance === 'number' ? retryBody.currentBalance : undefined,
 							);
 							if (isNonCommittedSpinRejection(retryErr)) {
-								if (typeof retryErr.currentBalance === 'number') {
-									game.setBalance(retryErr.currentBalance);
-									game.discardActiveBets();
-								} else {
-									// No currentBalance in the retry rejection. The
-									// local balance (already deducted by beginSpin)
-									// may be stale — another tab/game could have
-									// reduced the server balance during the in-flight
-									// spin. Mirror the initial rejection path: fetch
-									// a fresh authoritative balance; if it can't
-									// cover the bets, discard them rather than
-									// preserving a layout the player can't afford
-									// (Clear would refund totalBet on top of the
-									// stale local balance, displaying chips not in
-									// the account). If the fetch fails, fall back to
-									// abortSpin — the next spin attempt will hit
-									// INSUFFICIENT_BALANCE and correct the balance.
-									const retryBets = game.getState().activeBets;
-									const retryTotalBet = retryBets.reduce((s, b) => s + b.amount, 0);
-									const retryServerBalance = await fetchBalance();
-									if (retryServerBalance !== null && retryServerBalance < retryTotalBet) {
-										game.setBalance(retryServerBalance);
-										game.discardActiveBets();
-									} else {
-										if (retryServerBalance !== null) {
-											// Rebase to the server balance minus the
-											// local deduction that beginSpin already
-											// applied, so refunding via Clear
-											// restores to the server balance rather
-											// than inflating above it.
-											game.setBalance(retryServerBalance - retryTotalBet);
-										}
-										game.abortSpin();
-									}
-								}
+								// Retry rejection shares the same balance-
+								// correction flow as the initial rejection —
+								// see applyRejectionBalanceCorrection.
+								await applyRejectionBalanceCorrection(retryErr);
 								showMessage(messageForSpinRejection(retryErr));
 								ui.update(game.getState());
 								persistSession();

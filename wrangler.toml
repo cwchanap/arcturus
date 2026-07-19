@@ -44,5 +44,10 @@ GOOGLE_CLIENT_ID = "333977657035-o0bc5n6k1ac7nvah4u64meoereojvie8.apps.googleuse
 # Hourly global retention cleanup for roulette_round and chip_sync_receipt
 # (30-day retention). Replaces the former inline per-user cleanup that
 # left one-off users' expired rows uncleaned.
+#
+# NOTE: cron triggers do NOT fire under `bun run dev` (Astro dev server).
+# To test the scheduled handler locally, run the Worker via wrangler:
+#   wrangler dev --test-scheduled
+# and invoke with: curl "http://localhost:8787/__scheduled?cron=0+*+*+*+*"
 [triggers]
 crons = ["0 * * * *"]

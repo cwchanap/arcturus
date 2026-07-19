@@ -261,14 +261,23 @@ export interface MockFetchResponse {
 	status: number;
 	_json: unknown;
 	json: () => Promise<unknown>;
+	headers: { get: (name: string) => string | null };
 }
 
-export function makeFetchResponse(status: number, body: unknown): MockFetchResponse {
+export function makeFetchResponse(
+	status: number,
+	body: unknown,
+	headers?: Record<string, string>,
+): MockFetchResponse {
+	const headerMap = headers ?? {};
 	return {
 		ok: status >= 200 && status < 300,
 		status,
 		_json: body,
 		json: async () => body,
+		headers: {
+			get: (name: string) => headerMap[name] ?? null,
+		},
 	};
 }
 

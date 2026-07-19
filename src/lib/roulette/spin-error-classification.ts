@@ -14,16 +14,36 @@
 // retry logic can decide retriability by status/code rather than fragile
 // message-prefix matching. `currentBalance` carries the server-provided
 // authoritative balance from INSUFFICIENT_BALANCE responses so the client
-// can adopt it instead of keeping a stale local balance.
+// can adopt it instead of keeping a stale local balance. `retryAfterMs`
+// carries the parsed `Retry-After` header (in ms) from 429 responses so the
+// recovery path can wait out the rate-limit window before retrying — a 429
+// on recovery may mean the original spin committed and set the rate-limit
+// timestamp, so retrying past the window lets the server's idempotency
+// replay return the committed result instead of abandoning it.
 export class SpinHttpError extends Error {
 	readonly status: number;
 	readonly currentBalance?: number;
-	constructor(status: number, error: string, currentBalance?: number) {
+	readonly retryAfterMs?: number;
+	constructor(status: number, error: string, currentBalance?: number, retryAfterMs?: number) {
 		super(error);
 		this.name = 'SpinHttpError';
 		this.status = status;
 		this.currentBalance = currentBalance;
+		this.retryAfterMs = retryAfterMs;
 	}
+}
+
+// Parse the `Retry-After` response header (seconds form only — the roulette
+// spin endpoint sends `String(waitTime)` in seconds) into milliseconds.
+// Returns undefined for missing/unparseable headers. Capped at 5s so a
+// malicious or misconfigured server can't stall the recovery flow.
+const RETRY_AFTER_CAP_MS = 5000;
+export function parseRetryAfterMs(headerValue: string | null): number | undefined {
+	if (!headerValue) return undefined;
+	const seconds = Number(headerValue);
+	if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+	const ms = Math.ceil(seconds * 1000);
+	return Math.min(ms, RETRY_AFTER_CAP_MS);
 }
 
 // A spin attempt is retriable when the server may have committed the

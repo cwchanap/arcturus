@@ -229,8 +229,8 @@ function createMockChipSyncBinding({
 							_newBalanceForHigherBalanceCount,
 							_newBalanceForTieBreak,
 							_rankUserId,
-							_createdAt,
 							achievementPayload,
+							_createdAt,
 						] = statement.args as [
 							string,
 							string,
@@ -247,8 +247,8 @@ function createMockChipSyncBinding({
 							number,
 							number,
 							string,
-							number,
 							string | null,
+							number,
 						];
 
 						receipts.set(`${userId}:${syncId}`, {

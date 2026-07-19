@@ -44,6 +44,10 @@ import {
 	MAX_CRAPS_SYNC_LOSS_DELTA,
 	MAX_CRAPS_SYNC_WIN_DELTA,
 } from '../../../lib/craps/syncLimits';
+import {
+	CHIP_SYNC_RECEIPT_INSERT_SQL,
+	CHIP_SYNC_STATS_UPSERT_SQL,
+} from '../../../lib/chip-sync-batch-sql';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
@@ -230,10 +234,14 @@ async function applyChipSyncBatch(
 		dbBinding
 			.prepare(`UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ?`)
 			.bind(params.newBalance, params.userId, params.matchedBalanceValue),
+		// Receipt INSERT SQL is shared with the roulette spin cascade via
+		// src/lib/chip-sync-batch-sql.ts so the two paths cannot drift on the
+		// receipt schema. Column order is `... overallRank, achievementPayload,
+		// createdAt` — bind achievementPayload (null here; achievements are
+		// persisted separately via updateChipSyncAchievementPayload) before
+		// createdAt.
 		dbBinding
-			.prepare(
-				`INSERT INTO chip_sync_receipt (userId, syncId, gameType, previousBalance, balance, delta, statsDelta, outcome, handCount, winsIncrement, lossesIncrement, biggestWinCandidate, overallRank, createdAt, achievementPayload) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COUNT(*) + 1 FROM user leaderboard_user WHERE leaderboard_user.chipBalance > ? OR (leaderboard_user.chipBalance = ? AND leaderboard_user.id < ?)), ?, ? WHERE changes() = 1`,
-			)
+			.prepare(CHIP_SYNC_RECEIPT_INSERT_SQL)
 			.bind(
 				params.userId,
 				params.syncId,
@@ -250,18 +258,19 @@ async function applyChipSyncBatch(
 				params.newBalance,
 				params.newBalance,
 				params.userId,
-				params.updatedAtUnixSeconds,
 				null,
+				params.updatedAtUnixSeconds,
 			),
 	];
 
 	if (params.shouldRecordStats) {
 		const insertedBiggestWin = Math.max(params.biggestWinCandidate ?? 0, 0);
 		statements.push(
+			// Stats upsert SQL is shared with the roulette spin cascade via
+			// src/lib/chip-sync-batch-sql.ts so the CASE expression for
+			// biggestWin stays consistent across both callers.
 			dbBinding
-				.prepare(
-					`INSERT INTO game_stats (userId, gameType, totalWins, totalLosses, handsPlayed, biggestWin, netProfit, updatedAt) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1 ON CONFLICT(userId, gameType) DO UPDATE SET totalWins = game_stats.totalWins + excluded.totalWins, totalLosses = game_stats.totalLosses + excluded.totalLosses, handsPlayed = game_stats.handsPlayed + excluded.handsPlayed, biggestWin = CASE WHEN ? IS NULL THEN game_stats.biggestWin WHEN ? > 0 AND ? > game_stats.biggestWin THEN ? ELSE game_stats.biggestWin END, netProfit = game_stats.netProfit + excluded.netProfit, updatedAt = excluded.updatedAt`,
-				)
+				.prepare(CHIP_SYNC_STATS_UPSERT_SQL)
 				.bind(
 					params.userId,
 					params.gameType,

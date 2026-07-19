@@ -4,6 +4,7 @@ import {
 	isRetriableSpinError,
 	isNonCommittedSpinRejection,
 	messageForSpinRejection,
+	parseRetryAfterMs,
 } from './spin-error-classification';
 
 describe('SpinHttpError', () => {
@@ -24,6 +25,44 @@ describe('SpinHttpError', () => {
 	it('defaults currentBalance to undefined when not provided', () => {
 		const err = new SpinHttpError(429, 'RATE_LIMITED');
 		expect(err.currentBalance).toBeUndefined();
+	});
+
+	it('preserves retryAfterMs when provided', () => {
+		const err = new SpinHttpError(429, 'RATE_LIMITED', undefined, 2000);
+		expect(err.status).toBe(429);
+		expect(err.retryAfterMs).toBe(2000);
+	});
+
+	it('defaults retryAfterMs to undefined when not provided', () => {
+		const err = new SpinHttpError(429, 'RATE_LIMITED');
+		expect(err.retryAfterMs).toBeUndefined();
+	});
+});
+
+describe('parseRetryAfterMs', () => {
+	it('parses seconds-form header into milliseconds', () => {
+		expect(parseRetryAfterMs('2')).toBe(2000);
+		expect(parseRetryAfterMs('0')).toBe(0);
+		expect(parseRetryAfterMs('1')).toBe(1000);
+	});
+
+	it('returns undefined for null or empty header', () => {
+		expect(parseRetryAfterMs(null)).toBeUndefined();
+		expect(parseRetryAfterMs('')).toBeUndefined();
+	});
+
+	it('returns undefined for non-numeric header', () => {
+		expect(parseRetryAfterMs('Wed, 21 Oct 2025 07:28:00 GMT')).toBeUndefined();
+		expect(parseRetryAfterMs('abc')).toBeUndefined();
+	});
+
+	it('returns undefined for negative values', () => {
+		expect(parseRetryAfterMs('-1')).toBeUndefined();
+	});
+
+	it('caps at 5 seconds to prevent stalling the recovery flow', () => {
+		expect(parseRetryAfterMs('10')).toBe(5000);
+		expect(parseRetryAfterMs('99999')).toBe(5000);
 	});
 });
 

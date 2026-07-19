@@ -73,7 +73,7 @@ export function isValidBet(b: unknown): b is RouletteBet {
 // enforces the storage-bloat guard the BET_ID_RE cap intends.
 export function normalizeBet(b: unknown): RouletteBet | null {
 	if (!isValidBet(b)) return null;
-	const bet = b as Record<string, unknown>;
+	const bet = b as unknown as Record<string, unknown>;
 	const type = bet.type as BetType;
 	const normalized: RouletteBet = {
 		id: bet.id as string,
@@ -227,14 +227,12 @@ async function handleSpinRequest(
 	}
 
 	const normalized = rawBets.map(normalizeBet);
-	if (normalized.some((b) => b === null) || normalized.length !== rawBets.length) {
+	if (normalized.some((b) => b === null)) {
 		return new Response(JSON.stringify({ error: 'INVALID_BETS' }), {
 			status: 400,
 			headers: { 'Content-Type': 'application/json' },
 		});
 	}
-	// normalizeBet reconstructs each bet from only the known fields, so
-	// arbitrary caller-supplied properties are dropped before persistence.
 	const bets = normalized as RouletteBet[];
 
 	const totalBet = bets.reduce((sum, b) => sum + b.amount, 0);
@@ -311,7 +309,7 @@ async function handleSpinRequest(
 					replayedAchievements = parsed.newAchievements;
 				}
 			} catch {
-				// ignore corrupted payload
+				// ignore — fall through to re-run path
 			}
 		} else if (isValidGameType('roulette')) {
 			// Achievement payload is null — the batch committed but the

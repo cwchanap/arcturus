@@ -361,6 +361,31 @@ async function handleSpinRequest(
 				console.error('[ROULETTE] Replay achievement resolution error:', replayAchievementError);
 			}
 		}
+		// Fetch the authoritative current balance separately for the replay
+		// response. The stored newBalance is the historical balance at
+		// settlement time; the replay does not mutate the user row, so if
+		// another tab/game changed the account between the original
+		// settlement and this replay, returning newBalance as the live
+		// balance would let the page display and bet against stale chips
+		// until a later rejection or reload. Read the current chipBalance
+		// independently and return it as currentBalance for the client to
+		// adopt as the live balance. Best-effort: on failure, omit
+		// currentBalance and let the client fall back to newBalance (the
+		// next spin attempt's balance check will correct).
+		let replayCurrentBalance: number | undefined;
+		try {
+			const replayBalanceDb = createDbImpl(dbBinding);
+			const [replayUserRow] = await replayBalanceDb
+				.select({ chipBalance: user.chipBalance })
+				.from(user)
+				.where(eq(user.id, userId))
+				.limit(1);
+			if (replayUserRow && Number.isFinite(replayUserRow.chipBalance)) {
+				replayCurrentBalance = Math.trunc(replayUserRow.chipBalance);
+			}
+		} catch (replayBalanceError) {
+			console.error('[ROULETTE] Failed to read current balance for replay:', replayBalanceError);
+		}
 		return new Response(
 			JSON.stringify({
 				winningNumber: existing.winningNumber,
@@ -369,6 +394,7 @@ async function handleSpinRequest(
 				netDelta: existing.netDelta,
 				results: evaluateBetsImpl(storedBets, existing.winningNumber as number),
 				syncId,
+				currentBalance: replayCurrentBalance,
 				newAchievements:
 					replayedAchievements && replayedAchievements.length > 0
 						? replayedAchievements

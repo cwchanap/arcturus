@@ -150,6 +150,7 @@ export function initRouletteClient(): void {
 			netDelta: number;
 			results: SpinResult['results'];
 			newBalance: number;
+			currentBalance?: number;
 			newAchievements?: Array<{ id: string; name: string; icon: string }>;
 		},
 		syncId: string,
@@ -168,6 +169,18 @@ export function initRouletteClient(): void {
 			newBalance: data.newBalance,
 		};
 		game.applySettlement(spinResult);
+		// The replay response carries the authoritative current balance
+		// separately from the historical settled newBalance. Adopt it as
+		// the live balance so the page doesn't display or bet against
+		// stale chips when another tab/game changed the account between
+		// the original settlement and this replay. Without this, the
+		// replay (which doesn't mutate the user row) would install the
+		// historical newBalance as the current balance until a later
+		// rejection or reload. The main spin path doesn't need this — its
+		// newBalance is the just-written authoritative balance.
+		if (typeof data.currentBalance === 'number') {
+			game.setBalance(data.currentBalance);
+		}
 		// Mirror the main spin path: refresh the UI immediately so the
 		// table reflects the recovered 'settled' phase, updated balance,
 		// and cleared active bets during the 4s wheel animation, rather
@@ -294,6 +307,7 @@ export function initRouletteClient(): void {
 					netDelta: number;
 					results: SpinResult['results'];
 					newBalance: number;
+					currentBalance?: number;
 					newAchievements?: Array<{ id: string; name: string; icon: string }>;
 				};
 				applyRecoverySettlement(data, syncId, bets, totalBet);
@@ -333,6 +347,7 @@ export function initRouletteClient(): void {
 								netDelta: number;
 								results: SpinResult['results'];
 								newBalance: number;
+								currentBalance?: number;
 								newAchievements?: Array<{ id: string; name: string; icon: string }>;
 							};
 							applyRecoverySettlement(retryData, syncId, bets, totalBet);
@@ -396,6 +411,7 @@ export function initRouletteClient(): void {
 								netDelta: number;
 								results: SpinResult['results'];
 								newBalance: number;
+								currentBalance?: number;
 								newAchievements?: Array<{ id: string; name: string; icon: string }>;
 							};
 							applyRecoverySettlement(retryData, syncId, bets, totalBet);
@@ -676,6 +692,7 @@ export function initRouletteClient(): void {
 								netDelta: number;
 								results: SpinResult['results'];
 								newBalance: number;
+								currentBalance?: number;
 								newAchievements?: Array<{ id: string; name: string; icon: string }>;
 							};
 							// Reuse the shared settlement helper so the retry path

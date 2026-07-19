@@ -842,6 +842,48 @@ describe('roulette spin API', () => {
 		expect(body2.syncId).toBe('replay-sync');
 	});
 
+	test('replay returns authoritative currentBalance separate from historical newBalance', async () => {
+		// The replay branch must not return the stored newBalance as the live
+		// balance. Another tab/game may have changed the account since the
+		// original settlement, so the replay (which does not mutate the user
+		// row) must fetch the current chipBalance separately and return it as
+		// currentBalance for the client to adopt as the live balance.
+		const existingRound: MockRound = {
+			userId: 'user-replay-stale',
+			syncId: 'replay-stale-sync',
+			winningNumber: 17,
+			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
+			totalBet: 10,
+			totalPayout: 360,
+			netDelta: 350,
+			previousBalance: 1000,
+			newBalance: 1350,
+		};
+		// Current chipBalance (1500) differs from the round's settled
+		// newBalance (1350) — simulating a subsequent win in another tab/game.
+		const { handler, mock } = createHandler({
+			winningNumber: 17,
+			chipBalance: 1500,
+			existingRound,
+		});
+		const bets = [makeBet('straight', 10, 17)];
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ syncId: 'replay-stale-sync', bets }),
+		});
+		const locals = createLocals({
+			user: { id: 'user-replay-stale' },
+			dbBinding: mock.binding,
+		});
+		const response = await handler({ request, locals } as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		// Historical settled balance is preserved for the spin result record.
+		expect(body.newBalance).toBe(1350);
+		// Authoritative current balance is returned separately.
+		expect(body.currentBalance).toBe(1500);
+	});
+
 	test('replay with mismatched bets returns 409', async () => {
 		const { handler, mock } = createHandler({ winningNumber: 17 });
 		const originalBets = [makeBet('straight', 10, 17)];

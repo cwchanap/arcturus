@@ -802,6 +802,29 @@ describe('initRouletteClient — pending spin recovery', () => {
 		expect(s.balanceEl.textContent).toContain('990');
 	});
 
+	it('recovery replay adopts authoritative currentBalance over historical newBalance', async () => {
+		// The replay response carries the historical settled newBalance (990)
+		// for the spin result record AND the authoritative currentBalance
+		// (1500) reflecting a subsequent win in another tab/game. The client
+		// must adopt currentBalance as the live balance so the page doesn't
+		// display/bet against stale chips.
+		const s = setup({
+			guestMode: false,
+			session: makeSpinningSnapshot('recovery-sync-id'),
+			fetchImpl: () =>
+				makeFetchResponse(200, {
+					winningNumber: 17,
+					netDelta: -10,
+					results: [{ bet: { id: 'b1', type: 'red', amount: 10 }, won: false, payout: 0 }],
+					newBalance: 990,
+					currentBalance: 1500,
+				}),
+		});
+		await flush();
+		expect(s.balanceEl.textContent).toContain('1,500');
+		expect(s.balanceEl.textContent).not.toContain('990');
+	});
+
 	it('recovers with achievements', async () => {
 		const s = setup({
 			guestMode: false,

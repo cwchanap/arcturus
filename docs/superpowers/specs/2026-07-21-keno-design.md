@@ -16,7 +16,7 @@ baccarat, craps).
 |----------|--------|
 | Settlement architecture | **Client-authoritative (slots/craps receipt pattern)** — RNG + payout run client-side, synced via `POST /api/chips/update` + `chip_sync_receipt`. Supports guest + authenticated. |
 | Authoritative random source | Default RNG = unbiased uniform ints from `crypto.getRandomValues` (Fisher–Yates partial shuffle over 1–80), injectable `Rng = () => number` for tests. Stronger than `Math.random` (which `ReelManager` defaults to) and matches the issue's "authoritative random source" language; unbiased — no `byte % 80` modulo skew. |
-| Chip-sync transport | **Direct single-round fetch (blackjack pattern), NOT `ChipSyncCoordinator`.** The slots coordinator hardcodes `gameType:'slots'`, coalesces multiple rounds, and generates its own server `syncId` that differs from the game round's `syncId`. Keno is single-draw (one round = one sync), so it uses a direct `fetch('/api/chips/update')` with the game round's `syncId` as the receipt key. See Settlement Flow. |
+| Chip-sync transport | **Direct single-round POST to `/api/chips/update` with a client-generated `syncId` driving the server's `canonicalSyncPayload` receipt path**, serialized through a client-side FIFO outbox. NOT `ChipSyncCoordinator` (which hardcodes `gameType:'slots'`, coalesces rounds, and mints its own server `syncId`). Note: blackjack sends no `syncId` at all, so Keno is the first game to drive the generic chip-update receipt path with a client `syncId` (roulette does the same but via its own endpoint/table). See Settlement Flow. |
 | Paytable philosophy | **Realistic standard** published-style paytable, RTP-aligned with common Vegas/IGT tables |
 | Number pool | 80 numbers (1–80), player picks 1–10, house draws 20 |
 | Multi-draw | **Deferred.** Single-draw only for this spec. The UI shows a number-of-draws control with 5/10 disabled ("Coming soon"); multi-draw batch settlement is a future spec that extends this one. |
@@ -80,6 +80,9 @@ src/lib/keno/
 - `src/lib/chips-update-api.test.ts` — add coverage parallel to the existing slots tests
   (around line 818/846): accept a `keno` delta within `GAME_LIMITS.keno`, reject a `keno` win
   over `maxWin`, reject a `keno` loss over `maxLoss`.
+- `src/lib/game-stats/game-stats.test.ts:422` — update the existing game-count assertion
+  `expect(GAME_TYPES.length).toBe(6)` → `.toBe(7)` (and any parallel count/iteration
+  assertions in that file that assume the six-game set).
 - `src/pages/index.astro` — add a Keno entry to the `games` array:
   ```ts
   { name: 'Keno', emblem: 'spark' as const, players: 0, minBet: 1, href: '/games/keno' },
@@ -91,103 +94,163 @@ src/lib/keno/
 
 ## Settlement Flow (single draw)
 
-The client owns one authoritative `syncId` per draw. **The game round's `syncId` IS the
-chip-receipt `syncId`** (unlike slots, where the coordinator generates a separate server
-`syncId`). This is the blackjack pattern (`src/lib/blackjack/blackjackClient.ts`), not the
-slots `ChipSyncCoordinator` pattern.
+### syncId identity and transport
+
+The client generates one authoritative `syncId` per draw, and **the game round's `syncId` IS
+the chip-receipt `syncId`.** Keno sends the full canonical payload to `POST /api/chips/update`,
+which routes it through the server's existing `canonicalSyncPayload` path
+(`src/pages/api/chips/update.ts:1105+`) — optimistic-lock UPDATE + `chip_sync_receipt` INSERT
+gated on `changes() = 1`, with receipt replay on `syncId` collision. This makes Keno exact-once
+per `syncId`.
+
+**Relationship to existing games (verified):**
+- `ChipSyncCoordinator` (slots) is **not** used — it hardcodes `gameType:'slots'`, coalesces
+  multiple rounds, and generates its own server `syncId` that differs from the game round's.
+- `blackjackClient.ts` sends **no `syncId`** (body at :1069 has `previousBalance/delta/gameType/
+  outcome/...` but no `syncId`), so blackjack takes the server's non-receipt path (`:1405`).
+  Keno is the first game to drive the receipt path through `/api/chips/update` with a
+  client-generated `syncId`; roulette does the same but through its own `/api/roulette/spin`
+  endpoint and `roulette_round` table.
+
+### Serialized outbox (no in-flight overlap)
+
+Two distinct concurrency hazards must be handled separately:
+
+1. **Same-draw double-submit** (button double-click during the ~1.5s reveal) → guarded by a
+   per-draw `drawInFlight` flag. Set at commit; cleared in a `finally` only after the draw's
+   sync payload has been **enqueued** to the outbox (not after it settles). While set: Draw
+   disabled, pick/bet changes ignored, second click is a no-op.
+2. **Cross-draw sync overlap** (a second draw's sync starting before the first settles) →
+   guarded by a **single-worker FIFO outbox**. Each completed draw produces one
+   `PendingReceipt` (the full canonical payload below) appended to a queue. A single drain
+   loop processes the head of the queue to completion before starting the next. This guarantees
+   each sync's `previousBalance` (= `serverSyncedBalance`) reflects the prior sync's committed
+   result, so no two in-flight syncs ever race on the same `previousBalance` (which would 409)
+   and no draw's delta is lost or double-counted.
+
+### PendingReceipt (durable, full canonical payload)
+
+A retry must resend the **complete** canonical payload, because the server's
+`doesChipSyncReceiptMatch` (`update.ts:139`) compares **all** sync fields — a partial retry
+(only `syncId/delta/previousBalance`) would mismatch an already-committed receipt and 409. The
+pending receipt therefore stores every field:
+
+```ts
+type PendingReceipt = {
+  syncId: string;
+  previousBalance: number;   // serverSyncedBalance at the moment the draw settled locally
+  delta: number;             // game.getBalance() - previousBalance, captured at enqueue time
+  gameType: 'keno';
+  outcome: 'win' | 'loss' | 'push';   // from delta sign
+  handCount: 1;
+  biggestWinCandidate: number | undefined;  // delta > 0 ? delta : undefined
+};
+```
+
+`delta` and `previousBalance` are **snapshotted at enqueue time**, not recomputed at send time,
+so a later draw doesn't mutate them. The outbox is persisted to `localStorage`
+(`arcturus:keno:outbox:<clientUserId>`) so a mid-sync tab close can resume on next load — the
+drain loop runs on startup, replaying any pending receipts. (Guest mode persists to the same
+key; authenticated mode persists best-effort and clears on successful drain.)
+
+### Drain loop (per receipt)
+
+```
+pop head PendingReceipt →
+  POST /api/chips/update with the full payload (same syncId) →
+    200:  serverSyncedBalance = response.balance; game.setBalance(response.balance);
+          drop receipt from outbox; drain next.
+    409 BALANCE_MISMATCH (response.currentBalance present):
+          serverSyncedBalance = response.currentBalance; game.setBalance(currentBalance);
+          DROP the receipt — the server's authoritative balance already incorporates this
+          draw's effect (the optimistic lock failed because another tab/game committed first,
+          OR this very sync committed but the response was lost; either way the server balance
+          is the truth). Log a warning. Drain next.
+    409 MP_ESCROW_ACTIVE (NO currentBalance in chips/update.ts — only roulette's spin endpoint
+          returns one):
+          Refetch the authoritative balance via a fresh GET of the user row (or wait for the
+          next successful sync to rebase). Do NOT adopt game.getBalance(). Pause the drain
+          until escrow clears (the MP hand will release it); surface a toast.
+    409 SYNC_ID_REUSE_MISMATCH:
+          The server has this syncId for a DIFFERENT payload — a real client bug or a syncId
+          collision. Surface as a hard error; refetch balance; drop the receipt.
+    429 RATE_LIMITED: respect Retry-After; re-queue the SAME receipt at the head (do not drop);
+          the drain loop sleeps then retries. Because the server keys on syncId, a retry that
+          lands after the draw already committed is a no-op replay returning the cached receipt.
+    Network failure (after bounded retries): LEAVE the receipt at the head of the outbox;
+          back off and retry. Crucially, do NOT set serverSyncedBalance = game.getBalance() —
+          we cannot distinguish "request lost" from "server committed, response lost." The
+          durable receipt makes this safe: on next drain attempt (or next page load), the same
+          full payload is resent; if it had committed, the server returns the cached result and
+          we adopt response.balance.
+```
+
+### Game round flow
 
 1. Player commits a ticket (1–10 picks + wager) and taps **Draw**.
-2. **`kenoClient` generates one `syncId` at commit** and sets a module-level `drawInFlight`
-   flag (mirrors `spinInFlight` in `slotsClient.ts`). While set: the Draw button is disabled,
-   pick/bet changes are ignored, and a second click is a no-op. The flag clears in a `finally`
-   after both the animation completes AND the chip sync is kicked off (not awaiting sync
-   completion — sync runs in the background). This prevents a double-click during the ~1.5s
-   reveal from settling twice.
-3. `KenoGame.draw(syncId)`:
+2. `kenoClient` checks `drawInFlight`; if set, no-op. Otherwise sets it, generates a `syncId`,
+   and calls `KenoGame.draw(syncId)`:
    - Validates `syncId` (reject `INVALID_SYNC_ID`).
    - Returns cached `DrawResult` if `syncId` already exists in history (idempotent replay —
      matches `SlotsGame.spin`).
-   - Validates wager and selection. **Error routing matches `SlotsGame`:** programmatic
-     setters (`setBet`, `setSelection`) throw via `buildError` (no toast — caller bugs), while
-     `draw()` throws via `fail` (toast + throw). See Error Handling.
-   - Debits wager from balance, emits `onBalanceUpdate`.
+   - Validates wager and selection **at draw time only** (see Error Handling — setters accept
+     a 0–10 draft so `Clear` works). `draw()` throws via `fail` (toast + throw).
+   - Debits wager, emits `onBalanceUpdate`.
    - Calls `DrawManager.draw()` → 20 distinct numbers in 1–80 (crypto RNG by default).
-   - Computes hits via `selection.countHits`, payout via `payoutCalculator.evaluateDraw`.
-   - Credits payout to balance, appends `DrawResult` to history (capped at `MAX_HISTORY=20`,
-     FIFO like slots), emits `onRoundComplete` + `onBalanceUpdate`.
-4. **`kenoClient` performs a direct single-round chip sync** (authenticated only). It tracks
-   `serverSyncedBalance` (initialized from `createPublicGameSession` balance, then from each
-   successful response). For each completed draw:
-   ```ts
-   const deltaForRequest = game.getBalance() - serverSyncedBalance;
-   const response = await fetch('/api/chips/update', {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({
-       delta: deltaForRequest,
-       previousBalance: serverSyncedBalance,
-       gameType: 'keno',
-       syncId,                                  // the game round's syncId = receipt key
-       outcome: deltaForRequest > 0 ? 'win' : deltaForRequest < 0 ? 'loss' : 'push',
-       handCount: 1,
-       biggestWinCandidate: deltaForRequest > 0 ? deltaForRequest : undefined,
-     }),
-   });
-   ```
-   - **On 200:** adopt `response.balance` as the new `serverSyncedBalance`; `game.setBalance(...)`
-     to correct any drift.
-   - **On 409 `BALANCE_MISMATCH` / `MP_ESCROW_ACTIVE` (with `currentBalance`):** adopt the
-     server's `currentBalance` as both `serverSyncedBalance` and `game.setBalance(...)`; the
-     just-played draw's local delta is effectively rolled into the authoritative balance.
-     Surface a toast.
-   - **On 409 `SYNC_ID_REUSE_MISMATCH`:** the server already has this `syncId` for a different
-     payload — a real bug; surface the error and refetch balance.
-   - **On 429 `RATE_LIMITED`:** respect `Retry-After`; re-queue the same `{syncId, delta,
-     previousBalance}` payload after the backoff. Because the server keys on `syncId`, a
-     late-arriving retry after the draw already settled is a no-op replay (returns cached).
-   - **On network failure (after retries):** give up — set `serverSyncedBalance = game.getBalance()`
-     so subsequent draws sync against the locally-accepted balance (best-effort; the player's
-     local balance is authoritative in guest mode and best-effort in auth mode, same tradeoff
-     as blackjack).
-5. Server applies the delta under optimistic lock, writes `chip_sync_receipt` (PK `userId+syncId`)
-   → exact-once. On replay (same `syncId`), server returns the cached result and the client
-   adopts it — identical to blackjack/baccarat/roulette's receipt-replay branch.
-6. Guest mode (`shouldSyncAccountChips === false`): no fetch. Balance persists in `localStorage`
-   via `persistGuestBankroll('keno', clientUserId, balance)`; `serverSyncedBalance` tracks the
-   guest bankroll locally.
+   - Computes hits via `selection.countHits`, payout via `payoutCalculator.evaluateDraw`; the
+     `DrawResult` carries `netDelta` and a derived `outcome` so tests can assert outcome labels
+     without re-deriving them (see Data Model).
+   - Credits payout, appends `DrawResult` to history (capped at `MAX_HISTORY=20`, FIFO),
+     emits `onRoundComplete` + `onBalanceUpdate`.
+3. Animation plays (~1.5s). On completion, `kenoClient` snapshots the
+   `PendingReceipt { syncId, previousBalance: serverSyncedBalance, delta: game.getBalance() −
+   serverSyncedBalance, ... }`, appends it to the persisted outbox, and clears `drawInFlight`.
+4. The drain loop sends the receipt per the table above. On 200, `serverSyncedBalance` adopts
+   `response.balance` and the receipt is dropped.
+5. Server applies the delta under optimistic lock, writes `chip_sync_receipt`
+   (PK `userId+syncId`) → exact-once. A replay (same `syncId`, same canonical payload) returns
+   the cached receipt row.
+6. Guest mode (`shouldSyncAccountChips === false`): no fetch. The drain loop is a no-op;
+   balance persists in `localStorage` via `persistGuestBankroll('keno', clientUserId, balance)`;
+   `serverSyncedBalance` tracks the guest bankroll locally; the outbox stays empty.
 
 ## Paytable
 
 Realistic standard published-style paytable. Multiplier is per 1-unit bet; chip payout =
-`multiplier × bet`. Configurable in `constants.ts`; stamped with
-`PAYTABLE_VERSION = '2026-07-standard-v1'`.
+`multiplier × bet` (gross/total-returned convention: the player's net on a hit is
+`(multiplier − 1) × bet`, and `netDelta = payout − bet = (multiplier − 1) × bet`).
+Configurable in `constants.ts`; stamped with `PAYTABLE_VERSION = '2026-07-standard-v1'`.
 
-| Spots | Catch → multiplier |
-|-------|--------------------|
-| 1 | 1→3 |
-| 2 | 2→12 |
-| 3 | 3→45 · 2→2 |
-| 4 | 4→130 · 3→5 · 2→1 |
-| 5 | 5→500 · 4→20 · 3→2 |
-| 6 | 6→1500 · 5→50 · 4→7 · 3→1 |
-| 7 | 7→5000 · 6→150 · 5→15 · 4→2 · 3→1 |
-| 8 | 8→15000 · 7→400 · 6→50 · 5→10 · 4→2 |
-| 9 | 9→25000 · 8→2000 · 7→200 · 6→30 · 5→8 · 4→2 |
-| 10 | 10→50000 · 9→5000 · 8→1000 · 7→100 · 6→20 · 5→5 · 0→5 |
+| Spots | Catch → multiplier | RTP |
+|-------|--------------------|-----|
+| 1 | 1→3 | 75.00% |
+| 2 | 2→12 | 72.15% |
+| 3 | 3→45 · 2→2 | 90.19% |
+| 4 | 4→130 · 3→5 · 2→1 | 82.71% |
+| 5 | 5→500 · 4→20 · 3→2 | 73.22% |
+| 6 | 6→1500 · 5→50 · 4→7 · 3→1 | 67.78% |
+| 7 | 7→5000 · 6→150 · 5→15 · 4→2 · 3→1 | 64.08% |
+| 8 | 8→15000 · 7→400 · 6→50 · 5→10 · 4→2 | 59.37% |
+| 9 | 9→25000 · 8→2000 · 7→200 · 6→30 · 5→8 · 4→2 | 86.22% |
+| 10 | 10→50000 · 9→4000 · 8→500 · 7→120 · 6→25 · 5→5 | 83.53% |
+
+RTP is computed from the hypergeometric distribution
+`P(catch k of s picks | 20 drawn from 80) = C(20,k)·C(60,s−k) / C(80,s)` and summed as
+`Σ P(k)·multiplier(k)`. All spot counts land in the standard Keno band (≈59–90%); the table
+is house-favorable everywhere (no player-positive tier). The exact computation is checked into
+the repo as a runnable script alongside `payoutCalculator.test.ts` so the RTP column is
+auditable and stays in sync if any multiplier changes.
 
 Notes:
-- The catch-0 → 5× on the 10-spot is the classic Keno "no-catch bonus." **Important UX
-  consequence:** a 10-spot ticket with 0 hits is still a *win* (payout = 5 × bet > bet for
-  bet < 5, push at bet = 5). Status copy and outcome classification must NOT assume
-  `hitCount > 0` ⟹ win or `hitCount === 0` ⟹ loss. Compute outcome from `netDelta` (see
-  Settlement Flow), not from `hitCount`.
+- **No catch-0 consolation bonus.** An earlier draft had a 10-spot catch-0 → 5× bonus; combined
+  with the mid tiers that produced a player-positive 104.84% RTP (broken). The bonus is dropped
+  for MVP — it may be re-added in a future tuning pass only after recomputing RTP. With no
+  catch-0 tier, the outcome semantics simplify: `hitCount === 0` is always a loss.
 - `MAX_BET=5` keeps the top prize (10-spot catch-10) at 250,000 chips — 2× headroom under
-  `GAME_LIMITS.keno.maxWin=500000`.
-- All other prizes at `MAX_BET=5` fit trivially under the cap (next-highest: 9-spot catch-9
-  = 125,000).
-- Within each spot count, paying tiers are monotonic (more catches ≥ fewer catches).
-- With this table, `push` only occurs when `multiplier × bet === bet` (i.e. multiplier === 1,
-  e.g. 4-spot catch-2 at bet 1, or 10-spot catch-0 at bet 5). All non-paying tiers
+  `GAME_LIMITS.keno.maxWin=500000`. All other prizes at `MAX_BET=5` fit trivially under the cap
+  (next-highest: 9-spot catch-9 = 125,000).
+- Within each spot count, paying tiers are strictly monotonic (more catches > fewer catches).
+- `push` occurs only when `multiplier === 1` (e.g. 4-spot catch-2). All non-paying tiers
   (multiplier 0) are pure losses. Unit-test these edge outcome labels since the UI surfaces them.
 
 The UI shows the exact paytable for the currently-selected spot count, re-rendering when the
@@ -212,10 +275,15 @@ Client-authoritative — no server schema change.
     multiplier: number;     // from PAYTABLE[spots][hitCount] (0 if no payout tier)
     payout: number;         // multiplier × bet
     netDelta: number;       // payout - bet
+    outcome: 'win' | 'loss' | 'push';  // netDelta > 0 → win, < 0 → loss, === 0 → push
     paytableVersion: string;
     timestamp: number;
   }
   ```
+  `outcome` is computed in `KenoGame.draw` from `netDelta` and stored on the record so the UI
+  and tests can read it without re-deriving. (`evaluateDraw` returns only the raw
+  `{hits, hitCount, multiplier, payout}`; it does NOT classify outcome — that is `KenoGame`'s
+  job.) With no catch-0 bonus, `hitCount === 0` ⟹ `multiplier === 0` ⟹ `outcome === 'loss'`.
 - History: bounded ring buffer, `MAX_HISTORY=20`, FIFO eviction (matches `SlotsGame`).
 - Server-side: `chip_sync_receipt` row per draw with `gameType='keno'`, `delta`, `outcome`,
   `handCount=1`, `biggestWinCandidate`. No paytable-version column for MVP (see Resolved
@@ -241,9 +309,10 @@ Layout (follows the deco felt-table + sidebar pattern of other games):
   - Bet chips: `BET_INCREMENTS = [1, 2, 3, 5]` (selected style reuses `.bet-chip.selected`).
   - Buttons: **Quick Pick** (random valid ticket of current spot count, or **8 if none
     selected** — 8 is the common casino middle-ground default, balancing hit frequency and
-    payout potential), **Clear** (deselect all), **Repeat Ticket** (re-apply last ticket's
-    picks), **Draw** (disabled until 1–10 picks selected and balance ≥ bet, AND disabled
-    while `drawInFlight` is set — see Settlement Flow).
+    payout potential), **Clear** (deselect all → empty 0-pick draft; Draw disabled until
+    ≥1 pick), **Repeat Ticket** (re-apply last ticket's picks), **Draw** (disabled until 1–10
+    picks selected and balance ≥ bet, AND disabled while `drawInFlight` is set — see
+    Settlement Flow).
   - Number-of-draws control: rendered as `[1 | 5 | 10]` with `1` selected; `5` and `10`
     disabled with a "Coming soon" tooltip (forward-compat UI; multi-draw is deferred).
 - **Sidebar:**
@@ -266,49 +335,68 @@ reveal. Sound setting governs any audio cues.
 | `BET_BELOW_MIN` | wager < `MIN_BET` | `setBet` |
 | `BET_ABOVE_MAX` | wager > `MAX_BET` | `setBet` |
 | `INVALID_BET` | non-finite / non-integer wager | `setBet` |
-| `INVALID_SELECTION` | <1 or >10 picks, duplicates, out-of-range (non 1–80), non-integers | `setSelection` |
+| `INVALID_SELECTION` | duplicates, out-of-range (non 1–80), non-integers in a pick | `setSelection` / `togglePick` |
+| `INVALID_DRAW_SELECTION` | draw attempted with <1 or >10 picks | `draw` |
 | `INSUFFICIENT_BALANCE` | wager > balance | `draw` |
 | `INVALID_SYNC_ID` | missing/empty `syncId` | `draw` |
 
 **Two-path error routing, matching `SlotsGame` exactly:**
 
-- **Programmatic setters** (`setBet`, `setSelection`) throw via `buildError(code, msg)` —
-  plain `Error` with a `code` property, **no toast**. These are caller bugs (the UI clamps
-  before calling); emitting `onError` here would leak a toast even when the caller swallows
-  the throw. Mirrors `SlotsGame.setBet`.
+- **Programmatic setters** (`setBet`, `setSelection`, `togglePick`, `clearSelection`) throw
+  via `buildError(code, msg)` — plain `Error` with a `code` property, **no toast**. These are
+  caller bugs (the UI clamps before calling); emitting `onError` here would leak a toast even
+  when the caller swallows the throw. Mirrors `SlotsGame.setBet`.
 - **`draw(syncId)`** throws via `fail(code, msg)` — emits `onError` (toast) THEN throws.
-  `INSUFFICIENT_BALANCE` and `INVALID_SYNC_ID` are runtime conditions the player should see,
-  not caller bugs. Mirrors `SlotsGame.spin` / `SlotsGame.fail`.
+  `INSUFFICIENT_BALANCE`, `INVALID_DRAW_SELECTION`, and `INVALID_SYNC_ID` are runtime
+  conditions the player should see, not caller bugs. Mirrors `SlotsGame.spin`/`SlotsGame.fail`.
 
-Selection validation (`selection.validateSelection`) rejects: fewer than 1 or more than 10
-picks, duplicate numbers, numbers outside 1–80, non-integers. `quickPick` is guaranteed to
-return a valid ticket (correct count, unique, in-range).
+**Draft state — selection is validated at draw time, not at set time.** The selection setters
+must accept a **0–10 pick draft** so `Clear` works: `clearSelection()` yields an empty draft
+(0 picks) which is a valid UI state ("Pick 1–10 numbers"). The lower/upper pick-count bounds
+are enforced by `draw()` as `INVALID_DRAW_SELECTION`, NOT by `setSelection`. Per-pick
+invariants (duplicates, range 1–80, integer) ARE enforced by the setters as `INVALID_SELECTION`
+— those are genuine caller bugs, not a valid draft state. `validateSelection` (pure helper)
+exposes the full check for the UI to gate the Draw button (`canDraw` ⟺ 1–10 valid picks).
+`quickPick(n)` is guaranteed to return a valid ticket (correct count, unique, in-range).
 
-**Chip-sync failures** are NOT `KenoErrorCode`s — they surface as HTTP responses handled in
-`kenoClient` (see Settlement Flow): 200 adopts balance; 409 adopts `currentBalance` or
-surfaces `SYNC_ID_REUSE_MISMATCH`; 429 retries with backoff; network failure gives up and
-re-syncs against the local balance on the next draw. No `ChipSyncCoordinator` involvement.
+**Chip-sync failures** are NOT `KenoErrorCode`s — they surface as HTTP responses handled by
+the outbox drain loop in `kenoClient` (see Settlement Flow for the full 200/409×3/429/network
+table). No `ChipSyncCoordinator` involvement.
 
 ## Testing
 
 ### Unit tests (Bun)
 
 - `DrawManager.test.ts` — `draw()` returns exactly 20 numbers; all in range 1–80; all
-  distinct; injectable `Rng` is deterministic for a seeded sequence.
+  distinct; injectable `Rng` is deterministic for a seeded sequence; the default RNG path
+  exercises `crypto.getRandomValues` (mocked) and produces unbiased output (no `byte % 80`
+  modulo skew — verified by asserting uniform bucket counts over a large seeded sample, or by
+  structural check that Fisher–Yates rejection sampling is used).
 - `selection.test.ts` — `validateSelection` accepts all valid 1–10 pick sets and rejects
-  every malformed input (empty, >10, duplicates, out-of-range, non-integers, non-array);
-  `quickPick(n)` produces `n` unique in-range numbers; `countHits` is correct for known
-  inputs.
-- `payoutCalculator.test.ts` — every spot-count × hit-count branch in `PAYTABLE` is covered
-  (including the catch-0 bonus on the 10-spot), payout scales linearly with bet, monotonic
-  within each spot count, no payout for non-paying tiers. **Plus outcome-label cases:** the
-  10-spot-catch-0 case (0 hits, `netDelta > 0` → classified `'win'`), the multiplier===1
-  push cases (e.g. 4-spot catch-2 at bet 1, 10-spot catch-0 at bet 5), and a pure-loss
-  case (multiplier 0). The UI surfaces these labels, so they must be correct.
+  duplicates, out-of-range, non-integers, non-array; **`setSelection`/`togglePick` ACCEPT a
+  0–10 draft** (so `clearSelection` works); `quickPick(n)` produces `n` unique in-range
+  numbers; `countHits` is correct for known inputs.
+- `payoutCalculator.test.ts` — every spot-count × hit-count branch in `PAYTABLE` is covered,
+  payout scales linearly with bet, strictly monotonic within each spot count, no payout for
+  non-paying tiers. **RTP audit:** a runnable computation asserts each spot-count's RTP lands
+  in [0.55, 0.95] (house-favorable) — this is the regression net against the original
+  104.84% 10-spot bug.
 - `KenoGame.test.ts` — balance debit/credit, `syncId` replay returns cached `DrawResult`,
-  history cap eviction at `MAX_HISTORY`, `setBet`/`setSelection` throw via `buildError`
-  (no `onError` emission), `draw` throws via `fail` (`onError` emitted then throw), every
-  `KenoErrorCode` is thrown in the right condition, `canDraw` gating.
+  history cap eviction at `MAX_HISTORY`, `setBet`/`setSelection`/`togglePick`/`clearSelection`
+  throw via `buildError` (no `onError` emission) and accept a 0–10 draft, `draw` throws via
+  `fail` (`onError` emitted then throw) for `INSUFFICIENT_BALANCE`/`INVALID_DRAW_SELECTION`/
+  `INVALID_SYNC_ID`, every `KenoErrorCode` in the right condition, `canDraw` gating. **Outcome
+  labels:** `draw()` results carry `outcome` derived from `netDelta`; cover win/loss/push
+  (push = multiplier===1, e.g. 4-spot catch-2; loss = multiplier 0; win = the rest).
+- `kenoClient.test.ts` (sync state machine) — covers the outbox drain loop end-to-end with a
+  mocked `fetch`: (a) two rapid draws enqueue two receipts and they drain **serially** (second
+  send's `previousBalance` equals the first's committed `response.balance`, never overlapping);
+  (b) 429 re-queues the same full payload at the head (verifies `syncId` + all fields resent,
+  matching `doesChipSyncReceiptMatch`); (c) 409 `BALANCE_MISMATCH` adopts `currentBalance` and
+  drops the receipt; (d) network failure leaves the receipt at the head and retries the
+  identical payload (does NOT adopt local balance); (e) a persisted outbox on load re-drains;
+  (f) guest mode (`guestModeValue === 'true'`) skips all fetches and persists balance to
+  `localStorage`.
 
 ### E2E tests (Playwright — `e2e/keno.spec.ts`)
 
@@ -327,32 +415,41 @@ Reuses `e2e/.auth/user.json` global setup. Coverage:
 
 ## Acceptance Criteria Mapping
 
-All MVP criteria from the issue are covered. Multi-draw criteria are explicitly deferred.
+**MVP scope = single-draw.** The issue lists multi-draw (5/10 batches) under "MVP scope" but
+gates it on "when idempotent batch settlement is complete," and its multi-draw acceptance
+criterion is phrased conditionally ("Any enabled multi-draw mode…"). This spec implements the
+single-draw path and explicitly **defers the multi-draw criteria** — they are not claimed as
+covered. Single-draw settlement (the hardest single-draw AC: "updates chips and statistics
+exactly once") IS covered, via the client-generated-`syncId` receipt path + serialized outbox.
 
 | Issue criterion | Coverage |
 |-----------------|----------|
 | Select 1–10 unique numbers manually or via Quick Pick | UI + `selection.ts` |
-| Reject invalid/duplicate/out-of-range/over-limit selections | `selection.validateSelection` + unit tests |
-| Every draw = 20 unique valid numbers | `DrawManager` + unit tests |
-| Match counting + every payout branch has unit coverage | `selection.countHits` + `payoutCalculator` full-branch tests |
-| UI shows the exact paytable for the chosen spot count | Paytable modal, re-renders on spot-count change |
+| Reject invalid/duplicate/out-of-range/over-limit selections | `selection.validateSelection` + unit tests (draft-state: count enforced at draw time) |
+| Every draw = 20 unique valid numbers | `DrawManager` (crypto RNG, unbiased) + unit tests |
+| Match counting + every payout branch has unit coverage | `selection.countHits` + `payoutCalculator` full-branch tests + RTP audit |
+| UI shows the exact paytable for the chosen spot count | Paytable modal, re-renders on spot-count change; enabled before first draw |
 | Wagers cannot exceed available balance | `INSUFFICIENT_BALANCE` check in `KenoGame.draw` |
-| Single-draw settlement updates chips and stats exactly once | `chip_sync_receipt` PK `userId+syncId`, receipt-replay branch |
-| Guest and authenticated modes | `createPublicGameSession` + guest bankroll persistence |
+| Single-draw settlement updates chips and stats exactly once | Client-`syncId` receipt path + serialized outbox + durable full-payload retry; `chip_sync_receipt` PK `userId+syncId`; `kenoClient` sync unit tests |
+| Guest and authenticated modes | `createPublicGameSession` + guest bankroll persistence (outbox is a no-op in guest mode) |
 | Playwright coverage for manual select, Quick Pick, controlled draw, payout, repeat-ticket | `e2e/keno.spec.ts` |
-| Multi-draw resume / no duplicate draws | **Deferred** — future spec; UI shows 5/10 as "Coming soon" |
+| Multi-draw resume / no duplicate draws | **Deferred** — out of MVP scope; UI shows 5/10 as "Coming soon". Tracked in Out of Scope. |
 
 ## Out of Scope (deferred)
 
 - **Multi-draw batches (5/10 draws):** gated on idempotent batch settlement per the issue.
   Will be a separate spec that extends this one; forward-compat is limited to the
-  number-of-draws control being present-but-disabled.
-- **Server-side draw authority / `keno_round` table:** the issue's "authoritative random
-  source" language is satisfied for play-money by client-side `crypto.getRandomValues`
-  (consistent with slots/craps). A future server-authoritative migration (roulette-style)
-  is possible if ranked/seasonal Keno becomes a priority.
-- **Server-side paytable-version audit column:** not needed for MVP; version is recorded in
-  the client `DrawResult`.
+  number-of-draws control being present-but-disabled. The single-draw outbox/receipt model
+  here is a foundation for, not an implementation of, multi-draw.
+- **Server-side draw authority / `keno_round` table:** the issue's "authoritative draws /
+  server-verified round events" language is **relaxed** for play-money MVP to client-side
+  `crypto.getRandomValues` + capped-delta server trust (consistent with slots/craps). Ranked
+  or seasonal Keno integrity would require a server-authoritative migration (roulette-style);
+  flagged as a known MVP limitation, not a silent one.
+- **Server-side paytable-version audit column:** not in MVP; `PAYTABLE_VERSION` is recorded on
+  the client `DrawResult` only.
+- **catch-0 consolation bonus:** dropped to fix the 104.84% RTP 10-spot table; may be re-added
+  in a tuning pass after RTP recompute.
 - **LLM strategy/hint module:** Keno is pure chance; no strategy hint.
 
 ## References

@@ -128,17 +128,14 @@ Two distinct concurrency hazards must be handled separately:
    result, so no two in-flight syncs ever race on the same `previousBalance` (which would 409)
    and no draw's delta is lost or double-counted.
 
-### PendingReceipt (durable, full canonical payload)
+### PendingReceipt (durable, 7-field payload)
 
-A retry must resend the **complete** canonical payload, because the server's
-`doesChipSyncReceiptMatch` (`update.ts:139`) compares **all** sync fields — a partial retry
-(only `syncId/delta/previousBalance`) would mismatch an already-committed receipt and 409. The
-pending receipt therefore stores every field:
+The client sends **exactly these 7 fields** and re-sends the same 7 on every retry:
 
 ```ts
 type PendingReceipt = {
   syncId: string;
-  previousBalance: number;   // serverSyncedBalance at the moment the draw settled locally
+  previousBalance: number;   // serverSyncedBalance at enqueue time (rebased on BALANCE_MISMATCH — see drain loop)
   delta: number;             // game.getBalance() - previousBalance, captured at enqueue time
   gameType: 'keno';
   outcome: 'win' | 'loss' | 'push';   // from delta sign
@@ -147,25 +144,46 @@ type PendingReceipt = {
 };
 ```
 
-`delta` and `previousBalance` are **snapshotted at enqueue time**, not recomputed at send time,
-so a later draw doesn't mutate them. The outbox is persisted to `localStorage`
-(`arcturus:keno:outbox:<clientUserId>`) so a mid-sync tab close can resume on next load — the
-drain loop runs on startup, replaying any pending receipts. (Guest mode persists to the same
-key; authenticated mode persists best-effort and clears on successful drain.)
+**The client must NOT send `statsDelta`, `winsIncrement`, or `lossesIncrement`.** Keno is not
+in `BATCHED_GAME_TYPES`, so the server rejects any `statsDelta` with `STATS_DELTA_NOT_ALLOWED`
+(400, `update.ts:704`). This is safe w.r.t. `doesChipSyncReceiptMatch` (`update.ts:138`, which
+compares 10 fields including those three) precisely because the server **derives** the three
+omitted fields deterministically from the 7 the client sends: `statsDeltaForTracking =
+validatedStatsDelta ?? delta` (`:1006`, = `delta` for keno), and `winsIncrement`/`lossesIncrement`
+from `outcome` (`:992-1003`). So a retry that resends the identical 7 fields causes the server
+to rebuild the identical derived triple → receipt match succeeds → cached replay. The contract
+is: send 7, server derives 3, retry reproduces all 10.
+
+`delta` is snapshotted at enqueue time and never recomputed, so a later draw doesn't mutate it.
+`previousBalance` is the only field a retry may rewrite, and only on BALANCE_MISMATCH (below).
+The outbox is persisted to `localStorage` (`arcturus:keno:outbox:<clientUserId>`) so a mid-sync
+tab close can resume on next load — the drain loop runs on startup, replaying any pending
+receipts. (Guest mode persists to the same key; authenticated mode persists best-effort and
+clears each receipt on successful drain.)
 
 ### Drain loop (per receipt)
 
 ```
 pop head PendingReceipt →
-  POST /api/chips/update with the full payload (same syncId) →
+  POST /api/chips/update with the 7-field payload (same syncId) →
     200:  serverSyncedBalance = response.balance; game.setBalance(response.balance);
           drop receipt from outbox; drain next.
     409 BALANCE_MISMATCH (response.currentBalance present):
-          serverSyncedBalance = response.currentBalance; game.setBalance(currentBalance);
-          DROP the receipt — the server's authoritative balance already incorporates this
-          draw's effect (the optimistic lock failed because another tab/game committed first,
-          OR this very sync committed but the response was lost; either way the server balance
-          is the truth). Log a warning. Drain next.
+          REBASE AND RE-SUBMIT — do NOT drop. The server's branch order is: receipt-existence
+          check first (update.ts:1105-1181), so a syncId that already committed returns the
+          cached 200 and never reaches BALANCE_MISMATCH. Therefore BALANCE_MISMATCH (update.ts:1221)
+          fires ONLY when no receipt exists yet AND clientPreviousBalance !== serverBalance —
+          a genuine concurrent write from another tab/game that committed first. The draw's delta
+          was never applied and no receipt was written. So: set previousBalance :=
+          response.currentBalance (keep syncId, keep delta, keep all other fields), re-queue at
+          the head, and retry immediately. The retry hits no-receipt + matched-balance → fresh
+          insert on top of the authoritative balance (e.g. 1050 + 100 = 1150), preserving the
+          delta. Exact-once holds (syncId still gates it; serialized outbox means only one
+          rebased receipt is ever in flight). If a further concurrent write races the retry, the
+          server returns BALANCE_MISMATCH again with a fresh currentBalance → rebase again.
+          Bounded-retry the rebases; if the bound is exhausted, fall through to the terminal-4xx
+          rule (drop, adopt currentBalance, hard error) so a permanently-contended account can't
+          wedge the outbox.
     409 MP_ESCROW_ACTIVE (NO currentBalance in chips/update.ts — only roulette's spin endpoint
           returns one):
           Refetch the authoritative balance via a fresh GET of the user row (or wait for the
@@ -173,15 +191,24 @@ pop head PendingReceipt →
           until escrow clears (the MP hand will release it); surface a toast.
     409 SYNC_ID_REUSE_MISMATCH:
           The server has this syncId for a DIFFERENT payload — a real client bug or a syncId
-          collision. Surface as a hard error; refetch balance; drop the receipt.
+          collision. Surface as a hard error; refetch balance; drop the receipt (terminal).
     429 RATE_LIMITED: respect Retry-After; re-queue the SAME receipt at the head (do not drop);
-          the drain loop sleeps then retries. Because the server keys on syncId, a retry that
-          lands after the draw already committed is a no-op replay returning the cached receipt.
+          the drain loop sleeps then retries. NOTE: MIN_UPDATE_INTERVAL_MS is 2s (update.ts:447),
+          and the FIFO outbox spaces back-to-back draws' syncs <2s apart, so rapid successive
+          draws reliably eat one 429 each before succeeding — this is expected, not a bug.
+          kenoClient.test.ts case (b) includes this 2s-window 429 explicitly.
+    Any other 4xx (DELTA_EXCEEDS_LIMIT, INSUFFICIENT_BALANCE, STATS_DELTA_NOT_ALLOWED,
+          STATS_DELTA_WAGER_INCONSISTENCY, INVALID_*): TERMINAL. Normal keno play cannot trigger
+          these (top prize 250k vs maxWin 500k; loss 5 vs maxLoss 10k; no statsDelta sent), so
+          hitting one means a corrupted outbox or a client bug — a naive "retry at head" loop
+          would spin forever on the poison receipt and block the whole outbox. Drop the receipt,
+          adopt response.currentBalance if present, surface a hard error. (This also backstops a
+          statsDelta leak if one ever slips in.)
     Network failure (after bounded retries): LEAVE the receipt at the head of the outbox;
           back off and retry. Crucially, do NOT set serverSyncedBalance = game.getBalance() —
           we cannot distinguish "request lost" from "server committed, response lost." The
           durable receipt makes this safe: on next drain attempt (or next page load), the same
-          full payload is resent; if it had committed, the server returns the cached result and
+          7-field payload is resent; if it had committed, the server returns the cached 200 and
           we adopt response.balance.
 ```
 
@@ -391,12 +418,18 @@ table). No `ChipSyncCoordinator` involvement.
 - `kenoClient.test.ts` (sync state machine) — covers the outbox drain loop end-to-end with a
   mocked `fetch`: (a) two rapid draws enqueue two receipts and they drain **serially** (second
   send's `previousBalance` equals the first's committed `response.balance`, never overlapping);
-  (b) 429 re-queues the same full payload at the head (verifies `syncId` + all fields resent,
-  matching `doesChipSyncReceiptMatch`); (c) 409 `BALANCE_MISMATCH` adopts `currentBalance` and
-  drops the receipt; (d) network failure leaves the receipt at the head and retries the
-  identical payload (does NOT adopt local balance); (e) a persisted outbox on load re-drains;
-  (f) guest mode (`guestModeValue === 'true'`) skips all fetches and persists balance to
-  `localStorage`.
+  (b) 429 re-queues the same 7-field payload at the head (verifies `syncId`+`delta`+
+  `previousBalance`+`outcome`+`handCount`+`biggestWinCandidate` resent; asserts `statsDelta`/
+  `winsIncrement`/`lossesIncrement` are NEVER sent). Includes the realistic 2s-rate-limit window
+  (`MIN_UPDATE_INTERVAL_MS`) where back-to-back draws each eat one 429 before succeeding; (c) 409
+  `BALANCE_MISMATCH` **rebases and resubmits** — `previousBalance := response.currentBalance`,
+  same `syncId`+`delta` retained, retried until a 200 applies the delta on top of the authoritative
+  balance (verifies the delta is NOT lost; this is the regression net for the original "drop loses
+  the win" bug); (d) network failure leaves the receipt at the head and retries the identical
+  payload (does NOT adopt local balance); (e) a terminal 4xx (`DELTA_EXCEEDS_LIMIT` or
+  `STATS_DELTA_NOT_ALLOWED`) drops the receipt, adopts `currentBalance` if present, surfaces the
+  error, and does NOT loop; (f) a persisted outbox on load re-drains; (g) guest mode
+  (`guestModeValue === 'true'`) skips all fetches and persists balance to `localStorage`.
 
 ### E2E tests (Playwright — `e2e/keno.spec.ts`)
 

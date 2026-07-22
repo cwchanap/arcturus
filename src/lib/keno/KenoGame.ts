@@ -68,6 +68,9 @@ export class KenoGame {
 	}
 	// Per-pick invariants only; accepts a 0–10 draft (count enforced at draw).
 	togglePick(n: number): void {
+		if (this.state.picks.length >= MAX_SPOTS && !this.state.picks.includes(n)) {
+			throw this.buildError('INVALID_SELECTION', `At most ${MAX_SPOTS} picks`);
+		}
 		const v = validatePicks([n]);
 		if (!v.ok) throw this.buildError(v.code, `Invalid pick: ${n}`);
 		const set = new Set(this.state.picks);

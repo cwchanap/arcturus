@@ -104,7 +104,6 @@ export class KenoSyncOutbox {
 			const body = await res.json();
 			if (res.status === 200) {
 				this.deps.setServerSyncedBalance(num(body, 'balance'));
-				this.deps.setGameBalance(num(body, 'balance'));
 				this.dropHead();
 				return true;
 			}

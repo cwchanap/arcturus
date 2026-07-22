@@ -56,12 +56,12 @@ describe('KenoGame.draw (fail, toast + throw)', () => {
 		expect(() => g.draw('sync-1')).toThrow();
 		expect(errors).toContain('INVALID_DRAW_SELECTION');
 	});
-	test('emits onError then throws on INVALID_DRAW_SELECTION (>10 picks)', () => {
+	test('togglePick rejects 11th pick with INVALID_SELECTION (no toast)', () => {
 		const errors: string[] = [];
 		const g = new KenoGame(1000, {}, { onError: (e) => errors.push(e.code) });
-		for (let i = 1; i <= 11; i++) g.togglePick(i);
-		expect(() => g.draw('sync-1')).toThrow();
-		expect(errors).toContain('INVALID_DRAW_SELECTION');
+		for (let i = 1; i <= 10; i++) g.togglePick(i);
+		expect(() => g.togglePick(11)).toThrow();
+		expect(errors).toEqual([]); // buildError, no toast
 	});
 	test('emits onError then throws on INVALID_SYNC_ID', () => {
 		const errors: string[] = [];

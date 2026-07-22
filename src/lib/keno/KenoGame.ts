@@ -75,6 +75,10 @@ export class KenoGame {
 		this.state.picks = [...this.state.picks, n].sort((a, b) => a - b);
 		this.events.onSelectionChange?.(this.getPicks());
 	}
+	removePick(n: number): void {
+		this.state.picks = this.state.picks.filter((p) => p !== n);
+		this.events.onSelectionChange?.(this.getPicks());
+	}
 	clearSelection(): void {
 		this.state.picks = [];
 		this.events.onSelectionChange?.(this.getPicks());

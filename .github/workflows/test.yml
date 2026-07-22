@@ -49,40 +49,10 @@ jobs:
           override_branch: ${{ github.head_ref || github.ref_name }}
           override_pr: ${{ github.event.pull_request.number }}
 
-      - name: Capture Codecov processing state
-        if: always()
-        shell: bash
-        env:
-          CODECOV_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: |
-          : > codecov-processing.log
-          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            commit_status=$(curl --silent --show-error \
-              --output codecov-commit-response.json \
-              --write-out '%{http_code}' \
-              "https://api.codecov.io/api/v2/github/cwchanap/repos/arcturus/commits/${CODECOV_COMMIT}/" || true)
-            uploads_status=$(curl --silent --show-error \
-              --output codecov-uploads-response.json \
-              --write-out '%{http_code}' \
-              "https://api.codecov.io/api/v2/github/cwchanap/repos/arcturus/commits/${CODECOV_COMMIT}/uploads/" || true)
-            report_ready=$(jq -r 'if .report == null then "false" else "true" end' codecov-commit-response.json 2>/dev/null || echo false)
-            upload_states=$(jq -r '[.results[]?.state_name] | join(",")' codecov-uploads-response.json 2>/dev/null || echo unreadable)
-            printf 'attempt=%s commit_http=%s uploads_http=%s report_ready=%s upload_states=%s\n' \
-              "$attempt" "$commit_status" "$uploads_status" "$report_ready" "$upload_states" >> codecov-processing.log
-            if [ "$report_ready" = 'true' ]; then
-              break
-            fi
-            sleep 5
-          done
-
       - name: Archive coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: |
-            coverage/
-            codecov-processing.log
-            codecov-commit-response.json
-            codecov-uploads-response.json
+          path: coverage/
           retention-days: 30

@@ -241,3 +241,87 @@ describe('KenoSyncOutbox persistence (resume on load)', () => {
 		expect(calls[0].body.syncId).toBe('s-old');
 	});
 });
+
+describe('KenoSyncOutbox fire-and-forget (per-draw delta race regression)', () => {
+	test('rapid fire-and-forget draws do not corrupt game balance', async () => {
+		let serverBalance = 1000;
+		let gameBalance = 1000;
+		const setGameBalanceCalls: number[] = [];
+		const calls: FetchCall[] = [];
+		let callIdx = 0;
+		const results: FetchResult[] = [
+			{ status: 200, body: { balance: 995 } }, // s1: 1000 + (-5) = 995
+			{ status: 409, body: { error: 'BALANCE_MISMATCH', currentBalance: 995 } }, // s2 stale prevBalance
+			{ status: 200, body: { balance: 990 } }, // s2 rebased: 995 + (-5) = 990
+		];
+		const fetchImpl = async (url: string, init: { body: string }) => {
+			calls.push({ url, body: JSON.parse(init.body) });
+			const r = results[Math.min(callIdx, results.length - 1)];
+			callIdx++;
+			// Slow first call to simulate sync RTT > animation delay
+			if (callIdx === 1) await new Promise<void>((resolve) => setTimeout(resolve, 30));
+			return {
+				ok: r.status === 200,
+				status: r.status,
+				headers: { get: (k: string) => (k === 'Retry-After' ? '1' : null) },
+				json: async () => r.body,
+			};
+		};
+
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: (b) => {
+				serverBalance = b;
+			},
+			setGameBalance: (b) => {
+				setGameBalanceCalls.push(b);
+			},
+			onHardError: () => {},
+			onToast: () => {},
+			sleep: () => Promise.resolve(),
+		});
+
+		// Draw 1: gameBalance 1000 -> 995, per-draw delta = -5
+		gameBalance = 995;
+		// Fire-and-forget (production pattern: void enqueueAndDrain)
+		void ob.enqueueAndDrain({
+			syncId: 's1',
+			previousBalance: 1000,
+			delta: -5,
+			gameType: 'keno',
+			outcome: 'loss',
+			handCount: 1,
+			biggestWinCandidate: undefined,
+		});
+
+		// Draw 2 happens while s1 sync is in flight: gameBalance 995 -> 990, per-draw delta = -5
+		gameBalance = 990;
+		// previousBalance still 1000 (serverSyncedBalance not yet updated - race window)
+		await ob.enqueueAndDrain({
+			syncId: 's2',
+			previousBalance: 1000,
+			delta: -5,
+			gameType: 'keno',
+			outcome: 'loss',
+			handCount: 1,
+			biggestWinCandidate: undefined,
+		});
+
+		// Wait for background drain to complete (s1 has 30ms delay)
+		await new Promise((r) => setTimeout(r, 100));
+
+		// Per-draw deltas are correct (each -5, NOT cumulative -10)
+		expect(calls[0].body.delta).toBe(-5); // s1
+		expect(calls[1].body.delta).toBe(-5); // s2 first attempt (before rebase)
+
+		// gameBalance was NOT overwritten by 200 handler - still the locally-computed value
+		expect(gameBalance).toBe(990);
+		expect(setGameBalanceCalls).toEqual([]); // setGameBalance NEVER called on 200
+
+		// serverSyncedBalance was updated correctly through the drain
+		expect(serverBalance).toBe(990);
+	});
+});

@@ -4,7 +4,7 @@ import {
 	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from '../public-game-session';
-import { MIN_SPOTS } from './constants';
+import { MAX_SPOTS, MIN_SPOTS } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { KenoGame } from './KenoGame';
 import { KenoUIRenderer } from './KenoUIRenderer';
@@ -95,8 +95,12 @@ export function initKenoClient(): void {
 		cell.addEventListener('click', () => {
 			if (drawInFlight) return;
 			const n = Number(cell.dataset.number);
-			if (cell.classList.contains('selected')) game.removePick(n);
-			else game.togglePick(n);
+			if (cell.classList.contains('selected')) {
+				game.removePick(n);
+			} else {
+				if (game.getPicks().length >= MAX_SPOTS) return; // silently ignore
+				game.togglePick(n);
+			}
 		});
 	});
 
@@ -145,6 +149,7 @@ export function initKenoClient(): void {
 		renderer.clearDrawnHighlight();
 		try {
 			const syncId = `keno-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const balanceBefore = game.getBalance();
 			const result = game.draw(syncId);
 			lastTicketPicks = [...result.picks];
 			renderer.renderPicks(game.getPicks());
@@ -154,9 +159,9 @@ export function initKenoClient(): void {
 			renderer.renderLastResult(result);
 			renderer.renderRecent(game.getHistory());
 			renderer.setStatus(result.outcome === 'win' ? 'Round complete — win!' : 'Round complete');
-			// Enqueue settlement (snapshot delta at this moment against serverSyncedBalance)
+			// Enqueue settlement (per-draw delta: net change for THIS draw only)
 			if (outbox) {
-				const delta = game.getBalance() - serverSyncedBalance;
+				const delta = game.getBalance() - balanceBefore;
 				const receipt: PendingReceipt = {
 					syncId,
 					previousBalance: serverSyncedBalance,

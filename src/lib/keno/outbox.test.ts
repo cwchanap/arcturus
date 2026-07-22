@@ -123,7 +123,7 @@ describe('KenoSyncOutbox BALANCE_MISMATCH (rebase + resubmit, delta preserved)',
 		const { fetchImpl, calls } = makeFetch([
 			{ status: 409, body: { error: 'BALANCE_MISMATCH', currentBalance: 1050 } },
 		]);
-		let hardError: string | null = null;
+		let hardError: string | undefined = undefined;
 		const ob = new KenoSyncOutbox({
 			fetchImpl,
 			endpoint: '/api/chips/update',
@@ -137,7 +137,7 @@ describe('KenoSyncOutbox BALANCE_MISMATCH (rebase + resubmit, delta preserved)',
 		});
 		await ob.enqueueAndDrain(receipt('s1', 1000, 100));
 		expect(calls.length).toBeLessThanOrEqual(4); // 3 rebases + 1 terminal drop
-		expect(hardError).toBe('BALANCE_MISMATCH');
+		expect(hardError!).toBe('BALANCE_MISMATCH');
 	});
 });
 
@@ -170,7 +170,7 @@ describe('KenoSyncOutbox terminal 4xx (drop, no loop)', () => {
 		const { fetchImpl, calls } = makeFetch([
 			{ status: 400, body: { error: 'DELTA_EXCEEDS_LIMIT', currentBalance: 1000 } },
 		]);
-		let hardError: string | null = null;
+		let hardError: string | undefined = undefined;
 		let adopted = -1;
 		const ob = new KenoSyncOutbox({
 			fetchImpl,
@@ -184,7 +184,7 @@ describe('KenoSyncOutbox terminal 4xx (drop, no loop)', () => {
 		});
 		await ob.enqueueAndDrain(receipt('s1', 1000, 999999));
 		expect(calls).toHaveLength(1); // no retry
-		expect(hardError).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(hardError!).toBe('DELTA_EXCEEDS_LIMIT');
 		expect(adopted).toBe(1000);
 	});
 });

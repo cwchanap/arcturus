@@ -37,6 +37,7 @@ jobs:
         if: always()
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          slug: cwchanap/arcturus
           files: ./coverage/lcov.info
           disable_search: true
           report_type: coverage

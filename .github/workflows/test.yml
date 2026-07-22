@@ -41,7 +41,6 @@ jobs:
           files: ./coverage/lcov.info
           disable_search: true
           report_type: coverage
-          use_legacy_upload_endpoint: true
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: true

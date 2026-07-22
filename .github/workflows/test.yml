@@ -49,10 +49,32 @@ jobs:
           override_branch: ${{ github.head_ref || github.ref_name }}
           override_pr: ${{ github.event.pull_request.number }}
 
+      - name: Capture Codecov processing state
+        if: always()
+        shell: bash
+        env:
+          CODECOV_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          : > codecov-processing.log
+          for attempt in 1 2 3 4 5 6; do
+            status=$(curl --silent --show-error \
+              --output codecov-commit-response.json \
+              --write-out '%{http_code}' \
+              "https://api.codecov.io/api/v2/github/cwchanap/repos/arcturus/commits/${CODECOV_COMMIT}/" || true)
+            printf 'attempt=%s http_status=%s\n' "$attempt" "$status" >> codecov-processing.log
+            if [ "$status" = '200' ]; then
+              break
+            fi
+            sleep 5
+          done
+
       - name: Archive coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/
+          path: |
+            coverage/
+            codecov-processing.log
+            codecov-commit-response.json
           retention-days: 30

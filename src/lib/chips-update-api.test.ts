@@ -862,6 +862,93 @@ describe('chips update API', () => {
 		expect(body.currentBalance).toBe(50000);
 	});
 
+	test('accepts keno win within GAME_LIMITS.keno', async () => {
+		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const POST = createHandler();
+		// Top prize: 10-spot catch-10 (50000×) at MAX_BET=5 = 250,000.
+		// maxWin (500000) is 2× headroom; 250000 must be accepted.
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 250000,
+				gameType: 'keno',
+				previousBalance: 1000,
+				outcome: 'win',
+				handCount: 1,
+				winsIncrement: 1,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-keno-win' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(200);
+		expect(body.success).toBe(true);
+		expect(body.balance).toBe(251000);
+	});
+
+	test('rejects keno win exceeding maxWin (500000)', async () => {
+		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 1000 });
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: 500001, gameType: 'keno' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-keno-overwin' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(body.currentBalance).toBe(1000);
+	});
+
+	test('rejects keno loss exceeding maxLoss (10000)', async () => {
+		resetMocks();
+		mockCreateDb.db = createMockDb({ chipBalance: 50000 });
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({ delta: -10001, gameType: 'keno' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-keno-overloss' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
+		expect(body.currentBalance).toBe(50000);
+	});
+
+	test('rejects statsDelta for keno (not a batched game)', async () => {
+		resetMocks();
+		const POST = createHandler();
+		const request = new Request('http://test.local', {
+			method: 'POST',
+			body: JSON.stringify({
+				delta: 100,
+				gameType: 'keno',
+				statsDelta: 100,
+			}),
+		});
+
+		const response = await POST({
+			request,
+			locals: createLocals({ user: { id: 'user-keno-stats' } }),
+		} as any);
+		const body = await readJson(response);
+		expect(response.status).toBe(400);
+		expect(body.error).toBe('STATS_DELTA_NOT_ALLOWED');
+	});
+
 	test('rejects non-integer previousBalance', async () => {
 		resetMocks();
 		const POST = createHandler();

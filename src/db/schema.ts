@@ -116,7 +116,7 @@ export const gameStats = sqliteTable(
 		userId: text('userId')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat' | 'craps' | 'slots' | 'roulette'
+		gameType: text('gameType').notNull(), // 'poker' | 'blackjack' | 'baccarat' | 'craps' | 'slots' | 'roulette' | 'keno'
 
 		// Core statistics
 		totalWins: integer('totalWins').notNull().default(0),

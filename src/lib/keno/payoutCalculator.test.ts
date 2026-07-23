@@ -6,10 +6,7 @@ import { computeRtp, evaluateDraw } from './payoutCalculator';
 function ticket(spots: number, hitCount: number): { picks: number[]; drawn: number[] } {
 	const picks = Array.from({ length: spots }, (_, i) => i + 1);
 	const hits = picks.slice(0, hitCount);
-	const misses = Array.from(
-		{ length: KENO_DRAW_SIZE - hitCount },
-		(_, i) => MAX_SPOTS + 1 + i,
-	);
+	const misses = Array.from({ length: KENO_DRAW_SIZE - hitCount }, (_, i) => MAX_SPOTS + 1 + i);
 	return { picks, drawn: [...hits, ...misses] };
 }
 

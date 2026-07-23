@@ -37,6 +37,15 @@ export const ANIMATION_DELAY_MS: Record<AnimationSpeed, number> = {
 	fast: 800,
 };
 
+// Per-cell reveal stagger. Scaled to animationSpeed so the full reveal
+// (20 cells × stagger) fits within ANIMATION_DELAY_MS for each speed tier.
+// 19 × stagger < ANIMATION_DELAY_MS: slow 90→1710<2000, normal 70→1330<1500, fast 35→665<800.
+export const REVEAL_STAGGER_MS: Record<AnimationSpeed, number> = {
+	slow: 90,
+	normal: 70,
+	fast: 35,
+};
+
 export const DEFAULT_SETTINGS: KenoSettings = {
 	animationSpeed: 'normal',
 };

@@ -248,12 +248,12 @@ describe('KenoUIRenderer', () => {
 				'0 of 3 lost 5',
 			);
 		});
-		test('push outcome uses "pushed" and 0', () => {
+		test('push outcome uses "pushed" with bet-returned note', () => {
 			renderer.renderLastResult(
 				makeResult({ outcome: 'push', netDelta: 0, bet: 5, hitCount: 2, spots: 4 }),
 			);
 			expect(root.querySelector<HTMLElement>('[data-testid="last-result"]')?.textContent).toBe(
-				'2 of 4 pushed 0',
+				'2 of 4 — pushed (bet returned)',
 			);
 		});
 	});

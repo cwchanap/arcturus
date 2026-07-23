@@ -222,6 +222,72 @@ describe('KenoSyncOutbox network failure (leave at head, retry full payload)', (
 	});
 });
 
+describe('KenoSyncOutbox malformed JSON on 200 (item 6)', () => {
+	test('res.json() throwing is retried, not an unhandled rejection', async () => {
+		let attempt = 0;
+		const calls: FetchCall[] = [];
+		const fetchImpl = async (url: string, init: { body: string }) => {
+			calls.push({ url, body: JSON.parse(init.body) });
+			attempt++;
+			if (attempt === 1) {
+				return {
+					ok: true,
+					status: 200,
+					headers: { get: () => null },
+					json: async () => {
+						throw new SyntaxError('Unexpected token');
+					},
+				};
+			}
+			return {
+				ok: true,
+				status: 200,
+				headers: { get: () => null },
+				json: async () => ({ balance: 1100 }),
+			};
+		};
+		const synced: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: (b) => synced.push(b),
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+			sleep: () => Promise.resolve(),
+		});
+		await ob.enqueueAndDrain(receipt('s1', 1000, 100));
+		expect(calls).toHaveLength(2); // retried after parse failure
+		expect(synced).toEqual([1100]); // adopted real balance, not dropped
+	});
+});
+
+describe('KenoSyncOutbox non-numeric balance on 200 (item 3)', () => {
+	test('malformed balance field is retried, does not adopt 0', async () => {
+		const { fetchImpl, calls } = makeFetch([
+			{ status: 200, body: { balance: 'oops' } },
+			{ status: 200, body: { balance: 1100 } },
+		]);
+		const synced: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: (b) => synced.push(b),
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+			sleep: () => Promise.resolve(),
+		});
+		await ob.enqueueAndDrain(receipt('s1', 1000, 100));
+		expect(calls).toHaveLength(2); // retried
+		expect(synced).toEqual([1100]); // never adopted 0
+	});
+});
+
 describe('KenoSyncOutbox persistence (resume on load)', () => {
 	test('re-drains persisted receipts from load()', async () => {
 		let persisted: PendingReceipt[] = [receipt('s-old', 500, 50)];

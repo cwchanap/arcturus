@@ -101,9 +101,26 @@ export class KenoSyncOutbox {
 				await this.sleep(500 * networkRetries);
 				continue;
 			}
-			const body = await res.json();
+			let body: Record<string, unknown>;
+			try {
+				body = await res.json();
+			} catch {
+				// Malformed JSON — treat as transient, retry same head.
+				networkRetries++;
+				if (networkRetries > this.maxNetworkRetries) return false;
+				await this.sleep(500 * networkRetries);
+				continue;
+			}
 			if (res.status === 200) {
-				this.deps.setServerSyncedBalance(num(body, 'balance'));
+				const balance = body['balance'];
+				if (typeof balance !== 'number' || !Number.isFinite(balance)) {
+					// Malformed 200 — don't adopt 0 as synced balance; retry same head.
+					networkRetries++;
+					if (networkRetries > this.maxNetworkRetries) return false;
+					await this.sleep(500 * networkRetries);
+					continue;
+				}
+				this.deps.setServerSyncedBalance(balance);
 				this.dropHead();
 				return true;
 			}

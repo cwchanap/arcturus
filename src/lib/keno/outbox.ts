@@ -133,7 +133,13 @@ export class KenoSyncOutbox {
 				return true;
 			}
 			if (res.status === 429) {
-				const retryAfter = Number(res.headers.get('Retry-After') ?? '1');
+				networkRetries++;
+				if (networkRetries > this.maxNetworkRetries) {
+					return false;
+				}
+				const parsedRetryAfter = Number(res.headers.get('Retry-After') ?? '1');
+				const retryAfter =
+					Number.isFinite(parsedRetryAfter) && parsedRetryAfter > 0 ? parsedRetryAfter : 1;
 				await this.sleep(retryAfter * 1000);
 				continue; // same head, same payload
 			}

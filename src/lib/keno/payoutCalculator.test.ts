@@ -1,7 +1,17 @@
 // src/lib/keno/payoutCalculator.test.ts
 import { describe, expect, test } from 'bun:test';
-import { PAYTABLE } from './constants';
+import { KENO_DRAW_SIZE, MAX_SPOTS, PAYTABLE } from './constants';
 import { computeRtp, evaluateDraw } from './payoutCalculator';
+
+function ticket(spots: number, hitCount: number): { picks: number[]; drawn: number[] } {
+	const picks = Array.from({ length: spots }, (_, i) => i + 1);
+	const hits = picks.slice(0, hitCount);
+	const misses = Array.from(
+		{ length: KENO_DRAW_SIZE - hitCount },
+		(_, i) => MAX_SPOTS + 1 + i,
+	);
+	return { picks, drawn: [...hits, ...misses] };
+}
 
 describe('evaluateDraw', () => {
 	test('returns hits, hitCount, multiplier, payout', () => {
@@ -18,6 +28,31 @@ describe('evaluateDraw', () => {
 		const drawn = [1, 2, 3, 4, 5, 6]; // catch-5 of 5
 		expect(evaluateDraw(picks, drawn, 1).payout).toBe(500);
 		expect(evaluateDraw(picks, drawn, 5).payout).toBe(2500);
+	});
+	test('covers every paying and one non-paying tier for each spot count', () => {
+		const bet = 3;
+		for (let spots = 1; spots <= MAX_SPOTS; spots++) {
+			const tiers = PAYTABLE[spots];
+			for (const [hitCountText, multiplier] of Object.entries(tiers)) {
+				const hitCount = Number(hitCountText);
+				const { picks, drawn } = ticket(spots, hitCount);
+				const result = evaluateDraw(picks, drawn, bet);
+				expect(result.hitCount).toBe(hitCount);
+				expect(result.multiplier).toBe(multiplier);
+				expect(result.payout).toBe(multiplier * bet);
+			}
+
+			const payingHits = new Set(Object.keys(tiers).map(Number));
+			const nonPayingHitCount = Array.from({ length: spots + 1 }, (_, i) => i).find(
+				(hitCount) => !payingHits.has(hitCount),
+			);
+			expect(nonPayingHitCount).toBeDefined();
+			const { picks, drawn } = ticket(spots, nonPayingHitCount!);
+			const result = evaluateDraw(picks, drawn, bet);
+			expect(result.hitCount).toBe(nonPayingHitCount!);
+			expect(result.multiplier).toBe(0);
+			expect(result.payout).toBe(0);
+		}
 	});
 	test('no payout for a non-paying tier (multiplier 0)', () => {
 		const picks = [1, 2, 3, 4];

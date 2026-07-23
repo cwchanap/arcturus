@@ -12,8 +12,13 @@ describe('KenoGame setters (buildError, no toast)', () => {
 	test('setBet throws buildError for invalid bets (no onError emitted)', () => {
 		const errors: string[] = [];
 		const g = new KenoGame(1000, {}, { onError: (e) => errors.push(e.code) });
-		expect(() => g.setBet(MIN_BET - 1)).toThrow();
-		expect(code).toBeDefined(); // sanity
+		let thrown: unknown;
+		try {
+			g.setBet(MIN_BET - 1);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(code(thrown)).toBe('BET_BELOW_MIN');
 		expect(errors).toEqual([]); // NO toast
 		expect(() => g.setBet(MAX_BET + 1)).toThrow();
 		expect(() => g.setBet(Number.NaN)).toThrow();

@@ -1,17 +1,34 @@
 // src/lib/keno/KenoUIRenderer.test.ts
 import { Window } from 'happy-dom';
-import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { KENO_POOL, PAYTABLE } from './constants';
 import { KenoUIRenderer } from './KenoUIRenderer';
 import type { DrawResult } from './types';
 
 // happy-dom provides a full DOM implementation without a browser.
-// Install it onto the global scope so KenoUIRenderer (which uses `document`
-// and `window`) can run under `bun test`.
+// Install it for this suite only, then restore the original globals so this
+// file cannot leak DOM state into tests that intentionally exercise no-DOM paths.
+const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 const happyWindow = new Window();
 beforeAll(() => {
-	(globalThis as unknown as Record<string, unknown>).window = happyWindow;
-	(globalThis as unknown as Record<string, unknown>).document = happyWindow.document;
+	Object.defineProperty(globalThis, 'window', {
+		configurable: true,
+		writable: true,
+		value: happyWindow,
+	});
+	Object.defineProperty(globalThis, 'document', {
+		configurable: true,
+		writable: true,
+		value: happyWindow.document,
+	});
+});
+afterAll(() => {
+	happyWindow.close();
+	if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+	else Reflect.deleteProperty(globalThis, 'window');
+	if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+	else Reflect.deleteProperty(globalThis, 'document');
 });
 
 function makeResult(over: Partial<DrawResult> = {}): DrawResult {
@@ -136,7 +153,7 @@ describe('KenoUIRenderer', () => {
 			const cell2 = renderer.getCell(2)!;
 			expect(cell1.classList.contains('selected')).toBe(true);
 			expect(cell1.getAttribute('aria-pressed')).toBe('true');
-			expect(cell1.querySelector('.pick-order')?.textContent).toBe('2'); // 2nd in [3,1]
+			expect(cell1.querySelector('.pick-order')?.textContent).toBe('2');
 			expect(cell3.querySelector('.pick-order')?.textContent).toBe('1');
 			expect(cell2.classList.contains('selected')).toBe(false);
 			expect(cell2.querySelector('.pick-order')?.textContent).toBe('');
@@ -199,7 +216,6 @@ describe('KenoUIRenderer', () => {
 
 	describe('highlightDrawn / clearDrawnHighlight', () => {
 		test('clearDrawnHighlight removes drawn/hit classes and cancels pending timeouts', () => {
-			// Use a synchronous stub so we don't depend on real timers.
 			const timeouts: number[] = [];
 			const origSet = window.setTimeout;
 			const origClear = window.clearTimeout;
@@ -208,7 +224,6 @@ describe('KenoUIRenderer', () => {
 			) => {
 				const id = timeouts.length + 1;
 				timeouts.push(id);
-				// fire immediately
 				cb();
 				return id;
 			}) as typeof setTimeout;
@@ -234,7 +249,6 @@ describe('KenoUIRenderer', () => {
 		});
 		test('highlightDrawn skips unknown numbers gracefully', () => {
 			renderer.highlightDrawn([999], []);
-			// no throw, nothing applied
 			expect(renderer.getAllCells().every((c) => !c.classList.contains('drawn'))).toBe(true);
 			renderer.clearDrawnHighlight();
 		});

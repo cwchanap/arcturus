@@ -60,8 +60,8 @@ test.describe('Keno game', () => {
 		await page.getByTestId('btn-draw').click();
 
 		await expect(page.getByTestId('game-status')).toContainText('Round complete — win!');
+		await expect(page.locator('button.keno-cell.drawn')).toHaveCount(20);
 		const drawn = await drawnNumbers(page);
-		expect(drawn).toHaveLength(20);
 		expect(new Set(drawn).size).toBe(20);
 		expect(drawn.every((number) => number >= 1 && number <= 80)).toBe(true);
 		const hitCount = drawn.filter((number) => selected.includes(number)).length;
@@ -109,8 +109,8 @@ test.describe('Keno game', () => {
 		await page.locator(`.bet-chip[data-bet="${bet}"]`).click();
 		await page.getByTestId('btn-draw').click();
 
+		await expect(page.locator('button.keno-cell.drawn')).toHaveCount(20);
 		const drawn = await drawnNumbers(page);
-		expect(drawn).toHaveLength(20);
 		expect(new Set(drawn).size).toBe(20);
 		expect(drawn.every((number) => number >= 1 && number <= 80)).toBe(true);
 		const hitCount = drawn.filter((number) => selected.includes(number)).length;

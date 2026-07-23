@@ -21,16 +21,14 @@ describe('GameSettingsManager', () => {
 		const store = makeStore();
 		const s = new GameSettingsManager('u_abc', store);
 		s.setSetting('animationSpeed', 'fast');
-		s.setSetting('soundEnabled', false);
 		const reloaded = new GameSettingsManager('u_abc', store);
 		expect(reloaded.getSetting('animationSpeed')).toBe('fast');
-		expect(reloaded.getSetting('soundEnabled')).toBe(false);
 	});
 	test('namespaced key per clientUserId', () => {
 		const store = makeStore();
-		new GameSettingsManager('u_abc', store).setSetting('soundEnabled', false);
+		new GameSettingsManager('u_abc', store).setSetting('animationSpeed', 'fast');
 		expect(store.getItem('arcturus:keno:settings:u_abc')).toBeTruthy();
-		expect(new GameSettingsManager('u_def', store).getSetting('soundEnabled')).toBe(true);
+		expect(new GameSettingsManager('u_def', store).getSetting('animationSpeed')).toBe('normal');
 	});
 	test('getAnimationDelay maps speed → ms', () => {
 		const s = new GameSettingsManager('u_abc', makeStore());
@@ -50,8 +48,8 @@ describe('GameSettingsManager', () => {
 		try {
 			const s = new GameSettingsManager('u_abc');
 			expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
-			expect(() => s.setSetting('soundEnabled', false)).not.toThrow();
-			expect(s.getSetting('soundEnabled')).toBe(false);
+			expect(() => s.setSetting('animationSpeed', 'fast')).not.toThrow();
+			expect(s.getSetting('animationSpeed')).toBe('fast');
 		} finally {
 			if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
 		}

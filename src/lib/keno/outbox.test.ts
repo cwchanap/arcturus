@@ -373,6 +373,58 @@ describe('KenoSyncOutbox persistence (resume on load)', () => {
 	});
 });
 
+describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', () => {
+	test('resumed receipt synced via later live drain calls setGameBalance; live receipt does not', async () => {
+		// Scenario: page reloads with one persisted (resumed) receipt.
+		// drainPersisted() pauses immediately (MP_ESCROW).
+		// A live draw then enqueues a new receipt; the combined drain syncs
+		// the old resumed receipt via 200 → setGameBalance MUST be called
+		// (the display never saw that delta). The live receipt's 200 must
+		// NOT call setGameBalance (game balance already updated locally).
+		let persisted: PendingReceipt[] = [receipt('s-resumed', 1000, 100)];
+		const setGameBalanceCalls: number[] = [];
+		let callIdx = 0;
+		const results: FetchResult[] = [
+			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } }, // drainPersisted pauses
+			{ status: 200, body: { balance: 1100 } }, // resumed receipt syncs via live drain
+			{ status: 200, body: { balance: 1090 } }, // live receipt syncs
+		];
+		const fetchImpl = async (url: string, init: { body: string }) => {
+			const r = results[Math.min(callIdx, results.length - 1)];
+			callIdx++;
+			return {
+				ok: r.status === 200,
+				status: r.status,
+				headers: { get: () => null },
+				json: async () => r.body,
+			};
+		};
+
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+
+		// drainPersisted pauses on MP_ESCROW — resumed receipt still queued
+		const drained = await ob.drainPersisted();
+		expect(drained).toBe(0);
+		expect(setGameBalanceCalls).toEqual([]); // nothing synced yet
+
+		// Live draw enqueues a new receipt; drain resumes and syncs both
+		await ob.enqueueAndDrain(receipt('s-live', 1100, -10));
+
+		// Resumed receipt's 200 → setGameBalance called with 1100
+		// Live receipt's 200 → setGameBalance NOT called
+		expect(setGameBalanceCalls).toEqual([1100]);
+	});
+});
+
 describe('KenoSyncOutbox fire-and-forget (per-draw delta race regression)', () => {
 	test('rapid fire-and-forget draws do not corrupt game balance', async () => {
 		let serverBalance = 1000;

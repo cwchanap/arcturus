@@ -82,13 +82,13 @@ export function initKenoClient(): void {
 		: null;
 
 	// Resume any persisted receipts from a prior tab close.
-	// After the initial drain, reconcile the client game balance to the
-	// server-synced balance so a resumed win/loss displays correctly.
-	// The live-draw 200 path in outbox.ts is untouched (it never calls
-	// setGameBalance on success); this reconcile is resume-only.
+	// Reconcile is per-receipt inside the outbox: resumed receipts call
+	// setGameBalance on their 200 path so the display reflects the prior
+	// tab's delta. Live-draw 200s do NOT call setGameBalance (the display
+	// was already updated locally at draw time).
 	if (outbox) {
-		outbox.drainPersisted().then((drained) => {
-			if (drained > 0) game.setBalance(serverSyncedBalance);
+		outbox.drainPersisted().catch((err) => {
+			console.error('keno: resume drain failed', err);
 		});
 	}
 
@@ -97,6 +97,30 @@ export function initKenoClient(): void {
 	renderer.renderBet(game.getBet());
 	renderer.renderPicks(game.getPicks());
 	renderer.renderCanDraw(game.canDraw());
+	renderer.renderSettingsSpeed(settings.getSettings().animationSpeed);
+
+	// Settings modal
+	renderer.getSettingsButton().addEventListener('click', () => {
+		renderer.showSettingsModal();
+	});
+	renderer.getSettingsCloseButton().addEventListener('click', () => {
+		renderer.hideSettingsModal();
+	});
+	renderer.getSpeedOptions().forEach((opt) => {
+		opt.addEventListener('click', () => {
+			const speed = opt.dataset.speed;
+			if (speed !== 'slow' && speed !== 'normal' && speed !== 'fast') return;
+			settings.setSetting('animationSpeed', speed);
+			renderer.renderSettingsSpeed(speed);
+		});
+	});
+	// Close modal on overlay click
+	const settingsModal = root.querySelector<HTMLElement>('[data-testid="settings-modal"]');
+	if (settingsModal) {
+		settingsModal.addEventListener('click', (e) => {
+			if (e.target === settingsModal) renderer.hideSettingsModal();
+		});
+	}
 
 	// Grid: click an empty cell to add, click a selected cell to remove
 	renderer.getAllCells().forEach((cell) => {
@@ -179,7 +203,9 @@ export function initKenoClient(): void {
 					handCount: 1,
 					biggestWinCandidate: delta > 0 ? delta : undefined,
 				};
-				void outbox.enqueueAndDrain(receipt);
+				void outbox.enqueueAndDrain(receipt).catch((err) => {
+					console.error('keno: settlement drain failed', err);
+				});
 			} else {
 				// Guest mode: no fetch; serverSyncedBalance tracks the local bankroll.
 				serverSyncedBalance = game.getBalance();

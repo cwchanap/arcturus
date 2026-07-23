@@ -30,16 +30,26 @@ const clientUserId = gameSession.clientUserId;
 					Pick 1–10. House draws 20. 100% free virtual chips.
 				</p>
 			</div>
-			<div
-				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
-			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
-				<div
-					class="text-2xl font-bold text-[var(--deco-brass)]"
-					id="chip-balance"
-					data-testid="chip-balance"
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					id="btn-settings"
+					data-testid="btn-settings"
+					class="deco-btn px-4 py-3 rounded-lg text-sm"
+					aria-haspopup="dialog"
+					aria-expanded="false">Settings</button
 				>
-					{initialBalance.toLocaleString()}
+				<div
+					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+				>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+					<div
+						class="text-2xl font-bold text-[var(--deco-brass)]"
+						id="chip-balance"
+						data-testid="chip-balance"
+					>
+						{initialBalance.toLocaleString()}
+					</div>
 				</div>
 			</div>
 		</div>
@@ -154,6 +164,48 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 			</div>
 		</div>
+		<!-- Settings modal -->
+		<div
+			id="settings-modal"
+			data-testid="settings-modal"
+			class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="settings-title"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-2xl border border-[var(--deco-brass-dim)] p-6 max-w-sm w-full mx-4"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 id="settings-title" class="text-lg font-bold text-[var(--deco-brass)]">Settings</h2>
+					<button
+						type="button"
+						id="btn-settings-close"
+						data-testid="btn-settings-close"
+						class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close settings">&times;</button
+					>
+				</div>
+				<div class="mb-2 text-sm text-[var(--deco-muted)]">Animation speed</div>
+				<div class="flex gap-2" id="speed-options" data-testid="speed-options">
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="slow">Slow</button
+					>
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="normal">Normal</button
+					>
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="fast">Fast</button
+					>
+				</div>
+			</div>
+		</div>
 		<div
 			id="achievement-toast"
 			data-testid="achievement-toast"
@@ -189,6 +241,10 @@ const clientUserId = gameSession.clientUserId;
 	}
 	.bet-chip.selected,
 	.draws-chip.selected {
+		border-color: var(--deco-brass);
+		color: var(--deco-brass-bright);
+	}
+	.speed-opt.selected {
 		border-color: var(--deco-brass);
 		color: var(--deco-brass-bright);
 	}

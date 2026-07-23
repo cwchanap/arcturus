@@ -27,6 +27,33 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Format reviewed files for diagnostics
+        run: >-
+          bunx prettier --write
+          .github/workflows/test.yml
+          e2e/keno.spec.ts
+          src/lib/keno/DrawManager.test.ts
+          src/lib/keno/KenoGame.test.ts
+          src/lib/keno/KenoUIRenderer.ts
+          src/lib/keno/outbox.ts
+          src/lib/keno/payoutCalculator.test.ts
+          src/lib/keno/review-regressions.test.ts
+
+      - name: Archive formatted review files
+        uses: actions/upload-artifact@v4
+        with:
+          name: formatted-review-files
+          path: |
+            .github/workflows/test.yml
+            e2e/keno.spec.ts
+            src/lib/keno/DrawManager.test.ts
+            src/lib/keno/KenoGame.test.ts
+            src/lib/keno/KenoUIRenderer.ts
+            src/lib/keno/outbox.ts
+            src/lib/keno/payoutCalculator.test.ts
+            src/lib/keno/review-regressions.test.ts
+          retention-days: 1
+
       - name: Run unit tests
         run: bun run test:unit
 

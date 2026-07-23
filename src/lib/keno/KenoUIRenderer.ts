@@ -18,6 +18,7 @@ export class KenoUIRenderer {
 	private readonly repeatBtn: HTMLButtonElement;
 	private readonly recentEl: El;
 	private readonly paytableBody: El;
+	private revealTimeouts: number[] = [];
 
 	constructor(root: El) {
 		this.root = root;
@@ -42,8 +43,13 @@ export class KenoUIRenderer {
 			cell.type = 'button';
 			cell.className = 'keno-cell';
 			cell.dataset.number = String(n);
-			cell.textContent = String(n);
 			cell.setAttribute('aria-pressed', 'false');
+			const label = document.createElement('span');
+			label.textContent = String(n);
+			const badge = document.createElement('span');
+			badge.className = 'pick-order';
+			badge.setAttribute('aria-hidden', 'true');
+			cell.append(label, badge);
 			this.grid.appendChild(cell);
 		}
 	}
@@ -112,13 +118,16 @@ export class KenoUIRenderer {
 		drawn.forEach((n, i) => {
 			const cell = this.getCell(n);
 			if (!cell) return;
-			window.setTimeout(() => {
+			const timeout = window.setTimeout(() => {
 				cell.classList.add('drawn');
 				if (hitSet.has(n)) cell.classList.add('hit');
 			}, i * 60);
+			this.revealTimeouts.push(timeout);
 		});
 	}
 	clearDrawnHighlight(): void {
+		for (const timeout of this.revealTimeouts) window.clearTimeout(timeout);
+		this.revealTimeouts = [];
 		this.getAllCells().forEach((cell) => {
 			cell.classList.remove('drawn', 'hit');
 		});

@@ -68,11 +68,13 @@ describe('CodeRabbit regression coverage', () => {
 		const cell = { classList: new FakeClassList() };
 		const renderer = Object.create(KenoUIRenderer.prototype) as KenoUIRenderer;
 		const subject = renderer as unknown as {
+			revealTimeouts: number[];
 			getCell: (number: number) => HTMLButtonElement | null;
 			getAllCells: () => HTMLButtonElement[];
 			highlightDrawn: (drawn: number[], hits: number[]) => void;
 			clearDrawnHighlight: () => void;
 		};
+		subject.revealTimeouts = [];
 		subject.getCell = () => cell as unknown as HTMLButtonElement;
 		subject.getAllCells = () => [cell as unknown as HTMLButtonElement];
 

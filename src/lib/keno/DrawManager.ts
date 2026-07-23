@@ -10,10 +10,12 @@ function cryptoUniformInt(n: number): number {
 	const buf = new Uint8Array(1);
 	const cryptoObj = globalThis.crypto;
 	if (!cryptoObj?.getRandomValues) return Math.floor(Math.random() * n);
-	while (true) {
+	let byte: number;
+	do {
 		cryptoObj.getRandomValues(buf);
-		if (buf[0] < max) return buf[0] % n;
-	}
+		byte = buf[0];
+	} while (byte >= max);
+	return byte % n;
 }
 
 export class DrawManager {

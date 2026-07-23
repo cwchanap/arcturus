@@ -43,4 +43,25 @@ describe('DrawManager.draw', () => {
 			cryptoSpy.mockRestore();
 		}
 	});
+	test('falls back to Math.random when crypto.getRandomValues is unavailable', () => {
+		const originalCrypto = globalThis.crypto;
+		// Temporarily remove crypto to exercise the Math.random fallback branch.
+		Object.defineProperty(globalThis, 'crypto', {
+			value: undefined,
+			configurable: true,
+		});
+		const randomSpy = spyOn(Math, 'random').mockReturnValue(0);
+		try {
+			const drawn = new DrawManager().draw();
+			expect(drawn).toHaveLength(KENO_DRAW_SIZE);
+			expect(new Set(drawn).size).toBe(KENO_DRAW_SIZE);
+			expect(randomSpy).toHaveBeenCalled();
+		} finally {
+			randomSpy.mockRestore();
+			Object.defineProperty(globalThis, 'crypto', {
+				value: originalCrypto,
+				configurable: true,
+			});
+		}
+	});
 });

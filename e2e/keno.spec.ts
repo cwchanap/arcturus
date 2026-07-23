@@ -20,9 +20,11 @@ async function useCryptoBytes(page: Page, values: number[]): Promise<void> {
 }
 
 async function drawnNumbers(page: Page): Promise<number[]> {
-	return page.locator('button.keno-cell.drawn').evaluateAll((cells) =>
-		cells.map((cell) => Number((cell as HTMLButtonElement).dataset.number)),
-	);
+	return page
+		.locator('button.keno-cell.drawn')
+		.evaluateAll((cells) =>
+			cells.map((cell) => Number((cell as HTMLButtonElement).dataset.number)),
+		);
 }
 
 function expectedResultText(spots: number, hitCount: number, bet: number): string {
@@ -40,7 +42,10 @@ test.describe('Keno game', () => {
 	});
 
 	test('manual selection + non-default bet resolves a deterministic win', async ({ page }) => {
-		await useCryptoBytes(page, Array.from({ length: 20 }, (_, i) => i));
+		await useCryptoBytes(
+			page,
+			Array.from({ length: 20 }, (_, i) => i),
+		);
 		const cells = page.locator('button.keno-cell');
 		const selected = [1, 2, 3];
 		for (let i = 0; i < selected.length; i++) {
@@ -92,7 +97,10 @@ test.describe('Keno game', () => {
 	});
 
 	test('controlled draw resolves a deterministic non-winning result', async ({ page }) => {
-		await useCryptoBytes(page, Array.from({ length: 20 }, (_, i) => i + 20));
+		await useCryptoBytes(
+			page,
+			Array.from({ length: 20 }, (_, i) => i + 20),
+		);
 		const selected = [1, 2, 3];
 		for (let i = 0; i < selected.length; i++) {
 			await page.locator('button.keno-cell').nth(i).click();

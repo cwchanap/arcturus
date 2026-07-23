@@ -1,5 +1,5 @@
 // src/lib/keno/GameSettingsManager.ts
-import { ANIMATION_DELAY_MS, DEFAULT_SETTINGS } from './constants';
+import { ANIMATION_DELAY_MS, DEFAULT_SETTINGS, REVEAL_STAGGER_MS } from './constants';
 import type { KenoSettings } from './types';
 
 const KEY_PREFIX = 'arcturus:keno:settings:';
@@ -55,6 +55,9 @@ export class GameSettingsManager {
 	}
 	getAnimationDelay(): number {
 		return ANIMATION_DELAY_MS[this.settings.animationSpeed];
+	}
+	getRevealStagger(): number {
+		return REVEAL_STAGGER_MS[this.settings.animationSpeed];
 	}
 	private persist(): void {
 		if (!this.store) return;

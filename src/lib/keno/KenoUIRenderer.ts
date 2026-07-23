@@ -142,10 +142,13 @@ export class KenoUIRenderer {
 	}
 	renderLastResult(r: DrawResult): void {
 		const verb = r.outcome === 'win' ? 'won' : r.outcome === 'push' ? 'pushed' : 'lost';
-		const amt = r.outcome === 'win' ? r.netDelta : r.outcome === 'loss' ? r.bet : 0;
-		this.lastResultEl.textContent = `${r.hitCount} of ${r.spots} ${verb} ${amt.toLocaleString()}`;
+		const amt = r.outcome === 'win' ? r.netDelta : r.outcome === 'loss' ? r.bet : null;
+		this.lastResultEl.textContent =
+			amt === null
+				? `${r.hitCount} of ${r.spots} — ${verb} (bet returned)`
+				: `${r.hitCount} of ${r.spots} ${verb} ${amt.toLocaleString()}`;
 	}
-	highlightDrawn(drawn: number[], hits: number[]): void {
+	highlightDrawn(drawn: number[], hits: number[], staggerMs = 60): void {
 		const hitSet = new Set(hits);
 		drawn.forEach((n, i) => {
 			const cell = this.getCell(n);
@@ -153,7 +156,7 @@ export class KenoUIRenderer {
 			const timeout = window.setTimeout(() => {
 				cell.classList.add('drawn');
 				if (hitSet.has(n)) cell.classList.add('hit');
-			}, i * 60);
+			}, i * staggerMs);
 			this.revealTimeouts.push(timeout);
 		});
 	}

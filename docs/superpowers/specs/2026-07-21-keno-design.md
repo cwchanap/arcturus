@@ -416,8 +416,14 @@ table). No `ChipSyncCoordinator` involvement.
   labels:** `draw()` results carry `outcome` derived from `netDelta`; cover win/loss/push
   (push = multiplier===1, e.g. 4-spot catch-2; loss = multiplier 0; win = the rest).
 - `kenoClient.test.ts` (sync state machine) — covers the outbox drain loop end-to-end with a
-  mocked `fetch`: (a) two rapid draws enqueue two receipts and they drain **serially** (second
-  send's `previousBalance` equals the first's committed `response.balance`, never overlapping);
+  mocked `fetch`: (a) two rapid draws enqueue two receipts and they drain **serially**; because
+  `previousBalance` is captured at enqueue time (line 138), the second receipt's
+  `previousBalance` equals the pre-first-commit `serverSyncedBalance`, so on rapid successive
+  draws the second send hits one `BALANCE_MISMATCH`, rebases `previousBalance := response.
+  currentBalance`, and resubmits — the delta is preserved and the rebase is bounded. This is
+  the documented trade-off of enqueue-time capture (simpler, no send-time re-read) versus
+  send-time capture (no rebase on rapid draws); the impl chose enqueue-time and the rebase
+  loop handles the overlap correctly;
   (b) 429 re-queues the same 7-field payload at the head (verifies `syncId`+`delta`+
   `previousBalance`+`outcome`+`handCount`+`biggestWinCandidate` resent; asserts `statsDelta`/
   `winsIncrement`/`lossesIncrement` are NEVER sent). Includes the realistic 2s-rate-limit window

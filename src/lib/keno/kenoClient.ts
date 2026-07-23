@@ -181,19 +181,21 @@ export function initKenoClient(): void {
 		renderer.clearDrawnHighlight();
 		try {
 			const syncId = `keno-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-			const balanceBefore = game.getBalance();
 			const result = game.draw(syncId);
 			lastTicketPicks = [...result.picks];
 			renderer.renderPicks(game.getPicks());
 			// Reveal animation
-			renderer.highlightDrawn(result.drawn, result.hits);
+			renderer.highlightDrawn(result.drawn, result.hits, settings.getRevealStagger());
 			await sleep(settings.getAnimationDelay());
 			renderer.renderLastResult(result);
 			renderer.renderRecent(game.getHistory());
 			renderer.setStatus(result.outcome === 'win' ? 'Round complete — win!' : 'Round complete');
-			// Enqueue settlement (per-draw delta: net change for THIS draw only)
+			// Enqueue settlement (per-draw delta: net change for THIS draw only).
+			// Use result.netDelta (snapshotted at draw time) — NOT game.getBalance() - balanceBefore,
+			// because a resumed outbox receipt or terminalDrop may call setGameBalance() during the
+			// reveal animation's await, mutating game.getBalance() and inflating the diff.
 			if (outbox) {
-				const delta = game.getBalance() - balanceBefore;
+				const delta = result.netDelta;
 				const receipt: PendingReceipt = {
 					syncId,
 					previousBalance: serverSyncedBalance,
@@ -209,6 +211,13 @@ export function initKenoClient(): void {
 			} else {
 				// Guest mode: no fetch; serverSyncedBalance tracks the local bankroll.
 				serverSyncedBalance = game.getBalance();
+			}
+		} catch (err) {
+			// game.draw() throws via fail() which already emitted onError (toast).
+			// Swallow to prevent an unhandled rejection from the void commitDraw() call;
+			// non-fail throws (programming bugs) still surface via console.error.
+			if (!(err instanceof Error && (err as Error & { code?: string }).code)) {
+				console.error('keno: commitDraw failed', err);
 			}
 		} finally {
 			drawInFlight = false;

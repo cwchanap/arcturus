@@ -1,5 +1,5 @@
 // src/lib/keno/GameSettingsManager.test.ts
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { ANIMATION_DELAY_MS, DEFAULT_SETTINGS } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 
@@ -45,12 +45,15 @@ describe('GameSettingsManager', () => {
 		expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
 	});
 	test('defaultStore returns null when window is undefined (no DOM)', () => {
-		// bun:test runs without a DOM; window is undefined here, so the default
-		// store path should return null and the manager should fall back to defaults.
-		const s = new GameSettingsManager('u_abc');
-		expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
-		// setSetting must not throw even with no store
-		expect(() => s.setSetting('soundEnabled', false)).not.toThrow();
-		expect(s.getSetting('soundEnabled')).toBe(false);
+		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+		Reflect.deleteProperty(globalThis, 'window');
+		try {
+			const s = new GameSettingsManager('u_abc');
+			expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
+			expect(() => s.setSetting('soundEnabled', false)).not.toThrow();
+			expect(s.getSetting('soundEnabled')).toBe(false);
+		} finally {
+			if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+		}
 	});
 });

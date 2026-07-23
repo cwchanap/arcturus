@@ -44,4 +44,13 @@ describe('GameSettingsManager', () => {
 		const s = new GameSettingsManager('u_abc', store);
 		expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
 	});
+	test('defaultStore returns null when window is undefined (no DOM)', () => {
+		// bun:test runs without a DOM; window is undefined here, so the default
+		// store path should return null and the manager should fall back to defaults.
+		const s = new GameSettingsManager('u_abc');
+		expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
+		// setSetting must not throw even with no store
+		expect(() => s.setSetting('soundEnabled', false)).not.toThrow();
+		expect(s.getSetting('soundEnabled')).toBe(false);
+	});
 });

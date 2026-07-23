@@ -1,5 +1,5 @@
 // src/lib/keno/DrawManager.test.ts
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { KENO_DRAW_SIZE, KENO_POOL } from './constants';
 import { DrawManager } from './DrawManager';
 
@@ -26,16 +26,21 @@ describe('DrawManager.draw', () => {
 		const b = new DrawManager().draw(rng);
 		expect(a).toEqual(b);
 	});
-	test('default path uses crypto.getRandomValues (unbiased Fisher–Yates)', () => {
-		// Structural: draw 1000 times, assert each bucket 1..80 appears with roughly
-		// uniform frequency (mean ≈ 1000*20/80 = 250, allow ±40 for noise). This guards
-		// against a `byte % 80` modulo-skew regression.
-		const counts = new Array(KENO_POOL + 1).fill(0);
-		const dm = new DrawManager();
-		for (let i = 0; i < 1000; i++) for (const n of dm.draw()) counts[n]++;
-		const mean = (1000 * KENO_DRAW_SIZE) / KENO_POOL;
-		for (let n = 1; n <= KENO_POOL; n++) {
-			expect(Math.abs(counts[n] - mean)).toBeLessThan(60);
+	test('default path retries rejected crypto bytes before using accepted values', () => {
+		const values = [255, ...Array.from({ length: KENO_DRAW_SIZE }, (_, i) => i)];
+		let readIndex = 0;
+		const cryptoSpy = spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array) => {
+			const bytes = array as Uint8Array;
+			bytes[0] = values[readIndex++];
+			return array;
+		});
+
+		try {
+			const drawn = new DrawManager().draw();
+			expect(drawn).toEqual(Array.from({ length: KENO_DRAW_SIZE }, (_, i) => i + 1));
+			expect(cryptoSpy).toHaveBeenCalledTimes(KENO_DRAW_SIZE + 1);
+		} finally {
+			cryptoSpy.mockRestore();
 		}
 	});
 });

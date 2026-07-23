@@ -82,7 +82,15 @@ export function initKenoClient(): void {
 		: null;
 
 	// Resume any persisted receipts from a prior tab close.
-	void outbox?.drainPersisted();
+	// After the initial drain, reconcile the client game balance to the
+	// server-synced balance so a resumed win/loss displays correctly.
+	// The live-draw 200 path in outbox.ts is untouched (it never calls
+	// setGameBalance on success); this reconcile is resume-only.
+	if (outbox) {
+		outbox.drainPersisted().then((drained) => {
+			if (drained > 0) game.setBalance(serverSyncedBalance);
+		});
+	}
 
 	// Initial render
 	renderer.renderBalance(game.getBalance());

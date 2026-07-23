@@ -73,6 +73,13 @@ function makeRoot(): HTMLElement {
 		<div data-testid="recent-tickets"></div>
 		<div data-testid="paytable-body"></div>
 		<span data-chip-balance></span>
+		<button data-testid="btn-settings">Settings</button>
+		<div data-testid="settings-modal" class="hidden">
+			<button data-testid="btn-settings-close">&times;</button>
+			<button class="speed-opt" data-speed="slow">Slow</button>
+			<button class="speed-opt" data-speed="normal">Normal</button>
+			<button class="speed-opt" data-speed="fast">Fast</button>
+		</div>
 	`;
 	document.body.appendChild(root);
 	return root;
@@ -118,6 +125,43 @@ describe('KenoUIRenderer', () => {
 			expect(renderer.getClearButton().dataset.testid).toBe('btn-clear');
 			expect(renderer.getQuickPickButton().dataset.testid).toBe('btn-quickpick');
 			expect(renderer.getRepeatButton().dataset.testid).toBe('btn-repeat');
+		});
+	});
+
+	describe('settings modal', () => {
+		test('exposes settings and close buttons', () => {
+			expect(renderer.getSettingsButton().dataset.testid).toBe('btn-settings');
+			expect(renderer.getSettingsCloseButton().dataset.testid).toBe('btn-settings-close');
+		});
+		test('exposes three speed option buttons', () => {
+			const opts = renderer.getSpeedOptions();
+			expect(opts).toHaveLength(3);
+			expect(opts.map((o) => o.dataset.speed).sort()).toEqual(['fast', 'normal', 'slow']);
+		});
+		test('showSettingsModal removes hidden class; hideSettingsModal adds it back', () => {
+			renderer.showSettingsModal();
+			expect(
+				root
+					.querySelector<HTMLElement>('[data-testid="settings-modal"]')
+					?.classList.contains('hidden'),
+			).toBe(false);
+			expect(renderer.getSettingsButton().getAttribute('aria-expanded')).toBe('true');
+			renderer.hideSettingsModal();
+			expect(
+				root
+					.querySelector<HTMLElement>('[data-testid="settings-modal"]')
+					?.classList.contains('hidden'),
+			).toBe(true);
+			expect(renderer.getSettingsButton().getAttribute('aria-expanded')).toBe('false');
+		});
+		test('renderSettingsSpeed marks only the matching option as selected', () => {
+			renderer.renderSettingsSpeed('fast');
+			const opts = renderer.getSpeedOptions();
+			expect(opts[0].classList.contains('selected')).toBe(false); // slow
+			expect(opts[1].classList.contains('selected')).toBe(false); // normal
+			expect(opts[2].classList.contains('selected')).toBe(true); // fast
+			expect(opts[2].getAttribute('aria-pressed')).toBe('true');
+			expect(opts[0].getAttribute('aria-pressed')).toBe('false');
 		});
 	});
 

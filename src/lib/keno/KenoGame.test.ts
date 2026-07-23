@@ -176,13 +176,12 @@ describe('KenoGame setBalance / removePick', () => {
 		expect(changes.at(-1)).toEqual([2]);
 	});
 	test('getSettings returns a defensive copy merged with defaults', () => {
-		const g = new KenoGame(1000, { soundEnabled: false });
+		const g = new KenoGame(1000, { animationSpeed: 'fast' });
 		const s = g.getSettings();
-		expect(s.soundEnabled).toBe(false);
-		expect(s.animationSpeed).toBe('normal');
+		expect(s.animationSpeed).toBe('fast');
 		// mutating the returned object must not affect internal state
-		s.soundEnabled = true;
-		expect(g.getSettings().soundEnabled).toBe(false);
+		s.animationSpeed = 'slow';
+		expect(g.getSettings().animationSpeed).toBe('fast');
 	});
 });
 

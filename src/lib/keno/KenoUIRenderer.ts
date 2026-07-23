@@ -18,6 +18,10 @@ export class KenoUIRenderer {
 	private readonly repeatBtn: HTMLButtonElement;
 	private readonly recentEl: El;
 	private readonly paytableBody: El;
+	private readonly settingsBtn: HTMLButtonElement;
+	private readonly settingsModal: El;
+	private readonly settingsCloseBtn: HTMLButtonElement;
+	private readonly speedOptions: HTMLButtonElement[];
 	private revealTimeouts: number[] = [];
 
 	constructor(root: El) {
@@ -34,6 +38,10 @@ export class KenoUIRenderer {
 		this.repeatBtn = req<HTMLButtonElement>(root, 'btn-repeat');
 		this.recentEl = req<El>(root, 'recent-tickets');
 		this.paytableBody = req<El>(root, 'paytable-body');
+		this.settingsBtn = req<HTMLButtonElement>(root, 'btn-settings');
+		this.settingsModal = req<El>(root, 'settings-modal');
+		this.settingsCloseBtn = req<HTMLButtonElement>(root, 'btn-settings-close');
+		this.speedOptions = Array.from(root.querySelectorAll<HTMLButtonElement>('button.speed-opt'));
 		this.buildGrid();
 	}
 
@@ -73,6 +81,30 @@ export class KenoUIRenderer {
 	}
 	getRepeatButton(): HTMLButtonElement {
 		return this.repeatBtn;
+	}
+	getSettingsButton(): HTMLButtonElement {
+		return this.settingsBtn;
+	}
+	getSettingsCloseButton(): HTMLButtonElement {
+		return this.settingsCloseBtn;
+	}
+	getSpeedOptions(): HTMLButtonElement[] {
+		return this.speedOptions;
+	}
+	showSettingsModal(): void {
+		this.settingsModal.classList.remove('hidden');
+		this.settingsBtn.setAttribute('aria-expanded', 'true');
+	}
+	hideSettingsModal(): void {
+		this.settingsModal.classList.add('hidden');
+		this.settingsBtn.setAttribute('aria-expanded', 'false');
+	}
+	renderSettingsSpeed(speed: string): void {
+		this.speedOptions.forEach((b) => {
+			const active = b.dataset.speed === speed;
+			b.classList.toggle('selected', active);
+			b.setAttribute('aria-pressed', active ? 'true' : 'false');
+		});
 	}
 
 	renderBalance(balance: number): void {
@@ -144,13 +176,22 @@ export class KenoUIRenderer {
 	}
 	renderPaytable(spots: number): void {
 		const tiers = PAYTABLE[spots] ?? {};
-		const rows = Object.entries(tiers)
-			.map(
-				([k, v]) =>
-					`<tr><td class="py-2">Catch ${k}</td><td class="text-right py-2 text-[var(--deco-brass)]">×${v}</td></tr>`,
-			)
-			.join('');
-		this.paytableBody.innerHTML = `<table class="w-full text-sm"><tbody>${rows}</tbody></table>`;
+		const table = document.createElement('table');
+		table.className = 'w-full text-sm';
+		const tbody = document.createElement('tbody');
+		for (const [k, v] of Object.entries(tiers)) {
+			const tr = document.createElement('tr');
+			const tdLabel = document.createElement('td');
+			tdLabel.className = 'py-2';
+			tdLabel.textContent = `Catch ${k}`;
+			const tdMult = document.createElement('td');
+			tdMult.className = 'text-right py-2 text-[var(--deco-brass)]';
+			tdMult.textContent = `×${v}`;
+			tr.append(tdLabel, tdMult);
+			tbody.appendChild(tr);
+		}
+		table.appendChild(tbody);
+		this.paytableBody.replaceChildren(table);
 	}
 }
 

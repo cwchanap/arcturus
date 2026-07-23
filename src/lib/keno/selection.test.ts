@@ -44,7 +44,7 @@ describe('quickPick', () => {
 		expect(quickPick(1)).toHaveLength(1);
 		expect(quickPick(MAX_SPOTS)).toHaveLength(MAX_SPOTS);
 	});
-	test('respects count 1..MAX_SPOTS', () => {
+	test('rejects out-of-range count (0, MAX_SPOTS+1)', () => {
 		expect(() => quickPick(0)).toThrow();
 		expect(() => quickPick(MAX_SPOTS + 1)).toThrow();
 	});

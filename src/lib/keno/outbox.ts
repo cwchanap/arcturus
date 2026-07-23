@@ -12,6 +12,7 @@ export type PendingReceipt = {
 	outcome: KenoOutcome;
 	handCount: 1;
 	biggestWinCandidate: number | undefined;
+	resumed?: boolean; // true for receipts loaded from persistence (prior tab); 200 path reconciles display
 };
 
 export type FetchResponse = {
@@ -51,7 +52,7 @@ export class KenoSyncOutbox {
 
 	constructor(deps: OutboxDeps) {
 		this.deps = deps;
-		this.queue = deps.load();
+		this.queue = deps.load().map((r) => ({ ...r, resumed: true }));
 		this.maxRebases = deps.maxRebases ?? DEFAULT_REBASES;
 		this.maxNetworkRetries = deps.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
 		this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -125,6 +126,10 @@ export class KenoSyncOutbox {
 					await this.sleep(500 * networkRetries);
 					continue;
 				}
+				// Resumed receipts (from a prior tab) need their display reconciled —
+				// the current tab's game balance never saw the delta. Live receipts
+				// already updated the display locally at draw time, so we skip them.
+				if (receipt.resumed) this.deps.setGameBalance(balance);
 				this.deps.setServerSyncedBalance(balance);
 				this.dropHead();
 				return true;

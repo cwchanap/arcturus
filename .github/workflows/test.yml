@@ -31,7 +31,12 @@ jobs:
         run: bun run test:unit
 
       - name: Run unit tests with coverage
-        run: bun run test:coverage
+        shell: bash
+        run: |
+          set +e
+          bun run test:coverage 2>&1 | tee coverage-run.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v7
@@ -55,5 +60,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/
+          path: |
+            coverage/
+            coverage-run.log
           retention-days: 30

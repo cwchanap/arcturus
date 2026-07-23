@@ -306,6 +306,71 @@ describe('KenoSyncOutbox persistence (resume on load)', () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0].body.syncId).toBe('s-old');
 	});
+
+	test('drainPersisted returns count drained so caller can reconcile game balance', async () => {
+		// Simulate a page reload with two persisted receipts (a win then a loss)
+		// that were applied to the previous tab's game but never synced.
+		let persisted: PendingReceipt[] = [receipt('s-win', 1000, 100), receipt('s-loss', 1100, -30)];
+		const syncedBalances: number[] = [];
+		const { fetchImpl } = makeFetch([
+			{ status: 200, body: { balance: 1100 } },
+			{ status: 200, body: { balance: 1070 } },
+		]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: (b) => syncedBalances.push(b),
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+		});
+
+		const drained = await ob.drainPersisted();
+		expect(drained).toBe(2);
+		// Caller can now reconcile: game.setBalance(serverSyncedBalance) == 1070
+		expect(syncedBalances).toEqual([1100, 1070]);
+		expect(persisted).toEqual([]); // queue cleared
+	});
+
+	test('drainPersisted returns 0 when queue is empty', async () => {
+		const { fetchImpl, calls } = makeFetch([{ status: 200, body: { balance: 1000 } }]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		const drained = await ob.drainPersisted();
+		expect(drained).toBe(0);
+		expect(calls).toHaveLength(0);
+	});
+
+	test('drainPersisted returns partial count when drain pauses (MP_ESCROW)', async () => {
+		let persisted: PendingReceipt[] = [receipt('s1', 1000, 100), receipt('s2', 1100, -50)];
+		const { fetchImpl } = makeFetch([
+			{ status: 200, body: { balance: 1100 } },
+			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } },
+		]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		const drained = await ob.drainPersisted();
+		expect(drained).toBe(1); // only the first receipt consumed
+		expect(persisted).toHaveLength(1); // second still queued
+	});
 });
 
 describe('KenoSyncOutbox fire-and-forget (per-draw delta race regression)', () => {

@@ -57,9 +57,11 @@ export class KenoSyncOutbox {
 		this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	}
 
-	async drainPersisted(): Promise<void> {
-		if (this.draining) return;
-		await this.drain();
+	// Resume drain of persisted receipts from a prior tab close.
+	// Returns the number of receipts consumed (synced or terminal-dropped).
+	async drainPersisted(): Promise<number> {
+		if (this.draining) return 0;
+		return this.drain();
 	}
 
 	// Enqueue one receipt and drain the queue serially to completion.
@@ -70,16 +72,19 @@ export class KenoSyncOutbox {
 		await this.drain();
 	}
 
-	private async drain(): Promise<void> {
+	private async drain(): Promise<number> {
 		this.draining = true;
+		let drained = 0;
 		try {
 			while (this.queue.length > 0) {
 				const ok = await this.sendHead();
 				if (!ok) break; // paused (e.g. MP_ESCROW) or sleeping handled inside sendHead
+				drained++;
 			}
 		} finally {
 			this.draining = false;
 		}
+		return drained;
 	}
 
 	// Returns true if the head was consumed (drop or success); false if paused.

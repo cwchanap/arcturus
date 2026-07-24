@@ -58,9 +58,10 @@ export class KenoGame {
 	// Programmatic setter — throws buildError (NO toast). Caller must clamp.
 	setBet(bet: number): void {
 		if (!Number.isFinite(bet)) throw this.buildError('INVALID_BET', 'Bet must be a finite number');
+		if (!Number.isInteger(bet)) throw this.buildError('INVALID_BET', 'Bet must be an integer');
 		if (bet < MIN_BET) throw this.buildError('BET_BELOW_MIN', `Minimum bet is ${MIN_BET}`);
 		if (bet > MAX_BET) throw this.buildError('BET_ABOVE_MAX', `Maximum bet is ${MAX_BET}`);
-		this.state.bet = Math.floor(bet);
+		this.state.bet = bet;
 	}
 	getPicks(): number[] {
 		return [...this.state.picks];

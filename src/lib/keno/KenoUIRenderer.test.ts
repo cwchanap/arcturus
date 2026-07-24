@@ -81,6 +81,11 @@ function makeRoot(): HTMLElement {
 			<button class="speed-opt" data-speed="fast">Fast</button>
 			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
+		<button data-testid="btn-paytable">Paytable</button>
+		<div data-testid="paytable-modal" class="hidden">
+			<button data-testid="btn-paytable-close">&times;</button>
+			<div data-testid="paytable-modal-body"></div>
+		</div>
 	`;
 	document.body.appendChild(root);
 	return root;
@@ -347,6 +352,47 @@ describe('KenoUIRenderer', () => {
 			expect(body.innerHTML).toContain('<table');
 			renderer.clearPaytable();
 			expect(body.innerHTML).toBe('');
+		});
+		test('renderPaytable also populates the modal body and keeps it in sync', () => {
+			renderer.renderPaytable(7);
+			const sidebar = root.querySelector<HTMLElement>('[data-testid="paytable-body"]')!;
+			const modalBody = root.querySelector<HTMLElement>('[data-testid="paytable-modal-body"]')!;
+			expect(modalBody.innerHTML).toContain('<table');
+			expect(modalBody.innerHTML).toContain('Catch 7');
+			// Both bodies reflect the same spot count.
+			expect(modalBody.innerHTML).toContain('×5000');
+			expect(sidebar.innerHTML).toContain('×5000');
+			// Re-rendering with a different spot count updates both.
+			renderer.renderPaytable(1);
+			expect(modalBody.innerHTML).not.toContain('Catch 7');
+			expect(sidebar.innerHTML).not.toContain('Catch 7');
+			// clearPaytable empties both.
+			renderer.clearPaytable();
+			expect(modalBody.innerHTML).toBe('');
+			expect(sidebar.innerHTML).toBe('');
+		});
+	});
+
+	describe('paytable modal', () => {
+		test('exposes paytable and close buttons', () => {
+			expect(renderer.getPaytableButton().dataset.testid).toBe('btn-paytable');
+			expect(renderer.getPaytableCloseButton().dataset.testid).toBe('btn-paytable-close');
+		});
+		test('showPaytableModal removes hidden class; hidePaytableModal adds it back', () => {
+			renderer.showPaytableModal();
+			expect(
+				root
+					.querySelector<HTMLElement>('[data-testid="paytable-modal"]')
+					?.classList.contains('hidden'),
+			).toBe(false);
+			expect(renderer.getPaytableButton().getAttribute('aria-expanded')).toBe('true');
+			renderer.hidePaytableModal();
+			expect(
+				root
+					.querySelector<HTMLElement>('[data-testid="paytable-modal"]')
+					?.classList.contains('hidden'),
+			).toBe(true);
+			expect(renderer.getPaytableButton().getAttribute('aria-expanded')).toBe('false');
 		});
 	});
 });

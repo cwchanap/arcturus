@@ -33,6 +33,14 @@ const clientUserId = gameSession.clientUserId;
 			<div class="flex items-center gap-3">
 				<button
 					type="button"
+					id="btn-paytable"
+					data-testid="btn-paytable"
+					class="deco-btn px-4 py-3 rounded-lg text-sm"
+					aria-haspopup="dialog"
+					aria-expanded="false">Paytable</button
+				>
+				<button
+					type="button"
 					id="btn-settings"
 					data-testid="btn-settings"
 					class="deco-btn px-4 py-3 rounded-lg text-sm"
@@ -210,6 +218,36 @@ const clientUserId = gameSession.clientUserId;
 					<span class="text-sm text-[var(--deco-ivory-dim)]">Sound</span>
 					<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 				</label>
+			</div>
+		</div>
+		<!-- Paytable modal -->
+		<div
+			id="paytable-modal"
+			data-testid="paytable-modal"
+			class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="paytable-title"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-2xl border border-[var(--deco-brass-dim)] p-6 max-w-md w-full mx-4"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 id="paytable-title" class="text-lg font-bold text-[var(--deco-brass)]">Paytable</h2>
+					<button
+						type="button"
+						id="btn-paytable-close"
+						data-testid="btn-paytable-close"
+						class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close paytable">&times;</button
+					>
+				</div>
+				<div
+					id="paytable-modal-body"
+					data-testid="paytable-modal-body"
+					class="text-sm max-h-[60vh] overflow-y-auto"
+				>
+				</div>
 			</div>
 		</div>
 		<div

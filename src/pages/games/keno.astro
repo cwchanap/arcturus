@@ -1,0 +1,303 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { BET_INCREMENTS } from '../../lib/keno/constants';
+
+const user = Astro.locals.user;
+const gameSession = createPublicGameSession(user);
+const initialBalance = gameSession.initialBalance;
+const clientUserId = gameSession.clientUserId;
+---
+
+<CasinoLayout title="Keno - Arcturus Casino">
+	<div
+		id="keno-root"
+		data-testid="keno-root"
+		data-user-id={clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={initialBalance}
+		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+	>
+		<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+			<div>
+				<a
+					href="/games"
+					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
+					>← Back to Games</a
+				>
+				<h1 class="deco-section-title text-4xl">Keno</h1>
+				<p class="text-[var(--deco-muted)] text-sm mt-1">
+					Pick 1–10. House draws 20. 100% free virtual chips.
+				</p>
+			</div>
+			<div class="flex items-center gap-3">
+				<button
+					type="button"
+					id="btn-paytable"
+					data-testid="btn-paytable"
+					class="deco-btn px-4 py-3 rounded-lg text-sm"
+					aria-haspopup="dialog"
+					aria-expanded="false">Paytable</button
+				>
+				<button
+					type="button"
+					id="btn-settings"
+					data-testid="btn-settings"
+					class="deco-btn px-4 py-3 rounded-lg text-sm"
+					aria-haspopup="dialog"
+					aria-expanded="false">Settings</button
+				>
+				<div
+					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+				>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+					<div
+						class="text-2xl font-bold text-[var(--deco-brass)]"
+						id="chip-balance"
+						data-testid="chip-balance"
+					>
+						{initialBalance.toLocaleString()}
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+			<div class="lg:col-span-3">
+				<div class="felt-table rounded-3xl p-4 sm:p-6 mb-6">
+					<div
+						data-testid="game-status"
+						role="status"
+						aria-live="polite"
+						class="text-center text-[var(--deco-brass)] mb-3 font-semibold"
+					>
+						Pick 1–10 numbers
+					</div>
+					<div
+						data-testid="last-result"
+						role="status"
+						aria-live="polite"
+						class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6"
+					>
+						Tap Draw to play
+					</div>
+					<div
+						id="keno-grid"
+						data-testid="keno-grid"
+						class="grid grid-cols-8 gap-1 sm:gap-2 max-w-2xl mx-auto"
+					>
+					</div>
+				</div>
+
+				<div
+					class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 sm:p-6 border border-[var(--deco-line)]"
+				>
+					<div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+						<span class="text-[var(--deco-muted)] text-sm"
+							>Spots: <span id="spot-count" data-testid="spot-count">0/10</span></span
+						>
+						<span class="text-[var(--deco-muted)] text-sm"
+							>Bet: <span
+								id="current-bet"
+								data-testid="current-bet"
+								class="text-[var(--deco-brass)] font-bold">1</span
+							></span
+						>
+					</div>
+					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips" data-testid="bet-chips">
+						{
+							BET_INCREMENTS.map((amount, i) => (
+								<button
+									type="button"
+									class={`bet-chip rounded-full px-3 py-2 text-sm font-semibold border transition ${i === 0 ? 'selected' : ''}`}
+									data-bet={amount}
+									aria-pressed={i === 0 ? 'true' : 'false'}
+								>
+									{amount}
+								</button>
+							))
+						}
+					</div>
+					<div class="flex gap-2 mb-4">
+						<button
+							type="button"
+							id="btn-quickpick"
+							data-testid="btn-quickpick"
+							class="deco-btn flex-1 py-2 rounded-lg text-sm">Quick Pick</button
+						>
+						<button
+							type="button"
+							id="btn-clear"
+							data-testid="btn-clear"
+							class="deco-btn flex-1 py-2 rounded-lg text-sm">Clear</button
+						>
+						<button
+							type="button"
+							id="btn-repeat"
+							data-testid="btn-repeat"
+							class="deco-btn flex-1 py-2 rounded-lg text-sm">Repeat</button
+						>
+					</div>
+					<div class="flex gap-2 mb-4 text-sm">
+						<span class="text-[var(--deco-muted)]">Draws:</span>
+						<button type="button" class="draws-chip selected" data-draws="1" disabled>1</button>
+						<button type="button" class="draws-chip" data-draws="5" disabled title="Coming soon"
+							>5</button
+						>
+						<button type="button" class="draws-chip" data-draws="10" disabled title="Coming soon"
+							>10</button
+						>
+					</div>
+					<button
+						type="button"
+						id="btn-draw"
+						data-testid="btn-draw"
+						class="btn-gold w-full py-4 text-lg font-bold rounded-xl"
+						disabled>Draw</button
+					>
+				</div>
+			</div>
+
+			<div class="lg:col-span-1 space-y-4">
+				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
+					<div class="text-sm text-[var(--deco-muted)] mb-2">Recent tickets</div>
+					<div
+						id="recent-tickets"
+						data-testid="recent-tickets"
+						class="flex flex-col gap-1 min-h-[28px]"
+					>
+					</div>
+				</div>
+				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
+					<div class="text-sm text-[var(--deco-muted)] mb-2">Paytable (current spots)</div>
+					<div id="paytable-body" data-testid="paytable-body" class="text-sm"></div>
+				</div>
+			</div>
+		</div>
+		<!-- Settings modal -->
+		<div
+			id="settings-modal"
+			data-testid="settings-modal"
+			class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="settings-title"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-2xl border border-[var(--deco-brass-dim)] p-6 max-w-sm w-full mx-4"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 id="settings-title" class="text-lg font-bold text-[var(--deco-brass)]">Settings</h2>
+					<button
+						type="button"
+						id="btn-settings-close"
+						data-testid="btn-settings-close"
+						class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close settings">&times;</button
+					>
+				</div>
+				<div class="mb-2 text-sm text-[var(--deco-muted)]">Animation speed</div>
+				<div class="flex gap-2" id="speed-options" data-testid="speed-options">
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="slow">Slow</button
+					>
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="normal">Normal</button
+					>
+					<button
+						type="button"
+						class="speed-opt deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-speed="fast">Fast</button
+					>
+				</div>
+			</div>
+		</div>
+		<!-- Paytable modal -->
+		<div
+			id="paytable-modal"
+			data-testid="paytable-modal"
+			class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="paytable-title"
+		>
+			<div
+				class="bg-[var(--deco-obsidian-2)] rounded-2xl border border-[var(--deco-brass-dim)] p-6 max-w-md w-full mx-4"
+			>
+				<div class="flex items-center justify-between mb-4">
+					<h2 id="paytable-title" class="text-lg font-bold text-[var(--deco-brass)]">Paytable</h2>
+					<button
+						type="button"
+						id="btn-paytable-close"
+						data-testid="btn-paytable-close"
+						class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
+						aria-label="Close paytable">&times;</button
+					>
+				</div>
+				<div
+					id="paytable-modal-body"
+					data-testid="paytable-modal-body"
+					class="text-sm max-h-[60vh] overflow-y-auto"
+				>
+				</div>
+			</div>
+		</div>
+		<div
+			id="achievement-toast"
+			data-testid="achievement-toast"
+			class="hidden fixed bottom-6 right-6 z-50"
+		>
+		</div>
+	</div>
+</CasinoLayout>
+
+<style is:global>
+	.keno-cell {
+		aspect-ratio: 1;
+		border-radius: 6px;
+		background: var(--deco-obsidian);
+		border: 1px solid var(--deco-line);
+		color: var(--deco-ivory-dim);
+		font-weight: 600;
+		font-size: 0.9rem;
+		position: relative;
+	}
+	.keno-cell.selected {
+		border-color: var(--deco-brass);
+		color: var(--deco-brass-bright);
+		transform: scale(1.05);
+	}
+	.keno-cell.drawn {
+		border-color: var(--deco-brass-dim);
+	}
+	.keno-cell.hit {
+		border-color: var(--deco-brass-bright);
+		background: color-mix(in srgb, var(--deco-brass) 35%, var(--deco-obsidian));
+		box-shadow: 0 0 12px color-mix(in srgb, var(--deco-brass) 60%, transparent);
+	}
+	.bet-chip.selected,
+	.draws-chip.selected {
+		border-color: var(--deco-brass);
+		color: var(--deco-brass-bright);
+	}
+	.speed-opt.selected {
+		border-color: var(--deco-brass);
+		color: var(--deco-brass-bright);
+	}
+	.pick-order {
+		position: absolute;
+		top: 1px;
+		right: 3px;
+		font-size: 0.6rem;
+		color: var(--deco-brass-bright);
+	}
+</style>
+
+<script>
+	import { initKenoClient } from '../../lib/keno/kenoClient';
+	initKenoClient();
+</script>

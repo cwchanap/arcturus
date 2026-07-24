@@ -437,6 +437,12 @@ const GAME_LIMITS: Record<string, { maxWin: number; maxLoss: number }> = {
 		// attack surface is not meaningfully widened.
 		maxLoss: 10000,
 	},
+	keno: {
+		// Top prize: 10-spot catch-10 (50000×) at MAX_BET=5 = 250,000. 2× headroom.
+		maxWin: 500000,
+		// Single-draw loss = wager (5). 100× headroom matches slots.
+		maxLoss: 10000,
+	},
 	// NOTE: roulette is intentionally NOT listed here. Roulette is server-settled
 	// via /api/roulette/spin and must not be updatable through this client-
 	// authoritative chip-update endpoint.
@@ -1116,6 +1122,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 								success: false,
 								error: 'SYNC_ID_REUSE_MISMATCH',
 								message: 'syncId has already been used for a different chip sync payload',
+								currentBalance: serverBalance,
 							}),
 							{
 								status: 409,
@@ -1308,6 +1315,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 									success: false,
 									error: 'SYNC_ID_REUSE_MISMATCH',
 									message: 'syncId has already been used for a different chip sync payload',
+									currentBalance: serverBalance,
 								}),
 								{
 									status: 409,

@@ -419,7 +419,7 @@ describe('constants', () => {
 		expect(GAME_TYPES).toContain('poker');
 		expect(GAME_TYPES).toContain('slots');
 		expect(GAME_TYPES).toContain('roulette');
-		expect(GAME_TYPES.length).toBe(6);
+		expect(GAME_TYPES.length).toBe(7);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {

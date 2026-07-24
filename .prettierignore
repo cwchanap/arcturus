@@ -30,6 +30,9 @@ Thumbs.db
 *.swo
 .claude/settings.local.json
 
+# Local agent/planning workspaces
+.superpowers/
+
 # Other
 coverage/
 .cache/

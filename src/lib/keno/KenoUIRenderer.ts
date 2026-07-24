@@ -26,6 +26,8 @@ export class KenoUIRenderer {
 	private readonly paytableModal: El;
 	private readonly paytableCloseBtn: HTMLButtonElement;
 	private readonly paytableModalBody: El;
+	private readonly syncPausedBanner: El;
+	private readonly retrySyncBtn: HTMLButtonElement;
 	private revealTimeouts: number[] = [];
 	private settingsFocusBefore: HTMLElement | null = null;
 	private boundSettingsKeydown: ((e: KeyboardEvent) => void) | null = null;
@@ -54,6 +56,8 @@ export class KenoUIRenderer {
 		this.paytableModal = req<El>(root, 'paytable-modal');
 		this.paytableCloseBtn = req<HTMLButtonElement>(root, 'btn-paytable-close');
 		this.paytableModalBody = req<El>(root, 'paytable-modal-body');
+		this.syncPausedBanner = req<El>(root, 'sync-paused-banner');
+		this.retrySyncBtn = req<HTMLButtonElement>(root, 'btn-retry-sync');
 		this.buildGrid();
 	}
 
@@ -256,6 +260,15 @@ export class KenoUIRenderer {
 	}
 	setStatus(text: string): void {
 		this.statusEl.textContent = text;
+	}
+	showSyncPaused(): void {
+		this.syncPausedBanner.classList.remove('hidden');
+	}
+	hideSyncPaused(): void {
+		this.syncPausedBanner.classList.add('hidden');
+	}
+	getRetrySyncButton(): HTMLButtonElement {
+		return this.retrySyncBtn;
 	}
 	renderLastResult(r: DrawResult): void {
 		const verb = r.outcome === 'win' ? 'won' : r.outcome === 'push' ? 'pushed' : 'lost';

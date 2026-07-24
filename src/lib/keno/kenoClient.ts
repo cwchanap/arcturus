@@ -262,6 +262,12 @@ export function initKenoClient(): void {
 		try {
 			const syncId = `keno-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 			const result = game.draw(syncId);
+			// game.draw() applied the delta to the display. Tell the outbox so a
+			// persisted receipt's 200 firing during the reveal animation doesn't
+			// briefly overwrite this delta (it's not yet in the outbox queue).
+			// Cleared by enqueueAndDrain() once the receipt is queued, and in the
+			// finally block as a safety net.
+			if (outbox) outbox.setPendingDelta(result.netDelta);
 			lastTicketPicks = [...result.picks];
 			renderer.renderPicks(game.getPicks());
 			// Reveal animation
@@ -304,6 +310,10 @@ export function initKenoClient(): void {
 			// that overwrites it never ran.
 			renderer.setStatus('');
 		} finally {
+			// Safety net: if we set pendingDelta but never reached
+			// enqueueAndDrain (e.g. a non-fail throw after game.draw), clear it
+			// so a later reconcile doesn't include a stale pending delta.
+			if (outbox) outbox.setPendingDelta(0);
 			drawInFlight = false;
 			renderer.renderCanDraw(game.canDraw());
 		}

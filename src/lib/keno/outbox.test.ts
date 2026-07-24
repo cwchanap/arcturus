@@ -721,3 +721,126 @@ describe('KenoSyncOutbox authoritative balance reconciliation (items 1 & 2)', ()
 		expect(setGameBalanceCalls).toEqual([1050]);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Pending draw delta (transient flicker fix).
+// During the reveal animation, game.draw() has already applied its delta to
+// the display, but the receipt hasn't been enqueued yet. If a persisted
+// receipt's 200 fires in that window, reconcile() would set the display to
+// serverBalance + sum(queue deltas) — with the new draw's delta absent from
+// the queue, the display briefly loses it. setPendingDelta() lets the client
+// tell the outbox about the applied-but-not-yet-enqueued delta so reconcile()
+// includes it. enqueueAndDrain() clears it (the receipt is now in the queue).
+// ---------------------------------------------------------------------------
+describe('KenoSyncOutbox pending draw delta (reveal animation race)', () => {
+	test('reconcile includes pending delta when set, clears on enqueue', async () => {
+		const setGameBalanceCalls: number[] = [];
+		const { fetchImpl } = makeFetch([{ status: 200, body: { balance: 1095 } }]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+
+		// game.draw() applied delta=-5 to the display; receipt not yet enqueued.
+		ob.setPendingDelta(-5);
+
+		// A persisted receipt's 200 fires during the reveal animation.
+		// reconcile must include the pending delta: 1100 + (-5) = 1095.
+		ob.reconcileDisplay(1100);
+		expect(setGameBalanceCalls).toContain(1095);
+
+		// Now the receipt is enqueued — pendingDelta must be cleared.
+		await ob.enqueueAndDrain(receipt('s-live', 1100, -5));
+		// After drain: serverBalance=1095, queue=[], pendingDelta=0 → display=1095
+		expect(setGameBalanceCalls).toContain(1095);
+	});
+
+	test('persisted receipt 200 during reveal animation does not lose live draw delta', async () => {
+		// Page reloads with one persisted receipt (delta=100).
+		// drainPersisted starts (slow fetch). During the reveal animation,
+		// game.draw() applies delta=-5 and setPendingDelta(-5) is called.
+		// The persisted receipt's 200 fires → reconcile(1100) → display must
+		// be 1100 + (-5) = 1095, NOT 1100 (which would lose the live delta).
+		let persisted: PendingReceipt[] = [receipt('s-persisted', 1000, 100)];
+		const setGameBalanceCalls: number[] = [];
+		let callIdx = 0;
+		const results: FetchResult[] = [
+			{ status: 200, body: { balance: 1100 } }, // persisted receipt (slow)
+			{ status: 200, body: { balance: 1095 } }, // live receipt
+		];
+		const fetchImpl = async (url: string, init: { body: string }) => {
+			const r = results[Math.min(callIdx, results.length - 1)];
+			callIdx++;
+			if (callIdx === 1) await new Promise<void>((resolve) => setTimeout(resolve, 30));
+			return {
+				ok: r.status === 200,
+				status: r.status,
+				headers: { get: () => null },
+				json: async () => r.body,
+			};
+		};
+
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+
+		// Start drainPersisted (fire-and-forget, like production)
+		void ob.drainPersisted();
+
+		// Simulate: during the reveal animation, game.draw() applied delta=-5
+		ob.setPendingDelta(-5);
+
+		// Wait for the persisted receipt's 200 to fire
+		await new Promise((r) => setTimeout(r, 50));
+
+		// The persisted 200 should have reconciled WITH the pending delta:
+		// display = 1100 (serverBalance) + (-5) (pendingDelta) = 1095
+		// NOT 1100 (which would lose the live draw's delta)
+		expect(setGameBalanceCalls).toContain(1095);
+
+		// Now enqueue the live receipt (clears pendingDelta)
+		await ob.enqueueAndDrain(receipt('s-live', 1100, -5));
+
+		// After live receipt drains: display = 1095
+		expect(setGameBalanceCalls).toContain(1095);
+	});
+
+	test('pendingDelta is cleared by enqueueAndDrain (no double-count)', async () => {
+		// After enqueueAndDrain clears pendingDelta, a subsequent reconcile
+		// must NOT include the old pending delta (it's now in the queue).
+		const setGameBalanceCalls: number[] = [];
+		const { fetchImpl } = makeFetch([{ status: 200, body: { balance: 1095 } }]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+
+		ob.setPendingDelta(-5);
+		await ob.enqueueAndDrain(receipt('s-live', 1100, -5));
+
+		// After drain: queue=[], pendingDelta=0. A manual reconcile must
+		// produce serverBalance + 0, not serverBalance + (-5).
+		setGameBalanceCalls.length = 0;
+		ob.reconcileDisplay(1095);
+		expect(setGameBalanceCalls).toEqual([1095]);
+	});
+});

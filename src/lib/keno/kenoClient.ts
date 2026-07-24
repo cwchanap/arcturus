@@ -37,6 +37,17 @@ function outboxKey(clientUserId: string, tabId: string): string {
 	return `arcturus:keno:outbox:${clientUserId}:${tabId}`;
 }
 
+// Crypto-strong syncId (matches DrawManager's use of crypto). Falls back to
+// Math.random only when crypto.randomUUID is unavailable. Dedup makes any
+// collision benign; this is consistency with DrawManager, not a security fix.
+function makeSyncId(): string {
+	const rand =
+		typeof crypto !== 'undefined' && crypto.randomUUID
+			? crypto.randomUUID()
+			: Math.random().toString(36).slice(2, 10);
+	return `keno-${Date.now()}-${rand}`;
+}
+
 // Load this tab's receipts plus any orphaned receipts from closed tabs (different
 // tabIds). Orphaned keys are deleted and their receipts merged into this tab's
 // queue so they get drained. The server's chip_sync_receipt PK (userId+syncId)
@@ -260,7 +271,7 @@ export function initKenoClient(): void {
 		renderer.setStatus('Drawing…');
 		renderer.clearDrawnHighlight();
 		try {
-			const syncId = `keno-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+			const syncId = makeSyncId();
 			const result = game.draw(syncId);
 			// game.draw() applied the delta to the display. Tell the outbox so a
 			// persisted receipt's 200 firing during the reveal animation doesn't
@@ -282,18 +293,25 @@ export function initKenoClient(): void {
 			// reveal animation's await, mutating game.getBalance() and inflating the diff.
 			if (outbox) {
 				const delta = result.netDelta;
-				const receipt: PendingReceipt = {
-					syncId,
-					previousBalance: serverSyncedBalance,
-					delta,
-					gameType: 'keno',
-					outcome: result.outcome,
-					handCount: 1,
-					biggestWinCandidate: delta > 0 ? delta : undefined,
-				};
-				void outbox.enqueueAndDrain(receipt).catch((err) => {
-					console.error('keno: settlement drain failed', err);
-				});
+				// Push rounds (delta === 0) settle nothing — no balance change to
+				// record. Keno receipts carry no stats (unlike batched games), so
+				// enqueuing a zero-delta receipt only burns a rate-limit slot and
+				// a DB write. serverSyncedBalance is unchanged (correct: the server
+				// balance didn't move either), and pendingDelta is cleared in finally.
+				if (delta !== 0) {
+					const receipt: PendingReceipt = {
+						syncId,
+						previousBalance: serverSyncedBalance,
+						delta,
+						gameType: 'keno',
+						outcome: result.outcome,
+						handCount: 1,
+						biggestWinCandidate: delta > 0 ? delta : undefined,
+					};
+					void outbox.enqueueAndDrain(receipt).catch((err) => {
+						console.error('keno: settlement drain failed', err);
+					});
+				}
 			} else {
 				// Guest mode: no fetch; serverSyncedBalance tracks the local bankroll.
 				serverSyncedBalance = game.getBalance();

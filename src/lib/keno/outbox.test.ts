@@ -700,6 +700,33 @@ describe('KenoSyncOutbox authoritative balance reconciliation (items 1 & 2)', ()
 		expect(setGameBalanceCalls).toContain(997);
 	});
 
+	test('SYNC_ID_REUSE_MISMATCH terminal drop reconciles display to currentBalance', async () => {
+		// Server returns currentBalance on the reuse-mismatch terminal drop so the
+		// display doesn't stay stale until the next successful sync. Two receipts:
+		// r1 (delta -1) terminal-drops with currentBalance=998; r2 (delta -1) is
+		// still queued. Display must be 998 + (-1) = 997.
+		const { fetchImpl } = makeFetch([
+			{ status: 409, body: { error: 'SYNC_ID_REUSE_MISMATCH', currentBalance: 998 } },
+		]);
+		const setGameBalanceCalls: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		void ob.enqueueAndDrain(receipt('s1', 1000, -1));
+		await ob.enqueueAndDrain(receipt('s2', 999, -1));
+		await new Promise((r) => setTimeout(r, 50));
+		// After r1 terminal-drops: currentBalance=998, queue=[s2 delta=-1]
+		// display = 998 + (-1) = 997
+		expect(setGameBalanceCalls).toContain(997);
+	});
+
 	test('reconcileDisplay applies pending persisted deltas to game balance on init', async () => {
 		// Page reload with one persisted receipt (delta=50). serverSyncedBalance=1000.
 		// Before any drain completes, reconcileDisplay should set game balance

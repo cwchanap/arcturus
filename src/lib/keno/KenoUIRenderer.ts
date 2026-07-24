@@ -110,6 +110,11 @@ export class KenoUIRenderer {
 		return this.paytableCloseBtn;
 	}
 	showSettingsModal(): void {
+		// Already open — avoid orphaning the existing keydown listener by
+		// re-adding a second one (the old bound handler would be overwritten
+		// and never removed). Latent today (overlay usually blocks re-clicks)
+		// but cheap to guard.
+		if (this.boundSettingsKeydown) return;
 		this.settingsFocusBefore = document.activeElement as HTMLElement | null;
 		this.settingsModal.classList.remove('hidden');
 		this.settingsBtn.setAttribute('aria-expanded', 'true');
@@ -161,6 +166,9 @@ export class KenoUIRenderer {
 		}
 	}
 	showPaytableModal(): void {
+		// Already open — avoid orphaning the existing keydown listener (see
+		// showSettingsModal for the same guard).
+		if (this.boundPaytableKeydown) return;
 		this.paytableFocusBefore = document.activeElement as HTMLElement | null;
 		this.paytableModal.classList.remove('hidden');
 		this.paytableBtn.setAttribute('aria-expanded', 'true');

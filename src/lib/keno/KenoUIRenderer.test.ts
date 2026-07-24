@@ -159,6 +159,30 @@ describe('KenoUIRenderer', () => {
 			).toBe(true);
 			expect(renderer.getSettingsButton().getAttribute('aria-expanded')).toBe('false');
 		});
+		test('showSettingsModal twice does not orphan a second keydown listener', () => {
+			// Re-opening an already-open modal must early-return so the first
+			// bound keydown handler isn't overwritten and leaked.
+			const modal = root.querySelector<HTMLElement>('[data-testid="settings-modal"]')!;
+			let keydownAdds = 0;
+			const origAdd = modal.addEventListener.bind(modal);
+			modal.addEventListener = ((
+				type: string,
+				listener: EventListenerOrEventListenerObject,
+				options?: boolean | AddEventListenerOptions,
+			) => {
+				if (type === 'keydown') keydownAdds++;
+				return origAdd(type, listener, options);
+			}) as typeof modal.addEventListener;
+			try {
+				renderer.showSettingsModal();
+				expect(keydownAdds).toBe(1);
+				renderer.showSettingsModal(); // no-op guard
+				expect(keydownAdds).toBe(1); // still one — no second listener added
+			} finally {
+				modal.addEventListener = origAdd;
+				renderer.hideSettingsModal();
+			}
+		});
 		test('renderSettingsSpeed marks only the matching option as selected', () => {
 			renderer.renderSettingsSpeed('fast');
 			const opts = renderer.getSpeedOptions();

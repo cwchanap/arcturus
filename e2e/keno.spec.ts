@@ -46,11 +46,11 @@ test.describe('Keno game', () => {
 			page,
 			Array.from({ length: 20 }, (_, i) => i),
 		);
-		const cells = page.locator('button.keno-cell');
 		const selected = [1, 2, 3];
 		for (let i = 0; i < selected.length; i++) {
-			await cells.nth(i).click();
-			await expect(cells.nth(i).locator('.pick-order')).toHaveText(String(i + 1));
+			const cell = page.locator(`button.keno-cell[data-number="${selected[i]}"]`);
+			await cell.click();
+			await expect(cell.locator('.pick-order')).toHaveText(String(i + 1));
 		}
 		await expect(page.getByTestId('spot-count')).toContainText('3/10');
 
@@ -79,7 +79,7 @@ test.describe('Keno game', () => {
 	});
 
 	test('Repeat Ticket re-applies the prior ticket after a draw', async ({ page }) => {
-		for (let i = 0; i < 4; i++) await page.locator('button.keno-cell').nth(i).click();
+		for (let n = 1; n <= 4; n++) await page.locator(`button.keno-cell[data-number="${n}"]`).click();
 		await page.getByTestId('btn-draw').click();
 		await expect(page.getByTestId('last-result')).toContainText(/of 4/);
 		await page.getByTestId('btn-clear').click();
@@ -89,7 +89,7 @@ test.describe('Keno game', () => {
 	});
 
 	test('paytable renders the table for the selected spot count', async ({ page }) => {
-		for (let i = 0; i < 7; i++) await page.locator('button.keno-cell').nth(i).click();
+		for (let n = 1; n <= 7; n++) await page.locator(`button.keno-cell[data-number="${n}"]`).click();
 		// 7-spot paytable has tiers catch-3..7
 		const body = page.getByTestId('paytable-body');
 		await expect(body).toContainText('Catch 7');
@@ -103,7 +103,7 @@ test.describe('Keno game', () => {
 		);
 		const selected = [1, 2, 3];
 		for (let i = 0; i < selected.length; i++) {
-			await page.locator('button.keno-cell').nth(i).click();
+			await page.locator(`button.keno-cell[data-number="${selected[i]}"]`).click();
 		}
 		const bet = 5;
 		await page.locator(`.bet-chip[data-bet="${bet}"]`).click();

@@ -22,7 +22,10 @@ export class KenoUIRenderer {
 	private readonly settingsModal: El;
 	private readonly settingsCloseBtn: HTMLButtonElement;
 	private readonly speedOptions: HTMLButtonElement[];
+	private readonly soundCheckbox: HTMLInputElement;
 	private revealTimeouts: number[] = [];
+	private settingsFocusBefore: HTMLElement | null = null;
+	private boundSettingsKeydown: ((e: KeyboardEvent) => void) | null = null;
 
 	constructor(root: El) {
 		this.root = root;
@@ -42,6 +45,11 @@ export class KenoUIRenderer {
 		this.settingsModal = req<El>(root, 'settings-modal');
 		this.settingsCloseBtn = req<HTMLButtonElement>(root, 'btn-settings-close');
 		this.speedOptions = Array.from(root.querySelectorAll<HTMLButtonElement>('button.speed-opt'));
+		this.soundCheckbox =
+			root.querySelector<HTMLInputElement>('#setting-sound') ??
+			(() => {
+				throw new Error('KenoUIRenderer: missing #setting-sound');
+			})();
 		this.buildGrid();
 	}
 
@@ -91,13 +99,62 @@ export class KenoUIRenderer {
 	getSpeedOptions(): HTMLButtonElement[] {
 		return this.speedOptions;
 	}
+	getSoundCheckbox(): HTMLInputElement {
+		return this.soundCheckbox;
+	}
+	renderSettingsSound(enabled: boolean): void {
+		this.soundCheckbox.checked = enabled;
+	}
 	showSettingsModal(): void {
+		this.settingsFocusBefore = document.activeElement as HTMLElement | null;
 		this.settingsModal.classList.remove('hidden');
 		this.settingsBtn.setAttribute('aria-expanded', 'true');
+		// Focus the first focusable control so keyboard users land inside the modal.
+		const focusable = this.settingsFocusables();
+		focusable[0]?.focus();
+		this.boundSettingsKeydown = (e: KeyboardEvent) => this.onSettingsKeydown(e);
+		this.settingsModal.addEventListener('keydown', this.boundSettingsKeydown);
 	}
 	hideSettingsModal(): void {
 		this.settingsModal.classList.add('hidden');
 		this.settingsBtn.setAttribute('aria-expanded', 'false');
+		if (this.boundSettingsKeydown) {
+			this.settingsModal.removeEventListener('keydown', this.boundSettingsKeydown);
+			this.boundSettingsKeydown = null;
+		}
+		// Restore focus to the trigger so keyboard users don't get stranded.
+		this.settingsFocusBefore?.focus();
+		this.settingsFocusBefore = null;
+	}
+	private settingsFocusables(): HTMLElement[] {
+		return Array.from(
+			this.settingsModal.querySelectorAll<HTMLElement>(
+				'button, input, [tabindex]:not([tabindex="-1"])',
+			),
+		).filter((el) => !el.hasAttribute('disabled'));
+	}
+	private onSettingsKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			this.hideSettingsModal();
+			return;
+		}
+		if (e.key !== 'Tab') return;
+		const focusable = this.settingsFocusables();
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (e.shiftKey) {
+			if (document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			}
+		} else {
+			if (document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
+		}
 	}
 	renderSettingsSpeed(speed: string): void {
 		this.speedOptions.forEach((b) => {
@@ -195,6 +252,9 @@ export class KenoUIRenderer {
 		}
 		table.appendChild(tbody);
 		this.paytableBody.replaceChildren(table);
+	}
+	clearPaytable(): void {
+		this.paytableBody.replaceChildren();
 	}
 }
 

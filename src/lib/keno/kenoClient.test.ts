@@ -18,6 +18,7 @@ const origDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 const origFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
 const origSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
 const origLocalStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const origSessionStorage = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
 const happyWindow = new Window();
 
 beforeAll(() => {
@@ -36,6 +37,11 @@ beforeAll(() => {
 		writable: true,
 		value: happyWindow.localStorage,
 	});
+	Object.defineProperty(globalThis, 'sessionStorage', {
+		configurable: true,
+		writable: true,
+		value: happyWindow.sessionStorage,
+	});
 	// Mock setTimeout to 0ms so animation/retry sleeps are instant.
 	const realSetTimeout = (origSetTimeout?.value ?? setTimeout) as typeof setTimeout;
 	Object.defineProperty(globalThis, 'setTimeout', {
@@ -52,6 +58,7 @@ afterAll(() => {
 	restore(origFetch, 'fetch');
 	restore(origSetTimeout, 'setTimeout');
 	restore(origLocalStorage, 'localStorage');
+	restore(origSessionStorage, 'sessionStorage');
 });
 
 function restore(desc: PropertyDescriptor | undefined, key: string): void {
@@ -124,7 +131,9 @@ async function flush(ticks = 3): Promise<void> {
 }
 
 const USER_ID = 'test-user';
-const OUTBOX_KEY = `arcturus:keno:outbox:${USER_ID}`;
+const FIXED_TAB_ID = 'test-tab';
+const TAB_ID_KEY = 'arcturus:keno:tab-id';
+const OUTBOX_KEY = `arcturus:keno:outbox:${USER_ID}:${FIXED_TAB_ID}`;
 const SETTINGS_KEY = `arcturus:keno:settings:${USER_ID}`;
 
 function makeReceipt(over: Partial<PendingReceipt> = {}): PendingReceipt {
@@ -174,6 +183,7 @@ function makeKenoRoot(opts: { guestMode?: string; initialBalance?: string } = {}
 				<button class="speed-opt" data-speed="normal">Normal</button>
 				<button class="speed-opt" data-speed="fast">Fast</button>
 			</div>
+			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
 		<div id="achievement-toast" data-testid="achievement-toast" class="hidden"></div>
 	`;
@@ -207,6 +217,8 @@ describe('kenoClient sync state machine', () => {
 
 	beforeEach(() => {
 		localStorage.clear();
+		sessionStorage.clear();
+		sessionStorage.setItem(TAB_ID_KEY, FIXED_TAB_ID);
 		localStorage.setItem(SETTINGS_KEY, JSON.stringify({ animationSpeed: 'fast' }));
 		root = makeKenoRoot();
 	});
@@ -369,6 +381,45 @@ describe('kenoClient sync state machine', () => {
 			expect(calls[0].body.delta).toBe(50);
 			// Outbox cleared after successful drain
 			expect(JSON.parse(localStorage.getItem(OUTBOX_KEY) ?? '[]')).toEqual([]);
+		});
+	});
+
+	describe('(f2) per-tab outbox namespace absorbs orphaned receipts from closed tabs', () => {
+		test('orphaned key from a different tabId is absorbed and deleted on load', async () => {
+			// Seed an orphaned outbox key under a DIFFERENT tabId (simulating a closed tab)
+			const orphanKey = `arcturus:keno:outbox:${USER_ID}:dead-tab`;
+			localStorage.setItem(
+				orphanKey,
+				JSON.stringify([makeReceipt({ syncId: 's-orphan', delta: 25 })]),
+			);
+			const { calls } = installFetch([{ status: 200, body: { balance: 1025 } }]);
+
+			initKenoClient();
+			await flush(5);
+
+			// Orphan receipt was drained
+			expect(calls).toHaveLength(1);
+			expect(calls[0].body.syncId).toBe('s-orphan');
+			expect(calls[0].body.delta).toBe(25);
+			// Orphan key was deleted; current tab key is empty
+			expect(localStorage.getItem(orphanKey)).toBeNull();
+			expect(JSON.parse(localStorage.getItem(OUTBOX_KEY) ?? '[]')).toEqual([]);
+		});
+
+		test('current tab key is not deleted on load (only orphans are)', async () => {
+			localStorage.setItem(
+				OUTBOX_KEY,
+				JSON.stringify([makeReceipt({ syncId: 's-current-tab', delta: 10 })]),
+			);
+			const { calls } = installFetch([{ status: 200, body: { balance: 1010 } }]);
+
+			initKenoClient();
+			await flush(5);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].body.syncId).toBe('s-current-tab');
+			// Current tab key still exists (now empty after drain)
+			expect(localStorage.getItem(OUTBOX_KEY)).not.toBeNull();
 		});
 	});
 

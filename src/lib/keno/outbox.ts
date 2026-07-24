@@ -36,11 +36,15 @@ export type OutboxDeps = {
 	onToast: (message: string) => void;
 	maxRebases?: number; // default 3
 	maxNetworkRetries?: number; // default 3
+	maxEscrowRetries?: number; // default 3 — bounded retries while MP escrow holds
+	escrowRetryMs?: number; // default 2000 — backoff between escrow retries
 	sleep?: (ms: number) => Promise<void>;
 };
 
 const DEFAULT_REBASES = 3;
 const DEFAULT_NETWORK_RETRIES = 3;
+const DEFAULT_ESCROW_RETRIES = 3;
+const DEFAULT_ESCROW_RETRY_MS = 2000;
 
 export class KenoSyncOutbox {
 	private queue: PendingReceipt[];
@@ -48,6 +52,8 @@ export class KenoSyncOutbox {
 	private readonly deps: OutboxDeps;
 	private readonly maxRebases: number;
 	private readonly maxNetworkRetries: number;
+	private readonly maxEscrowRetries: number;
+	private readonly escrowRetryMs: number;
 	private readonly sleep: (ms: number) => Promise<void>;
 
 	constructor(deps: OutboxDeps) {
@@ -55,6 +61,8 @@ export class KenoSyncOutbox {
 		this.queue = deps.load().map((r) => ({ ...r, resumed: true }));
 		this.maxRebases = deps.maxRebases ?? DEFAULT_REBASES;
 		this.maxNetworkRetries = deps.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
+		this.maxEscrowRetries = deps.maxEscrowRetries ?? DEFAULT_ESCROW_RETRIES;
+		this.escrowRetryMs = deps.escrowRetryMs ?? DEFAULT_ESCROW_RETRY_MS;
 		this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	}
 
@@ -92,6 +100,7 @@ export class KenoSyncOutbox {
 	private async sendHead(): Promise<boolean> {
 		let rebases = 0;
 		let networkRetries = 0;
+		let escrowRetries = 0;
 		while (true) {
 			// Re-read head each iteration: BALANCE_MISMATCH mutates queue[0] in place
 			// (previousBalance := server currentBalance) and the next post() must use
@@ -144,16 +153,31 @@ export class KenoSyncOutbox {
 				// rebase previousBalance := currentBalance; keep syncId + delta; retry same head.
 				// Server's receipt check runs before BALANCE_MISMATCH, so this proves the delta
 				// was never applied — safe to retry with the corrected previousBalance.
-				const serverBalance = num(body, 'currentBalance');
+				// currentBalance MUST be a finite number — rebasing to 0 on a missing field
+				// would corrupt serverSyncedBalance and poison the next receipt's
+				// previousBalance. Treat a malformed MISMATCH body as terminal.
+				const serverBalance = body['currentBalance'];
+				if (typeof serverBalance !== 'number' || !Number.isFinite(serverBalance)) {
+					this.terminalDrop(body, 'BALANCE_MISMATCH_MISSING_BALANCE');
+					return true;
+				}
 				this.queue[0] = { ...receipt, previousBalance: serverBalance };
 				this.deps.setServerSyncedBalance(serverBalance);
 				this.deps.persist(this.queue);
 				continue;
 			}
 			if (res.status === 409 && code === 'MP_ESCROW_ACTIVE') {
-				// No currentBalance in chips/update.ts. Refetch handled by caller (pause).
-				this.deps.onToast('Chip sync paused: multiplayer hand in progress.');
-				return false;
+				// Multiplayer escrow is transient (hand in progress). Retry with a bounded
+				// backoff so a receipt doesn't stall indefinitely waiting for the next draw
+				// or page reload. After exhausting retries, leave at head (return false) —
+				// the next enqueueAndDrain / drainPersisted resumes from here.
+				escrowRetries++;
+				if (escrowRetries > this.maxEscrowRetries) {
+					this.deps.onToast('Chip sync paused: multiplayer hand in progress.');
+					return false;
+				}
+				await this.sleep(this.escrowRetryMs);
+				continue;
 			}
 			if (res.status === 409 && code === 'SYNC_ID_REUSE_MISMATCH') {
 				this.terminalDrop(body, code);
@@ -223,10 +247,6 @@ export class KenoSyncOutbox {
 	}
 }
 
-function num(b: Record<string, unknown>, k: string): number {
-	const v = b[k];
-	return typeof v === 'number' && Number.isFinite(v) ? v : 0;
-}
 function str(b: Record<string, unknown>, k: string): string {
 	return typeof b[k] === 'string' ? (b[k] as string) : '';
 }

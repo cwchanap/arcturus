@@ -75,13 +75,13 @@ test.describe('Keno game', () => {
 		await page.getByTestId('btn-quickpick').click();
 		await expect(page.getByTestId('spot-count')).toContainText('8/10');
 		await page.getByTestId('btn-draw').click();
-		await expect(page.getByTestId('last-result')).toContainText(/of 8/);
+		await expect(page.getByTestId('last-result')).toContainText(/\d+ of 8 (won|lost|— pushed)/);
 	});
 
 	test('Repeat Ticket re-applies the prior ticket after a draw', async ({ page }) => {
 		for (let n = 1; n <= 4; n++) await page.locator(`button.keno-cell[data-number="${n}"]`).click();
 		await page.getByTestId('btn-draw').click();
-		await expect(page.getByTestId('last-result')).toContainText(/of 4/);
+		await expect(page.getByTestId('last-result')).toContainText(/\d+ of 4 (won|lost|— pushed)/);
 		await page.getByTestId('btn-clear').click();
 		await expect(page.getByTestId('spot-count')).toContainText('0/10');
 		await page.getByTestId('btn-repeat').click();

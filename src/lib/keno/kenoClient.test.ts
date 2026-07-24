@@ -8,6 +8,7 @@
 import { Window } from 'happy-dom';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { initKenoClient } from './kenoClient';
+import { DrawManager } from './DrawManager';
 import type { PendingReceipt } from './outbox';
 
 // ---------------------------------------------------------------------------
@@ -497,6 +498,37 @@ describe('kenoClient sync state machine', () => {
 		});
 	});
 
+	describe('push rounds (delta === 0) skip the outbox', () => {
+		test('a push draw enqueues no receipt — no fetch, no rate-limit slot burned', async () => {
+			// 4-spot catch-2 = multiplier 1 → payout = bet → netDelta = 0 (push).
+			// Stub DrawManager.draw to return a deterministic draw with exactly 2
+			// hits on picks [1,2,3,4] so the round is a push regardless of RNG.
+			const drawn = [1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+			const origDraw = DrawManager.prototype.draw;
+			DrawManager.prototype.draw = () => drawn;
+			try {
+				const { calls } = installFetch([{ status: 200, body: { balance: 1000 } }]);
+				initKenoClient();
+				await flush();
+				// Select 4 spots manually.
+				for (const n of [1, 2, 3, 4]) {
+					document
+						.querySelector<HTMLButtonElement>(`button.keno-cell[data-number="${n}"]`)!
+						.click();
+				}
+				clickDraw();
+				await flush(5);
+				// Push → no receipt enqueued → no fetch call. (drainPersisted on an
+				// empty outbox also makes no calls, so calls stays at 0.)
+				expect(calls).toHaveLength(0);
+				// Sanity: the round was actually a push (netDelta 0 in recent tickets).
+				expect(parseRecentNetDelta()).toBe(0);
+			} finally {
+				DrawManager.prototype.draw = origDraw;
+			}
+		});
+	});
+
 	describe('(f3) orphan receipts persisted to current tab key before orphan deletion (item 3)', () => {
 		test('merged orphan receipts are durable in current tab key immediately after init', () => {
 			// Seed an orphaned outbox key under a DIFFERENT tabId (closed tab).
@@ -808,23 +840,23 @@ describe('kenoClient sync state machine', () => {
 			installFetch([{ status: 200, body: { balance: 1000 } }]);
 			initKenoClient();
 			clickQuickPick();
-			// Make Math.random throw to trigger a non-coded TypeError in commitDraw's
-			// syncId generation (line 183), before game.draw() is reached.
-			const origRandom = Math.random;
+			// Make crypto.randomUUID throw to trigger a non-coded TypeError in
+			// commitDraw's syncId generation, before game.draw() is reached.
+			const origRandomUUID = crypto.randomUUID;
 			const errors: string[] = [];
 			const origConsoleError = console.error;
 			console.error = (...args: unknown[]) => {
 				errors.push(String(args[0]));
 			};
-			Math.random = (() => {
-				throw new TypeError('random broken');
-			}) as typeof Math.random;
+			crypto.randomUUID = (() => {
+				throw new TypeError('randomUUID broken');
+			}) as typeof crypto.randomUUID;
 			try {
 				clickDraw();
 				await flush(5);
 				expect(errors.some((e) => e.includes('keno: commitDraw failed'))).toBe(true);
 			} finally {
-				Math.random = origRandom;
+				crypto.randomUUID = origRandomUUID;
 				console.error = origConsoleError;
 			}
 		});

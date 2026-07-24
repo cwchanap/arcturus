@@ -1122,6 +1122,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 								success: false,
 								error: 'SYNC_ID_REUSE_MISMATCH',
 								message: 'syncId has already been used for a different chip sync payload',
+								currentBalance: serverBalance,
 							}),
 							{
 								status: 409,
@@ -1314,6 +1315,7 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 									success: false,
 									error: 'SYNC_ID_REUSE_MISMATCH',
 									message: 'syncId has already been used for a different chip sync payload',
+									currentBalance: serverBalance,
 								}),
 								{
 									status: 409,

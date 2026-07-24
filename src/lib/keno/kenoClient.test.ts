@@ -185,6 +185,11 @@ function makeKenoRoot(opts: { guestMode?: string; initialBalance?: string } = {}
 			</div>
 			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
+		<button id="btn-paytable" data-testid="btn-paytable">Paytable</button>
+		<div id="paytable-modal" data-testid="paytable-modal" class="hidden">
+			<button id="btn-paytable-close" data-testid="btn-paytable-close">&times;</button>
+			<div id="paytable-modal-body" data-testid="paytable-modal-body"></div>
+		</div>
 		<div id="achievement-toast" data-testid="achievement-toast" class="hidden"></div>
 	`;
 	document.body.appendChild(root);
@@ -693,12 +698,13 @@ describe('kenoClient sync state machine', () => {
 	});
 
 	describe('drainPersisted error handling', () => {
-		test('resume drain failure is logged to console.error', async () => {
+		test('persist failure is best-effort: resumed receipt still drains to the server', async () => {
 			localStorage.setItem(OUTBOX_KEY, JSON.stringify([makeReceipt({ syncId: 's-resume-fail' })]));
-			installFetch([{ status: 200, body: { balance: 1100 } }]);
+			const { calls } = installFetch([{ status: 200, body: { balance: 1100 } }]);
 			initKenoClient();
-			// Override setItem to throw — dropHead's persist will throw after 200 response,
-			// causing drainPersisted() to reject and the .catch() handler to fire.
+			// Override setItem to throw — dropHead's persist will throw after the 200
+			// response. Persistence is best-effort (crash recovery only), so the drain
+			// must NOT abort: the receipt was already sent and the server settled it.
 			// happy-dom puts setItem on the prototype, so direct assignment is a no-op;
 			// Object.defineProperty on the instance creates an own override.
 			const origSetItem = localStorage.setItem;
@@ -716,7 +722,11 @@ describe('kenoClient sync state machine', () => {
 			});
 			try {
 				await flush(5);
-				expect(errors.some((e) => e.includes('keno: resume drain failed'))).toBe(true);
+				// The resumed receipt reached the server despite persist throwing.
+				expect(calls).toHaveLength(1);
+				expect(calls[0].body.syncId).toBe('s-resume-fail');
+				// The outbox logged its best-effort persist warning.
+				expect(errors.some((e) => e.includes('keno: outbox persist failed'))).toBe(true);
 			} finally {
 				Object.defineProperty(localStorage, 'setItem', {
 					configurable: true,
@@ -729,13 +739,14 @@ describe('kenoClient sync state machine', () => {
 	});
 
 	describe('settlement drain error handling', () => {
-		test('enqueueAndDrain failure is logged to console.error', async () => {
-			installFetch([{ status: 200, body: { balance: 1000 } }]);
+		test('persist failure is best-effort: live draw settlement still reaches the server', async () => {
+			const { calls } = installFetch([{ status: 200, body: { balance: 1000 } }]);
 			initKenoClient();
 			clickQuickPick();
 			clickDraw();
 			// Override setItem to throw before the settlement drain runs (after the
-			// reveal animation await yields back to the test).
+			// reveal animation await yields back to the test). The drain must continue
+			// so the chip delta is sent; persistence is only for crash recovery.
 			const origSetItem = localStorage.setItem;
 			const errors: string[] = [];
 			const origConsoleError = console.error;
@@ -751,7 +762,11 @@ describe('kenoClient sync state machine', () => {
 			});
 			try {
 				await flush(5);
-				expect(errors.some((e) => e.includes('keno: settlement drain failed'))).toBe(true);
+				// The live draw's settlement reached the server despite persist throwing.
+				expect(calls).toHaveLength(1);
+				expect(calls[0].body.gameType).toBe('keno');
+				// The outbox logged its best-effort persist warning.
+				expect(errors.some((e) => e.includes('keno: outbox persist failed'))).toBe(true);
 			} finally {
 				Object.defineProperty(localStorage, 'setItem', {
 					configurable: true,

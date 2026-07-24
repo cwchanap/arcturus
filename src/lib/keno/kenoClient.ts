@@ -44,25 +44,34 @@ function outboxKey(clientUserId: string, tabId: string): string {
 function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 	const prefix = `arcturus:keno:outbox:${clientUserId}:`;
 	const merged: PendingReceipt[] = [];
+	const orphanKeys: string[] = [];
 	try {
+		// Snapshot matching keys BEFORE removing any. Removing an item while
+		// iterating by numeric index shifts subsequent indices, so the entry
+		// after a removed orphan is skipped — its receipts would be absent
+		// from memory and the next persist could overwrite that key, dropping
+		// the settlement. Collecting orphans first and deleting after the
+		// scan guarantees every key is visited exactly once.
+		const matchingKeys: string[] = [];
 		for (let i = 0; i < localStorage.length; i++) {
 			const key = localStorage.key(i);
-			if (!key || !key.startsWith(prefix)) continue;
+			if (key && key.startsWith(prefix)) matchingKeys.push(key);
+		}
+		for (const key of matchingKeys) {
 			try {
 				const raw = localStorage.getItem(key);
 				const parsed = raw ? (JSON.parse(raw) as PendingReceipt[]) : [];
-				if (key === outboxKey(clientUserId, tabId)) {
-					merged.push(...parsed);
-				} else {
-					// Orphan from a closed tab — absorb and delete.
-					merged.push(...parsed);
-					localStorage.removeItem(key);
+				merged.push(...parsed);
+				if (key !== outboxKey(clientUserId, tabId)) {
+					// Orphan from a closed tab — absorb; delete after the scan.
+					orphanKeys.push(key);
 				}
 			} catch {
-				// corrupt entry — remove it
-				if (key) localStorage.removeItem(key);
+				// corrupt entry — remove it after the scan
+				orphanKeys.push(key);
 			}
 		}
+		for (const key of orphanKeys) localStorage.removeItem(key);
 	} catch {
 		return [];
 	}
@@ -144,6 +153,7 @@ export function initKenoClient(): void {
 	renderer.renderPicks(game.getPicks());
 	renderer.renderCanDraw(game.canDraw());
 	renderer.renderSettingsSpeed(settings.getSettings().animationSpeed);
+	renderer.renderSettingsSound(settings.getSettings().soundEnabled);
 
 	// Settings modal
 	renderer.getSettingsButton().addEventListener('click', () => {
@@ -168,6 +178,20 @@ export function initKenoClient(): void {
 	if (settingsModal) {
 		settingsModal.addEventListener('click', (e) => {
 			if (e.target === settingsModal) renderer.hideSettingsModal();
+		});
+	}
+
+	// Paytable modal
+	renderer.getPaytableButton().addEventListener('click', () => {
+		renderer.showPaytableModal();
+	});
+	renderer.getPaytableCloseButton().addEventListener('click', () => {
+		renderer.hidePaytableModal();
+	});
+	const paytableModal = root.querySelector<HTMLElement>('[data-testid="paytable-modal"]');
+	if (paytableModal) {
+		paytableModal.addEventListener('click', (e) => {
+			if (e.target === paytableModal) renderer.hidePaytableModal();
 		});
 	}
 

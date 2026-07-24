@@ -23,9 +23,15 @@ export class KenoUIRenderer {
 	private readonly settingsCloseBtn: HTMLButtonElement;
 	private readonly speedOptions: HTMLButtonElement[];
 	private readonly soundCheckbox: HTMLInputElement;
+	private readonly paytableBtn: HTMLButtonElement;
+	private readonly paytableModal: El;
+	private readonly paytableCloseBtn: HTMLButtonElement;
+	private readonly paytableModalBody: El;
 	private revealTimeouts: number[] = [];
 	private settingsFocusBefore: HTMLElement | null = null;
 	private boundSettingsKeydown: ((e: KeyboardEvent) => void) | null = null;
+	private paytableFocusBefore: HTMLElement | null = null;
+	private boundPaytableKeydown: ((e: KeyboardEvent) => void) | null = null;
 
 	constructor(root: El) {
 		this.root = root;
@@ -50,6 +56,10 @@ export class KenoUIRenderer {
 			(() => {
 				throw new Error('KenoUIRenderer: missing #setting-sound');
 			})();
+		this.paytableBtn = req<HTMLButtonElement>(root, 'btn-paytable');
+		this.paytableModal = req<El>(root, 'paytable-modal');
+		this.paytableCloseBtn = req<HTMLButtonElement>(root, 'btn-paytable-close');
+		this.paytableModalBody = req<El>(root, 'paytable-modal-body');
 		this.buildGrid();
 	}
 
@@ -102,6 +112,12 @@ export class KenoUIRenderer {
 	getSoundCheckbox(): HTMLInputElement {
 		return this.soundCheckbox;
 	}
+	getPaytableButton(): HTMLButtonElement {
+		return this.paytableBtn;
+	}
+	getPaytableCloseButton(): HTMLButtonElement {
+		return this.paytableCloseBtn;
+	}
 	renderSettingsSound(enabled: boolean): void {
 		this.soundCheckbox.checked = enabled;
 	}
@@ -141,6 +157,54 @@ export class KenoUIRenderer {
 		}
 		if (e.key !== 'Tab') return;
 		const focusable = this.settingsFocusables();
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		if (e.shiftKey) {
+			if (document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			}
+		} else {
+			if (document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
+		}
+	}
+	showPaytableModal(): void {
+		this.paytableFocusBefore = document.activeElement as HTMLElement | null;
+		this.paytableModal.classList.remove('hidden');
+		this.paytableBtn.setAttribute('aria-expanded', 'true');
+		// Focus the close button so keyboard users land inside the modal.
+		this.paytableCloseBtn.focus();
+		this.boundPaytableKeydown = (e: KeyboardEvent) => this.onPaytableKeydown(e);
+		this.paytableModal.addEventListener('keydown', this.boundPaytableKeydown);
+	}
+	hidePaytableModal(): void {
+		this.paytableModal.classList.add('hidden');
+		this.paytableBtn.setAttribute('aria-expanded', 'false');
+		if (this.boundPaytableKeydown) {
+			this.paytableModal.removeEventListener('keydown', this.boundPaytableKeydown);
+			this.boundPaytableKeydown = null;
+		}
+		// Restore focus to the trigger so keyboard users don't get stranded.
+		this.paytableFocusBefore?.focus();
+		this.paytableFocusBefore = null;
+	}
+	private paytableFocusables(): HTMLElement[] {
+		return Array.from(
+			this.paytableModal.querySelectorAll<HTMLElement>('button, [tabindex]:not([tabindex="-1"])'),
+		).filter((el) => !el.hasAttribute('disabled'));
+	}
+	private onPaytableKeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			this.hidePaytableModal();
+			return;
+		}
+		if (e.key !== 'Tab') return;
+		const focusable = this.paytableFocusables();
 		if (focusable.length === 0) return;
 		const first = focusable[0];
 		const last = focusable[focusable.length - 1];
@@ -251,10 +315,15 @@ export class KenoUIRenderer {
 			tbody.appendChild(tr);
 		}
 		table.appendChild(tbody);
+		// Sidebar table (always visible) + modal table (shown on demand). The
+		// clone keeps them in sync when the spot count changes while the modal
+		// is open.
 		this.paytableBody.replaceChildren(table);
+		this.paytableModalBody.replaceChildren(table.cloneNode(true));
 	}
 	clearPaytable(): void {
 		this.paytableBody.replaceChildren();
+		this.paytableModalBody.replaceChildren();
 	}
 }
 

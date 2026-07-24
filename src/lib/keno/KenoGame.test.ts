@@ -24,6 +24,20 @@ describe('KenoGame setters (buildError, no toast)', () => {
 		expect(() => g.setBet(Number.NaN)).toThrow();
 		expect(errors).toEqual([]);
 	});
+	test('setBet rejects fractional wagers with INVALID_BET (no silent flooring)', () => {
+		const errors: string[] = [];
+		const g = new KenoGame(1000, {}, { onError: (e) => errors.push(e.code) });
+		let thrown: unknown;
+		try {
+			g.setBet(1.5);
+		} catch (error) {
+			thrown = error;
+		}
+		expect(code(thrown)).toBe('INVALID_BET');
+		expect(errors).toEqual([]); // NO toast
+		// Bet state must not have been mutated by the rejected call.
+		expect(g.getBet()).toBe(MIN_BET);
+	});
 	test('setBet accepts valid bets', () => {
 		const g = new KenoGame(1000);
 		g.setBet(3);

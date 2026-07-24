@@ -76,9 +76,21 @@ export class KenoSyncOutbox {
 	// Enqueue one receipt and drain the queue serially to completion.
 	async enqueueAndDrain(receipt: PendingReceipt): Promise<void> {
 		this.queue.push(receipt);
-		this.deps.persist(this.queue);
+		this.persistBestEffort();
 		if (this.draining) return; // an in-flight drain will pick it up
 		await this.drain();
+	}
+
+	// Persistence is best-effort (crash recovery only). The in-memory queue is
+	// the drain source of truth — a thrown persist (e.g. localStorage full or
+	// blocked) must NOT abort the drain, or the chip delta is never sent and is
+	// not durable. Log and continue; the next successful persist re-syncs state.
+	private persistBestEffort(): void {
+		try {
+			this.deps.persist(this.queue);
+		} catch (err) {
+			console.error('keno: outbox persist failed (best-effort)', err);
+		}
 	}
 
 	private async drain(): Promise<number> {
@@ -163,7 +175,7 @@ export class KenoSyncOutbox {
 				}
 				this.queue[0] = { ...receipt, previousBalance: serverBalance };
 				this.deps.setServerSyncedBalance(serverBalance);
-				this.deps.persist(this.queue);
+				this.persistBestEffort();
 				continue;
 			}
 			if (res.status === 409 && code === 'MP_ESCROW_ACTIVE') {
@@ -221,7 +233,7 @@ export class KenoSyncOutbox {
 
 	private dropHead(): void {
 		this.queue.shift();
-		this.deps.persist(this.queue);
+		this.persistBestEffort();
 	}
 
 	private async post(receipt: PendingReceipt): Promise<FetchResponse | 'NETWORK_ERROR'> {

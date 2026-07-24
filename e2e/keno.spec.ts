@@ -96,6 +96,19 @@ test.describe('Keno game', () => {
 		await expect(body).toContainText('×5000');
 	});
 
+	test('paytable modal opens and closes with the selected spot count', async ({ page }) => {
+		for (let n = 1; n <= 7; n++) await page.locator(`button.keno-cell[data-number="${n}"]`).click();
+		const modal = page.getByTestId('paytable-modal');
+		await expect(modal).toHaveClass(/hidden/);
+		await page.getByTestId('btn-paytable').click();
+		await expect(modal).not.toHaveClass(/hidden/);
+		const modalBody = page.getByTestId('paytable-modal-body');
+		await expect(modalBody).toContainText('Catch 7');
+		await expect(modalBody).toContainText('×5000');
+		await page.getByTestId('btn-paytable-close').click();
+		await expect(modal).toHaveClass(/hidden/);
+	});
+
 	test('controlled draw resolves a deterministic non-winning result', async ({ page }) => {
 		await useCryptoBytes(
 			page,

@@ -1,4 +1,6 @@
 [test]
+preload = ["./test/setup.ts"]
+
 # E2E specs are Playwright-only and import @playwright/test, which fails to load
 # under `bun test`. The `test` script already scopes to `src/`, but this keeps
 # bare `bun test` from reporting spurious load failures in e2e/**.
@@ -13,4 +15,5 @@ coveragePathIgnorePatterns = [
 	"src/lib/e2e-auth-bootstrap.test.ts",
 	"src/lib/bootstrap-secret-header.test.ts",
 	"e2e/bootstrap-auth.ts",
+	"test/setup.ts",
 ]

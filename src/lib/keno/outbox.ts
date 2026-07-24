@@ -48,6 +48,11 @@ const DEFAULT_ESCROW_RETRY_MS = 2000;
 export class KenoSyncOutbox {
 	private queue: PendingReceipt[];
 	private draining = false;
+	// Delta applied to the display by game.draw() but not yet enqueued as a
+	// receipt. Included in reconcile() so a persisted receipt's 200 firing
+	// during the reveal animation doesn't briefly overwrite the live draw's
+	// delta. Cleared by enqueueAndDrain() (the receipt is then in the queue).
+	private pendingDelta = 0;
 	private readonly deps: OutboxDeps;
 	private readonly maxRebases: number;
 	private readonly maxNetworkRetries: number;
@@ -72,6 +77,14 @@ export class KenoSyncOutbox {
 		return this.drain();
 	}
 
+	// Track a delta applied to the display by game.draw() but not yet
+	// enqueued as a receipt. reconcile() includes it so a persisted receipt's
+	// 200 firing during the reveal animation doesn't briefly lose the live
+	// draw's delta. Cleared by enqueueAndDrain() once the receipt is queued.
+	setPendingDelta(delta: number): void {
+		this.pendingDelta = delta;
+	}
+
 	// Reconcile the display to serverBalance + sum(unsettled queued deltas).
 	// Called by the client after construction to apply persisted receipts'
 	// deltas to the display before the drain completes, and internally after
@@ -83,6 +96,9 @@ export class KenoSyncOutbox {
 
 	// Enqueue one receipt and drain the queue serially to completion.
 	async enqueueAndDrain(receipt: PendingReceipt): Promise<void> {
+		// The receipt's delta is now in the queue — clear the pending delta
+		// so reconcile() doesn't double-count it (queue + pendingDelta).
+		this.pendingDelta = 0;
 		this.queue.push(receipt);
 		this.persistBestEffort();
 		if (this.draining) return; // an in-flight drain will pick it up
@@ -255,7 +271,7 @@ export class KenoSyncOutbox {
 	private reconcile(serverBalance: number): void {
 		this.deps.setServerSyncedBalance(serverBalance);
 		const unsettled = this.queue.reduce((sum, r) => sum + r.delta, 0);
-		this.deps.setGameBalance(serverBalance + unsettled);
+		this.deps.setGameBalance(serverBalance + unsettled + this.pendingDelta);
 	}
 
 	private async post(receipt: PendingReceipt): Promise<FetchResponse | 'NETWORK_ERROR'> {

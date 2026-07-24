@@ -110,7 +110,8 @@ function installFetch(responses: (MockResponse | Promise<MockResponse>)[]): { ca
 	let idx = 0;
 	const fetchImpl = async (url: string, init: RequestInit) => {
 		calls.push({ url, body: JSON.parse(init.body as string) });
-		const entry = responses[idx];
+		const entry =
+			idx < responses.length ? responses[idx] : { status: 200, body: { balance: 1000 } };
 		idx++;
 		const r = entry instanceof Promise ? await entry : (entry as MockResponse);
 		return makeRes(r);

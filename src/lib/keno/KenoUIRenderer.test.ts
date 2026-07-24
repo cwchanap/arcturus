@@ -70,6 +70,9 @@ function makeRoot(): HTMLElement {
 		<button data-testid="btn-clear">Clear</button>
 		<button data-testid="btn-repeat">Repeat</button>
 		<button data-testid="btn-draw" disabled>Draw</button>
+		<div data-testid="sync-paused-banner" class="hidden">
+			<button data-testid="btn-retry-sync">Retry Sync</button>
+		</div>
 		<div data-testid="recent-tickets"></div>
 		<div data-testid="paytable-body"></div>
 		<span data-chip-balance></span>

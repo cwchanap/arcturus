@@ -175,6 +175,9 @@ function makeKenoRoot(opts: { guestMode?: string; initialBalance?: string } = {}
 		<button id="btn-clear" data-testid="btn-clear">Clear</button>
 		<button id="btn-repeat" data-testid="btn-repeat">Repeat</button>
 		<button id="btn-draw" data-testid="btn-draw" disabled>Draw</button>
+		<div id="sync-paused-banner" data-testid="sync-paused-banner" class="hidden">
+			<button id="btn-retry-sync" data-testid="btn-retry-sync">Retry Sync</button>
+		</div>
 		<div id="recent-tickets" data-testid="recent-tickets"></div>
 		<div id="paytable-body" data-testid="paytable-body"></div>
 		<button id="btn-settings" data-testid="btn-settings">Settings</button>
@@ -415,9 +418,11 @@ describe('kenoClient sync state machine', () => {
 			expect(drawBtn.disabled).toBe(false);
 		});
 
-		test('draw re-enables on stall (network retries exhausted) using server balance', async () => {
-			// Drain pauses (network error exhausts retries). Gameplay re-enables
-			// with the last known serverSyncedBalance (no persisted deltas applied).
+		test('draw stays disabled on stall (network retries exhausted) — sync-paused state', async () => {
+			// Drain pauses (network error exhausts retries). Receipts remain
+			// queued — gameplay stays gated and a sync-paused banner appears
+			// with a retry button. Re-enabling would let the user spend chips
+			// committed to an unresolved pending loss.
 			localStorage.setItem(
 				OUTBOX_KEY,
 				JSON.stringify([makeReceipt({ syncId: 's-stall', delta: 50 })]),
@@ -432,8 +437,39 @@ describe('kenoClient sync state machine', () => {
 			const drawBtn = document.getElementById('btn-draw') as HTMLButtonElement;
 			expect(drawBtn.disabled).toBe(true); // gated during drain
 			await flush(10); // retries exhaust, drain pauses
-			// Re-enabled after stall — user can still play.
+			// Still gated — receipts remain, sync-paused banner visible.
+			expect(drawBtn.disabled).toBe(true);
+			const banner = document.getElementById('sync-paused-banner') as HTMLElement;
+			expect(banner.classList.contains('hidden')).toBe(false);
+		});
+
+		test('retry sync re-drains and re-enables gameplay when network recovers', async () => {
+			// Stall on network error, then retry with a working fetch → drain
+			// completes, banner hides, draw re-enables.
+			localStorage.setItem(
+				OUTBOX_KEY,
+				JSON.stringify([makeReceipt({ syncId: 's-stall', delta: 50 })]),
+			);
+			let fetchDown = true;
+			const calls: FetchCall[] = [];
+			globalThis.fetch = (async (url: string, init: RequestInit) => {
+				calls.push({ url, body: JSON.parse(init.body as string) });
+				if (fetchDown) throw new Error('network down');
+				return makeRes({ status: 200, body: { balance: 1050 } });
+			}) as typeof fetch;
+			initKenoClient();
+			clickQuickPick();
+			await flush(10); // retries exhaust, drain pauses
+			const drawBtn = document.getElementById('btn-draw') as HTMLButtonElement;
+			expect(drawBtn.disabled).toBe(true); // still gated
+			// Network recovers — click retry.
+			fetchDown = false;
+			document.getElementById('btn-retry-sync')!.click();
+			await flush(5);
+			// Drain completes → banner hidden, draw enabled.
 			expect(drawBtn.disabled).toBe(false);
+			const banner = document.getElementById('sync-paused-banner') as HTMLElement;
+			expect(banner.classList.contains('hidden')).toBe(true);
 		});
 	});
 

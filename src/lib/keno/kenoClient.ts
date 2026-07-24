@@ -242,22 +242,43 @@ export function initKenoClient(): void {
 	// which may already include committed persisted receipts. Adding persisted
 	// deltas on top double-counts them. The drain's per-200 reconcile handles
 	// the display after each receipt is classified (committed or newly applied).
-	// Gameplay is gated until the drain completes or pauses (network stall):
-	// on stall, re-enable with the last known serverSyncedBalance (conservative
-	// — may be temporarily low if a receipt is uncommitted, but never inflated).
+	// Gameplay is gated until the drain completes AND the outbox is empty.
+	// If the drain stalls (network exhaustion, MP escrow, 401/403), receipts
+	// remain queued — keep gameplay disabled and show a persistent sync-paused
+	// state with a retry action. Re-enabling while a pending loss is
+	// uncommitted would let the user spend chips already debited by the
+	// unresolved receipt (server balance hasn't been debited yet, so the
+	// display is inflated relative to truly available chips).
 	if (outbox) {
 		if (outbox.hasPending()) persistedDrainInProgress = true;
 		const finishDrain = () => {
-			persistedDrainInProgress = false;
-			renderer.renderCanDraw(canDrawNow());
+			if (outbox.hasPending()) {
+				// Receipts remain — drain stalled. Keep gameplay gated and
+				// surface a persistent sync-paused state with retry.
+				renderer.showSyncPaused();
+				renderer.setStatus('Chip sync paused — retry to reconnect.');
+			} else {
+				persistedDrainInProgress = false;
+				renderer.hideSyncPaused();
+				renderer.renderCanDraw(canDrawNow());
+			}
 		};
-		outbox
-			.drainPersisted()
-			.then(finishDrain)
-			.catch((err) => {
-				finishDrain();
-				console.error('keno: resume drain failed', err);
-			});
+		const startDrain = () => {
+			outbox
+				.drainPersisted()
+				.then(finishDrain)
+				.catch((err) => {
+					finishDrain();
+					console.error('keno: resume drain failed', err);
+				});
+		};
+		startDrain();
+		// Retry: re-attempt draining persisted receipts after a stall.
+		renderer.getRetrySyncButton().addEventListener('click', () => {
+			if (!outbox.hasPending()) return;
+			renderer.setStatus('Retrying sync…');
+			startDrain();
+		});
 	}
 
 	// Initial render

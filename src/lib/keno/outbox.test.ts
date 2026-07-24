@@ -189,6 +189,81 @@ describe('KenoSyncOutbox terminal 4xx (drop, no loop)', () => {
 	});
 });
 
+describe('KenoSyncOutbox auth failure (401/403: retain queue, pause, surface)', () => {
+	test('401 retains the receipt at head, pauses drain, calls onAuthRequired', async () => {
+		const { fetchImpl, calls } = makeFetch([
+			{ status: 401, body: { error: 'UNAUTHORIZED', message: 'Authentication required' } },
+		]);
+		let persisted: PendingReceipt[] = [receipt('s-auth', 1000, 100)];
+		let authRequired = false;
+		let hardError: string | undefined = undefined;
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: () => {},
+			onHardError: (code) => (hardError = code),
+			onToast: () => {},
+			onAuthRequired: () => (authRequired = true),
+		});
+		const drained = await ob.drainPersisted();
+		expect(calls).toHaveLength(1); // one attempt, then paused
+		expect(drained).toBe(0); // nothing consumed — paused, not dropped
+		expect(authRequired).toBe(true);
+		expect(hardError).toBeUndefined(); // NOT a terminal hard error
+		// Receipt retained in the queue (not dropped) for retry after re-auth
+		expect(persisted).toHaveLength(1);
+		expect(persisted[0].syncId).toBe('s-auth');
+	});
+
+	test('403 retains the receipt at head, pauses drain, calls onAuthRequired', async () => {
+		const { fetchImpl } = makeFetch([{ status: 403, body: { error: 'FORBIDDEN' } }]);
+		let persisted: PendingReceipt[] = [receipt('s-forbidden', 1000, -5)];
+		let authRequired = false;
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+			onAuthRequired: () => (authRequired = true),
+		});
+		await ob.drainPersisted();
+		expect(authRequired).toBe(true);
+		expect(persisted).toHaveLength(1); // retained
+	});
+
+	test('after 401 pause, a subsequent drainPersisted retries the retained receipt', async () => {
+		const { fetchImpl, calls } = makeFetch([
+			{ status: 401, body: { error: 'UNAUTHORIZED' } },
+			{ status: 200, body: { balance: 1100 } },
+		]);
+		let persisted: PendingReceipt[] = [receipt('s-retry', 1000, 100)];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: () => {},
+			onHardError: () => {},
+			onToast: () => {},
+			onAuthRequired: () => {},
+		});
+		await ob.drainPersisted(); // 401 → pause
+		expect(calls).toHaveLength(1);
+		// Simulate auth restoration — retry
+		await ob.drainPersisted();
+		expect(calls).toHaveLength(2);
+		expect(persisted).toEqual([]); // drained successfully
+	});
+});
+
 describe('KenoSyncOutbox network failure (leave at head, retry full payload)', () => {
 	test('does NOT adopt local balance; retries identical payload', async () => {
 		let attempt = 0;

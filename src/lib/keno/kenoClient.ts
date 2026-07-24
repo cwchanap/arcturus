@@ -37,6 +37,39 @@ function outboxKey(clientUserId: string, tabId: string): string {
 	return `arcturus:keno:outbox:${clientUserId}:${tabId}`;
 }
 
+// Heartbeat: each tab writes a timestamp periodically so other tabs can tell
+// whether it's still live before absorbing its outbox key. Without this, Tab B
+// can absorb Tab A's outbox while Tab A is still active — if Tab A enqueues a
+// new receipt after Tab B's scan but before Tab B deletes the key, that receipt
+// is lost (item 3 race). A tab is "live" if it heartbeated within STALE_MS.
+const HEARTBEAT_INTERVAL_MS = 5000;
+const HEARTBEAT_STALE_MS = 15000; // 3x interval — tolerates a missed beat
+
+function heartbeatKey(clientUserId: string, tabId: string): string {
+	return `arcturus:keno:heartbeat:${clientUserId}:${tabId}`;
+}
+
+function isTabLive(clientUserId: string, tabId: string): boolean {
+	try {
+		const raw = localStorage.getItem(heartbeatKey(clientUserId, tabId));
+		if (!raw) return false;
+		const ts = Number(raw);
+		return Number.isFinite(ts) && Date.now() - ts < HEARTBEAT_STALE_MS;
+	} catch {
+		return false;
+	}
+}
+
+function writeHeartbeat(clientUserId: string, tabId: string): void {
+	try {
+		localStorage.setItem(heartbeatKey(clientUserId, tabId), String(Date.now()));
+	} catch {
+		// localStorage may be blocked — heartbeats are best-effort. Without a
+		// heartbeat, other tabs will treat this tab as dead and absorb its
+		// outbox. That's the pre-heartbeat behavior (acceptable, not worse).
+	}
+}
+
 // Crypto-strong syncId (matches DrawManager's use of crypto). Falls back to
 // Math.random only when crypto.randomUUID is unavailable. Dedup makes any
 // collision benign; this is consistency with DrawManager, not a security fix.
@@ -52,6 +85,12 @@ function makeSyncId(): string {
 // tabIds). Orphaned keys are deleted and their receipts merged into this tab's
 // queue so they get drained. The server's chip_sync_receipt PK (userId+syncId)
 // guarantees exact-once even if two live tabs race on the same orphan.
+//
+// HEARTBEAT GUARD: a key belonging to a tab with a recent heartbeat is NOT
+// absorbed or deleted — the tab is still live and may enqueue more receipts
+// after our scan. Only keys from dead/stale tabs (no heartbeat or stale) are
+// absorbed. This closes the item-3 race where Tab B absorbs Tab A's stale
+// snapshot, then Tab A enqueues a new receipt that Tab B's delete drops.
 function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 	const prefix = `arcturus:keno:outbox:${clientUserId}:`;
 	const myKey = outboxKey(clientUserId, tabId);
@@ -70,12 +109,21 @@ function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 			if (key && key.startsWith(prefix)) matchingKeys.push(key);
 		}
 		for (const key of matchingKeys) {
+			if (key !== myKey) {
+				// Check if the owning tab is still live before touching its key.
+				const orphanTabId = key.slice(prefix.length);
+				if (isTabLive(clientUserId, orphanTabId)) {
+					// Live tab — skip entirely. It may enqueue more receipts
+					// after our scan; absorbing a stale copy could lose them.
+					continue;
+				}
+			}
 			try {
 				const raw = localStorage.getItem(key);
 				const parsed = raw ? (JSON.parse(raw) as PendingReceipt[]) : [];
 				merged.push(...parsed);
 				if (key !== myKey) {
-					// Orphan from a closed tab — absorb; delete after the scan.
+					// Orphan from a dead/stale tab — absorb; delete after the scan.
 					orphanKeys.push(key);
 				}
 			} catch {
@@ -110,6 +158,28 @@ export function initKenoClient(): void {
 	const initialBalance = Number(root.dataset.initialBalance ?? '1000');
 	const syncChips = shouldSyncAccountChips({ isGuestMode });
 
+	// Write this tab's heartbeat BEFORE loadOutbox scans so other tabs scanning
+	// concurrently see us as live. Update periodically and clean up on unload.
+	if (syncChips) {
+		writeHeartbeat(clientUserId, tabId);
+		try {
+			const hbInterval = window.setInterval(
+				() => writeHeartbeat(clientUserId, tabId),
+				HEARTBEAT_INTERVAL_MS,
+			);
+			window.addEventListener('beforeunload', () => {
+				window.clearInterval(hbInterval);
+				try {
+					localStorage.removeItem(heartbeatKey(clientUserId, tabId));
+				} catch {
+					/* best-effort */
+				}
+			});
+		} catch {
+			/* window.setInterval may be unavailable in some environments */
+		}
+	}
+
 	const settings = new GameSettingsManager(clientUserId);
 	let serverSyncedBalance = isGuestMode
 		? loadGuestBankroll(GAME_KEY, clientUserId, initialBalance)
@@ -118,24 +188,32 @@ export function initKenoClient(): void {
 	const renderer = new KenoUIRenderer(root);
 	let drawInFlight = false;
 	let lastTicketPicks: number[] = [];
+	// True while persisted receipts are draining on page load. Gameplay is
+	// gated (canDraw returns false) so the user can't draw until each receipt
+	// is classified as committed or newly applied — preventing double-counting
+	// of persisted deltas against the server's current chipBalance.
+	let persistedDrainInProgress = false;
 
 	const game = new KenoGame(serverSyncedBalance, settings.getSettings(), {
 		onBalanceUpdate: (b) => {
 			renderer.renderBalance(b);
-			renderer.renderCanDraw(game.canDraw());
+			renderer.renderCanDraw(canDrawNow());
 			if (isGuestMode) persistGuestBankroll(GAME_KEY, clientUserId, b);
 		},
 		onSelectionChange: (picks) => {
 			renderer.renderPicks(picks);
 			if (picks.length >= MIN_SPOTS) renderer.renderPaytable(picks.length);
 			else renderer.clearPaytable();
-			renderer.renderCanDraw(game.canDraw());
+			renderer.renderCanDraw(canDrawNow());
 		},
 		onError: (e) => toast(e.message),
 		onRoundComplete: () => {
 			/* no-op: settlement happens after the reveal animation */
 		},
 	});
+
+	// Gameplay gate: disabled while persisted receipts drain on page load.
+	const canDrawNow = () => !persistedDrainInProgress && game.canDraw();
 
 	const outbox = syncChips
 		? new KenoSyncOutbox({
@@ -154,26 +232,39 @@ export function initKenoClient(): void {
 				setGameBalance: (b) => game.setBalance(b),
 				onHardError: (code) => toast(`Sync error: ${code}`),
 				onToast: (m) => toast(m),
+				onAuthRequired: () => toast('Sign in required to sync chips. Please re-sign-in.'),
 			})
 		: null;
 
-	// Resume any persisted receipts from a prior tab close.
-	// First reconcile the display to serverSyncedBalance + sum(persisted deltas)
-	// so the user sees their true balance (including pending settlements) before
-	// the drain completes. Then start the drain — every server response (200,
-	// rebase, terminal) re-reconciles internally to keep the display authoritative.
+	// Resume any persisted receipts from a prior tab close. Do NOT pre-apply
+	// persisted deltas to the display — for authenticated users,
+	// serverSyncedBalance already reflects the server's current chipBalance,
+	// which may already include committed persisted receipts. Adding persisted
+	// deltas on top double-counts them. The drain's per-200 reconcile handles
+	// the display after each receipt is classified (committed or newly applied).
+	// Gameplay is gated until the drain completes or pauses (network stall):
+	// on stall, re-enable with the last known serverSyncedBalance (conservative
+	// — may be temporarily low if a receipt is uncommitted, but never inflated).
 	if (outbox) {
-		outbox.reconcileDisplay(serverSyncedBalance);
-		outbox.drainPersisted().catch((err) => {
-			console.error('keno: resume drain failed', err);
-		});
+		if (outbox.hasPending()) persistedDrainInProgress = true;
+		const finishDrain = () => {
+			persistedDrainInProgress = false;
+			renderer.renderCanDraw(canDrawNow());
+		};
+		outbox
+			.drainPersisted()
+			.then(finishDrain)
+			.catch((err) => {
+				finishDrain();
+				console.error('keno: resume drain failed', err);
+			});
 	}
 
 	// Initial render
 	renderer.renderBalance(game.getBalance());
 	renderer.renderBet(game.getBet());
 	renderer.renderPicks(game.getPicks());
-	renderer.renderCanDraw(game.canDraw());
+	renderer.renderCanDraw(canDrawNow());
 	renderer.renderSettingsSpeed(settings.getSettings().animationSpeed);
 
 	// Settings modal
@@ -265,7 +356,7 @@ export function initKenoClient(): void {
 
 	async function commitDraw(): Promise<void> {
 		if (drawInFlight) return;
-		if (!game.canDraw()) return;
+		if (!canDrawNow()) return;
 		drawInFlight = true;
 		renderer.getDrawButton().disabled = true;
 		renderer.setStatus('Drawing…');
@@ -293,25 +384,26 @@ export function initKenoClient(): void {
 			// reveal animation's await, mutating game.getBalance() and inflating the diff.
 			if (outbox) {
 				const delta = result.netDelta;
-				// Push rounds (delta === 0) settle nothing — no balance change to
-				// record. Keno receipts carry no stats (unlike batched games), so
-				// enqueuing a zero-delta receipt only burns a rate-limit slot and
-				// a DB write. serverSyncedBalance is unchanged (correct: the server
-				// balance didn't move either), and pendingDelta is cleared in finally.
-				if (delta !== 0) {
-					const receipt: PendingReceipt = {
-						syncId,
-						previousBalance: serverSyncedBalance,
-						delta,
-						gameType: 'keno',
-						outcome: result.outcome,
-						handCount: 1,
-						biggestWinCandidate: delta > 0 ? delta : undefined,
-					};
-					void outbox.enqueueAndDrain(receipt).catch((err) => {
-						console.error('keno: settlement drain failed', err);
-					});
-				}
+				// Always enqueue a receipt, including push rounds (delta === 0).
+				// The chip endpoint records the round via outcome + handCount
+				// (handsPlayed increments even when wins/losses/net are zero), so
+				// skipping push receipts would lose those rounds from game stats
+				// and any achievements derived from handsPlayed. A zero-delta
+				// receipt doesn't change the balance (the optimistic-lock UPDATE
+				// sets chipBalance to the same value; changes() still matches),
+				// but it does insert the receipt row and upsert game_stats.
+				const receipt: PendingReceipt = {
+					syncId,
+					previousBalance: serverSyncedBalance,
+					delta,
+					gameType: 'keno',
+					outcome: result.outcome,
+					handCount: 1,
+					biggestWinCandidate: delta > 0 ? delta : undefined,
+				};
+				void outbox.enqueueAndDrain(receipt).catch((err) => {
+					console.error('keno: settlement drain failed', err);
+				});
 			} else {
 				// Guest mode: no fetch; serverSyncedBalance tracks the local bankroll.
 				serverSyncedBalance = game.getBalance();
@@ -333,7 +425,7 @@ export function initKenoClient(): void {
 			// so a later reconcile doesn't include a stale pending delta.
 			if (outbox) outbox.setPendingDelta(0);
 			drawInFlight = false;
-			renderer.renderCanDraw(game.canDraw());
+			renderer.renderCanDraw(canDrawNow());
 		}
 	}
 }

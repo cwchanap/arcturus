@@ -33,6 +33,14 @@ export type OutboxDeps = {
 	setGameBalance: (balance: number) => void;
 	onHardError: (code: string) => void;
 	onToast: (message: string) => void;
+	// Called on 401/403 — the session is no longer valid. The queue is retained
+	// (receipt NOT dropped) and the drain pauses so the receipt can be retried
+	// after authentication is restored (e.g. page reload after re-sign-in, or
+	// an explicit resume call). Without this, an expired session during a draw
+	// permanently discards the chip delta — the 401 response carries no
+	// currentBalance, so terminalDrop would delete the receipt without
+	// reconciling the display, losing the settlement.
+	onAuthRequired?: () => void;
 	maxRebases?: number; // default 3
 	maxNetworkRetries?: number; // default 3
 	maxEscrowRetries?: number; // default 3 — bounded retries while MP escrow holds
@@ -68,6 +76,14 @@ export class KenoSyncOutbox {
 		this.maxEscrowRetries = deps.maxEscrowRetries ?? DEFAULT_ESCROW_RETRIES;
 		this.escrowRetryMs = deps.escrowRetryMs ?? DEFAULT_ESCROW_RETRY_MS;
 		this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+	}
+
+	// True if the outbox has receipts loaded from a prior tab close that haven't
+	// been drained yet. The client uses this to gate gameplay only when there
+	// are actually persisted receipts to replay (avoiding a needless gate when
+	// the outbox is empty on a fresh page load).
+	hasPending(): boolean {
+		return this.queue.length > 0;
 	}
 
 	// Resume drain of persisted receipts from a prior tab close.
@@ -240,6 +256,16 @@ export class KenoSyncOutbox {
 				}
 				await this.sleep(500 * networkRetries);
 				continue;
+			}
+			// 401/403 → session expired. The 401 response carries no currentBalance,
+			// so terminalDrop would delete the receipt without reconciling the
+			// display — permanently losing the chip delta. Instead, retain the
+			// receipt at the head, surface an auth-required state, and pause the
+			// drain. The receipt is still persisted; a page reload after re-sign-in
+			// (or an explicit resume) re-drains it.
+			if (res.status === 401 || res.status === 403) {
+				this.deps.onAuthRequired?.();
+				return false; // pause — leave receipt at head, do NOT drop
 			}
 			// Any other 4xx → terminal
 			this.terminalDrop(body, code || `HTTP_${res.status}`);

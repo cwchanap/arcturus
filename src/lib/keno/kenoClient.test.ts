@@ -371,6 +371,72 @@ describe('kenoClient sync state machine', () => {
 		});
 	});
 
+	describe('persisted receipts not double-counted on page load (item 1)', () => {
+		test('display starts at server balance, not server balance + persisted delta', () => {
+			// Server already committed the receipt (balance=1100 includes +100).
+			// The persisted receipt is still in localStorage (tab closed before
+			// dropHead persisted the empty queue). On reload, initialBalance=1100
+			// (from server chipBalance). The display must NOT add the persisted
+			// delta again (1100 + 100 = 1200 would be double-counted).
+			localStorage.setItem(
+				OUTBOX_KEY,
+				JSON.stringify([makeReceipt({ syncId: 's-committed', previousBalance: 1000, delta: 100 })]),
+			);
+			root.remove();
+			root = makeKenoRoot({ initialBalance: '1100' });
+			installFetch([{ status: 200, body: { balance: 1100 } }]);
+
+			initKenoClient();
+			// Synchronously after init — drain hasn't completed yet.
+			// Display must be 1100 (server balance), NOT 1200 (double-counted).
+			const balanceEl = document.querySelector<HTMLElement>('[data-testid="chip-balance"]')!;
+			expect(balanceEl.textContent).toBe('1,100');
+		});
+
+		test('draw button is disabled while persisted receipts drain, re-enabled after', async () => {
+			localStorage.setItem(
+				OUTBOX_KEY,
+				JSON.stringify([makeReceipt({ syncId: 's-drain-gate', delta: 50 })]),
+			);
+			const d1 = deferred();
+			installFetch([d1.promise]);
+			initKenoClient();
+			// Select spots so canDraw would be true without the gate.
+			clickQuickPick();
+			// Draw button must be disabled while drain is in progress.
+			const drawBtn = document.getElementById('btn-draw') as HTMLButtonElement;
+			expect(drawBtn.disabled).toBe(true);
+			// Clicking draw while gated does nothing.
+			clickDraw();
+			// Resolve the drain → 200 → drain completes → gate lifts.
+			d1.resolve({ status: 200, body: { balance: 1050 } });
+			await flush(5);
+			// After drain, draw button is enabled (picks selected, balance > bet).
+			expect(drawBtn.disabled).toBe(false);
+		});
+
+		test('draw re-enables on stall (network retries exhausted) using server balance', async () => {
+			// Drain pauses (network error exhausts retries). Gameplay re-enables
+			// with the last known serverSyncedBalance (no persisted deltas applied).
+			localStorage.setItem(
+				OUTBOX_KEY,
+				JSON.stringify([makeReceipt({ syncId: 's-stall', delta: 50 })]),
+			);
+			const calls: FetchCall[] = [];
+			globalThis.fetch = (async (url: string, init: RequestInit) => {
+				calls.push({ url, body: JSON.parse(init.body as string) });
+				throw new Error('network down');
+			}) as typeof fetch;
+			initKenoClient();
+			clickQuickPick();
+			const drawBtn = document.getElementById('btn-draw') as HTMLButtonElement;
+			expect(drawBtn.disabled).toBe(true); // gated during drain
+			await flush(10); // retries exhaust, drain pauses
+			// Re-enabled after stall — user can still play.
+			expect(drawBtn.disabled).toBe(false);
+		});
+	});
+
 	describe('(f) persisted outbox re-drains on load', () => {
 		test('resumed receipt is synced via drainPersisted on init', async () => {
 			localStorage.setItem(
@@ -429,6 +495,72 @@ describe('kenoClient sync state machine', () => {
 		});
 	});
 
+	describe('(f4) live tabs are not orphaned (item 3: heartbeats)', () => {
+		test('outbox key with a recent heartbeat is NOT absorbed or deleted', async () => {
+			// A live tab has a recent heartbeat. Its outbox key must be left
+			// intact — absorbing it could lose receipts the live tab enqueues
+			// after our scan (the race in item 3).
+			const liveTabKey = `arcturus:keno:outbox:${USER_ID}:live-tab`;
+			const liveHeartbeatKey = `arcturus:keno:heartbeat:${USER_ID}:live-tab`;
+			localStorage.setItem(
+				liveTabKey,
+				JSON.stringify([makeReceipt({ syncId: 's-live-tab', delta: 25 })]),
+			);
+			localStorage.setItem(liveHeartbeatKey, String(Date.now())); // fresh heartbeat
+			const { calls } = installFetch([{ status: 200, body: { balance: 1000 } }]);
+
+			initKenoClient();
+			await flush(5);
+
+			// Live tab's receipt was NOT drained (not absorbed).
+			expect(calls).toHaveLength(0);
+			// Live tab's key still exists (not deleted).
+			expect(localStorage.getItem(liveTabKey)).not.toBeNull();
+		});
+
+		test('outbox key with a stale heartbeat IS absorbed and deleted', async () => {
+			// A dead tab has a stale heartbeat (or none). Its outbox key is
+			// safe to absorb — the tab is gone and won't enqueue more receipts.
+			const deadTabKey = `arcturus:keno:outbox:${USER_ID}:dead-tab-2`;
+			const deadHeartbeatKey = `arcturus:keno:heartbeat:${USER_ID}:dead-tab-2`;
+			localStorage.setItem(
+				deadTabKey,
+				JSON.stringify([makeReceipt({ syncId: 's-dead-tab-2', delta: 25 })]),
+			);
+			// Heartbeat 60s ago — well beyond the stale threshold.
+			localStorage.setItem(deadHeartbeatKey, String(Date.now() - 60000));
+			const { calls } = installFetch([{ status: 200, body: { balance: 1025 } }]);
+
+			initKenoClient();
+			await flush(5);
+
+			// Dead tab's receipt WAS drained (absorbed).
+			expect(calls).toHaveLength(1);
+			expect(calls[0].body.syncId).toBe('s-dead-tab-2');
+			// Dead tab's key deleted.
+			expect(localStorage.getItem(deadTabKey)).toBeNull();
+		});
+
+		test('outbox key with no heartbeat IS absorbed (no heartbeat = dead)', async () => {
+			// No heartbeat at all — the tab never heartbeated (e.g. crashed
+			// before the first heartbeat, or old version without heartbeats).
+			// Treated as dead/stale and absorbed.
+			const noHeartTabKey = `arcturus:keno:outbox:${USER_ID}:no-heart-tab`;
+			localStorage.setItem(
+				noHeartTabKey,
+				JSON.stringify([makeReceipt({ syncId: 's-no-heart', delta: 10 })]),
+			);
+			const { calls } = installFetch([{ status: 200, body: { balance: 1010 } }]);
+
+			initKenoClient();
+			await flush(5);
+
+			expect(calls).toHaveLength(1);
+			expect(calls[0].body.syncId).toBe('s-no-heart');
+			expect(localStorage.getItem(noHeartTabKey)).toBeNull();
+		});
+	});
+
 	describe('(g) guest mode skips all fetches', () => {
 		test('no fetch calls; balance persists to localStorage', async () => {
 			root.remove();
@@ -454,55 +586,65 @@ describe('kenoClient sync state machine', () => {
 
 	describe('chip-race regression: result.netDelta not game.getBalance() - balanceBefore', () => {
 		test('concurrent setGameBalance during reveal does not inflate delta', async () => {
-			// Pre-populate a resumed receipt that, when synced, calls setGameBalance(1500)
-			// during the live draw's reveal animation await.
-			localStorage.setItem(
-				OUTBOX_KEY,
-				JSON.stringify([makeReceipt({ syncId: 's-old', previousBalance: 1000, delta: 500 })]),
-			);
-
-			// Fetch #1 (resumed receipt) blocks on a deferred so it resolves
-			// DURING the live draw's await sleep(). Fetch #2 (live draw) returns 200.
+			// Two live draws: draw #1's settlement 200 fires during draw #2's
+			// reveal animation await, calling setGameBalance mid-reveal. The
+			// live draw's delta must be result.netDelta (snapshotted at draw
+			// time), NOT game.getBalance() - balanceBefore (which the concurrent
+			// setGameBalance would inflate).
+			//
+			// (Previously this used a persisted receipt for draw #1, but the
+			// item-1 gate now correctly blocks gameplay while persisted receipts
+			// drain. The same race exists between two live draws: the outbox
+			// drain is independent of drawInFlight, so draw #1's 200 can fire
+			// during draw #2's reveal animation.)
 			const d1 = deferred();
 			const { calls } = installFetch([
-				d1.promise, // fetch #1: resumed receipt (blocked)
-				{ status: 200, body: { balance: 1500 } }, // fetch #2: live draw
+				d1.promise, // fetch #1: draw #1 settlement (blocked)
+				{ status: 200, body: { balance: 1500 } }, // fetch #2: draw #2 settlement
 			]);
 
 			initKenoClient();
-			await flush(); // drainPersisted starts, fetch #1 pending (d1)
+			await flush(); // no persisted receipts → gate not active
 
-			// Live draw
+			// Draw #1
 			clickQuickPick();
 			clickDraw();
+			await flush(); // animation completes, receipt #1 enqueued, fetch #1 pending (d1)
+
+			// Draw #2 (same picks — drawInFlight cleared after #1's commitDraw)
+			clickDraw();
 			// commitDraw: game.draw() runs, then await sleep(0) yields.
-			// Resolve the resumed receipt's fetch → 200 → setGameBalance(1500)
-			// fires during the animation await.
+			// Resolve draw #1's fetch → 200 → setGameBalance(1500 + pendingDelta)
+			// fires during draw #2's animation await.
 			d1.resolve({ status: 200, body: { balance: 1500 } });
 			await flush(5);
 
-			// The resumed receipt's delta is 500 (pre-populated).
-			expect(calls[0].body.delta).toBe(500);
+			// Draw #1's delta was sent (whatever the RNG produced).
+			expect(calls).toHaveLength(2);
 
-			// The live draw's delta must be result.netDelta (payout - bet),
-			// NOT game.getBalance() - balanceBefore = 1500 - 1000 = 500.
-			// Read the actual netDelta from the recent-tickets DOM.
+			// Draw #2's delta must be result.netDelta (payout - bet),
+			// NOT game.getBalance() - balanceBefore (inflated by the 1500 reconcile).
+			// Read the actual netDelta from the recent-tickets DOM (last ticket = draw #2).
 			const expectedNetDelta = parseRecentNetDelta();
 			expect(calls[1].body.delta).toBe(expectedNetDelta);
 
 			// The inflation bug would have produced delta = 500 (the reconciliation
-			// amount). Assert it's NOT 500 — proving the fix uses netDelta.
+			// amount: 1500 - 1000). Assert it's NOT 500 — proving the fix uses netDelta.
 			// (With bet=1, no paytable multiplier produces netDelta=500, since
 			// that would require multiplier=501, which doesn't exist.)
 			expect(calls[1].body.delta).not.toBe(500);
 		});
 	});
 
-	describe('push rounds (delta === 0) skip the outbox', () => {
-		test('a push draw enqueues no receipt — no fetch, no rate-limit slot burned', async () => {
+	describe('push rounds (delta === 0) submit a zero-delta receipt for stats', () => {
+		test('a push draw enqueues a receipt with delta=0 and outcome=push', async () => {
 			// 4-spot catch-2 = multiplier 1 → payout = bet → netDelta = 0 (push).
 			// Stub DrawManager.draw to return a deterministic draw with exactly 2
 			// hits on picks [1,2,3,4] so the round is a push regardless of RNG.
+			// Push receipts carry stats (handsPlayed increments) even though the
+			// balance doesn't change — the chip endpoint records the round via
+			// outcome + handCount, so skipping the receipt loses the round from
+			// game statistics and any achievements derived from handsPlayed.
 			const drawn = [1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
 			const origDraw = DrawManager.prototype.draw;
 			DrawManager.prototype.draw = () => drawn;
@@ -518,9 +660,12 @@ describe('kenoClient sync state machine', () => {
 				}
 				clickDraw();
 				await flush(5);
-				// Push → no receipt enqueued → no fetch call. (drainPersisted on an
-				// empty outbox also makes no calls, so calls stays at 0.)
-				expect(calls).toHaveLength(0);
+				// Push → receipt enqueued with delta=0, outcome='push' for stats.
+				expect(calls).toHaveLength(1);
+				expect(calls[0].body.delta).toBe(0);
+				expect(calls[0].body.outcome).toBe('push');
+				expect(calls[0].body.handCount).toBe(1);
+				expect(calls[0].body.biggestWinCandidate).toBeUndefined();
 				// Sanity: the round was actually a push (netDelta 0 in recent tickets).
 				expect(parseRecentNetDelta()).toBe(0);
 			} finally {

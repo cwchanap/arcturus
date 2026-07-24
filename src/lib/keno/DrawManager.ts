@@ -6,7 +6,7 @@ import type { Rng } from './selection';
 // Uses rejection sampling on the 8-bit byte to avoid modulo skew (byte % n is biased
 // for n not a power of 2). Falls back to Math.random only if crypto is unavailable.
 function cryptoUniformInt(n: number): number {
-	const max = Math.floor(0xff / n) * n; // largest multiple of n <= 255
+	const max = Math.floor(0x100 / n) * n; // largest multiple of n <= 256 (byte range is 0–255)
 	const buf = new Uint8Array(1);
 	const cryptoObj = globalThis.crypto;
 	if (!cryptoObj?.getRandomValues) return Math.floor(Math.random() * n);

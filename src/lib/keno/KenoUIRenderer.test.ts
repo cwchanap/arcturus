@@ -79,6 +79,7 @@ function makeRoot(): HTMLElement {
 			<button class="speed-opt" data-speed="slow">Slow</button>
 			<button class="speed-opt" data-speed="normal">Normal</button>
 			<button class="speed-opt" data-speed="fast">Fast</button>
+			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
 	`;
 	document.body.appendChild(root);
@@ -339,6 +340,13 @@ describe('KenoUIRenderer', () => {
 			const body = root.querySelector<HTMLElement>('[data-testid="paytable-body"]')!;
 			expect(body.innerHTML).toContain('<table');
 			expect(body.innerHTML).not.toContain('Catch');
+		});
+		test('clearPaytable empties the paytable body', () => {
+			renderer.renderPaytable(5);
+			const body = root.querySelector<HTMLElement>('[data-testid="paytable-body"]')!;
+			expect(body.innerHTML).toContain('<table');
+			renderer.clearPaytable();
+			expect(body.innerHTML).toBe('');
 		});
 	});
 });

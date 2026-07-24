@@ -43,13 +43,13 @@ export type AnimationSpeed = 'slow' | 'normal' | 'fast';
 
 export interface KenoSettings {
 	animationSpeed: AnimationSpeed;
+	soundEnabled: boolean;
 }
 
 export interface KenoGameState {
 	balance: number;
 	bet: number;
 	picks: number[];
-	lastDraw: DrawResult | null;
 	history: DrawResult[];
 	settings: KenoSettings;
 }

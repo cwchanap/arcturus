@@ -40,7 +40,6 @@ export class KenoGame {
 			balance: Math.max(0, Math.floor(initialBalance)),
 			bet: MIN_BET,
 			picks: [],
-			lastDraw: null,
 			history: [],
 			settings: { ...DEFAULT_SETTINGS, ...settings },
 		};
@@ -159,7 +158,6 @@ export class KenoGame {
 			timestamp: Date.now(),
 		};
 
-		this.state.lastDraw = result;
 		this.state.history.unshift(result);
 		if (this.state.history.length > MAX_HISTORY) this.state.history.length = MAX_HISTORY;
 		this.events.onRoundComplete?.({

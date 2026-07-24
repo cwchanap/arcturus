@@ -12,17 +12,61 @@ import { KenoSyncOutbox } from './outbox';
 import type { PendingReceipt } from './outbox';
 
 const GAME_KEY = 'keno';
+const TAB_ID_KEY = 'arcturus:keno:tab-id';
 
-function outboxKey(clientUserId: string): string {
-	return `arcturus:keno:outbox:${clientUserId}`;
-}
-function loadOutbox(clientUserId: string): PendingReceipt[] {
+// Per-tab outbox key. sessionStorage is scoped to a single tab and cleared on
+// tab close, so each tab gets a stable uuid for its lifetime and tabs never
+// share one outbox key (which would let Tab B's persist clobber Tab A's in-flight
+// receipt). Orphaned keys from closed tabs are recovered by loadOutbox's scan.
+function getTabId(): string {
 	try {
-		const raw = localStorage.getItem(outboxKey(clientUserId));
-		return raw ? (JSON.parse(raw) as PendingReceipt[]) : [];
+		const existing = sessionStorage.getItem(TAB_ID_KEY);
+		if (existing) return existing;
+		const id =
+			typeof crypto !== 'undefined' && crypto.randomUUID
+				? crypto.randomUUID()
+				: `tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+		sessionStorage.setItem(TAB_ID_KEY, id);
+		return id;
+	} catch {
+		return 'fallback';
+	}
+}
+
+function outboxKey(clientUserId: string, tabId: string): string {
+	return `arcturus:keno:outbox:${clientUserId}:${tabId}`;
+}
+
+// Load this tab's receipts plus any orphaned receipts from closed tabs (different
+// tabIds). Orphaned keys are deleted and their receipts merged into this tab's
+// queue so they get drained. The server's chip_sync_receipt PK (userId+syncId)
+// guarantees exact-once even if two live tabs race on the same orphan.
+function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
+	const prefix = `arcturus:keno:outbox:${clientUserId}:`;
+	const merged: PendingReceipt[] = [];
+	try {
+		for (let i = 0; i < localStorage.length; i++) {
+			const key = localStorage.key(i);
+			if (!key || !key.startsWith(prefix)) continue;
+			try {
+				const raw = localStorage.getItem(key);
+				const parsed = raw ? (JSON.parse(raw) as PendingReceipt[]) : [];
+				if (key === outboxKey(clientUserId, tabId)) {
+					merged.push(...parsed);
+				} else {
+					// Orphan from a closed tab — absorb and delete.
+					merged.push(...parsed);
+					localStorage.removeItem(key);
+				}
+			} catch {
+				// corrupt entry — remove it
+				if (key) localStorage.removeItem(key);
+			}
+		}
 	} catch {
 		return [];
 	}
+	return merged;
 }
 
 export function initKenoClient(): void {
@@ -31,6 +75,7 @@ export function initKenoClient(): void {
 	if (!root) return;
 
 	const clientUserId = root.dataset.userId ?? 'anonymous';
+	const tabId = getTabId();
 	const isGuestMode = root.dataset.guestMode === 'true';
 	const initialBalance = Number(root.dataset.initialBalance ?? '1000');
 	const syncChips = shouldSyncAccountChips({ isGuestMode });
@@ -53,6 +98,7 @@ export function initKenoClient(): void {
 		onSelectionChange: (picks) => {
 			renderer.renderPicks(picks);
 			if (picks.length >= MIN_SPOTS) renderer.renderPaytable(picks.length);
+			else renderer.clearPaytable();
 			renderer.renderCanDraw(game.canDraw());
 		},
 		onError: (e) => toast(e.message),
@@ -72,8 +118,8 @@ export function initKenoClient(): void {
 					})),
 				endpoint: '/api/chips/update',
 				persist: (receipts) =>
-					localStorage.setItem(outboxKey(clientUserId), JSON.stringify(receipts)),
-				load: () => loadOutbox(clientUserId),
+					localStorage.setItem(outboxKey(clientUserId, tabId), JSON.stringify(receipts)),
+				load: () => loadOutbox(clientUserId, tabId),
 				setServerSyncedBalance: (b) => (serverSyncedBalance = b),
 				setGameBalance: (b) => game.setBalance(b),
 				onHardError: (code) => toast(`Sync error: ${code}`),
@@ -113,6 +159,9 @@ export function initKenoClient(): void {
 			settings.setSetting('animationSpeed', speed);
 			renderer.renderSettingsSpeed(speed);
 		});
+	});
+	renderer.getSoundCheckbox().addEventListener('change', (e) => {
+		settings.setSetting('soundEnabled', (e.target as HTMLInputElement).checked);
 	});
 	// Close modal on overlay click
 	const settingsModal = root.querySelector<HTMLElement>('[data-testid="settings-modal"]');
@@ -219,6 +268,10 @@ export function initKenoClient(): void {
 			if (!(err instanceof Error && (err as Error & { code?: string }).code)) {
 				console.error('keno: commitDraw failed', err);
 			}
+			// Reset the in-flight status line — fail() toasted the error, but the
+			// "Drawing…" label would otherwise stay stuck since the success path
+			// that overwrites it never ran.
+			renderer.setStatus('');
 		} finally {
 			drawInFlight = false;
 			renderer.renderCanDraw(game.canDraw());

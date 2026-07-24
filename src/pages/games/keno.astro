@@ -59,6 +59,8 @@ const clientUserId = gameSession.clientUserId;
 				<div class="felt-table rounded-3xl p-4 sm:p-6 mb-6">
 					<div
 						data-testid="game-status"
+						role="status"
+						aria-live="polite"
 						class="text-center text-[var(--deco-brass)] mb-3 font-semibold"
 					>
 						Pick 1–10 numbers
@@ -204,6 +206,10 @@ const clientUserId = gameSession.clientUserId;
 						data-speed="fast">Fast</button
 					>
 				</div>
+				<label class="flex items-center justify-between py-2 mt-2">
+					<span class="text-sm text-[var(--deco-ivory-dim)]">Sound</span>
+					<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
+				</label>
 			</div>
 		</div>
 		<div

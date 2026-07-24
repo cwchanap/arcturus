@@ -42,6 +42,24 @@ describe('GameSettingsManager', () => {
 		const s = new GameSettingsManager('u_abc', store);
 		expect(s.getSettings()).toEqual(DEFAULT_SETTINGS);
 	});
+	test('persists and reloads soundEnabled', () => {
+		const store = makeStore();
+		const s = new GameSettingsManager('u_abc', store);
+		s.setSetting('soundEnabled', false);
+		const reloaded = new GameSettingsManager('u_abc', store);
+		expect(reloaded.getSetting('soundEnabled')).toBe(false);
+	});
+	test('soundEnabled defaults to true when missing from stored payload', () => {
+		const store = makeStore();
+		store.setItem('arcturus:keno:settings:u_abc', JSON.stringify({ animationSpeed: 'fast' }));
+		const s = new GameSettingsManager('u_abc', store);
+		expect(s.getSetting('soundEnabled')).toBe(true);
+	});
+	test('soundEnabled is namespaced per clientUserId', () => {
+		const store = makeStore();
+		new GameSettingsManager('u_abc', store).setSetting('soundEnabled', false);
+		expect(new GameSettingsManager('u_def', store).getSetting('soundEnabled')).toBe(true);
+	});
 	test('defaultStore returns null when window is undefined (no DOM)', () => {
 		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 		Reflect.deleteProperty(globalThis, 'window');

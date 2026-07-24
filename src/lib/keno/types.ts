@@ -43,7 +43,6 @@ export type AnimationSpeed = 'slow' | 'normal' | 'fast';
 
 export interface KenoSettings {
 	animationSpeed: AnimationSpeed;
-	soundEnabled: boolean;
 }
 
 export interface KenoGameState {

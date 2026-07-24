@@ -12,7 +12,6 @@ export type PendingReceipt = {
 	outcome: KenoOutcome;
 	handCount: 1;
 	biggestWinCandidate: number | undefined;
-	resumed?: boolean; // true for receipts loaded from persistence (prior tab); 200 path reconciles display
 };
 
 export type FetchResponse = {
@@ -58,7 +57,7 @@ export class KenoSyncOutbox {
 
 	constructor(deps: OutboxDeps) {
 		this.deps = deps;
-		this.queue = deps.load().map((r) => ({ ...r, resumed: true }));
+		this.queue = deps.load().map((r) => ({ ...r }));
 		this.maxRebases = deps.maxRebases ?? DEFAULT_REBASES;
 		this.maxNetworkRetries = deps.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
 		this.maxEscrowRetries = deps.maxEscrowRetries ?? DEFAULT_ESCROW_RETRIES;
@@ -71,6 +70,15 @@ export class KenoSyncOutbox {
 	async drainPersisted(): Promise<number> {
 		if (this.draining) return 0;
 		return this.drain();
+	}
+
+	// Reconcile the display to serverBalance + sum(unsettled queued deltas).
+	// Called by the client after construction to apply persisted receipts'
+	// deltas to the display before the drain completes, and internally after
+	// every server response (200, rebase, terminal) to keep the display
+	// authoritative: display = serverSyncedBalance + unsettled optimistic deltas.
+	reconcileDisplay(serverBalance: number): void {
+		this.reconcile(serverBalance);
 	}
 
 	// Enqueue one receipt and drain the queue serially to completion.
@@ -147,12 +155,12 @@ export class KenoSyncOutbox {
 					await this.sleep(500 * networkRetries);
 					continue;
 				}
-				// Resumed receipts (from a prior tab) need their display reconciled —
-				// the current tab's game balance never saw the delta. Live receipts
-				// already updated the display locally at draw time, so we skip them.
-				if (receipt.resumed) this.deps.setGameBalance(balance);
-				this.deps.setServerSyncedBalance(balance);
+				// Drop the settled receipt, then reconcile display to the server's
+				// authoritative balance + any still-unsettled queued deltas. Every
+				// 200 reconciles, so the display is always serverBalance + sum(remaining
+				// queue deltas) — no resumed/live split.
 				this.dropHead();
+				this.reconcile(balance);
 				return true;
 			}
 			const code = str(body, 'error');
@@ -174,8 +182,10 @@ export class KenoSyncOutbox {
 					return true;
 				}
 				this.queue[0] = { ...receipt, previousBalance: serverBalance };
-				this.deps.setServerSyncedBalance(serverBalance);
 				this.persistBestEffort();
+				// Reconcile display to the rebased server balance + pending deltas
+				// (including this receipt's delta, which is still unsettled).
+				this.reconcile(serverBalance);
 				continue;
 			}
 			if (res.status === 409 && code === 'MP_ESCROW_ACTIVE') {
@@ -222,18 +232,30 @@ export class KenoSyncOutbox {
 	}
 
 	private terminalDrop(body: Record<string, unknown>, code: string): void {
-		const cur = body['currentBalance'];
-		if (typeof cur === 'number') {
-			this.deps.setServerSyncedBalance(cur);
-			this.deps.setGameBalance(cur);
-		}
 		this.dropHead();
+		const cur = body['currentBalance'];
+		// Reconcile display to the server's currentBalance + any remaining
+		// queued deltas (later optimistic receipts still pending). Without this,
+		// a terminal drop would overwrite the display with currentBalance and
+		// lose later receipts' deltas that were already applied locally.
+		if (typeof cur === 'number') {
+			this.reconcile(cur);
+		}
 		this.deps.onHardError(code);
 	}
 
 	private dropHead(): void {
 		this.queue.shift();
 		this.persistBestEffort();
+	}
+
+	// Set the authoritative server balance and reconcile the display to
+	// serverBalance + sum(unsettled queued deltas). Called after every server
+	// response that changes the known server balance (200, rebase, terminal).
+	private reconcile(serverBalance: number): void {
+		this.deps.setServerSyncedBalance(serverBalance);
+		const unsettled = this.queue.reduce((sum, r) => sum + r.delta, 0);
+		this.deps.setGameBalance(serverBalance + unsettled);
 	}
 
 	private async post(receipt: PendingReceipt): Promise<FetchResponse | 'NETWORK_ERROR'> {

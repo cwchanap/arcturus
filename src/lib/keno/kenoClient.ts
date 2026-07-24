@@ -43,6 +43,7 @@ function outboxKey(clientUserId: string, tabId: string): string {
 // guarantees exact-once even if two live tabs race on the same orphan.
 function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 	const prefix = `arcturus:keno:outbox:${clientUserId}:`;
+	const myKey = outboxKey(clientUserId, tabId);
 	const merged: PendingReceipt[] = [];
 	const orphanKeys: string[] = [];
 	try {
@@ -62,7 +63,7 @@ function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 				const raw = localStorage.getItem(key);
 				const parsed = raw ? (JSON.parse(raw) as PendingReceipt[]) : [];
 				merged.push(...parsed);
-				if (key !== outboxKey(clientUserId, tabId)) {
+				if (key !== myKey) {
 					// Orphan from a closed tab — absorb; delete after the scan.
 					orphanKeys.push(key);
 				}
@@ -70,6 +71,15 @@ function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 				// corrupt entry — remove it after the scan
 				orphanKeys.push(key);
 			}
+		}
+		// DURABILITY: persist the merged queue to this tab's key BEFORE deleting
+		// orphan source keys. If we delete first and this tab crashes before the
+		// outbox's first persistBestEffort (e.g. network retries exhaust and
+		// sendHead returns false without persisting), the absorbed receipts are
+		// lost permanently — the orphan key is gone and the merged queue lives
+		// only in memory.
+		if (orphanKeys.length > 0) {
+			localStorage.setItem(myKey, JSON.stringify(merged));
 		}
 		for (const key of orphanKeys) localStorage.removeItem(key);
 	} catch {
@@ -137,11 +147,12 @@ export function initKenoClient(): void {
 		: null;
 
 	// Resume any persisted receipts from a prior tab close.
-	// Reconcile is per-receipt inside the outbox: resumed receipts call
-	// setGameBalance on their 200 path so the display reflects the prior
-	// tab's delta. Live-draw 200s do NOT call setGameBalance (the display
-	// was already updated locally at draw time).
+	// First reconcile the display to serverSyncedBalance + sum(persisted deltas)
+	// so the user sees their true balance (including pending settlements) before
+	// the drain completes. Then start the drain — every server response (200,
+	// rebase, terminal) re-reconciles internally to keep the display authoritative.
 	if (outbox) {
+		outbox.reconcileDisplay(serverSyncedBalance);
 		outbox.drainPersisted().catch((err) => {
 			console.error('keno: resume drain failed', err);
 		});
@@ -153,7 +164,6 @@ export function initKenoClient(): void {
 	renderer.renderPicks(game.getPicks());
 	renderer.renderCanDraw(game.canDraw());
 	renderer.renderSettingsSpeed(settings.getSettings().animationSpeed);
-	renderer.renderSettingsSound(settings.getSettings().soundEnabled);
 
 	// Settings modal
 	renderer.getSettingsButton().addEventListener('click', () => {
@@ -169,9 +179,6 @@ export function initKenoClient(): void {
 			settings.setSetting('animationSpeed', speed);
 			renderer.renderSettingsSpeed(speed);
 		});
-	});
-	renderer.getSoundCheckbox().addEventListener('change', (e) => {
-		settings.setSetting('soundEnabled', (e.target as HTMLInputElement).checked);
 	});
 	// Close modal on overlay click
 	const settingsModal = root.querySelector<HTMLElement>('[data-testid="settings-modal"]');

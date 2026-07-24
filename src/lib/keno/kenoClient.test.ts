@@ -184,7 +184,6 @@ function makeKenoRoot(opts: { guestMode?: string; initialBalance?: string } = {}
 				<button class="speed-opt" data-speed="normal">Normal</button>
 				<button class="speed-opt" data-speed="fast">Fast</button>
 			</div>
-			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
 		<button id="btn-paytable" data-testid="btn-paytable">Paytable</button>
 		<div id="paytable-modal" data-testid="paytable-modal" class="hidden">
@@ -495,6 +494,31 @@ describe('kenoClient sync state machine', () => {
 			// (With bet=1, no paytable multiplier produces netDelta=500, since
 			// that would require multiplier=501, which doesn't exist.)
 			expect(calls[1].body.delta).not.toBe(500);
+		});
+	});
+
+	describe('(f3) orphan receipts persisted to current tab key before orphan deletion (item 3)', () => {
+		test('merged orphan receipts are durable in current tab key immediately after init', () => {
+			// Seed an orphaned outbox key under a DIFFERENT tabId (closed tab).
+			// After initKenoClient (synchronous), the merged receipts MUST be
+			// persisted to the current tab's key — BEFORE any drain completes.
+			// Without this, a tab crash before the first successful persist
+			// loses the absorbed receipts permanently (orphan key already deleted).
+			const orphanKey = `arcturus:keno:outbox:${USER_ID}:dead-tab`;
+			localStorage.setItem(
+				orphanKey,
+				JSON.stringify([makeReceipt({ syncId: 's-orphan', delta: 25 })]),
+			);
+			installFetch([{ status: 200, body: { balance: 1025 } }]);
+
+			initKenoClient();
+			// Synchronously after init — drain hasn't completed yet.
+			// Current tab key must hold the merged receipt (durable copy).
+			const currentKeyData = JSON.parse(localStorage.getItem(OUTBOX_KEY) ?? '[]');
+			expect(currentKeyData).toHaveLength(1);
+			expect(currentKeyData[0].syncId).toBe('s-orphan');
+			// Orphan source key already deleted.
+			expect(localStorage.getItem(orphanKey)).toBeNull();
 		});
 	});
 

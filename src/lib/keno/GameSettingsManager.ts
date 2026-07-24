@@ -37,7 +37,6 @@ export class GameSettingsManager {
 					parsed.animationSpeed === 'slow' || parsed.animationSpeed === 'fast'
 						? parsed.animationSpeed
 						: 'normal',
-				soundEnabled: typeof parsed.soundEnabled === 'boolean' ? parsed.soundEnabled : true,
 			};
 		} catch {
 			return { ...DEFAULT_SETTINGS };

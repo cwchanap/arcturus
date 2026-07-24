@@ -22,7 +22,6 @@ export class KenoUIRenderer {
 	private readonly settingsModal: El;
 	private readonly settingsCloseBtn: HTMLButtonElement;
 	private readonly speedOptions: HTMLButtonElement[];
-	private readonly soundCheckbox: HTMLInputElement;
 	private readonly paytableBtn: HTMLButtonElement;
 	private readonly paytableModal: El;
 	private readonly paytableCloseBtn: HTMLButtonElement;
@@ -51,11 +50,6 @@ export class KenoUIRenderer {
 		this.settingsModal = req<El>(root, 'settings-modal');
 		this.settingsCloseBtn = req<HTMLButtonElement>(root, 'btn-settings-close');
 		this.speedOptions = Array.from(root.querySelectorAll<HTMLButtonElement>('button.speed-opt'));
-		this.soundCheckbox =
-			root.querySelector<HTMLInputElement>('#setting-sound') ??
-			(() => {
-				throw new Error('KenoUIRenderer: missing #setting-sound');
-			})();
 		this.paytableBtn = req<HTMLButtonElement>(root, 'btn-paytable');
 		this.paytableModal = req<El>(root, 'paytable-modal');
 		this.paytableCloseBtn = req<HTMLButtonElement>(root, 'btn-paytable-close');
@@ -109,17 +103,11 @@ export class KenoUIRenderer {
 	getSpeedOptions(): HTMLButtonElement[] {
 		return this.speedOptions;
 	}
-	getSoundCheckbox(): HTMLInputElement {
-		return this.soundCheckbox;
-	}
 	getPaytableButton(): HTMLButtonElement {
 		return this.paytableBtn;
 	}
 	getPaytableCloseButton(): HTMLButtonElement {
 		return this.paytableCloseBtn;
-	}
-	renderSettingsSound(enabled: boolean): void {
-		this.soundCheckbox.checked = enabled;
 	}
 	showSettingsModal(): void {
 		this.settingsFocusBefore = document.activeElement as HTMLElement | null;

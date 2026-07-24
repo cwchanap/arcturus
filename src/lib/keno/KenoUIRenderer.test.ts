@@ -79,7 +79,6 @@ function makeRoot(): HTMLElement {
 			<button class="speed-opt" data-speed="slow">Slow</button>
 			<button class="speed-opt" data-speed="normal">Normal</button>
 			<button class="speed-opt" data-speed="fast">Fast</button>
-			<input type="checkbox" id="setting-sound" data-testid="setting-sound" checked />
 		</div>
 		<button data-testid="btn-paytable">Paytable</button>
 		<div data-testid="paytable-modal" class="hidden">

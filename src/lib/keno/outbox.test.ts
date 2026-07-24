@@ -466,13 +466,14 @@ describe('KenoSyncOutbox BALANCE_MISMATCH missing currentBalance (item 5)', () =
 });
 
 describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', () => {
-	test('resumed receipt synced via later live drain calls setGameBalance; live receipt does not', async () => {
-		// Scenario: page reloads with one persisted (resumed) receipt.
+	test('both resumed and live receipts reconcile display via setGameBalance', async () => {
+		// Scenario: page reloads with one persisted receipt.
 		// drainPersisted() pauses immediately (MP_ESCROW).
 		// A live draw then enqueues a new receipt; the combined drain syncs
-		// the old resumed receipt via 200 → setGameBalance MUST be called
-		// (the display never saw that delta). The live receipt's 200 must
-		// NOT call setGameBalance (game balance already updated locally).
+		// both. With the authoritative-balance model, every 200 reconciles
+		// the display to serverBalance + sum(remaining queue deltas):
+		//   resumed 200 (balance=1100): queue=[s-live delta=-10], display=1090
+		//   live 200 (balance=1090): queue=[], display=1090
 		let persisted: PendingReceipt[] = [receipt('s-resumed', 1000, 100)];
 		const setGameBalanceCalls: number[] = [];
 		let callIdx = 0;
@@ -513,9 +514,10 @@ describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', (
 		// Live draw enqueues a new receipt; drain resumes and syncs both
 		await ob.enqueueAndDrain(receipt('s-live', 1100, -10));
 
-		// Resumed receipt's 200 → setGameBalance called with 1100
-		// Live receipt's 200 → setGameBalance NOT called
-		expect(setGameBalanceCalls).toEqual([1100]);
+		// Resumed receipt's 200 → reconcile(1100): queue=[s-live delta=-10],
+		//   display = 1100 + (-10) = 1090
+		// Live receipt's 200 → reconcile(1090): queue=[], display = 1090
+		expect(setGameBalanceCalls).toEqual([1090, 1090]);
 	});
 });
 
@@ -594,11 +596,128 @@ describe('KenoSyncOutbox fire-and-forget (per-draw delta race regression)', () =
 		expect(calls[0].body.delta).toBe(-5); // s1
 		expect(calls[1].body.delta).toBe(-5); // s2 first attempt (before rebase)
 
-		// gameBalance was NOT overwritten by 200 handler - still the locally-computed value
+		// gameBalance (the test's local var) is unchanged — the mock callback
+		// doesn't assign. The outbox DID call setGameBalance via reconcile, but
+		// with the correct value: serverBalance + remaining queue deltas = 990.
 		expect(gameBalance).toBe(990);
-		expect(setGameBalanceCalls).toEqual([]); // setGameBalance NEVER called on 200
+		// Every reconciliation sets display = serverBalance + unsettled deltas.
+		// After s1's 200 (995): queue=[s2 -5], display=990.
+		// After s2's rebase (995): queue=[s2 -5], display=990.
+		// After s2's 200 (990): queue=[], display=990.
+		expect(setGameBalanceCalls.every((b) => b === 990)).toBe(true);
+		expect(setGameBalanceCalls.length).toBeGreaterThan(0);
 
 		// serverSyncedBalance was updated correctly through the drain
 		expect(serverBalance).toBe(990);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Authoritative balance + unsettled deltas model (review items 1 & 2).
+// display = serverSyncedBalance + sum(unsettled queued deltas) after every
+// server reconciliation. This fixes:
+//   item 1: persisted receipt 200 overwrites game balance, leaving live draw
+//           delta un-reflected (live 200 skipped setGameBalance).
+//   item 2: BALANCE_MISMATCH rebase updates serverSyncedBalance but not the
+//           display; terminal drop overwrites display without replaying later
+//           optimistic deltas already queued.
+// ---------------------------------------------------------------------------
+describe('KenoSyncOutbox authoritative balance reconciliation (items 1 & 2)', () => {
+	test('200 response sets display = serverBalance + remaining queue deltas', async () => {
+		// Two live receipts queued. First settles with 200.
+		// After first 200: display = 1095 + (-5) = 1090 (second delta still pending).
+		const { fetchImpl } = makeFetch([
+			{ status: 200, body: { balance: 1095 } },
+			{ status: 200, body: { balance: 1090 } },
+		]);
+		const setGameBalanceCalls: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		void ob.enqueueAndDrain(receipt('s1', 1000, 95));
+		await ob.enqueueAndDrain(receipt('s2', 1095, -5));
+		// Wait for the background drain (s1 → 200 → reconcile, then s2 → 200 → reconcile)
+		await new Promise((r) => setTimeout(r, 50));
+		// After s1's 200: queue=[s2 delta=-5], display = 1095 + (-5) = 1090
+		expect(setGameBalanceCalls).toContain(1090);
+	});
+
+	test('BALANCE_MISMATCH rebase reconciles display = serverBalance + pending delta', async () => {
+		// Local baseline 1000, server changed to 900 (other tab).
+		// Local draw delta -1. Rebase: previousBalance=900, delta still -1.
+		// Retry 200: balance=899. Display must be 899, NOT 999 (stale local).
+		const { fetchImpl } = makeFetch([
+			{ status: 409, body: { error: 'BALANCE_MISMATCH', currentBalance: 900 } },
+			{ status: 200, body: { balance: 899 } },
+		]);
+		const setGameBalanceCalls: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		await ob.enqueueAndDrain(receipt('s1', 1000, -1));
+		// After rebase: serverBalance=900, queue=[s1 delta=-1], display=900+(-1)=899
+		expect(setGameBalanceCalls).toContain(899);
+	});
+
+	test('terminal drop replays remaining queued deltas into display', async () => {
+		// Two receipts: r1 (delta -1) terminal-drops with currentBalance=998.
+		// r2 (delta -1) is still queued. Display must be 998 + (-1) = 997,
+		// NOT 998 (which would lose r2's optimistic delta).
+		const { fetchImpl } = makeFetch([
+			{ status: 400, body: { error: 'DELTA_EXCEEDS_LIMIT', currentBalance: 998 } },
+		]);
+		const setGameBalanceCalls: number[] = [];
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: () => {},
+			load: () => [],
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		void ob.enqueueAndDrain(receipt('s1', 1000, -1));
+		await ob.enqueueAndDrain(receipt('s2', 999, -1));
+		// Wait for the background drain to process s1's terminal drop
+		await new Promise((r) => setTimeout(r, 50));
+		// After r1 terminal-drops: currentBalance=998, queue=[s2 delta=-1]
+		// display = 998 + (-1) = 997
+		expect(setGameBalanceCalls).toContain(997);
+	});
+
+	test('reconcileDisplay applies pending persisted deltas to game balance on init', async () => {
+		// Page reload with one persisted receipt (delta=50). serverSyncedBalance=1000.
+		// Before any drain completes, reconcileDisplay should set game balance
+		// to 1000 + 50 = 1050 so the display reflects the pending settlement.
+		let persisted: PendingReceipt[] = [receipt('s-old', 1000, 50)];
+		const setGameBalanceCalls: number[] = [];
+		const { fetchImpl } = makeFetch([{ status: 200, body: { balance: 1050 } }]);
+		const ob = new KenoSyncOutbox({
+			fetchImpl,
+			endpoint: '/api/chips/update',
+			persist: (r) => (persisted = r),
+			load: () => persisted,
+			setServerSyncedBalance: () => {},
+			setGameBalance: (b) => setGameBalanceCalls.push(b),
+			onHardError: () => {},
+			onToast: () => {},
+		});
+		ob.reconcileDisplay(1000);
+		expect(setGameBalanceCalls).toEqual([1050]);
 	});
 });

@@ -48,5 +48,4 @@ export const REVEAL_STAGGER_MS: Record<AnimationSpeed, number> = {
 
 export const DEFAULT_SETTINGS: KenoSettings = {
 	animationSpeed: 'normal',
-	soundEnabled: true,
 };

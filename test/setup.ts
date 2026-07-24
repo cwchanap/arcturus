@@ -12,10 +12,9 @@ globalThis.setTimeout = ((
 	delay?: number,
 	...args: unknown[]
 ) => {
-	let timeoutId: ReturnType<typeof setTimeout>;
-	timeoutId = nativeSetTimeout(() => {
+	const timeoutId = nativeSetTimeout(() => {
 		pendingTimeouts.delete(timeoutId);
-		Reflect.apply(callback, undefined, args);
+		callback(...args);
 	}, delay);
 	pendingTimeouts.add(timeoutId);
 	return timeoutId;

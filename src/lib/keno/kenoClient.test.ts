@@ -440,4 +440,302 @@ describe('kenoClient sync state machine', () => {
 			expect(calls[1].body.delta).not.toBe(500);
 		});
 	});
+
+	describe('loadOutbox error handling', () => {
+		test('corrupted outbox JSON falls back to empty array without throwing', async () => {
+			localStorage.setItem(OUTBOX_KEY, '{corrupted json');
+			const { calls } = installFetch([{ status: 200, body: { balance: 1000 } }]);
+			expect(() => initKenoClient()).not.toThrow();
+			await flush(3);
+			// Outbox loaded as empty → no fetch calls during drainPersisted
+			expect(calls).toHaveLength(0);
+		});
+	});
+
+	describe('settings modal UI', () => {
+		test('settings button click shows the modal', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const modal = document.querySelector<HTMLElement>('[data-testid="settings-modal"]')!;
+			expect(modal.classList.contains('hidden')).toBe(true);
+			(document.getElementById('btn-settings') as HTMLButtonElement).click();
+			expect(modal.classList.contains('hidden')).toBe(false);
+		});
+
+		test('settings close button hides the modal', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const modal = document.querySelector<HTMLElement>('[data-testid="settings-modal"]')!;
+			(document.getElementById('btn-settings') as HTMLButtonElement).click();
+			expect(modal.classList.contains('hidden')).toBe(false);
+			(document.getElementById('btn-settings-close') as HTMLButtonElement).click();
+			expect(modal.classList.contains('hidden')).toBe(true);
+		});
+
+		test('speed option click updates settings and UI', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const slowBtn = document.querySelector<HTMLButtonElement>('.speed-opt[data-speed="slow"]')!;
+			slowBtn.click();
+			const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
+			expect(stored.animationSpeed).toBe('slow');
+		});
+
+		test('invalid speed value is ignored', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const slowBtn = document.querySelector<HTMLButtonElement>('.speed-opt[data-speed="slow"]')!;
+			slowBtn.dataset.speed = 'invalid';
+			slowBtn.click();
+			// Settings should remain 'fast' (from beforeEach)
+			const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}');
+			expect(stored.animationSpeed).toBe('fast');
+		});
+
+		test('clicking modal overlay (e.target === modal) closes the modal', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const modal = document.querySelector<HTMLElement>('[data-testid="settings-modal"]')!;
+			(document.getElementById('btn-settings') as HTMLButtonElement).click();
+			expect(modal.classList.contains('hidden')).toBe(false);
+			modal.click(); // e.target === settingsModal
+			expect(modal.classList.contains('hidden')).toBe(true);
+		});
+	});
+
+	describe('grid cell interactions', () => {
+		test('clicking an empty cell selects it', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const cell = document.querySelector<HTMLButtonElement>('button.keno-cell[data-number="5"]')!;
+			expect(cell.classList.contains('selected')).toBe(false);
+			cell.click();
+			expect(cell.classList.contains('selected')).toBe(true);
+		});
+
+		test('clicking a selected cell deselects it', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const cell = document.querySelector<HTMLButtonElement>('button.keno-cell[data-number="5"]')!;
+			cell.click();
+			expect(cell.classList.contains('selected')).toBe(true);
+			cell.click();
+			expect(cell.classList.contains('selected')).toBe(false);
+		});
+
+		test('drawInFlight blocks cell clicks', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			clickDraw(); // sets drawInFlight = true, yields at await sleep
+			// Find a cell that is NOT selected (quickPick selects 8 of 40)
+			const unselected = Array.from(
+				document.querySelectorAll<HTMLButtonElement>('button.keno-cell:not(.selected)'),
+			)[0];
+			unselected!.click();
+			expect(unselected!.classList.contains('selected')).toBe(false);
+			await flush(5);
+		});
+
+		test('MAX_SPOTS blocks 11th pick', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			// Select 10 cells (MAX_SPOTS)
+			for (let n = 1; n <= 10; n++) {
+				document.querySelector<HTMLButtonElement>(`button.keno-cell[data-number="${n}"]`)!.click();
+			}
+			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(10);
+			// Try 11th — silently ignored
+			const cell11 = document.querySelector<HTMLButtonElement>(
+				'button.keno-cell[data-number="11"]',
+			)!;
+			cell11.click();
+			expect(cell11.classList.contains('selected')).toBe(false);
+			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(10);
+		});
+	});
+
+	describe('bet chip interaction', () => {
+		test('clicking a bet chip updates the bet', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			const chip5 = document.querySelector<HTMLButtonElement>('.bet-chip[data-bet="5"]')!;
+			chip5.click();
+			expect(document.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe(
+				'5',
+			);
+		});
+
+		test('drawInFlight blocks bet chip clicks', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			clickDraw();
+			const chip5 = document.querySelector<HTMLButtonElement>('.bet-chip[data-bet="5"]')!;
+			chip5.click();
+			expect(document.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe(
+				'1',
+			);
+			await flush(5);
+		});
+	});
+
+	describe('clear button', () => {
+		test('clicking clear removes all picks', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			document.querySelector<HTMLButtonElement>('button.keno-cell[data-number="5"]')!.click();
+			document.querySelector<HTMLButtonElement>('button.keno-cell[data-number="10"]')!.click();
+			expect(document.querySelectorAll('button.keno-cell.selected').length).toBeGreaterThan(0);
+			(document.getElementById('btn-clear') as HTMLButtonElement).click();
+			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(0);
+		});
+
+		test('drawInFlight blocks clear', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			clickDraw();
+			(document.getElementById('btn-clear') as HTMLButtonElement).click();
+			expect(document.querySelectorAll('button.keno-cell.selected').length).toBeGreaterThan(0);
+			await flush(5);
+		});
+	});
+
+	describe('repeat button', () => {
+		test('repeats last ticket picks after a draw', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			const picksBefore = Array.from(document.querySelectorAll('button.keno-cell.selected'))
+				.map((c) => Number(c.dataset.number))
+				.sort((a, b) => a - b);
+			clickDraw();
+			await flush(5);
+			// Clear picks, then repeat
+			(document.getElementById('btn-clear') as HTMLButtonElement).click();
+			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(0);
+			(document.getElementById('btn-repeat') as HTMLButtonElement).click();
+			const picksAfter = Array.from(document.querySelectorAll('button.keno-cell.selected'))
+				.map((c) => Number(c.dataset.number))
+				.sort((a, b) => a - b);
+			expect(picksAfter).toEqual(picksBefore);
+		});
+
+		test('repeat with no previous ticket is a no-op', () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			(document.getElementById('btn-repeat') as HTMLButtonElement).click();
+			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(0);
+		});
+
+		test('drawInFlight blocks repeat', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			clickDraw();
+			(document.getElementById('btn-repeat') as HTMLButtonElement).click();
+			// Picks unchanged — repeat was blocked
+			expect(document.querySelectorAll('button.keno-cell.selected').length).toBeGreaterThan(0);
+			await flush(5);
+		});
+	});
+
+	describe('drainPersisted error handling', () => {
+		test('resume drain failure is logged to console.error', async () => {
+			localStorage.setItem(OUTBOX_KEY, JSON.stringify([makeReceipt({ syncId: 's-resume-fail' })]));
+			installFetch([{ status: 200, body: { balance: 1100 } }]);
+			initKenoClient();
+			// Override setItem to throw — dropHead's persist will throw after 200 response,
+			// causing drainPersisted() to reject and the .catch() handler to fire.
+			// happy-dom puts setItem on the prototype, so direct assignment is a no-op;
+			// Object.defineProperty on the instance creates an own override.
+			const origSetItem = localStorage.setItem;
+			const errors: string[] = [];
+			const origConsoleError = console.error;
+			console.error = (...args: unknown[]) => {
+				errors.push(String(args[0]));
+			};
+			Object.defineProperty(localStorage, 'setItem', {
+				configurable: true,
+				writable: true,
+				value: () => {
+					throw new Error('storage full');
+				},
+			});
+			try {
+				await flush(5);
+				expect(errors.some((e) => e.includes('keno: resume drain failed'))).toBe(true);
+			} finally {
+				Object.defineProperty(localStorage, 'setItem', {
+					configurable: true,
+					writable: true,
+					value: origSetItem,
+				});
+				console.error = origConsoleError;
+			}
+		});
+	});
+
+	describe('settlement drain error handling', () => {
+		test('enqueueAndDrain failure is logged to console.error', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			clickDraw();
+			// Override setItem to throw before the settlement drain runs (after the
+			// reveal animation await yields back to the test).
+			const origSetItem = localStorage.setItem;
+			const errors: string[] = [];
+			const origConsoleError = console.error;
+			console.error = (...args: unknown[]) => {
+				errors.push(String(args[0]));
+			};
+			Object.defineProperty(localStorage, 'setItem', {
+				configurable: true,
+				writable: true,
+				value: () => {
+					throw new Error('storage full');
+				},
+			});
+			try {
+				await flush(5);
+				expect(errors.some((e) => e.includes('keno: settlement drain failed'))).toBe(true);
+			} finally {
+				Object.defineProperty(localStorage, 'setItem', {
+					configurable: true,
+					writable: true,
+					value: origSetItem,
+				});
+				console.error = origConsoleError;
+			}
+		});
+	});
+
+	describe('commitDraw error handling', () => {
+		test('non-fail error (no code) is logged to console.error', async () => {
+			installFetch([{ status: 200, body: { balance: 1000 } }]);
+			initKenoClient();
+			clickQuickPick();
+			// Make Math.random throw to trigger a non-coded TypeError in commitDraw's
+			// syncId generation (line 183), before game.draw() is reached.
+			const origRandom = Math.random;
+			const errors: string[] = [];
+			const origConsoleError = console.error;
+			console.error = (...args: unknown[]) => {
+				errors.push(String(args[0]));
+			};
+			Math.random = (() => {
+				throw new TypeError('random broken');
+			}) as typeof Math.random;
+			try {
+				clickDraw();
+				await flush(5);
+				expect(errors.some((e) => e.includes('keno: commitDraw failed'))).toBe(true);
+			} finally {
+				Math.random = origRandom;
+				console.error = origConsoleError;
+			}
+		});
+	});
 });

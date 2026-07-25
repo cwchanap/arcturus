@@ -224,14 +224,9 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		classifyMembership(await resolveMembership(userId, nowMs), userId);
 	};
 
-	const reconcileCurrentActionMembership = async (
-		userId: string,
-		nowMs: number,
-		nowSeconds: number,
-	): Promise<void> => {
+	const reconcileCurrentActionMembership = async (userId: string, nowMs: number): Promise<void> => {
 		const resolution = await resolveMembership(userId, nowMs);
 		if (resolution.kind === 'clear') return;
-		await consumeRate(userId, 'ranked_action', nowSeconds);
 		classifyMembership(resolution, userId);
 	};
 
@@ -539,9 +534,9 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		sessionId: string;
 	}): Promise<RankedCoordinatorResponse> => {
 		const nowSeconds = asNowSeconds(deps.now());
+		await consumeRate(userId, 'ranked_resume', nowSeconds);
 		const session = await deps.repository.findOwnedSession(userId, sessionId);
 		if (!session) throw new RankedServiceError('SESSION_NOT_FOUND');
-		await consumeRate(userId, 'ranked_resume', nowSeconds);
 		if (session.status === 'active' && nowSeconds >= session.expiresAt) {
 			return expireOwned(userId, sessionId);
 		}
@@ -560,7 +555,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		actionRequestSchema.parse(body);
 		const nowSeconds = asNowSeconds(deps.now());
 		let session = await deps.repository.findOwnedSession(userId, sessionId);
-		if (!session) throw new RankedServiceError('SESSION_NOT_FOUND');
+		if (!session) {
+			await consumeRate(userId, 'ranked_action', nowSeconds);
+			throw new RankedServiceError('SESSION_NOT_FOUND');
+		}
 
 		if (body.sequence < session.nextSequence) {
 			if (session.actionLog[body.sequence]?.action !== body.action) {
@@ -590,8 +588,8 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			return expireOwned(userId, sessionId);
 		}
 
-		await reconcileCurrentActionMembership(userId, deps.now().getTime(), nowSeconds);
-		let actionRateConsumed = false;
+		await consumeRate(userId, 'ranked_action', nowSeconds);
+		await reconcileCurrentActionMembership(userId, deps.now().getTime());
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
 			if (session.status !== 'active') return render(session);
 			if (body.sequence !== session.nextSequence) {
@@ -613,13 +611,11 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			const replayed = await replay(session);
 			const legal = replayed.replay.legalActions.find(({ action }) => action === body.action);
 			if (!legal) {
-				await consumeRate(userId, 'ranked_action', nowSeconds);
 				throw new RankedServiceError('INVALID_ACTION');
 			}
 			const account = await deps.repository.readAccount(userId);
 			if (!account) return internalError('Ranked account disappeared during action');
 			if (account.chipBalance < legal.additionalWager) {
-				await consumeRate(userId, 'ranked_action', nowSeconds);
 				throw new RankedServiceError('INSUFFICIENT_BALANCE');
 			}
 			const actionLog = [...session.actionLog, body];
@@ -640,7 +636,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 				additionalWager: legal.additionalWager,
 				committedWager: nextReplay.state.committedWager,
 				nowSeconds,
-				rateLimitMode: actionRateConsumed ? 'already-consumed' : 'consume',
+				rateLimitMode: 'already-consumed',
 			};
 			if (outcome) {
 				const receiptContext: ReceiptContext = {
@@ -683,7 +679,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					retryAfter: transition.retryAfter,
 				});
 			}
-			actionRateConsumed = true;
 			if (transition.kind === 'applied') {
 				log(transition.result ? 'ranked_session_settled' : 'ranked_action_accepted', {
 					userId,

@@ -4,6 +4,7 @@ import { canonicalizeRanked, encodeBase64Url, hashCanonical } from '../../lib/ra
 import { createSeedCommitment } from '../../lib/ranked/random';
 import { getRankedAdapter } from '../../lib/ranked/registry';
 import {
+	RANKED_ERROR_STATUS,
 	RankedServiceError,
 	type RankedBlackjackActionLogV1,
 	type RankedStartRequest,
@@ -21,6 +22,7 @@ import type {
 	TerminalTransitionInput,
 } from './repository';
 import { createRankedRepository } from './repository';
+import { RANKED_RATE_LIMITS } from './rate-limit';
 import { createRankedTestD1, insertRankedTestUser } from './test-d1';
 
 const USER_ID = 'ranked-coordinator-user';
@@ -642,6 +644,14 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		});
 
 		expect(repository.calls.runTerminalTransition).toHaveLength(2);
+		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
+			[USER_ID, 'ranked_action', NOW_SECONDS],
+		]);
+		expect(
+			repository.calls.runTerminalTransition.every(
+				({ rateLimitMode }) => rateLimitMode === 'already-consumed',
+			),
+		).toBe(true);
 		expect(
 			repository.calls.runTerminalTransition.map(({ terminal }) => terminal?.expectedWalletBalance),
 		).toEqual([900, 875]);
@@ -859,6 +869,119 @@ test('real D1 underfunded starts consume durable capacity until RATE_LIMITED', a
 	}
 });
 
+test('real D1 random valid resume IDs return the same public 404 until durable exhaustion', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const ranked = createRankedCoordinator({
+			repository: createRankedRepository(db),
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes: (length) => new Uint8Array(length),
+		});
+		const errors: RankedServiceError[] = [];
+
+		for (let attempt = 0; attempt <= RANKED_RATE_LIMITS.ranked_resume.limit; attempt += 1) {
+			const randomValidId = encodeBase64Url(
+				Uint8Array.from({ length: 16 }, (_, index) => (attempt + index) & 0xff),
+			);
+			try {
+				await ranked.resume({ userId: USER_ID, sessionId: randomValidId });
+				throw new Error('Expected missing ranked session');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RankedServiceError);
+				errors.push(error as RankedServiceError);
+			}
+		}
+
+		expect(
+			errors
+				.slice(0, RANKED_RATE_LIMITS.ranked_resume.limit)
+				.map(({ code }) => [code, RANKED_ERROR_STATUS[code]]),
+		).toEqual(
+			Array.from({ length: RANKED_RATE_LIMITS.ranked_resume.limit }, () => [
+				'SESSION_NOT_FOUND',
+				404,
+			]),
+		);
+		expect(errors.at(-1)).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 60 });
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_resume'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: RANKED_RATE_LIMITS.ranked_resume.limit });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('real D1 non-owned action IDs return the same public 404 until durable exhaustion', async () => {
+	const { mf, db } = await createRankedTestD1();
+	const ownerId = 'ranked-session-owner';
+	try {
+		await insertRankedTestUser(db, { id: ownerId, chipBalance: 1000 });
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const repository = createRankedRepository(db);
+		const ranked = createRankedCoordinator({
+			repository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: ownerId, body: START_REQUEST });
+		const errors: RankedServiceError[] = [];
+
+		for (let attempt = 0; attempt <= RANKED_RATE_LIMITS.ranked_action.limit; attempt += 1) {
+			try {
+				await ranked.act({
+					userId: USER_ID,
+					sessionId: started.sessionId,
+					body: { sequence: 0, action: 'hit' },
+				});
+				throw new Error('Expected hidden ranked ownership');
+			} catch (error) {
+				expect(error).toBeInstanceOf(RankedServiceError);
+				errors.push(error as RankedServiceError);
+			}
+		}
+
+		expect(
+			errors
+				.slice(0, RANKED_RATE_LIMITS.ranked_action.limit)
+				.map(({ code }) => [code, RANKED_ERROR_STATUS[code]]),
+		).toEqual(
+			Array.from({ length: RANKED_RATE_LIMITS.ranked_action.limit }, () => [
+				'SESSION_NOT_FOUND',
+				404,
+			]),
+		);
+		expect(errors.at(-1)).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 60 });
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: RANKED_RATE_LIMITS.ranked_action.limit });
+		expect(await repository.findOwnedSession(ownerId, started.sessionId)).toMatchObject({
+			status: 'active',
+			nextSequence: 0,
+		});
+	} finally {
+		await mf.dispose();
+	}
+});
+
 test('real D1 concurrent different terminal actions return one winner and one identifier mismatch', async () => {
 	const { mf, db } = await createRankedTestD1();
 	try {
@@ -957,6 +1080,62 @@ test('a terminal snapshot retry at the 29/30 boundary consumes exactly one actio
 				.bind(USER_ID)
 				.first<{ count: number }>(),
 		).toEqual({ count: 30 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('a pre-consume denial leaves a valid real D1 action and wallet unchanged', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const durableRepository = createRankedRepository(db);
+		const ranked = createRankedCoordinator({
+			repository: durableRepository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+		for (let count = 0; count < RANKED_RATE_LIMITS.ranked_action.limit; count += 1) {
+			expect(
+				await durableRepository.consumeStandaloneRateLimit(USER_ID, 'ranked_action', NOW_SECONDS),
+			).toEqual({ kind: 'allowed' });
+		}
+
+		try {
+			await ranked.act({
+				userId: USER_ID,
+				sessionId: started.sessionId,
+				body: { sequence: 0, action: 'stand' },
+			});
+			throw new Error('Expected action rate limit');
+		} catch (error) {
+			expect(error).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 60 });
+		}
+
+		expect(await durableRepository.readAccount(USER_ID)).toEqual({
+			chipBalance: 900,
+			heldChips: 0,
+		});
+		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
+			status: 'active',
+			nextSequence: 0,
+			actionLog: [],
+		});
+		expect(await durableRepository.findResult(started.sessionId)).toBeNull();
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: RANKED_RATE_LIMITS.ranked_action.limit });
 	} finally {
 		await mf.dispose();
 	}

@@ -1558,6 +1558,7 @@ describe('typed ranked repository reads', () => {
 
 		const byRequest = await repository.findByStartRequest(USER_ID, session.startRequestId);
 		const owned = await repository.findOwnedSession(USER_ID, session.id);
+		const active = await repository.findActiveSession(USER_ID);
 
 		expect(byRequest?.config).toEqual({
 			...BLACKJACK_RANKED_V1_CONFIG,
@@ -1565,10 +1566,24 @@ describe('typed ranked repository reads', () => {
 		});
 		expect(byRequest?.actionLog).toEqual([]);
 		expect(owned).toEqual(byRequest);
+		expect(active).toEqual(byRequest);
 		expect(await repository.readAccount(USER_ID)).toEqual({
 			chipBalance: 900,
 			heldChips: 0,
 		});
+	});
+
+	test('returns no active session after the nullable active-user key is cleared', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		await db
+			.prepare(
+				"UPDATE ranked_session SET activeUserId = NULL, status = 'settled', settledAt = ? WHERE id = ?",
+			)
+			.bind(NOW_SECONDS + 1, SESSION_A)
+			.run();
+
+		expect(await repository.findActiveSession(USER_ID)).toBeNull();
 	});
 
 	test('parses immutable result JSON into typed fields', async () => {

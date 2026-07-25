@@ -201,6 +201,7 @@ export type ExpirationTransitionResult =
 
 export interface RankedRepository {
 	findByStartRequest(userId: string, requestId: string): Promise<RankedSessionRecord | null>;
+	findActiveSession(userId: string): Promise<RankedSessionRecord | null>;
 	findOwnedSession(userId: string, sessionId: string): Promise<RankedSessionRecord | null>;
 	findResult(sessionId: string): Promise<RankedResultRecord | null>;
 	readAccount(userId: string): Promise<{ chipBalance: number; heldChips: number } | null>;
@@ -1426,6 +1427,13 @@ export function createRankedRepository(db: D1Database): RankedRepository {
 			const row = await db
 				.prepare('SELECT * FROM ranked_session WHERE userId = ? AND startRequestId = ? LIMIT 1')
 				.bind(userId, requestId)
+				.first<RankedSessionRow>();
+			return row === null ? null : parseSessionRow(row);
+		},
+		async findActiveSession(userId) {
+			const row = await db
+				.prepare('SELECT * FROM ranked_session WHERE activeUserId = ? LIMIT 1')
+				.bind(userId)
 				.first<RankedSessionRow>();
 			return row === null ? null : parseSessionRow(row);
 		},

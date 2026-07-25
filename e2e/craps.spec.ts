@@ -238,11 +238,24 @@ test.describe('Craps — Clear Bets Sync', () => {
 			const balanceBeforeClear = parseBalance(await page.locator('#chip-balance').innerText());
 
 			// Clear bets
+			const refundSyncPromise = page.waitForResponse((response) => {
+				if (
+					new URL(response.url()).pathname !== '/api/chips/update' ||
+					response.request().method() !== 'POST' ||
+					!response.ok()
+				) {
+					return false;
+				}
+				const payload = response.request().postDataJSON() as { delta?: unknown } | null;
+				return typeof payload?.delta === 'number' && payload.delta > 0;
+			});
 			await page.getByTestId('clear-bets-button').click();
 
 			// Balance should be refunded locally
 			const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
 			expect(balanceAfterClear).toBe(balanceBeforeClear + 75); // passLine $25 + field $50
+			const refundSync = await refundSyncPromise;
+			expect(((await refundSync.json()) as { balance: number }).balance).toBe(balanceAfterClear);
 
 			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
 				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';

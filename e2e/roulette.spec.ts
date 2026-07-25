@@ -195,44 +195,59 @@ test.describe('Roulette — Bet Placement', () => {
 test.describe('Roulette — Game Flow', () => {
 	test.describe.configure({ mode: 'serial' });
 
-	test.beforeEach(async ({ page }) => {
-		await gotoRouletteFresh(page);
-		await ensureMinimumBalance(page, 25);
+	test('spin resolves with winning number and new round button', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedRoulettePage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 25);
+			await page.getByTestId('chip-25').click();
+			await page.locator('[data-bet-type="red"]').click();
+			await page.getByTestId('spin-button').click();
+
+			await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+			await expect(page.locator('#wheel-result')).not.toContainText('—');
+			await expect(page.locator('#game-phase')).toContainText('Round Complete');
+		} finally {
+			await context.close();
+		}
 	});
 
-	test('spin resolves with winning number and new round button', async ({ page }) => {
-		await page.getByTestId('chip-25').click();
-		await page.locator('[data-bet-type="red"]').click();
-		await page.getByTestId('spin-button').click();
+	test('new round resets to betting phase', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedRoulettePage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 25);
+			await page.getByTestId('chip-25').click();
+			await page.locator('[data-bet-type="red"]').click();
+			await page.getByTestId('spin-button').click();
 
-		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
-		await expect(page.locator('#wheel-result')).not.toContainText('—');
-		await expect(page.locator('#game-phase')).toContainText('Round Complete');
+			await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+			await page.getByTestId('new-round-button').click();
+
+			await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
+			await expect(page.getByTestId('total-bet')).toContainText('$0');
+			await expect(page.getByTestId('spin-button')).toBeDisabled();
+			await expect(page.getByTestId('new-round-button')).toBeHidden();
+		} finally {
+			await context.close();
+		}
 	});
 
-	test('new round resets to betting phase', async ({ page }) => {
-		await page.getByTestId('chip-25').click();
-		await page.locator('[data-bet-type="red"]').click();
-		await page.getByTestId('spin-button').click();
+	test('bet results are shown after spin', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedRoulettePage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 25);
+			await page.getByTestId('chip-25').click();
+			await page.locator('[data-bet-type="red"]').click();
+			await page.getByTestId('spin-button').click();
 
-		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
-		await page.getByTestId('new-round-button').click();
-
-		await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
-		await expect(page.getByTestId('total-bet')).toContainText('$0');
-		await expect(page.getByTestId('spin-button')).toBeDisabled();
-		await expect(page.getByTestId('new-round-button')).toBeHidden();
-	});
-
-	test('bet results are shown after spin', async ({ page }) => {
-		await page.getByTestId('chip-25').click();
-		await page.locator('[data-bet-type="red"]').click();
-		await page.getByTestId('spin-button').click();
-
-		await expect(page.getByTestId('bet-results')).not.toBeEmpty({ timeout: 15000 });
+			await expect(page.getByTestId('bet-results')).not.toBeEmpty({ timeout: 15000 });
+		} finally {
+			await context.close();
+		}
 	});
 
 	test('winning bet shows positive payout and net delta', async ({ page }) => {
+		await gotoRouletteFresh(page);
+		await ensureMinimumBalance(page, 25);
 		await page.route('**/api/roulette/spin', async (route) => {
 			await route.fulfill({
 				status: 200,
@@ -258,6 +273,8 @@ test.describe('Roulette — Game Flow', () => {
 	});
 
 	test('losing bet shows negative net delta and lost bet result', async ({ page }) => {
+		await gotoRouletteFresh(page);
+		await ensureMinimumBalance(page, 25);
 		await page.route('**/api/roulette/spin', async (route) => {
 			await route.fulfill({
 				status: 200,
@@ -281,42 +298,50 @@ test.describe('Roulette — Game Flow', () => {
 		await expect(page.getByTestId('bet-results')).toContainText('Red');
 	});
 
-	test('real spin keeps displayed balance in sync with server newBalance', async ({ page }) => {
-		// No route mock — this hits the real /api/roulette/spin endpoint.
-		// Verifies browser-level balance integrity: the displayed balance
-		// after settlement must equal the server-provided newBalance, and
-		// the net change must equal the server-provided netDelta.
-		await ensureMinimumBalance(page, 50);
+	test('real spin keeps displayed balance in sync with server newBalance', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedRoulettePage(browser, baseURL);
+		try {
+			// No route mock — this hits the real /api/roulette/spin endpoint.
+			// Verifies browser-level balance integrity: the displayed balance
+			// after settlement must equal the server-provided newBalance, and
+			// the net change must equal the server-provided netDelta.
+			await ensureMinimumBalance(page, 50);
 
-		const balanceBefore = parseBalance(await page.locator('#chip-balance').innerText());
+			const balanceBefore = parseBalance(await page.locator('#chip-balance').innerText());
 
-		await page.getByTestId('chip-25').click();
-		await page.locator('[data-bet-type="red"]').click();
+			await page.getByTestId('chip-25').click();
+			await page.locator('[data-bet-type="red"]').click();
 
-		// Capture the real spin response without mocking it.
-		const spinResponsePromise = page.waitForResponse(
-			(resp) => resp.url().includes('/api/roulette/spin') && resp.status() === 200,
-		);
-		await page.getByTestId('spin-button').click();
-		const spinResponse = await spinResponsePromise;
-		const spinData = (await spinResponse.json()) as {
-			winningNumber: number;
-			netDelta: number;
-			newBalance: number;
-		};
+			// Capture the real spin response without mocking it.
+			const spinResponsePromise = page.waitForResponse(
+				(resp) => resp.url().includes('/api/roulette/spin') && resp.status() === 200,
+			);
+			await page.getByTestId('spin-button').click();
+			const spinResponse = await spinResponsePromise;
+			const spinData = (await spinResponse.json()) as {
+				winningNumber: number;
+				netDelta: number;
+				newBalance: number;
+			};
 
-		// Wait for settlement to complete and UI to update.
-		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+			// Wait for settlement to complete and UI to update.
+			await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
 
-		const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
+			const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
 
-		// The displayed balance after settlement must match the server's
-		// authoritative newBalance exactly.
-		expect(balanceAfter).toBe(spinData.newBalance);
+			// The displayed balance after settlement must match the server's
+			// authoritative newBalance exactly.
+			expect(balanceAfter).toBe(spinData.newBalance);
 
-		// The net change from before-bet to after-settlement must equal
-		// the server's netDelta (payout - bet).
-		expect(balanceAfter - balanceBefore).toBe(spinData.netDelta);
+			// The net change from before-bet to after-settlement must equal
+			// the server's netDelta (payout - bet).
+			expect(balanceAfter - balanceBefore).toBe(spinData.netDelta);
+		} finally {
+			await context.close();
+		}
 	});
 });
 

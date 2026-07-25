@@ -24,6 +24,56 @@ const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 export const ROULETTE_RECEIPT_RETENTION_DAYS = 90;
 const ROULETTE_RECEIPT_RETENTION_MS = ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+export interface ScheduledJobEnv {
+	[key: string]: unknown;
+	DB?: D1Database;
+	arcturus?: DurableObjectNamespace;
+}
+
+export interface ScheduledJobDeps {
+	rankedExpiration(
+		db: D1Database,
+		namespace: DurableObjectNamespace | undefined,
+		nowSeconds: number,
+	): Promise<void>;
+	rankedRateCleanup(db: D1Database, nowSeconds: number): Promise<void>;
+	retentionCleanup(db: D1Database): Promise<void>;
+	nowSeconds(): number;
+	warn(message: string): void;
+}
+
+/**
+ * Run each scheduled database job behind its own error boundary. Ranked
+ * history is deliberately absent: HPA-170 keeps sessions and results as
+ * replayable audit material.
+ */
+export async function runScheduledJobs(
+	env: ScheduledJobEnv,
+	deps: ScheduledJobDeps,
+): Promise<void> {
+	const db = env.DB;
+	if (!db) {
+		deps.warn('[SCHEDULED] DB binding unavailable, skipping cleanup');
+		return;
+	}
+
+	try {
+		await deps.rankedExpiration(db, env.arcturus, deps.nowSeconds());
+	} catch {
+		deps.warn('[SCHEDULED] Ranked expiration failed');
+	}
+	try {
+		await deps.rankedRateCleanup(db, deps.nowSeconds());
+	} catch {
+		deps.warn('[SCHEDULED] Ranked rate-limit cleanup failed');
+	}
+	try {
+		await deps.retentionCleanup(db);
+	} catch {
+		deps.warn('[SCHEDULED] Retention cleanup failed');
+	}
+}
+
 /**
  * Delete rows older than RETENTION_DAYS from roulette_round and
  * chip_sync_receipt. Uses the createdAt indexes for efficiency.

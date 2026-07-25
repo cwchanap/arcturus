@@ -59,7 +59,7 @@ export function issueBlackjackConfig(wager: number): RankedBlackjackConfigV1 {
 	if (!isValidInitialWager(wager)) {
 		throw new RangeError('Initial wager is outside blackjack-ranked-v1 limits');
 	}
-	return { ...BLACKJACK_RANKED_V1_CONFIG, initialWager: wager };
+	return Object.freeze({ ...BLACKJACK_RANKED_V1_CONFIG, initialWager: wager });
 }
 
 function projectHand(cards: readonly Card[], wager: number): RankedBlackjackPublicHandV1 {

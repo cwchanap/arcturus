@@ -28,6 +28,7 @@ describe('ranked Blackjack v1 configuration', () => {
 		});
 		expect(Object.isFrozen(BLACKJACK_RANKED_V1_CONFIG)).toBe(true);
 		expect(first.config).toEqual({ ...BLACKJACK_RANKED_V1_CONFIG, initialWager: 100 });
+		expect(Object.isFrozen(first.config)).toBe(true);
 		expect(first.configJson).toBe(
 			'{"blackjackProfitDenominator":2,"blackjackProfitNumerator":3,"dealerHitsSoft17":false,"deckCount":1,"gameType":"blackjack","initialWager":100,"maximumHands":4,"maximumWager":1000,"minimumWager":10,"normalWinProfitDenominator":1,"normalWinProfitNumerator":1,"rulesetVersion":"blackjack-ranked-v1"}',
 		);

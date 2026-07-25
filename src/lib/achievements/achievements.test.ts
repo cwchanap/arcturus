@@ -169,10 +169,22 @@ describe('achievements orchestration', () => {
 		const risingStar = results.find((a) => a.id === 'rising_star');
 		expect(risingStar?.isUnlocked).toBe(true);
 		expect(risingStar?.earnedAt).toBeInstanceOf(Date);
+
+		const rankedDebut = results.find((a) => a.id === 'ranked_debut');
+		expect(rankedDebut).toMatchObject({
+			id: 'ranked_debut',
+			isUnlocked: false,
+			earnedAt: null,
+			gameType: null,
+		});
 	});
 
 	test('generic evaluation never attempts to grant ranked debut', async () => {
 		const grantAchievement = mock(async () => true);
+		const rankedDebutCheck = mock(() => ({
+			achievementId: 'ranked_debut' as const,
+			shouldGrant: true,
+		}));
 		const service = createAchievementService({
 			getEarnedAchievementIds: async () => [],
 			grantAchievement,
@@ -184,8 +196,13 @@ describe('achievements orchestration', () => {
 				totalNetProfit: 0,
 			}),
 			getUserRank: async () => null,
+			achievementChecks: {
+				...ACHIEVEMENT_CHECKS,
+				ranked_debut: rankedDebutCheck,
+			},
 		});
 		await service.checkAndGrantAchievements(createMockDb(), 'user-1', 1000);
+		expect(rankedDebutCheck.mock.calls).toHaveLength(0);
 		expect(grantAchievement.mock.calls.some((call) => call[2] === 'ranked_debut')).toBe(false);
 	});
 

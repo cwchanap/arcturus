@@ -304,7 +304,8 @@ WHERE id = ?
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
 		WHERE id = ? AND userId = ? AND activeUserId = ?
-			AND status = 'active' AND expiresAt <= ?
+			AND status = 'active' AND expiresAt <= ? AND nextSequence = ?
+			AND actionLogHash = ? AND committedWager = ?
 	)`;
 
 const RANKED_REWARD_RESERVATION_SQL = `INSERT INTO ranked_reward_grant (
@@ -344,6 +345,7 @@ const RANKED_EXPIRATION_SESSION_UPDATE_SQL = `UPDATE ranked_session
 SET activeUserId = NULL, status = 'expired', settledAt = ?, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId = ?
 	AND status = 'active' AND expiresAt <= ?
+	AND nextSequence = ? AND actionLogHash = ? AND committedWager = ?
 	AND changes() = 1`;
 
 const RANKED_RESULT_INSERT_SQL = `INSERT INTO ranked_result (
@@ -579,10 +581,7 @@ function validateTerminal(
 	) {
 		invariant('Ranked terminal outcome monetary identity mismatch');
 	}
-	const expectedBiggestWin = outcome.hands.reduce(
-		(biggest, hand) => Math.max(biggest, hand.payout - hand.wager),
-		0,
-	);
+	const expectedBiggestWin = Math.max(terminal.gameNetDelta, 0);
 	if (
 		statsEffects.netProfit !== terminal.gameNetDelta ||
 		statsEffects.biggestWin !== expectedBiggestWin
@@ -1116,6 +1115,9 @@ function buildExpirationBatch(
 					input.userId,
 					input.userId,
 					input.nowSeconds,
+					session.nextSequence,
+					session.actionLogHash,
+					session.committedWager,
 				),
 			db
 				.prepare(RANKED_EXPIRATION_SESSION_UPDATE_SQL)
@@ -1126,6 +1128,9 @@ function buildExpirationBatch(
 					input.userId,
 					input.userId,
 					input.nowSeconds,
+					session.nextSequence,
+					session.actionLogHash,
+					session.committedWager,
 				),
 			resultInsertStatement(db, input.userId, context, terminal),
 			statsUpsertStatement(db, input.userId, terminal),
@@ -1387,6 +1392,14 @@ async function executeExpirationTransition(
 		const current = await readCurrentTransitionState(db, input.userId, input.sessionId);
 		if (current.result && current.session?.status === 'expired') {
 			return { kind: 'applied', result: current.result };
+		}
+		if (
+			current.session?.status === 'active' &&
+			(current.session.nextSequence !== session.nextSequence ||
+				current.session.actionLogHash !== session.actionLogHash ||
+				current.session.committedWager !== session.committedWager)
+		) {
+			return { kind: 'not-applied' };
 		}
 		if (
 			current.session?.status === 'active' &&

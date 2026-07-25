@@ -289,6 +289,7 @@ export function createRankedBlackjackClient(
 	const act = async (action: RankedBlackjackAction): Promise<void> => {
 		if (pending || !current || current.status !== 'active') return;
 		if (actionRecovery && actionRecovery.action !== action) return;
+		const isRecoveryAttempt = actionRecovery !== null;
 		const sessionId = actionRecovery?.sessionId ?? current.sessionId;
 		const body = actionRecovery?.body ?? JSON.stringify({ sequence: current.nextSequence, action });
 		const actionUrl = `/api/ranked/sessions/${sessionId}/actions`;
@@ -317,7 +318,7 @@ export function createRankedBlackjackClient(
 			setPending(false);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
-			if (authoritativeRecoveryAttempted) {
+			if (isRecoveryAttempt || authoritativeRecoveryAttempted) {
 				actionRecovery = { sessionId, action, body };
 				pending = false;
 				return;

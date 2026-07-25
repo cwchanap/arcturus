@@ -257,6 +257,81 @@ describe('ranked Blackjack dealer transition and settlement', () => {
 		expect(replay.outcome?.hands[0]).toMatchObject({ result, wager: 20, payout });
 		expect(replay.outcome?.result).toBe(result);
 	});
+
+	test.each([
+		{
+			name: 'win',
+			deck: () =>
+				deckWithDraws(
+					card('A', 'hearts'),
+					card('A', 'diamonds'),
+					card('10', 'clubs'),
+					card('Q', 'spades'),
+					card('K', 'hearts'),
+					card('8', 'hearts'),
+				),
+			actions: [action(0, 'split'), action(1, 'stand'), action(2, 'stand')],
+			hands: [
+				{ handIndex: 0, result: 'blackjack', wager: 10, payout: 25 },
+				{ handIndex: 1, result: 'loss', wager: 10, payout: 0 },
+			],
+			committedWager: 20,
+			payout: 25,
+			gameNetDelta: 5,
+			result: 'win',
+		},
+		{
+			name: 'loss',
+			deck: () =>
+				deckWithDraws(
+					card('5', 'hearts'),
+					card('5', 'diamonds'),
+					card('10', 'clubs'),
+					card('9', 'spades'),
+					card('6', 'clubs'),
+					card('10', 'hearts'),
+					card('7', 'clubs'),
+					card('5', 'clubs'),
+				),
+			actions: [action(0, 'split'), action(1, 'double-down'), action(2, 'hit'), action(3, 'stand')],
+			hands: [
+				{ handIndex: 0, result: 'loss', wager: 20, payout: 0 },
+				{ handIndex: 1, result: 'win', wager: 10, payout: 20 },
+			],
+			committedWager: 30,
+			payout: 20,
+			gameNetDelta: -10,
+			result: 'loss',
+		},
+		{
+			name: 'push',
+			deck: () =>
+				deckWithDraws(
+					card('9', 'hearts'),
+					card('9', 'diamonds'),
+					card('10', 'clubs'),
+					card('8', 'spades'),
+					card('K', 'hearts'),
+					card('8', 'hearts'),
+				),
+			actions: [action(0, 'split'), action(1, 'stand'), action(2, 'stand')],
+			hands: [
+				{ handIndex: 0, result: 'win', wager: 10, payout: 20 },
+				{ handIndex: 1, result: 'loss', wager: 10, payout: 0 },
+			],
+			committedWager: 20,
+			payout: 20,
+			gameNetDelta: 0,
+			result: 'push',
+		},
+	] as const)(
+		'classifies a mixed win/loss split session as an aggregate $name',
+		({ deck, actions, name: _name, ...expectedOutcome }) => {
+			const replay = replayRankedBlackjack(config(10), deck(), actions);
+
+			expect(replay.outcome).toEqual(expectedOutcome);
+		},
+	);
 });
 
 describe('ranked Blackjack doubles and splits', () => {
@@ -313,9 +388,23 @@ describe('ranked Blackjack doubles and splits', () => {
 		});
 	});
 
-	test('rejects a fifth hand and permits double-down on an eligible post-split hand', () => {
+	test('reaches the canonical four-hand cap and does not offer a fifth split', () => {
 		const fourHands = replayRankedBlackjack(config(10), deckForFourHands(), splitToFourHands());
+
+		expect(fourHands.state.playerHands).toEqual([
+			{ cards: [card('8', 'hearts'), card('2', 'hearts')], wager: 10 },
+			{ cards: [card('8', 'diamonds'), card('4', 'hearts')], wager: 10 },
+			{ cards: [card('8', 'clubs'), card('3', 'hearts')], wager: 10 },
+			{ cards: [card('8', 'spades'), card('5', 'hearts')], wager: 10 },
+		]);
+		expect(fourHands.state.activeHandIndex).toBe(1);
+		// A canonical single deck has only four cards of one rank. Reaching four
+		// exact-rank split hands consumes all four, so an equal-rank active hand
+		// capable of directly requesting a fifth split is unreachable.
 		expect(fourHands.legalActions.some((entry) => entry.action === 'split')).toBe(false);
+	});
+
+	test('permits double-down on an eligible post-split hand', () => {
 		const postSplit = replayRankedBlackjack(config(10), deckForPostSplitEleven(), [
 			action(0, 'split'),
 		]);

@@ -211,16 +211,27 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		}
 	};
 
-	const reconcileMembership = async (userId: string, nowMs: number): Promise<void> => {
-		classifyMembership(
-			await deps.reconcileMembership({
-				db: deps.membershipDb,
-				namespace: deps.membershipNamespace,
-				userId,
-				nowMs,
-			}),
+	const resolveMembership = (userId: string, nowMs: number): Promise<MembershipResolution> =>
+		deps.reconcileMembership({
+			db: deps.membershipDb,
+			namespace: deps.membershipNamespace,
 			userId,
-		);
+			nowMs,
+		});
+
+	const reconcileMembership = async (userId: string, nowMs: number): Promise<void> => {
+		classifyMembership(await resolveMembership(userId, nowMs), userId);
+	};
+
+	const reconcileCurrentActionMembership = async (
+		userId: string,
+		nowMs: number,
+		nowSeconds: number,
+	): Promise<void> => {
+		const resolution = await resolveMembership(userId, nowMs);
+		if (resolution.kind === 'clear') return;
+		await consumeRate(userId, 'ranked_action', nowSeconds);
+		classifyMembership(resolution, userId);
 	};
 
 	const replay = async (session: RankedSessionRecord) => {
@@ -292,6 +303,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			if (session.status !== 'active') return render(session);
 			if (nowSeconds < session.expiresAt) return render(session);
 
+			await reconcileMembership(userId, deps.now().getTime());
 			const account = await deps.repository.readAccount(userId);
 			if (!account) return internalError('Ranked account disappeared during expiration');
 			const replayed = await replay(session);
@@ -572,6 +584,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			return expireOwned(userId, sessionId);
 		}
 
+		await reconcileCurrentActionMembership(userId, deps.now().getTime(), nowSeconds);
 		let actionRateConsumed = false;
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
 			if (session.status !== 'active') return render(session);

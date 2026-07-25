@@ -35,6 +35,15 @@ describe('ranked canonical JSON', () => {
 		expect(() => canonicalizeRanked(extended)).toThrow(CanonicalizationError);
 	});
 
+	test('rejects a sparse array whose extra property compensates for the missing index', () => {
+		const mixed = Array(3) as number[] & { extra?: number };
+		mixed[0] = 1;
+		mixed[2] = 3;
+		mixed.extra = 4;
+
+		expect(() => canonicalizeRanked(mixed)).toThrow(CanonicalizationError);
+	});
+
 	test('rejects non-plain objects', () => {
 		expect(() => canonicalizeRanked(new Date(0) as never)).toThrow(CanonicalizationError);
 		expect(() => canonicalizeRanked(Object.create(null) as never)).toThrow(CanonicalizationError);

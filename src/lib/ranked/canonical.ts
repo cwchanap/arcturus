@@ -31,7 +31,8 @@ export function canonicalizeRanked(value: RankedJson): string {
 		return JSON.stringify(value);
 	}
 	if (Array.isArray(value)) {
-		if (Object.keys(value).length !== value.length) {
+		const keys = Object.keys(value);
+		if (keys.length !== value.length || keys.some((key, index) => key !== String(index))) {
 			throw new CanonicalizationError();
 		}
 		return `[${value.map(canonicalizeRanked).join(',')}]`;

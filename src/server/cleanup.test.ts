@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { runRetentionCleanup, RETENTION_DAYS, ROULETTE_RECEIPT_RETENTION_DAYS } from './cleanup';
+import {
+	runRetentionCleanup,
+	runScheduledJobs,
+	RETENTION_DAYS,
+	ROULETTE_RECEIPT_RETENTION_DAYS,
+	type ScheduledJobDeps,
+} from './cleanup';
 
 interface PreparedCall {
 	sql: string;
@@ -184,5 +190,114 @@ describe('runRetentionCleanup', () => {
 		await runRetentionCleanup(binding);
 		expect(rouletteRoundDeleted).toBe(true);
 		expect(receiptDeleted).toBe(true);
+	});
+});
+
+describe('runScheduledJobs', () => {
+	function scheduledHarness(
+		overrides: Partial<ScheduledJobDeps> = {},
+		env: Parameters<typeof runScheduledJobs>[0] = {
+			DB: {} as D1Database,
+			arcturus: {} as DurableObjectNamespace,
+		},
+	) {
+		const events: string[] = [];
+		const warnings: string[] = [];
+		const deps: ScheduledJobDeps = {
+			async rankedExpiration(_db, _namespace) {
+				events.push('ranked-expiration');
+			},
+			async rankedRateCleanup(_db, _nowSeconds) {
+				events.push('ranked-rate-cleanup');
+			},
+			async retentionCleanup(_db) {
+				events.push('retention-cleanup');
+			},
+			nowSeconds: () => 1_750_000_000,
+			warn(message) {
+				warnings.push(message);
+			},
+			...overrides,
+		};
+		return {
+			events,
+			warnings,
+			run: () => runScheduledJobs(env, deps),
+		};
+	}
+
+	test('runs ranked expiration, ranked rate cleanup, and retention cleanup in order', async () => {
+		const harness = scheduledHarness();
+
+		await harness.run();
+
+		expect(harness.events).toEqual([
+			'ranked-expiration',
+			'ranked-rate-cleanup',
+			'retention-cleanup',
+		]);
+	});
+
+	test('a ranked expiration failure does not suppress rate or retention cleanup', async () => {
+		const harness = scheduledHarness({
+			async rankedExpiration() {
+				harness.events.push('ranked-expiration');
+				throw new Error('ranked failure');
+			},
+		});
+
+		await harness.run();
+
+		expect(harness.events).toEqual([
+			'ranked-expiration',
+			'ranked-rate-cleanup',
+			'retention-cleanup',
+		]);
+		expect(harness.warnings).toEqual(['[SCHEDULED] Ranked expiration failed']);
+	});
+
+	test('a rate cleanup failure does not suppress retention cleanup', async () => {
+		const harness = scheduledHarness({
+			async rankedRateCleanup() {
+				harness.events.push('ranked-rate-cleanup');
+				throw new Error('rate failure');
+			},
+		});
+
+		await harness.run();
+
+		expect(harness.events).toEqual([
+			'ranked-expiration',
+			'ranked-rate-cleanup',
+			'retention-cleanup',
+		]);
+		expect(harness.warnings).toEqual(['[SCHEDULED] Ranked rate-limit cleanup failed']);
+	});
+
+	test('a retention failure is isolated to its own scheduled job', async () => {
+		const harness = scheduledHarness({
+			async retentionCleanup() {
+				harness.events.push('retention-cleanup');
+				throw new Error('retention failure');
+			},
+		});
+
+		await harness.run();
+
+		expect(harness.events).toEqual([
+			'ranked-expiration',
+			'ranked-rate-cleanup',
+			'retention-cleanup',
+		]);
+		expect(harness.warnings).toEqual(['[SCHEDULED] Retention cleanup failed']);
+	});
+
+	test('missing DB logs once and skips every scheduled job', async () => {
+		const harness = scheduledHarness({}, {});
+
+		await harness.run();
+
+		expect(harness.events).toEqual([]);
+		expect(harness.warnings).toEqual(['[SCHEDULED] DB binding unavailable, skipping cleanup']);
 	});
 });

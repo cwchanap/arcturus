@@ -41,8 +41,8 @@ test.describe('Leaderboard Page', () => {
 			await expect(currentUserRow.locator('text=YOU')).toBeVisible();
 		} else {
 			// User is not in top 50 - should see their rank below the table
-			const rankInfo = page.locator("text=/You're ranked #\\d+/");
-			await expect(rankInfo).toBeVisible();
+			const rankInfo = page.locator('p').filter({ hasText: "You're ranked" });
+			await expect(rankInfo).toContainText(/You're ranked\s*#\d+/);
 		}
 	});
 

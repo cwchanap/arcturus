@@ -105,11 +105,15 @@ interface PendingActionRecovery {
 
 class RankedHttpResponseError extends Error {
 	readonly uncertain: boolean;
+	readonly status: number;
+	readonly code: string | null;
 
-	constructor(message: string, uncertain: boolean) {
+	constructor(message: string, uncertain: boolean, status: number, code: string | null) {
 		super(message);
 		this.name = 'RankedHttpResponseError';
 		this.uncertain = uncertain;
+		this.status = status;
+		this.code = code;
 	}
 }
 
@@ -131,15 +135,21 @@ function parseStoredStartRequest(raw: string | null): StoredStartRequest | null 
 	return null;
 }
 
-function responseErrorMessage(response: Response, payload: unknown): string {
+function responseErrorCode(payload: unknown): string | null {
 	if (
 		typeof payload === 'object' &&
 		payload !== null &&
 		'error' in payload &&
 		typeof payload.error === 'string'
 	) {
-		return payload.error.replaceAll('_', ' ').toLowerCase();
+		return payload.error;
 	}
+	return null;
+}
+
+function responseErrorMessage(response: Response, payload: unknown): string {
+	const code = responseErrorCode(payload);
+	if (code) return code.replaceAll('_', ' ').toLowerCase();
 	return `request failed (${response.status})`;
 }
 
@@ -154,6 +164,8 @@ async function readResponse(response: Response): Promise<RankedBlackjackResponse
 		throw new RankedHttpResponseError(
 			responseErrorMessage(response, payload),
 			response.status >= 500,
+			response.status,
+			responseErrorCode(payload),
 		);
 	}
 	if (
@@ -175,6 +187,14 @@ function errorMessage(error: unknown): string {
 
 function isUncertainResponse(error: unknown): boolean {
 	return !(error instanceof RankedHttpResponseError) || error.uncertain;
+}
+
+function isDefinitiveMissingSession(error: unknown): boolean {
+	return (
+		error instanceof RankedHttpResponseError &&
+		error.status === 404 &&
+		error.code === 'SESSION_NOT_FOUND'
+	);
 }
 
 export function createRankedBlackjackClient(
@@ -252,6 +272,12 @@ export function createRankedBlackjackClient(
 			setPending(false);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
+			if (isDefinitiveMissingSession(error)) {
+				deps.storage.removeItem(ACTIVE_SESSION_KEY);
+				current = null;
+				deps.renderer.render(null);
+				setPending(false);
+			}
 		}
 	};
 
@@ -281,6 +307,9 @@ export function createRankedBlackjackClient(
 			accept(response);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
+			if (!isUncertainResponse(error)) {
+				deps.storage.removeItem(START_REQUEST_KEY);
+			}
 		} finally {
 			setPending(false);
 		}

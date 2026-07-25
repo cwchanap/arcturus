@@ -1,4 +1,11 @@
-import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlite-core';
+import {
+	sqliteTable,
+	text,
+	integer,
+	primaryKey,
+	index,
+	uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
 	id: text('id').primaryKey(),
@@ -196,5 +203,123 @@ export const rouletteRound = sqliteTable(
 	(table) => ({
 		pk: primaryKey({ columns: [table.userId, table.syncId] }),
 		createdIdx: index('roulette_round_created_idx').on(table.createdAt),
+	}),
+);
+
+export const rankedSession = sqliteTable(
+	'ranked_session',
+	{
+		id: text('id').primaryKey(),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		startRequestId: text('startRequestId').notNull(),
+		startPayloadHash: text('startPayloadHash').notNull(),
+		activeUserId: text('activeUserId').references(() => user.id, { onDelete: 'cascade' }),
+		gameType: text('gameType').notNull(),
+		rulesetVersion: text('rulesetVersion').notNull(),
+		configJson: text('configJson').notNull(),
+		configHash: text('configHash').notNull(),
+		// Server-only sensitive replay material. Never expose through public APIs or logs.
+		seed: text('seed').notNull(),
+		seedCommitment: text('seedCommitment').notNull(),
+		actionLogJson: text('actionLogJson').notNull(),
+		actionLogHash: text('actionLogHash').notNull(),
+		nextSequence: integer('nextSequence').notNull().default(0),
+		initialWager: integer('initialWager').notNull(),
+		committedWager: integer('committedWager').notNull(),
+		status: text('status').notNull(),
+		expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+		settledAt: integer('settledAt', { mode: 'timestamp' }),
+	},
+	(table) => ({
+		startRequestUnique: uniqueIndex('ranked_session_user_start_request_idx').on(
+			table.userId,
+			table.startRequestId,
+		),
+		activeUserUnique: uniqueIndex('ranked_session_active_user_idx').on(table.activeUserId),
+		expiryIdx: index('ranked_session_status_expiry_idx').on(table.status, table.expiresAt),
+		userCreatedIdx: index('ranked_session_user_created_idx').on(table.userId, table.createdAt),
+	}),
+);
+
+export const rankedResult = sqliteTable('ranked_result', {
+	sessionId: text('sessionId')
+		.primaryKey()
+		.references(() => rankedSession.id, { onDelete: 'cascade' }),
+	userId: text('userId')
+		.notNull()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	gameType: text('gameType').notNull(),
+	rulesetVersion: text('rulesetVersion').notNull(),
+	seedCommitment: text('seedCommitment').notNull(),
+	configHash: text('configHash').notNull(),
+	actionLogHash: text('actionLogHash').notNull(),
+	outcomeJson: text('outcomeJson').notNull(),
+	initialWager: integer('initialWager').notNull(),
+	committedWager: integer('committedWager').notNull(),
+	payout: integer('payout').notNull(),
+	gameNetDelta: integer('gameNetDelta').notNull(),
+	rewardDelta: integer('rewardDelta').notNull(),
+	balanceAfter: integer('balanceAfter').notNull(),
+	statsEffectsJson: text('statsEffectsJson').notNull(),
+	achievementEffectsJson: text('achievementEffectsJson').notNull(),
+	rewardEffectsJson: text('rewardEffectsJson').notNull(),
+	receiptHash: text('receiptHash').notNull(),
+	settledAt: integer('settledAt', { mode: 'timestamp' }).notNull(),
+});
+
+export const rankedGameStats = sqliteTable(
+	'ranked_game_stats',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		gameType: text('gameType').notNull(),
+		sessionsPlayed: integer('sessionsPlayed').notNull().default(0),
+		totalWins: integer('totalWins').notNull().default(0),
+		totalLosses: integer('totalLosses').notNull().default(0),
+		totalPushes: integer('totalPushes').notNull().default(0),
+		totalForfeits: integer('totalForfeits').notNull().default(0),
+		netProfit: integer('netProfit').notNull().default(0),
+		biggestWin: integer('biggestWin').notNull().default(0),
+		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({ pk: primaryKey({ columns: [table.userId, table.gameType] }) }),
+);
+
+export const rankedRewardGrant = sqliteTable(
+	'ranked_reward_grant',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		rewardId: text('rewardId').notNull(),
+		sourceSessionId: text('sourceSessionId')
+			.notNull()
+			.references(() => rankedSession.id, { onDelete: 'cascade' }),
+		achievementId: text('achievementId').notNull(),
+		chipAmount: integer('chipAmount').notNull(),
+		grantedAt: integer('grantedAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({ pk: primaryKey({ columns: [table.userId, table.rewardId] }) }),
+);
+
+export const rankedRateLimit = sqliteTable(
+	'ranked_rate_limit',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		operation: text('operation').notNull(),
+		windowStart: integer('windowStart').notNull(),
+		count: integer('count').notNull(),
+		expiresAt: integer('expiresAt').notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.operation, table.windowStart] }),
+		expiryIdx: index('ranked_rate_limit_expiry_idx').on(table.expiresAt),
 	}),
 );

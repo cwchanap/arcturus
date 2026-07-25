@@ -154,7 +154,7 @@ The initial ruleset identifier is `blackjack-ranked-v1`. Its canonical configura
 }
 ```
 
-The selected initial wager is part of the per-session configuration and therefore part of the configuration hash. Changing any rule requires a new ruleset version; historical sessions always replay through the version they recorded.
+The selected initial wager is part of the per-session issued configuration and therefore part of `configHash`. The hash protects the complete issued configuration for one session; it is not the ruleset's version identity. `rulesetVersion` identifies the immutable rule implementation. Changing any rule requires a new ruleset version; historical sessions always replay through the version they recorded.
 
 ### 5.2 Randomness boundary
 
@@ -176,7 +176,7 @@ Ranked start creates exactly 32 seed bytes with `crypto.getRandomValues`. D1 sto
 
 Deck derivation may be asynchronous, but it completes before the synchronous pure reducer runs. The HMAC algorithm, domain separator, counter encoding, unsigned integer decoding, rejection sampling, initial deck order, shuffle direction, and deal direction are all immutable parts of `blackjack-ranked-v1`.
 
-The seed commitment is lowercase hexadecimal SHA-256 over the UTF-8 bytes of `arcturus:blackjack-ranked-v1:seed:` followed by the 32 raw seed bytes. Only this commitment may appear in a receipt. The raw seed, HMAC state, undealt cards, and future draws are never returned or logged.
+The seed commitment is lowercase hexadecimal SHA-256 over the UTF-8 bytes of `arcturus:blackjack-ranked-v1:seed:` followed by the 32 raw seed bytes. Only this commitment may appear in a receipt. It is an audit fingerprint that lets trusted server-side tooling detect seed substitution; HPA-170 does not claim player-verifiable or provably fair shuffling because the commitment is not opened publicly. The raw seed, HMAC state, undealt cards, and future draws are never returned or logged.
 
 ### 5.3 Rules
 
@@ -187,7 +187,7 @@ Ranked Blackjack intentionally follows current casual behavior with two explicit
 - Normal wins return the wager plus 1:1 profit.
 - Blackjack returns the wager plus 3:2 profit; fractional profit rounds down to a whole chip.
 - A push returns the wager.
-- Double-down is available only on an initial two-card total of 9, 10, or 11.
+- Double-down is available only on a hand's first two cards totaling 9, 10, or 11, including an eligible post-split hand.
 - Double-down commits another equal wager, deals exactly one card, and ends that hand.
 - Split requires equal ranks and commits another equal wager.
 - Re-splitting is permitted until the session has four player hands.
@@ -258,12 +258,11 @@ It must not contain:
 The server:
 
 1. Authenticates the user.
-2. Looks up an existing `(userId, requestId)` before consuming a rate-limit unit.
-3. Returns a matching idempotent replay without consuming another unit; mismatched reuse is
-   rate-limited and then rejected.
+2. Looks up an existing `(userId, requestId)` before consuming a transition rate-limit unit.
+3. Returns a matching idempotent replay through the replay-rate bucket; mismatched reuse consumes a start-rate unit and is then rejected.
 4. Finalizes the user's expired active session, if any.
 5. Enforces the durable start limit.
-6. Rejects active multiplayer membership or held chips.
+6. Runs the shared multiplayer resolver, rejecting a live/unknown membership conflict or orphaned escrow.
 7. Validates the ruleset and wager.
 8. Generates the session ID, seed, seed commitment, configuration, and opening state.
 9. Atomically creates the session and deducts the wager.
@@ -271,7 +270,7 @@ The server:
 
 The client generates and persists `requestId` before sending the request. A retry with the same payload returns the same session or receipt without another deduction.
 
-`requestId` must match `^[A-Za-z0-9_-]{16,128}$`; UUIDs and unpadded base64url identifiers are valid. The server generates each opaque session ID from 16 cryptographically random bytes encoded as exactly 22 unpadded base64url characters. Malformed or out-of-range identifiers return `400 INVALID_REQUEST`.
+`requestId` must match `^[A-Za-z0-9_-]{16,128}$`; UUIDs and unpadded base64url identifiers are valid. The server generates each opaque session ID from 16 cryptographically random bytes encoded as exactly 22 unpadded base64url characters. Malformed or out-of-range identifiers and unknown or unsupported `(gameType, rulesetVersion)` pairs return `400 INVALID_REQUEST`.
 
 ### 6.2 Action
 
@@ -287,8 +286,8 @@ The client generates and persists `requestId` before sending the request. A retr
 Valid actions are `hit`, `stand`, `double-down`, and `split`. The server:
 
 1. Authenticates ownership without revealing whether another user's session exists.
-2. Detects an already-recorded sequence before consuming a rate-limit unit.
-3. Returns the existing state for the same canonical action without consuming another unit.
+2. Detects an already-recorded sequence before consuming an action transition-rate unit.
+3. Returns current authoritative state or the terminal receipt for the same canonical action through the replay-rate bucket.
 4. Rate-limits and then rejects a different action at the same sequence.
 5. Enforces expiration and durable action limits.
 6. Replays the authoritative state and validates the action.
@@ -302,20 +301,20 @@ No client timestamp, score, card, payout, chip delta, or final-state field is ac
 
 `GET /api/ranked/sessions/:sessionId`
 
-The server authenticates ownership, finalizes the session if it has expired, replays active state, and returns public state or the stored terminal receipt. Resume is safe after a page reload, uncertain network response, or browser restart.
+The server authenticates ownership, increments the durable resume-rate bucket, finalizes the session if it has expired, replays active state, and returns public state or the stored terminal receipt. Resume is safe after a page reload, uncertain network response, or browser restart. This intentionally makes `GET` resume a D1-writing operation, bounded at 120 requests per user per minute.
 
 ### 6.4 Sequence rules
 
 - The first player action uses sequence `0`.
 - Every accepted action increments `nextSequence` by one.
-- The same sequence and same canonical action returns the same resulting state or receipt.
-- The same sequence with different content returns `409 IDENTIFIER_REUSE_MISMATCH`.
-- A sequence greater than `nextSequence` returns `409 SEQUENCE_MISMATCH` with the expected value.
-- An action after terminal settlement returns the stored receipt.
+- For `sequence < nextSequence`, the server compares the submitted action with the stored entry at that sequence. A match returns current authoritative public state, not a historical state snapshot; a mismatch returns `409 IDENTIFIER_REUSE_MISMATCH`.
+- For `sequence = nextSequence`, an active session attempts a new transition and a terminal session returns its stored receipt.
+- A sequence greater than `nextSequence` returns `409 SEQUENCE_MISMATCH` with the expected value, including after settlement.
+- Recorded-sequence payload comparison takes precedence over the general terminal-receipt rule, so settlement never hides identifier reuse with different content.
 
 ### 6.5 Expiration and abandonment
 
-An active session expires 15 minutes after the opening deal. The server clock is authoritative.
+An active session expires exactly 15 minutes after the opening deal. `expiresAt` is immutable and accepted actions do not extend it. The server clock is authoritative.
 
 Expiration:
 
@@ -329,6 +328,8 @@ Expiration:
 Expiration is applied lazily during start, action, or resume. The scheduled Worker also finalizes overdue sessions in bounded batches as a global backstop. Because every wager is deducted when committed, abandonment cannot release unearned chips or leave an unsettled hold on the account.
 
 An action or resume request that discovers expiration returns the stored terminal receipt as a successful response. Expiration is a game result, not a `SESSION_EXPIRED` transport error.
+
+The absolute deadline is deliberate: ranked Blackjack is a bounded, normally short round, and a fixed expiry prevents one session from retaining the user's single ranked-session slot and multiplayer exclusion indefinitely. The client shows the authoritative countdown before play begins and throughout the round. Sliding inactivity extension is outside `blackjack-ranked-v1`.
 
 ---
 
@@ -348,7 +349,7 @@ One row contains the complete replay material and mutable session cursor:
 | `gameType` | `blackjack` in v1 |
 | `rulesetVersion` | `blackjack-ranked-v1` |
 | `configJson` / `configHash` | Canonical immutable configuration |
-| `seed` / `seedCommitment` | Server-only replay seed and public-safe commitment |
+| `seed` / `seedCommitment` | Server-only replay seed and audit fingerprint |
 | `actionLogJson` / `actionLogHash` | Canonical accepted actions and hash |
 | `nextSequence` | Optimistic concurrency cursor |
 | `initialWager` | Opening wager |
@@ -388,7 +389,7 @@ The receipt is immutable and keyed by `sessionId`:
 
 `balanceAfter` is a receipt-time snapshot selected from the account row after this settlement batch's wallet update. It is not a permanent account balance and may differ from a later balance after unrelated casual or ranked activity.
 
-The session's seed remains server-only. A stored result plus its session replay material lets the server independently reproduce and audit the receipt.
+The session's seed remains server-only. A stored result plus its session replay material lets trusted server-side tooling independently reproduce and audit the receipt. `seedCommitment` is an audit-only fingerprint in HPA-170; because the seed is never disclosed to the player, it is not evidence of public provable fairness.
 
 ### 7.3 `ranked_game_stats`
 
@@ -435,11 +436,11 @@ The v1 reward ID is `ranked_debut_100`. The associated achievement catalog entry
 - Icon: `🎖️`
 - Grant source: `ranked-terminal`
 
-Implementation adds the ID and definition to the shared achievement types/catalog so profile views and receipt toasts resolve it. The generic `checkAndGrantAchievements` path skips terminal-only definitions; the ranked terminal transaction is the only granter and uses the existing `(userId, achievementId)` primary key. A normally completed first ranked hand qualifies regardless of win, loss, or push; an expired hand does not.
+`AchievementDefinition` gains a required `grantSource: 'evaluated' | 'ranked-terminal'` field. Existing definitions use `evaluated`; Ranked Debut uses `ranked-terminal`. Implementation adds the ID and definition to the shared achievement types/catalog, filters the definitions passed to `checkAndGrantAchievements` to `grantSource === 'evaluated'`, and keeps profile views and receipt toasts catalog-driven so both sources render correctly. The ranked terminal transaction is the only granter for Ranked Debut and uses the existing `(userId, achievementId)` primary key. A normally completed first ranked hand qualifies regardless of win, loss, or push; an expired hand does not.
 
 ### 7.5 `ranked_rate_limit`
 
-Durable fixed-window counters are keyed by `(userId, operation, windowStart)`:
+Durable fixed-window counters have a composite primary key on `(userId, operation, windowStart)`:
 
 - `count`
 - `expiresAt`
@@ -451,8 +452,11 @@ Initial limits:
 - `ranked_start`: 6 requests per user per 60 seconds.
 - `ranked_action`: 30 requests per user per 60 seconds.
 - `ranked_resume`: 120 requests per user per 60 seconds.
+- `ranked_replay`: 120 matching start/action replays per user per 60 seconds.
 
-Valid idempotent replays are resolved before incrementing a counter so a lost response cannot make recovery impossible. For starts and new actions, the rate-limit upsert is the first statement in the same D1 transition batch. This keeps enforcement durable without adding a second database round trip. A denied upsert reports zero changes, and every following mutation in that batch is gated off.
+Valid idempotent replays are identified before incrementing the start/action transition bucket so a lost response does not consume another scarce transition unit. A matching replay then consumes the separate, generous `ranked_replay` bucket before the server reconstructs and returns current state or the receipt. Mismatched identifier reuse consumes the applicable start/action bucket before rejection.
+
+For new starts and actions, the transition rate-limit upsert is the first statement in the same D1 transition batch. This keeps enforcement durable without adding a second database round trip. A denied upsert reports zero changes, and every following mutation in that batch, including the first wallet statement, is explicitly gated by `WHERE changes() = 1`.
 
 ---
 
@@ -463,11 +467,11 @@ Valid idempotent replays are resolved before incrementing a counter so a lost re
 The start D1 batch:
 
 1. Conditionally upserts the start rate bucket.
-2. Inserts the session with `INSERT ... SELECT ... WHERE changes() = 1` only if the user still has enough chips, `heldChips = 0`, no active ranked session, and no live multiplayer conflict.
+2. Inserts the session with `INSERT ... SELECT ... WHERE changes() = 1 ... ON CONFLICT DO NOTHING` only if the user still has enough chips, `heldChips = 0`, no active ranked session, and no live multiplayer conflict.
 3. Deducts the initial wager with a relative `UPDATE user SET chipBalance = chipBalance - ?` gated by the newly inserted session, `heldChips = 0`, and `WHERE changes() = 1`.
 4. For an opening natural, applies the same terminal cascade described below in this batch.
 
-Unique constraint failure rolls back the whole batch. The handler then reads the winner:
+Start idempotency and active-session conflicts are deliberately conflict-tolerant rather than statement errors. A conflict makes the session insert and all following mutations report zero changes while the rate-limit increment commits. The handler inspects the mutation counts and reads the winner:
 
 - Matching start payload returns the existing session.
 - Different payload returns `409 IDENTIFIER_REUSE_MISMATCH`.
@@ -478,7 +482,7 @@ Unique constraint failure rolls back the whole batch. The handler then reads the
 
 Before writing, the coordinator replays the stored session and computes the next canonical state. The D1 batch uses the repository's established sequential `WHERE changes() = 1` cascade; a successful zero-row statement is never assumed to roll back a batch.
 
-The action rate-limit upsert runs first. When the action has a non-zero wallet delta, the next statement is a relative wallet update guarded by `heldChips = 0`, an `EXISTS` subquery for the owned, active session at the expected sequence, and, when another wager is being committed, sufficient balance. The session compare-and-swap repeats the ownership, status, and sequence predicates and additionally requires `changes() = 1`. When the action has no wallet delta, the session compare-and-swap follows the rate upsert directly and requires `changes() = 1`. It records the canonical action, action-log hash, committed wager, next sequence, and any terminal state.
+The action rate-limit upsert runs first. When the action has a non-zero wallet delta, the next statement is a relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, an `EXISTS` subquery for the owned, active session at the expected sequence, and, when another wager is being committed, sufficient balance. The session compare-and-swap repeats the ownership, status, and sequence predicates and additionally requires `changes() = 1`. When the action has no wallet delta, the session compare-and-swap follows the rate upsert directly and requires `changes() = 1`. It records the canonical action, action-log hash, committed wager, next sequence, and any terminal state.
 
 Every required `D1Result.meta.changes` value is inspected. A rate result of zero becomes `RATE_LIMITED`; a wallet result of zero is classified by re-reading balance and session state; and a session result other than one after a successful wallet mutation is an internal invariant failure. The SQL text for these safety-critical cascades is exported from shared repository constants so handlers and integration tests execute the same statements.
 
@@ -491,15 +495,19 @@ Because D1 batch statements execute sequentially in one transaction, a competing
 
 One D1 batch:
 
-1. For a non-zero terminal wallet delta, applies the final additional wager, game payout, and eligible Ranked Debut reward in one relative wallet update guarded by `heldChips = 0`, the active session, and expected sequence.
-2. Changes the session to `settled` or `expired`, clears `activeUserId`, repeats the ownership/status/sequence predicates, and, when step 1 ran, requires `changes() = 1`.
-3. Inserts the immutable `ranked_result` with `WHERE changes() = 1`, selecting `balanceAfter` from the wallet row after step 1.
-4. Upserts `ranked_game_stats` with `WHERE changes() = 1`.
-5. Inserts the unique reward grant and eligible achievement from the just-created result. These optional inserts are last and use their own unique keys, so a conflict-ignore result cannot interrupt a mandatory monetary or statistics cascade.
+1. Establishes the transition gate: the successful action-rate upsert for an action, the successful opening-wager deduction for an opening natural, or the expiration session compare-and-swap for lazy/scheduled expiry.
+2. For a qualifying first completion, inserts `ranked_debut_100` with a strict unique `INSERT ... SELECT ... WHERE changes() = 1`. This statement does not use conflict-ignore. An unexpected uniqueness conflict is a statement error and rolls back the entire batch.
+3. For a non-zero terminal wallet delta, applies the final additional wager, game payout, and reward credit in one relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, the active session, and expected sequence. The reward credit is included only in the branch where step 2 succeeded.
+4. For normal settlement, changes the session to `settled`, clears `activeUserId`, repeats the ownership/status/sequence predicates, and requires `changes() = 1` from the preceding gate or wallet statement. Expiration skips this step because its compare-and-swap in step 1 already changed the session to `expired` and cleared `activeUserId`.
+5. Inserts the immutable `ranked_result` with `WHERE changes() = 1`, selecting `balanceAfter` from the wallet row after any step 3 update, or from the current wallet row when step 3 is omitted, and recording the reward delta selected by the transaction branch.
+6. Upserts `ranked_game_stats` with `WHERE changes() = 1`.
+7. Inserts the eligible `user_achievement` from the stored result with conflict-ignore semantics. This catalog-visible side effect is last; an existing achievement cannot interrupt a mandatory monetary, result, or statistics cascade.
 
-If the terminal wallet delta is zero, step 2 follows the rate-limit statement directly for an action, or is the first mutation for scheduled/lazy expiration. Opening natural settlement follows the start session insert and initial deduction. Reward eligibility is derived inside the wallet/result statements from the absence of `ranked_debut_100`; the one-active-session constraint prevents two ranked settlements for the same user from competing for that reward.
+If no reward is eligible, step 2 is omitted and the wallet/session cascade follows the transition gate directly. If the terminal wallet delta is zero, step 3 is omitted. Expiration never qualifies for Ranked Debut and follows step 1 directly with the result/statistics cascade.
 
-Every mandatory downstream effect is conditioned on the winning session transition or unique result. A retry reads and returns the existing receipt rather than recalculating effects. The handler verifies all mandatory mutation counts before responding. An impossible partial-count pattern is logged as an invariant violation and returns `INTERNAL_ERROR`; real-D1 integration tests must prove that the SQL predicates make that pattern unreachable.
+Reward eligibility is read before building the branch, but the strict grant insert is the definitive reservation. If it conflicts unexpectedly, D1 rolls back all earlier statements, including rate, wager, and session mutations. The handler re-reads the grant: a valid prior grant retries the non-reward branch, while inconsistent data is logged as an invariant violation and returns `INTERNAL_ERROR`. Merely noticing `meta.changes === 0` after committing a reward credit is not considered sufficient.
+
+Every mandatory downstream effect is conditioned on the winning transition, strict reward reservation when applicable, or unique result. A retry reads and returns the existing receipt rather than recalculating effects. The handler verifies all mandatory mutation counts before responding. An impossible partial-count pattern is logged as an invariant violation and returns `INTERNAL_ERROR`; real-D1 integration tests must prove that the SQL predicates make that pattern unreachable.
 
 The response is built from the stored result row, not from transient in-memory calculations.
 
@@ -515,8 +523,10 @@ Replaying the same settlement request always returns byte-equivalent canonical r
 
 Ranked sessions and multiplayer escrow cannot overlap:
 
-- Before blocking ranked start, the coordinator reuses the multiplayer stale-membership resolution policy. A membership younger than the 30-second initialization grace period, a live Durable Object room, or an `unknown` room probe result is a `MULTIPLAYER_CONFLICT`.
-- Only a definitive `gone` room probe may be repaired. The repair returns `heldChips` while the membership still points to that exact room, deletes only that scoped stale membership, and then re-checks both membership and `heldChips` before ranked start proceeds.
+- One shared server-only membership resolver owns stale-lock handling and is used by multiplayer room creation, `/api/mp/lock`, and the ranked coordinator. The existing route-local copies are removed so escrow release and membership deletion cannot diverge again.
+- A membership younger than the 30-second initialization grace period, a live Durable Object room, or an `unknown` room probe result is a `MULTIPLAYER_CONFLICT`.
+- Only a definitive `gone` room probe may be repaired. The shared repair returns `heldChips` while the membership still points to that exact room, deletes only that scoped stale membership, and then re-checks both membership and `heldChips` before ranked start proceeds. Release always happens before deletion.
+- `heldChips > 0` with no membership row is an orphaned escrow state because no room identity remains to probe or scope safely. Ranked start fails closed with `MULTIPLAYER_ESCROW_ORPHANED`, emits a redacted audit event, and does not auto-release funds. After verifying that no live room owns the escrow, support can use the existing service-authenticated escrow-release path to repair it.
 - Multiplayer room create/join/lock rejects a non-null active ranked-session key.
 - Resume and terminal settlement remain available even if unrelated casual activity has changed the account balance.
 
@@ -582,6 +592,7 @@ All endpoints return structured JSON with stable error codes:
 | 409 | `SEQUENCE_MISMATCH` | Gap or stale sequence that does not match a stored action |
 | 409 | `INSUFFICIENT_BALANCE` | Initial or additional wager cannot be funded |
 | 409 | `MULTIPLAYER_CONFLICT` | Ranked and multiplayer escrow would overlap |
+| 409 | `MULTIPLAYER_ESCROW_ORPHANED` | Held chips exist without a membership that can be safely reconciled |
 | 429 | `RATE_LIMITED` | Durable operation limit reached |
 | 500 | `INTERNAL_ERROR` | Unexpected server failure |
 
@@ -598,6 +609,8 @@ The existing scheduled Worker adds two ranked jobs:
 
 The 100-session limit is the complete work budget for one cron invocation; any remaining rows are picked up by the next hourly run or by a lazy request. Deterministic ordering prevents starvation among equally old rows. Lazy start/action/resume checks and the scheduled job call the same expiration finalizer and terminal transaction, including the same status compare-and-swap, so retries and overlapping cron/lazy work are safe. The scheduled path does not maintain a second settlement implementation.
 
+Each selected session is finalized inside its own error boundary; one poison row is logged and skipped without preventing later rows from being attempted. Ranked expiration, rate-bucket cleanup, and the existing retention cleanup also have independent top-level error boundaries. A failure in one job must not abort the others.
+
 The scheduled Worker invokes ranked expiration before the existing retention cleanup. Lazy expiration keeps users unblocked immediately; scheduled finalization is the global backstop. Historical ranked sessions and results are retained in HPA-170 so later competitive features can audit them. A future retention policy must preserve result and season requirements before deleting replay material.
 
 The raw seed is necessary replay material but is sensitive at rest: a D1 snapshot, overly broad support query, or privileged database compromise could reveal the deck. The seed column is server-only, excluded from logs, receipts, public APIs, routine support tooling, and analytics exports. Database and support access should remain least-privileged, and future administrative endpoints must omit it by default. Application-layer seed encryption and key rotation are deferred for HPA-170; they become required if the threat model expands beyond trusted server/database operators.
@@ -611,6 +624,7 @@ Structured logs use redacted user/session identifiers and event names:
 - `ranked_session_settled`
 - `ranked_session_expired`
 - `ranked_rate_limited`
+- `ranked_mp_escrow_orphaned`
 
 Seeds, deck state, complete action logs, emails, and raw account IDs are never logged.
 
@@ -625,6 +639,7 @@ Seeds, deck state, complete action logs, emails, and raw account IDs are never l
 - Different accepted actions produce their expected deterministic branches.
 - Dealer stands on soft 17.
 - Blackjack payout is `wager + floor(wager * 3 / 2)`, including a split Ace plus ten-value card; push, normal win, loss, double, split, and re-split follow v1 rules.
+- Eligible post-split hands may double on their first two cards totaling 9, 10, or 11.
 - The fourth hand is the cap and an attempted fifth split is unavailable and rejected.
 - All-bust rounds skip dealer draws, while a mixed split with an earlier standing hand and a final bust still runs the dealer.
 - Public projection hides the dealer hole card, seed, and undealt cards.
@@ -639,26 +654,37 @@ Tests run against the real migration schema and cover:
 
 - Insufficient initial balance.
 - Insufficient double/split balance without sequence advancement.
+- A denied action-rate upsert prevents every following wallet, session, result, and statistics mutation.
 - `heldChips > 0` introduced between preflight and the D1 batch blocks every ranked wallet transition without partial effects.
 - Malformed, short, or oversized request/session identifiers are rejected.
+- Unknown game/ruleset pairs and negative, fractional, or non-safe-integer sequences are rejected.
 - Duplicate start returning the same session without another wager.
 - Start request ID reused with a different wager.
+- A conflict-tolerant start insert still commits its start-rate unit while every wallet/session effect remains gated off.
 - Duplicate action returning the same state.
 - Same sequence reused with a different action.
+- A matching old sequence returns current state, and a mismatched recorded sequence still conflicts after terminal settlement.
+- Matching start/action replays use the separate durable replay bucket and are eventually rate-limited.
 - Actual parallel action batches against Miniflare/workerd D1 allow one sequence winner, one wallet effect, and one action-log append; this is not simulated with only a stale in-memory predicate.
 - Natural settlement during start.
 - Terminal action retry returning the same receipt.
 - Expiration and scheduled expiration producing one forfeit receipt.
 - Action/resume expiration returns the immutable receipt as success rather than an error.
+- An accepted action just before the deadline does not move `expiresAt`; a later request at or after the original deadline settles the session as expired.
 - Scheduled expiration processes the oldest 100 rows deterministically and leaves overflow safe for the next invocation.
 - Ranked statistics updated exactly once.
 - Ranked `netProfit` excludes rewards, expiration records its wager loss, and `biggestWin` ignores rewards and expiration.
 - Ranked Debut achievement and 100-chip reward granted exactly once.
+- An injected reward-grant uniqueness conflict rolls back the reward credit and every preceding mutation before the handler re-reads eligibility.
 - Ranked Debut is present in the shared catalog but cannot be granted by casual achievement evaluation.
 - Durable rate limits shared by fresh handler instances.
 - Active ranked-session uniqueness.
+- Two sequential sessions for one user prove the nullable `activeUserId` uniqueness constraint permits multiple terminal `NULL` rows.
 - Ranked/multiplayer exclusion in both directions.
 - Stale multiplayer membership is repaired only after a definitive gone-room probe; live, recent, and unknown probes remain blocked.
+- Multiplayer room creation, lock acquisition, and ranked start use the same stale-membership resolver; scoped escrow is released before deletion.
+- Orphaned `heldChips` without membership fails closed and never auto-releases through a user-authenticated request.
+- A poison expiration row and a failed ranked cleanup job do not prevent other expirations or retention cleanup.
 - Transaction rollback after injected persistence failure.
 
 ### 13.3 End-to-end tests
@@ -716,7 +742,8 @@ Implementation planning should preserve these boundaries:
 - Casual game logic must not call ranked endpoints.
 - Existing `/api/chips/update` remains explicitly casual and client-authoritative.
 - Ranked statistics must never read or merge existing casual `game_stats`.
+- Multiplayer room creation, lock acquisition, and ranked start must call one shared stale-membership/escrow resolver rather than copying its policy.
 - The ranked seed schema field must carry a source comment identifying it as server-only sensitive replay material.
-- `ranked_debut` is catalog-visible but terminal-only; generic casual achievement evaluation must skip it.
-- Every schema change must run `bun run db:generate`; the concrete migration paths in `package.json` for both `db:migrate:local` and `db:migrate:remote` must then be updated to include the generated SQL.
+- `ranked_debut` is catalog-visible but terminal-only; generic casual achievement evaluation must filter it by `grantSource`.
+- Every schema change must run `bun run db:generate`. The existing `scripts/apply-migrations.ts` automatically discovers numbered `drizzle/*.sql` files, so adding a generated migration does not require editing the `db:migrate:local` or `db:migrate:remote` scripts in `package.json`.
 - Future games must add a new immutable adapter/ruleset version rather than branching on ad hoc payload fields inside the coordinator.

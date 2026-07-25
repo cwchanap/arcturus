@@ -166,6 +166,7 @@ function createHarness({
 	fetch: fetchImplementation = async () => jsonResponse(activeResponse()),
 	storage = new RecordingStorage(),
 	renderer = createRenderer(),
+	createRequestId = () => 'request-00000001',
 	now = () => 1_800_000_000_000,
 	setInterval: setIntervalImplementation = () => 1,
 	clearInterval: clearIntervalImplementation = () => {},
@@ -178,7 +179,7 @@ function createHarness({
 		fetch: fetchMock,
 		storage,
 		renderer,
-		createRequestId: () => 'request-00000001',
+		createRequestId,
 		now,
 		setInterval: setIntervalImplementation,
 		clearInterval: clearIntervalImplementation,
@@ -204,22 +205,33 @@ describe('ranked Blackjack recovery client', () => {
 		]);
 	});
 
-	test('reuses the exact persisted start payload after an uncertain prior start', async () => {
+	test('reuses the exact persisted start payload after an uncertain prior start and reload', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(
-			START_REQUEST_KEY,
+		const first = createHarness({
+			storage,
+			createRequestId: () => 'request-00000001',
+			fetch: async () => {
+				throw new TypeError('network');
+			},
+		});
+		await first.client.start(100);
+
+		expect(storage.getItem(START_REQUEST_KEY)).toBe(
 			JSON.stringify({ requestId: 'request-00000001', wager: 100 }),
 		);
+
 		let postedBody: string | undefined;
-		const { client } = createHarness({
+		const reloaded = createHarness({
 			storage,
+			createRequestId: () => 'request-00000002',
 			fetch: async (_url, init) => {
 				postedBody = String(init?.body);
 				return jsonResponse(activeResponse());
 			},
 		});
+		await reloaded.client.initialize();
 
-		await client.start(200);
+		await reloaded.client.start(200);
 
 		expect(JSON.parse(postedBody ?? '')).toEqual({
 			requestId: 'request-00000001',
@@ -227,6 +239,40 @@ describe('ranked Blackjack recovery client', () => {
 			rulesetVersion: 'blackjack-ranked-v1',
 			wager: 100,
 		});
+	});
+
+	test('clears a definitively missing stored session so reload and start controls recover', async () => {
+		const storage = new RecordingStorage();
+		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		const renderer = createRenderer();
+		const { client } = createHarness({
+			storage,
+			renderer,
+			fetch: async () =>
+				new Response(JSON.stringify({ error: 'SESSION_NOT_FOUND' }), {
+					status: 404,
+					headers: { 'content-type': 'application/json' },
+				}),
+		});
+
+		await client.initialize();
+
+		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBeNull();
+		expect(renderer.pending).toEqual([true, false]);
+		expect(renderer.errors).toEqual(['session not found']);
+
+		const reloadEvents: string[] = [];
+		const reloaded = createHarness({
+			storage,
+			renderer: createRenderer(reloadEvents),
+			fetch: async () => {
+				throw new Error('reload must not fetch a cleared session');
+			},
+		});
+		await reloaded.client.initialize();
+
+		expect(reloaded.fetchMock).toHaveBeenCalledTimes(0);
+		expect(reloadEvents).toEqual(['render']);
 	});
 
 	test('resumes a stored session before start can be enabled on reload', async () => {
@@ -259,6 +305,80 @@ describe('ranked Blackjack recovery client', () => {
 
 		expect(renderer.pending).toEqual([true]);
 		expect(renderer.errors).toEqual(['network']);
+		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+	});
+
+	test.each([
+		['server error', 500, 'INTERNAL_ERROR'],
+		['authentication response', 401, 'UNAUTHORIZED'],
+	])('keeps reload blocked for unresolved %s', async (_label, status, code) => {
+		const storage = new RecordingStorage();
+		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		const renderer = createRenderer();
+		const { client } = createHarness({
+			storage,
+			renderer,
+			fetch: async () =>
+				new Response(JSON.stringify({ error: code }), {
+					status,
+					headers: { 'content-type': 'application/json' },
+				}),
+		});
+
+		await client.initialize();
+
+		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(renderer.pending).toEqual([true]);
+	});
+
+	test('clears a definitively rejected start so a lower wager after reload uses a fresh request', async () => {
+		const storage = new RecordingStorage();
+		const bodies: string[] = [];
+		const first = createHarness({
+			storage,
+			createRequestId: () => 'request-00000001',
+			fetch: async (_url, init) => {
+				bodies.push(String(init?.body));
+				return new Response(JSON.stringify({ error: 'INSUFFICIENT_BALANCE' }), {
+					status: 409,
+					headers: { 'content-type': 'application/json' },
+				});
+			},
+		});
+
+		await first.client.start(1000);
+
+		expect(storage.getItem(START_REQUEST_KEY)).toBeNull();
+		expect(storage.events.map(([operation, key]) => [operation, key])).toEqual([
+			['set', START_REQUEST_KEY],
+			['remove', START_REQUEST_KEY],
+		]);
+
+		const reloaded = createHarness({
+			storage,
+			createRequestId: () => 'request-00000002',
+			fetch: async (_url, init) => {
+				bodies.push(String(init?.body));
+				return jsonResponse(activeResponse());
+			},
+		});
+		await reloaded.client.initialize();
+		await reloaded.client.start(10);
+
+		expect(bodies.map((body) => JSON.parse(body))).toEqual([
+			{
+				requestId: 'request-00000001',
+				gameType: 'blackjack',
+				rulesetVersion: 'blackjack-ranked-v1',
+				wager: 1000,
+			},
+			{
+				requestId: 'request-00000002',
+				gameType: 'blackjack',
+				rulesetVersion: 'blackjack-ranked-v1',
+				wager: 10,
+			},
+		]);
 		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
 	});
 

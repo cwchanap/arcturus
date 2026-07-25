@@ -8,7 +8,7 @@ import {
 	type RankedBlackjackActionLogV1,
 	type RankedStartRequest,
 } from '../../lib/ranked/protocol';
-import type { MembershipResolution } from '../mp/membership';
+import { reconcileMultiplayerMembership, type MembershipResolution } from '../mp/membership';
 import { createRankedCoordinator, type RankedCoordinatorDeps } from './coordinator';
 import type {
 	ActionTransitionInput,
@@ -41,6 +41,7 @@ const START_REQUEST: RankedStartRequest = {
 interface RepositoryCalls {
 	findByStartRequest: [string, string][];
 	findActiveSession: string[];
+	findSessionOwner: string[];
 	findOwnedSession: [string, string][];
 	findResult: string[];
 	readAccount: string[];
@@ -132,6 +133,7 @@ function createRepository(
 	const calls: RepositoryCalls = {
 		findByStartRequest: [],
 		findActiveSession: [],
+		findSessionOwner: [],
 		findOwnedSession: [],
 		findResult: [],
 		readAccount: [],
@@ -150,6 +152,10 @@ function createRepository(
 		async findActiveSession(userId) {
 			calls.findActiveSession.push(userId);
 			return overrides.findActiveSession?.(userId) ?? null;
+		},
+		async findSessionOwner(sessionId) {
+			calls.findSessionOwner.push(sessionId);
+			return overrides.findSessionOwner?.(sessionId) ?? null;
 		},
 		async findOwnedSession(userId, sessionId) {
 			calls.findOwnedSession.push([userId, sessionId]);
@@ -202,10 +208,12 @@ function coordinator(
 		membership = { kind: 'clear' },
 		randomSeed = ACTIVE_SEED,
 		reconcileMembership,
+		log,
 	}: {
 		membership?: MembershipResolution;
 		randomSeed?: Uint8Array;
 		reconcileMembership?: RankedCoordinatorDeps['reconcileMembership'];
+		log?: RankedCoordinatorDeps['log'];
 	} = {},
 ) {
 	const deps: RankedCoordinatorDeps = {
@@ -220,6 +228,7 @@ function coordinator(
 			if (length === 32) return randomSeed.slice();
 			throw new Error(`unexpected random length ${length}`);
 		},
+		log,
 	};
 	return createRankedCoordinator(deps);
 }
@@ -304,6 +313,9 @@ describe('ranked coordinator start lifecycle', () => {
 		);
 
 		expect(repository.calls.runStartTransition).toHaveLength(0);
+		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
+			[USER_ID, 'ranked_start', NOW_SECONDS],
+		]);
 	});
 
 	test('a membership inserted after preflight is reclassified as MULTIPLAYER_CONFLICT', async () => {
@@ -325,6 +337,9 @@ describe('ranked coordinator start lifecycle', () => {
 
 		expect(repository.calls.runStartTransition).toHaveLength(1);
 		expect(reconciliation).toBe(2);
+		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
+			[USER_ID, 'ranked_start', NOW_SECONDS],
+		]);
 	});
 
 	test('a recoverable escrow race is re-read after the shared reconciler clears it', async () => {
@@ -581,6 +596,9 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		expect(response.status).toBe('expired');
 		expect(response.expiresAt).toBe(originalDeadline);
 		expect(response.receipt?.statsEffects.totalForfeits).toBe(1);
+		expect(response.state.phase).toBe('complete');
+		expect(response.state.availableActions).toEqual([]);
+		expect(response.state.outcome).toEqual(response.receipt?.outcome);
 		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_resume');
 	});
 
@@ -662,6 +680,28 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		).toHaveProperty('size', 3);
 	});
 
+	test('a transition-batch rate denial emits the redacted ranked_rate_limited event', async () => {
+		const events: string[] = [];
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+			runTerminalTransition: async () => ({ kind: 'rate-limited', retryAfter: 19 }),
+		});
+
+		try {
+			await coordinator(repository, {
+				log: ({ event }) => events.push(event),
+			}).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'stand' },
+			});
+			throw new Error('Expected action rate limit');
+		} catch (error) {
+			expect(error).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 19 });
+		}
+		expect(events).toContain('ranked_rate_limited');
+	});
+
 	test('a fresh snapshot that cannot fund an additional wager returns INSUFFICIENT_BALANCE', async () => {
 		const doubleSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 5);
 		const active = session({ seed: doubleSeed });
@@ -731,6 +771,247 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 				.bind(started.sessionId)
 				.first<{ count: number }>(),
 		).toEqual({ count: 1 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('real D1 underfunded starts consume durable capacity until RATE_LIMITED', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 5 });
+		const ranked = createRankedCoordinator({
+			repository: createRankedRepository(db),
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes: (length) => new Uint8Array(length),
+		});
+		const codes: string[] = [];
+
+		for (let attempt = 0; attempt < 7; attempt += 1) {
+			try {
+				await ranked.start({ userId: USER_ID, body: START_REQUEST });
+			} catch (error) {
+				codes.push((error as RankedServiceError).code);
+			}
+		}
+
+		expect(codes).toEqual([
+			'INSUFFICIENT_BALANCE',
+			'INSUFFICIENT_BALANCE',
+			'INSUFFICIENT_BALANCE',
+			'INSUFFICIENT_BALANCE',
+			'INSUFFICIENT_BALANCE',
+			'INSUFFICIENT_BALANCE',
+			'RATE_LIMITED',
+		]);
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_start'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: 6 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('real D1 concurrent different terminal actions return one winner and one identifier mismatch', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const terminalSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 20);
+		const ranked = createRankedCoordinator({
+			repository: createRankedRepository(db),
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : terminalSeed.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+
+		const outcomes = await Promise.allSettled([
+			ranked.act({
+				userId: USER_ID,
+				sessionId: started.sessionId,
+				body: { sequence: 0, action: 'stand' },
+			}),
+			ranked.act({
+				userId: USER_ID,
+				sessionId: started.sessionId,
+				body: { sequence: 0, action: 'hit' },
+			}),
+		]);
+
+		expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+		const rejection = outcomes.find(({ status }) => status === 'rejected');
+		expect(rejection).toMatchObject({
+			status: 'rejected',
+			reason: { code: 'IDENTIFIER_REUSE_MISMATCH' },
+		});
+		expect(
+			await db
+				.prepare('SELECT COUNT(*) AS count FROM ranked_result WHERE sessionId = ?')
+				.bind(started.sessionId)
+				.first<{ count: number }>(),
+		).toEqual({ count: 1 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('a terminal snapshot retry at the 29/30 boundary consumes exactly one action unit', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const durableRepository = createRankedRepository(db);
+		let armBalanceRace = false;
+		let balanceRaced = false;
+		const repository: RankedRepository = {
+			...durableRepository,
+			async readAccount(userId) {
+				const account = await durableRepository.readAccount(userId);
+				if (armBalanceRace && !balanceRaced) {
+					balanceRaced = true;
+					await db.prepare('UPDATE user SET chipBalance = ? WHERE id = ?').bind(875, userId).run();
+				}
+				return account;
+			},
+		};
+		const ranked = createRankedCoordinator({
+			repository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+		for (let count = 0; count < 29; count += 1) {
+			expect(
+				await durableRepository.consumeStandaloneRateLimit(USER_ID, 'ranked_action', NOW_SECONDS),
+			).toEqual({ kind: 'allowed' });
+		}
+		armBalanceRace = true;
+
+		const settled = await ranked.act({
+			userId: USER_ID,
+			sessionId: started.sessionId,
+			body: { sequence: 0, action: 'stand' },
+		});
+
+		expect(settled.receipt?.balanceAfter).toBe(1175);
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: 30 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('post-start recent multiplayer membership is classified as a conflict', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const durableRepository = createRankedRepository(db);
+		let now = new Date(NOW);
+		const ranked = createRankedCoordinator({
+			repository: durableRepository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: reconcileMultiplayerMembership,
+			membershipDb: db,
+			now: () => new Date(now),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'ROOM01', NOW_SECONDS)
+			.run();
+		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(100, USER_ID).run();
+
+		await expectRankedError(
+			ranked.act({
+				userId: USER_ID,
+				sessionId: started.sessionId,
+				body: { sequence: 0, action: 'stand' },
+			}),
+			'MULTIPLAYER_CONFLICT',
+		);
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: 1 });
+
+		now = new Date((NOW_SECONDS + 901) * 1000);
+		await expectRankedError(ranked.expire(started.sessionId), 'MULTIPLAYER_CONFLICT');
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('post-start orphaned escrow is classified for action and scheduled expiration', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const durableRepository = createRankedRepository(db);
+		let now = new Date(NOW);
+		const ranked = createRankedCoordinator({
+			repository: durableRepository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: reconcileMultiplayerMembership,
+			membershipDb: db,
+			now: () => new Date(now),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(100, USER_ID).run();
+
+		await expectRankedError(
+			ranked.act({
+				userId: USER_ID,
+				sessionId: started.sessionId,
+				body: { sequence: 0, action: 'stand' },
+			}),
+			'MULTIPLAYER_ESCROW_ORPHANED',
+		);
+		expect(
+			await db
+				.prepare(
+					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+				)
+				.bind(USER_ID)
+				.first<{ count: number }>(),
+		).toEqual({ count: 1 });
+
+		now = new Date((NOW_SECONDS + 901) * 1000);
+		await expectRankedError(ranked.expire(started.sessionId), 'MULTIPLAYER_ESCROW_ORPHANED');
+		await db.prepare('UPDATE user SET heldChips = 0 WHERE id = ?').bind(USER_ID).run();
+		const expired = await ranked.expire(started.sessionId);
+		expect(expired.status).toBe('expired');
+		expect(expired.receipt?.statsEffects.totalForfeits).toBe(1);
 	} finally {
 		await mf.dispose();
 	}

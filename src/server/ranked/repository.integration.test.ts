@@ -637,6 +637,36 @@ describe('ranked start transaction', () => {
 		expect(await readRateCount('ranked_start')).toBe(6);
 	});
 
+	test('a pre-consumed start continuation proves but does not increment its durable rate unit', async () => {
+		const repository = createRankedRepository(db);
+		expect(
+			await repository.consumeStandaloneRateLimit(USER_ID, 'ranked_start', NOW_SECONDS),
+		).toEqual({ kind: 'allowed' });
+
+		const result = await repository.runStartTransition({
+			...startInput(),
+			rateLimitMode: 'already-consumed',
+		});
+
+		expect(result).toEqual({ kind: 'created' });
+		expect(await readRateCount('ranked_start')).toBe(1);
+		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+	});
+
+	test('a start continuation without a consumed rate unit gates every mutation', async () => {
+		const repository = createRankedRepository(db);
+
+		const result = await repository.runStartTransition({
+			...startInput(),
+			rateLimitMode: 'already-consumed',
+		});
+
+		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 60 });
+		expect(await readRateCount('ranked_start')).toBe(0);
+		expect(await countSessions()).toBe(0);
+		expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
+	});
+
 	test('heldChips introduced after preflight blocks the session and wager', async () => {
 		const repository = createRankedRepository(db);
 		const preflight = await repository.readAccount(USER_ID);
@@ -1559,6 +1589,7 @@ describe('typed ranked repository reads', () => {
 		const byRequest = await repository.findByStartRequest(USER_ID, session.startRequestId);
 		const owned = await repository.findOwnedSession(USER_ID, session.id);
 		const active = await repository.findActiveSession(USER_ID);
+		const owner = await repository.findSessionOwner(session.id);
 
 		expect(byRequest?.config).toEqual({
 			...BLACKJACK_RANKED_V1_CONFIG,
@@ -1567,6 +1598,7 @@ describe('typed ranked repository reads', () => {
 		expect(byRequest?.actionLog).toEqual([]);
 		expect(owned).toEqual(byRequest);
 		expect(active).toEqual(byRequest);
+		expect(owner).toBe(USER_ID);
 		expect(await repository.readAccount(USER_ID)).toEqual({
 			chipBalance: 900,
 			heldChips: 0,

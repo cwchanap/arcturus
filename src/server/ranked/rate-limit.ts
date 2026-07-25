@@ -25,6 +25,14 @@ ON CONFLICT (userId, operation, windowStart)
 DO UPDATE SET count = ranked_rate_limit.count + 1, expiresAt = excluded.expiresAt
 WHERE ranked_rate_limit.count < ?`;
 
+export const RANKED_RATE_LIMIT_CONTINUATION_SQL = `UPDATE ranked_rate_limit
+SET count = count
+WHERE userId = ?
+	AND operation = ?
+	AND windowStart = ?
+	AND count >= 1
+	AND count <= ?`;
+
 function assertNowSeconds(nowSeconds: number): void {
 	if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
 		throw new TypeError('Ranked rate-limit time must be a non-negative safe integer');
@@ -52,6 +60,17 @@ export function buildRateLimitStatement(
 	return db
 		.prepare(RANKED_RATE_LIMIT_UPSERT_SQL)
 		.bind(input.userId, input.operation, windowStart, expiresAt, policy.limit);
+}
+
+export function buildRateLimitContinuationStatement(
+	db: D1Database,
+	input: RankedRateLimitInput,
+): D1PreparedStatement {
+	const policy = RANKED_RATE_LIMITS[input.operation];
+	const windowStart = getWindowStart(input.operation, input.nowSeconds);
+	return db
+		.prepare(RANKED_RATE_LIMIT_CONTINUATION_SQL)
+		.bind(input.userId, input.operation, windowStart, policy.limit);
 }
 
 export async function consumeStandaloneRateLimit(

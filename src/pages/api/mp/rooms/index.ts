@@ -1,9 +1,12 @@
 import type { APIRoute } from 'astro';
 import { and, eq } from 'drizzle-orm';
 import { generateRoomCode } from '../../../../lib/mp-poker/roomCode';
-import { roomExists } from '../../../../lib/mp-poker/roomExists';
 import { createDb } from '../../../../lib/db';
 import { mpMembership } from '../../../../db/schema';
+import {
+	hasActiveRankedSession,
+	reconcileMultiplayerMembership,
+} from '../../../../server/mp/membership';
 
 export const POST: APIRoute = async ({ locals, request }) => {
 	const user = locals.user;
@@ -11,6 +14,18 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
 	const db = createDb(locals.runtime.env.DB);
 	const env = locals.runtime.env;
+
+	if (await hasActiveRankedSession(env.DB, user.id)) {
+		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
+	}
+	const membership = await reconcileMultiplayerMembership({
+		db: env.DB,
+		namespace: env.arcturus,
+		userId: user.id,
+	});
+	if (membership.kind !== 'clear') {
+		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
+	}
 
 	// Atomically acquire a membership lock before creating the DO.
 	// Using INSERT … ON CONFLICT DO NOTHING prevents the TOCTOU race where
@@ -27,69 +42,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
 		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 	}
 	// Re-read to confirm we own the lock (vs a conflicting row for another room)
-	let lockRow = await db.select().from(mpMembership).where(eq(mpMembership.userId, user.id)).get();
-	if (lockRow && lockRow.roomCode !== code) {
-		// Existing lock references a different room.  Check whether that room
-		// actually still exists — if the DO was never created or has been
-		// evicted, the lock is stale and should be cleaned up so the user
-		// isn't permanently blocked from multiplayer.
-		// Only treat a definitive 404 as stale. Transient errors (5xx,
-		// timeout) return 'unknown' and the lock is preserved to avoid
-		// breaking the one-room escrow invariant.
-		if (env.arcturus) {
-			// Guard: if the lock was acquired very recently, the DO may
-			// simply not have been initialised yet (e.g. a concurrent
-			// double-submit from the same user).  Treat it as in-progress
-			// rather than stale so we don't delete a valid lock.
-			const IN_PROGRESS_GRACE_MS = 30_000; // 30 seconds
-			const lockAge = Date.now() - lockRow.joinedAt.getTime();
-			if (lockAge < IN_PROGRESS_GRACE_MS) {
-				// Lock is too recent — assume the other request is still
-				// initialising the DO.  Refuse this request.
-				return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
-			}
-
-			const status = await roomExists(env.arcturus, lockRow.roomCode);
-			if (status === 'gone') {
-				// Release any escrowed chips for the old room before deleting the
-				// membership row.  The release-escrow endpoint scopes by roomCode
-				// via mp_membership, so we must release while the row still exists.
-				// If we deleted first and the subsequent create failed before the
-				// new room snapshotted chips, the user would be stuck with
-				// chipBalance=0 and heldChips>0, blocking all chip updates.
-				const d1 = locals.runtime.env.DB;
-				const nowSeconds = Math.trunc(Date.now() / 1000);
-				await d1
-					.prepare(
-						`UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? ` +
-							`WHERE id = ? AND heldChips > 0 ` +
-							`AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = ? AND roomCode = ?)`,
-					)
-					.bind(nowSeconds, user.id, user.id, lockRow.roomCode)
-					.run();
-
-				// Scope delete to the specific stale roomCode so a concurrent
-				// request that already replaced the row doesn't get clobbered.
-				await db
-					.delete(mpMembership)
-					.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, lockRow.roomCode)))
-					.run();
-				// Re-acquire the lock with our new room code; use
-				// onConflictDoNothing to avoid clobbering a lock another
-				// concurrent request already inserted, then re-read.
-				await db
-					.insert(mpMembership)
-					.values({ userId: user.id, roomCode: code, joinedAt: new Date() })
-					.onConflictDoNothing()
-					.run();
-				lockRow = await db
-					.select()
-					.from(mpMembership)
-					.where(eq(mpMembership.userId, user.id))
-					.get();
-			}
-		}
-	}
+	const lockRow = await db
+		.select()
+		.from(mpMembership)
+		.where(eq(mpMembership.userId, user.id))
+		.get();
 	if (!lockRow || lockRow.roomCode !== code) {
 		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 	}

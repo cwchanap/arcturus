@@ -1166,6 +1166,71 @@ describe('ranked terminal transaction', () => {
 		expect(await readBalance()).toEqual({ chipBalance: 1200, heldChips: 0 });
 	});
 
+	test('mixed split profit uses the positive overall session delta for biggest win', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		expect(
+			await repository.runActionTransition(
+				actionInput({
+					action: 'split',
+					additionalWager: 100,
+					committedWager: 200,
+				}),
+			),
+		).toEqual({ kind: 'applied', result: null });
+		const actionLog = [
+			{ sequence: 0, action: 'split' },
+			{ sequence: 1, action: 'stand' },
+		] as const;
+		const actionLogHash = hashCanonical(actionLog);
+		const outcome = {
+			result: 'push' as const,
+			hands: [
+				{ handIndex: 0, result: 'win' as const, wager: 100, payout: 200 },
+				{ handIndex: 1, result: 'loss' as const, wager: 100, payout: 0 },
+			],
+			committedWager: 200,
+			payout: 200,
+			gameNetDelta: 0,
+		};
+		const statsEffects = {
+			sessionsPlayed: 1 as const,
+			totalWins: 0 as const,
+			totalLosses: 0 as const,
+			totalPushes: 1 as const,
+			totalForfeits: 0 as const,
+			netProfit: 0,
+			biggestWin: 0,
+		};
+
+		const result = await repository.runTerminalTransition({
+			...actionInput({
+				expectedSequence: 1,
+				action: 'stand',
+				additionalWager: 0,
+				committedWager: 200,
+				terminal: terminalInput({
+					expectedWalletBalance: 800,
+					actionLogHash,
+					committedWager: 200,
+					payout: 200,
+					outcome,
+					statsEffects,
+				}),
+			}),
+			actionLogJson: canonicalizeRanked(actionLog),
+			actionLogHash,
+		});
+
+		expect(result.kind).toBe('applied');
+		expect(await readRankedStats()).toMatchObject({
+			sessionsPlayed: 1,
+			totalPushes: 1,
+			netProfit: 0,
+			biggestWin: 0,
+		});
+	});
+
 	test('a result persistence failure rolls back wallet, session, reward, and stats', async () => {
 		const repository = createRankedRepository(db);
 		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
@@ -1364,6 +1429,52 @@ describe('opening natural and expiration transactions', () => {
 		expect(fresh.kind).toBe('applied');
 		expect(fresh.kind === 'applied' ? fresh.result.balanceAfter : null).toBe(875);
 		expect(await readBalance()).toEqual({ chipBalance: 875, heldChips: 0 });
+	});
+
+	test('a zero-wager action racing expiration never stores a stale action receipt', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		const expiration = expirationInput();
+		const hit = actionInput({
+			action: 'hit',
+			additionalWager: 0,
+			committedWager: 100,
+			nowSeconds: NOW_SECONDS + 901,
+		});
+
+		const [expirationResult, actionResult] = await Promise.all([
+			repository.runExpirationTransition(expiration),
+			repository.runActionTransition(hit),
+		]);
+
+		expect(
+			Number(expirationResult.kind === 'applied') + Number(actionResult.kind === 'applied'),
+		).toBe(1);
+		let session = await repository.findOwnedSession(USER_ID, SESSION_A);
+		let stored = await repository.findResult(SESSION_A);
+		if (actionResult.kind === 'applied') {
+			expect(expirationResult).toEqual({ kind: 'not-applied' });
+			expect(stored).toBeNull();
+			expect(session).toMatchObject({
+				status: 'active',
+				nextSequence: 1,
+				actionLogHash: hit.actionLogHash,
+			});
+			if (!session) throw new Error('missing raced ranked session');
+			const retried = await repository.runExpirationTransition(
+				expirationInput({
+					session,
+					expectedWalletBalance: 900,
+					nowSeconds: NOW_SECONDS + 901,
+				}),
+			);
+			expect(retried.kind).toBe('applied');
+			session = await repository.findOwnedSession(USER_ID, SESSION_A);
+			stored = await repository.findResult(SESSION_A);
+		}
+		expect(session?.status).toBe('expired');
+		expect(stored?.actionLogHash).toBe(session?.actionLogHash);
+		expect(stored?.committedWager).toBe(session?.committedWager);
 	});
 
 	test('lists only the oldest one hundred active expired sessions in stable order', async () => {

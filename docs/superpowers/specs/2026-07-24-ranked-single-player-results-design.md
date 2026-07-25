@@ -1,6 +1,6 @@
 # Server-Verifiable Ranked Single-Player Results — Design
 
-**Status:** Approved (brainstorming phase complete)  
+**Status:** Approved (brainstorming phase complete; D1 balance-snapshot clarification added 2026-07-25)
 **Date:** 2026-07-24  
 **Issue:** HPA-170  
 **Scope:** Generic ranked-session platform plus one-hand Blackjack reference implementation.
@@ -387,7 +387,7 @@ The receipt is immutable and keyed by `sessionId`:
 | `receiptHash` | SHA-256 of canonical receipt fields |
 | `settledAt` | Authoritative settlement time |
 
-`balanceAfter` is a receipt-time snapshot selected from the account row after this settlement batch's wallet update. It is not a permanent account balance and may differ from a later balance after unrelated casual or ranked activity.
+`balanceAfter` is a receipt-time snapshot established by an exact-balance compare-and-swap in the settlement batch. Before building the batch, the coordinator reads the account balance, computes the complete terminal wallet delta and expected post-settlement balance, and canonicalizes the receipt with that value. The batch first verifies the pre-read balance with a no-op guarded account update, applies any relative wallet delta, and requires the result insert to observe the expected post-settlement balance. This is necessary because D1 SQLite has no SHA-256 function with which to construct `receiptHash` from an intra-batch query result. A stale pre-read changes zero rows and causes no result-affecting mutation; the coordinator re-reads and retries with a newly canonicalized receipt. The stored value is not a permanent account balance and may differ from a later balance after unrelated casual or ranked activity.
 
 The session's seed remains server-only. A stored result plus its session replay material lets trusted server-side tooling independently reproduce and audit the receipt. `seedCommitment` is an audit-only fingerprint in HPA-170; because the seed is never disclosed to the player, it is not evidence of public provable fairness.
 
@@ -456,7 +456,7 @@ Initial limits:
 
 Valid idempotent replays are identified before incrementing the start/action transition bucket so a lost response does not consume another scarce transition unit. A matching replay then consumes the separate, generous `ranked_replay` bucket before the server reconstructs and returns current state or the receipt. Mismatched identifier reuse consumes the applicable start/action bucket before rejection.
 
-For new starts and actions, the transition rate-limit upsert is the first statement in the same D1 transition batch. This keeps enforcement durable without adding a second database round trip. A denied upsert reports zero changes, and every following mutation in that batch, including the first wallet statement, is explicitly gated by `WHERE changes() = 1`.
+For new starts and actions, the transition rate-limit upsert is the first statement in the same D1 transition batch. This keeps enforcement durable without adding a second database round trip. A denied upsert reports zero changes, and every following mutation in that batch, including an account-snapshot or wallet statement, is explicitly gated by `WHERE changes() = 1`.
 
 ---
 
@@ -467,22 +467,26 @@ For new starts and actions, the transition rate-limit upsert is the first statem
 The start D1 batch:
 
 1. Conditionally upserts the start rate bucket.
-2. Inserts the session with `INSERT ... SELECT ... WHERE changes() = 1 ... ON CONFLICT DO NOTHING` only if the user still has enough chips, `heldChips = 0`, no active ranked session, and no live multiplayer conflict.
-3. Deducts the initial wager with a relative `UPDATE user SET chipBalance = chipBalance - ?` gated by the newly inserted session, `heldChips = 0`, and `WHERE changes() = 1`.
-4. For an opening natural, applies the same terminal cascade described below in this batch.
+2. Establishes an exact account snapshot with `UPDATE user SET chipBalance = chipBalance` gated by `WHERE changes() = 1`, the coordinator's pre-read balance, sufficient chips, `heldChips = 0`, no active ranked session, and no multiplayer membership. Workerd D1 reports one changed row for this matched no-op update, so it is a valid compare-and-swap gate.
+3. Inserts the session with `INSERT ... SELECT ... WHERE changes() = 1 ... ON CONFLICT DO NOTHING`, repeating the ownership and exclusion predicates.
+4. Deducts the initial wager with a relative `UPDATE user SET chipBalance = chipBalance - ?` gated by the newly inserted session, the exact pre-read balance, `heldChips = 0`, and `WHERE changes() = 1`.
+5. For an opening natural, applies the same terminal cascade described below in this batch.
 
-Start idempotency and active-session conflicts are deliberately conflict-tolerant rather than statement errors. A conflict makes the session insert and all following mutations report zero changes while the rate-limit increment commits. The handler inspects the mutation counts and reads the winner:
+Putting the harmless account snapshot before the session insert prevents an account race from leaving an active session whose wager was not deducted. Start idempotency and active-session conflicts are deliberately conflict-tolerant rather than statement errors. A conflict makes the account snapshot or session insert and all following mutations report zero changes while the rate-limit increment commits. The handler inspects the mutation counts and reads the winner:
 
 - Matching start payload returns the existing session.
 - Different payload returns `409 IDENTIFIER_REUSE_MISMATCH`.
 - A different active session returns `409 ACTIVE_SESSION_EXISTS`.
 - A zero-row balance guard returns `409 INSUFFICIENT_BALANCE`.
+- A sufficient balance that changed after preflight is re-read and retried with the same request ID; repeated contention returns the retriable `409 ACCOUNT_BALANCE_CHANGED`.
 
 ### 8.2 Action transaction
 
 Before writing, the coordinator replays the stored session and computes the next canonical state. The D1 batch uses the repository's established sequential `WHERE changes() = 1` cascade; a successful zero-row statement is never assumed to roll back a batch.
 
-The action rate-limit upsert runs first. When the action has a non-zero wallet delta, the next statement is a relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, an `EXISTS` subquery for the owned, active session at the expected sequence, and, when another wager is being committed, sufficient balance. The session compare-and-swap repeats the ownership, status, and sequence predicates and additionally requires `changes() = 1`. When the action has no wallet delta, the session compare-and-swap follows the rate upsert directly and requires `changes() = 1`. It records the canonical action, action-log hash, committed wager, next sequence, and any terminal state.
+The action rate-limit upsert runs first. For a non-terminal action with a non-zero wallet delta, the next statement is a relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, an `EXISTS` subquery for the owned, active session at the expected sequence, and, when another wager is being committed, sufficient balance. The session compare-and-swap repeats the ownership, status, and sequence predicates and additionally requires `changes() = 1`. When a non-terminal action has no wallet delta, the session compare-and-swap follows the rate upsert directly and requires `changes() = 1`. It records the canonical action, action-log hash, committed wager, and next sequence.
+
+A terminal action follows section 8.3 instead: after the rate upsert it establishes the exact account snapshot needed to precompute `balanceAfter` and `receiptHash`, then appends the terminal cascade in the same batch.
 
 Every required `D1Result.meta.changes` value is inspected. A rate result of zero becomes `RATE_LIMITED`; a wallet result of zero is classified by re-reading balance and session state; and a session result other than one after a successful wallet mutation is an internal invariant failure. The SQL text for these safety-critical cascades is exported from shared repository constants so handlers and integration tests execute the same statements.
 
@@ -493,27 +497,34 @@ Because D1 batch statements execute sequentially in one transaction, a competing
 
 ### 8.3 Terminal transaction
 
-One D1 batch:
+Before constructing a terminal batch, the coordinator establishes `expectedWalletBalance` as the account value immediately before the terminal wallet delta, computes `balanceAfter = expectedWalletBalance - finalAdditionalWager + payout + rewardDelta`, chooses `settledAt`, and computes `receiptHash` from the complete canonical receipt. For an action or expiration, `expectedWalletBalance` is the account balance read during terminal preflight. For an opening natural, it is the pre-read start balance minus the successfully deducted initial wager. The batch must prove that account snapshot before it can reserve a reward or mutate the session.
 
-1. Establishes the transition gate: the successful action-rate upsert for an action, the successful opening-wager deduction for an opening natural, or the expiration session compare-and-swap for lazy/scheduled expiry.
-2. For a qualifying first completion, inserts `ranked_debut_100` with a strict unique `INSERT ... SELECT ... WHERE changes() = 1`. This statement does not use conflict-ignore. An unexpected uniqueness conflict is a statement error and rolls back the entire batch.
-3. For a non-zero terminal wallet delta, applies the final additional wager, game payout, and reward credit in one relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, the active session, and expected sequence. The reward credit is included only in the branch where step 2 succeeded.
-4. For normal settlement, changes the session to `settled`, clears `activeUserId`, repeats the ownership/status/sequence predicates, and requires `changes() = 1` from the preceding gate or wallet statement. Expiration skips this step because its compare-and-swap in step 1 already changed the session to `expired` and cleared `activeUserId`.
-5. Inserts the immutable `ranked_result` with `WHERE changes() = 1`, selecting `balanceAfter` from the wallet row after any step 3 update, or from the current wallet row when step 3 is omitted, and recording the reward delta selected by the transaction branch.
-6. Upserts `ranked_game_stats` with `WHERE changes() = 1`.
-7. Inserts the eligible `user_achievement` from the stored result with conflict-ignore semantics. This catalog-visible side effect is last; an existing achievement cannot interrupt a mandatory monetary, result, or statistics cascade.
+The source-specific prefix is:
 
-If no reward is eligible, step 2 is omitted and the wallet/session cascade follows the transition gate directly. If the terminal wallet delta is zero, step 3 is omitted. Expiration never qualifies for Ranked Debut and follows step 1 directly with the result/statistics cascade.
+1. **Terminal action:** successful action-rate upsert, then `UPDATE user SET chipBalance = chipBalance` guarded by `WHERE changes() = 1`, the exact expected balance, `heldChips = 0`, and the owned active session at the expected sequence.
+2. **Opening natural:** the start prefix from section 8.1, whose exact-balance account snapshot and successful opening-wager deduction establish the known post-wager balance.
+3. **Expiration:** the exact-balance no-op account update runs first, guarded by `heldChips = 0` and the owned active expired-at-or-before-now session; because it is statement one, it deliberately has no predecessor `changes()` predicate. The expiration session compare-and-swap follows it with `WHERE changes() = 1` and clears `activeUserId`. No rate statement precedes expiration.
+
+The shared suffix is:
+
+1. For a qualifying first completion, insert `ranked_debut_100` with a strict unique `INSERT ... SELECT ... WHERE changes() = 1`. This statement does not use conflict-ignore. An unexpected uniqueness conflict is a statement error and rolls back the entire batch.
+2. For a non-zero terminal wallet delta, apply the final additional wager, game payout, and reward credit in one relative wallet update guarded by `WHERE changes() = 1`, `heldChips = 0`, the exact expected pre-update balance, and the owned active session at the expected sequence. The reward credit is included only in the branch where the strict grant insert succeeded. An opening natural uses its known post-opening-wager balance as the pre-update value.
+3. For normal settlement, change the session to `settled`, clear `activeUserId`, repeat the ownership/status/sequence predicates, and require `changes() = 1` from the preceding account, reward, or wallet gate. Expiration already performed this compare-and-swap in its prefix.
+4. Insert the immutable `ranked_result` with `WHERE changes() = 1`, binding the precomputed receipt fields and additionally selecting the account only when its balance equals the precomputed `balanceAfter`.
+5. Upsert `ranked_game_stats` with `WHERE changes() = 1`.
+6. Insert the eligible `user_achievement` from the stored result with conflict-ignore semantics. This catalog-visible side effect is last; an existing achievement cannot interrupt a mandatory monetary, result, or statistics cascade.
+
+If no reward is eligible, the strict grant step is omitted and the wallet/session cascade follows the account gate directly. If the terminal wallet delta is zero, the wallet step is omitted; the exact-balance account snapshot still establishes and protects `balanceAfter`. Expiration never qualifies for Ranked Debut and uses its account snapshot and expiration compare-and-swap before the result/statistics cascade.
 
 Reward eligibility is read before building the branch, but the strict grant insert is the definitive reservation. If it conflicts unexpectedly, D1 rolls back all earlier statements, including rate, wager, and session mutations. The handler re-reads the grant: a valid prior grant retries the non-reward branch, while inconsistent data is logged as an invariant violation and returns `INTERNAL_ERROR`. Merely noticing `meta.changes === 0` after committing a reward credit is not considered sufficient.
 
-Every mandatory downstream effect is conditioned on the winning transition, strict reward reservation when applicable, or unique result. A retry reads and returns the existing receipt rather than recalculating effects. The handler verifies all mandatory mutation counts before responding. An impossible partial-count pattern is logged as an invariant violation and returns `INTERNAL_ERROR`; real-D1 integration tests must prove that the SQL predicates make that pattern unreachable.
+Every mandatory downstream effect is conditioned on the winning account snapshot, transition, strict reward reservation when applicable, or unique result. If the account snapshot reports zero, no result-affecting mutation has occurred; the coordinator distinguishes an account balance race from insufficient funds, escrow, expiry, or a winning concurrent transition, then retries with a fresh canonical receipt when appropriate. A retry of an already terminal session reads and returns the existing receipt rather than recalculating effects. The handler verifies all mandatory mutation counts before responding. An impossible partial-count pattern is logged as an invariant violation and returns `INTERNAL_ERROR`; real-D1 integration tests must prove that the SQL predicates make that pattern unreachable.
 
 The response is built from the stored result row, not from transient in-memory calculations.
 
 ### 8.4 Receipt identity
 
-Canonical receipt JSON follows section 4.4 and excludes presentation-only text. `receiptHash` covers all monetary, statistical, achievement, reward, ruleset, configuration, action-log, and timestamp fields.
+Canonical receipt JSON follows section 4.4 and excludes presentation-only text. `receiptHash` covers all monetary, statistical, achievement, reward, ruleset, configuration, action-log, balance-snapshot, and timestamp fields. It is computed before the D1 batch from the expected balance transition, while exact-balance guards and the result insert prove that the stored receipt observed those values.
 
 Replaying the same settlement request always returns byte-equivalent canonical receipt data. Reusing the session ID with a different payload is impossible through the public API because the server never accepts terminal result fields.
 
@@ -530,7 +541,7 @@ Ranked sessions and multiplayer escrow cannot overlap:
 - Multiplayer room create/join/lock rejects a non-null active ranked-session key.
 - Resume and terminal settlement remain available even if unrelated casual activity has changed the account balance.
 
-Casual games remain independently available, including in another tab during an active ranked session. A casual update can change the account balance and therefore enable or disable ranked double/split actions between requests. Each ranked response replaces the client's displayed balance and available actions with the latest authoritative projection. A ranked wallet write may make a casual optimistic sync stale; the existing casual reconciliation path handles that conflict. Casual outcomes never enter ranked result or ranked statistics tables.
+Casual games remain independently available, including in another tab during an active ranked session. A casual update can change the account balance and therefore enable or disable ranked double/split actions between requests. If it lands between terminal preflight and the ranked batch, the exact-balance account snapshot prevents a receipt for the wrong balance and the coordinator rebuilds the batch from the new snapshot. Each ranked response replaces the client's displayed balance and available actions with the latest authoritative projection. A ranked wallet write may make a casual optimistic sync stale; the existing casual reconciliation path handles that conflict. Casual outcomes never enter ranked result or ranked statistics tables.
 
 ---
 
@@ -591,6 +602,7 @@ All endpoints return structured JSON with stable error codes:
 | 409 | `IDENTIFIER_REUSE_MISMATCH` | Same request ID or sequence, different canonical payload |
 | 409 | `SEQUENCE_MISMATCH` | Gap or stale sequence that does not match a stored action |
 | 409 | `INSUFFICIENT_BALANCE` | Initial or additional wager cannot be funded |
+| 409 | `ACCOUNT_BALANCE_CHANGED` | Repeated concurrent account updates prevented a stable transactional snapshot; retry is safe |
 | 409 | `MULTIPLAYER_CONFLICT` | Ranked and multiplayer escrow would overlap |
 | 409 | `MULTIPLAYER_ESCROW_ORPHANED` | Held chips exist without a membership that can be safely reconciled |
 | 429 | `RATE_LIMITED` | Durable operation limit reached |
@@ -656,6 +668,9 @@ Tests run against the real migration schema and cover:
 - Insufficient double/split balance without sequence advancement.
 - A denied action-rate upsert prevents every following wallet, session, result, and statistics mutation.
 - `heldChips > 0` introduced between preflight and the D1 batch blocks every ranked wallet transition without partial effects.
+- A matched no-op account update reports one D1 change and a stale expected balance reports zero.
+- A start-time account race cannot leave an active session without its opening-wager deduction.
+- A casual balance change between terminal preflight and the D1 batch produces no result-affecting mutation, retries from a fresh snapshot, and stores a receipt hash covering the actual `balanceAfter`.
 - Malformed, short, or oversized request/session identifiers are rejected.
 - Unknown game/ruleset pairs and negative, fractional, or non-safe-integer sequences are rejected.
 - Duplicate start returning the same session without another wager.

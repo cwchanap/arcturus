@@ -849,6 +849,39 @@ describe('ranked action transaction', () => {
 		expect(rateRow?.count).toBe(30);
 	});
 
+	test('a pre-consumed action continuation proves one unit without double charging', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		expect(
+			await repository.consumeStandaloneRateLimit(USER_ID, 'ranked_action', NOW_SECONDS + 1),
+		).toEqual({ kind: 'allowed' });
+
+		const result = await repository.runActionTransition({
+			...actionInput(),
+			rateLimitMode: 'already-consumed',
+		});
+
+		expect(result).toEqual({ kind: 'applied', result: null });
+		expect(await readRateCount('ranked_action')).toBe(1);
+		expect(await readBalance()).toEqual({ chipBalance: 800, heldChips: 0 });
+		expect((await readSessionState()).nextSequence).toBe(1);
+	});
+
+	test('an unproven action continuation gates every account and session mutation', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+
+		const result = await repository.runActionTransition({
+			...actionInput(),
+			rateLimitMode: 'already-consumed',
+		});
+
+		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 59 });
+		expect(await readRateCount('ranked_action')).toBe(0);
+		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect((await readSessionState()).nextSequence).toBe(0);
+	});
+
 	test('escrow introduced after action preflight blocks wallet and sequence changes', async () => {
 		const repository = createRankedRepository(db);
 		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });

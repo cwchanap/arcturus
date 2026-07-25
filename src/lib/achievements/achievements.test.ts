@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import type { Database } from '../db';
 import type { GameType } from '../game-stats/types';
 import type { AchievementDefinition, AchievementId, UserAchievementRecord } from './types';
@@ -138,6 +138,7 @@ describe('achievements orchestration', () => {
 				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
+				grantSource: 'evaluated',
 			},
 		];
 
@@ -168,6 +169,24 @@ describe('achievements orchestration', () => {
 		const risingStar = results.find((a) => a.id === 'rising_star');
 		expect(risingStar?.isUnlocked).toBe(true);
 		expect(risingStar?.earnedAt).toBeInstanceOf(Date);
+	});
+
+	test('generic evaluation never attempts to grant ranked debut', async () => {
+		const grantAchievement = mock(async () => true);
+		const service = createAchievementService({
+			getEarnedAchievementIds: async () => [],
+			grantAchievement,
+			getAggregateUserStats: async () => ({
+				totalWins: 0,
+				totalLosses: 0,
+				totalHandsPlayed: 0,
+				biggestWin: 0,
+				totalNetProfit: 0,
+			}),
+			getUserRank: async () => null,
+		});
+		await service.checkAndGrantAchievements(createMockDb(), 'user-1', 1000);
+		expect(grantAchievement.mock.calls.some((call) => call[2] === 'ranked_debut')).toBe(false);
 	});
 
 	test('getUnlockedAchievements filters to unlocked only', async () => {
@@ -240,6 +259,7 @@ describe('achievements orchestration', () => {
 				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
+				grantSource: 'evaluated',
 			},
 		];
 
@@ -293,6 +313,7 @@ describe('achievements orchestration', () => {
 				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
+				grantSource: 'evaluated',
 			},
 		];
 

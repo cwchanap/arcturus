@@ -13,6 +13,7 @@ export const ACHIEVEMENT_IDS = [
 	'champion',
 	'consistent',
 	'comeback',
+	'ranked_debut',
 ] as const;
 export type AchievementId = (typeof ACHIEVEMENT_IDS)[number];
 
@@ -20,6 +21,8 @@ export type AchievementId = (typeof ACHIEVEMENT_IDS)[number];
  * Achievement category for organization
  */
 export type AchievementCategory = 'leaderboard' | 'gameplay' | 'milestone';
+
+export type AchievementGrantSource = 'evaluated' | 'ranked-terminal';
 
 /**
  * Achievement definition (static configuration)
@@ -30,6 +33,7 @@ export interface AchievementDefinition {
 	description: string;
 	category: AchievementCategory;
 	icon: string; // emoji
+	grantSource: AchievementGrantSource;
 }
 
 /**

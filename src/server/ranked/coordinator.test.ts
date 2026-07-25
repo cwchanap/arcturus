@@ -467,7 +467,9 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			findOwnedSession: async () => current,
 		});
 
-		const response = await coordinator(repository).act({
+		const response = await coordinator(repository, {
+			membership: { kind: 'conflict', roomCode: 'ROOM01' },
+		}).act({
 			userId: USER_ID,
 			sessionId: SESSION_ID,
 			body: { sequence: 0, action: 'hit' },
@@ -923,18 +925,17 @@ test('a terminal snapshot retry at the 29/30 boundary consumes exactly one actio
 	}
 });
 
-test('post-start recent multiplayer membership is classified as a conflict', async () => {
+test('post-start recent membership with no held chips blocks a current terminal action', async () => {
 	const { mf, db } = await createRankedTestD1();
 	try {
 		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
 		const durableRepository = createRankedRepository(db);
-		let now = new Date(NOW);
 		const ranked = createRankedCoordinator({
 			repository: durableRepository,
 			getAdapter: getRankedAdapter,
 			reconcileMembership: reconcileMultiplayerMembership,
 			membershipDb: db,
-			now: () => new Date(now),
+			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
 			},
@@ -944,7 +945,6 @@ test('post-start recent multiplayer membership is classified as a conflict', asy
 			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
 			.bind(USER_ID, 'ROOM01', NOW_SECONDS)
 			.run();
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(100, USER_ID).run();
 
 		await expectRankedError(
 			ranked.act({
@@ -962,9 +962,113 @@ test('post-start recent multiplayer membership is classified as a conflict', asy
 				.bind(USER_ID)
 				.first<{ count: number }>(),
 		).toEqual({ count: 1 });
+		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
+			status: 'active',
+			nextSequence: 0,
+			committedWager: 100,
+		});
+		expect(await durableRepository.findResult(started.sessionId)).toBeNull();
+		expect(await durableRepository.readAccount(USER_ID)).toEqual({
+			chipBalance: 900,
+			heldChips: 0,
+		});
+	} finally {
+		await mf.dispose();
+	}
+});
 
+for (const fixture of [
+	{ label: 'double-down', seedOffset: 5, action: 'double-down' as const },
+	{ label: 'split', seedOffset: 30, action: 'split' as const },
+]) {
+	test(`post-start orphan escrow wins over insufficient balance for ${fixture.label}`, async () => {
+		const { mf, db } = await createRankedTestD1();
+		try {
+			await insertRankedTestUser(db, { id: USER_ID, chipBalance: 150 });
+			const durableRepository = createRankedRepository(db);
+			const seed = Uint8Array.from(
+				{ length: 32 },
+				(_, index) => (index + fixture.seedOffset) & 0xff,
+			);
+			const ranked = createRankedCoordinator({
+				repository: durableRepository,
+				getAdapter: getRankedAdapter,
+				reconcileMembership: reconcileMultiplayerMembership,
+				membershipDb: db,
+				now: () => new Date(NOW),
+				randomBytes(length) {
+					return length === 16 ? Uint8Array.from({ length }, () => 7) : seed.slice();
+				},
+			});
+			const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+			await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(25, USER_ID).run();
+
+			await expectRankedError(
+				ranked.act({
+					userId: USER_ID,
+					sessionId: started.sessionId,
+					body: { sequence: 0, action: fixture.action },
+				}),
+				'MULTIPLAYER_ESCROW_ORPHANED',
+			);
+			expect(
+				await db
+					.prepare(
+						"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
+					)
+					.bind(USER_ID)
+					.first<{ count: number }>(),
+			).toEqual({ count: 1 });
+			expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
+				status: 'active',
+				nextSequence: 0,
+				committedWager: 100,
+			});
+			expect(await durableRepository.findResult(started.sessionId)).toBeNull();
+			expect(await durableRepository.readAccount(USER_ID)).toEqual({
+				chipBalance: 50,
+				heldChips: 25,
+			});
+		} finally {
+			await mf.dispose();
+		}
+	});
+}
+
+test('scheduled expiration preserves an active session when recent membership has no held chips', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const durableRepository = createRankedRepository(db);
+		let now = new Date(NOW);
+		const ranked = createRankedCoordinator({
+			repository: durableRepository,
+			getAdapter: getRankedAdapter,
+			reconcileMembership: reconcileMultiplayerMembership,
+			membershipDb: db,
+			now: () => new Date(now),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
 		now = new Date((NOW_SECONDS + 901) * 1000);
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'ROOM01', NOW_SECONDS + 901)
+			.run();
+
 		await expectRankedError(ranked.expire(started.sessionId), 'MULTIPLAYER_CONFLICT');
+		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
+			status: 'active',
+			nextSequence: 0,
+			committedWager: 100,
+		});
+		expect(await durableRepository.findResult(started.sessionId)).toBeNull();
+		expect(await durableRepository.readAccount(USER_ID)).toEqual({
+			chipBalance: 900,
+			heldChips: 0,
+		});
 	} finally {
 		await mf.dispose();
 	}

@@ -1,22 +1,16 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { join } from 'path';
 import { Miniflare } from 'miniflare';
-import { canonicalizeRanked } from './canonical';
-import { createSeedCommitment, deriveRankedCounterBlock, shuffleRankedDeck } from './random';
 
 const projectRoot = process.cwd();
 let miniflare: Miniflare | null = null;
-
-function bytesToHex(bytes: Uint8Array): string {
-	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
 
 afterAll(async () => {
 	await miniflare?.dispose();
 });
 
 describe('ranked crypto in workerd', () => {
-	test('matches Bun canonical, HMAC, commitment, and deck fixtures', async () => {
+	test('matches pinned canonical, HMAC, commitment, and deck fixtures', async () => {
 		const entrypoint = 'ranked-worker-fixture';
 		const randomPath = join(projectRoot, 'src/lib/ranked/random.ts');
 		const canonicalPath = join(projectRoot, 'src/lib/ranked/canonical.ts');
@@ -75,14 +69,24 @@ describe('ranked crypto in workerd', () => {
 			],
 		});
 
-		const seed = Uint8Array.from({ length: 32 }, (_, index) => index);
 		const response = await miniflare.dispatchFetch('http://ranked.test/');
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({
-			block: bytesToHex(deriveRankedCounterBlock(seed, 0n)),
-			commitment: createSeedCommitment(seed),
-			canonical: canonicalizeRanked({ z: 0, a: [3, { x: 'é', b: true }] }),
-			firstTenDealt: shuffleRankedDeck(seed).slice(-10).reverse(),
+			block: '26703278906b275d44e68bcccc9563a062c2364c71cd76679fe6d1a3afc86ac3',
+			commitment: '53b7d7e3c3cccc4d50c84318061deca625f712619eab99f8dd1c0b66c7d9ef7e',
+			canonical: '{"a":[3,{"b":true,"x":"é"}],"z":0}',
+			firstTenDealt: [
+				{ rank: '9', suit: 'hearts' },
+				{ rank: 'A', suit: 'clubs' },
+				{ rank: '7', suit: 'hearts' },
+				{ rank: 'J', suit: 'clubs' },
+				{ rank: '6', suit: 'spades' },
+				{ rank: 'Q', suit: 'hearts' },
+				{ rank: 'J', suit: 'diamonds' },
+				{ rank: '4', suit: 'diamonds' },
+				{ rank: '4', suit: 'hearts' },
+				{ rank: 'K', suit: 'diamonds' },
+			],
 		});
 	});
 });

@@ -3,6 +3,7 @@ import {
 	ACHIEVEMENTS,
 	ACHIEVEMENT_CHECKS,
 	ACHIEVEMENT_THRESHOLDS,
+	EVALUATED_ACHIEVEMENTS,
 	getAchievementById,
 	getAchievementsByCategory,
 } from './achievement-rules';
@@ -25,7 +26,7 @@ function createContext(overrides: Partial<AchievementCheckContext> = {}): Achiev
 
 describe('ACHIEVEMENTS', () => {
 	test('contains all expected achievements', () => {
-		expect(ACHIEVEMENTS.length).toBe(5);
+		expect(ACHIEVEMENTS.length).toBe(6);
 
 		const ids = ACHIEVEMENTS.map((a) => a.id);
 		expect(ids).toContain('rising_star');
@@ -33,6 +34,7 @@ describe('ACHIEVEMENTS', () => {
 		expect(ids).toContain('champion');
 		expect(ids).toContain('consistent');
 		expect(ids).toContain('comeback');
+		expect(ids).toContain('ranked_debut');
 	});
 
 	test('all achievements have required properties', () => {
@@ -45,11 +47,23 @@ describe('ACHIEVEMENTS', () => {
 		}
 	});
 
-	test('all achievements have check functions', () => {
-		for (const achievement of ACHIEVEMENTS) {
+	test('all evaluated achievements have check functions', () => {
+		for (const achievement of EVALUATED_ACHIEVEMENTS) {
 			expect(ACHIEVEMENT_CHECKS[achievement.id]).toBeDefined();
 			expect(typeof ACHIEVEMENT_CHECKS[achievement.id]).toBe('function');
 		}
+	});
+
+	test('ranked debut is catalog-visible and terminal-only', () => {
+		expect(getAchievementById('ranked_debut')).toEqual({
+			id: 'ranked_debut',
+			name: 'Ranked Debut',
+			description: 'Complete your first ranked game.',
+			category: 'milestone',
+			icon: '🎖️',
+			grantSource: 'ranked-terminal',
+		});
+		expect(EVALUATED_ACHIEVEMENTS.every((item) => item.grantSource === 'evaluated')).toBe(true);
 	});
 });
 

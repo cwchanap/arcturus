@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { createDb } from '../../../lib/db';
 import { mpMembership } from '../../../db/schema';
 import {
+	acquireMultiplayerMembership,
 	hasActiveRankedSession,
 	reconcileMultiplayerMembership,
 } from '../../../server/mp/membership';
@@ -86,22 +87,21 @@ export const POST: APIRoute = async ({ locals, request }) => {
 			return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 		}
 
-		// Atomic upsert: avoid TOCTOU race where two concurrent requests both see no row
-		// and the second insert fails with a primary-key constraint violation (500).
-		if (membership.kind === 'clear') {
-			await db
-				.insert(mpMembership)
-				.values({ userId: userId, roomCode: parsed.roomCode, joinedAt: new Date() })
-				.onConflictDoNothing()
-				.run();
+		const acquisition = await acquireMultiplayerMembership({
+			db: locals.runtime.env.DB,
+			userId,
+			roomCode: parsed.roomCode,
+		});
+		if (acquisition.kind === 'blocked') {
+			return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 		}
-		// Re-read to check actual state after upsert
+		// Confirm ownership again at the route boundary before reporting success.
 		const actual = await db
 			.select()
 			.from(mpMembership)
 			.where(eq(mpMembership.userId, userId))
 			.get();
-		if (actual && actual.roomCode !== parsed.roomCode) {
+		if (!actual || actual.roomCode !== parsed.roomCode) {
 			return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 		}
 		return new Response(JSON.stringify({ ok: true }));

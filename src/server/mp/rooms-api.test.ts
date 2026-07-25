@@ -17,6 +17,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
 	await db.batch([
+		db.prepare('DROP TRIGGER IF EXISTS rooms_ranked_after_stale_delete'),
 		db.prepare('DELETE FROM ranked_session'),
 		db.prepare('DELETE FROM mp_membership'),
 		db.prepare('DELETE FROM user'),
@@ -32,10 +33,10 @@ function makeRequest(): Request {
 	});
 }
 
-function makeLocals() {
+function makeLocals(namespace?: DurableObjectNamespace) {
 	return {
 		user: { id: USER_ID },
-		runtime: { env: { DB: db } },
+		runtime: { env: { DB: db, arcturus: namespace } },
 	};
 }
 
@@ -75,6 +76,44 @@ async function seedActiveRankedSession(): Promise<void> {
 		.run();
 }
 
+async function installRankedAfterStaleDelete(): Promise<void> {
+	const now = Math.trunc(Date.now() / 1000);
+	await db
+		.prepare(
+			`CREATE TRIGGER rooms_ranked_after_stale_delete
+			AFTER DELETE ON mp_membership
+			WHEN OLD.userId = '${USER_ID}' AND OLD.roomCode = 'MP-OLD01'
+			BEGIN
+				INSERT INTO ranked_session (
+					id, userId, startRequestId, startPayloadHash, activeUserId,
+					gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
+					actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
+					status, expiresAt, createdAt, updatedAt
+				) VALUES (
+					'rooms-race-ranked', '${USER_ID}', 'rooms-race-request', 'start-hash', '${USER_ID}',
+					'blackjack', 'blackjack-ranked-v1', '{}', 'config-hash',
+					'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'seed-commitment',
+					'[]', 'action-log-hash', 0, 10, 10, 'active', ${now + 900}, ${now}, ${now}
+				);
+			END`,
+		)
+		.run();
+}
+
+function goneThenInitNamespace(): DurableObjectNamespace {
+	return {
+		idFromName: () => ({}) as DurableObjectId,
+		get: () => ({
+			fetch: async (input: RequestInfo | URL) => {
+				if (String(input).endsWith('/metadata')) {
+					return new Response(null, { status: 404 });
+				}
+				return new Response(null, { status: 200 });
+			},
+		}),
+	} as unknown as DurableObjectNamespace;
+}
+
 describe('mp/rooms create membership policy', () => {
 	test('rejects room creation while the user has an active ranked session', async () => {
 		await seedActiveRankedSession();
@@ -110,5 +149,29 @@ describe('mp/rooms create membership policy', () => {
 		expect(
 			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
 		).toBeNull();
+	});
+
+	test('atomic room creation loses to a ranked session created after stale repair', async () => {
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-OLD01', Math.trunc((Date.now() - 32_000) / 1000))
+			.run();
+		await installRankedAfterStaleDelete();
+
+		const response = await POST({
+			request: makeRequest(),
+			locals: makeLocals(goneThenInitNamespace()) as any,
+		} as any);
+
+		expect(response.status).toBe(409);
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toBeNull();
+		expect(
+			await db
+				.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?')
+				.bind(USER_ID)
+				.first(),
+		).toEqual({ id: 'rooms-race-ranked' });
 	});
 });

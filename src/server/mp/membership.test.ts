@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
 import {
+	acquireMultiplayerMembership,
 	hasActiveRankedSession,
 	reconcileMultiplayerMembership,
 	type ReconcileMembershipInput,
@@ -8,7 +9,7 @@ import {
 import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
 
 const USER_ID = 'membership-user';
-const NOW_MS = 2_000_000_000_000;
+const NOW_MS = 2_000_000_000_999;
 
 let mf: Miniflare;
 let db: D1Database;
@@ -110,6 +111,47 @@ async function seedRankedSession(activeUserId: string | null): Promise<void> {
 		.run();
 }
 
+async function insertRankedSessionIfNoMembership(): Promise<D1Result> {
+	const now = Math.trunc(NOW_MS / 1000);
+	return db
+		.prepare(
+			`INSERT INTO ranked_session (
+				id, userId, startRequestId, startPayloadHash, activeUserId,
+				gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
+				actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
+				status, expiresAt, createdAt, updatedAt
+			)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE NOT EXISTS (
+				SELECT 1 FROM mp_membership WHERE userId = ?
+			)`,
+		)
+		.bind(
+			'ranked-race-session',
+			USER_ID,
+			'ranked-race-request',
+			'start-hash',
+			USER_ID,
+			'blackjack',
+			'blackjack-ranked-v1',
+			'{}',
+			'config-hash',
+			'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+			'seed-commitment',
+			'[]',
+			'action-log-hash',
+			0,
+			10,
+			10,
+			'active',
+			now + 900,
+			now,
+			now,
+			USER_ID,
+		)
+		.run();
+}
+
 describe('reconcileMultiplayerMembership', () => {
 	test.each(['exists', 'unknown'] as const)('preserves a %s membership', async (probeResult) => {
 		await seedMembership('MP-OLD01', 31_000);
@@ -127,6 +169,23 @@ describe('reconcileMultiplayerMembership', () => {
 
 		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-NEW01' });
 		expect(await readMembership()).toEqual({ roomCode: 'MP-NEW01' });
+	});
+
+	test('preserves a truly 29.5-second-old membership stored at whole-second precision', async () => {
+		const nowMs = 2_000_000_000_499;
+		const actualJoinedAtMs = nowMs - 29_500;
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-SUBSEC', Math.trunc(actualJoinedAtMs / 1000))
+			.run();
+
+		const result = await reconcileMultiplayerMembership({
+			...input({ probeResult: 'gone' }),
+			nowMs,
+		});
+
+		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-SUBSEC' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-SUBSEC' });
 	});
 
 	test('probes and repairs at the exact 30-second boundary', async () => {
@@ -216,5 +275,47 @@ describe('hasActiveRankedSession', () => {
 		await seedRankedSession(null);
 
 		expect(await hasActiveRankedSession(db, USER_ID)).toBe(false);
+	});
+});
+
+describe('acquireMultiplayerMembership', () => {
+	test('atomic insert affects zero rows when an active ranked session exists', async () => {
+		await seedRankedSession(USER_ID);
+
+		const result = await acquireMultiplayerMembership({
+			db,
+			userId: USER_ID,
+			roomCode: 'MP-BLOCK1',
+			joinedAtMs: NOW_MS,
+		});
+
+		expect(result).toEqual({ kind: 'blocked' });
+		expect(await readMembership()).toBeNull();
+	});
+
+	test('concurrent inverse acquisitions allow exactly one ranked or multiplayer owner', async () => {
+		const [membershipResult, rankedResult] = await Promise.all([
+			acquireMultiplayerMembership({
+				db,
+				userId: USER_ID,
+				roomCode: 'MP-RACE01',
+				joinedAtMs: NOW_MS,
+			}),
+			insertRankedSessionIfNoMembership(),
+		]);
+
+		const membership = await readMembership();
+		const ranked = await db
+			.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?')
+			.bind(USER_ID)
+			.first<{ id: string }>();
+		expect(Number(membership !== null) + Number(ranked !== null)).toBe(1);
+		if (membership) {
+			expect(membershipResult).toEqual({ kind: 'acquired', roomCode: 'MP-RACE01' });
+			expect(rankedResult.meta.changes).toBe(0);
+		} else {
+			expect(membershipResult).toEqual({ kind: 'blocked' });
+			expect(rankedResult.meta.changes).toBe(1);
+		}
 	});
 });

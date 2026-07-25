@@ -282,7 +282,7 @@ describe('ranked Blackjack recovery client', () => {
 			if (response) return response;
 			return jsonResponse(activeResponse({ nextSequence: 1 }));
 		});
-		const { client, fetchMock } = createHarness({ fetch: fetchImplementation, storage });
+		const { client, fetchMock, renderer } = createHarness({ fetch: fetchImplementation, storage });
 		await client.initialize();
 		fetchMock.mockClear();
 		bodies.length = 0;
@@ -304,6 +304,51 @@ describe('ranked Blackjack recovery client', () => {
 			JSON.stringify({ sequence: 0, action: 'stand' }),
 			JSON.stringify({ sequence: 0, action: 'stand' }),
 		]);
+		expect(renderer.pending.at(-1)).toBe(false);
+	});
+
+	test('keeps stale actions blocked after POST, POST, and authoritative GET all remain uncertain', async () => {
+		const storage = new RecordingStorage();
+		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		let phase: 'initialize' | 'failed-recovery' | 'successful-retry' = 'initialize';
+		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
+			if (phase === 'initialize' && init === undefined) return jsonResponse(activeResponse());
+			if (phase === 'successful-retry') {
+				return jsonResponse(activeResponse({ nextSequence: 1 }));
+			}
+			throw new TypeError('network');
+		});
+		const renderer = createRenderer();
+		const { client, fetchMock } = createHarness({
+			storage,
+			renderer,
+			fetch: fetchImplementation,
+		});
+		await client.initialize();
+		fetchMock.mockClear();
+		renderer.pending.length = 0;
+		phase = 'failed-recovery';
+
+		await client.act('stand');
+
+		expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+			`/api/ranked/sessions/${SESSION_ID}/actions`,
+			`/api/ranked/sessions/${SESSION_ID}/actions`,
+			`/api/ranked/sessions/${SESSION_ID}`,
+		]);
+		expect(renderer.pending).toEqual([true]);
+		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+
+		await client.act('hit');
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+
+		phase = 'successful-retry';
+		await client.act('stand');
+
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+		expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/ranked/sessions/${SESSION_ID}/actions`);
+		expect(renderer.pending.at(-1)).toBe(false);
+		expect(renderer.responses.at(-1)?.nextSequence).toBe(1);
 	});
 
 	test('does not replay an action after a certain client error response', async () => {

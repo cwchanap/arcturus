@@ -197,6 +197,21 @@ describe('ranked Blackjack renderer', () => {
 		expect(root.querySelector('[aria-label*="face down" i]')).toBeNull();
 	});
 
+	test('initializes against the real page topology where the toast is a root sibling', () => {
+		const toast = root.querySelector<HTMLElement>('[data-testid="ranked-achievement-toast"]')!;
+		root.after(toast);
+		try {
+			const renderer = createRankedBlackjackRenderer(root);
+
+			renderer.render(activeResponse());
+
+			expect(root.contains(toast)).toBe(false);
+			expect(toast.isConnected).toBe(true);
+		} finally {
+			toast.remove();
+		}
+	});
+
 	test('enables only server-provided actions and disables every control while pending', () => {
 		const renderer = createRankedBlackjackRenderer(root);
 		renderer.render(activeResponse());

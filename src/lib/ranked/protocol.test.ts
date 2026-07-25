@@ -4,6 +4,9 @@ import {
 	RankedServiceError,
 	actionLogSchema,
 	actionRequestSchema,
+	rankedAchievementEffectsV1Schema,
+	rankedRewardEffectsV1Schema,
+	rankedStatsEffectsV1Schema,
 	requestIdSchema,
 	sessionIdSchema,
 	startRequestSchema,
@@ -86,6 +89,92 @@ describe('ranked request protocol', () => {
 		expect(sessionIdSchema.safeParse('a'.repeat(23)).success).toBe(false);
 		expect(sessionIdSchema.safeParse('A_-0'.repeat(5) + 'AB').success).toBe(true);
 		expect(sessionIdSchema.safeParse('a'.repeat(21) + '.').success).toBe(false);
+	});
+});
+
+describe('ranked receipt effect protocol', () => {
+	test('accepts the exact v1 statistics, achievement, and reward effects', () => {
+		expect(
+			rankedStatsEffectsV1Schema.parse({
+				sessionsPlayed: 1,
+				totalWins: 1,
+				totalLosses: 0,
+				totalPushes: 0,
+				totalForfeits: 0,
+				netProfit: 100,
+				biggestWin: 100,
+			}),
+		).toEqual({
+			sessionsPlayed: 1,
+			totalWins: 1,
+			totalLosses: 0,
+			totalPushes: 0,
+			totalForfeits: 0,
+			netProfit: 100,
+			biggestWin: 100,
+		});
+		expect(rankedAchievementEffectsV1Schema.parse(['ranked_debut'])).toEqual(['ranked_debut']);
+		expect(
+			rankedRewardEffectsV1Schema.parse([{ rewardId: 'ranked_debut_100', chipAmount: 100 }]),
+		).toEqual([{ rewardId: 'ranked_debut_100', chipAmount: 100 }]);
+	});
+
+	test('rejects unknown and structurally invalid v1 receipt effects', () => {
+		expect(
+			rankedStatsEffectsV1Schema.safeParse({
+				sessionsPlayed: 1,
+				totalWins: 1,
+				totalLosses: 0,
+				totalPushes: 0,
+				totalForfeits: 0,
+				netProfit: 100,
+				biggestWin: 100,
+				extra: true,
+			}).success,
+		).toBe(false);
+		expect(
+			rankedStatsEffectsV1Schema.safeParse({
+				sessionsPlayed: 2,
+				totalWins: 1,
+				totalLosses: 0,
+				totalPushes: 0,
+				totalForfeits: 0,
+				netProfit: 100,
+				biggestWin: 100,
+			}).success,
+		).toBe(false);
+		expect(
+			rankedStatsEffectsV1Schema.safeParse({
+				sessionsPlayed: 1,
+				totalWins: 1,
+				totalLosses: 1,
+				totalPushes: 0,
+				totalForfeits: 0,
+				netProfit: 0,
+				biggestWin: 0,
+			}).success,
+		).toBe(false);
+		expect(
+			rankedStatsEffectsV1Schema.safeParse({
+				sessionsPlayed: 1,
+				totalWins: 0,
+				totalLosses: 0,
+				totalPushes: 1,
+				totalForfeits: 1,
+				netProfit: 0,
+				biggestWin: 0,
+			}).success,
+		).toBe(false);
+		expect(rankedAchievementEffectsV1Schema.safeParse(['rising_star']).success).toBe(false);
+		expect(
+			rankedRewardEffectsV1Schema.safeParse([
+				{ rewardId: 'ranked_debut_100', chipAmount: 100, extra: true },
+			]).success,
+		).toBe(false);
+		expect(
+			rankedRewardEffectsV1Schema.safeParse([{ rewardId: 'ranked_debut_100', chipAmount: 99 }])
+				.success,
+		).toBe(false);
 	});
 });
 

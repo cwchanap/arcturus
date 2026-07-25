@@ -1,8 +1,20 @@
 import { z } from 'zod';
 import type { RankedJson } from '../../lib/ranked/canonical';
 import { canonicalizeRanked, sha256Hex } from '../../lib/ranked/canonical';
-import type { RankedBlackjackActionLogV1, RankedSessionStatus } from '../../lib/ranked/protocol';
-import { actionLogSchema, safeIntegerSchema } from '../../lib/ranked/protocol';
+import type {
+	RankedAchievementEffectsV1,
+	RankedBlackjackActionLogV1,
+	RankedRewardEffectsV1,
+	RankedSessionStatus,
+	RankedStatsEffectsV1,
+} from '../../lib/ranked/protocol';
+import {
+	actionLogSchema,
+	rankedAchievementEffectsV1Schema,
+	rankedRewardEffectsV1Schema,
+	rankedStatsEffectsV1Schema,
+	safeIntegerSchema,
+} from '../../lib/ranked/protocol';
 import type {
 	RankedBlackjackConfigV1,
 	RankedBlackjackOutcomeV1,
@@ -111,9 +123,9 @@ export interface RankedResultRecord {
 	receiptHash: string;
 	settledAt: number;
 	outcome: RankedBlackjackOutcomeV1;
-	statsEffects: RankedJson;
-	achievementEffects: RankedJson;
-	rewardEffects: RankedJson;
+	statsEffects: RankedStatsEffectsV1;
+	achievementEffects: RankedAchievementEffectsV1;
+	rewardEffects: RankedRewardEffectsV1;
 }
 
 export interface StartTransitionInput {
@@ -243,9 +255,15 @@ function parseResultRow(row: RankedResultRow): RankedResultRecord {
 			outcome: blackjackOutcomeV1Schema.parse(
 				parseCanonicalJson(row.outcomeJson, 'result outcome JSON'),
 			),
-			statsEffects: parseCanonicalJson(row.statsEffectsJson, 'result statistics JSON'),
-			achievementEffects: parseCanonicalJson(row.achievementEffectsJson, 'result achievement JSON'),
-			rewardEffects: parseCanonicalJson(row.rewardEffectsJson, 'result reward JSON'),
+			statsEffects: rankedStatsEffectsV1Schema.parse(
+				parseCanonicalJson(row.statsEffectsJson, 'result statistics JSON'),
+			),
+			achievementEffects: rankedAchievementEffectsV1Schema.parse(
+				parseCanonicalJson(row.achievementEffectsJson, 'result achievement JSON'),
+			),
+			rewardEffects: rankedRewardEffectsV1Schema.parse(
+				parseCanonicalJson(row.rewardEffectsJson, 'result reward JSON'),
+			),
 		};
 	} catch (error) {
 		if (error instanceof RankedRepositoryInvariantError) throw error;

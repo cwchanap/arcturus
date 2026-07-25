@@ -131,6 +131,98 @@ async function consumeBatch(
 	return results.map((result) => result.meta.changes ?? 0);
 }
 
+const VALID_OUTCOME = {
+	result: 'win',
+	hands: [{ handIndex: 0, result: 'win', wager: 100, payout: 200 }],
+	committedWager: 100,
+	payout: 200,
+	gameNetDelta: 100,
+} as const;
+
+const VALID_STATS_EFFECTS = {
+	sessionsPlayed: 1,
+	totalWins: 1,
+	totalLosses: 0,
+	totalPushes: 0,
+	totalForfeits: 0,
+	netProfit: 100,
+	biggestWin: 100,
+} as const;
+
+const VALID_ACHIEVEMENT_EFFECTS: readonly string[] = [];
+const VALID_REWARD_EFFECTS: readonly { rewardId: string; chipAmount: number }[] = [];
+
+async function insertResult({
+	statsEffects = VALID_STATS_EFFECTS,
+	achievementEffects = VALID_ACHIEVEMENT_EFFECTS,
+	rewardEffects = VALID_REWARD_EFFECTS,
+}: {
+	statsEffects?: unknown;
+	achievementEffects?: unknown;
+	rewardEffects?: unknown;
+} = {}): Promise<void> {
+	const receiptWithoutHash = {
+		sessionId: SESSION_A,
+		gameType: 'blackjack',
+		rulesetVersion: 'blackjack-ranked-v1',
+		seedCommitment: sha256Hex('seed-commitment'),
+		configHash: hashCanonical({ ...BLACKJACK_RANKED_V1_CONFIG, initialWager: 100 }),
+		actionLogHash: hashCanonical([]),
+		outcome: VALID_OUTCOME,
+		initialWager: 100,
+		committedWager: 100,
+		payout: 200,
+		gameNetDelta: 100,
+		rewardDelta: 0,
+		balanceAfter: 1100,
+		statsEffects,
+		achievementEffects,
+		rewardEffects,
+		settledAt: NOW_SECONDS + 1,
+	};
+	await db.batch([
+		db
+			.prepare('UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ?')
+			.bind(1100, NOW_SECONDS + 1, USER_ID),
+		db
+			.prepare(
+				"UPDATE ranked_session SET activeUserId = NULL, status = 'settled', settledAt = ?, updatedAt = ? WHERE id = ?",
+			)
+			.bind(NOW_SECONDS + 1, NOW_SECONDS + 1, SESSION_A),
+	]);
+	await db
+		.prepare(
+			`INSERT INTO ranked_result (
+				sessionId, userId, gameType, rulesetVersion, seedCommitment, configHash,
+				actionLogHash, outcomeJson, initialWager, committedWager, payout,
+				gameNetDelta, rewardDelta, balanceAfter, statsEffectsJson,
+				achievementEffectsJson, rewardEffectsJson, receiptHash, settledAt
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			SESSION_A,
+			USER_ID,
+			'blackjack',
+			'blackjack-ranked-v1',
+			receiptWithoutHash.seedCommitment,
+			receiptWithoutHash.configHash,
+			receiptWithoutHash.actionLogHash,
+			canonicalizeRanked(VALID_OUTCOME),
+			100,
+			100,
+			200,
+			100,
+			0,
+			1100,
+			canonicalizeRanked(statsEffects as never),
+			canonicalizeRanked(achievementEffects as never),
+			canonicalizeRanked(rewardEffects as never),
+			hashCanonical(receiptWithoutHash as never),
+			NOW_SECONDS + 1,
+		)
+		.run();
+}
+
 describe('durable ranked rate limits', () => {
 	test.each([
 		['ranked_start', 6],
@@ -399,68 +491,51 @@ describe('typed ranked repository reads', () => {
 	test('parses immutable result JSON into typed fields', async () => {
 		const repository = createRankedRepository(db);
 		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
-		const outcome = {
-			result: 'win',
-			hands: [{ handIndex: 0, result: 'win', wager: 100, payout: 200 }],
-			committedWager: 100,
-			payout: 200,
-			gameNetDelta: 100,
-		};
-		const statsEffects = { sessionsPlayed: 1, totalWins: 1 };
-		const achievementEffects = { granted: [] };
-		const rewardEffects = { chipAmount: 0 };
-		await db
-			.prepare(
-				`INSERT INTO ranked_result (
-					sessionId, userId, gameType, rulesetVersion, seedCommitment, configHash,
-					actionLogHash, outcomeJson, initialWager, committedWager, payout,
-					gameNetDelta, rewardDelta, balanceAfter, statsEffectsJson,
-					achievementEffectsJson, rewardEffectsJson, receiptHash, settledAt
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-			.bind(
-				SESSION_A,
-				USER_ID,
-				'blackjack',
-				'blackjack-ranked-v1',
-				sha256Hex('seed-commitment'),
-				hashCanonical({ ...BLACKJACK_RANKED_V1_CONFIG, initialWager: 100 }),
-				hashCanonical([]),
-				canonicalizeRanked(outcome),
-				100,
-				100,
-				200,
-				100,
-				0,
-				1100,
-				canonicalizeRanked(statsEffects),
-				canonicalizeRanked(achievementEffects),
-				canonicalizeRanked(rewardEffects),
-				sha256Hex('receipt'),
-				NOW_SECONDS + 1,
-			)
-			.run();
+		await insertResult();
 
 		const result = await repository.findResult(SESSION_A);
 
-		expect(result?.outcome).toEqual(outcome);
-		expect(result?.statsEffects).toEqual(statsEffects);
-		expect(result?.achievementEffects).toEqual(achievementEffects);
-		expect(result?.rewardEffects).toEqual(rewardEffects);
+		expect(result?.outcome).toEqual(VALID_OUTCOME);
+		expect(result?.statsEffects).toEqual(VALID_STATS_EFFECTS);
+		expect(result?.achievementEffects).toEqual(VALID_ACHIEVEMENT_EFFECTS);
+		expect(result?.rewardEffects).toEqual(VALID_REWARD_EFFECTS);
 	});
 
-	test('treats unknown-field and hash-mismatched session JSON as invariants', async () => {
+	test('rejects canonical hash-matched unknown action fields through the strict schema', async () => {
 		const repository = createRankedRepository(db);
 		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		const actionLogWithUnknownField = [{ sequence: 0, action: 'hit', extra: true }] as const;
 
 		await db
-			.prepare('UPDATE ranked_session SET actionLogJson = ? WHERE id = ?')
-			.bind('[{"sequence":0,"action":"hit","extra":true}]', SESSION_A)
+			.prepare('UPDATE ranked_session SET actionLogJson = ?, actionLogHash = ? WHERE id = ?')
+			.bind(
+				canonicalizeRanked(actionLogWithUnknownField),
+				hashCanonical(actionLogWithUnknownField),
+				SESSION_A,
+			)
 			.run();
 		await expect(repository.findOwnedSession(USER_ID, SESSION_A)).rejects.toBeInstanceOf(
 			RankedRepositoryInvariantError,
 		);
+	});
 
+	test('rejects a valid canonical action log with a mismatched stored hash', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+		const validActionLog = [{ sequence: 0, action: 'hit' }] as const;
+
+		await db
+			.prepare('UPDATE ranked_session SET actionLogJson = ?, actionLogHash = ? WHERE id = ?')
+			.bind(canonicalizeRanked(validActionLog), sha256Hex('wrong-action-log-hash'), SESSION_A)
+			.run();
+		await expect(repository.findOwnedSession(USER_ID, SESSION_A)).rejects.toBeInstanceOf(
+			RankedRepositoryInvariantError,
+		);
+	});
+
+	test('treats strict config and config-hash failures as invariants', async () => {
+		const repository = createRankedRepository(db);
+		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
 		const configWithUnknownField = {
 			...BLACKJACK_RANKED_V1_CONFIG,
 			initialWager: 100,
@@ -494,6 +569,38 @@ describe('typed ranked repository reads', () => {
 			RankedRepositoryInvariantError,
 		);
 	});
+
+	test.each([
+		{
+			label: 'statistics unknown field',
+			statsEffects: { ...VALID_STATS_EFFECTS, extra: true },
+			achievementEffects: VALID_ACHIEVEMENT_EFFECTS,
+			rewardEffects: VALID_REWARD_EFFECTS,
+		},
+		{
+			label: 'unknown achievement ID',
+			statsEffects: VALID_STATS_EFFECTS,
+			achievementEffects: ['rising_star'],
+			rewardEffects: VALID_REWARD_EFFECTS,
+		},
+		{
+			label: 'reward unknown field',
+			statsEffects: VALID_STATS_EFFECTS,
+			achievementEffects: VALID_ACHIEVEMENT_EFFECTS,
+			rewardEffects: [{ rewardId: 'ranked_debut_100', chipAmount: 100, extra: true }],
+		},
+	])(
+		'rejects canonical receipt-hash-matched $label result effects',
+		async ({ statsEffects, achievementEffects, rewardEffects }) => {
+			const repository = createRankedRepository(db);
+			expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
+			await insertResult({ statsEffects, achievementEffects, rewardEffects });
+
+			await expect(repository.findResult(SESSION_A)).rejects.toBeInstanceOf(
+				RankedRepositoryInvariantError,
+			);
+		},
+	);
 });
 
 describe('ranked logging redaction', () => {

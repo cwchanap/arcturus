@@ -26,10 +26,54 @@ export const actionRequestSchema = z
 
 export const actionLogSchema = z.array(actionRequestSchema);
 
+const zeroOrOneSchema = z.union([z.literal(0), z.literal(1)]);
+
+export const rankedStatsEffectsV1Schema = z
+	.object({
+		sessionsPlayed: z.literal(1),
+		totalWins: zeroOrOneSchema,
+		totalLosses: zeroOrOneSchema,
+		totalPushes: zeroOrOneSchema,
+		totalForfeits: zeroOrOneSchema,
+		netProfit: safeIntegerSchema,
+		biggestWin: safeIntegerSchema.min(0),
+	})
+	.strict()
+	.superRefine((effects, context) => {
+		if (effects.totalWins + effects.totalLosses + effects.totalPushes !== 1) {
+			context.addIssue({
+				code: 'custom',
+				message: 'Exactly one ranked terminal classification is required',
+			});
+		}
+		if (effects.totalForfeits > effects.totalLosses) {
+			context.addIssue({
+				code: 'custom',
+				message: 'A ranked forfeit must also be a loss',
+			});
+		}
+	});
+
+export const rankedAchievementEffectsV1Schema = z.array(z.literal('ranked_debut')).max(1);
+
+export const rankedRewardEffectsV1Schema = z
+	.array(
+		z
+			.object({
+				rewardId: z.literal('ranked_debut_100'),
+				chipAmount: z.literal(100),
+			})
+			.strict(),
+	)
+	.max(1);
+
 export type RankedStartRequest = z.infer<typeof startRequestSchema>;
 export type RankedBlackjackAction = z.infer<typeof rankedActionSchema>;
 export type RankedBlackjackActionLogEntryV1 = z.infer<typeof actionRequestSchema>;
 export type RankedBlackjackActionLogV1 = z.infer<typeof actionLogSchema>;
+export type RankedStatsEffectsV1 = z.infer<typeof rankedStatsEffectsV1Schema>;
+export type RankedAchievementEffectsV1 = z.infer<typeof rankedAchievementEffectsV1Schema>;
+export type RankedRewardEffectsV1 = z.infer<typeof rankedRewardEffectsV1Schema>;
 export type RankedSessionStatus = 'active' | 'settled' | 'expired';
 
 export interface RankedReceiptV1<TOutcome extends RankedJson = RankedJson> {
@@ -46,9 +90,9 @@ export interface RankedReceiptV1<TOutcome extends RankedJson = RankedJson> {
 	gameNetDelta: number;
 	rewardDelta: number;
 	balanceAfter: number;
-	statsEffects: RankedJson;
-	achievementEffects: RankedJson;
-	rewardEffects: RankedJson;
+	statsEffects: RankedStatsEffectsV1;
+	achievementEffects: RankedAchievementEffectsV1;
+	rewardEffects: RankedRewardEffectsV1;
 	settledAt: number;
 	receiptHash: string;
 }

@@ -30,7 +30,33 @@ const clientUserId = gameSession.clientUserId;
 				>
 					← Back to Games
 				</a>
-				<h1 class="deco-section-title text-4xl">Blackjack</h1>
+				<div class="flex flex-wrap items-center gap-3">
+					<h1 class="deco-section-title text-4xl">Blackjack</h1>
+					<span
+						class="rounded-full border border-[var(--deco-line)] bg-[var(--deco-obsidian-3)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-muted)]"
+					>
+						Casual
+					</span>
+				</div>
+				{
+					user ? (
+						<a
+							href="/games/blackjack/ranked"
+							data-testid="ranked-blackjack-link"
+							class="mt-3 inline-flex items-center rounded-lg border border-[var(--deco-brass-dim)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)] transition-colors hover:border-[var(--deco-brass)] hover:text-[var(--deco-brass-bright)]"
+						>
+							Play server-verified Ranked Blackjack →
+						</a>
+					) : (
+						<a
+							href="/signin"
+							data-testid="ranked-blackjack-signin"
+							class="mt-3 inline-flex items-center rounded-lg border border-[var(--deco-line)] px-4 py-2 text-sm text-[var(--deco-muted)] transition-colors hover:border-[var(--deco-brass-dim)] hover:text-[var(--deco-brass)]"
+						>
+							Ranked Blackjack requires an account — sign in
+						</a>
+					)
+				}
 			</div>
 			<div class="flex items-center gap-4">
 				<div

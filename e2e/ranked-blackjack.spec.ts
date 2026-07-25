@@ -1,16 +1,124 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { z } from 'zod';
 import type { RankedBlackjackResponseV1 } from '../src/lib/ranked/blackjack/client';
+import {
+	createRankedPublicStateV1Schema,
+	rankedAchievementEffectsV1Schema,
+	rankedActionSchema,
+	rankedBalanceSchema,
+	rankedRewardEffectsV1Schema,
+	rankedStatsEffectsV1Schema,
+	safeIntegerSchema,
+	sessionIdSchema,
+} from '../src/lib/ranked/protocol';
 import { createIsolatedPage } from './isolated-page';
 
 const RANKED_START_PATH = '/api/ranked/sessions';
 const ACTIVE_SESSION_ATTEMPTS = 5;
 const RANKED_WAGER = 10;
+const PRIVATE_STATE_MARKERS = [
+	'seed',
+	'deck',
+	'generator',
+	'hole',
+	'private',
+	'prng',
+	'rng',
+	'randomstate',
+] as const;
+
+const rankedCardSchema = z
+	.object({
+		rank: z.enum(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']),
+		suit: z.enum(['hearts', 'diamonds', 'clubs', 'spades']),
+	})
+	.strict();
+
+const rankedHandValueSchema = z
+	.object({
+		value: safeIntegerSchema,
+		isSoft: z.boolean(),
+		isBust: z.boolean(),
+	})
+	.strict();
+
+const rankedHandSchema = z
+	.object({
+		cards: z.array(rankedCardSchema),
+		wager: safeIntegerSchema.min(0),
+		value: rankedHandValueSchema,
+	})
+	.strict();
+
+const rankedOutcomeSchema = z
+	.object({
+		result: z.enum(['win', 'loss', 'push']),
+		hands: z.array(
+			z
+				.object({
+					handIndex: safeIntegerSchema.min(0),
+					result: z.enum(['win', 'loss', 'push', 'blackjack']),
+					wager: safeIntegerSchema.min(0),
+					payout: safeIntegerSchema.min(0),
+				})
+				.strict(),
+		),
+		committedWager: safeIntegerSchema.min(0),
+		payout: safeIntegerSchema.min(0),
+		gameNetDelta: safeIntegerSchema,
+	})
+	.strict();
+
+const rankedBrowserStateSchema = z
+	.object({
+		phase: z.enum(['player-turn', 'complete']),
+		playerHands: z.array(rankedHandSchema),
+		activeHandIndex: safeIntegerSchema.min(0),
+		dealer: z
+			.object({
+				cards: z.array(rankedCardSchema),
+				value: rankedHandValueSchema,
+			})
+			.strict(),
+		committedWager: safeIntegerSchema.min(0),
+		nextSequence: safeIntegerSchema.min(0),
+		availableActions: z.array(rankedActionSchema),
+		outcome: rankedOutcomeSchema.nullable(),
+	})
+	.strict();
+
+const rankedReceiptSchema = z
+	.object({
+		sessionId: sessionIdSchema,
+		gameType: z.literal('blackjack'),
+		rulesetVersion: z.literal('blackjack-ranked-v1'),
+		seedCommitment: z.string(),
+		configHash: z.string(),
+		actionLogHash: z.string(),
+		outcome: rankedOutcomeSchema,
+		initialWager: safeIntegerSchema.min(0),
+		committedWager: safeIntegerSchema.min(0),
+		payout: safeIntegerSchema.min(0),
+		gameNetDelta: safeIntegerSchema,
+		rewardDelta: safeIntegerSchema.min(0),
+		balanceAfter: rankedBalanceSchema,
+		statsEffects: rankedStatsEffectsV1Schema,
+		achievementEffects: rankedAchievementEffectsV1Schema,
+		rewardEffects: rankedRewardEffectsV1Schema,
+		settledAt: safeIntegerSchema.min(0),
+		receiptHash: z.string(),
+	})
+	.strict();
+
+const rankedResponseSchema = createRankedPublicStateV1Schema(
+	rankedBrowserStateSchema,
+	rankedReceiptSchema,
+);
 
 type ActiveRankedPage = {
 	context: BrowserContext;
 	page: Page;
 	initialBalance: number;
-	startBody: string;
 	startResponse: RankedBlackjackResponseV1;
 };
 
@@ -29,20 +137,68 @@ function isRankedSessionRequest(
 	);
 }
 
+function normalizePrivacyMarker(value: string): string {
+	return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function assertNoPrivateMarker(value: string, location: string): void {
+	const normalized = normalizePrivacyMarker(value).replaceAll('seedcommitment', '');
+	const marker = PRIVATE_STATE_MARKERS.find((candidate) => normalized.includes(candidate));
+	if (marker) {
+		throw new Error(`Private ranked state marker "${marker}" found at ${location}`);
+	}
+}
+
+function assertNoPrivateRankedValue(value: unknown, location = '$'): void {
+	if (typeof value === 'string') {
+		assertNoPrivateMarker(value, location);
+		return;
+	}
+	if (Array.isArray(value)) {
+		value.forEach((entry, index) => assertNoPrivateRankedValue(entry, `${location}[${index}]`));
+		return;
+	}
+	if (typeof value !== 'object' || value === null) return;
+
+	for (const [key, entry] of Object.entries(value)) {
+		if (normalizePrivacyMarker(key) !== 'seedcommitment') {
+			assertNoPrivateMarker(key, `${location}.${key}`);
+		}
+		assertNoPrivateRankedValue(entry, `${location}.${key}`);
+	}
+}
+
 function expectNoPrivateRankedState(response: RankedBlackjackResponseV1): void {
-	const serialized = JSON.stringify(response);
-	expect(serialized).not.toMatch(
-		/"(?:seed|deck|generatorState|rngState|prngState|randomState)"\s*:/i,
-	);
+	assertNoPrivateRankedValue(response);
 	if (response.status === 'active') {
 		expect(response.state.dealer.cards).toHaveLength(1);
 	}
 }
 
+function parseRankedResponse(value: unknown): RankedBlackjackResponseV1 {
+	assertNoPrivateRankedValue(value);
+	const response = rankedResponseSchema.parse(value);
+	expectNoPrivateRankedState(response);
+	return response;
+}
+
+function parseRankedResponseText(text: string): RankedBlackjackResponseV1 {
+	return parseRankedResponse(JSON.parse(text) as unknown);
+}
+
 async function expectActiveDomIsPublic(page: Page): Promise<void> {
-	await expect(page.getByTestId('ranked-dealer-card')).toHaveCount(1);
-	const rankedText = await page.getByTestId('ranked-blackjack-root').innerText();
-	expect(rankedText).not.toMatch(/\b(?:seed|deck|generator state|rng state|prng state)\b/i);
+	const dealerHand = page.locator('#ranked-dealer-hand');
+	await expect(dealerHand).toHaveCount(1);
+	await expect(dealerHand.locator(':scope > .playing-card')).toHaveCount(1);
+	expect(await dealerHand.evaluate((element) => element.children.length)).toBe(1);
+
+	const rankedRoot = page.getByTestId('ranked-blackjack-root');
+	const [rankedMarkup, documentMarkup] = await Promise.all([
+		rankedRoot.evaluate((element) => element.outerHTML),
+		page.locator('html').evaluate((element) => element.outerHTML),
+	]);
+	assertNoPrivateMarker(rankedMarkup, 'ranked root markup');
+	assertNoPrivateMarker(documentMarkup, 'document markup');
 }
 
 async function createActiveRankedPage(
@@ -76,21 +232,29 @@ async function createActiveRankedPage(
 				candidate.page.getByTestId('ranked-start').click(),
 			]);
 			expect(startResponse.ok()).toBe(true);
-			const response = (await startResponse.json()) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(response);
+			const startText = await startResponse.text();
+			const response = parseRankedResponseText(startText);
+
+			const startBody = startRequest.postData();
+			expect(startBody).not.toBeNull();
+			const replayedStart = await candidate.page.request.post(RANKED_START_PATH, {
+				data: startBody as string,
+				headers: { 'content-type': 'application/json' },
+			});
+			expect(replayedStart.ok()).toBe(true);
+			const replayedStartText = await replayedStart.text();
+			expect(replayedStartText).toBe(startText);
+			parseRankedResponseText(replayedStartText);
 
 			if (response.status !== 'active') {
 				await candidate.context.close();
 				continue;
 			}
 
-			const startBody = startRequest.postData();
-			expect(startBody).not.toBeNull();
 			await expectActiveDomIsPublic(candidate.page);
 			return {
 				...candidate,
 				initialBalance,
-				startBody: startBody as string,
 				startResponse: response,
 			};
 		} catch (error) {
@@ -104,6 +268,46 @@ async function createActiveRankedPage(
 	);
 }
 
+test.describe('ranked secrecy guard self-tests', () => {
+	test('rejects normalized private-state variants while allowing seedCommitment', () => {
+		expect(() =>
+			assertNoPrivateRankedValue({
+				seedCommitment: 'public-hash',
+			}),
+		).not.toThrow();
+
+		const representativeLeaks = [
+			{ nested: { serverSeed: 'private' } },
+			{ nested: { shuffledDeck: [] } },
+			{ nested: { deckCursor: 4 } },
+			{ nested: { dealerHoleCard: { rank: 'K', suit: 'clubs' } } },
+			{ nested: { privateRngState: 'private' } },
+		];
+
+		for (const leak of representativeLeaks) {
+			expect(() => assertNoPrivateRankedValue(leak)).toThrow();
+		}
+	});
+
+	test('rejects private state hidden in ranked markup', async ({ page }) => {
+		await page.setContent(`
+			<main
+				data-testid="ranked-blackjack-root"
+				data-server-seed="private"
+			>
+				<div id="ranked-dealer-hand">
+					<div class="playing-card" data-testid="ranked-dealer-card">A♠</div>
+				</div>
+				<script type="application/json">
+					{"dealerHoleCard":{"rank":"K","suit":"clubs"}}
+				</script>
+			</main>
+		`);
+
+		await expect(expectActiveDomIsPublic(page)).rejects.toThrow();
+	});
+});
+
 test.describe('ranked Blackjack', () => {
 	test('settles once and exact start/action retries return the stored receipt', async ({
 		browser,
@@ -116,16 +320,6 @@ test.describe('ranked Blackjack', () => {
 			expect(active.startResponse.state.committedWager).toBe(RANKED_WAGER);
 			expect(active.startResponse.receipt).toBeNull();
 
-			const replayedStart = await active.page.request.post(RANKED_START_PATH, {
-				data: active.startBody,
-				headers: { 'content-type': 'application/json' },
-			});
-			expect(replayedStart.ok()).toBe(true);
-			const replayedStartBody = (await replayedStart.json()) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(replayedStartBody);
-			expect(replayedStartBody.sessionId).toBe(active.startResponse.sessionId);
-			expect(replayedStartBody.balance).toBe(active.startResponse.balance);
-			expect(replayedStartBody.state.committedWager).toBe(RANKED_WAGER);
 			await expectActiveDomIsPublic(active.page);
 
 			const sessionId = active.startResponse.sessionId;
@@ -145,8 +339,7 @@ test.describe('ranked Blackjack', () => {
 			]);
 			expect(terminalResponse.ok()).toBe(true);
 			const terminalText = await terminalResponse.text();
-			const terminal = JSON.parse(terminalText) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(terminal);
+			const terminal = parseRankedResponseText(terminalText);
 			expect(terminal.status).toBe('settled');
 			expect(terminal.receipt).not.toBeNull();
 			expect(terminal.receipt?.sessionId).toBe(sessionId);
@@ -182,8 +375,7 @@ test.describe('ranked Blackjack', () => {
 
 			const resumed = await active.page.request.get(`${RANKED_START_PATH}/${sessionId}`);
 			expect(resumed.ok()).toBe(true);
-			const resumedBody = (await resumed.json()) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(resumedBody);
+			const resumedBody = parseRankedResponseText(await resumed.text());
 			expect(resumedBody.balance).toBe(terminal.balance);
 			expect(resumedBody.receipt).toEqual(terminal.receipt);
 		} finally {
@@ -209,8 +401,7 @@ test.describe('ranked Blackjack', () => {
 			await active.page.reload({ waitUntil: 'domcontentloaded' });
 			const firstResumeResponse = await firstResumePromise;
 			expect(firstResumeResponse.ok()).toBe(true);
-			const firstResume = (await firstResumeResponse.json()) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(firstResume);
+			const firstResume = parseRankedResponseText(await firstResumeResponse.text());
 			expect(firstResume.sessionId).toBe(sessionId);
 			expect(firstResume.nextSequence).toBe(nextSequence);
 			await expectActiveDomIsPublic(active.page);
@@ -237,8 +428,7 @@ test.describe('ranked Blackjack', () => {
 			await active.page.reload({ waitUntil: 'domcontentloaded' });
 			const refreshedResumeResponse = await refreshedResumePromise;
 			expect(refreshedResumeResponse.ok()).toBe(true);
-			const refreshedResume = (await refreshedResumeResponse.json()) as RankedBlackjackResponseV1;
-			expectNoPrivateRankedState(refreshedResume);
+			const refreshedResume = parseRankedResponseText(await refreshedResumeResponse.text());
 			expect(refreshedResume.sessionId).toBe(sessionId);
 			expect(refreshedResume.nextSequence).toBe(nextSequence);
 			expect(refreshedResume.balance).toBe(0);

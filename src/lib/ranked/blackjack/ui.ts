@@ -12,7 +12,7 @@ import type {
 
 const ACTIONS: readonly RankedBlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 
-function requireElement<T extends Element>(root: HTMLElement, selector: string): T {
+function requireElement<T extends Element>(root: ParentNode, selector: string): T {
 	const element = root.querySelector<T>(selector);
 	if (!element) throw new Error(`Ranked Blackjack is missing ${selector}`);
 	return element;
@@ -67,9 +67,9 @@ export function createRankedBlackjackRenderer(root: HTMLElement): RankedBlackjac
 			requireElement<HTMLButtonElement>(root, `[data-ranked-action="${action}"]`),
 		]),
 	);
-	const toast = requireElement<HTMLElement>(root, '[data-testid="ranked-achievement-toast"]');
-	const toastIcon = requireElement<HTMLElement>(root, '#ranked-achievement-icon');
-	const toastName = requireElement<HTMLElement>(root, '#ranked-achievement-name');
+	const toast = requireElement<HTMLElement>(root.ownerDocument, '#ranked-achievement-toast');
+	const toastIcon = requireElement<HTMLElement>(root.ownerDocument, '#ranked-achievement-icon');
+	const toastName = requireElement<HTMLElement>(root.ownerDocument, '#ranked-achievement-name');
 	const achievementToast = initAchievementToast(() => ({
 		toast,
 		icon: toastIcon,

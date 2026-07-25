@@ -97,6 +97,12 @@ interface StoredStartRequest {
 	wager: number;
 }
 
+interface PendingActionRecovery {
+	sessionId: string;
+	action: RankedBlackjackAction;
+	body: string;
+}
+
 class RankedHttpResponseError extends Error {
 	readonly uncertain: boolean;
 
@@ -187,6 +193,7 @@ export function createRankedBlackjackClient(
 	let current: RankedBlackjackResponseV1 | null = null;
 	let pending = false;
 	let countdownHandle: TimerHandle | null = null;
+	let actionRecovery: PendingActionRecovery | null = null;
 
 	const stopCountdown = (): void => {
 		if (countdownHandle === null) return;
@@ -214,6 +221,7 @@ export function createRankedBlackjackClient(
 
 	const accept = (response: RankedBlackjackResponseV1): void => {
 		current = response;
+		actionRecovery = null;
 		deps.renderer.render(response);
 		startCountdown();
 		if (response.receipt && response.status !== 'active') {
@@ -280,8 +288,9 @@ export function createRankedBlackjackClient(
 
 	const act = async (action: RankedBlackjackAction): Promise<void> => {
 		if (pending || !current || current.status !== 'active') return;
-		const sessionId = current.sessionId;
-		const body = JSON.stringify({ sequence: current.nextSequence, action });
+		if (actionRecovery && actionRecovery.action !== action) return;
+		const sessionId = actionRecovery?.sessionId ?? current.sessionId;
+		const body = actionRecovery?.body ?? JSON.stringify({ sequence: current.nextSequence, action });
 		const actionUrl = `/api/ranked/sessions/${sessionId}/actions`;
 		const requestInit: RequestInit = {
 			method: 'POST',
@@ -289,6 +298,7 @@ export function createRankedBlackjackClient(
 			body,
 		};
 		setPending(true);
+		let authoritativeRecoveryAttempted = false;
 		try {
 			let response: RankedBlackjackResponseV1;
 			try {
@@ -299,13 +309,20 @@ export function createRankedBlackjackClient(
 					response = await readResponse(await deps.fetch(actionUrl, requestInit));
 				} catch (retryError) {
 					if (!isUncertainResponse(retryError)) throw retryError;
+					authoritativeRecoveryAttempted = true;
 					response = await get(sessionId);
 				}
 			}
 			accept(response);
+			setPending(false);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
-		} finally {
+			if (authoritativeRecoveryAttempted) {
+				actionRecovery = { sessionId, action, body };
+				pending = false;
+				return;
+			}
+			actionRecovery = null;
 			setPending(false);
 		}
 	};

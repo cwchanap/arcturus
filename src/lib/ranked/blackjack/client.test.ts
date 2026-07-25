@@ -351,6 +351,60 @@ describe('ranked Blackjack recovery client', () => {
 		expect(renderer.responses.at(-1)?.nextSequence).toBe(1);
 	});
 
+	test('retains unresolved action recovery through a later certain error until authoritative success', async () => {
+		const storage = new RecordingStorage();
+		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		let phase: 'initialize' | 'uncertain' | 'rate-limited' | 'success' = 'initialize';
+		const bodies: string[] = [];
+		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
+			if (typeof init?.body === 'string') bodies.push(init.body);
+			if (phase === 'initialize' && init === undefined) return jsonResponse(activeResponse());
+			if (phase === 'rate-limited') {
+				return new Response(JSON.stringify({ error: 'RATE_LIMITED' }), {
+					status: 429,
+					headers: { 'content-type': 'application/json' },
+				});
+			}
+			if (phase === 'success') return jsonResponse(activeResponse({ nextSequence: 1 }));
+			throw new TypeError('network');
+		});
+		const renderer = createRenderer();
+		const { client, fetchMock } = createHarness({
+			storage,
+			renderer,
+			fetch: fetchImplementation,
+		});
+		await client.initialize();
+		fetchMock.mockClear();
+		renderer.pending.length = 0;
+		bodies.length = 0;
+		phase = 'uncertain';
+
+		await client.act('stand');
+		const unresolvedBody = JSON.stringify({ sequence: 0, action: 'stand' });
+		expect(renderer.pending).toEqual([true]);
+
+		phase = 'rate-limited';
+		await client.act('stand');
+
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+		expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/ranked/sessions/${SESSION_ID}/actions`);
+		expect(bodies).toEqual([unresolvedBody, unresolvedBody, unresolvedBody]);
+		expect(renderer.pending).toEqual([true, true]);
+
+		await client.act('hit');
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+
+		phase = 'success';
+		await client.act('stand');
+
+		expect(fetchMock).toHaveBeenCalledTimes(5);
+		expect(fetchMock.mock.calls[4]?.[0]).toBe(`/api/ranked/sessions/${SESSION_ID}/actions`);
+		expect(bodies).toEqual([unresolvedBody, unresolvedBody, unresolvedBody, unresolvedBody]);
+		expect(renderer.pending.at(-1)).toBe(false);
+		expect(renderer.responses.at(-1)?.nextSequence).toBe(1);
+	});
+
 	test('does not replay an action after a certain client error response', async () => {
 		const storage = new RecordingStorage();
 		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);

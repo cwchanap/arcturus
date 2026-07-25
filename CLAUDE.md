@@ -132,7 +132,7 @@ bun run db:migrate:remote
 
 **Dynamic Schema Updates**: The middleware includes graceful schema initialization for `chipBalance` column. See `src/middleware.ts` for the pattern of handling missing columns at runtime.
 
-**Important**: Migration scripts in `package.json` reference specific SQL files. Update these paths when adding new migrations.
+**Important**: `scripts/apply-migrations.ts` automatically discovers numbered SQL files under `drizzle/`. Generate and commit the migration; do not add per-file paths to the migration scripts in `package.json`.
 
 ## Project Structure
 
@@ -322,7 +322,7 @@ Tables defined in `src/db/schema.ts`:
 - `src/env.d.ts`: TypeScript definitions for `Env` interface and `App.Locals`
 - `eslint.config.js`: Flat config with TypeScript + Astro support
 - `playwright.config.ts`: E2E test configuration with global setup
-- `package.json`: All scripts use `bun`, migration scripts reference specific SQL files
+- `package.json`: All scripts use `bun`; migration scripts delegate numbered SQL discovery to `scripts/apply-migrations.ts`
 
 ## Deployment
 

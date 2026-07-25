@@ -25,6 +25,7 @@ function publicResponse(): RankedCoordinatorResponse {
 		seedCommitment: 'public-seed-commitment',
 		expiresAt: 1_800_000_900,
 		nextSequence: 0,
+		balance: 900,
 		state: {
 			phase: 'player-turn',
 			playerHands: [
@@ -297,5 +298,6 @@ describe('ranked HTTP stable response contract', () => {
 		expect(serialized).not.toContain('deckCursor');
 		expect(serialized).not.toContain(hiddenHoleCard);
 		expect(serialized).toContain('"seedCommitment":"public-seed-commitment"');
+		expect(serialized).toContain('"balance":900');
 	});
 });

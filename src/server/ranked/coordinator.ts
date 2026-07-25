@@ -8,6 +8,7 @@ import {
 } from '../../lib/ranked/canonical';
 import {
 	actionRequestSchema,
+	rankedBalanceSchema,
 	RankedServiceError,
 	type RankedBlackjackActionLogEntryV1,
 	type RankedPublicStateV1,
@@ -259,6 +260,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		if (session.status !== 'active' && !result) {
 			return internalError('Ranked terminal session has no stored result');
 		}
+		const balance = result ? result.balanceAfter : account.chipBalance;
+		if (!rankedBalanceSchema.safeParse(balance).success) {
+			return internalError('Ranked response balance is invalid');
+		}
 		const projected = replayed.adapter.project(replayed.replay, account.chipBalance);
 		const state =
 			session.status === 'expired' && result
@@ -277,6 +282,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			seedCommitment: session.seedCommitment,
 			expiresAt: session.expiresAt,
 			nextSequence: session.nextSequence,
+			balance,
 			state,
 			receipt: result ? resultReceipt(result) : null,
 		};

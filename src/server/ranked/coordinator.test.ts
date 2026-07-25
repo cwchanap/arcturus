@@ -753,6 +753,7 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 			sessionId: started.sessionId,
 			body: { sequence: 0, action: 'stand' },
 		});
+		await db.prepare('UPDATE user SET chipBalance = ? WHERE id = ?').bind(777, USER_ID).run();
 		const replayed = await ranked.act({
 			userId: USER_ID,
 			sessionId: started.sessionId,
@@ -760,11 +761,14 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 		});
 
 		expect(started.status).toBe('active');
+		expect(started.balance).toBe(900);
 		expect(settled.status).toBe('settled');
+		expect(settled.balance).toBe(1200);
 		expect(settled.receipt?.balanceAfter).toBe(1200);
+		expect(replayed.balance).toBe(1200);
 		expect(replayed.receipt).toEqual(settled.receipt);
 		expect(await repository.readAccount(USER_ID)).toEqual({
-			chipBalance: 1200,
+			chipBalance: 777,
 			heldChips: 0,
 		});
 		expect(
@@ -773,6 +777,39 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 				.bind(started.sessionId)
 				.first<{ count: number }>(),
 		).toEqual({ count: 1 });
+	} finally {
+		await mf.dispose();
+	}
+});
+
+test('real D1 resume and matching start replay refresh an active casual cross-tab balance', async () => {
+	const { mf, db } = await createRankedTestD1();
+	try {
+		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+		const ranked = createRankedCoordinator({
+			repository: createRankedRepository(db),
+			getAdapter: getRankedAdapter,
+			reconcileMembership: async () => ({ kind: 'clear' }),
+			membershipDb: db,
+			now: () => new Date(NOW),
+			randomBytes(length) {
+				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
+			},
+		});
+		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+		await db.prepare('UPDATE user SET chipBalance = ? WHERE id = ?').bind(725, USER_ID).run();
+
+		const resumed = await ranked.resume({
+			userId: USER_ID,
+			sessionId: started.sessionId,
+		});
+		const replayedStart = await ranked.start({ userId: USER_ID, body: START_REQUEST });
+
+		expect(started.balance).toBe(900);
+		expect(resumed.balance).toBe(725);
+		expect(replayedStart.balance).toBe(725);
+		expect(resumed.status).toBe('active');
+		expect(replayedStart.sessionId).toBe(started.sessionId);
 	} finally {
 		await mf.dispose();
 	}

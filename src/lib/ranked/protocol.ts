@@ -7,6 +7,7 @@ export const rankedActionSchema = z.enum(['hit', 'stand', 'double-down', 'split'
 export const safeIntegerSchema = z
 	.number()
 	.refine((value) => Number.isSafeInteger(value) && !Object.is(value, -0));
+export const rankedBalanceSchema = safeIntegerSchema.min(0);
 
 export const startRequestSchema = z
 	.object({
@@ -105,8 +106,29 @@ export interface RankedPublicStateV1<TState> {
 	seedCommitment: string;
 	expiresAt: number;
 	nextSequence: number;
+	balance: z.infer<typeof rankedBalanceSchema>;
 	state: TState;
 	receipt: RankedReceiptV1 | null;
+}
+
+export function createRankedPublicStateV1Schema<
+	TStateSchema extends z.ZodType,
+	TReceiptSchema extends z.ZodType,
+>(stateSchema: TStateSchema, receiptSchema: TReceiptSchema) {
+	return z
+		.object({
+			sessionId: sessionIdSchema,
+			status: z.enum(['active', 'settled', 'expired']),
+			gameType: z.literal('blackjack'),
+			rulesetVersion: z.literal('blackjack-ranked-v1'),
+			seedCommitment: z.string(),
+			expiresAt: safeIntegerSchema.min(0),
+			nextSequence: safeIntegerSchema.min(0),
+			balance: rankedBalanceSchema,
+			state: stateSchema,
+			receipt: receiptSchema.nullable(),
+		})
+		.strict();
 }
 
 export const RANKED_ERROR_STATUS = {

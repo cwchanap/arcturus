@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { z } from 'zod';
+import * as rankedProtocol from './protocol';
 import {
 	RANKED_ERROR_STATUS,
 	RankedServiceError,
@@ -8,6 +10,7 @@ import {
 	rankedRewardEffectsV1Schema,
 	rankedStatsEffectsV1Schema,
 	requestIdSchema,
+	safeIntegerSchema,
 	sessionIdSchema,
 	startRequestSchema,
 } from './protocol';
@@ -89,6 +92,48 @@ describe('ranked request protocol', () => {
 		expect(sessionIdSchema.safeParse('a'.repeat(23)).success).toBe(false);
 		expect(sessionIdSchema.safeParse('A_-0'.repeat(5) + 'AB').success).toBe(true);
 		expect(sessionIdSchema.safeParse('a'.repeat(21) + '.').success).toBe(false);
+	});
+});
+
+describe('ranked public response protocol', () => {
+	test('requires a strict nonnegative safe-integer balance for active and terminal responses', () => {
+		const createSchema = Reflect.get(rankedProtocol, 'createRankedPublicStateV1Schema');
+		expect(typeof createSchema).toBe('function');
+		if (typeof createSchema !== 'function') return;
+		const schema = createSchema(
+			z.object({ phase: z.enum(['player-turn', 'complete']) }).strict(),
+			z.object({ balanceAfter: safeIntegerSchema.min(0) }).strict(),
+		) as z.ZodType;
+		const active = {
+			sessionId: 'A'.repeat(22),
+			status: 'active',
+			gameType: 'blackjack',
+			rulesetVersion: 'blackjack-ranked-v1',
+			seedCommitment: 'seed-commitment',
+			expiresAt: 1_800_000_900,
+			nextSequence: 0,
+			balance: 900,
+			state: { phase: 'player-turn' },
+			receipt: null,
+		};
+		const terminal = {
+			...active,
+			status: 'settled',
+			balance: 1200,
+			state: { phase: 'complete' },
+			receipt: { balanceAfter: 1200 },
+		};
+
+		expect(schema.safeParse(active).success).toBe(true);
+		expect(schema.safeParse(terminal).success).toBe(true);
+		expect(schema.safeParse({ ...active, balance: 0 }).success).toBe(true);
+		expect(schema.safeParse({ ...active, balance: Number.MAX_SAFE_INTEGER }).success).toBe(true);
+		for (const balance of [-1, -0, 0.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN]) {
+			expect(schema.safeParse({ ...active, balance }).success).toBe(false);
+		}
+		const { balance: _balance, ...missingBalance } = active;
+		expect(schema.safeParse(missingBalance).success).toBe(false);
+		expect(schema.safeParse({ ...terminal, rawSeed: 'must-not-pass' }).success).toBe(false);
 	});
 });
 

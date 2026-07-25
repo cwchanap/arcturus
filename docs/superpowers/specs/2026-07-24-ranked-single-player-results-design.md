@@ -107,7 +107,7 @@ Each action rebuilds authoritative state from a small immutable input:
 ruleset version + hidden seed + canonical configuration + accepted action log
 ```
 
-The replay cost is bounded by one Blackjack round and is small compared with network and database latency. D1's transaction serialization plus explicit session sequence numbers resolve concurrent requests.
+The replay cost is bounded by one Blackjack round and is small compared with network and database latency. Explicit conditional writes, inspected mutation counts, and session sequence numbers resolve concurrent requests; atomic batching alone is not treated as a compare-and-swap guarantee.
 
 ### 4.3 Generic platform components
 
@@ -122,6 +122,12 @@ The ranked platform is divided into focused units:
 - **Expiration service:** finalizes expired sessions lazily and from the scheduled Worker.
 
 Astro API handlers remain thin transport adapters around these services.
+
+### 4.4 Canonical bytes and hashes
+
+All persisted or compared hashes use the UTF-8 bytes of RFC 8785 JSON Canonicalization Scheme (JCS) output. Inputs are schema-validated before canonicalization, unknown fields are rejected, and every numeric field in a hashed structure must be a finite JavaScript safe integer. Floating-point values, `NaN`, `Infinity`, negative zero, and numeric strings standing in for integer fields are invalid.
+
+Configuration objects, accepted action objects, action-log arrays, result effects, and receipt data each have a versioned schema. Hashes are lowercase hexadecimal SHA-256 digests of the canonical bytes. `receiptHash` is computed from the receipt schema with the `receiptHash` field omitted. Implementations must use one shared canonicalization module rather than relying on insertion order or plain `JSON.stringify`.
 
 ---
 
@@ -152,17 +158,25 @@ The selected initial wager is part of the per-session configuration and therefor
 
 ### 5.2 Randomness boundary
 
-The current deck managers use `Math.random` directly. They gain an optional random source while preserving `Math.random` as the casual default:
+The current casual deck manager may gain an injected random source while preserving `Math.random` as its default. Ranked play does not use floating-point randomness. Its versioned source exposes bounded integers:
 
 ```ts
-type RandomSource = () => number;
+interface RankedRandomSource {
+	nextInt(exclusiveUpperBound: number): number;
+}
 ```
 
-Ranked start creates a cryptographically random 256-bit seed with `crypto.getRandomValues`. A versioned deterministic generator derives the same `[0, 1)` sequence from that seed on every Worker or Bun runtime. Fisher-Yates consumes that source to create the deck.
+Ranked start creates exactly 32 seed bytes with `crypto.getRandomValues`. D1 stores those bytes as unpadded RFC 4648 base64url; decoding must reproduce exactly 32 bytes, and malformed or non-canonical encodings are rejected. `blackjack-ranked-v1` defines the stream byte-for-byte:
 
-The server stores the seed and a SHA-256 seed commitment. Only the commitment may appear in a receipt. The raw seed, generator state, undealt cards, and future draws are never returned or logged.
+- HMAC-SHA-256 uses the 32-byte seed as its key.
+- The message is the UTF-8 bytes of `arcturus:blackjack-ranked-v1:deck`, followed by an unsigned 64-bit big-endian counter starting at zero.
+- Successive 32-byte digests are concatenated. Each four-byte chunk is interpreted as an unsigned big-endian 32-bit integer.
+- `nextInt(n)` requires an integer `1 <= n <= 2^32`. It computes `limit = floor(2^32 / n) * n`, rejects values greater than or equal to `limit`, and returns the next accepted value modulo `n`. This rejection step avoids modulo bias.
+- The initial ordered deck is suits `hearts`, `diamonds`, `clubs`, `spades`, with ranks `A`, `2` through `10`, `J`, `Q`, `K` inside each suit. Fisher-Yates iterates from index 51 down to 1 and swaps with index `nextInt(i + 1)`. Cards are dealt from the end of the shuffled array, matching the current Blackjack deck manager.
 
-The generator algorithm and seed encoding are part of `blackjack-ranked-v1`; they cannot change in place.
+Deck derivation may be asynchronous, but it completes before the synchronous pure reducer runs. The HMAC algorithm, domain separator, counter encoding, unsigned integer decoding, rejection sampling, initial deck order, shuffle direction, and deal direction are all immutable parts of `blackjack-ranked-v1`.
+
+The seed commitment is lowercase hexadecimal SHA-256 over the UTF-8 bytes of `arcturus:blackjack-ranked-v1:seed:` followed by the 32 raw seed bytes. Only this commitment may appear in a receipt. The raw seed, HMAC state, undealt cards, and future draws are never returned or logged.
 
 ### 5.3 Rules
 
@@ -355,6 +369,8 @@ The receipt is immutable and keyed by `sessionId`:
 | `receiptHash` | SHA-256 of canonical receipt fields |
 | `settledAt` | Authoritative settlement time |
 
+`balanceAfter` is a receipt-time snapshot selected from the account row after this settlement batch's wallet update. It is not a permanent account balance and may differ from a later balance after unrelated casual or ranked activity.
+
 The session's seed remains server-only. A stored result plus its session replay material lets the server independently reproduce and audit the receipt.
 
 ### 7.3 `ranked_game_stats`
@@ -377,7 +393,7 @@ A split round counts as one ranked session. Its overall classification is:
 - `push` when equal.
 - `expired` always increments loss and forfeit.
 
-Per-hand outcomes remain in the immutable receipt.
+These counters are intentionally overlapping rather than mutually exclusive: expiration increments `sessionsPlayed`, `totalLosses`, and `totalForfeits` once each. Per-hand outcomes remain in the immutable receipt.
 
 ### 7.4 `ranked_reward_grant`
 
@@ -402,10 +418,10 @@ The increment uses a single conditional upsert. If the limit is already reached,
 Initial limits:
 
 - `ranked_start`: 6 requests per user per 60 seconds.
-- `ranked_action`: 120 requests per user per 60 seconds.
+- `ranked_action`: 30 requests per user per 60 seconds.
 - `ranked_resume`: 120 requests per user per 60 seconds.
 
-Valid idempotent replays are resolved before incrementing a counter so a lost response cannot make recovery impossible.
+Valid idempotent replays are resolved before incrementing a counter so a lost response cannot make recovery impossible. For starts and new actions, the rate-limit upsert is the first statement in the same D1 transition batch. This keeps enforcement durable without adding a second database round trip. A denied upsert reports zero changes, and every following mutation in that batch is gated off.
 
 ---
 
@@ -415,9 +431,10 @@ Valid idempotent replays are resolved before incrementing a counter so a lost re
 
 The start D1 batch:
 
-1. Inserts the session only if the user has enough chips and no multiplayer escrow.
-2. Deducts the initial wager only for the newly inserted session.
-3. For an opening natural, closes the session and applies terminal effects in the same batch.
+1. Conditionally upserts the start rate bucket.
+2. Inserts the session with `INSERT ... SELECT ... WHERE changes() = 1` only if the user still has enough chips, no active ranked session, and no live multiplayer conflict.
+3. Deducts the initial wager with a relative `UPDATE user SET chipBalance = chipBalance - ?` gated by both the newly inserted session and `WHERE changes() = 1`.
+4. For an opening natural, applies the same terminal cascade described below in this batch.
 
 Unique constraint failure rolls back the whole batch. The handler then reads the winner:
 
@@ -428,11 +445,13 @@ Unique constraint failure rolls back the whole batch. The handler then reads the
 
 ### 8.2 Action transaction
 
-Before writing, the coordinator replays the stored session and computes the next canonical state. The D1 batch predicates wallet and session changes on the same active status and prior sequence.
+Before writing, the coordinator replays the stored session and computes the next canonical state. The D1 batch uses the repository's established sequential `WHERE changes() = 1` cascade; a successful zero-row statement is never assumed to roll back a batch.
 
-For double or split, the relative wallet deduction executes only if the account has enough chips and the session still has the expected sequence. The subsequent session update records the action and committed wager in the same transaction.
+The action rate-limit upsert runs first. When the action has a non-zero wallet delta, the next statement is a relative wallet update guarded by an `EXISTS` subquery for the owned, active session at the expected sequence and, when another wager is being committed, sufficient balance. The session compare-and-swap repeats the ownership, status, and sequence predicates and additionally requires `changes() = 1`. When the action has no wallet delta, the session compare-and-swap follows the rate upsert directly and requires `changes() = 1`. It records the canonical action, action-log hash, committed wager, next sequence, and any terminal state.
 
-A competing request that loses the sequence race changes no wallet or session state. It re-reads the stored action:
+Every required `D1Result.meta.changes` value is inspected. A rate result of zero becomes `RATE_LIMITED`; a wallet result of zero is classified by re-reading balance and session state; and a session result other than one after a successful wallet mutation is an internal invariant failure. The SQL text for these safety-critical cascades is exported from shared repository constants so handlers and integration tests execute the same statements.
+
+Because D1 batch statements execute sequentially in one transaction, a competing request serialized after the winner no longer satisfies the active-session/sequence predicate. Its wallet and session statements both report zero changes. The handler re-reads the stored action:
 
 - Same payload returns the winning result.
 - Different payload returns a conflict.
@@ -441,21 +460,21 @@ A competing request that loses the sequence race changes no wallet or session st
 
 One D1 batch:
 
-1. Applies any final additional wager and game payout.
-2. Applies Ranked Debut reward only if no grant exists.
-3. Changes the session to `settled` or `expired` and clears `activeUserId`.
-4. Inserts the immutable `ranked_result`.
-5. Upserts `ranked_game_stats`.
-6. Inserts eligible achievements with conflict-ignore semantics.
-7. Inserts the unique reward grant.
+1. For a non-zero terminal wallet delta, applies the final additional wager, game payout, and eligible Ranked Debut reward in one relative wallet update guarded by the active session and expected sequence.
+2. Changes the session to `settled` or `expired`, clears `activeUserId`, repeats the ownership/status/sequence predicates, and, when step 1 ran, requires `changes() = 1`.
+3. Inserts the immutable `ranked_result` with `WHERE changes() = 1`, selecting `balanceAfter` from the wallet row after step 1.
+4. Upserts `ranked_game_stats` with `WHERE changes() = 1`.
+5. Inserts the unique reward grant and eligible achievement from the just-created result. These optional inserts are last and use their own unique keys, so a conflict-ignore result cannot interrupt a mandatory monetary or statistics cascade.
 
-Every downstream effect is conditioned on the winning session transition or unique result. A retry reads and returns the existing receipt rather than recalculating effects.
+If the terminal wallet delta is zero, step 2 follows the rate-limit statement directly for an action, or is the first mutation for scheduled/lazy expiration. Opening natural settlement follows the start session insert and initial deduction. Reward eligibility is derived inside the wallet/result statements from the absence of `ranked_debut_100`; the one-active-session constraint prevents two ranked settlements for the same user from competing for that reward.
+
+Every mandatory downstream effect is conditioned on the winning session transition or unique result. A retry reads and returns the existing receipt rather than recalculating effects. The handler verifies all mandatory mutation counts before responding. An impossible partial-count pattern is logged as an invariant violation and returns `INTERNAL_ERROR`; real-D1 integration tests must prove that the SQL predicates make that pattern unreachable.
 
 The response is built from the stored result row, not from transient in-memory calculations.
 
 ### 8.4 Receipt identity
 
-Canonical receipt JSON uses a fixed key order and excludes presentation-only text. `receiptHash` covers all monetary, statistical, achievement, reward, ruleset, configuration, action-log, and timestamp fields.
+Canonical receipt JSON follows section 4.4 and excludes presentation-only text. `receiptHash` covers all monetary, statistical, achievement, reward, ruleset, configuration, action-log, and timestamp fields.
 
 Replaying the same settlement request always returns byte-equivalent canonical receipt data. Reusing the session ID with a different payload is impossible through the public API because the server never accepts terminal result fields.
 
@@ -465,7 +484,8 @@ Replaying the same settlement request always returns byte-equivalent canonical r
 
 Ranked sessions and multiplayer escrow cannot overlap:
 
-- Ranked start rejects an existing `mp_membership` row or non-zero `heldChips`.
+- Before blocking ranked start, the coordinator reuses the multiplayer stale-membership resolution policy. A membership younger than the 30-second initialization grace period, a live Durable Object room, or an `unknown` room probe result is a `MULTIPLAYER_CONFLICT`.
+- Only a definitive `gone` room probe may be repaired. The repair returns `heldChips` while the membership still points to that exact room, deletes only that scoped stale membership, and then re-checks both membership and `heldChips` before ranked start proceeds.
 - Multiplayer room create/join/lock rejects a non-null active ranked-session key.
 - Resume and terminal settlement remain available even if unrelated casual activity has changed the account balance.
 
@@ -541,10 +561,12 @@ All endpoints return structured JSON with stable error codes:
 
 The existing scheduled Worker adds two ranked jobs:
 
-1. Finalize active sessions whose `expiresAt` is in the past.
+1. Finalize rows matching `status = 'active' AND expiresAt <= now`.
 2. Delete expired rate-limit buckets.
 
-Lazy expiration keeps users unblocked immediately; scheduled finalization is the global backstop. Historical ranked sessions and results are retained in HPA-170 so later competitive features can audit them. A future retention policy must preserve result and season requirements before deleting replay material.
+Lazy start/action/resume checks and the scheduled job call the same expiration finalizer and terminal transaction; the scheduled path does not maintain a second settlement implementation. The scheduled Worker invokes ranked expiration before the existing retention cleanup. Lazy expiration keeps users unblocked immediately; scheduled finalization is the global backstop. Historical ranked sessions and results are retained in HPA-170 so later competitive features can audit them. A future retention policy must preserve result and season requirements before deleting replay material.
+
+The raw seed is necessary replay material but is sensitive at rest: a D1 snapshot, overly broad support query, or privileged database compromise could reveal the deck. The seed column is server-only, excluded from logs, receipts, public APIs, routine support tooling, and analytics exports. Database and support access should remain least-privileged, and future administrative endpoints must omit it by default. Application-layer seed encryption and key rotation are deferred for HPA-170; they become required if the threat model expands beyond trusted server/database operators.
 
 Structured logs use redacted user/session identifiers and event names:
 
@@ -565,9 +587,10 @@ Seeds, deck state, complete action logs, emails, and raw account IDs are never l
 ### 13.1 Pure unit tests
 
 - Same seed, configuration, and actions produce byte-equivalent state, outcomes, and hashes.
+- Fixed HMAC/counter, rejection-sampling, deck-order, and JCS fixtures produce identical bytes and values under Bun and the Worker runtime.
 - Different accepted actions produce their expected deterministic branches.
 - Dealer stands on soft 17.
-- Blackjack, push, win, loss, double, split, re-split, and four-hand cap follow v1 rules.
+- Blackjack payout is `wager + floor(wager * 3 / 2)`; push, normal win, loss, double, split, re-split, and the four-hand cap follow v1 rules.
 - Public projection hides the dealer hole card, seed, and undealt cards.
 - Configuration and action canonicalization rejects unknown or ambiguous fields.
 - Payload tampering changes hashes and is rejected.
@@ -582,7 +605,7 @@ Tests run against the real migration schema and cover:
 - Start request ID reused with a different wager.
 - Duplicate action returning the same state.
 - Same sequence reused with a different action.
-- Concurrent actions allowing one sequence winner.
+- Actual parallel action batches against Miniflare/workerd D1 allow one sequence winner, one wallet effect, and one action-log append; this is not simulated with only a stale in-memory predicate.
 - Natural settlement during start.
 - Terminal action retry returning the same receipt.
 - Expiration and scheduled expiration producing one forfeit receipt.
@@ -591,6 +614,7 @@ Tests run against the real migration schema and cover:
 - Durable rate limits shared by fresh handler instances.
 - Active ranked-session uniqueness.
 - Ranked/multiplayer exclusion in both directions.
+- Stale multiplayer membership is repaired only after a definitive gone-room probe; live, recent, and unknown probes remain blocked.
 - Transaction rollback after injected persistence failure.
 
 ### 13.3 End-to-end tests
@@ -647,5 +671,5 @@ Implementation planning should preserve these boundaries:
 - Casual game logic must not call ranked endpoints.
 - Existing `/api/chips/update` remains explicitly casual and client-authoritative.
 - Ranked statistics must never read or merge existing casual `game_stats`.
-- Every schema change must have a generated migration and updated repository migration command.
+- Every schema change must run `bun run db:generate`; the concrete migration paths in `package.json` for both `db:migrate:local` and `db:migrate:remote` must then be updated to include the generated SQL.
 - Future games must add a new immutable adapter/ruleset version rather than branching on ad hoc payload fields inside the coordinator.

@@ -1,5 +1,84 @@
-import { describe, expect, test } from 'bun:test';
-import { lockBodySchema } from '../../pages/api/mp/lock';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { Miniflare } from 'miniflare';
+import { lockBodySchema, POST } from '../../pages/api/mp/lock';
+import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+
+const USER_ID = 'lock-user';
+let mf: Miniflare;
+let db: D1Database;
+
+beforeAll(async () => {
+	({ mf, db } = await createRankedTestD1());
+});
+
+afterAll(async () => {
+	await mf.dispose();
+});
+
+beforeEach(async () => {
+	await db.batch([
+		db.prepare('DELETE FROM ranked_session'),
+		db.prepare('DELETE FROM mp_membership'),
+		db.prepare('DELETE FROM user'),
+	]);
+	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 500 });
+});
+
+function makeAcquireRequest(roomCode: string): Request {
+	return new Request('http://test.local/api/mp/lock', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: JSON.stringify({ action: 'acquire', roomCode }),
+	});
+}
+
+function makeLocals(namespace?: DurableObjectNamespace) {
+	return {
+		user: { id: USER_ID },
+		runtime: {
+			env: {
+				DB: db,
+				arcturus: namespace,
+			},
+		},
+	};
+}
+
+async function seedActiveRankedSession(): Promise<void> {
+	const now = Math.trunc(Date.now() / 1000);
+	await db
+		.prepare(
+			`INSERT INTO ranked_session (
+				id, userId, startRequestId, startPayloadHash, activeUserId,
+				gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
+				actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
+				status, expiresAt, createdAt, updatedAt
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			'lock-ranked-session',
+			USER_ID,
+			'lock-ranked-request',
+			'start-hash',
+			USER_ID,
+			'blackjack',
+			'blackjack-ranked-v1',
+			'{}',
+			'config-hash',
+			'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+			'seed-commitment',
+			'[]',
+			'action-log-hash',
+			0,
+			10,
+			10,
+			'active',
+			now + 900,
+			now,
+			now,
+		)
+		.run();
+}
 
 describe('lockBodySchema', () => {
 	test('accepts valid acquire with roomCode', () => {
@@ -68,5 +147,73 @@ describe('lockBodySchema', () => {
 	test('rejects null', () => {
 		const result = lockBodySchema.safeParse(null);
 		expect(result.success).toBe(false);
+	});
+});
+
+describe('mp/lock membership acquisition', () => {
+	test('allows re-acquiring the same room membership', async () => {
+		const joinedAt = Math.trunc(Date.now() / 1000);
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-SAME1', joinedAt)
+			.run();
+
+		const response = await POST({
+			request: makeAcquireRequest('MP-SAME1'),
+			locals: makeLocals() as any,
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-SAME1' });
+	});
+
+	test('releases escrow before replacing a definitively gone membership', async () => {
+		const oldJoinedAt = Math.trunc((Date.now() - 31_000) / 1000);
+		await db.batch([
+			db
+				.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+				.bind(USER_ID, 'MP-OLD01', oldJoinedAt),
+			db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, USER_ID),
+		]);
+		const goneNamespace = {
+			idFromName: () => ({}) as DurableObjectId,
+			get: () => ({
+				fetch: async () => new Response(null, { status: 404 }),
+			}),
+		} as unknown as DurableObjectNamespace;
+
+		const response = await POST({
+			request: makeAcquireRequest('MP-NEW02'),
+			locals: makeLocals(goneNamespace) as any,
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-NEW02' });
+		expect(
+			await db
+				.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
+				.bind(USER_ID)
+				.first(),
+		).toEqual({ chipBalance: 1000, heldChips: 0 });
+	});
+
+	test('rejects acquisition while the user has an active ranked session', async () => {
+		await seedActiveRankedSession();
+
+		const response = await POST({
+			request: makeAcquireRequest('MP-NEW01'),
+			locals: makeLocals() as any,
+		} as any);
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: 'ALREADY_IN_ROOM' });
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toBeNull();
 	});
 });

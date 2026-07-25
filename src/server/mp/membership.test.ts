@@ -1,0 +1,220 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import type { Miniflare } from 'miniflare';
+import {
+	hasActiveRankedSession,
+	reconcileMultiplayerMembership,
+	type ReconcileMembershipInput,
+} from './membership';
+import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+
+const USER_ID = 'membership-user';
+const NOW_MS = 2_000_000_000_000;
+
+let mf: Miniflare;
+let db: D1Database;
+
+beforeAll(async () => {
+	({ mf, db } = await createRankedTestD1());
+});
+
+afterAll(async () => {
+	await mf.dispose();
+});
+
+beforeEach(async () => {
+	await db.batch([
+		db.prepare('DELETE FROM ranked_session'),
+		db.prepare('DELETE FROM mp_membership'),
+		db.prepare('DELETE FROM user'),
+	]);
+	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 500 });
+});
+
+async function seedMembership(roomCode: string, ageMs: number): Promise<void> {
+	await db
+		.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+		.bind(USER_ID, roomCode, Math.trunc((NOW_MS - ageMs) / 1000))
+		.run();
+}
+
+async function seedEscrow(heldChips: number): Promise<void> {
+	await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(heldChips, USER_ID).run();
+}
+
+async function readMembership(): Promise<{ roomCode: string } | null> {
+	return db
+		.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?')
+		.bind(USER_ID)
+		.first<{ roomCode: string }>();
+}
+
+async function readBalance(): Promise<{ chipBalance: number; heldChips: number } | null> {
+	return db
+		.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
+		.bind(USER_ID)
+		.first<{ chipBalance: number; heldChips: number }>();
+}
+
+function input({
+	probeResult = 'gone',
+	allowedRoomCode,
+	namespace = {} as DurableObjectNamespace,
+}: {
+	probeResult?: 'exists' | 'gone' | 'unknown';
+	allowedRoomCode?: string;
+	namespace?: DurableObjectNamespace;
+} = {}): ReconcileMembershipInput {
+	return {
+		db,
+		namespace,
+		userId: USER_ID,
+		allowedRoomCode,
+		nowMs: NOW_MS,
+		probe: async () => probeResult,
+	};
+}
+
+async function seedRankedSession(activeUserId: string | null): Promise<void> {
+	const now = Math.trunc(NOW_MS / 1000);
+	await db
+		.prepare(
+			`INSERT INTO ranked_session (
+				id, userId, startRequestId, startPayloadHash, activeUserId,
+				gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
+				actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
+				status, expiresAt, createdAt, updatedAt
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			'ranked-session',
+			USER_ID,
+			'ranked-request-0001',
+			'start-hash',
+			activeUserId,
+			'blackjack',
+			'blackjack-ranked-v1',
+			'{}',
+			'config-hash',
+			'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+			'seed-commitment',
+			'[]',
+			'action-log-hash',
+			0,
+			10,
+			10,
+			activeUserId === null ? 'settled' : 'active',
+			now + 900,
+			now,
+			now,
+		)
+		.run();
+}
+
+describe('reconcileMultiplayerMembership', () => {
+	test.each(['exists', 'unknown'] as const)('preserves a %s membership', async (probeResult) => {
+		await seedMembership('MP-OLD01', 31_000);
+
+		const result = await reconcileMultiplayerMembership(input({ probeResult }));
+
+		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-OLD01' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-OLD01' });
+	});
+
+	test('preserves a membership younger than 30 seconds without trusting a gone probe', async () => {
+		await seedMembership('MP-NEW01', 29_000);
+
+		const result = await reconcileMultiplayerMembership(input({ probeResult: 'gone' }));
+
+		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-NEW01' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-NEW01' });
+	});
+
+	test('probes and repairs at the exact 30-second boundary', async () => {
+		await seedMembership('MP-OLD01', 30_000);
+
+		const result = await reconcileMultiplayerMembership(input({ probeResult: 'gone' }));
+
+		expect(result).toEqual({ kind: 'clear' });
+		expect(await readMembership()).toBeNull();
+	});
+
+	test('preserves an old membership when the Durable Object namespace is unavailable', async () => {
+		await seedMembership('MP-OLD01', 31_000);
+
+		const result = await reconcileMultiplayerMembership({
+			db,
+			userId: USER_ID,
+			nowMs: NOW_MS,
+			probe: async () => 'gone',
+		});
+
+		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-OLD01' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-OLD01' });
+	});
+
+	test('allows the requested room without probing or replacing its membership', async () => {
+		await seedMembership('MP-SAME1', 1_000);
+
+		const result = await reconcileMultiplayerMembership(
+			input({ allowedRoomCode: 'MP-SAME1', probeResult: 'gone' }),
+		);
+
+		expect(result).toEqual({ kind: 'same-room', roomCode: 'MP-SAME1' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-SAME1' });
+	});
+
+	test('releases scoped escrow before deleting a definitively gone membership', async () => {
+		await seedMembership('MP-OLD01', 31_000);
+		await seedEscrow(500);
+
+		const result = await reconcileMultiplayerMembership(input({ probeResult: 'gone' }));
+
+		expect(result).toEqual({ kind: 'clear' });
+		expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
+		expect(await readMembership()).toBeNull();
+	});
+
+	test('fails closed when held chips have no membership', async () => {
+		await seedEscrow(500);
+
+		const result = await reconcileMultiplayerMembership(input());
+
+		expect(result).toEqual({ kind: 'orphaned' });
+		expect(await readBalance()).toEqual({ chipBalance: 500, heldChips: 500 });
+	});
+
+	test('does not release or delete a concurrently replaced membership', async () => {
+		await seedMembership('MP-OLD01', 31_000);
+		await seedEscrow(500);
+		const replacingProbe: ReconcileMembershipInput['probe'] = async () => {
+			await db
+				.prepare('UPDATE mp_membership SET roomCode = ?, joinedAt = ? WHERE userId = ?')
+				.bind('MP-NEW02', Math.trunc(NOW_MS / 1000), USER_ID)
+				.run();
+			return 'gone';
+		};
+
+		const result = await reconcileMultiplayerMembership({
+			...input(),
+			probe: replacingProbe,
+		});
+
+		expect(result).toEqual({ kind: 'conflict', roomCode: 'MP-NEW02' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-NEW02' });
+		expect(await readBalance()).toEqual({ chipBalance: 500, heldChips: 500 });
+	});
+});
+
+describe('hasActiveRankedSession', () => {
+	test('returns true for a non-null activeUserId', async () => {
+		await seedRankedSession(USER_ID);
+
+		expect(await hasActiveRankedSession(db, USER_ID)).toBe(true);
+	});
+
+	test('returns false after a ranked session clears activeUserId', async () => {
+		await seedRankedSession(null);
+
+		expect(await hasActiveRankedSession(db, USER_ID)).toBe(false);
+	});
+});

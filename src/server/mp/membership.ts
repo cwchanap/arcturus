@@ -17,6 +17,18 @@ export interface ReconcileMembershipInput {
 	probe?: typeof roomExists;
 }
 
+export interface AcquireMembershipInput {
+	db: D1Database;
+	userId: string;
+	roomCode: string;
+	joinedAtMs?: number;
+}
+
+export type MembershipAcquisition =
+	| { kind: 'acquired'; roomCode: string }
+	| { kind: 'same-room'; roomCode: string }
+	| { kind: 'blocked' };
+
 interface MembershipState {
 	membership: { roomCode: string; joinedAt: number } | null;
 	heldChips: number;
@@ -64,7 +76,9 @@ export async function reconcileMultiplayerMembership({
 		return { kind: 'same-room', roomCode: membership.roomCode };
 	}
 
-	const membershipAgeMs = nowMs - membership.joinedAt * 1000;
+	// joinedAt is stored as whole Unix seconds. Use the latest instant that
+	// second could represent so a sub-second truncation never shortens grace.
+	const membershipAgeMs = nowMs - (membership.joinedAt * 1000 + 999);
 	if (membershipAgeMs < MEMBERSHIP_GRACE_MS) {
 		return { kind: 'conflict', roomCode: membership.roomCode };
 	}
@@ -111,4 +125,39 @@ export async function hasActiveRankedSession(db: D1Database, userId: string): Pr
 		.bind(userId)
 		.first<{ active: number }>();
 	return row !== null;
+}
+
+export async function acquireMultiplayerMembership({
+	db,
+	userId,
+	roomCode,
+	joinedAtMs = Date.now(),
+}: AcquireMembershipInput): Promise<MembershipAcquisition> {
+	const insertResult = await db
+		.prepare(
+			`INSERT INTO mp_membership (userId, roomCode, joinedAt)
+			SELECT ?, ?, ?
+			WHERE NOT EXISTS (
+				SELECT 1 FROM ranked_session WHERE activeUserId = ?
+			)
+			ON CONFLICT(userId) DO NOTHING`,
+		)
+		.bind(userId, roomCode, Math.trunc(joinedAtMs / 1000), userId)
+		.run();
+
+	const [membershipResult, rankedResult] = await db.batch([
+		db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(userId),
+		db
+			.prepare('SELECT 1 AS active FROM ranked_session WHERE activeUserId = ? LIMIT 1')
+			.bind(userId),
+	]);
+	const membership = membershipResult.results[0] as { roomCode: string } | undefined;
+	const hasActiveRanked = rankedResult.results.length > 0;
+	if (hasActiveRanked || membership?.roomCode !== roomCode) {
+		return { kind: 'blocked' };
+	}
+	if ((insertResult.meta.changes ?? 0) === 1) {
+		return { kind: 'acquired', roomCode };
+	}
+	return { kind: 'same-room', roomCode };
 }

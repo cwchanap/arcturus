@@ -17,6 +17,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
 	await db.batch([
+		db.prepare('DROP TRIGGER IF EXISTS delete_lock_after_insert'),
+		db.prepare('DROP TRIGGER IF EXISTS lock_ranked_after_stale_delete'),
 		db.prepare('DELETE FROM ranked_session'),
 		db.prepare('DELETE FROM mp_membership'),
 		db.prepare('DELETE FROM user'),
@@ -76,6 +78,30 @@ async function seedActiveRankedSession(): Promise<void> {
 			now + 900,
 			now,
 			now,
+		)
+		.run();
+}
+
+async function installRankedAfterStaleDelete(): Promise<void> {
+	const now = Math.trunc(Date.now() / 1000);
+	await db
+		.prepare(
+			`CREATE TRIGGER lock_ranked_after_stale_delete
+			AFTER DELETE ON mp_membership
+			WHEN OLD.userId = '${USER_ID}' AND OLD.roomCode = 'MP-OLD01'
+			BEGIN
+				INSERT INTO ranked_session (
+					id, userId, startRequestId, startPayloadHash, activeUserId,
+					gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
+					actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
+					status, expiresAt, createdAt, updatedAt
+				) VALUES (
+					'lock-race-ranked', '${USER_ID}', 'lock-race-request', 'start-hash', '${USER_ID}',
+					'blackjack', 'blackjack-ranked-v1', '{}', 'config-hash',
+					'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'seed-commitment',
+					'[]', 'action-log-hash', 0, 10, 10, 'active', ${now + 900}, ${now}, ${now}
+				);
+			END`,
 		)
 		.run();
 }
@@ -215,5 +241,59 @@ describe('mp/lock membership acquisition', () => {
 		expect(
 			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
 		).toBeNull();
+	});
+
+	test('rejects success when concurrent cleanup removes the acquired membership', async () => {
+		await db
+			.prepare(
+				`CREATE TRIGGER delete_lock_after_insert
+				AFTER INSERT ON mp_membership
+				WHEN NEW.userId = '${USER_ID}'
+				BEGIN
+					DELETE FROM mp_membership WHERE userId = NEW.userId AND roomCode = NEW.roomCode;
+				END`,
+			)
+			.run();
+
+		const response = await POST({
+			request: makeAcquireRequest('MP-RACE01'),
+			locals: makeLocals() as any,
+		} as any);
+
+		expect(response.status).toBe(409);
+		expect(await response.json()).toEqual({ error: 'ALREADY_IN_ROOM' });
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toBeNull();
+	});
+
+	test('atomic lock acquisition loses to a ranked session created after stale repair', async () => {
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-OLD01', Math.trunc((Date.now() - 32_000) / 1000))
+			.run();
+		await installRankedAfterStaleDelete();
+		const goneNamespace = {
+			idFromName: () => ({}) as DurableObjectId,
+			get: () => ({
+				fetch: async () => new Response(null, { status: 404 }),
+			}),
+		} as unknown as DurableObjectNamespace;
+
+		const response = await POST({
+			request: makeAcquireRequest('MP-NEW02'),
+			locals: makeLocals(goneNamespace) as any,
+		} as any);
+
+		expect(response.status).toBe(409);
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toBeNull();
+		expect(
+			await db
+				.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?')
+				.bind(USER_ID)
+				.first(),
+		).toEqual({ id: 'lock-race-ranked' });
 	});
 });

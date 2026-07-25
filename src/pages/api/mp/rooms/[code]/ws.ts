@@ -3,7 +3,11 @@ import { createDb } from '../../../../../lib/db';
 import { mpMembership } from '../../../../../db/schema';
 import { and, eq } from 'drizzle-orm';
 import { isValidRoomCode } from '../../../../../lib/mp-poker/roomCode';
-import { roomExists } from '../../../../../lib/mp-poker/roomExists';
+import {
+	acquireMultiplayerMembership,
+	hasActiveRankedSession,
+	reconcileMultiplayerMembership,
+} from '../../../../../server/mp/membership';
 
 export const GET: APIRoute = async ({ params, request, locals, url }) => {
 	const code = params.code;
@@ -30,108 +34,47 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 		return new Response('Expected websocket', { status: 426 });
 	}
 
-	// Enforce single-room lock: user must not be in another room
+	// Enforce ranked exclusion and single-room membership before upgrading.
 	const db = createDb(locals.runtime.env.DB);
-	let existing = await db.select().from(mpMembership).where(eq(mpMembership.userId, user.id)).get();
-	if (existing && existing.roomCode !== code) {
-		// Existing lock references a different room. Check whether that room
-		// actually still exists — if the DO was evicted/never created, the
-		// lock is stale and should be cleaned up so the user isn't
-		// permanently blocked from joining other rooms via URL.
-		const env = locals.runtime.env;
-		if (env.arcturus) {
-			// Grace period: if the lock was acquired recently, the other room's
-			// DO may still be initialising. Don't treat it as stale.
-			const IN_PROGRESS_GRACE_MS = 30_000;
-			const lockAge = Date.now() - existing.joinedAt.getTime();
-			if (lockAge >= IN_PROGRESS_GRACE_MS) {
-				const status = await roomExists(env.arcturus, existing.roomCode);
-				if (status === 'gone') {
-					// Release any escrowed chips for the old room before deleting the
-					// membership row. The release-escrow endpoint scopes by roomCode
-					// via mp_membership, so we must release while the row still exists.
-					// If we deleted first and the subsequent join failed before the
-					// new room snapshotted chips, the user would be stuck with
-					// chipBalance=0 and heldChips>0, blocking all chip updates.
-					const d1 = locals.runtime.env.DB;
-					const nowSeconds = Math.trunc(Date.now() / 1000);
-					await d1
-						.prepare(
-							`UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? ` +
-								`WHERE id = ? AND heldChips > 0 ` +
-								`AND EXISTS (SELECT 1 FROM mp_membership WHERE userId = ? AND roomCode = ?)`,
-						)
-						.bind(nowSeconds, user.id, user.id, existing.roomCode)
-						.run();
-
-					// Scope delete to the specific stale roomCode so a concurrent
-					// request that already replaced the row doesn't get clobbered.
-					await db
-						.delete(mpMembership)
-						.where(
-							and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, existing.roomCode)),
-						)
-						.run();
-					// Mark as cleared so the next block re-acquires for the target room.
-					existing = undefined;
-				} else {
-					return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
-						status: 409,
-						headers: { 'Content-Type': 'application/json' },
-					});
-				}
-			} else {
-				return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
-					status: 409,
-					headers: { 'Content-Type': 'application/json' },
-				});
-			}
-		} else {
-			return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
-				status: 409,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-	}
-
-	// Acquire the membership lock BEFORE upgrading to prevent TOCTOU races
-	// where two concurrent joins both pass the `existing` check.
-	let lockAcquired = false;
-	if (!existing) {
-		try {
-			await db
-				.insert(mpMembership)
-				.values({ userId: user.id, roomCode: code, joinedAt: new Date() })
-				.run();
-			lockAcquired = true;
-		} catch (err: unknown) {
-			const msg = err instanceof Error ? err.message : String(err);
-			if (msg.includes('UNIQUE constraint failed') || msg.includes('unique')) {
-				// Unique constraint violation — two concurrent inserts for the same user.
-				// Re-read to distinguish same-room (valid reconnect/tab) from another-room.
-				const collision = await db
-					.select()
-					.from(mpMembership)
-					.where(eq(mpMembership.userId, user.id))
-					.get();
-				if (collision && collision.roomCode === code) {
-					// Same room — allow the reconnect
-					lockAcquired = false; // lock was acquired by the first request
-				} else {
-					return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
-						status: 409,
-						headers: { 'Content-Type': 'application/json' },
-					});
-				}
-			} else {
-				// Unexpected DB error — log and surface
-				console.error(`[ws] DB insert failed for user=${user.id} code=${code}:`, err);
-				return new Response(JSON.stringify({ error: 'DB_ERROR' }), { status: 500 });
-			}
-		}
-	}
-
 	const env = locals.runtime.env;
+	if (await hasActiveRankedSession(env.DB, user.id)) {
+		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+	const membership = await reconcileMultiplayerMembership({
+		db: env.DB,
+		namespace: env.arcturus,
+		userId: user.id,
+		allowedRoomCode: code,
+	});
+	if (membership.kind === 'conflict' || membership.kind === 'orphaned') {
+		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+	const existingRoomMatch = membership.kind === 'same-room';
+	let acquisition: Awaited<ReturnType<typeof acquireMultiplayerMembership>>;
+	try {
+		acquisition = await acquireMultiplayerMembership({
+			db: env.DB,
+			userId: user.id,
+			roomCode: code,
+		});
+	} catch (err) {
+		console.error(`[ws] DB insert failed for user=${user.id} code=${code}:`, err);
+		return new Response(JSON.stringify({ error: 'DB_ERROR' }), { status: 500 });
+	}
+	if (acquisition.kind === 'blocked') {
+		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), {
+			status: 409,
+			headers: { 'Content-Type': 'application/json' },
+		});
+	}
+	const lockAcquired = acquisition.kind === 'acquired';
+
 	if (!env.arcturus) {
 		// Clean up the membership lock we just acquired to avoid leaving a stale row
 		if (lockAcquired) {
@@ -190,8 +133,7 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 	// the user join another room and double-spend via the new room's snapshot.
 	if (doRes.status !== 101) {
 		const is4xx = doRes.status >= 400 && doRes.status < 500;
-		const shouldCleanup =
-			is4xx && (lockAcquired || (existing !== undefined && existing.roomCode === code));
+		const shouldCleanup = is4xx && (lockAcquired || existingRoomMatch);
 		if (shouldCleanup) {
 			try {
 				// Release any escrowed chips before deleting the membership lock.

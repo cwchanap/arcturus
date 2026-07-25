@@ -4,6 +4,7 @@ import { generateRoomCode } from '../../../../lib/mp-poker/roomCode';
 import { createDb } from '../../../../lib/db';
 import { mpMembership } from '../../../../db/schema';
 import {
+	acquireMultiplayerMembership,
 	hasActiveRankedSession,
 	reconcileMultiplayerMembership,
 } from '../../../../server/mp/membership';
@@ -32,13 +33,12 @@ export const POST: APIRoute = async ({ locals, request }) => {
 	// concurrent POST /mp/rooms requests all pass a SELECT check and each
 	// creates an orphaned DO. The userId primary key ensures at most one row.
 	const code = generateRoomCode();
-	try {
-		await db
-			.insert(mpMembership)
-			.values({ userId: user.id, roomCode: code, joinedAt: new Date() })
-			.onConflictDoNothing()
-			.run();
-	} catch {
+	const acquisition = await acquireMultiplayerMembership({
+		db: env.DB,
+		userId: user.id,
+		roomCode: code,
+	});
+	if (acquisition.kind !== 'acquired') {
 		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
 	}
 	// Re-read to confirm we own the lock (vs a conflicting row for another room)

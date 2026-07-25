@@ -159,9 +159,13 @@ test.describe('public single-player games', () => {
 
 	test('guest blackjack can complete a round without calling chip sync', async ({ page }) => {
 		const chipUpdateRequests: string[] = [];
+		const rankedRequests: string[] = [];
 		page.on('request', (request) => {
 			if (request.url().includes('/api/chips/update')) {
 				chipUpdateRequests.push(request.url());
+			}
+			if (request.url().includes('/api/ranked/')) {
+				rankedRequests.push(request.url());
 			}
 		});
 
@@ -171,6 +175,9 @@ test.describe('public single-player games', () => {
 
 		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.getByText('Casual', { exact: true })).toBeVisible();
+		await expect(page.getByTestId('ranked-blackjack-signin')).toBeVisible();
+		await expect(page.getByTestId('ranked-blackjack-signin')).toHaveAttribute('href', '/signin');
 
 		await page.locator('#bet-amount').fill('50');
 		await page.getByRole('button', { name: 'Deal' }).click();
@@ -198,6 +205,7 @@ test.describe('public single-player games', () => {
 		// sync requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
 		expect(chipUpdateRequests).toEqual([]);
+		expect(rankedRequests).toEqual([]);
 	});
 
 	test('guest craps restores persisted local bankroll without chip sync', async ({ page }) => {

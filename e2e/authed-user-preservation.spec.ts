@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { createIsolatedPage } from './isolated-page';
 
 /**
  * Guards the authed-preservation contract: signed-in users must receive a
@@ -51,5 +52,60 @@ test.describe('authed user preservation', () => {
 		expect(userId).not.toBeNull();
 		expect(userId).not.toBe('anonymous');
 		expect(userId?.startsWith('u_')).toBe(true);
+	});
+
+	test('authenticated Casual Blackjack settles normally without ranked requests', async ({
+		browser,
+		baseURL,
+	}) => {
+		const isolated = await createIsolatedPage(browser, baseURL, {
+			emailPrefix: 'casual-blackjack',
+			namePrefix: 'Casual Blackjack E2E',
+		});
+
+		try {
+			const rankedRequests: string[] = [];
+			isolated.page.on('request', (request) => {
+				if (request.url().includes('/api/ranked/')) {
+					rankedRequests.push(request.url());
+				}
+			});
+			await isolated.page.addInitScript(() => {
+				Math.random = () => 0;
+			});
+			await isolated.page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+
+			await expect(isolated.page.locator('#blackjack-root')).toHaveAttribute(
+				'data-guest-mode',
+				'false',
+			);
+			await expect(isolated.page.getByText('Casual', { exact: true })).toBeVisible();
+			await expect(isolated.page.getByTestId('ranked-blackjack-link')).toBeVisible();
+			await expect(isolated.page.getByTestId('ranked-blackjack-link')).toHaveAttribute(
+				'href',
+				'/games/blackjack/ranked',
+			);
+
+			await isolated.page.locator('#bet-amount').fill('50');
+			const chipUpdatePromise = isolated.page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname === '/api/chips/update' &&
+					response.request().method() === 'POST',
+			);
+			await isolated.page.getByRole('button', { name: 'Deal' }).click();
+			const chipUpdate = await chipUpdatePromise;
+			expect(chipUpdate.ok()).toBe(true);
+			const settledBalance = ((await chipUpdate.json()) as { balance: number }).balance;
+
+			await expect(isolated.page.locator('#btn-new-round')).toBeVisible();
+			await expect(isolated.page.locator('#game-status')).toContainText('BLACKJACK');
+			await expect(isolated.page.locator('#player-balance')).toHaveText(
+				`$${settledBalance.toLocaleString('en-US')}`,
+			);
+			await isolated.page.waitForLoadState('networkidle');
+			expect(rankedRequests).toEqual([]);
+		} finally {
+			await isolated.context.close();
+		}
 	});
 });

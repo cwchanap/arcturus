@@ -40,7 +40,7 @@ export interface RankedCoordinator {
 		sessionId: string;
 		body: RankedBlackjackActionLogEntryV1;
 	}): Promise<RankedCoordinatorResponse>;
-	expire(input: { userId: string; sessionId: string }): Promise<RankedCoordinatorResponse>;
+	expire(sessionId: string): Promise<RankedCoordinatorResponse>;
 }
 
 export interface RankedCoordinatorDeps {
@@ -248,6 +248,16 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		if (session.status !== 'active' && !result) {
 			return internalError('Ranked terminal session has no stored result');
 		}
+		const projected = replayed.adapter.project(replayed.replay, account.chipBalance);
+		const state =
+			session.status === 'expired' && result
+				? {
+						...projected,
+						phase: 'complete' as const,
+						availableActions: [],
+						outcome: result.outcome,
+					}
+				: projected;
 		return {
 			sessionId: session.id,
 			status: session.status,
@@ -256,7 +266,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			seedCommitment: session.seedCommitment,
 			expiresAt: session.expiresAt,
 			nextSequence: session.nextSequence,
-			state: replayed.adapter.project(replayed.replay, account.chipBalance),
+			state,
 			receipt: result ? resultReceipt(result) : null,
 		};
 	};
@@ -271,13 +281,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		return render(current, result);
 	};
 
-	const expire = async ({
-		userId,
-		sessionId,
-	}: {
-		userId: string;
-		sessionId: string;
-	}): Promise<RankedCoordinatorResponse> => {
+	const expireOwned = async (
+		userId: string,
+		sessionId: string,
+	): Promise<RankedCoordinatorResponse> => {
 		const nowSeconds = asNowSeconds(deps.now());
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
 			const session = await deps.repository.findOwnedSession(userId, sessionId);
@@ -323,8 +330,15 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			const current = await deps.repository.findOwnedSession(userId, sessionId);
 			if (!current) throw new RankedServiceError('SESSION_NOT_FOUND');
 			if (current.status !== 'active') return render(current);
+			await reconcileMembership(userId, deps.now().getTime());
 		}
 		throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
+	};
+
+	const expire = async (sessionId: string): Promise<RankedCoordinatorResponse> => {
+		const userId = await deps.repository.findSessionOwner(sessionId);
+		if (!userId) throw new RankedServiceError('SESSION_NOT_FOUND');
+		return expireOwned(userId, sessionId);
 	};
 
 	const start = async ({
@@ -346,14 +360,14 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			await consumeRate(userId, 'ranked_replay', nowSeconds);
 			log('ranked_session_replayed', { userId, sessionId: existing.id });
 			if (existing.status === 'active' && nowSeconds >= existing.expiresAt) {
-				return expire({ userId, sessionId: existing.id });
+				return expireOwned(userId, existing.id);
 			}
 			return render(existing);
 		}
 
 		let active = await deps.repository.findActiveSession(userId);
 		if (active?.status === 'active' && nowSeconds >= active.expiresAt) {
-			await expire({ userId, sessionId: active.id });
+			await expireOwned(userId, active.id);
 			active = await deps.repository.findActiveSession(userId);
 		}
 		if (active) {
@@ -361,6 +375,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			throw new RankedServiceError('ACTIVE_SESSION_EXISTS');
 		}
 
+		await consumeRate(userId, 'ranked_start', nowSeconds);
 		await reconcileMembership(userId, now.getTime());
 		let accountAtStart = await deps.repository.readAccount(userId);
 		if (!accountAtStart) return internalError('Ranked account does not exist');
@@ -444,6 +459,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 				expectedBalance: account.chipBalance,
 				session: newSession,
 				rateLimit: { userId, operation: 'ranked_start', nowSeconds },
+				rateLimitMode: 'already-consumed',
 				openingTerminal,
 				openingNonRewardTerminal,
 			});
@@ -455,6 +471,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 				return readAndRender(userId, sessionId, transition.result);
 			}
 			if (transition.kind === 'rate-limited') {
+				log('ranked_rate_limited', { userId, sessionId });
 				throw new RankedServiceError('RATE_LIMITED', {
 					retryAfter: transition.retryAfter,
 				});
@@ -470,7 +487,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			const blocking = await deps.repository.findActiveSession(userId);
 			if (blocking) {
 				if (blocking.status === 'active' && nowSeconds >= blocking.expiresAt) {
-					await expire({ userId, sessionId: blocking.id });
+					await expireOwned(userId, blocking.id);
 					account =
 						(await deps.repository.readAccount(userId)) ??
 						internalError('Ranked account disappeared after expiration');
@@ -508,7 +525,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		if (!session) throw new RankedServiceError('SESSION_NOT_FOUND');
 		await consumeRate(userId, 'ranked_resume', nowSeconds);
 		if (session.status === 'active' && nowSeconds >= session.expiresAt) {
-			return expire({ userId, sessionId });
+			return expireOwned(userId, sessionId);
 		}
 		return render(session);
 	};
@@ -536,7 +553,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			await consumeRate(userId, 'ranked_replay', nowSeconds);
 			log('ranked_session_replayed', { userId, sessionId });
 			if (session.status === 'active' && nowSeconds >= session.expiresAt) {
-				return expire({ userId, sessionId });
+				return expireOwned(userId, sessionId);
 			}
 			return render(session);
 		}
@@ -552,9 +569,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		}
 		if (nowSeconds >= session.expiresAt) {
 			await consumeRate(userId, 'ranked_action', nowSeconds);
-			return expire({ userId, sessionId });
+			return expireOwned(userId, sessionId);
 		}
 
+		let actionRateConsumed = false;
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
 			if (session.status !== 'active') return render(session);
 			if (body.sequence !== session.nextSequence) {
@@ -571,7 +589,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					expectedSequence: session.nextSequence,
 				});
 			}
-			if (nowSeconds >= session.expiresAt) return expire({ userId, sessionId });
+			if (nowSeconds >= session.expiresAt) return expireOwned(userId, sessionId);
 
 			const replayed = await replay(session);
 			const legal = replayed.replay.legalActions.find(({ action }) => action === body.action);
@@ -603,6 +621,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 				additionalWager: legal.additionalWager,
 				committedWager: nextReplay.state.committedWager,
 				nowSeconds,
+				rateLimitMode: actionRateConsumed ? 'already-consumed' : 'consume',
 			};
 			if (outcome) {
 				const receiptContext: ReceiptContext = {
@@ -640,10 +659,12 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					})
 				: await deps.repository.runActionTransition(input);
 			if (transition.kind === 'rate-limited') {
+				log('ranked_rate_limited', { userId, sessionId });
 				throw new RankedServiceError('RATE_LIMITED', {
 					retryAfter: transition.retryAfter,
 				});
 			}
+			actionRateConsumed = true;
 			if (transition.kind === 'applied') {
 				log(transition.result ? 'ranked_session_settled' : 'ranked_action_accepted', {
 					userId,
@@ -654,7 +675,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 
 			const current = await deps.repository.findOwnedSession(userId, sessionId);
 			if (!current) throw new RankedServiceError('SESSION_NOT_FOUND');
-			if (current.status !== 'active') return render(current);
 			if (current.nextSequence > body.sequence) {
 				if (current.actionLog[body.sequence]?.action !== body.action) {
 					throw new RankedServiceError('IDENTIFIER_REUSE_MISMATCH');
@@ -666,7 +686,9 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					expectedSequence: current.nextSequence,
 				});
 			}
+			if (current.status !== 'active') return render(current);
 			session = current;
+			await reconcileMembership(userId, deps.now().getTime());
 			const freshAccount = await deps.repository.readAccount(userId);
 			if (!freshAccount) return internalError('Ranked account disappeared during action retry');
 			if (freshAccount.chipBalance < legal.additionalWager) {

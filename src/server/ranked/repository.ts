@@ -21,6 +21,7 @@ import type {
 	RankedBlackjackOutcomeV1,
 } from '../../lib/ranked/blackjack/types';
 import {
+	buildRateLimitContinuationStatement,
 	buildRateLimitStatement,
 	consumeStandaloneRateLimit,
 	getRetryAfterSeconds,
@@ -134,6 +135,8 @@ export interface StartTransitionInput {
 	expectedBalance: number;
 	session: NewRankedSessionRecord;
 	rateLimit: RankedRateLimitInput;
+	/** Defaults to consuming one unit; retries may prove a unit consumed earlier in this request. */
+	rateLimitMode?: 'consume' | 'already-consumed';
 	openingTerminal?: TerminalTransitionInput;
 	/** Precomputed canonical fallback used only after a consistent prior grant is proven. */
 	openingNonRewardTerminal?: TerminalTransitionInput;
@@ -172,6 +175,8 @@ export interface ActionTransitionInput {
 	additionalWager: number;
 	committedWager: number;
 	nowSeconds: number;
+	/** Defaults to consuming one unit; retries may prove a unit consumed earlier in this request. */
+	rateLimitMode?: 'consume' | 'already-consumed';
 	terminal?: TerminalTransitionInput;
 	/** Precomputed canonical fallback used only after a consistent prior grant is proven. */
 	nonRewardTerminal?: TerminalTransitionInput;
@@ -202,6 +207,7 @@ export type ExpirationTransitionResult =
 export interface RankedRepository {
 	findByStartRequest(userId: string, requestId: string): Promise<RankedSessionRecord | null>;
 	findActiveSession(userId: string): Promise<RankedSessionRecord | null>;
+	findSessionOwner(sessionId: string): Promise<string | null>;
 	findOwnedSession(userId: string, sessionId: string): Promise<RankedSessionRecord | null>;
 	findResult(sessionId: string): Promise<RankedResultRecord | null>;
 	readAccount(userId: string): Promise<{ chipBalance: number; heldChips: number } | null>;
@@ -855,7 +861,9 @@ async function hasConflictingSession(
 function buildStartStatements(db: D1Database, input: StartTransitionInput): D1PreparedStatement[] {
 	const { session, userId, expectedBalance } = input;
 	return [
-		buildRateLimitStatement(db, input.rateLimit),
+		input.rateLimitMode === 'already-consumed'
+			? buildRateLimitContinuationStatement(db, input.rateLimit)
+			: buildRateLimitStatement(db, input.rateLimit),
 		db
 			.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL)
 			.bind(userId, expectedBalance, session.initialWager, userId, userId),
@@ -964,11 +972,17 @@ function buildActionBatch(
 	const priorActionLogHash = sha256Hex(priorActionLogJson);
 	const batch: TransitionBatch = {
 		statements: [
-			buildRateLimitStatement(db, {
-				userId: input.userId,
-				operation: 'ranked_action',
-				nowSeconds: input.nowSeconds,
-			}),
+			input.rateLimitMode === 'already-consumed'
+				? buildRateLimitContinuationStatement(db, {
+						userId: input.userId,
+						operation: 'ranked_action',
+						nowSeconds: input.nowSeconds,
+					})
+				: buildRateLimitStatement(db, {
+						userId: input.userId,
+						operation: 'ranked_action',
+						nowSeconds: input.nowSeconds,
+					}),
 		],
 		labels: ['action rate'],
 		mandatory: [true],
@@ -1436,6 +1450,17 @@ export function createRankedRepository(db: D1Database): RankedRepository {
 				.bind(userId)
 				.first<RankedSessionRow>();
 			return row === null ? null : parseSessionRow(row);
+		},
+		async findSessionOwner(sessionId) {
+			const row = await db
+				.prepare('SELECT userId FROM ranked_session WHERE id = ? LIMIT 1')
+				.bind(sessionId)
+				.first<{ userId: unknown }>();
+			if (row === null) return null;
+			if (typeof row.userId !== 'string' || row.userId.length === 0) {
+				return invariant('Corrupt ranked session owner');
+			}
+			return row.userId;
 		},
 		async findOwnedSession(userId, sessionId) {
 			const row = await db

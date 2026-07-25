@@ -127,8 +127,12 @@ function loadOutbox(clientUserId: string, tabId: string): PendingReceipt[] {
 					orphanKeys.push(key);
 				}
 			} catch {
-				// corrupt entry — remove it after the scan
-				orphanKeys.push(key);
+				// Corrupt entry — remove after the scan, but never delete this
+				// tab's own key. Deleting myKey would drop the slot the current
+				// tab persists into, and if other orphans were absorbed, the
+				// persist-before-delete below would write merged to myKey then
+				// immediately delete it, losing the absorbed receipts.
+				if (key !== myKey) orphanKeys.push(key);
 			}
 		}
 		// DURABILITY: persist the merged queue to this tab's key BEFORE deleting

@@ -301,3 +301,97 @@ describe('ranked HTTP stable response contract', () => {
 		expect(serialized).toContain('"balance":900');
 	});
 });
+
+describe('ranked HTTP error fallbacks', () => {
+	test('coordinatorFor returns INTERNAL_ERROR when the DB binding is missing', async () => {
+		const handlers = createRankedHttpHandlers({
+			createCoordinator: () => fakeCoordinator(),
+		});
+
+		const response = await handlers.start({
+			locals: {
+				user: { id: USER_ID },
+				runtime: { env: {} },
+			},
+			request: new Request('https://arcturus.test/api/ranked', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(START_BODY),
+			}),
+		} as never);
+
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+	});
+
+	test('rankedJsonError maps a non-RankedServiceError to a 500 INTERNAL_ERROR', async () => {
+		const response = rankedJsonError(new Error('boom'));
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+		expect(response.headers.get('content-type')).toBe('application/json');
+		expect(response.headers.get('cache-control')).toBe('no-store');
+	});
+
+	test('rankedJsonError maps a non-Error thrown value to a 500 INTERNAL_ERROR', async () => {
+		const response = rankedJsonError('string error');
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+	});
+
+	test('action handler surfaces INTERNAL_ERROR when the DB binding is missing', async () => {
+		const handlers = createRankedHttpHandlers({
+			createCoordinator: () => fakeCoordinator(),
+		});
+
+		const response = await handlers.action({
+			locals: {
+				user: { id: USER_ID },
+				runtime: { env: {} },
+			},
+			params: { sessionId: SESSION_ID },
+			request: new Request('https://arcturus.test/api/ranked', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ sequence: 0, action: 'hit' }),
+			}),
+		} as never);
+
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+	});
+});
+
+describe('rankedHttpHandlers default factory', () => {
+	test('start surfaces INTERNAL_ERROR when DB is missing', async () => {
+		// Importing the default handlers exercises the production coordinator
+		// factory wiring (createRankedRepository + createRankedCoordinator).
+		const { rankedHttpHandlers } = await import('./http');
+
+		const response = await rankedHttpHandlers.start({
+			locals: {
+				user: { id: USER_ID },
+				runtime: { env: { arcturus: undefined } },
+			},
+			request: new Request('https://arcturus.test/api/ranked', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(START_BODY),
+			}),
+		} as never);
+
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+	});
+
+	test('resume surfaces UNAUTHORIZED when no user is present', async () => {
+		const { rankedHttpHandlers } = await import('./http');
+
+		const response = await rankedHttpHandlers.resume({
+			locals: { runtime: { env: { DB: { binding: 'db' } } } },
+			params: { sessionId: SESSION_ID },
+		} as never);
+
+		expect(response.status).toBe(401);
+		expect(await json(response)).toEqual({ error: 'UNAUTHORIZED' });
+	});
+});

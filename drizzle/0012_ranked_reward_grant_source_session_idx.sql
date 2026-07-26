@@ -1,0 +1,1 @@
+CREATE INDEX `ranked_reward_grant_source_session_idx` ON `ranked_reward_grant` (`sourceSessionId`);

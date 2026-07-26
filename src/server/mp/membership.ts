@@ -92,7 +92,7 @@ export async function reconcileMultiplayerMembership({
 	}
 
 	const nowSeconds = Math.trunc(nowMs / 1000);
-	const [releaseResult, deleteResult] = await db.batch([
+	await db.batch([
 		db
 			.prepare(
 				`UPDATE user SET chipBalance = chipBalance + heldChips, heldChips = 0, updatedAt = ? ` +
@@ -105,17 +105,12 @@ export async function reconcileMultiplayerMembership({
 			.bind(userId, membership.roomCode),
 	]);
 
-	const releaseChanges = releaseResult.meta.changes ?? 0;
-	const deleteChanges = deleteResult.meta.changes ?? 0;
 	const finalState = await readMembershipState(db, userId);
 	const resolution = resolutionFromState(finalState);
 
 	// Mutation counts are evidence only, never the source of truth. A zero-row
 	// release/delete can be caused by a concurrent membership replacement, so
 	// every outcome is classified from the post-batch membership and escrow.
-	if (releaseChanges === 0 || deleteChanges === 0) {
-		return resolution;
-	}
 	return resolution;
 }
 

@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
 import { POST } from '../../pages/api/mp/rooms/index';
-import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+import {
+	createRankedTestD1,
+	insertRankedSession,
+	insertRankedTestUser,
+	installRankedAfterStaleDelete as installRankedAfterStaleDeleteHelper,
+} from '../ranked/test-d1';
 
 const USER_ID = 'rooms-api-user';
 let mf: Miniflare;
@@ -41,63 +46,22 @@ function makeLocals(namespace?: DurableObjectNamespace) {
 }
 
 async function seedActiveRankedSession(): Promise<void> {
-	const now = Math.trunc(Date.now() / 1000);
-	await db
-		.prepare(
-			`INSERT INTO ranked_session (
-				id, userId, startRequestId, startPayloadHash, activeUserId,
-				gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
-				actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
-				status, expiresAt, createdAt, updatedAt
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			'rooms-ranked-session',
-			USER_ID,
-			'rooms-ranked-request',
-			'start-hash',
-			USER_ID,
-			'blackjack',
-			'blackjack-ranked-v1',
-			'{}',
-			'config-hash',
-			'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-			'seed-commitment',
-			'[]',
-			'action-log-hash',
-			0,
-			10,
-			10,
-			'active',
-			now + 900,
-			now,
-			now,
-		)
-		.run();
+	await insertRankedSession(db, {
+		id: 'rooms-ranked-session',
+		userId: USER_ID,
+		startRequestId: 'rooms-ranked-request',
+		activeUserId: USER_ID,
+	});
 }
 
 async function installRankedAfterStaleDelete(): Promise<void> {
-	const now = Math.trunc(Date.now() / 1000);
-	await db
-		.prepare(
-			`CREATE TRIGGER rooms_ranked_after_stale_delete
-			AFTER DELETE ON mp_membership
-			WHEN OLD.userId = '${USER_ID}' AND OLD.roomCode = 'MP-OLD01'
-			BEGIN
-				INSERT INTO ranked_session (
-					id, userId, startRequestId, startPayloadHash, activeUserId,
-					gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
-					actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
-					status, expiresAt, createdAt, updatedAt
-				) VALUES (
-					'rooms-race-ranked', '${USER_ID}', 'rooms-race-request', 'start-hash', '${USER_ID}',
-					'blackjack', 'blackjack-ranked-v1', '{}', 'config-hash',
-					'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'seed-commitment',
-					'[]', 'action-log-hash', 0, 10, 10, 'active', ${now + 900}, ${now}, ${now}
-				);
-			END`,
-		)
-		.run();
+	await installRankedAfterStaleDeleteHelper(db, {
+		userId: USER_ID,
+		roomCode: 'MP-OLD01',
+		sessionId: 'rooms-race-ranked',
+		startRequestId: 'rooms-race-request',
+		triggerName: 'rooms_ranked_after_stale_delete',
+	});
 }
 
 function goneThenInitNamespace(): DurableObjectNamespace {

@@ -1,5 +1,6 @@
+import { z } from 'zod';
 import {
-	rankedBalanceSchema,
+	createRankedPublicStateV1Schema,
 	type RankedBlackjackAction,
 	type RankedPublicStateV1,
 	type RankedReceiptV1,
@@ -153,6 +154,12 @@ function responseErrorMessage(response: Response, payload: unknown): string {
 	return `request failed (${response.status})`;
 }
 
+// Schema-validated response parser. State and receipt content are permissive
+// (z.unknown / z.any) because the client trusts the server's authoritative
+// state structure; the top-level envelope (sessionId, status, gameType,
+// rulesetVersion, balance, etc.) is fully validated, removing the unsafe cast.
+const rankedResponseSchema = createRankedPublicStateV1Schema(z.unknown(), z.any());
+
 async function readResponse(response: Response): Promise<RankedBlackjackResponseV1> {
 	let payload: unknown;
 	try {
@@ -168,17 +175,11 @@ async function readResponse(response: Response): Promise<RankedBlackjackResponse
 			responseErrorCode(payload),
 		);
 	}
-	if (
-		typeof payload !== 'object' ||
-		payload === null ||
-		!('sessionId' in payload) ||
-		typeof payload.sessionId !== 'string' ||
-		!('balance' in payload) ||
-		!rankedBalanceSchema.safeParse(payload.balance).success
-	) {
+	const parsed = rankedResponseSchema.safeParse(payload);
+	if (!parsed.success) {
 		throw new TypeError('Ranked response was malformed');
 	}
-	return payload as RankedBlackjackResponseV1;
+	return parsed.data as RankedBlackjackResponseV1;
 }
 
 function errorMessage(error: unknown): string {
@@ -349,7 +350,7 @@ export function createRankedBlackjackClient(
 			deps.renderer.renderError(errorMessage(error));
 			if (isRecoveryAttempt || authoritativeRecoveryAttempted) {
 				actionRecovery = { sessionId, action, body };
-				pending = false;
+				setPending(false);
 				return;
 			}
 			actionRecovery = null;

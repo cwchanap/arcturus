@@ -308,4 +308,32 @@ describe('ranked Blackjack renderer', () => {
 		expect(starts).toEqual([100]);
 		expect(actions).toEqual(['split']);
 	});
+
+	test('render(null) falls back to data-initial-balance and clears hands and status', () => {
+		const renderer = createRankedBlackjackRenderer(root);
+
+		renderer.render(activeResponse());
+		renderer.render(null);
+
+		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('$1,000');
+		expect(root.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe('$0');
+		expect(root.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
+			'Choose a wager to begin a ranked session.',
+		);
+		expect(root.querySelectorAll('[data-testid="ranked-dealer-card"]')).toHaveLength(0);
+		expect(root.querySelectorAll('[data-testid="ranked-player-hand"]')).toHaveLength(0);
+		expect(root.querySelector<HTMLElement>('[data-testid="ranked-receipt"]')?.hidden).toBe(true);
+		expect(root.querySelector('[data-testid="ranked-dealer-value"]')?.textContent).toBe('—');
+	});
+
+	test('renderError displays the error message in the status element', () => {
+		const renderer = createRankedBlackjackRenderer(root);
+
+		renderer.render(activeResponse());
+		renderer.renderError('Something went wrong');
+
+		expect(root.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
+			'Something went wrong',
+		);
+	});
 });

@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
 import { GET } from '../../pages/api/mp/rooms/[code]/ws';
-import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+import {
+	createRankedTestD1,
+	insertRankedSession,
+	insertRankedTestUser,
+	installRankedAfterStaleDelete as installRankedAfterStaleDeleteHelper,
+} from '../ranked/test-d1';
 
 /**
  * Unit tests for the display-name fallback and 4xx cleanup logic
@@ -39,14 +44,15 @@ describe('display-name fallback', () => {
 });
 
 describe('4xx cleanup decision logic', () => {
-	// Mirrors the shouldCleanup logic from ws.ts lines 192-194
+	// Mirrors the shouldCleanup logic from ws.ts
 	function shouldCleanup(
 		doStatus: number,
 		lockAcquired: boolean,
 		existingRoomMatch: boolean,
+		acquisitionSameRoom = false,
 	): boolean {
 		const is4xx = doStatus >= 400 && doStatus < 500;
-		return is4xx && (lockAcquired || existingRoomMatch);
+		return is4xx && (lockAcquired || existingRoomMatch || acquisitionSameRoom);
 	}
 
 	test('cleans up on 401 with newly acquired lock', () => {
@@ -63,6 +69,10 @@ describe('4xx cleanup decision logic', () => {
 
 	test('cleans up on 404 with existing room match (reconnect)', () => {
 		expect(shouldCleanup(404, false, true)).toBe(true);
+	});
+
+	test('cleans up on 404 with same-room acquisition (race after clear reconcile)', () => {
+		expect(shouldCleanup(404, false, false, true)).toBe(true);
 	});
 
 	test('does NOT clean up on 500 (transient failure)', () => {
@@ -133,63 +143,22 @@ describe('WebSocket join membership policy', () => {
 	}
 
 	async function seedActiveRankedSession(id = 'ws-active-ranked'): Promise<void> {
-		const now = Math.trunc(Date.now() / 1000);
-		await db
-			.prepare(
-				`INSERT INTO ranked_session (
-					id, userId, startRequestId, startPayloadHash, activeUserId,
-					gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
-					actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
-					status, expiresAt, createdAt, updatedAt
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			)
-			.bind(
-				id,
-				userId,
-				`${id}-request`,
-				'start-hash',
-				userId,
-				'blackjack',
-				'blackjack-ranked-v1',
-				'{}',
-				'config-hash',
-				'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-				'seed-commitment',
-				'[]',
-				'action-log-hash',
-				0,
-				10,
-				10,
-				'active',
-				now + 900,
-				now,
-				now,
-			)
-			.run();
+		await insertRankedSession(db, {
+			id,
+			userId,
+			startRequestId: `${id}-request`,
+			activeUserId: userId,
+		});
 	}
 
 	async function installRankedAfterStaleDelete(): Promise<void> {
-		const now = Math.trunc(Date.now() / 1000);
-		await db
-			.prepare(
-				`CREATE TRIGGER ws_ranked_after_stale_delete
-				AFTER DELETE ON mp_membership
-				WHEN OLD.userId = '${userId}' AND OLD.roomCode = 'MP-OLD01'
-				BEGIN
-					INSERT INTO ranked_session (
-						id, userId, startRequestId, startPayloadHash, activeUserId,
-						gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
-						actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
-						status, expiresAt, createdAt, updatedAt
-					) VALUES (
-						'ws-race-ranked', '${userId}', 'ws-race-request', 'start-hash', '${userId}',
-						'blackjack', 'blackjack-ranked-v1', '{}', 'config-hash',
-						'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'seed-commitment',
-						'[]', 'action-log-hash', 0, 10, 10, 'active', ${now + 900}, ${now}, ${now}
-					);
-				END`,
-			)
-			.run();
+		await installRankedAfterStaleDeleteHelper(db, {
+			userId,
+			roomCode: 'MP-OLD01',
+			sessionId: 'ws-race-ranked',
+			startRequestId: 'ws-race-request',
+			triggerName: 'ws_ranked_after_stale_delete',
+		});
 	}
 
 	function goneThenUpgradeNamespace(): DurableObjectNamespace {

@@ -456,7 +456,7 @@ describe('ranked Blackjack recovery client', () => {
 			`/api/ranked/sessions/${SESSION_ID}/actions`,
 			`/api/ranked/sessions/${SESSION_ID}`,
 		]);
-		expect(renderer.pending).toEqual([true]);
+		expect(renderer.pending).toEqual([true, false]);
 		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
 
 		await client.act('hit');
@@ -502,7 +502,7 @@ describe('ranked Blackjack recovery client', () => {
 
 		await client.act('stand');
 		const unresolvedBody = JSON.stringify({ sequence: 0, action: 'stand' });
-		expect(renderer.pending).toEqual([true]);
+		expect(renderer.pending).toEqual([true, false]);
 
 		phase = 'rate-limited';
 		await client.act('stand');
@@ -510,7 +510,7 @@ describe('ranked Blackjack recovery client', () => {
 		expect(fetchMock).toHaveBeenCalledTimes(4);
 		expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/ranked/sessions/${SESSION_ID}/actions`);
 		expect(bodies).toEqual([unresolvedBody, unresolvedBody, unresolvedBody]);
-		expect(renderer.pending).toEqual([true, true]);
+		expect(renderer.pending).toEqual([true, false, true, false]);
 
 		await client.act('hit');
 		expect(fetchMock).toHaveBeenCalledTimes(4);

@@ -33,7 +33,7 @@ export interface RankedHttpHandlers {
 
 function jsonSuccess(body: RankedCoordinatorResponse): Response {
 	return new Response(JSON.stringify(body), {
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 	});
 }
 
@@ -88,7 +88,10 @@ function coordinatorFor(deps: RankedHttpHandlerDeps, locals: App.Locals): Ranked
 
 export function rankedJsonError(error: unknown): Response {
 	if (error instanceof RankedServiceError) {
-		const headers = new Headers({ 'content-type': 'application/json' });
+		const headers = new Headers({
+			'content-type': 'application/json',
+			'cache-control': 'no-store',
+		});
 		if (error.retryAfter !== undefined) {
 			headers.set('Retry-After', String(error.retryAfter));
 		}
@@ -102,10 +105,10 @@ export function rankedJsonError(error: unknown): Response {
 			{ status: RANKED_ERROR_STATUS[error.code], headers },
 		);
 	}
-	console.error('[RANKED] unhandled request failure');
+	console.error('[RANKED] unhandled request failure:', error);
 	return new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), {
 		status: 500,
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
 	});
 }
 

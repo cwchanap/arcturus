@@ -304,7 +304,10 @@ export const rankedRewardGrant = sqliteTable(
 		chipAmount: integer('chipAmount').notNull(),
 		grantedAt: integer('grantedAt', { mode: 'timestamp' }).notNull(),
 	},
-	(table) => ({ pk: primaryKey({ columns: [table.userId, table.rewardId] }) }),
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.rewardId] }),
+		sourceSessionIdx: index('ranked_reward_grant_source_session_idx').on(table.sourceSessionId),
+	}),
 );
 
 export const rankedRateLimit = sqliteTable(

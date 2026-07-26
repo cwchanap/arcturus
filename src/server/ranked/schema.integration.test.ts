@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
-import { createRankedTestD1, insertRankedTestUser } from './test-d1';
+import { createRankedTestD1, insertRankedSession, insertRankedTestUser } from './test-d1';
 
 let mf: Miniflare;
 let db: D1Database;
@@ -17,39 +17,12 @@ async function insertSession(
 	db: D1Database,
 	values: { id: string; activeUserId: string | null; startRequestId: string },
 ) {
-	const now = Math.trunc(Date.now() / 1000);
-	return db
-		.prepare(
-			`INSERT INTO ranked_session (
-				id, userId, startRequestId, startPayloadHash, activeUserId,
-				gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
-				actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
-				status, expiresAt, createdAt, updatedAt
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			values.id,
-			'schema-user',
-			values.startRequestId,
-			'start-hash',
-			values.activeUserId,
-			'blackjack',
-			'blackjack-ranked-v1',
-			'{}',
-			'config-hash',
-			'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
-			'seed-commitment',
-			'[]',
-			'action-log-hash',
-			0,
-			10,
-			10,
-			values.activeUserId === null ? 'settled' : 'active',
-			now + 900,
-			now,
-			now,
-		)
-		.run();
+	await insertRankedSession(db, {
+		id: values.id,
+		userId: 'schema-user',
+		startRequestId: values.startRequestId,
+		activeUserId: values.activeUserId,
+	});
 }
 
 async function countRows(db: D1Database, table: 'ranked_session'): Promise<number> {

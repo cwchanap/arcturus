@@ -621,6 +621,74 @@ describe('ranked Blackjack recovery client', () => {
 		expect(renderer.errors).toEqual(['Ranked response was malformed']);
 	});
 
+	test('rejects a valid envelope with state missing dealer and playerHands before rendering', async () => {
+		// A response with a valid top-level envelope but an empty state
+		// object would previously pass readResponse (the state schema was
+		// z.object({}).passthrough()) and then throw inside the renderer
+		// when it accessed state.dealer.cards / state.playerHands. The
+		// render exception was treated as an uncertain failure, leaving
+		// pending=true permanently. The structured state schema now rejects
+		// this payload in readResponse so it never reaches the renderer.
+		const storage = new RecordingStorage();
+		storage.values.set(keys.activeSession, SESSION_ID);
+		const renderer = createRenderer();
+		const malformedEnvelope = {
+			sessionId: SESSION_ID,
+			status: 'active',
+			gameType: 'blackjack',
+			rulesetVersion: 'blackjack-ranked-v1',
+			seedCommitment: 'seed-commitment',
+			expiresAt: 1_800_000_900,
+			nextSequence: 0,
+			balance: 900,
+			state: {},
+			receipt: null,
+		};
+		const { client } = createHarness({
+			storage,
+			renderer,
+			fetch: async () =>
+				new Response(JSON.stringify(malformedEnvelope), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+		});
+
+		await client.initialize();
+
+		// The malformed state never reaches the renderer.
+		expect(renderer.responses).toEqual([]);
+		expect(renderer.errors).toEqual(['Ranked response was malformed']);
+	});
+
+	test('rejects a state with a malformed dealer hand value before rendering', async () => {
+		// The dealer.value field must be a structured hand-value object,
+		// not a bare number. The schema rejects this before the renderer
+		// can throw on value.isBust access.
+		const storage = new RecordingStorage();
+		storage.values.set(keys.activeSession, SESSION_ID);
+		const renderer = createRenderer();
+		const malformed = activeResponse({
+			state: {
+				...activeResponse().state,
+				dealer: {
+					cards: [{ rank: '7', suit: 'spades' }],
+					value: 7 as unknown as { value: number; isSoft: boolean; isBust: boolean },
+				},
+			},
+		});
+		const { client } = createHarness({
+			storage,
+			renderer,
+			fetch: async () => jsonResponse(malformed),
+		});
+
+		await client.initialize();
+
+		expect(renderer.responses).toEqual([]);
+		expect(renderer.errors).toEqual(['Ranked response was malformed']);
+	});
+
 	test('clears terminal references only after the receipt has rendered', async () => {
 		const events: string[] = [];
 		const storage = new RecordingStorage();

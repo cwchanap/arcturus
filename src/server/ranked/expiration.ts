@@ -45,41 +45,49 @@ export async function runRankedExpiration(
 	const nowMs = deps.nowMs ?? Date.now;
 	const deadline = nowMs() + (deps.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS);
 
-	// Sessions that failed expiration in this invocation are tracked so we
-	// don't retry them in the next page (they'd be returned again because
-	// they remain active). If every ID in a page is skipped, the remaining
-	// unprocessable sessions are left for the next cron tick.
-	const skipped = new Set<string>();
+	// Stable cursor pagination: after each page, advance the cursor past
+	// every row that was attempted (whether the attempt succeeded or
+	// failed). This prevents unprocessable "poison" rows that remain active
+	// from being returned by every subsequent page query and permanently
+	// blocking later sessions (head-of-line blocking). The cursor is scoped
+	// to a single invocation; the next cron tick starts fresh so transient
+	// skip conditions (MULTIPLAYER_CONFLICT, orphaned escrow) get retried.
+	let cursor: { expiresAt: number; id: string } | null = null;
 
 	for (;;) {
-		const sessionIds = await repository.listExpiredSessions(nowSeconds);
-		if (sessionIds.length === 0) break;
+		const rows = await repository.listExpiredSessions(nowSeconds, cursor);
+		if (rows.length === 0) break;
 
-		for (const sessionId of sessionIds) {
-			if (skipped.has(sessionId)) continue;
+		let hitDeadline = false;
+		for (const row of rows) {
+			// Check the deadline before each expiration so a slow page cannot
+			// blow the entire budget before the guard runs.
+			if (nowMs() >= deadline) {
+				hitDeadline = true;
+				break;
+			}
 			try {
-				const result = await deps.expire(sessionId);
+				const result = await deps.expire(row.id);
 				if (isTerminalStatus(result)) {
-					log(createRankedLogEntry('ranked_session_expired', { sessionId }));
+					log(createRankedLogEntry('ranked_session_expired', { sessionId: row.id }));
 				}
 			} catch (error) {
 				if (error instanceof RankedServiceError && EXPECTED_EXPIRATION_ERRORS.has(error.code)) {
 					warn(`[RANKED] expiration skipped ${error.code} for session`, error);
 				} else {
-					log(createRankedLogEntry('ranked_invariant_violation', { sessionId }));
+					log(createRankedLogEntry('ranked_invariant_violation', { sessionId: row.id }));
 					warn('[RANKED] unexpected expiration failure', error);
 				}
-				skipped.add(sessionId);
 			}
+			// Advance past every attempted row regardless of outcome so
+			// poison rows cannot starve later expirations.
+			cursor = { expiresAt: row.expiresAt, id: row.id };
 		}
 
 		// Fewer than a full page means no more expired sessions remain.
-		if (sessionIds.length < RANKED_EXPIRATION_PAGE_SIZE) break;
-		// If every ID in this page was skipped, the query will keep returning
-		// the same unprocessable sessions. Stop to avoid a busy loop.
-		if (sessionIds.every((id) => skipped.has(id))) break;
+		if (rows.length < RANKED_EXPIRATION_PAGE_SIZE) break;
 		// Respect the wall-clock budget.
-		if (nowMs() >= deadline) break;
+		if (hitDeadline) break;
 	}
 }
 

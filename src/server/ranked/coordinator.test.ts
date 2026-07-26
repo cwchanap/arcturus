@@ -195,8 +195,8 @@ function createRepository(
 			calls.runExpirationTransition.push(input);
 			return overrides.runExpirationTransition?.(input) ?? { kind: 'not-applied' };
 		},
-		async listExpiredSessions(nowSeconds) {
-			return overrides.listExpiredSessions?.(nowSeconds) ?? [];
+		async listExpiredSessions(nowSeconds, cursor) {
+			return overrides.listExpiredSessions?.(nowSeconds, cursor) ?? [];
 		},
 		async deleteExpiredRateBuckets(nowSeconds) {
 			return overrides.deleteExpiredRateBuckets?.(nowSeconds) ?? 0;

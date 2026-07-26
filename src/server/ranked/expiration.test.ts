@@ -8,8 +8,16 @@ interface PreparedCall {
 	args: unknown[];
 }
 
+// Each id is assigned a monotonically increasing expiresAt so the array
+// index matches the ORDER BY expiresAt ASC, id ASC ordering used by the
+// real query, and the cursor pagination can advance forward through it.
+function rowFor(id: string, index: number): { id: string; expiresAt: number } {
+	return { id, expiresAt: 1_740_000_000 + index };
+}
+
 function createExpirationDb(ids: readonly string[]) {
 	const calls: PreparedCall[] = [];
+	const rowsByIndex = ids.map((id, index) => rowFor(id, index));
 	const binding = {
 		prepare(sql: string) {
 			return {
@@ -17,7 +25,21 @@ function createExpirationDb(ids: readonly string[]) {
 					return {
 						async all() {
 							calls.push({ sql, args });
-							return { results: ids.map((id) => ({ id })) };
+							// Cursor pagination: when a cursor is supplied (4 bind args:
+							// nowSeconds, cursorExpiresAt, cursorExpiresAt, cursorId),
+							// return only rows after that cursor. The first call has 1
+							// bind arg (nowSeconds only) and returns the first page.
+							if (args.length === 4) {
+								const cursorExpiresAt = args[1] as number;
+								const cursorId = args[3] as string;
+								const filtered = rowsByIndex.filter(
+									(row) =>
+										row.expiresAt > cursorExpiresAt ||
+										(row.expiresAt === cursorExpiresAt && row.id > cursorId),
+								);
+								return { results: filtered };
+							}
+							return { results: rowsByIndex };
 						},
 						async run() {
 							calls.push({ sql, args });
@@ -38,6 +60,7 @@ function createExpirationDb(ids: readonly string[]) {
 function createPaginatedExpirationDb(totalIds: readonly string[], pageSize = 100) {
 	const calls: PreparedCall[] = [];
 	let page = 0;
+	const rowsByIndex = totalIds.map((id, index) => rowFor(id, index));
 	const binding = {
 		prepare(sql: string) {
 			return {
@@ -46,9 +69,9 @@ function createPaginatedExpirationDb(totalIds: readonly string[], pageSize = 100
 						async all() {
 							calls.push({ sql, args });
 							const start = page * pageSize;
-							const pageIds = totalIds.slice(start, start + pageSize);
+							const pageIds = rowsByIndex.slice(start, start + pageSize);
 							page += 1;
-							return { results: pageIds.map((id) => ({ id })) };
+							return { results: pageIds };
 						},
 						async run() {
 							calls.push({ sql, args });
@@ -80,6 +103,7 @@ describe('runRankedExpiration', () => {
 		expect(calls[0].sql).toContain("WHERE status = 'active' AND expiresAt <= ?");
 		expect(calls[0].sql).toContain('ORDER BY expiresAt ASC, id ASC');
 		expect(calls[0].sql).toContain('LIMIT 100');
+		expect(calls[0].sql).toContain('SELECT id, expiresAt');
 		expect(calls[0].args).toEqual([1_750_000_000]);
 	});
 
@@ -224,15 +248,19 @@ describe('runRankedExpiration', () => {
 			log: () => undefined,
 		});
 
-		// First page (100 sessions) processes, advancing the clock to 1000ms.
-		// Budget deadline is 0 + 50 = 50ms, so the loop stops after page 1.
-		expect(attempted).toHaveLength(100);
-		expect(attempted).toEqual(totalIds.slice(0, 100));
+		// The deadline is checked before each expiration. Budget deadline is
+		// 0 + 50 = 50ms; each expire advances the clock by 10ms. So sessions
+		// 0..4 are attempted (clock 0,10,20,30,40 -> all < 50), and session 5
+		// sees clock=50 >= deadline and stops the inner loop immediately.
+		expect(attempted).toHaveLength(5);
+		expect(attempted).toEqual(totalIds.slice(0, 5));
 	});
 
 	test('stops when every session in a page is unprocessable to avoid a busy loop', async () => {
 		const ids = Array.from({ length: 100 }, (_, i) => `session-${i}`);
-		// createExpirationDb always returns the same 100 IDs.
+		// createExpirationDb returns the 100 rows on the first call, then
+		// filters by cursor on subsequent calls (returning empty once the
+		// cursor has advanced past every row).
 		const { binding } = createExpirationDb(ids);
 		const attempted: string[] = [];
 
@@ -246,9 +274,41 @@ describe('runRankedExpiration', () => {
 			warn: () => undefined,
 		});
 
-		// Each session attempted exactly once, then the loop detects all are
-		// skipped and stops rather than re-querying indefinitely.
+		// Each session attempted exactly once. The cursor advances past
+		// every attempted row, so the next query returns no rows and the
+		// loop stops rather than re-querying the same unprocessable rows.
 		expect(attempted).toEqual(ids);
+	});
+
+	test('advances past a full page of poison rows and still attempts later sessions', async () => {
+		// 100 oldest rows all fail, followed by 50 processable rows. Without
+		// cursor advancement, the first 100 poison rows would be returned by
+		// every page query and the 50 later rows would never be reached.
+		const poisonIds = Array.from({ length: 100 }, (_, i) => `poison-${i}`);
+		const goodIds = Array.from({ length: 50 }, (_, i) => `good-${i}`);
+		const allIds = [...poisonIds, ...goodIds];
+		const { binding } = createExpirationDb(allIds);
+		const attempted: string[] = [];
+		const logs: RankedLogEntry[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async (sessionId) => {
+				attempted.push(sessionId);
+				if (sessionId.startsWith('poison-')) throw new Error('corrupt row');
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+			warn: () => undefined,
+		});
+
+		// Every row is attempted exactly once: the 100 poison rows fail, the
+		// cursor advances past them, and the 50 good rows are then returned
+		// and processed successfully.
+		expect(attempted).toEqual(allIds);
+		expect(attempted.filter((id) => id.startsWith('good-'))).toEqual(goodIds);
+		// 100 invariant violations for poison rows + 50 successful expirations.
+		expect(logs.filter((entry) => entry.event === 'ranked_invariant_violation')).toHaveLength(100);
+		expect(logs.filter((entry) => entry.event === 'ranked_session_expired')).toHaveLength(50);
 	});
 });
 

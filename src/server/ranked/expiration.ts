@@ -1,4 +1,4 @@
-import { RankedServiceError } from '../../lib/ranked/protocol';
+import { RankedServiceError, type RankedErrorCode } from '../../lib/ranked/protocol';
 import { createRankedLogEntry, type RankedLogEntry } from './logging';
 import { createRankedRepository, RANKED_EXPIRATION_PAGE_SIZE } from './repository';
 
@@ -33,7 +33,7 @@ function isTerminalStatus(result: unknown): boolean {
 // after SNAPSHOT_ATTEMPTS retries are exhausted, which is a benign balance
 // race on the money path — not an invariant violation that should noise up
 // alerting. The session remains active and the next cron tick retries.
-const EXPECTED_EXPIRATION_ERRORS = new Set([
+const EXPECTED_EXPIRATION_ERRORS: Set<RankedErrorCode> = new Set<RankedErrorCode>([
 	'MULTIPLAYER_CONFLICT',
 	'MULTIPLAYER_ESCROW_ORPHANED',
 	'ACCOUNT_BALANCE_CHANGED',

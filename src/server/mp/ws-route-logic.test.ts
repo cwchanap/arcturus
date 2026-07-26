@@ -210,8 +210,10 @@ describe('WebSocket join membership policy', () => {
 			const response = await callGet({
 				headers: { Upgrade: 'websocket', Origin: 'http://test.local' },
 			});
-			// Past origin check; rejected later because arcturus binding is missing.
-			expect(response.status).not.toBe(403);
+			// Past origin check; rejected deterministically because the arcturus
+			// binding is missing (callGet does not pass a namespace).
+			expect(response.status).toBe(503);
+			expect(await response.json()).toEqual({ error: 'DO_UNAVAILABLE' });
 		});
 
 		test('rejects a non-websocket request with 426', async () => {

@@ -1584,11 +1584,15 @@ describe('opening natural and expiration transactions', () => {
 		}
 		await db.batch(statements);
 
-		const ids = await createRankedRepository(db).listExpiredSessions(NOW_SECONDS);
+		const rows = await createRankedRepository(db).listExpiredSessions(NOW_SECONDS);
 
-		expect(ids).toHaveLength(100);
-		expect(ids[0]).toBe(String(101).padStart(22, '0'));
-		expect(ids.at(-1)).toBe(String(2).padStart(22, '0'));
+		expect(rows).toHaveLength(100);
+		expect(rows[0].id).toBe(String(101).padStart(22, '0'));
+		expect(rows.at(-1)?.id).toBe(String(2).padStart(22, '0'));
+		// Each row carries its expiresAt so the expiration loop can advance
+		// a stable cursor past attempted rows.
+		expect(rows[0].expiresAt).toBe(NOW_SECONDS - 101);
+		expect(rows.at(-1)?.expiresAt).toBe(NOW_SECONDS - 2);
 	});
 
 	test('deletes only expired ranked rate buckets', async () => {

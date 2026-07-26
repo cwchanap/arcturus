@@ -220,7 +220,10 @@ export interface RankedRepository {
 	runActionTransition(input: ActionTransitionInput): Promise<ActionTransitionResult>;
 	runTerminalTransition(input: TerminalActionTransitionInput): Promise<ActionTransitionResult>;
 	runExpirationTransition(input: ExpirationTransitionInput): Promise<ExpirationTransitionResult>;
-	listExpiredSessions(nowSeconds: number): Promise<string[]>;
+	listExpiredSessions(
+		nowSeconds: number,
+		cursor?: RankedExpirationCursor | null,
+	): Promise<readonly RankedExpirationRow[]>;
 	deleteExpiredRateBuckets(nowSeconds: number): Promise<number>;
 }
 
@@ -245,6 +248,21 @@ WHERE id = ?
 // use the same value for its pagination-completion check; the two paths
 // cannot diverge.
 export const RANKED_EXPIRATION_PAGE_SIZE = 100;
+
+// Stable cursor for advancing past rows already attempted in this
+// invocation (whether the attempt succeeded or failed). Without it,
+// unprocessable "poison" rows that remain active would be returned by
+// every subsequent page query and permanently block later sessions
+// (head-of-line blocking).
+export interface RankedExpirationCursor {
+	readonly expiresAt: number;
+	readonly id: string;
+}
+
+export interface RankedExpirationRow {
+	readonly id: string;
+	readonly expiresAt: number;
+}
 
 export const RANKED_START_SESSION_INSERT_SQL = `INSERT INTO ranked_session (
 	id, userId, startRequestId, startPayloadHash, activeUserId,
@@ -1502,19 +1520,37 @@ export function createRankedRepository(db: D1Database): RankedRepository {
 		runExpirationTransition(input) {
 			return executeExpirationTransition(db, input);
 		},
-		async listExpiredSessions(nowSeconds) {
+		async listExpiredSessions(nowSeconds, cursor) {
 			assertSafeNonNegativeInteger(nowSeconds, 'expiration cutoff');
+			if (cursor) {
+				assertSafeNonNegativeInteger(cursor.expiresAt, 'expiration cursor expiresAt');
+				if (typeof cursor.id !== 'string' || cursor.id.length === 0) {
+					invariant('Invalid ranked expiration cursor id');
+				}
+				const rows = await db
+					.prepare(
+						`SELECT id, expiresAt
+						FROM ranked_session
+						WHERE status = 'active' AND expiresAt <= ?
+							AND (expiresAt > ? OR (expiresAt = ? AND id > ?))
+						ORDER BY expiresAt ASC, id ASC
+						LIMIT ${RANKED_EXPIRATION_PAGE_SIZE}`,
+					)
+					.bind(nowSeconds, cursor.expiresAt, cursor.expiresAt, cursor.id)
+					.all<{ id: string; expiresAt: number }>();
+				return rows.results.map(({ id, expiresAt }) => ({ id, expiresAt }));
+			}
 			const rows = await db
 				.prepare(
-					`SELECT id
+					`SELECT id, expiresAt
 					FROM ranked_session
 					WHERE status = 'active' AND expiresAt <= ?
 					ORDER BY expiresAt ASC, id ASC
 					LIMIT ${RANKED_EXPIRATION_PAGE_SIZE}`,
 				)
 				.bind(nowSeconds)
-				.all<{ id: string }>();
-			return rows.results.map(({ id }) => id);
+				.all<{ id: string; expiresAt: number }>();
+			return rows.results.map(({ id, expiresAt }) => ({ id, expiresAt }));
 		},
 		async deleteExpiredRateBuckets(nowSeconds) {
 			assertSafeNonNegativeInteger(nowSeconds, 'rate cleanup cutoff');

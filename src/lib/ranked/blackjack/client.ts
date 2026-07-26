@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import {
 	createRankedPublicStateV1Schema,
+	rankedAchievementEffectsV1Schema,
+	rankedActionSchema,
+	rankedRewardEffectsV1Schema,
+	rankedStatsEffectsV1Schema,
+	safeIntegerSchema,
+	sessionIdSchema,
 	type RankedBlackjackAction,
 	type RankedPublicStateV1,
 	type RankedReceiptV1,
@@ -190,15 +196,98 @@ function responseErrorMessage(response: Response, payload: unknown): string {
 	return `request failed (${response.status})`;
 }
 
-// Schema-validated response parser. The top-level envelope (sessionId,
-// status, gameType, rulesetVersion, balance, etc.) is fully validated.
-// State and receipt are validated as non-null objects (structure trusted
-// from the server) rather than z.unknown()/z.any(), so grossly malformed
-// payloads are rejected while preserving the readResponse flow.
-const rankedResponseSchema = createRankedPublicStateV1Schema(
-	z.object({}).passthrough(),
-	z.object({}).passthrough(),
-);
+// Schema-validated response parser. The full envelope — including the
+// Blackjack state, cards, hand values, outcome, receipt and effects — is
+// validated against structured Zod schemas. This prevents a malformed
+// payload (e.g. a valid envelope with state: {}) from reaching the
+// renderer, which would throw on field access and leave the page
+// permanently disabled because the render exception is treated as an
+// uncertain failure.
+const publicCardSchema = z
+	.object({
+		rank: z.enum(['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']),
+		suit: z.enum(['hearts', 'diamonds', 'clubs', 'spades']),
+	})
+	.strict();
+
+const publicHandValueSchema = z
+	.object({
+		value: safeIntegerSchema.min(0),
+		isSoft: z.boolean(),
+		isBust: z.boolean(),
+	})
+	.strict();
+
+const publicHandSchema = z
+	.object({
+		cards: z.array(publicCardSchema),
+		wager: safeIntegerSchema.min(0),
+		value: publicHandValueSchema,
+	})
+	.strict();
+
+const publicHandOutcomeSchema = z
+	.object({
+		handIndex: safeIntegerSchema.min(0),
+		result: z.enum(['win', 'loss', 'push', 'blackjack']),
+		wager: safeIntegerSchema.min(0),
+		payout: safeIntegerSchema.min(0),
+	})
+	.strict();
+
+const publicOutcomeSchema = z
+	.object({
+		result: z.enum(['win', 'loss', 'push']),
+		hands: z.array(publicHandOutcomeSchema),
+		committedWager: safeIntegerSchema.min(0),
+		payout: safeIntegerSchema.min(0),
+		gameNetDelta: safeIntegerSchema,
+	})
+	.strict();
+
+const browserStateSchema = z
+	.object({
+		phase: z.enum(['player-turn', 'complete']),
+		playerHands: z.array(publicHandSchema),
+		activeHandIndex: safeIntegerSchema.min(0),
+		dealer: z
+			.object({
+				cards: z.array(publicCardSchema),
+				value: publicHandValueSchema,
+			})
+			.strict(),
+		committedWager: safeIntegerSchema.min(0),
+		nextSequence: safeIntegerSchema.min(0),
+		availableActions: z.array(rankedActionSchema),
+		outcome: publicOutcomeSchema.nullable(),
+	})
+	.strict();
+
+const receiptSchema = z
+	.object({
+		sessionId: sessionIdSchema,
+		gameType: z.literal('blackjack'),
+		rulesetVersion: z.literal('blackjack-ranked-v1'),
+		seedCommitment: z.string(),
+		configHash: z.string(),
+		actionLogHash: z.string(),
+		outcome: publicOutcomeSchema,
+		initialWager: safeIntegerSchema.min(0),
+		committedWager: safeIntegerSchema.min(0),
+		payout: safeIntegerSchema.min(0),
+		gameNetDelta: safeIntegerSchema,
+		rewardDelta: safeIntegerSchema,
+		balanceAfter: safeIntegerSchema.min(0),
+		statsEffects: rankedStatsEffectsV1Schema,
+		achievementEffects: rankedAchievementEffectsV1Schema,
+		rewardEffects: rankedRewardEffectsV1Schema,
+		settledAt: safeIntegerSchema.min(0),
+		receiptHash: z.string(),
+	})
+	.strict()
+	.nullable();
+
+const rankedResponseSchema = createRankedPublicStateV1Schema(browserStateSchema, receiptSchema);
 
 async function readResponse(response: Response): Promise<RankedBlackjackResponseV1> {
 	let payload: unknown;

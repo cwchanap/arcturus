@@ -812,8 +812,9 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			'ACCOUNT_BALANCE_CHANGED',
 		);
 
-		// Non-terminal actions do not retry — the first balance-changed fails.
-		expect(repository.calls.runActionTransition).toHaveLength(1);
+		// Recoverable balance conflicts retry through all SNAPSHOT_ATTEMPTS
+		// before surfacing ACCOUNT_BALANCE_CHANGED.
+		expect(repository.calls.runActionTransition).toHaveLength(3);
 	});
 
 	test('a stale snapshot whose sequence advanced past the request replays the stored action', async () => {

@@ -603,6 +603,14 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		expect(response.state.phase).toBe('complete');
 		expect(response.state.availableActions).toEqual([]);
 		expect(response.state.outcome).toEqual(response.receipt?.outcome);
+		// Expiration must reveal the full dealer hand, not just the up-card projection.
+		const fullDealerProjection = blackjackRankedV1Adapter.projectTerminal(
+			await blackjackRankedV1Adapter.replay(ACTIVE_SEED, issueBlackjackConfig(100), []),
+			900,
+		).dealer;
+		expect(response.state.dealer.cards).toEqual(fullDealerProjection.cards);
+		expect(response.state.dealer.value).toEqual(fullDealerProjection.value);
+		expect(response.state.dealer.cards.length).toBe(2);
 		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_resume');
 	});
 

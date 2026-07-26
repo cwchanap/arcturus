@@ -82,19 +82,24 @@ function projectDealer(cards: readonly Card[]): RankedBlackjackPublicDealerV1 {
 function projectReplay(
 	replay: RankedBlackjackReplay,
 	accountBalance: number,
+	forceTerminal = false,
 ): RankedBlackjackPublicStateV1 {
-	const isTerminal = replay.state.phase === 'complete';
+	const isTerminal = forceTerminal || replay.state.phase === 'complete';
 	const dealerCards = isTerminal
 		? replay.state.dealerHand.cards
 		: replay.state.dealerHand.cards.slice(0, 1);
 	const availableBalance =
 		Number.isSafeInteger(accountBalance) && accountBalance >= 0 ? accountBalance : 0;
-	const availableActions = replay.legalActions
-		.filter(({ additionalWager }) => additionalWager === 0 || availableBalance >= additionalWager)
-		.map(({ action }) => action);
+	const availableActions = isTerminal
+		? []
+		: replay.legalActions
+				.filter(
+					({ additionalWager }) => additionalWager === 0 || availableBalance >= additionalWager,
+				)
+				.map(({ action }) => action);
 
 	return {
-		phase: replay.state.phase,
+		phase: isTerminal ? 'complete' : replay.state.phase,
 		playerHands: replay.state.playerHands.map(({ cards, wager }) => projectHand(cards, wager)),
 		activeHandIndex: replay.state.activeHandIndex,
 		dealer: projectDealer(dealerCards),
@@ -125,7 +130,12 @@ export const blackjackRankedV1Adapter: RankedGameAdapter<
 	async replay(seed, config, actions) {
 		return replayRankedBlackjack(config, shuffleRankedDeck(seed), actions);
 	},
-	project: projectReplay,
+	project(replay, accountBalance) {
+		return projectReplay(replay, accountBalance);
+	},
+	projectTerminal(replay, accountBalance) {
+		return projectReplay(replay, accountBalance, true);
+	},
 	terminalOutcome(replay) {
 		return replay.outcome;
 	},

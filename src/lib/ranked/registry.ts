@@ -15,6 +15,7 @@ export interface RankedGameAdapter<C, A, R, P, O> {
 	issue(input: { wager: number }): Promise<{ config: C; configJson: string; configHash: string }>;
 	replay(seed: Uint8Array, config: C, actions: readonly A[]): Promise<R>;
 	project(replay: R, accountBalance: number): P;
+	projectTerminal(replay: R, accountBalance: number): P;
 	terminalOutcome(replay: R): O | null;
 }
 

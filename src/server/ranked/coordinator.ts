@@ -263,8 +263,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		const state =
 			session.status === 'expired' && result
 				? {
-						...projected,
-						phase: 'complete' as const,
+						...replayed.adapter.projectTerminal(replayed.replay, account.chipBalance),
 						availableActions: [],
 						outcome: result.outcome,
 					}

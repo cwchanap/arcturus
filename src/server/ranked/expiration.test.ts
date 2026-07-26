@@ -31,6 +31,37 @@ function createExpirationDb(ids: readonly string[]) {
 	return { binding: binding as unknown as D1Database, calls };
 }
 
+// Simulates paginated listExpiredSessions: each all() call returns the next
+// page of IDs. When all pages are exhausted, returns empty. This mirrors the
+// real D1 behaviour where expired sessions are removed from the active set
+// after expire() succeeds, so subsequent queries return the next batch.
+function createPaginatedExpirationDb(totalIds: readonly string[], pageSize = 100) {
+	const calls: PreparedCall[] = [];
+	let page = 0;
+	const binding = {
+		prepare(sql: string) {
+			return {
+				bind(...args: unknown[]) {
+					return {
+						async all() {
+							calls.push({ sql, args });
+							const start = page * pageSize;
+							const pageIds = totalIds.slice(start, start + pageSize);
+							page += 1;
+							return { results: pageIds.map((id) => ({ id })) };
+						},
+						async run() {
+							calls.push({ sql, args });
+							return { meta: { changes: 2 } };
+						},
+					};
+				},
+			};
+		},
+	};
+	return { binding: binding as unknown as D1Database, calls };
+}
+
 describe('runRankedExpiration', () => {
 	test('reads the bounded ordered session list once and attempts each returned ID in order', async () => {
 		const { binding, calls } = createExpirationDb(['oldest', 'same-time-a', 'same-time-b']);
@@ -156,6 +187,68 @@ describe('runRankedExpiration', () => {
 		expect(logs.map(({ event }) => event)).toEqual(['ranked_invariant_violation']);
 		expect(warnings).toHaveLength(1);
 		expect(warnings[0]).toContain('unexpected expiration failure');
+	});
+
+	test('drains more than one page of expired sessions when the backlog exceeds the page size', async () => {
+		const totalIds = Array.from({ length: 250 }, (_, i) => `session-${String(i).padStart(3, '0')}`);
+		const { binding, calls } = createPaginatedExpirationDb(totalIds);
+		const attempted: string[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async (sessionId) => {
+				attempted.push(sessionId);
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: () => undefined,
+		});
+
+		expect(attempted).toEqual(totalIds);
+		// Three pages: 100 + 100 + 50.
+		expect(calls.filter((c) => c.sql.includes('SELECT id'))).toHaveLength(3);
+	});
+
+	test('stops draining when the wall-clock time budget is exceeded', async () => {
+		const totalIds = Array.from({ length: 250 }, (_, i) => `session-${i}`);
+		const { binding } = createPaginatedExpirationDb(totalIds);
+		const attempted: string[] = [];
+		let clockMs = 0;
+
+		await runRankedExpiration(binding, {
+			expire: async (sessionId) => {
+				attempted.push(sessionId);
+				clockMs += 10;
+			},
+			nowSeconds: () => 1_750_000_000,
+			timeBudgetMs: 50,
+			nowMs: () => clockMs,
+			log: () => undefined,
+		});
+
+		// First page (100 sessions) processes, advancing the clock to 1000ms.
+		// Budget deadline is 0 + 50 = 50ms, so the loop stops after page 1.
+		expect(attempted).toHaveLength(100);
+		expect(attempted).toEqual(totalIds.slice(0, 100));
+	});
+
+	test('stops when every session in a page is unprocessable to avoid a busy loop', async () => {
+		const ids = Array.from({ length: 100 }, (_, i) => `session-${i}`);
+		// createExpirationDb always returns the same 100 IDs.
+		const { binding } = createExpirationDb(ids);
+		const attempted: string[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async (sessionId) => {
+				attempted.push(sessionId);
+				throw new Error('unprocessable');
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: () => undefined,
+			warn: () => undefined,
+		});
+
+		// Each session attempted exactly once, then the loop detects all are
+		// skipped and stops rather than re-querying indefinitely.
+		expect(attempted).toEqual(ids);
 	});
 });
 

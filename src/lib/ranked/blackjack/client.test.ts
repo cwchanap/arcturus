@@ -1,8 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { RankedBlackjackAction } from '../protocol';
 import {
-	ACTIVE_SESSION_KEY,
-	START_REQUEST_KEY,
+	buildRankedBlackjackStorageKeys,
 	createRankedBlackjackClient,
 	type RankedBlackjackClientDeps,
 	type RankedBlackjackRenderer,
@@ -10,6 +9,12 @@ import {
 } from './client';
 
 const SESSION_ID = 'abcdefghijklmnopqrstuv';
+const USER_ID = 'test-user-1';
+const keys = buildRankedBlackjackStorageKeys(USER_ID);
+
+function activeSessionValue(sessionId: string, requestId: string | null = null): string {
+	return JSON.stringify({ sessionId, requestId });
+}
 
 function activeResponse(
 	overrides: Partial<RankedBlackjackResponseV1> = {},
@@ -163,6 +168,7 @@ function createRenderer(events: string[] = []): RankedBlackjackRenderer & {
 }
 
 function createHarness({
+	userId = USER_ID,
 	fetch: fetchImplementation = async () => jsonResponse(activeResponse()),
 	storage = new RecordingStorage(),
 	renderer = createRenderer(),
@@ -176,6 +182,7 @@ function createHarness({
 } = {}) {
 	const fetchMock = mock(fetchImplementation as typeof fetch);
 	const client = createRankedBlackjackClient({
+		userId,
 		fetch: fetchMock,
 		storage,
 		renderer,
@@ -191,17 +198,20 @@ describe('ranked Blackjack recovery client', () => {
 	test('persists the start request before fetch and the session after success', async () => {
 		const storage = new RecordingStorage();
 		const fetchImplementation = mock(async () => {
-			expect(storage.events[0]?.slice(0, 2)).toEqual(['set', START_REQUEST_KEY]);
+			expect(storage.events[0]?.slice(0, 2)).toEqual(['set', keys.startRequest]);
 			return jsonResponse(activeResponse());
 		});
 		const { client } = createHarness({ fetch: fetchImplementation, storage });
 
 		await client.start(100);
 
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(
+			activeSessionValue(SESSION_ID, 'request-00000001'),
+		);
 		expect(storage.events.map(([operation, key]) => [operation, key])).toEqual([
-			['set', START_REQUEST_KEY],
-			['set', ACTIVE_SESSION_KEY],
+			['set', keys.startRequest],
+			['set', keys.activeSession],
+			['remove', keys.startRequest],
 		]);
 	});
 
@@ -216,7 +226,7 @@ describe('ranked Blackjack recovery client', () => {
 		});
 		await first.client.start(100);
 
-		expect(storage.getItem(START_REQUEST_KEY)).toBe(
+		expect(storage.getItem(keys.startRequest)).toBe(
 			JSON.stringify({ requestId: 'request-00000001', wager: 100 }),
 		);
 
@@ -243,7 +253,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('clears a definitively missing stored session so reload and start controls recover', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		const { client } = createHarness({
 			storage,
@@ -257,7 +267,7 @@ describe('ranked Blackjack recovery client', () => {
 
 		await client.initialize();
 
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBeNull();
+		expect(storage.getItem(keys.activeSession)).toBeNull();
 		expect(renderer.pending).toEqual([true, false]);
 		expect(renderer.errors).toEqual(['session not found']);
 
@@ -278,7 +288,7 @@ describe('ranked Blackjack recovery client', () => {
 	test('resumes a stored session before start can be enabled on reload', async () => {
 		const events: string[] = [];
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer(events);
 		const { client, fetchMock } = createHarness({ storage, renderer });
 
@@ -291,7 +301,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('keeps controls blocked when reload recovery remains uncertain', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		const { client } = createHarness({
 			storage,
@@ -305,7 +315,7 @@ describe('ranked Blackjack recovery client', () => {
 
 		expect(renderer.pending).toEqual([true]);
 		expect(renderer.errors).toEqual(['network']);
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(SESSION_ID);
 	});
 
 	test.each([
@@ -313,7 +323,7 @@ describe('ranked Blackjack recovery client', () => {
 		['authentication response', 401, 'UNAUTHORIZED'],
 	])('keeps reload blocked for unresolved %s', async (_label, status, code) => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		const { client } = createHarness({
 			storage,
@@ -327,7 +337,7 @@ describe('ranked Blackjack recovery client', () => {
 
 		await client.initialize();
 
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(SESSION_ID);
 		expect(renderer.pending).toEqual([true]);
 	});
 
@@ -348,10 +358,10 @@ describe('ranked Blackjack recovery client', () => {
 
 		await first.client.start(1000);
 
-		expect(storage.getItem(START_REQUEST_KEY)).toBeNull();
+		expect(storage.getItem(keys.startRequest)).toBeNull();
 		expect(storage.events.map(([operation, key]) => [operation, key])).toEqual([
-			['set', START_REQUEST_KEY],
-			['remove', START_REQUEST_KEY],
+			['set', keys.startRequest],
+			['remove', keys.startRequest],
 		]);
 
 		const reloaded = createHarness({
@@ -379,12 +389,14 @@ describe('ranked Blackjack recovery client', () => {
 				wager: 10,
 			},
 		]);
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(
+			activeSessionValue(SESSION_ID, 'request-00000002'),
+		);
 	});
 
 	test('retries the identical uncertain action once then resumes authoritative state', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const bodies: string[] = [];
 		const actionResponses: Array<Response | Error> = [
 			new TypeError('network'),
@@ -429,7 +441,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('keeps stale actions blocked after POST, POST, and authoritative GET all remain uncertain', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		let phase: 'initialize' | 'failed-recovery' | 'successful-retry' = 'initialize';
 		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
 			if (phase === 'initialize' && init === undefined) return jsonResponse(activeResponse());
@@ -457,7 +469,7 @@ describe('ranked Blackjack recovery client', () => {
 			`/api/ranked/sessions/${SESSION_ID}`,
 		]);
 		expect(renderer.pending).toEqual([true, false]);
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(SESSION_ID);
 
 		await client.act('hit');
 		expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -473,7 +485,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('retains unresolved action recovery through a later certain error until authoritative success', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		let phase: 'initialize' | 'uncertain' | 'rate-limited' | 'success' = 'initialize';
 		const bodies: string[] = [];
 		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -527,7 +539,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('does not replay an action after a certain client error response', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
 			if (init === undefined) return jsonResponse(activeResponse());
 			return new Response(JSON.stringify({ error: 'INVALID_ACTION' }), {
@@ -548,7 +560,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('allows only one action request in flight', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		let release: ((response: Response) => void) | undefined;
 		const fetchImplementation = mock((_: RequestInfo | URL, init?: RequestInit) => {
 			if (init === undefined) return Promise.resolve(jsonResponse(activeResponse()));
@@ -558,6 +570,7 @@ describe('ranked Blackjack recovery client', () => {
 		});
 		const renderer = createRenderer();
 		const client = createRankedBlackjackClient({
+			userId: USER_ID,
 			fetch: fetchImplementation as typeof fetch,
 			storage,
 			renderer,
@@ -579,7 +592,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('replaces the displayed balance with every authoritative ranked response', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		const { client } = createHarness({
 			storage,
@@ -594,7 +607,7 @@ describe('ranked Blackjack recovery client', () => {
 
 	test('rejects a malformed negative authoritative balance instead of displaying it', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		const { client } = createHarness({
 			storage,
@@ -611,8 +624,8 @@ describe('ranked Blackjack recovery client', () => {
 	test('clears terminal references only after the receipt has rendered', async () => {
 		const events: string[] = [];
 		const storage = new RecordingStorage();
-		storage.values.set(START_REQUEST_KEY, '{"requestId":"request-00000001","wager":100}');
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.startRequest, '{"requestId":"request-00000001","wager":100}');
+		storage.values.set(keys.activeSession, activeSessionValue(SESSION_ID, 'request-00000001'));
 		const originalRemove = storage.removeItem.bind(storage);
 		storage.removeItem = (key) => {
 			events.push(`remove:${key}`);
@@ -630,15 +643,15 @@ describe('ranked Blackjack recovery client', () => {
 		expect(events).toEqual([
 			'pending:true',
 			'render-terminal',
-			`remove:${START_REQUEST_KEY}`,
-			`remove:${ACTIVE_SESSION_KEY}`,
+			`remove:${keys.activeSession}`,
+			`remove:${keys.startRequest}`,
 			'pending:false',
 		]);
 	});
 
 	test('a countdown reaching zero does not settle or clear the active session locally', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const renderer = createRenderer();
 		let intervalTick: (() => void) | undefined;
 		const { client, fetchMock } = createHarness({
@@ -655,14 +668,14 @@ describe('ranked Blackjack recovery client', () => {
 		intervalTick?.();
 
 		expect(renderer.countdowns.at(-1)).toBe(0);
-		expect(storage.getItem(ACTIVE_SESSION_KEY)).toBe(SESSION_ID);
+		expect(storage.getItem(keys.activeSession)).toBe(SESSION_ID);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(renderer.responses.at(-1)?.status).toBe('active');
 	});
 
 	test('serializes the server-provided next sequence and action without local rules', async () => {
 		const storage = new RecordingStorage();
-		storage.values.set(ACTIVE_SESSION_KEY, SESSION_ID);
+		storage.values.set(keys.activeSession, SESSION_ID);
 		const sent: Array<{ sequence: number; action: RankedBlackjackAction }> = [];
 		const { client } = createHarness({
 			storage,
@@ -678,5 +691,128 @@ describe('ranked Blackjack recovery client', () => {
 		await client.act('split');
 
 		expect(sent).toEqual([{ sequence: 8, action: 'split' }]);
+	});
+
+	test("does not resume another user's active session after sign-in on the same browser", async () => {
+		const storage = new RecordingStorage();
+		const userAKeys = buildRankedBlackjackStorageKeys('user-a');
+		// User A left an active session and start request in localStorage.
+		storage.values.set(
+			userAKeys.activeSession,
+			activeSessionValue('user-a-session', 'user-a-request'),
+		);
+		storage.values.set(
+			userAKeys.startRequest,
+			JSON.stringify({ requestId: 'user-a-request', wager: 500 }),
+		);
+
+		// User B signs in — their client uses a different userId namespace.
+		const renderer = createRenderer();
+		const { client, fetchMock } = createHarness({
+			userId: 'user-b',
+			storage,
+			renderer,
+			fetch: async () => {
+				throw new Error("user B must not fetch user A's session");
+			},
+		});
+
+		await client.initialize();
+
+		// User B's keys are empty; no fetch should occur.
+		expect(fetchMock).toHaveBeenCalledTimes(0);
+		// render(null) was called but doesn't push to responses array.
+		expect(renderer.responses).toEqual([]);
+		// User A's records remain untouched (not cleared by user B's client).
+		expect(storage.getItem(userAKeys.activeSession)).not.toBeNull();
+		expect(storage.getItem(userAKeys.startRequest)).not.toBeNull();
+	});
+
+	test("does not reuse another user's start request wager when starting a new session", async () => {
+		const storage = new RecordingStorage();
+		const userAKeys = buildRankedBlackjackStorageKeys('user-a');
+		storage.values.set(
+			userAKeys.startRequest,
+			JSON.stringify({ requestId: 'user-a-request', wager: 500 }),
+		);
+
+		let postedBody: string | undefined;
+		const { client } = createHarness({
+			userId: 'user-b',
+			storage,
+			createRequestId: () => 'user-b-request',
+			fetch: async (_url, init) => {
+				postedBody = String(init?.body);
+				return jsonResponse(activeResponse());
+			},
+		});
+
+		await client.start(50);
+
+		const body = JSON.parse(postedBody ?? '');
+		expect(body.requestId).toBe('user-b-request');
+		expect(body.wager).toBe(50);
+	});
+
+	test("a delayed terminal response for S1 does not delete another tab's active session S2", async () => {
+		const storage = new RecordingStorage();
+		// Tab 2 has already started S2 and stored it as the active session.
+		storage.values.set(keys.activeSession, activeSessionValue('session-2', 'request-2'));
+		storage.values.set(keys.startRequest, JSON.stringify({ requestId: 'request-2', wager: 100 }));
+
+		// Simulate tab 1's delayed terminal response for S1 arriving after
+		// tab 2 has already stored S2. The response carries sessionId='session-1'
+		// while storage holds 'session-2'. accept() must not clear S2's records.
+		const mismatchedTerminal = {
+			...terminalResponse(),
+			sessionId: 'session-1',
+		};
+		const mismatchedClient = createRankedBlackjackClient({
+			userId: USER_ID,
+			fetch: async () => jsonResponse(mismatchedTerminal),
+			storage,
+			renderer: createRenderer(),
+			createRequestId: () => 'request-1',
+			now: () => 1_800_000_000_000,
+			setInterval: () => 1,
+			clearInterval: () => {},
+		});
+		await mismatchedClient.initialize();
+
+		// S2's records must survive S1's terminal response.
+		expect(storage.getItem(keys.activeSession)).toBe(activeSessionValue('session-2', 'request-2'));
+		expect(storage.getItem(keys.startRequest)).toBe(
+			JSON.stringify({ requestId: 'request-2', wager: 100 }),
+		);
+	});
+
+	test("a delayed definitive start error for R1 does not delete another tab's start request R2", async () => {
+		const storage = new RecordingStorage();
+		// Tab 1 has already stored its start request R1.
+		storage.values.set(keys.startRequest, JSON.stringify({ requestId: 'request-1', wager: 50 }));
+
+		const { client } = createHarness({
+			storage,
+			createRequestId: () => 'request-1',
+			fetch: async () => {
+				// While tab 1's fetch is in-flight, tab 2 overwrites the
+				// shared start request key with R2.
+				storage.values.set(
+					keys.startRequest,
+					JSON.stringify({ requestId: 'request-2', wager: 100 }),
+				);
+				return new Response(JSON.stringify({ error: 'INSUFFICIENT_BALANCE' }), {
+					status: 409,
+					headers: { 'content-type': 'application/json' },
+				});
+			},
+		});
+
+		await client.start(50);
+
+		// R2's start request must survive R1's definitive error.
+		expect(storage.getItem(keys.startRequest)).toBe(
+			JSON.stringify({ requestId: 'request-2', wager: 100 }),
+		);
 	});
 });

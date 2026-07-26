@@ -7,8 +7,18 @@ import {
 } from '../protocol';
 import { createRankedBlackjackRenderer } from './ui';
 
-export const START_REQUEST_KEY = 'arcturus:ranked-blackjack:start-request';
-export const ACTIVE_SESSION_KEY = 'arcturus:ranked-blackjack:session';
+export const START_REQUEST_KEY_PREFIX = 'arcturus:ranked-blackjack:start-request:';
+export const ACTIVE_SESSION_KEY_PREFIX = 'arcturus:ranked-blackjack:session:';
+
+export function buildRankedBlackjackStorageKeys(userId: string): {
+	startRequest: string;
+	activeSession: string;
+} {
+	return {
+		startRequest: `${START_REQUEST_KEY_PREFIX}${userId}`,
+		activeSession: `${ACTIVE_SESSION_KEY_PREFIX}${userId}`,
+	};
+}
 
 export interface RankedBlackjackPublicCardV1 {
 	readonly rank: 'A' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '10' | 'J' | 'Q' | 'K';
@@ -78,6 +88,7 @@ export interface RankedBlackjackRenderer {
 type TimerHandle = unknown;
 
 export interface RankedBlackjackClientDeps {
+	userId: string;
 	fetch: typeof fetch;
 	storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 	renderer: RankedBlackjackRenderer;
@@ -96,6 +107,11 @@ export interface RankedBlackjackClient {
 interface StoredStartRequest {
 	requestId: string;
 	wager: number;
+}
+
+interface StoredActiveSession {
+	sessionId: string;
+	requestId: string | null;
 }
 
 interface PendingActionRecovery {
@@ -132,6 +148,26 @@ function parseStoredStartRequest(raw: string | null): StoredStartRequest | null 
 	} catch {
 		// Legacy/plain request IDs still retain their idempotency value.
 		if (/^[A-Za-z0-9_-]{16,128}$/.test(raw)) return { requestId: raw, wager: 0 };
+	}
+	return null;
+}
+
+function parseStoredActiveSession(raw: string | null): StoredActiveSession | null {
+	if (!raw) return null;
+	try {
+		const parsed = JSON.parse(raw) as Partial<StoredActiveSession>;
+		if (
+			typeof parsed.sessionId === 'string' &&
+			(parsed.requestId === null ||
+				(typeof parsed.requestId === 'string' && parsed.requestId.length > 0))
+		) {
+			return { sessionId: parsed.sessionId, requestId: parsed.requestId ?? null };
+		}
+	} catch {
+		// Legacy format: plain session ID string.
+		if (typeof raw === 'string' && raw.length > 0) {
+			return { sessionId: raw, requestId: null };
+		}
 	}
 	return null;
 }
@@ -211,6 +247,8 @@ export function createRankedBlackjackClient(
 		((handle: TimerHandle): void =>
 			globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>));
 
+	const keys = buildRankedBlackjackStorageKeys(deps.userId);
+
 	let current: RankedBlackjackResponseV1 | null = null;
 	let pending = false;
 	let countdownHandle: TimerHandle | null = null;
@@ -240,14 +278,42 @@ export function createRankedBlackjackClient(
 		deps.renderer.setPending(nextPending);
 	};
 
+	// Compare-and-remove: only remove the stored start request when its
+	// requestId still matches the request being completed. This prevents a
+	// delayed response for one tab from deleting another tab's in-flight
+	// start request (localStorage is shared across tabs per origin).
+	const removeStartRequestIfMatch = (requestId: string): void => {
+		const stored = parseStoredStartRequest(deps.storage.getItem(keys.startRequest));
+		if (stored?.requestId === requestId) {
+			deps.storage.removeItem(keys.startRequest);
+		}
+	};
+
+	// Compare-and-remove: only remove the stored active session when its
+	// sessionId still matches the response being accepted. This prevents a
+	// delayed terminal response for session S1 from deleting another tab's
+	// active session S2.
+	const removeActiveSessionIfMatch = (sessionId: string): void => {
+		const stored = parseStoredActiveSession(deps.storage.getItem(keys.activeSession));
+		if (stored?.sessionId === sessionId) {
+			deps.storage.removeItem(keys.activeSession);
+		}
+	};
+
 	const accept = (response: RankedBlackjackResponseV1): void => {
 		current = response;
 		actionRecovery = null;
 		deps.renderer.render(response);
 		startCountdown();
 		if (response.receipt && response.status !== 'active') {
-			deps.storage.removeItem(START_REQUEST_KEY);
-			deps.storage.removeItem(ACTIVE_SESSION_KEY);
+			const stored = parseStoredActiveSession(deps.storage.getItem(keys.activeSession));
+			removeActiveSessionIfMatch(response.sessionId);
+			// If the stored active session records the start request that
+			// created it, clear that start request too — but only when it
+			// still matches, so another tab's in-flight start is preserved.
+			if (stored?.requestId) {
+				removeStartRequestIfMatch(stored.requestId);
+			}
 		}
 	};
 
@@ -262,19 +328,20 @@ export function createRankedBlackjackClient(
 
 	const initialize = async (): Promise<void> => {
 		if (pending) return;
-		const sessionId = deps.storage.getItem(ACTIVE_SESSION_KEY);
-		if (!sessionId) {
+		const stored = parseStoredActiveSession(deps.storage.getItem(keys.activeSession));
+		if (!stored) {
 			deps.renderer.render(null);
 			return;
 		}
 		setPending(true);
 		try {
-			await resume(sessionId);
+			await resume(stored.sessionId);
 			setPending(false);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
 			if (isDefinitiveMissingSession(error)) {
-				deps.storage.removeItem(ACTIVE_SESSION_KEY);
+				// Only clear if another tab hasn't already replaced it.
+				removeActiveSessionIfMatch(stored.sessionId);
 				current = null;
 				deps.renderer.render(null);
 				setPending(false);
@@ -284,11 +351,11 @@ export function createRankedBlackjackClient(
 
 	const start = async (wager: number): Promise<void> => {
 		if (pending || current?.status === 'active') return;
-		const stored = parseStoredStartRequest(deps.storage.getItem(START_REQUEST_KEY));
+		const stored = parseStoredStartRequest(deps.storage.getItem(keys.startRequest));
 		const startRequest = stored
 			? { requestId: stored.requestId, wager: stored.wager === 0 ? wager : stored.wager }
 			: { requestId: deps.createRequestId(), wager };
-		deps.storage.setItem(START_REQUEST_KEY, JSON.stringify(startRequest));
+		deps.storage.setItem(keys.startRequest, JSON.stringify(startRequest));
 		const body = JSON.stringify({
 			requestId: startRequest.requestId,
 			gameType: 'blackjack',
@@ -304,12 +371,25 @@ export function createRankedBlackjackClient(
 					body,
 				}),
 			);
-			deps.storage.setItem(ACTIVE_SESSION_KEY, response.sessionId);
+			// Persist the active session with its originating request ID so
+			// a later terminal response can safely clear the start request
+			// via compare-and-remove even after a crash-recovery resume.
+			deps.storage.setItem(
+				keys.activeSession,
+				JSON.stringify({
+					sessionId: response.sessionId,
+					requestId: startRequest.requestId,
+				}),
+			);
+			// The start request has been safely superseded by the active
+			// session record. Remove it now (compare-and-remove) so a
+			// delayed response for another tab cannot resurrect it.
+			removeStartRequestIfMatch(startRequest.requestId);
 			accept(response);
 		} catch (error) {
 			deps.renderer.renderError(errorMessage(error));
 			if (!isUncertainResponse(error)) {
-				deps.storage.removeItem(START_REQUEST_KEY);
+				removeStartRequestIfMatch(startRequest.requestId);
 			}
 		} finally {
 			setPending(false);
@@ -364,8 +444,11 @@ export function createRankedBlackjackClient(
 export function initRankedBlackjackClient(): RankedBlackjackClient | null {
 	const root = document.getElementById('ranked-blackjack-root');
 	if (!root) return null;
+	const userId = root.dataset.userId;
+	if (!userId) return null;
 	const renderer = createRankedBlackjackRenderer(root);
 	const client = createRankedBlackjackClient({
+		userId,
 		fetch: window.fetch.bind(window),
 		storage: window.localStorage,
 		renderer,

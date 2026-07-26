@@ -241,6 +241,11 @@ WHERE id = ?
 	AND NOT EXISTS (SELECT 1 FROM mp_membership WHERE userId = ?)
 	AND NOT EXISTS (SELECT 1 FROM ranked_session WHERE activeUserId = ?)`;
 
+// Page size for listExpiredSessions. Exported so the expiration flow can
+// use the same value for its pagination-completion check; the two paths
+// cannot diverge.
+export const RANKED_EXPIRATION_PAGE_SIZE = 100;
+
 export const RANKED_START_SESSION_INSERT_SQL = `INSERT INTO ranked_session (
 	id, userId, startRequestId, startPayloadHash, activeUserId,
 	gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
@@ -1505,7 +1510,7 @@ export function createRankedRepository(db: D1Database): RankedRepository {
 					FROM ranked_session
 					WHERE status = 'active' AND expiresAt <= ?
 					ORDER BY expiresAt ASC, id ASC
-					LIMIT 100`,
+					LIMIT ${RANKED_EXPIRATION_PAGE_SIZE}`,
 				)
 				.bind(nowSeconds)
 				.all<{ id: string }>();

@@ -296,8 +296,13 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		userId: string,
 		sessionId: string,
 	): Promise<RankedCoordinatorResponse> => {
-		const nowSeconds = asNowSeconds(deps.now());
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
+			// Re-capture nowSeconds per retry so the expiration check and
+			// transition timestamps reflect the current wall clock rather than
+			// a value captured before the first attempt. Within a single
+			// iteration, all fields share the same nowSeconds to avoid
+			// createdAt/expiresAt skew within one transition record.
+			const nowSeconds = asNowSeconds(deps.now());
 			const session = await deps.repository.findOwnedSession(userId, sessionId);
 			if (!session) throw new RankedServiceError('SESSION_NOT_FOUND');
 			if (session.status !== 'active') return render(session);
@@ -713,7 +718,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			if (freshAccount.chipBalance < legal.additionalWager) {
 				throw new RankedServiceError('INSUFFICIENT_BALANCE');
 			}
-			if (!outcome) throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
+			// Recoverable balance conflicts (concurrent update changed
+			// chipBalance) continue through the remaining SNAPSHOT_ATTEMPTS
+			// for both terminal and non-terminal actions. The loop throws
+			// ACCOUNT_BALANCE_CHANGED only after retries are exhausted.
 		}
 		throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
 	};

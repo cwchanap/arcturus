@@ -190,11 +190,15 @@ function responseErrorMessage(response: Response, payload: unknown): string {
 	return `request failed (${response.status})`;
 }
 
-// Schema-validated response parser. State and receipt content are permissive
-// (z.unknown / z.any) because the client trusts the server's authoritative
-// state structure; the top-level envelope (sessionId, status, gameType,
-// rulesetVersion, balance, etc.) is fully validated, removing the unsafe cast.
-const rankedResponseSchema = createRankedPublicStateV1Schema(z.unknown(), z.any());
+// Schema-validated response parser. The top-level envelope (sessionId,
+// status, gameType, rulesetVersion, balance, etc.) is fully validated.
+// State and receipt are validated as non-null objects (structure trusted
+// from the server) rather than z.unknown()/z.any(), so grossly malformed
+// payloads are rejected while preserving the readResponse flow.
+const rankedResponseSchema = createRankedPublicStateV1Schema(
+	z.object({}).passthrough(),
+	z.object({}).passthrough(),
+);
 
 async function readResponse(response: Response): Promise<RankedBlackjackResponseV1> {
 	let payload: unknown;
@@ -215,7 +219,7 @@ async function readResponse(response: Response): Promise<RankedBlackjackResponse
 	if (!parsed.success) {
 		throw new TypeError('Ranked response was malformed');
 	}
-	return parsed.data as RankedBlackjackResponseV1;
+	return parsed.data as unknown as RankedBlackjackResponseV1;
 }
 
 function errorMessage(error: unknown): string {

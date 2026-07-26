@@ -1,6 +1,6 @@
 import { RankedServiceError } from '../../lib/ranked/protocol';
 import { createRankedLogEntry, type RankedLogEntry } from './logging';
-import { createRankedRepository } from './repository';
+import { createRankedRepository, RANKED_EXPIRATION_PAGE_SIZE } from './repository';
 
 export interface RankedExpirationDeps {
 	expire(sessionId: string): Promise<unknown>;
@@ -33,10 +33,6 @@ const EXPECTED_EXPIRATION_ERRORS = new Set(['MULTIPLAYER_CONFLICT', 'MULTIPLAYER
 // wall-clock budget so a single cron invocation drains as many expired
 // sessions as possible without risking a platform-enforced timeout.
 const DEFAULT_TIME_BUDGET_MS = 25_000;
-
-// The repository query returns at most this many IDs per page. When a page is
-// full, more expired sessions may remain and the loop continues.
-const EXPIRATION_PAGE_SIZE = 100;
 
 export async function runRankedExpiration(
 	db: D1Database,
@@ -78,7 +74,7 @@ export async function runRankedExpiration(
 		}
 
 		// Fewer than a full page means no more expired sessions remain.
-		if (sessionIds.length < EXPIRATION_PAGE_SIZE) break;
+		if (sessionIds.length < RANKED_EXPIRATION_PAGE_SIZE) break;
 		// If every ID in this page was skipped, the query will keep returning
 		// the same unprocessable sessions. Stop to avoid a busy loop.
 		if (sessionIds.every((id) => skipped.has(id))) break;

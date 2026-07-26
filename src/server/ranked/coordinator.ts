@@ -405,9 +405,10 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			throw new RankedServiceError('INSUFFICIENT_BALANCE');
 		}
 
+		const adapter = deps.getAdapter(body.gameType, body.rulesetVersion);
 		let issued;
 		try {
-			issued = await deps.getAdapter(body.gameType, body.rulesetVersion).issue({
+			issued = await adapter.issue({
 				wager: body.wager,
 			});
 		} catch (error) {
@@ -437,7 +438,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			createdAt: nowSeconds,
 			updatedAt: nowSeconds,
 		};
-		const adapter = deps.getAdapter(body.gameType, body.rulesetVersion);
 		const openingReplay = await adapter.replay(seed, issued.config, actionLog);
 		const openingOutcome = adapter.terminalOutcome(openingReplay);
 		let account = accountAtStart;
@@ -708,9 +708,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			if (freshAccount.chipBalance < legal.additionalWager) {
 				throw new RankedServiceError('INSUFFICIENT_BALANCE');
 			}
-			if (!outcome || transition.kind === 'not-applied') {
-				if (!outcome) throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
-			}
+			if (!outcome) throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
 		}
 		throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
 	};

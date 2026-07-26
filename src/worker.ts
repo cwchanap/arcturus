@@ -42,13 +42,16 @@ const scheduledJobDeps: ScheduledJobDeps = {
 			log(entry) {
 				console.warn('[RANKED]', entry);
 			},
+			warn(message, error) {
+				console.warn(message, error);
+			},
 		});
 	},
 	rankedRateCleanup: runRankedRateLimitCleanup,
 	retentionCleanup: runRetentionCleanup,
 	nowSeconds: () => Math.trunc(Date.now() / 1000),
-	warn(message) {
-		console.warn(message);
+	warn(message, error) {
+		console.warn(message, error);
 	},
 };
 

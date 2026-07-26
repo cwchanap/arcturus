@@ -214,7 +214,7 @@ describe('runScheduledJobs', () => {
 				events.push('retention-cleanup');
 			},
 			nowSeconds: () => 1_750_000_000,
-			warn(message) {
+			warn(message, _error) {
 				warnings.push(message);
 			},
 			...overrides,

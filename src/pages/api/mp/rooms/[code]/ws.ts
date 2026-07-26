@@ -133,7 +133,8 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 	// the user join another room and double-spend via the new room's snapshot.
 	if (doRes.status !== 101) {
 		const is4xx = doRes.status >= 400 && doRes.status < 500;
-		const shouldCleanup = is4xx && (lockAcquired || existingRoomMatch);
+		const shouldCleanup =
+			is4xx && (lockAcquired || existingRoomMatch || acquisition.kind === 'same-room');
 		if (shouldCleanup) {
 			try {
 				// Release any escrowed chips before deleting the membership lock.

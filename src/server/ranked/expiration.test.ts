@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { RankedServiceError } from '../../lib/ranked/protocol';
 import type { RankedLogEntry } from './logging';
 import { runRankedExpiration, runRankedRateLimitCleanup } from './expiration';
 
@@ -91,6 +92,70 @@ describe('runRankedExpiration', () => {
 			expect(entry.sessionRef).not.toBe(rawIds[index]);
 			expect(JSON.stringify(entry)).not.toContain(rawIds[index]);
 		}
+	});
+
+	test('does not log ranked_session_expired when expire returns an active status', async () => {
+		const { binding } = createExpirationDb(['still-active']);
+		const logs: RankedLogEntry[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async () => ({ status: 'active' }),
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+		});
+
+		expect(logs).toEqual([]);
+	});
+
+	test('logs ranked_session_expired when expire returns a settled status', async () => {
+		const { binding } = createExpirationDb(['settled-now']);
+		const logs: RankedLogEntry[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async () => ({ status: 'settled' }),
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+		});
+
+		expect(logs.map(({ event }) => event)).toEqual(['ranked_session_expired']);
+	});
+
+	test('does not log ranked_invariant_violation for expected MULTIPLAYER_CONFLICT errors', async () => {
+		const { binding } = createExpirationDb(['conflict-session']);
+		const logs: RankedLogEntry[] = [];
+		const warnings: string[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async () => {
+				throw new RankedServiceError('MULTIPLAYER_CONFLICT');
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+			warn: (message) => warnings.push(message),
+		});
+
+		expect(logs).toEqual([]);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('MULTIPLAYER_CONFLICT');
+	});
+
+	test('logs ranked_invariant_violation and warns for unexpected errors', async () => {
+		const { binding } = createExpirationDb(['unexpected']);
+		const logs: RankedLogEntry[] = [];
+		const warnings: string[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async () => {
+				throw new Error('unexpected failure');
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+			warn: (message) => warnings.push(message),
+		});
+
+		expect(logs.map(({ event }) => event)).toEqual(['ranked_invariant_violation']);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('unexpected expiration failure');
 	});
 });
 

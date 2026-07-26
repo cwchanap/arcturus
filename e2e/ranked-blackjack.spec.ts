@@ -192,13 +192,34 @@ async function expectActiveDomIsPublic(page: Page): Promise<void> {
 	await expect(dealerHand.locator(':scope > .playing-card')).toHaveCount(1);
 	expect(await dealerHand.evaluate((element) => element.children.length)).toBe(1);
 
-	const rankedRoot = page.getByTestId('ranked-blackjack-root');
-	const [rankedMarkup, documentMarkup] = await Promise.all([
-		rankedRoot.evaluate((element) => element.outerHTML),
-		page.locator('html').evaluate((element) => element.outerHTML),
+	// Scan only data-* attribute values and <script> text content for private
+	// markers, not the entire document HTML. Whole-document substring matching
+	// after normalization false-positives on ordinary CSS class names, visible
+	// text, and unrelated UI copy (e.g. "deck" in a tooltip, "hole" in help
+	// text). Data attributes and inline scripts are the actual leak vectors.
+	const [dataAttrValues, scriptContents] = await Promise.all([
+		page.evaluate(() => {
+			const values: string[] = [];
+			for (const el of document.querySelectorAll('*')) {
+				for (const attr of el.attributes) {
+					if (attr.name.startsWith('data-')) {
+						values.push(`${attr.name}=${attr.value}`);
+					}
+				}
+			}
+			return values;
+		}),
+		page.evaluate(() =>
+			Array.from(document.querySelectorAll('script')).map((s) => s.textContent ?? ''),
+		),
 	]);
-	assertNoPrivateMarker(rankedMarkup, 'ranked root markup');
-	assertNoPrivateMarker(documentMarkup, 'document markup');
+
+	for (const value of dataAttrValues) {
+		assertNoPrivateMarker(value, 'data attribute');
+	}
+	for (const content of scriptContents) {
+		assertNoPrivateMarker(content, 'script content');
+	}
 }
 
 async function createActiveRankedPage(

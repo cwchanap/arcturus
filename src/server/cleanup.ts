@@ -39,7 +39,7 @@ export interface ScheduledJobDeps {
 	rankedRateCleanup(db: D1Database, nowSeconds: number): Promise<void>;
 	retentionCleanup(db: D1Database): Promise<void>;
 	nowSeconds(): number;
-	warn(message: string): void;
+	warn(message: string, error?: unknown): void;
 }
 
 /**
@@ -59,18 +59,18 @@ export async function runScheduledJobs(
 
 	try {
 		await deps.rankedExpiration(db, env.arcturus, deps.nowSeconds());
-	} catch {
-		deps.warn('[SCHEDULED] Ranked expiration failed');
+	} catch (error) {
+		deps.warn('[SCHEDULED] Ranked expiration failed', error);
 	}
 	try {
 		await deps.rankedRateCleanup(db, deps.nowSeconds());
-	} catch {
-		deps.warn('[SCHEDULED] Ranked rate-limit cleanup failed');
+	} catch (error) {
+		deps.warn('[SCHEDULED] Ranked rate-limit cleanup failed', error);
 	}
 	try {
 		await deps.retentionCleanup(db);
-	} catch {
-		deps.warn('[SCHEDULED] Retention cleanup failed');
+	} catch (error) {
+		deps.warn('[SCHEDULED] Retention cleanup failed', error);
 	}
 }
 

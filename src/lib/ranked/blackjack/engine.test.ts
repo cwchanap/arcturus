@@ -224,7 +224,31 @@ describe('ranked Blackjack dealer transition and settlement', () => {
 			action(2, 'hit'),
 		]);
 		expect(replay.state.phase).toBe('complete');
-		expect(replay.state.dealerHand.cards.length).toBeGreaterThan(2);
+		// Dealer drew exactly one card (the 2♣) to a hard 16 then stood at 18.
+		// Pinning the exact cards catches a regression where the dealer
+		// threshold changes (e.g. hits on 17+) — such a bug would still
+		// satisfy a loose `length > 2` assertion but would draw extra cards.
+		expect(replay.state.dealerHand.cards).toEqual([
+			card('6', 'hearts'),
+			card('10', 'clubs'),
+			card('2', 'clubs'),
+		]);
+		expect(replay.state.playerHands).toHaveLength(2);
+		expect(replay.state.playerHands[0].cards).toEqual([card('8', 'hearts'), card('10', 'hearts')]);
+		expect(replay.state.playerHands[1].cards).toEqual([
+			card('8', 'diamonds'),
+			card('9', 'hearts'),
+			card('10', 'diamonds'),
+		]);
+		// Hand 0 pushed (18 vs 18); hand 1 busted (27). Net -100.
+		expect(replay.outcome?.hands).toEqual([
+			{ handIndex: 0, result: 'push', wager: 100, payout: 100 },
+			{ handIndex: 1, result: 'loss', wager: 100, payout: 0 },
+		]);
+		expect(replay.outcome?.result).toBe('loss');
+		expect(replay.outcome?.committedWager).toBe(200);
+		expect(replay.outcome?.payout).toBe(100);
+		expect(replay.outcome?.gameNetDelta).toBe(-100);
 	});
 
 	test.each([

@@ -229,6 +229,9 @@ export const rankedSession = sqliteTable(
 		initialWager: integer('initialWager').notNull(),
 		committedWager: integer('committedWager').notNull(),
 		status: text('status').notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository transitions, scheduled expiration) must bind
+		// Math.trunc(Date.now() / 1000).
 		expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
 		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
@@ -268,6 +271,9 @@ export const rankedResult = sqliteTable('ranked_result', {
 	achievementEffectsJson: text('achievementEffectsJson').notNull(),
 	rewardEffectsJson: text('rewardEffectsJson').notNull(),
 	receiptHash: text('receiptHash').notNull(),
+	// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL writers
+	// (repository terminal/expiration transitions) must bind
+	// Math.trunc(Date.now() / 1000).
 	settledAt: integer('settledAt', { mode: 'timestamp' }).notNull(),
 });
 
@@ -285,6 +291,9 @@ export const rankedGameStats = sqliteTable(
 		totalForfeits: integer('totalForfeits').notNull().default(0),
 		netProfit: integer('netProfit').notNull().default(0),
 		biggestWin: integer('biggestWin').notNull().default(0),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository stats upsert) must bind
+		// Math.trunc(Date.now() / 1000).
 		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 	},
 	(table) => ({ pk: primaryKey({ columns: [table.userId, table.gameType] }) }),
@@ -302,6 +311,9 @@ export const rankedRewardGrant = sqliteTable(
 			.references(() => rankedSession.id, { onDelete: 'cascade' }),
 		achievementId: text('achievementId').notNull(),
 		chipAmount: integer('chipAmount').notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository reward reservation) must bind
+		// Math.trunc(Date.now() / 1000).
 		grantedAt: integer('grantedAt', { mode: 'timestamp' }).notNull(),
 	},
 	(table) => ({
@@ -317,6 +329,9 @@ export const rankedRateLimit = sqliteTable(
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
 		operation: text('operation').notNull(),
+		// Plain integer (not mode: 'timestamp') but stores unix seconds
+		// (not ms). Raw SQL writers (rate-limit upsert/continuation) must
+		// bind Math.trunc(Date.now() / 1000).
 		windowStart: integer('windowStart').notNull(),
 		count: integer('count').notNull(),
 		expiresAt: integer('expiresAt').notNull(),

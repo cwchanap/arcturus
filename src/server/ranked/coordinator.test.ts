@@ -10,7 +10,11 @@ import {
 	type RankedStartRequest,
 } from '../../lib/ranked/protocol';
 import { reconcileMultiplayerMembership, type MembershipResolution } from '../mp/membership';
-import { createRankedCoordinator, type RankedCoordinatorDeps } from './coordinator';
+import {
+	createRankedCoordinator,
+	SNAPSHOT_ATTEMPTS,
+	type RankedCoordinatorDeps,
+} from './coordinator';
 import type {
 	ActionTransitionInput,
 	ExpirationTransitionInput,
@@ -814,7 +818,7 @@ describe('ranked coordinator action and resume lifecycle', () => {
 
 		// Recoverable balance conflicts retry through all SNAPSHOT_ATTEMPTS
 		// before surfacing ACCOUNT_BALANCE_CHANGED.
-		expect(repository.calls.runActionTransition).toHaveLength(3);
+		expect(repository.calls.runActionTransition).toHaveLength(SNAPSHOT_ATTEMPTS);
 	});
 
 	test('a stale snapshot whose sequence advanced past the request replays the stored action', async () => {
@@ -967,6 +971,9 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			}),
 			'MULTIPLAYER_CONFLICT',
 		);
+
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
 	});
 
 	test('an orphaned escrow during an active action fails closed', async () => {
@@ -984,6 +991,9 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			}),
 			'MULTIPLAYER_ESCROW_ORPHANED',
 		);
+
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
 	});
 
 	test('a preflight rate denial on an action rejects before any transition', async () => {

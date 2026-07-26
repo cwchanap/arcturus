@@ -370,7 +370,7 @@ describe('rankedHttpHandlers default factory', () => {
 		const response = await rankedHttpHandlers.start({
 			locals: {
 				user: { id: USER_ID },
-				runtime: { env: { arcturus: undefined } },
+				runtime: { env: { arcturus: undefined, DB: undefined } },
 			},
 			request: new Request('https://arcturus.test/api/ranked', {
 				method: 'POST',

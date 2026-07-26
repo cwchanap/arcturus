@@ -78,7 +78,9 @@ function goneThenInitNamespace(): DurableObjectNamespace {
 	} as unknown as DurableObjectNamespace;
 }
 
-function initSuccessNamespace(): DurableObjectNamespace {
+function makeInitNamespace(
+	handleInit: (input: RequestInfo | URL) => Promise<Response> | Response,
+): DurableObjectNamespace {
 	return {
 		idFromName: () => ({}) as DurableObjectId,
 		get: () => ({
@@ -86,57 +88,35 @@ function initSuccessNamespace(): DurableObjectNamespace {
 				if (String(input).endsWith('/metadata')) {
 					return new Response(null, { status: 404 });
 				}
-				return new Response(null, { status: 200 });
+				return handleInit(input);
 			},
 		}),
 	} as unknown as DurableObjectNamespace;
+}
+
+function initSuccessNamespace(): DurableObjectNamespace {
+	return makeInitNamespace(() => new Response(null, { status: 200 }));
 }
 
 function initStatusNamespace(status: number, body: string = ''): DurableObjectNamespace {
-	return {
-		idFromName: () => ({}) as DurableObjectId,
-		get: () => ({
-			fetch: async (input: RequestInfo | URL) => {
-				if (String(input).endsWith('/metadata')) {
-					return new Response(null, { status: 404 });
-				}
-				return new Response(body, { status });
-			},
-		}),
-	} as unknown as DurableObjectNamespace;
+	return makeInitNamespace(() => new Response(body, { status }));
 }
 
 function initThrowNamespace(): DurableObjectNamespace {
-	return {
-		idFromName: () => ({}) as DurableObjectId,
-		get: () => ({
-			fetch: async (input: RequestInfo | URL) => {
-				if (String(input).endsWith('/metadata')) {
-					return new Response(null, { status: 404 });
-				}
-				throw new Error('DO fetch exploded');
-			},
-		}),
-	} as unknown as DurableObjectNamespace;
+	return makeInitNamespace(() => {
+		throw new Error('DO fetch exploded');
+	});
 }
 
 function initCollisionThenSuccessNamespace(failures: number): DurableObjectNamespace {
 	let initCalls = 0;
-	return {
-		idFromName: () => ({}) as DurableObjectId,
-		get: () => ({
-			fetch: async (input: RequestInfo | URL) => {
-				if (String(input).endsWith('/metadata')) {
-					return new Response(null, { status: 404 });
-				}
-				initCalls += 1;
-				if (initCalls <= failures) {
-					return new Response(null, { status: 409 });
-				}
-				return new Response(null, { status: 200 });
-			},
-		}),
-	} as unknown as DurableObjectNamespace;
+	return makeInitNamespace(() => {
+		initCalls += 1;
+		if (initCalls <= failures) {
+			return new Response(null, { status: 409 });
+		}
+		return new Response(null, { status: 200 });
+	});
 }
 
 function makeRequestWithBody(body: unknown): Request {

@@ -29,7 +29,7 @@ import type {
 } from './repository';
 
 const SESSION_TTL_SECONDS = 15 * 60;
-const SNAPSHOT_ATTEMPTS = 3;
+export const SNAPSHOT_ATTEMPTS = 3;
 
 export type RankedCoordinatorResponse = RankedPublicStateV1<RankedBlackjackPublicStateV1>;
 

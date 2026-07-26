@@ -590,6 +590,12 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		await consumeRate(userId, 'ranked_action', nowSeconds);
 		await reconcileCurrentActionMembership(userId, deps.now().getTime());
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
+			// Re-capture nowSeconds per retry so the expiration check and
+			// transition timestamps reflect the current wall clock rather than
+			// the value captured before the first attempt. Within a single
+			// iteration, all fields share the same attemptNowSeconds to avoid
+			// createdAt/expiresAt skew within one transition record.
+			const attemptNowSeconds = asNowSeconds(deps.now());
 			if (session.status !== 'active') return render(session);
 			if (body.sequence !== session.nextSequence) {
 				if (
@@ -605,7 +611,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					expectedSequence: session.nextSequence,
 				});
 			}
-			if (nowSeconds >= session.expiresAt) return expireOwned(userId, sessionId);
+			if (attemptNowSeconds >= session.expiresAt) return expireOwned(userId, sessionId);
 
 			const replayed = await replay(session);
 			const legal = replayed.replay.legalActions.find(({ action }) => action === body.action);
@@ -634,7 +640,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 				actionLogHash,
 				additionalWager: legal.additionalWager,
 				committedWager: nextReplay.state.committedWager,
-				nowSeconds,
+				nowSeconds: attemptNowSeconds,
 				rateLimitMode: 'already-consumed',
 			};
 			if (outcome) {
@@ -653,7 +659,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					outcome,
 					account.chipBalance,
 					legal.additionalWager,
-					nowSeconds,
+					attemptNowSeconds,
 					100,
 				);
 				input.nonRewardTerminal = terminalInput(
@@ -661,7 +667,7 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 					outcome,
 					account.chipBalance,
 					legal.additionalWager,
-					nowSeconds,
+					attemptNowSeconds,
 					0,
 				);
 			}

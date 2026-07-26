@@ -10,7 +10,7 @@ export type IsolatedPageOptions = {
 	 * Optional navigation run after bootstrap (e.g. goto the game page).
 	 * Omit for specs that set up `page.route` mocks before navigating.
 	 */
-	navigate?: (page: Page) => Promise<void>;
+	navigate?: (page: Page) => Promise<unknown>;
 };
 
 /**

@@ -15,6 +15,17 @@ export interface RankedGameAdapter<C, A, R, P, O> {
 	issue(input: { wager: number }): Promise<{ config: C; configJson: string; configHash: string }>;
 	replay(seed: Uint8Array, config: C, actions: readonly A[]): Promise<R>;
 	project(replay: R, accountBalance: number): P;
+	/**
+	 * Forces a terminal projection: reveals the dealer hole card and sets
+	 * `phase` to `'complete'` even when the replay did not reach a natural
+	 * terminal state. Used to render expired/forfeited sessions.
+	 *
+	 * Contract caveat: the returned state's `outcome` field reflects the
+	 * replay's own outcome, which is `null` for replays that did not
+	 * complete naturally. Callers rendering an expired/forfeited session
+	 * MUST override `outcome` with the authoritative stored result. See
+	 * `projectReplay` in `blackjack/adapter.ts` for the full rationale.
+	 */
 	projectTerminal(replay: R, accountBalance: number): P;
 	terminalOutcome(replay: R): O | null;
 }

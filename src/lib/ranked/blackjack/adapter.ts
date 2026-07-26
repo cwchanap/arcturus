@@ -79,6 +79,23 @@ function projectDealer(cards: readonly Card[]): RankedBlackjackPublicDealerV1 {
 	};
 }
 
+/**
+ * Projects a replay into a public state. When `forceTerminal` is true the
+ * dealer hole card is revealed and `phase` is forced to `'complete'` even
+ * if the replay's underlying state is still in `'player-turn'` (e.g. an
+ * expired/forfeited session where the player abandoned mid-hand).
+ *
+ * Contract caveat: `outcome` is forwarded verbatim from the replay, so
+ * when `forceTerminal` is applied to a non-complete replay the returned
+ * state has `phase: 'complete'` with `outcome: null`. The engine only
+ * computes an outcome for replays that reached `'complete'` naturally,
+ * so a forced-terminal projection of an incomplete session does NOT
+ * carry a settlement outcome. Callers rendering an expired/forfeited
+ * session MUST supply the authoritative outcome externally (the
+ * coordinator's `render` path overrides `outcome` with the stored
+ * `result.outcome` and clears `availableActions`). Do not interpret a
+ * forced-terminal projection's `outcome` field as the settlement result.
+ */
 function projectReplay(
 	replay: RankedBlackjackReplay,
 	accountBalance: number,

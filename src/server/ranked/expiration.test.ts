@@ -194,6 +194,27 @@ describe('runRankedExpiration', () => {
 		expect(warnings[0]).toContain('MULTIPLAYER_CONFLICT');
 	});
 
+	test('does not log ranked_invariant_violation for ACCOUNT_BALANCE_CHANGED (benign casual-play race)', async () => {
+		const { binding } = createExpirationDb(['balance-race-session']);
+		const logs: RankedLogEntry[] = [];
+		const warnings: string[] = [];
+
+		await runRankedExpiration(binding, {
+			expire: async () => {
+				throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
+			},
+			nowSeconds: () => 1_750_000_000,
+			log: (entry) => logs.push(entry),
+			warn: (message) => warnings.push(message),
+		});
+
+		// Concurrent casual play changing chipBalance between expiration
+		// retry snapshots is a benign race, not an invariant violation.
+		expect(logs).toEqual([]);
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('ACCOUNT_BALANCE_CHANGED');
+	});
+
 	test('logs ranked_invariant_violation and warns for unexpected errors', async () => {
 		const { binding } = createExpirationDb(['unexpected']);
 		const logs: RankedLogEntry[] = [];

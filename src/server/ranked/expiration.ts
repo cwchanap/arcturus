@@ -27,7 +27,17 @@ function isTerminalStatus(result: unknown): boolean {
 	return status === 'expired' || status === 'settled';
 }
 
-const EXPECTED_EXPIRATION_ERRORS = new Set(['MULTIPLAYER_CONFLICT', 'MULTIPLAYER_ESCROW_ORPHANED']);
+// ACCOUNT_BALANCE_CHANGED is expected during scheduled expiration because
+// concurrent casual play can change the user's chipBalance between the
+// expiration retry snapshots. The expireOwned retry loop throws it only
+// after SNAPSHOT_ATTEMPTS retries are exhausted, which is a benign balance
+// race on the money path — not an invariant violation that should noise up
+// alerting. The session remains active and the next cron tick retries.
+const EXPECTED_EXPIRATION_ERRORS = new Set([
+	'MULTIPLAYER_CONFLICT',
+	'MULTIPLAYER_ESCROW_ORPHANED',
+	'ACCOUNT_BALANCE_CHANGED',
+]);
 
 // Cloudflare Workers scheduled handler CPU time is limited; use a conservative
 // wall-clock budget so a single cron invocation drains as many expired

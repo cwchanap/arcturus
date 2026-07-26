@@ -234,6 +234,26 @@ type RankedResultRow = Omit<
 	'outcome' | 'statsEffects' | 'achievementEffects' | 'rewardEffects'
 >;
 
+// Foundational settlement invariant: every value-preserving "snapshot"
+// UPDATE (SET chipBalance = chipBalance WHERE ...) relies on SQLite's
+// `changes()` returning 1 for a row that matches the WHERE clause even
+// though no column value actually changes. This is the CAS-style guard
+// that proves the row exists with the expected balance/escrow state at
+// the moment the transition runs, without mutating the money path.
+//
+// This guarantee is proven on Miniflare (the local/test D1 backing
+// store) via the repository integration tests. workerd production D1
+// (libsql) is not independently probed today. SQLite documents
+// `changes()` as the count of rows modified by the UPDATE, where
+// "modified" means matched-and-written (SQLite always writes matched
+// rows even when values are unchanged), so the assumption holds for
+// stock SQLite. If a future workerd/libsql change reports 0 for
+// value-preserving UPDATEs, every transition below degrades silently:
+// starts/actions/expirations would report "balance-changed" and retry
+// until exhaustion, surfacing as ACCOUNT_BALANCE_CHANGED to the user.
+// A workerd canary probe should be added before relying on this across
+// a platform migration; until then the Miniflare integration tests are
+// the canary.
 export const RANKED_START_ACCOUNT_SNAPSHOT_SQL = `UPDATE user
 SET chipBalance = chipBalance
 WHERE id = ?

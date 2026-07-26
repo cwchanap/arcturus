@@ -24,6 +24,15 @@ function createContext(overrides: Partial<AchievementCheckContext> = {}): Achiev
 	};
 }
 
+function runAchievementCheck(
+	id: keyof typeof ACHIEVEMENT_CHECKS,
+	context: AchievementCheckContext,
+): { shouldGrant: boolean } {
+	const fn = ACHIEVEMENT_CHECKS[id];
+	if (!fn) throw new Error(`Achievement check '${id}' is not defined`);
+	return fn(context);
+}
+
 describe('ACHIEVEMENTS', () => {
 	test('contains all expected achievements', () => {
 		expect(ACHIEVEMENTS.length).toBe(6);
@@ -109,13 +118,13 @@ describe('Achievement check functions', () => {
 	describe('rising_star', () => {
 		test('grants when user reaches top threshold', () => {
 			const context = createContext({ overallRank: ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK });
-			const result = ACHIEVEMENT_CHECKS.rising_star(context);
+			const result = runAchievementCheck('rising_star', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
 		test('grants when user is in top 10', () => {
 			const context = createContext({ overallRank: 5 });
-			const result = ACHIEVEMENT_CHECKS.rising_star(context);
+			const result = runAchievementCheck('rising_star', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
@@ -123,13 +132,13 @@ describe('Achievement check functions', () => {
 			const context = createContext({
 				overallRank: ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK + 1,
 			});
-			const result = ACHIEVEMENT_CHECKS.rising_star(context);
+			const result = runAchievementCheck('rising_star', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
 		test('does not grant when no rank', () => {
 			const context = createContext({ overallRank: null });
-			const result = ACHIEVEMENT_CHECKS.rising_star(context);
+			const result = runAchievementCheck('rising_star', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -138,7 +147,7 @@ describe('Achievement check functions', () => {
 				overallRank: 10,
 				existingAchievementIds: ['rising_star'],
 			});
-			const result = ACHIEVEMENT_CHECKS.rising_star(context);
+			const result = runAchievementCheck('rising_star', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 	});
@@ -146,7 +155,7 @@ describe('Achievement check functions', () => {
 	describe('high_roller', () => {
 		test('grants when user reaches top threshold', () => {
 			const context = createContext({ overallRank: ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK });
-			const result = ACHIEVEMENT_CHECKS.high_roller(context);
+			const result = runAchievementCheck('high_roller', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
@@ -154,7 +163,7 @@ describe('Achievement check functions', () => {
 			const context = createContext({
 				overallRank: ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK + 1,
 			});
-			const result = ACHIEVEMENT_CHECKS.high_roller(context);
+			const result = runAchievementCheck('high_roller', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -163,13 +172,13 @@ describe('Achievement check functions', () => {
 				overallRank: 5,
 				existingAchievementIds: ['high_roller'],
 			});
-			const result = ACHIEVEMENT_CHECKS.high_roller(context);
+			const result = runAchievementCheck('high_roller', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
 		test('does not grant when no rank', () => {
 			const context = createContext({ overallRank: null });
-			const result = ACHIEVEMENT_CHECKS.high_roller(context);
+			const result = runAchievementCheck('high_roller', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 	});
@@ -177,13 +186,13 @@ describe('Achievement check functions', () => {
 	describe('champion', () => {
 		test('grants when user is #1', () => {
 			const context = createContext({ overallRank: 1 });
-			const result = ACHIEVEMENT_CHECKS.champion(context);
+			const result = runAchievementCheck('champion', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
 		test('does not grant when rank is not 1', () => {
 			const context = createContext({ overallRank: 2 });
-			const result = ACHIEVEMENT_CHECKS.champion(context);
+			const result = runAchievementCheck('champion', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -192,13 +201,13 @@ describe('Achievement check functions', () => {
 				overallRank: 1,
 				existingAchievementIds: ['champion'],
 			});
-			const result = ACHIEVEMENT_CHECKS.champion(context);
+			const result = runAchievementCheck('champion', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
 		test('does not grant when no rank', () => {
 			const context = createContext({ overallRank: null });
-			const result = ACHIEVEMENT_CHECKS.champion(context);
+			const result = runAchievementCheck('champion', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 	});
@@ -206,13 +215,13 @@ describe('Achievement check functions', () => {
 	describe('consistent', () => {
 		test('grants when user reaches win threshold', () => {
 			const context = createContext({ totalWins: ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS });
-			const result = ACHIEVEMENT_CHECKS.consistent(context);
+			const result = runAchievementCheck('consistent', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
 		test('does not grant when wins below threshold', () => {
 			const context = createContext({ totalWins: ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS - 1 });
-			const result = ACHIEVEMENT_CHECKS.consistent(context);
+			const result = runAchievementCheck('consistent', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -221,7 +230,7 @@ describe('Achievement check functions', () => {
 				totalWins: 150,
 				existingAchievementIds: ['consistent'],
 			});
-			const result = ACHIEVEMENT_CHECKS.consistent(context);
+			const result = runAchievementCheck('consistent', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 	});
@@ -236,7 +245,7 @@ describe('Achievement check functions', () => {
 				currentChipBalance: newBalance,
 				recentWinAmount: winAmount,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
@@ -249,7 +258,7 @@ describe('Achievement check functions', () => {
 				currentChipBalance: newBalance,
 				recentWinAmount: winAmount,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(true);
 		});
 
@@ -262,7 +271,7 @@ describe('Achievement check functions', () => {
 				currentChipBalance: newBalance,
 				recentWinAmount: winAmount,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -271,7 +280,7 @@ describe('Achievement check functions', () => {
 				currentChipBalance: 500,
 				recentWinAmount: 0,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -279,7 +288,7 @@ describe('Achievement check functions', () => {
 			const context = createContext({
 				currentChipBalance: 2000,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -288,7 +297,7 @@ describe('Achievement check functions', () => {
 				currentChipBalance: null as unknown as number,
 				recentWinAmount: 200,
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 
@@ -298,7 +307,7 @@ describe('Achievement check functions', () => {
 				recentWinAmount: 1500,
 				existingAchievementIds: ['comeback'],
 			});
-			const result = ACHIEVEMENT_CHECKS.comeback(context);
+			const result = runAchievementCheck('comeback', context);
 			expect(result.shouldGrant).toBe(false);
 		});
 	});

@@ -17,6 +17,21 @@ export type RankedRateLimitResult =
 	| { kind: 'allowed' }
 	| { kind: 'rate-limited'; retryAfter: number };
 
+/**
+ * Rate-limit strategy: standalone pre-consume + batch continuation.
+ *
+ * The coordinator calls {@link consumeStandaloneRateLimit} to short-circuit
+ * BEFORE building the expensive transition batch (replay, hash, receipt). If
+ * the pre-consume returns `rate-limited`, the batch is never built. When the
+ * pre-consume succeeds, the same row is carried forward into the batch via
+ * {@link buildRateLimitContinuationStatement} so the count increment survives
+ * the batch's atomic commit (or rolls back with it if the batch fails).
+ *
+ * This two-phase approach is preferred over a single-batch upsert because it
+ * avoids the cost of replay + receipt construction on requests that would be
+ * rejected anyway, while still keeping the count increment atomic with the
+ * transition via the continuation statement inside the same D1 batch.
+ */
 export const RANKED_RATE_LIMIT_UPSERT_SQL = `INSERT INTO ranked_rate_limit (
 	userId, operation, windowStart, count, expiresAt
 )

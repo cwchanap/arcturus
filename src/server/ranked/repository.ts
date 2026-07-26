@@ -440,8 +440,8 @@ function parseResultRow(row: RankedResultRow): RankedResultRecord {
 	try {
 		const parsed = {
 			...row,
-			gameType: 'blackjack',
-			rulesetVersion: 'blackjack-ranked-v1',
+			gameType: 'blackjack' as const,
+			rulesetVersion: 'blackjack-ranked-v1' as const,
 			outcome: blackjackOutcomeV1Schema.parse(
 				parseCanonicalJson(row.outcomeJson, 'result outcome JSON'),
 			),

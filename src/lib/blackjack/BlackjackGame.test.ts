@@ -788,7 +788,7 @@ describe('BlackjackGame', () => {
 			const originalCardCount = deepState.dealerHand.cards.length;
 
 			// Mutate the deep copy
-			deepState.dealerHand.cards.push({ suit: 'hearts', rank: 'A', value: 11 });
+			deepState.dealerHand.cards.push({ suit: 'hearts', rank: 'A' });
 
 			// Internal state should NOT be affected (deep copy is independent)
 			const internalState = game.getState();

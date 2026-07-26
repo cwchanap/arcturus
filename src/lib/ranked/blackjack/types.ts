@@ -1,7 +1,7 @@
 import type { Card } from '../../blackjack/types';
 import type { RankedBlackjackAction } from '../protocol';
 
-export interface RankedBlackjackConfigV1 {
+export type RankedBlackjackConfigV1 = {
 	readonly gameType: 'blackjack';
 	readonly rulesetVersion: 'blackjack-ranked-v1';
 	readonly deckCount: 1;
@@ -14,7 +14,7 @@ export interface RankedBlackjackConfigV1 {
 	readonly normalWinProfitNumerator: number;
 	readonly normalWinProfitDenominator: number;
 	readonly initialWager: number;
-}
+};
 
 export interface RankedBlackjackHandV1 {
 	readonly cards: readonly Card[];
@@ -42,20 +42,20 @@ export interface RankedBlackjackLegalActionV1 {
 export type RankedBlackjackHandResultV1 = 'win' | 'loss' | 'push' | 'blackjack';
 export type RankedBlackjackSessionResultV1 = 'win' | 'loss' | 'push';
 
-export interface RankedBlackjackHandOutcomeV1 {
+export type RankedBlackjackHandOutcomeV1 = {
 	readonly handIndex: number;
 	readonly result: RankedBlackjackHandResultV1;
 	readonly wager: number;
 	readonly payout: number;
-}
+};
 
-export interface RankedBlackjackOutcomeV1 {
+export type RankedBlackjackOutcomeV1 = {
 	readonly result: RankedBlackjackSessionResultV1;
 	readonly hands: readonly RankedBlackjackHandOutcomeV1[];
 	readonly committedWager: number;
 	readonly payout: number;
 	readonly gameNetDelta: number;
-}
+};
 
 export interface RankedBlackjackReplay {
 	readonly state: RankedBlackjackStateV1;

@@ -77,7 +77,7 @@ export type RankedAchievementEffectsV1 = z.infer<typeof rankedAchievementEffects
 export type RankedRewardEffectsV1 = z.infer<typeof rankedRewardEffectsV1Schema>;
 export type RankedSessionStatus = 'active' | 'settled' | 'expired';
 
-export interface RankedReceiptV1<TOutcome extends RankedJson = RankedJson> {
+export type RankedReceiptV1<TOutcome extends RankedJson = RankedJson> = {
 	sessionId: string;
 	gameType: 'blackjack';
 	rulesetVersion: 'blackjack-ranked-v1';
@@ -96,7 +96,7 @@ export interface RankedReceiptV1<TOutcome extends RankedJson = RankedJson> {
 	rewardEffects: RankedRewardEffectsV1;
 	settledAt: number;
 	receiptHash: string;
-}
+};
 
 export interface RankedPublicStateV1<TState> {
 	sessionId: string;

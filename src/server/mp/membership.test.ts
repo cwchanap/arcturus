@@ -75,8 +75,13 @@ function input({
 	};
 }
 
-async function seedRankedSession(activeUserId: string | null): Promise<void> {
+async function seedRankedSession(
+	activeUserId: string | null,
+	options: { expiresAtSeconds?: number; status?: string } = {},
+): Promise<void> {
 	const now = Math.trunc(NOW_MS / 1000);
+	const expiresAt = options.expiresAtSeconds ?? now + 900;
+	const status = options.status ?? (activeUserId === null ? 'settled' : 'active');
 	await db
 		.prepare(
 			`INSERT INTO ranked_session (
@@ -103,8 +108,8 @@ async function seedRankedSession(activeUserId: string | null): Promise<void> {
 			0,
 			10,
 			10,
-			activeUserId === null ? 'settled' : 'active',
-			now + 900,
+			status,
+			expiresAt,
 			now,
 			now,
 		)
@@ -268,13 +273,30 @@ describe('hasActiveRankedSession', () => {
 	test('returns true for a non-null activeUserId', async () => {
 		await seedRankedSession(USER_ID);
 
-		expect(await hasActiveRankedSession(db, USER_ID)).toBe(true);
+		expect(await hasActiveRankedSession(db, USER_ID, NOW_MS)).toBe(true);
 	});
 
 	test('returns false after a ranked session clears activeUserId', async () => {
 		await seedRankedSession(null);
 
-		expect(await hasActiveRankedSession(db, USER_ID)).toBe(false);
+		expect(await hasActiveRankedSession(db, USER_ID, NOW_MS)).toBe(false);
+	});
+
+	test('returns false when an active-ranked session is past its expiresAt deadline but not yet cleaned up', async () => {
+		// Simulate the window between the 15-minute ranked deadline and the
+		// hourly runRankedExpiration sweep: status is still 'active' and
+		// activeUserId is still set, but expiresAt is in the past.
+		const nowSeconds = Math.trunc(NOW_MS / 1000);
+		await seedRankedSession(USER_ID, { expiresAtSeconds: nowSeconds - 60 });
+
+		expect(await hasActiveRankedSession(db, USER_ID, NOW_MS)).toBe(false);
+	});
+
+	test('returns false when status is expired but activeUserId was not yet NULLed', async () => {
+		// Defensive: status takes precedence even if activeUserId is stale.
+		await seedRankedSession(USER_ID, { status: 'expired' });
+
+		expect(await hasActiveRankedSession(db, USER_ID, NOW_MS)).toBe(false);
 	});
 });
 
@@ -291,6 +313,25 @@ describe('acquireMultiplayerMembership', () => {
 
 		expect(result).toEqual({ kind: 'blocked' });
 		expect(await readMembership()).toBeNull();
+	});
+
+	test('allows multiplayer join when ranked session is past expiresAt but not yet cleaned up', async () => {
+		// The window between the ranked deadline and the hourly expiration
+		// sweep. activeUserId is still set and status is still 'active', but
+		// expiresAt is in the past — the user should be allowed to join a
+		// multiplayer room without waiting for the cleanup.
+		const nowSeconds = Math.trunc(NOW_MS / 1000);
+		await seedRankedSession(USER_ID, { expiresAtSeconds: nowSeconds - 60 });
+
+		const result = await acquireMultiplayerMembership({
+			db,
+			userId: USER_ID,
+			roomCode: 'MP-AFTER-EXPIRY',
+			joinedAtMs: NOW_MS,
+		});
+
+		expect(result).toEqual({ kind: 'acquired', roomCode: 'MP-AFTER-EXPIRY' });
+		expect(await readMembership()).toEqual({ roomCode: 'MP-AFTER-EXPIRY' });
 	});
 
 	test('concurrent inverse acquisitions allow exactly one ranked or multiplayer owner', async () => {

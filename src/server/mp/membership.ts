@@ -114,10 +114,28 @@ export async function reconcileMultiplayerMembership({
 	return resolution;
 }
 
-export async function hasActiveRankedSession(db: D1Database, userId: string): Promise<boolean> {
+export async function hasActiveRankedSession(
+	db: D1Database,
+	userId: string,
+	nowMs: number = Date.now(),
+): Promise<boolean> {
+	// Treat a session as active only when it is both status='active' and not
+	// past its expiresAt deadline. The background runRankedExpiration job is
+	// what ultimately NULLs activeUserId and flips status to 'expired', but it
+	// runs on an hourly schedule. Between the deadline and the next cleanup
+	// run the row is still status='active' with activeUserId set; without the
+	// expiresAt check here, a user whose ranked round idled past its deadline
+	// would be blocked from multiplayer until the cleanup catches up. The
+	// expiration job already gracefully handles MULTIPLAYER_CONFLICT when the
+	// user has since joined a room, so honoring the deadline here is safe.
+	const nowSeconds = Math.trunc(nowMs / 1000);
 	const row = await db
-		.prepare('SELECT 1 AS active FROM ranked_session WHERE activeUserId = ? LIMIT 1')
-		.bind(userId)
+		.prepare(
+			'SELECT 1 AS active FROM ranked_session ' +
+				"WHERE activeUserId = ? AND status = 'active' AND expiresAt > ? " +
+				'LIMIT 1',
+		)
+		.bind(userId, nowSeconds)
 		.first<{ active: number }>();
 	return row !== null;
 }
@@ -128,23 +146,32 @@ export async function acquireMultiplayerMembership({
 	roomCode,
 	joinedAtMs = Date.now(),
 }: AcquireMembershipInput): Promise<MembershipAcquisition> {
+	// Mirror hasActiveRankedSession: a ranked session past its expiresAt
+	// deadline is treated as not active even before the background cleanup
+	// has NULLed activeUserId, so an idle-then-expired ranked user can join a
+	// multiplayer room without waiting for the hourly expiration sweep.
+	const nowSeconds = Math.trunc(joinedAtMs / 1000);
 	const insertResult = await db
 		.prepare(
 			`INSERT INTO mp_membership (userId, roomCode, joinedAt)
 			SELECT ?, ?, ?
 			WHERE NOT EXISTS (
-				SELECT 1 FROM ranked_session WHERE activeUserId = ?
+				SELECT 1 FROM ranked_session
+				WHERE activeUserId = ? AND status = 'active' AND expiresAt > ?
 			)
 			ON CONFLICT(userId) DO NOTHING`,
 		)
-		.bind(userId, roomCode, Math.trunc(joinedAtMs / 1000), userId)
+		.bind(userId, roomCode, nowSeconds, userId, nowSeconds)
 		.run();
 
 	const [membershipResult, rankedResult] = await db.batch([
 		db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(userId),
 		db
-			.prepare('SELECT 1 AS active FROM ranked_session WHERE activeUserId = ? LIMIT 1')
-			.bind(userId),
+			.prepare(
+				'SELECT 1 AS active FROM ranked_session ' +
+					"WHERE activeUserId = ? AND status = 'active' AND expiresAt > ? LIMIT 1",
+			)
+			.bind(userId, nowSeconds),
 	]);
 	const membership = membershipResult.results[0] as { roomCode: string } | undefined;
 	const hasActiveRanked = rankedResult.results.length > 0;

@@ -746,6 +746,266 @@ describe('ranked coordinator action and resume lifecycle', () => {
 
 		expect(repository.calls.runTerminalTransition).toHaveLength(1);
 	});
+
+	test('an illegal action at the active sequence is rejected as INVALID_ACTION', async () => {
+		// 'split' is only legal on a pair; the default session is not a pair.
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+		});
+
+		await expectRankedError(
+			coordinator(repository).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'split' },
+			}),
+			'INVALID_ACTION',
+		);
+
+		// No transition attempted for an illegal action.
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
+	});
+
+	test('a non-terminal action applies the action transition and renders the new state', async () => {
+		const initial = session();
+		let current = initial;
+		const repository = createRepository({
+			findOwnedSession: async () => current,
+			runActionTransition: async (input) => {
+				current = {
+					...current,
+					nextSequence: input.expectedSequence + 1,
+					actionLog: [...current.actionLog, { sequence: input.expectedSequence, action: 'hit' }],
+					actionLogJson: input.actionLogJson,
+					actionLogHash: input.actionLogHash,
+				};
+				return { kind: 'applied' };
+			},
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 0, action: 'hit' },
+		});
+
+		expect(repository.calls.runActionTransition).toHaveLength(1);
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
+		expect(response.nextSequence).toBe(1);
+		expect(response.status).toBe('active');
+	});
+
+	test('a non-terminal balance race with no session advance surfaces ACCOUNT_BALANCE_CHANGED', async () => {
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+			readAccount: async () => ({ chipBalance: 900, heldChips: 0 }),
+			runActionTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'hit' },
+			}),
+			'ACCOUNT_BALANCE_CHANGED',
+		);
+
+		// Non-terminal actions do not retry — the first balance-changed fails.
+		expect(repository.calls.runActionTransition).toHaveLength(1);
+	});
+
+	test('a stale snapshot whose sequence advanced past the request replays the stored action', async () => {
+		// First findOwnedSession returns an active session at sequence 0; after
+		// the balance-changed transition, a concurrent winner advanced it to 1.
+		let callCount = 0;
+		const advanced = session({ actions: [{ sequence: 0, action: 'hit' }] });
+		const repository = createRepository({
+			findOwnedSession: async () => {
+				callCount += 1;
+				return callCount === 1 ? session() : advanced;
+			},
+			runActionTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 0, action: 'hit' },
+		});
+
+		expect(response.nextSequence).toBe(1);
+		expect(repository.calls.runActionTransition).toHaveLength(1);
+	});
+
+	test('a stale snapshot whose sequence advanced with a mismatched action rejects identifier reuse', async () => {
+		let callCount = 0;
+		const advanced = session({ actions: [{ sequence: 0, action: 'stand' }] });
+		const repository = createRepository({
+			findOwnedSession: async () => {
+				callCount += 1;
+				return callCount === 1 ? session() : advanced;
+			},
+			runActionTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'hit' },
+			}),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+
+	test('a settled stale snapshot renders the stored receipt without retrying', async () => {
+		let callCount = 0;
+		const settled = session({
+			status: 'settled',
+			actions: [{ sequence: 0, action: 'stand' }],
+		});
+		const replay = await blackjackRankedV1Adapter.replay(
+			ACTIVE_SEED,
+			settled.config,
+			settled.actionLog,
+		);
+		const terminal = terminalFixture(settled, replay.outcome!, 900, 0);
+		const storedResult = resultFromTerminal(settled, terminal);
+		const repository = createRepository({
+			findOwnedSession: async () => {
+				callCount += 1;
+				return callCount === 1 ? session() : settled;
+			},
+			findResult: async () => storedResult,
+			runTerminalTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 0, action: 'stand' },
+		});
+
+		expect(response.status).toBe('settled');
+		expect(response.receipt?.receiptHash).toBe(storedResult.receiptHash);
+		expect(repository.calls.runTerminalTransition).toHaveLength(1);
+	});
+
+	test('an action against a session that has since expired is lazily expired', async () => {
+		let current = session({ expiresAt: NOW_SECONDS });
+		let storedResult: RankedResultRecord | null = null;
+		const repository = createRepository({
+			findOwnedSession: async () => current,
+			readAccount: async () => ({ chipBalance: 900, heldChips: 0 }),
+			runExpirationTransition: async (input) => {
+				storedResult = resultFromTerminal(current, input.terminal);
+				current = {
+					...current,
+					activeUserId: null,
+					status: 'expired',
+					settledAt: input.nowSeconds,
+				};
+				return { kind: 'applied', result: storedResult };
+			},
+			findResult: async () => storedResult,
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 0, action: 'hit' },
+		});
+
+		expect(response.status).toBe('expired');
+		expect(repository.calls.runExpirationTransition).toHaveLength(1);
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+	});
+
+	test('an action against a settled session replays the stored receipt', async () => {
+		const settled = session({
+			status: 'settled',
+			actions: [{ sequence: 0, action: 'stand' }],
+		});
+		const replay = await blackjackRankedV1Adapter.replay(
+			ACTIVE_SEED,
+			settled.config,
+			settled.actionLog,
+		);
+		const terminal = terminalFixture(settled, replay.outcome!, 900, 0);
+		const storedResult = resultFromTerminal(settled, terminal);
+		const repository = createRepository({
+			findOwnedSession: async () => settled,
+			findResult: async () => storedResult,
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 1, action: 'hit' },
+		});
+
+		expect(response.status).toBe('settled');
+		// Settled sessions short-circuit to a replay-bucket consume, not action.
+		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_replay');
+	});
+
+	test('a membership conflict during an active action fails closed', async () => {
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+		});
+
+		await expectRankedError(
+			coordinator(repository, {
+				membership: { kind: 'conflict', roomCode: 'ROOM01' },
+			}).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'hit' },
+			}),
+			'MULTIPLAYER_CONFLICT',
+		);
+	});
+
+	test('an orphaned escrow during an active action fails closed', async () => {
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+		});
+
+		await expectRankedError(
+			coordinator(repository, {
+				membership: { kind: 'orphaned' },
+			}).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'hit' },
+			}),
+			'MULTIPLAYER_ESCROW_ORPHANED',
+		);
+	});
+
+	test('a preflight rate denial on an action rejects before any transition', async () => {
+		const repository = createRepository({
+			findOwnedSession: async () => session(),
+			consumeStandaloneRateLimit: async () => ({
+				kind: 'rate-limited',
+				retryAfter: 7,
+			}),
+		});
+
+		await expectRankedError(
+			coordinator(repository).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'hit' },
+			}),
+			'RATE_LIMITED',
+		);
+
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
+	});
 });
 
 test('real D1 start, settlement, and replay preserve one stored receipt and wallet effect', async () => {

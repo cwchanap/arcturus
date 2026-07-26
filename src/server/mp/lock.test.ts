@@ -261,3 +261,182 @@ describe('mp/lock membership acquisition', () => {
 		).toEqual({ id: 'lock-race-ranked' });
 	});
 });
+
+describe('mp/lock service auth and release', () => {
+	const SECRET = 'test-mp-secret';
+
+	function makeLocalsWithSecret(namespace?: DurableObjectNamespace) {
+		return {
+			user: { id: USER_ID },
+			runtime: {
+				env: {
+					DB: db,
+					arcturus: namespace,
+					MP_AUTH_SECRET: SECRET,
+				},
+			},
+		};
+	}
+
+	function makeServiceRequest(
+		action: 'acquire' | 'release',
+		roomCode: string,
+		userId?: string,
+	): Request {
+		const headers: Record<string, string> = {
+			'content-type': 'application/json',
+			'x-arcturus-auth': SECRET,
+		};
+		if (userId !== undefined) {
+			headers['x-arcturus-user-id'] = userId;
+		}
+		return new Request('http://test.local/api/mp/lock', {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ action, roomCode }),
+		});
+	}
+
+	test('service auth acquires a lock using the x-arcturus-user-id header', async () => {
+		const response = await POST({
+			request: makeServiceRequest('acquire', 'MP-SVC01', USER_ID),
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-SVC01' });
+	});
+
+	test('service auth ignores the session user when the auth header is present', async () => {
+		// The session user is a different id; service auth should override it.
+		const locals = {
+			user: { id: 'session-user' },
+			runtime: {
+				env: { DB: db, arcturus: undefined, MP_AUTH_SECRET: SECRET },
+			},
+		};
+		const response = await POST({
+			request: makeServiceRequest('acquire', 'MP-SVC02', USER_ID),
+			locals: locals as any,
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-SVC02' });
+		expect(
+			await db
+				.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?')
+				.bind('session-user')
+				.first(),
+		).toBeNull();
+	});
+
+	test('service auth release deletes the membership row', async () => {
+		const joinedAt = Math.trunc(Date.now() / 1000);
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-REL01', joinedAt)
+			.run();
+
+		const response = await POST({
+			request: makeServiceRequest('release', 'MP-REL01', USER_ID),
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ ok: true });
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toBeNull();
+	});
+
+	test('client session auth is forbidden from releasing a lock', async () => {
+		const joinedAt = Math.trunc(Date.now() / 1000);
+		await db
+			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
+			.bind(USER_ID, 'MP-REL02', joinedAt)
+			.run();
+
+		const request = new Request('http://test.local/api/mp/lock', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ action: 'release', roomCode: 'MP-REL02' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'FORBIDDEN' });
+		// Membership row must remain — only the DO service may release.
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-REL02' });
+	});
+
+	test('release with a wrong service secret is forbidden', async () => {
+		const request = new Request('http://test.local/api/mp/lock', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-arcturus-auth': 'wrong-secret',
+				'x-arcturus-user-id': USER_ID,
+			},
+			body: JSON.stringify({ action: 'release', roomCode: 'MP-REL03' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		expect(response.status).toBe(403);
+		expect(await response.json()).toEqual({ error: 'FORBIDDEN' });
+	});
+
+	test('rejects malformed JSON with INVALID_JSON', async () => {
+		const request = new Request('http://test.local/api/mp/lock', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: '{not-json',
+		});
+
+		const response = await POST({
+			request,
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		expect(response.status).toBe(400);
+		expect(await response.json()).toEqual({ error: 'INVALID_JSON' });
+	});
+
+	test('service auth with a blank trimmed user id falls back to session auth', async () => {
+		// A whitespace-only x-arcturus-user-id should not be accepted as service auth.
+		const request = new Request('http://test.local/api/mp/lock', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'x-arcturus-auth': SECRET,
+				'x-arcturus-user-id': '   ',
+			},
+			body: JSON.stringify({ action: 'acquire', roomCode: 'MP-SVC03' }),
+		});
+
+		const response = await POST({
+			request,
+			locals: makeLocalsWithSecret() as any,
+		} as any);
+
+		// Falls back to session auth (USER_ID), then acquires successfully.
+		expect(response.status).toBe(200);
+		expect(
+			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
+		).toEqual({ roomCode: 'MP-SVC03' });
+	});
+});

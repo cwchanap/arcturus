@@ -156,7 +156,7 @@ export async function getBoardState(
 
 	const streakRow = await d1
 		.prepare(
-			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`,
+			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ? LIMIT 1`,
 		)
 		.bind(userId)
 		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();

@@ -52,13 +52,24 @@ export async function performReroll(
 	const replacement = pool[Math.floor(Math.random() * pool.length)];
 	const nowSeconds = Math.trunc(Date.now() / 1000);
 
-	await d1
+	// Race guard: the read-side `overrides.length === 0` check above is
+	// necessary but not sufficient — two concurrent reroll requests can both
+	// pass it before either INSERT commits. The UNIQUE(userId, periodKey)
+	// index on mission_override backs this INSERT ... ON CONFLICT DO NOTHING;
+	// the loser sees meta.changes === 0 and is told reroll-used.
+	const insertResult = await d1
 		.prepare(
 			`INSERT INTO mission_override (userId, periodKey, originalMissionDefId, replacementMissionDefId, rerolledAt)
-			 VALUES (?, ?, ?, ?, ?)`,
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(userId, periodKey) DO NOTHING`,
 		)
 		.bind(userId, periodKey, missionDefId, replacement.id, nowSeconds)
-		.run();
+		.run<{ meta?: { changes?: number } }>();
+
+	const changes = insertResult?.meta?.changes ?? 0;
+	if (changes === 0) {
+		return { status: 'reroll-used' };
+	}
 
 	return {
 		status: 'rerolled',

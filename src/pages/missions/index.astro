@@ -1,0 +1,346 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import DecoIcon from '../../components/DecoIcon.astro';
+import { createDb } from '../../lib/db';
+import { user } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { getBoardState } from '../../lib/missions/index';
+
+const session = Astro.locals.session;
+if (!session || !Astro.locals.runtime?.env?.DB) {
+	if (!session) return Astro.redirect('/signin');
+	return new Response('Service temporarily unavailable', { status: 503 });
+}
+
+const d1 = Astro.locals.runtime.env.DB;
+const db = createDb(d1);
+const [userRow] = await db
+	.select({ chipBalance: user.chipBalance })
+	.from(user)
+	.where(eq(user.id, session.user.id))
+	.limit(1);
+
+const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalance ?? 0);
+---
+
+<CasinoLayout title="Missions - Arcturus Casino">
+	<section class="deco-atmosphere relative overflow-hidden">
+		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<!-- Streak Banner -->
+			<div id="streak-banner" class="deco-panel mb-8 p-6" data-testid="streak-banner">
+				<div class="flex items-center justify-between">
+					<div>
+						<p class="deco-eyebrow-sm">Daily Login Streak</p>
+						<h2 class="deco-section-title text-2xl mt-1">
+							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span>
+						</h2>
+						<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
+							{initialBoard.streak.current}-day streak · Best: {initialBoard.streak.longest}
+						</p>
+					</div>
+					<div class="text-right">
+						<p class="deco-text-dim text-sm">Today's Reward</p>
+						<p class="text-[var(--deco-brass)] font-bold text-xl" data-testid="streak-reward">
+							{initialBoard.streak.rewardPreview.toLocaleString()} chips
+						</p>
+						<button
+							id="claim-login-btn"
+							class="btn-gold mt-2 px-4 py-2 rounded"
+							data-testid="claim-login-btn"
+							disabled={!initialBoard.streak.claimableToday}
+						>
+							{initialBoard.streak.claimableToday ? 'Claim' : 'Claimed'}
+						</button>
+					</div>
+				</div>
+			</div>
+
+			<!-- Daily Quests -->
+			<h2 class="deco-section-title text-xl mb-4">Daily Quests</h2>
+			<div
+				id="daily-grid"
+				class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
+				data-testid="daily-grid"
+			>
+				{initialBoard.daily.map((mission) => (
+					<div
+						class="deco-panel p-4 mission-card"
+						data-testid={`mission-${mission.missionDefId}`}
+						data-mission-id={mission.missionDefId}
+					>
+						<div class="flex items-start justify-between mb-2">
+							<div class="flex items-center gap-2">
+								<span class="text-xl">{mission.icon}</span>
+								<h3 class="font-body font-semibold">{mission.title}</h3>
+								{mission.isOverride && (
+									<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>
+								)}
+							</div>
+							<button
+								class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
+								data-reroll-target={mission.missionDefId}
+								data-testid={`reroll-${mission.missionDefId}`}
+								style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
+								aria-label="Reroll mission"
+							>
+								<DecoIcon name="star" size={16} />
+							</button>
+						</div>
+						<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
+						<div class="flex items-center gap-2 mb-3">
+							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
+								<div
+									class="bg-[var(--deco-brass)] h-full transition-all"
+									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+									data-testid={`progress-${mission.missionDefId}`}
+								></div>
+							</div>
+							<span
+								class="text-sm tabular-nums"
+								data-testid={`progress-text-${mission.missionDefId}`}
+							>
+								{mission.progress}/{mission.target}
+							</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-[var(--deco-brass)] text-sm font-medium">
+								{mission.rewardChips.toLocaleString()} chips
+							</span>
+							<button
+								class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
+								data-claim-target={mission.missionDefId}
+								data-testid={`claim-${mission.missionDefId}`}
+								disabled={!mission.claimable}
+							>
+								{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+							</button>
+						</div>
+					</div>
+				))}
+			</div>
+
+			<!-- Weekly Goal -->
+			<h2 class="deco-section-title text-xl mb-4">Weekly Goal</h2>
+			<div id="weekly-section" data-testid="weekly-section">
+				{initialBoard.weekly.map((mission) => (
+					<div
+						class="deco-panel p-6 mission-card"
+						data-testid={`mission-${mission.missionDefId}`}
+						data-mission-id={mission.missionDefId}
+					>
+						<div class="flex items-start justify-between mb-3">
+							<div class="flex items-center gap-2">
+								<span class="text-2xl">{mission.icon}</span>
+								<h3 class="font-body font-semibold text-lg">{mission.title}</h3>
+							</div>
+						</div>
+						<p class="deco-text-dim text-sm mb-4">{mission.description}</p>
+						<div class="flex items-center gap-3 mb-4">
+							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
+								<div
+									class="bg-[var(--deco-brass)] h-full transition-all"
+									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+									data-testid={`progress-${mission.missionDefId}`}
+								></div>
+							</div>
+							<span
+								class="text-sm tabular-nums"
+								data-testid={`progress-text-${mission.missionDefId}`}
+							>
+								{mission.progress}/{mission.target}
+							</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-[var(--deco-brass)] text-sm font-medium">
+								{mission.rewardChips.toLocaleString()} chips
+							</span>
+							<button
+								class="claim-btn btn-gold px-4 py-2 rounded text-sm"
+								data-claim-target={mission.missionDefId}
+								data-testid={`claim-${mission.missionDefId}`}
+								disabled={!mission.claimable}
+							>
+								{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+							</button>
+						</div>
+					</div>
+				))}
+			</div>
+		</div>
+	</section>
+
+	<script>
+		type MissionView = {
+			missionDefId: string;
+			title: string;
+			description: string;
+			icon: string;
+			period: 'daily' | 'weekly';
+			progress: number;
+			target: number;
+			completed: boolean;
+			claimed: boolean;
+			claimable: boolean;
+			rewardChips: number;
+			isOverride: boolean;
+		};
+
+		type BoardState = {
+			streak: {
+				current: number;
+				longest: number;
+				claimableToday: boolean;
+				dayOfCycle: number;
+				rewardPreview: number;
+			};
+			daily: MissionView[];
+			weekly: MissionView[];
+			rerollAvailable: boolean;
+		};
+
+		function escapeHtml(value: string): string {
+			return value.replace(
+				/[&<>"']/g,
+				(ch) =>
+					({
+						'&': '&amp;',
+						'<': '&lt;',
+						'>': '&gt;',
+						'"': '&quot;',
+						"'": '&#39;',
+					})[ch] ?? ch,
+			);
+		}
+
+		function claimLabel(mission: MissionView): string {
+			if (mission.claimed) return 'Claimed';
+			return mission.completed ? 'Claim' : 'In Progress';
+		}
+
+		function renderMissionCard(mission: MissionView, opts: { weekly?: boolean; rerollAvailable?: boolean }): string {
+			const large = opts.weekly === true;
+			const pad = large ? 'p-6' : 'p-4';
+			const iconSize = large ? 'text-2xl' : 'text-xl';
+			const titleSize = large ? 'text-lg' : '';
+			const barHeight = large ? 'h-2.5' : 'h-2';
+			const claimPad = large ? 'px-4 py-2' : 'px-3 py-1.5';
+			const widthPct = Math.min(100, (mission.progress / mission.target) * 100);
+
+			const rerollBtn =
+				large || !opts.rerollAvailable || mission.completed
+					? ''
+					: `<button class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors" data-reroll-target="${escapeHtml(mission.missionDefId)}" data-testid="reroll-${escapeHtml(mission.missionDefId)}" aria-label="Reroll mission"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"></path></svg></button>`;
+
+			const overrideTag = mission.isOverride
+				? '<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>'
+				: '';
+
+			return `<div class="deco-panel ${pad} mission-card" data-testid="mission-${escapeHtml(mission.missionDefId)}" data-mission-id="${escapeHtml(mission.missionDefId)}">
+				<div class="flex items-start justify-between ${large ? 'mb-3' : 'mb-2'}">
+					<div class="flex items-center gap-2">
+						<span class="${iconSize}">${escapeHtml(mission.icon)}</span>
+						<h3 class="font-body font-semibold ${titleSize}">${escapeHtml(mission.title)}</h3>
+						${overrideTag}
+					</div>
+					${rerollBtn}
+				</div>
+				<p class="deco-text-dim text-sm ${large ? 'mb-4' : 'mb-3'}">${escapeHtml(mission.description)}</p>
+				<div class="flex items-center gap-2 ${large ? 'mb-4 gap-3' : 'mb-3'}">
+					<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full ${barHeight} overflow-hidden">
+						<div class="bg-[var(--deco-brass)] h-full transition-all" style="width: ${widthPct}%" data-testid="progress-${escapeHtml(mission.missionDefId)}"></div>
+					</div>
+					<span class="text-sm tabular-nums" data-testid="progress-text-${escapeHtml(mission.missionDefId)}">${mission.progress}/${mission.target}</span>
+				</div>
+				<div class="flex items-center justify-between">
+					<span class="text-[var(--deco-brass)] text-sm font-medium">${mission.rewardChips.toLocaleString()} chips</span>
+					<button class="claim-btn btn-gold ${claimPad} rounded text-sm" data-claim-target="${escapeHtml(mission.missionDefId)}" data-testid="claim-${escapeHtml(mission.missionDefId)}" ${!mission.claimable ? 'disabled' : ''}>${claimLabel(mission)}</button>
+				</div>
+			</div>`;
+		}
+
+		function renderStreakBanner(board: BoardState): string {
+			return `<div class="flex items-center justify-between">
+				<div>
+					<p class="deco-eyebrow-sm">Daily Login Streak</p>
+					<h2 class="deco-section-title text-2xl mt-1">
+						<span data-testid="streak-display">Day ${board.streak.dayOfCycle} of cycle</span>
+					</h2>
+					<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
+						${board.streak.current}-day streak · Best: ${board.streak.longest}
+					</p>
+				</div>
+				<div class="text-right">
+					<p class="deco-text-dim text-sm">Today's Reward</p>
+					<p class="text-[var(--deco-brass)] font-bold text-xl" data-testid="streak-reward">
+						${board.streak.rewardPreview.toLocaleString()} chips
+					</p>
+					<button id="claim-login-btn" class="btn-gold mt-2 px-4 py-2 rounded" data-testid="claim-login-btn" ${!board.streak.claimableToday ? 'disabled' : ''}>${board.streak.claimableToday ? 'Claim' : 'Claimed'}</button>
+				</div>
+			</div>`;
+		}
+
+		async function refreshBoard(): Promise<void> {
+			const res = await fetch('/api/missions/board');
+			if (!res.ok) return;
+			const board = (await res.json()) as BoardState;
+
+			const banner = document.getElementById('streak-banner');
+			if (banner) banner.innerHTML = renderStreakBanner(board);
+
+			const dailyGrid = document.getElementById('daily-grid');
+			if (dailyGrid) {
+				dailyGrid.innerHTML = board.daily
+					.map((m) => renderMissionCard(m, { rerollAvailable: board.rerollAvailable }))
+					.join('');
+			}
+
+			const weeklySection = document.getElementById('weekly-section');
+			if (weeklySection) {
+				weeklySection.innerHTML = board.weekly.map((m) => renderMissionCard(m, { weekly: true })).join('');
+			}
+		}
+
+		async function postJson(url: string, body: unknown): Promise<boolean> {
+			const res = await fetch(url, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify(body),
+			});
+			return res.ok;
+		}
+
+		// Event delegation: survives innerHTML rebuilds during refresh.
+		document.addEventListener('click', async (event) => {
+			const target = event.target as HTMLElement | null;
+			if (!target) return;
+
+			// Streak claim
+			if (target.id === 'claim-login-btn' || target.closest('#claim-login-btn')) {
+				if (await postJson('/api/missions/claim-login', {})) {
+					await refreshBoard();
+				}
+				return;
+			}
+
+			// Mission claim
+			const claimBtn = target.closest<HTMLElement>('.claim-btn');
+			if (claimBtn) {
+				const missionDefId = claimBtn.dataset.claimTarget;
+				if (missionDefId && (await postJson('/api/missions/claim', { missionDefId }))) {
+					await refreshBoard();
+				}
+				return;
+			}
+
+			// Reroll
+			const rerollBtn = target.closest<HTMLElement>('.reroll-btn');
+			if (rerollBtn) {
+				const missionDefId = rerollBtn.dataset.rerollTarget;
+				if (missionDefId && (await postJson('/api/missions/reroll', { missionDefId }))) {
+					await refreshBoard();
+				}
+				return;
+			}
+		});
+	</script>
+</CasinoLayout>

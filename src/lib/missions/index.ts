@@ -6,3 +6,4 @@ export * from './progress';
 export * from './board';
 export * from './claim';
 export * from './reroll';
+export * from './seed';

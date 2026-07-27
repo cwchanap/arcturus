@@ -101,6 +101,52 @@ export const mission = sqliteTable(
 	}),
 );
 
+export const missionProgress = sqliteTable(
+	'mission_progress',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		missionDefId: text('missionDefId').notNull(),
+		periodKey: text('periodKey').notNull(),
+		progress: integer('progress').notNull().default(0),
+		metadataJson: text('metadataJson'),
+		completedAt: integer('completedAt', { mode: 'timestamp' }),
+		claimedAt: integer('claimedAt', { mode: 'timestamp' }),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.missionDefId, table.periodKey] }),
+	}),
+);
+
+export const loginStreak = sqliteTable(
+	'login_streak',
+	{
+		userId: text('userId')
+			.primaryKey()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		currentStreak: integer('currentStreak').notNull().default(0),
+		longestStreak: integer('longestStreak').notNull().default(0),
+		lastClaimPeriodKey: text('lastClaimPeriodKey').notNull().default(''),
+	},
+);
+
+export const missionOverride = sqliteTable(
+	'mission_override',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		periodKey: text('periodKey').notNull(),
+		originalMissionDefId: text('originalMissionDefId').notNull(),
+		replacementMissionDefId: text('replacementMissionDefId').notNull(),
+		rerolledAt: integer('rerolledAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.userId, table.periodKey, table.originalMissionDefId] }),
+	}),
+);
+
 export const llmSettings = sqliteTable('llm_settings', {
 	userId: text('userId')
 		.primaryKey()

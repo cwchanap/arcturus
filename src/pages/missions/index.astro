@@ -314,32 +314,46 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			const target = event.target as HTMLElement | null;
 			if (!target) return;
 
-			// Streak claim
-			if (target.id === 'claim-login-btn' || target.closest('#claim-login-btn')) {
-				if (await postJson('/api/missions/claim-login', {})) {
-					await refreshBoard();
-				}
-				return;
-			}
+			// Double-click protection: disable the clicked button for the duration
+			// of the in-flight POST + refresh. refreshBoard() rebuilds the DOM, so
+			// re-enabling the (now-stale) reference in `finally` is harmless — the
+			// fresh button's disabled state comes from the rendered HTML.
+			const btn = target.closest('button');
+			if (btn?.disabled) return;
+			if (btn) btn.disabled = true;
 
-			// Mission claim
-			const claimBtn = target.closest<HTMLElement>('.claim-btn');
-			if (claimBtn) {
-				const missionDefId = claimBtn.dataset.claimTarget;
-				if (missionDefId && (await postJson('/api/missions/claim', { missionDefId }))) {
-					await refreshBoard();
+			try {
+				// Streak claim
+				if (target.id === 'claim-login-btn' || target.closest('#claim-login-btn')) {
+					if (await postJson('/api/missions/claim-login', {})) {
+						await refreshBoard();
+					}
+					return;
 				}
-				return;
-			}
 
-			// Reroll
-			const rerollBtn = target.closest<HTMLElement>('.reroll-btn');
-			if (rerollBtn) {
-				const missionDefId = rerollBtn.dataset.rerollTarget;
-				if (missionDefId && (await postJson('/api/missions/reroll', { missionDefId }))) {
-					await refreshBoard();
+				// Mission claim
+				const claimBtn = target.closest<HTMLElement>('.claim-btn');
+				if (claimBtn) {
+					const missionDefId = claimBtn.dataset.claimTarget;
+					if (missionDefId && (await postJson('/api/missions/claim', { missionDefId }))) {
+						await refreshBoard();
+					}
+					return;
 				}
-				return;
+
+				// Reroll
+				const rerollBtn = target.closest<HTMLElement>('.reroll-btn');
+				if (rerollBtn) {
+					const missionDefId = rerollBtn.dataset.rerollTarget;
+					if (missionDefId && (await postJson('/api/missions/reroll', { missionDefId }))) {
+						await refreshBoard();
+					}
+					return;
+				}
+			} catch (err) {
+				console.error('[MISSIONS] Action failed:', err);
+			} finally {
+				if (btn) btn.disabled = false;
 			}
 		});
 	</script>

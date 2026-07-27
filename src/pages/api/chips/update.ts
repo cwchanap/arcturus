@@ -48,6 +48,7 @@ import {
 	CHIP_SYNC_RECEIPT_INSERT_SQL,
 	CHIP_SYNC_STATS_UPSERT_SQL,
 } from '../../../lib/chip-sync-batch-sql';
+import { applyMissionProgress } from '../../../lib/missions/index';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
@@ -1595,6 +1596,21 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 						statsError,
 					);
 					warnings.push('Stats tracking failed');
+				}
+			}
+
+			if (shouldRecordStats && isValidGameType(gameType)) {
+				try {
+					await applyMissionProgress(dbBinding, userId, {
+						gameType,
+						outcome: outcome as 'win' | 'loss' | 'push',
+						handCount: resolvedHandCount,
+						winsIncrement: actualWinsIncrement,
+						lossesIncrement: actualLossesIncrement,
+						delta: statsDeltaForTracking,
+					});
+				} catch (missionError) {
+					console.error('[MISSION_PROGRESS] Failed to update:', missionError);
 				}
 			}
 

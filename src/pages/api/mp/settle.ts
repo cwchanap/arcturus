@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { applyMissionProgress } from '../../../lib/missions/index';
 
 interface SettleEntry {
 	userId: string;
@@ -183,6 +184,22 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	});
 
 	await d1.batch(settleStatements);
+
+	for (const entry of newEntries) {
+		try {
+			const outcome = entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push';
+			await applyMissionProgress(d1, entry.userId, {
+				gameType: 'poker_mp',
+				outcome,
+				handCount: 1,
+				winsIncrement: entry.delta > 0 ? 1 : 0,
+				lossesIncrement: entry.delta < 0 ? 1 : 0,
+				delta: entry.delta,
+			});
+		} catch (missionError) {
+			console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
+		}
+	}
 
 	return new Response(JSON.stringify({ ok: true }), {
 		headers: { 'content-type': 'application/json' },

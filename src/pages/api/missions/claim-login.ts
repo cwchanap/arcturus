@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { user } from '../../../db/schema';
 import { eq } from 'drizzle-orm';
 import { createDb } from '../../../lib/db';
-import { claimLogin, seedStreakFromOldMission } from '../../../lib/missions/index';
+import { claimLogin, seedStreakFromOldMission } from '../../../lib/missions';
 
 export const POST: APIRoute = async ({ locals }) => {
 	if (!locals.session) {

@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import type { D1PreparedStatement } from '@cloudflare/workers-types';
-import { getDailyPeriodKeyForYesterday } from '../../../lib/missions/index';
+import { getDailyPeriodKeyForYesterday } from '../../../lib/missions';
 
 export const DELETE: APIRoute = async ({ request, locals }) => {
 	if (!import.meta.env.DEV) {

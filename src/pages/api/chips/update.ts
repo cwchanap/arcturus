@@ -48,7 +48,7 @@ import {
 	CHIP_SYNC_RECEIPT_INSERT_SQL,
 	CHIP_SYNC_STATS_UPSERT_SQL,
 } from '../../../lib/chip-sync-batch-sql';
-import { applyMissionProgress } from '../../../lib/missions/index';
+import { applyMissionProgress } from '../../../lib/missions';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 

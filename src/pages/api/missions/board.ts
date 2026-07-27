@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { user } from '../../../db/schema';
 import { eq } from 'drizzle-orm';
 import { createDb } from '../../../lib/db';
-import { getBoardState } from '../../../lib/missions/index';
+import { getBoardState } from '../../../lib/missions';
 
 export const GET: APIRoute = async ({ locals }) => {
 	if (!locals.session) {

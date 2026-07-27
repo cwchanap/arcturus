@@ -4,7 +4,7 @@ import DecoIcon from '../../components/DecoIcon.astro';
 import { createDb } from '../../lib/db';
 import { user } from '../../db/schema';
 import { eq } from 'drizzle-orm';
-import { getBoardState } from '../../lib/missions/index';
+import { getBoardState } from '../../lib/missions';
 
 const session = Astro.locals.session;
 if (!session || !Astro.locals.runtime?.env?.DB) {

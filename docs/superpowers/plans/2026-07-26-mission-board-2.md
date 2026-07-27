@@ -150,12 +150,11 @@ git commit -m "feat: add mission_progress, login_streak, mission_override tables
 import type { GameType } from '../game-stats/types';
 
 export type MissionMetric =
-	| { kind: 'handsPlayed'; gameType?: GameType }
-	| { kind: 'roundsWon'; gameType?: GameType }
+	| { kind: 'handsPlayed'; gameType?: string }
+	| { kind: 'roundsWon'; gameType?: string }
 	| { kind: 'spinsCompleted' }
 	| { kind: 'mpHandsCompleted' }
-	| { kind: 'gamesTried' }
-	| { kind: 'netChipsEarned'; gameType?: GameType };
+	| { kind: 'gamesTried' };
 
 export interface MissionDefinition {
 	id: string;
@@ -170,7 +169,7 @@ export interface MissionDefinition {
 
 export interface MissionGameEvent {
 	gameType: string;
-	outcome: 'win' | 'loss' | 'push' | null;
+	outcome: 'win' | 'loss' | 'push' | null | undefined;
 	handCount: number;
 	winsIncrement: number;
 	lossesIncrement: number;
@@ -748,7 +747,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'blackjack' },
 		target: 5,
 		rewardChips: 500,
-		icon: 'spade',
+		icon: '\u{1F0CF}', // playing card emoji
 	},
 	{
 		id: 'daily-win-3',
@@ -758,7 +757,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'roundsWon' },
 		target: 3,
 		rewardChips: 750,
-		icon: 'trophy',
+		icon: '\u{1F3C6}', // trophy emoji
 	},
 	{
 		id: 'daily-slots-20',
@@ -768,7 +767,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'spinsCompleted' },
 		target: 20,
 		rewardChips: 500,
-		icon: 'star',
+		icon: '\u{2B50}', // star emoji
 	},
 	{
 		id: 'daily-mp-1',
@@ -778,7 +777,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'mpHandsCompleted' },
 		target: 1,
 		rewardChips: 1000,
-		icon: 'chip',
+		icon: '\u{1F3B4}', // flower playing card emoji
 	},
 ];
 
@@ -791,7 +790,7 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'craps' },
 		target: 3,
 		rewardChips: 500,
-		icon: 'dice',
+		icon: '\u{1F3B2}', // game die emoji
 	},
 	{
 		id: 'daily-baccarat-3',
@@ -801,7 +800,7 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'baccarat' },
 		target: 3,
 		rewardChips: 500,
-		icon: 'diamond',
+		icon: '\u{2666}', // diamond suit emoji
 	},
 	{
 		id: 'daily-keno-5',
@@ -811,7 +810,7 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'keno' },
 		target: 5,
 		rewardChips: 600,
-		icon: 'star',
+		icon: '\u{1F4DD}', // memo emoji (lotto ticket)
 	},
 ];
 
@@ -824,7 +823,7 @@ export const DEFAULT_WEEKLY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'gamesTried' },
 		target: 3,
 		rewardChips: 2000,
-		icon: 'calendar',
+		icon: '\u{1F4C5}', // calendar emoji
 	},
 ];
 
@@ -844,7 +843,7 @@ export function getAllMissionDefIds(): string[] {
 }
 ```
 
-> **Note on DecoIcon names:** Verify the `icon` values (`spade`, `trophy`, `star`, `chip`, `dice`, `diamond`, `calendar`) exist in `src/components/DecoIcon.astro`. Adjust to match the available icon set.
+> **Note on icons:** Icons use Unicode emoji (e.g., `\u{1F0CF}` for cards, `\u{1F3C6}` for trophy). These are rendered directly in the UI as text, not via `DecoIcon`. This avoids the 6-name DecoIcon limitation. See `GAME_TYPE_ICONS` in `src/lib/game-stats/constants.ts` for the existing emoji convention.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -981,18 +980,8 @@ describe('computeIncrement', () => {
 		).toEqual({ amount: 0 });
 	});
 
-	test('netChipsEarned counts delta', () => {
-		const def = makeDef('d1', { kind: 'netChipsEarned' });
-		expect(computeIncrement(def, { ...baseEvent, delta: 500 }, null)).toEqual({
-			amount: 500,
-		});
-	});
-
-	test('netChipsEarned with negative delta still adds (can reduce progress)', () => {
-		const def = makeDef('d1', { kind: 'netChipsEarned' });
-		expect(computeIncrement(def, { ...baseEvent, delta: -200 }, null)).toEqual({
-			amount: -200,
-		});
+	test('netChipsEarned dropped for MVP — no test needed', () => {
+		// netChipsEarned was removed from MissionMetric. No mission uses it.
 	});
 
 	test('gamesTried adds new gameType', () => {
@@ -1090,10 +1079,6 @@ export function computeIncrement(
 			const existingGames = parseMetadata(existing?.metadataJson);
 			if (existingGames.includes(event.gameType)) return { amount: 0 };
 			return { amount: 1, metadata: [...existingGames, event.gameType] };
-		}
-		case 'netChipsEarned': {
-			if (metric.gameType && event.gameType !== metric.gameType) return { amount: 0 };
-			return { amount: event.delta };
 		}
 	}
 }
@@ -1471,7 +1456,7 @@ export async function applyMissionProgress(
 	userId: string,
 	event: MissionGameEvent,
 ): Promise<void> {
-	if (event.outcome === null) return;
+	if (!event.outcome) return;
 
 	const dailyKey = getDailyPeriodKey();
 	const weeklyKey = getWeeklyPeriodKey();
@@ -1641,28 +1626,27 @@ export async function claimMission(
 	const periodKey = def.period === 'daily' ? getDailyPeriodKey() : getWeeklyPeriodKey();
 	const nowSeconds = Math.trunc(Date.now() / 1000);
 
-	// Step 1: conditional claim UPDATE — only sets claimedAt if not already claimed AND progress >= target.
-	// Run ALONE (not in a batch) so we can check changes() before granting chips.
-	// D1 batch runs ALL statements unconditionally — a conditional grant must be a separate call.
-	const claimResult = await d1
+	// In-SQL changes() cascade: the grant UPDATE gates on the claim UPDATE's changes().
+	// D1 batch runs ALL statements, but the WHERE changes() = 1 on the grant
+	// makes it a no-op when the claim didn't match. Atomic — no crash window.
+	// This matches the chip-sync cascade pattern (chip-sync-batch-sql.ts).
+	const claimStmt = d1
 		.prepare(
 			`UPDATE mission_progress
 			 SET claimedAt = ?
 			 WHERE userId = ? AND missionDefId = ? AND periodKey = ?
 			   AND claimedAt IS NULL AND progress >= ?`,
 		)
-		.bind(nowSeconds, userId, missionDefId, periodKey, def.target)
-		.run();
+		.bind(nowSeconds, userId, missionDefId, periodKey, def.target);
 
-	const claimChanges = claimResult.meta?.changes ?? 0;
+	const grantStmt = d1
+		.prepare(`UPDATE user SET chipBalance = chipBalance + ? WHERE id = ? AND changes() = 1`)
+		.bind(def.rewardChips, userId);
+
+	const results = await d1.batch([claimStmt, grantStmt]);
+	const claimChanges = results[0]?.meta?.changes ?? 0;
 
 	if (claimChanges === 1) {
-		// Step 2: grant chips — only because the claim UPDATE succeeded
-		await d1
-			.prepare(`UPDATE user SET chipBalance = chipBalance + ? WHERE id = ?`)
-			.bind(def.rewardChips, userId)
-			.run();
-
 		return {
 			status: 'completed',
 			missionDefId,
@@ -1671,13 +1655,13 @@ export async function claimMission(
 		};
 	}
 
-	// Claim didn't fire — figure out why
+	// Claim didn't fire — distinguish already-claimed from not-completed
 	const row = await d1
 		.prepare(
-			`SELECT claimedAt, progress FROM mission_progress WHERE userId = ? AND missionDefId = ? AND periodKey = ?`,
+			`SELECT claimedAt FROM mission_progress WHERE userId = ? AND missionDefId = ? AND periodKey = ?`,
 		)
 		.bind(userId, missionDefId, periodKey)
-		.first<{ claimedAt: number | null; progress: number }>();
+		.first<{ claimedAt: number | null }>();
 
 	if (row?.claimedAt) {
 		return { status: 'already-claimed', missionDefId, rewardChips: 0, chipBalance: currentChipBalance };
@@ -1693,7 +1677,8 @@ export async function claimLogin(
 	const today = getDailyPeriodKey();
 	const yesterday = getDailyPeriodKeyForYesterday();
 
-	// Load current streak state
+	// Read current streak to compute transition values (not for race guard —
+	// the WHERE clause on the upsert handles the race)
 	const existing = await d1
 		.prepare(`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`)
 		.bind(userId)
@@ -1703,7 +1688,7 @@ export async function claimLogin(
 	const longestStreak = existing?.longestStreak ?? 0;
 	const lastClaimPeriodKey = existing?.lastClaimPeriodKey ?? '';
 
-	// Idempotent: already claimed today (fast path — skip transition + grant)
+	// Fast path: already claimed today
 	if (lastClaimPeriodKey === today) {
 		return {
 			status: 'already-claimed',
@@ -1723,9 +1708,10 @@ export async function claimLogin(
 		yesterday,
 	});
 
-	// Step 1: conditional streak UPDATE — only applies if lastClaimPeriodKey != today.
-	// Run ALONE so we can check changes() before granting chips.
-	const streakResult = await d1
+	// In-SQL changes() cascade: always use the upsert form.
+	// The WHERE clause gates on lastClaimPeriodKey != today (handles races).
+	// The grant gates on changes() = 1 from the upsert.
+	const streakStmt = d1
 		.prepare(
 			`INSERT INTO login_streak (userId, currentStreak, longestStreak, lastClaimPeriodKey)
 			 VALUES (?, ?, ?, ?)
@@ -1735,18 +1721,16 @@ export async function claimLogin(
 			   lastClaimPeriodKey = excluded.lastClaimPeriodKey
 			 WHERE login_streak.lastClaimPeriodKey != ?`,
 		)
-		.bind(userId, transition.newStreak, transition.newLongest, today, today)
-		.run();
+		.bind(userId, transition.newStreak, transition.newLongest, today, today);
 
-	const streakChanges = streakResult.meta?.changes ?? 0;
+	const grantStmt = d1
+		.prepare(`UPDATE user SET chipBalance = chipBalance + ? WHERE id = ? AND changes() = 1`)
+		.bind(transition.reward, userId);
+
+	const results = await d1.batch([streakStmt, grantStmt]);
+	const streakChanges = results[0]?.meta?.changes ?? 0;
 
 	if (streakChanges === 1) {
-		// Step 2: grant chips — only because the streak UPDATE succeeded
-		await d1
-			.prepare(`UPDATE user SET chipBalance = chipBalance + ? WHERE id = ?`)
-			.bind(transition.reward, userId)
-			.run();
-
 		return {
 			status: 'completed',
 			currentStreak: transition.newStreak,
@@ -1769,7 +1753,7 @@ export async function claimLogin(
 }
 ```
 
-> **Critical pattern:** The conditional UPDATE runs FIRST (alone, not batched). The chip grant runs SECOND (separate call) ONLY if `changes() === 1`. This prevents double-pay under concurrency: D1's batch API runs ALL statements unconditionally, so a conditional grant cannot live in the same batch as the claim UPDATE.
+> **Critical pattern:** The claim and grant run in ONE `d1.batch()`. The grant statement uses `WHERE changes() = 1` to gate on the claim statement's row count — the same in-SQL cascade pattern used by `chip-sync-batch-sql.ts`. D1 batch runs ALL statements, but `WHERE changes() = 1` makes the grant a no-op when the claim didn't match. This is atomic (no crash window between claim and grant) and race-safe (concurrent claims only match once).
 
 - [ ] **Step 3: Run any unit tests**
 
@@ -2216,16 +2200,18 @@ git commit -m "feat: add mission API endpoints and deploy-day seeding (HPA-173)"
 
 - [ ] **Step 1: Wire `applyMissionProgress` into `/api/chips/update.ts`**
 
-In the success path (after the `recordGameRound` / `checkAndGrantAchievements` calls, inside the existing try/catch block around stats), add:
+**Critical**: Place the call at a SINGLE site — just before the final `return buildSuccessResponse(...)` (line ~1601). This is naturally replay-safe because all receipt-replay branches return early (lines 1139/1181/1332/1374). Do NOT place it after `recordGameRound` (which only runs in the legacy no-syncId branch at line 1545) or in the replay paths.
 
 ```typescript
 import { applyMissionProgress } from '../../../lib/missions';
 ```
 
-And in the success path, after stats/achievements are resolved (around line ~1601, before `return buildSuccessResponse(...)`):
+Insert just before `return buildSuccessResponse(newBalance, serverBalance, delta, newAchievements, warnings);` (line ~1601), inside the existing try block:
 
 ```typescript
-// Update mission progress from validated game event
+// Update mission progress from validated game event.
+// Single call site — replay-safe because replay branches return early above.
+// Only runs when outcome is present and gameType is valid (same guard as stats).
 if (shouldRecordStats && isValidGameType(gameType)) {
 	try {
 		await applyMissionProgress(dbBinding, userId, {
@@ -2241,8 +2227,6 @@ if (shouldRecordStats && isValidGameType(gameType)) {
 	}
 }
 ```
-
-> **Placement:** This goes in BOTH code paths — after the `canonicalSyncPayload !== null` achievement resolution AND after the non-canonical `recordGameRound` path. Or: extract it as a shared call before `buildSuccessResponse`. The key constraint: only call when `shouldRecordStats` is true (outcome is present and valid) and gameType is valid.
 
 - [ ] **Step 2: Wire `applyMissionProgress` into `/api/mp/settle.ts`**
 

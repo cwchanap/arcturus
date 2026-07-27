@@ -46,7 +46,7 @@ async function provisionUser(
 ): Promise<void> {
 	await bootstrapTestUser(context, baseURL, credentials);
 
-	await page.goto(`${baseURL}/missions/daily`, { waitUntil: 'networkidle' });
+	await page.goto(`${baseURL}/missions`, { waitUntil: 'networkidle' });
 	await page.locator('[data-chip-balance]').first().waitFor({ state: 'attached', timeout: 10000 });
 
 	let currentBalance = (await readChipBalanceFromPage(page)) ?? 0;

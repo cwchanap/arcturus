@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { applyMissionProgress } from '../../../lib/missions/index';
+import { applyMissionProgress } from '../../../lib/missions';
 
 interface SettleEntry {
 	userId: string;

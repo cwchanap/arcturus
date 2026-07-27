@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { performReroll } from '../../../lib/missions/index';
+import { performReroll } from '../../../lib/missions';
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	if (!locals.session) {

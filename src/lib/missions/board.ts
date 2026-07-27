@@ -142,7 +142,7 @@ export async function getBoardState(
 	const activeDefIds = [...activeDaily, ...DEFAULT_WEEKLY_MISSIONS].map((d) => d.id);
 	const progressMap = await getProgressRows(d1, userId, activeDefIds, dailyKey, weeklyKey);
 
-	const overrideIds = new Set(overrides.map((o) => o.originalMissionDefId));
+	const overrideIds = new Set(overrides.map((o) => o.replacementMissionDefId));
 
 	const dailyViews: MissionView[] = activeDaily.map((def) => {
 		const progress = progressMap.get(`${def.id}:${dailyKey}`) ?? emptyProgress();

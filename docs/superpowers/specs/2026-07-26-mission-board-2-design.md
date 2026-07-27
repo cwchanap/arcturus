@@ -17,11 +17,13 @@ Create a repeatable progression loop that rewards players for returning, trying 
 | Daily login | Folded into streak system; day-1 reward = 1000 chips for migration continuity |
 | Streak curve | 7-day cycle: `[1000, 1250, 1500, 2000, 2500, 3500, 5000]`, then resets to day 1 |
 | Reroll | One daily swap per period; replacement drawn from non-active pool |
-| Claim atomicity | Conditional `UPDATE ... WHERE claimedAt IS NULL` + chip grant in one D1 batch; chips granted only if `changes() === 1` |
+| Claim atomicity | In-SQL `changes() = 1` cascade in one D1 batch (matching `chip-sync-batch-sql.ts` pattern); grant statement gated on claim statement's `changes()` |
 | Claim scope | Current period only — server computes periodKey, not the client |
-| Deploy migration | Seed `login_streak` from old `mission` table to prevent double-claim on deploy day |
+| Deploy migration | Seed `login_streak` from old `mission` table (gated on streak row not existing) to prevent double-claim on deploy day |
 | Streak display | Effective streak computed on read (continuing vs broken) so the board never shows a stale streak |
-| Atomicity mechanism | Raw D1 `dbBinding.batch()` for multi-statement atomicity (Drizzle `db` has no `.batch()`) |
+| Atomicity mechanism | Raw D1 `dbBinding.batch()` for multi-statement atomicity (Drizzle `db` has no `.batch()`); conditional gates via `WHERE changes() = 1` in SQL |
+| netChipsEarned | Dropped for MVP — no starter/reroll mission uses it and the spec was self-contradictory |
+| Icons | Emoji from `GAME_TYPE_ICONS` (game-stats/constants.ts), not DecoIcon names (DecoIcon only has 6 generic names) |
 
 ## Architecture
 
@@ -67,7 +69,7 @@ e2e/missions.spec.ts                      # E2E: complete, claim, streak, reroll
 
 ### Integration touchpoints (existing files)
 
-- `src/pages/api/chips/update.ts` — after a successful chip sync (where it currently calls `recordGameRound` / `checkAndGrantAchievements`), add a call to `applyMissionProgress`. Only called when `outcome` is present and `gameType` is a valid game (same guard as `recordGameRound`). Built from already-validated fields: `{ gameType, outcome, handCount, winsIncrement, lossesIncrement, delta }`. Wrapped in the same try/catch as stats/achievements so failures never break chip sync.
+- `src/pages/api/chips/update.ts` — a single call to `applyMissionProgress` just before the final `return buildSuccessResponse(...)` (line ~1601). This is naturally replay-safe because all receipt-replay branches return early (lines 1139/1181/1332/1374). Only called when `outcome` is present and `gameType` is a valid game (same guard as `recordGameRound`). Built from already-validated fields. Wrapped in try/catch so failures never break chip sync. Note: `recordGameRound` only runs in the legacy no-syncId branch (line 1545) — most games go through `applyChipSyncBatch` (line 1285) — so the call must NOT be tied to `recordGameRound`.
 - `src/pages/api/mp/settle.ts` — after the settle batch, for each newly-applied entry (not idempotent replays), call `applyMissionProgress` with `{ gameType: 'poker_mp', outcome, handCount: 1, winsIncrement, lossesIncrement, delta }` for the `mpHandsCompleted` metric.
 - `src/db/schema.ts` — add three new tables (see Data Model below) via Drizzle migration (`bun run db:generate` + `bun run db:migrate:local`). The new tables are created by migration SQL, not runtime DDL. The old `ensureMissionSchema()` runtime CREATE TABLE in `missions.ts` is removed.
 - `src/layouts/AppLayout.astro` — update nav links from `/missions/daily` → `/missions` (header line 73 + footer line 111).
@@ -181,7 +183,7 @@ export const missionOverride = sqliteTable(
 
 ### Existing `mission` table
 
-The old `mission` table (`userId`, `missionId`, `completedDate`) is left in place — harmless, no longer read or written. Can be dropped in a future cleanup migration. No data migration is needed because the new streak system starts fresh (there is no historical streak data to carry over).
+The old `mission` table (`userId`, `missionId`, `completedDate`) is read once during deploy-day seeding (see Migration section), then left in place — harmless, no longer read or written after seeding. Can be dropped in a future cleanup migration. The table is created by the initial Drizzle migration (`drizzle/0000_powerful_wrecking_crew.sql`), not only by runtime DDL, so it is safe to query during the seeding backfill.
 
 ## Mission Registry
 
@@ -191,12 +193,11 @@ The old `mission` table (`userId`, `missionId`, `completedDate`) is left in plac
 // src/lib/missions/types.ts
 
 type MissionMetric =
-	| { kind: 'handsPlayed'; gameType?: GameType }   // gameType omitted = any game
-	| { kind: 'roundsWon'; gameType?: GameType }
+	| { kind: 'handsPlayed'; gameType?: string }   // gameType omitted = any game; string (not GameType) so poker_mp is expressible
+	| { kind: 'roundsWon'; gameType?: string }
 	| { kind: 'spinsCompleted' }                      // slots only (roulette is server-settled, see note)
 	| { kind: 'mpHandsCompleted' }
-	| { kind: 'gamesTried' }                          // distinct gameTypes (metadataJson)
-	| { kind: 'netChipsEarned'; gameType?: GameType }; // sum of delta; floor at 0; gameType omitted = any
+	| { kind: 'gamesTried' };                         // distinct gameTypes (metadataJson)
 
 interface MissionDefinition {
 	id: string;              // e.g. 'daily-blackjack-5'
@@ -206,7 +207,7 @@ interface MissionDefinition {
 	metric: MissionMetric;
 	target: number;
 	rewardChips: number;
-	icon: string;            // DecoIcon name
+	icon: string;            // Emoji from GAME_TYPE_ICONS (game-stats/constants.ts) or generic emoji
 }
 ```
 
@@ -232,9 +233,10 @@ interface MissionGameEvent {
 | `spinsCompleted` | `event.handCount` | `event.gameType === 'slots'` |
 | `mpHandsCompleted` | `1` | `event.gameType === 'poker_mp'` |
 | `gamesTried` | `1` | `event.gameType` not already in `metadataJson` array. Note: `'poker'` and `'poker_mp'` are distinct gameTypes for variety tracking. |
-| `netChipsEarned` | `event.delta` | `event.gameType` matches `metric.gameType` (or any if omitted). Progress floored at 0 — negative deltas reduce the sum but stored progress never goes below 0. |
 
 > **Roulette note**: Roulette is server-settled via `/api/roulette/spin` (not `/api/chips/update`). For MVP, `spinsCompleted` only counts slots. Wiring roulette's spin endpoint to call `applyMissionProgress` is a small follow-up (the spin handler already has `netDelta` and `handCount=1`).
+
+> **handCount semantics**: `handCount` means different things per game. Blackjack sends one per split hand (a single round with two splits sends `handCount=3`). Slots coalesces up to `MAX_SLOTS_SYNC_HANDS_PER_REQUEST` spins per request. Missions that count `handsPlayed[gameType]` will complete faster than the mission title implies for these games. Document the actual semantics in the UI tooltip, not the title.
 
 Progress is clamped at `target` (never over-counts). `completedAt` is set the moment `progress >= target`, via an atomic conditional update (only set if currently null).
 
@@ -274,8 +276,8 @@ function getWeeklyPeriodKey(date = new Date()): string {
 	return `${tmp.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
 }
 
-function getDailyPeriodKeyForYesterday(): string {
-	const d = new Date();
+function getDailyPeriodKeyForYesterday(date = new Date()): string {
+	const d = new Date(date);
 	d.setUTCDate(d.getUTCDate() - 1);
 	return getDailyPeriodKey(d);
 }
@@ -392,15 +394,19 @@ Extra reroll-pool missions (suggested):
 
 Called from `/api/chips/update` and `/api/mp/settle` after a validated round succeeds. Requires the raw D1 binding (`locals.runtime.env.DB`) for atomic batch operations — the Drizzle `db` wrapper has no `.batch()` method (see existing pattern in `chips/update.ts` and `mp/settle.ts`).
 
+**Hot-path budget**: Two D1 reads + one batch write per chip sync. To minimize cost:
+1. Skip entirely when `outcome` is absent (`null` or `undefined`) — same guard as `recordGameRound`.
+2. Fold the overrides query into the progress query: a single `SELECT` that joins `mission_progress` with `mission_override` for the user and current period keys. Or: issue one combined batch of two read statements (`d1.batch([overridesStmt, progressStmt])`) to avoid sequential round-trips.
+3. **Awaited** (blocking the response, same as `recordGameRound`/`checkAndGrantAchievements` today) so progress is consistent when the user navigates to the board. Wrapped in try/catch so failures never break chip sync.
+
 ```typescript
 async function applyMissionProgress(
 	d1: D1Database,
 	userId: string,
 	event: MissionGameEvent,
 ): Promise<void> {
-	// Early exit: skip entirely when payload has no countable event
-	// (same guard as recordGameRound — only run for validated game outcomes)
-	if (event.outcome === null) return;
+	// Early exit: skip when no countable event
+	if (!event.outcome) return;
 
 	const dailyKey = getDailyPeriodKey();
 	const weeklyKey = getWeeklyPeriodKey();
@@ -499,6 +505,8 @@ The server computes the current period key — `periodKey` is NOT accepted from 
 
 **Claim algorithm (prevents double-pay under concurrency):**
 
+Uses the same in-SQL `changes() = 1` cascade pattern as the chip-sync batch (`src/lib/chip-sync-batch-sql.ts`). D1 batch executes every statement unconditionally — JS can't gate statement 2 on statement 1's `changes()` after the batch returns. So the gate lives in the SQL.
+
 ```sql
 -- Step 1: conditional UPDATE — only sets claimedAt if not already claimed
 UPDATE mission_progress
@@ -507,19 +515,15 @@ WHERE userId = ? AND missionDefId = ? AND periodKey = ?
   AND claimedAt IS NULL
   AND progress >= ?;   -- target from registry
 
--- Step 2: only if changes() === 1, grant chips
-UPDATE user SET chipBalance = chipBalance + ? WHERE id = ?;
+-- Step 2: chip grant gated on step 1's changes() — only grants if claim succeeded
+UPDATE user SET chipBalance = chipBalance + ? WHERE id = ? AND changes() = 1;
 ```
 
-Both statements run in one D1 batch (`d1.batch([step1, step2])`). If `changes() === 0` after step 1, step 2 is a no-op (chips are NOT granted). This is the same conditional-write pattern used by ranked settlement.
+Both statements run in one `d1.batch([step1, step2])`. If step 1 affected 0 rows (already claimed or progress < target), `changes()` is 0, and step 2's `WHERE changes() = 1` prevents the chip grant. This is atomic — no crash window between claim and grant.
 
-Idempotent: if already claimed, `changes() === 0` and the endpoint returns `{ status: 'already-claimed', rewardChips: 0, chipBalance }` with 200 (not an error).
+Idempotent: if already claimed, `changes() = 0` → no grant → returns `{ status: 'already-claimed', rewardChips: 0, chipBalance }` with 200.
 
-Returns: `{ status: 'completed' | 'already-claimed', missionDefId, rewardChips, chipBalance }`.
-
-**Validation (before the conditional UPDATE):**
-- Mission exists in the registry.
-- `gameType`/`period` from registry determines which period key to use.
+If no `mission_progress` row exists at all (never started), `changes() = 0` → returns `{ status: 'not-completed' }`.
 
 ### `POST /api/missions/claim-login`
 
@@ -527,22 +531,25 @@ No body needed (uses session user).
 
 **Claim algorithm (prevents double-pay under concurrency):**
 
-```sql
--- Step 1: conditional UPDATE — only updates if not already claimed today
-UPDATE login_streak
-SET currentStreak = ?,     -- computed new streak (see logic below)
-    longestStreak = ?,
-    lastClaimPeriodKey = ?
-WHERE userId = ?
-  AND lastClaimPeriodKey != ?;  -- today's period key
+Same in-SQL `changes() = 1` cascade pattern. Always uses the `INSERT ... ON CONFLICT DO UPDATE ... WHERE` form — no read-then-branch needed for the race (the WHERE handles it):
 
--- Step 2: only if changes() === 1, grant chips
-UPDATE user SET chipBalance = chipBalance + ? WHERE id = ?;
+```sql
+-- Step 1: conditional upsert — only updates if lastClaimPeriodKey != today
+INSERT INTO login_streak (userId, currentStreak, longestStreak, lastClaimPeriodKey)
+VALUES (?, ?, ?, ?)
+ON CONFLICT (userId) DO UPDATE SET
+  currentStreak = excluded.currentStreak,
+  longestStreak = excluded.longestStreak,
+  lastClaimPeriodKey = excluded.lastClaimPeriodKey
+WHERE login_streak.lastClaimPeriodKey != ?;  -- today
+
+-- Step 2: chip grant gated on step 1's changes()
+UPDATE user SET chipBalance = chipBalance + ? WHERE id = ? AND changes() = 1;
 ```
 
-Both statements run in one D1 batch. If the row doesn't exist yet (first-ever claim), an `INSERT ... ON CONFLICT` variant is used instead, but the same `lastClaimPeriodKey != today` guard applies.
+Both statements run in one `d1.batch()`. The read to compute transition values (new streak, reward) happens before the batch — it's not for the race guard, it's to compute the new streak numbers. The WHERE clause on the upsert handles the race.
 
-Idempotent: if `lastClaimPeriodKey === today`, `changes() === 0` and the endpoint returns `{ status: 'already-claimed', rewardChips: 0 }` with 200.
+Idempotent: if `lastClaimPeriodKey === today`, `changes() = 0` → no grant → returns `{ status: 'already-claimed', rewardChips: 0 }` with 200.
 
 Returns: `{ status: 'completed' | 'already-claimed', currentStreak, longestStreak, dayOfCycle, rewardChips, chipBalance }`.
 
@@ -613,11 +620,12 @@ Single board page using `CasinoLayout` and the Art Deco design tokens (`deco-*` 
 ## Migration
 
 1. **Schema migration**: Edit `src/db/schema.ts` to add the three new tables. Run `bun run db:generate` to produce the migration SQL. Run `bun run db:migrate:local` to apply locally. Tables are created by migration SQL, not runtime DDL — the old `ensureMissionSchema()` runtime CREATE TABLE in `missions.ts` is removed.
-2. **Deploy-day seeding** (prevents double-claim): On first request to the new streak system, check if the user has a row in the old `mission` table where `missionId = 'daily-login'` and `completedDate` is today (UTC). If so, seed `login_streak` with `lastClaimPeriodKey = today`, `currentStreak = 1`. This one-time backfill prevents users who already claimed today from getting a second 1000-chip payout on deploy day. If the old row is absent or from a previous day, the streak starts fresh.
+2. **Deploy-day seeding** (prevents double-claim): Called once from `claim-login.ts` on the first streak claim request. Gated on `login_streak` row not existing for the user — if the row already exists, the function is a no-op. Only when no streak row exists does it query the old `mission` table for `missionId = 'daily-login'` with `completedDate` today (UTC). If found, it seeds `login_streak` with `lastClaimPeriodKey = today`, `currentStreak = 1`. After the first claim (whether seeded or fresh), the streak row exists and the function never queries the legacy table again.
 3. **Code migration**: Create the new `src/lib/missions/` directory with all modules. Update `/api/chips/update.ts` and `/api/mp/settle.ts` to call `applyMissionProgress`. Create the new API endpoints and board page.
 4. **Remove old code**: Delete `src/lib/missions.ts`, `src/pages/missions/daily.astro`, and `src/pages/api/missions/daily-login.ts`.
 5. **Update nav links**: `src/layouts/AppLayout.astro` (header + footer), `src/pages/index.astro` (CTA buttons), and `e2e/global-setup.ts` — change `/missions/daily` → `/missions`.
 6. **Old `mission` table**: left in place (harmless, no longer read or written after the one-time seeding backfill). Can be dropped in a future cleanup migration.
+7. **Row retention**: Add `mission_progress` and `mission_override` reaping to the existing hourly cleanup in `src/server/cleanup.ts` (already runs via `wrangler.toml [triggers] crons`). Delete rows where `periodKey` is older than 30 days. This bounds table growth without adding new infrastructure.
 
 ## Testing
 

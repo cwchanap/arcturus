@@ -103,6 +103,7 @@ export async function applyMissionProgress(
 			userId,
 			def,
 			periodKey,
+			result.amount,
 			newProgress,
 			metadataJson,
 			nowSeconds,
@@ -115,29 +116,74 @@ export async function applyMissionProgress(
 	}
 }
 
+/**
+ * Build the mission_progress UPSERT.
+ *
+ * Two write strategies, selected by metric kind:
+ *
+ *  - Atomic increment (default): passes `amount` as `excluded.progress` and
+ *    the ON CONFLICT branch computes `MIN(progress + excluded.progress,
+ *    target)` directly in SQL. This closes the lost-update race where two
+ *    concurrent requests both read the same stale `currentProgress`, each
+ *    compute the same absolute `newProgress`, and the second overwrites the
+ *    first. With the SQL-side increment the second call still adds its delta
+ *    on top of the committed value. The first-write INSERT path stores
+ *    `clampProgress(amount, target)` directly (0 + amount clamped).
+ *
+ *  - Absolute write (`gamesTried`): the metric deduplicates via metadata, so
+ *    the increment must be computed JS-side from a read-then-write of the
+ *    metadata blob. This is inherently non-atomic and acknowledged in the
+ *    spec; for this path we keep the legacy absolute-write semantics, passing
+ *    `newProgress` as `excluded.progress`.
+ */
 export function buildProgressUpsertSQL(
 	d1: D1Database,
 	userId: string,
 	def: MissionDefinition,
 	periodKey: string,
+	amount: number,
 	newProgress: number,
 	metadataJson: string | null,
 	nowSeconds: number,
 ): D1PreparedStatement {
 	const target = def.target;
-	const completedClause = newProgress >= target ? `${nowSeconds}` : 'NULL';
+	const isAbsolute = def.metric.kind === 'gamesTried';
+
+	if (isAbsolute) {
+		const completedClause = newProgress >= target ? `${nowSeconds}` : 'NULL';
+		return d1
+			.prepare(
+				`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
+				 VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)
+				 ON CONFLICT (userId, missionDefId, periodKey) DO UPDATE SET
+				   progress = excluded.progress,
+				   metadataJson = excluded.metadataJson,
+				   completedAt = CASE
+				     WHEN excluded.progress >= ${target} AND mission_progress.completedAt IS NULL
+				     THEN ${nowSeconds}
+				     ELSE mission_progress.completedAt
+				   END`,
+			)
+			.bind(userId, def.id, periodKey, newProgress, metadataJson);
+	}
+
+	// Atomic increment path. excluded.progress is the increment amount; the
+	// INSERT values store it clamped to target so a single oversized event
+	// never persists progress > target.
+	const clampedAmount = Math.min(amount, target);
+	const completedClause = clampedAmount >= target ? `${nowSeconds}` : 'NULL';
 	return d1
 		.prepare(
 			`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
 			 VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)
 			 ON CONFLICT (userId, missionDefId, periodKey) DO UPDATE SET
-			   progress = excluded.progress,
+			   progress = MIN(mission_progress.progress + excluded.progress, ${target}),
 			   metadataJson = excluded.metadataJson,
 			   completedAt = CASE
-			     WHEN excluded.progress >= ${target} AND mission_progress.completedAt IS NULL
-			     THEN excluded.completedAt
+			     WHEN MIN(mission_progress.progress + excluded.progress, ${target}) >= ${target} AND mission_progress.completedAt IS NULL
+			     THEN ${nowSeconds}
 			     ELSE mission_progress.completedAt
 			   END`,
 		)
-		.bind(userId, def.id, periodKey, newProgress, metadataJson);
+		.bind(userId, def.id, periodKey, clampedAmount, metadataJson);
 }

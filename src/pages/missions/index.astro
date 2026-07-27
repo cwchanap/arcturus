@@ -245,7 +245,7 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 					${rerollBtn}
 				</div>
 				<p class="deco-text-dim text-sm ${large ? 'mb-4' : 'mb-3'}">${escapeHtml(mission.description)}</p>
-				<div class="flex items-center gap-2 ${large ? 'mb-4 gap-3' : 'mb-3'}">
+				<div class="flex items-center ${large ? 'mb-4 gap-3' : 'mb-3 gap-2'}">
 					<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full ${barHeight} overflow-hidden">
 						<div class="bg-[var(--deco-brass)] h-full transition-all" style="width: ${widthPct}%" data-testid="progress-${escapeHtml(mission.missionDefId)}"></div>
 					</div>

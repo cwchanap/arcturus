@@ -16,6 +16,8 @@ CREATE TABLE `mission_override` (
 	FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `mission_override_one_per_day` ON `mission_override` (`userId`, `periodKey`);
+--> statement-breakpoint
 CREATE TABLE `mission_progress` (
 	`userId` text NOT NULL,
 	`missionDefId` text NOT NULL,

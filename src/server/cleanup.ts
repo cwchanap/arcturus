@@ -10,6 +10,8 @@
  * wrangler.toml `[triggers]` crons).
  */
 
+import { getDailyPeriodKey } from '../lib/missions/periods';
+
 export const RETENTION_DAYS = 30;
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
@@ -124,5 +126,32 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 			.run();
 	} catch (error) {
 		console.warn('[CLEANUP] Failed to delete expired roulette chip_sync_receipt rows:', error);
+	}
+
+	// Mission board row retention. mission_progress and mission_override are
+	// partitioned by a daily period key (YYYY-MM-DD); weekly keys sort after
+	// any YYYY-MM-DD so they are unaffected by this comparison and persist
+	// (they self-roll over weekly and never grow large). At ~6 rows/user/day
+	// the daily tables would otherwise grow ~1,850 rows/user/year, so reap
+	// any daily period key older than RETENTION_DAYS. Compare on periodKey
+	// rather than completedAt so uncompleted/abandoned rows also get reaped.
+	const missionCutoffDate = new Date();
+	missionCutoffDate.setUTCDate(missionCutoffDate.getUTCDate() - RETENTION_DAYS);
+	const missionCutoffKey = getDailyPeriodKey(missionCutoffDate);
+	try {
+		await dbBinding
+			.prepare('DELETE FROM mission_progress WHERE periodKey < ?')
+			.bind(missionCutoffKey)
+			.run();
+	} catch (error) {
+		console.warn('[CLEANUP] Failed to delete expired mission_progress rows:', error);
+	}
+	try {
+		await dbBinding
+			.prepare('DELETE FROM mission_override WHERE periodKey < ?')
+			.bind(missionCutoffKey)
+			.run();
+	} catch (error) {
+		console.warn('[CLEANUP] Failed to delete expired mission_override rows:', error);
 	}
 }

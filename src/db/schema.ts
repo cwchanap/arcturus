@@ -5,6 +5,7 @@ import {
 	primaryKey,
 	index,
 	uniqueIndex,
+	unique,
 } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
@@ -144,6 +145,13 @@ export const missionOverride = sqliteTable(
 	},
 	(table) => ({
 		pk: primaryKey({ columns: [table.userId, table.periodKey, table.originalMissionDefId] }),
+		// One reroll per user per daily period. The PK alone allows multiple
+		// rows for the same (userId, periodKey) keyed by originalMissionDefId;
+		// this unique constraint closes the concurrent-reroll race where two
+		// requests both pass the read-side `overrides.length === 0` check and
+		// both INSERT. The reroll path uses INSERT ... ON CONFLICT(userId,
+		// periodKey) DO NOTHING and treats 0 rows affected as `reroll-used`.
+		onePerDay: unique('mission_override_one_per_day').on(table.userId, table.periodKey),
 	}),
 );
 

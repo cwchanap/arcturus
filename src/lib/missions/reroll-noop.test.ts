@@ -31,12 +31,14 @@ mock.module('./board', () => ({
 
 const { performReroll } = await import('./reroll');
 
-/** Minimal fake D1: the mission_progress SELECT returns no row. */
+/** Minimal fake D1: the mission_progress SELECT returns no row; the override
+ * INSERT reports 1 row affected so the ON CONFLICT race guard treats it as
+ * a successful insert. */
 function makeFakeD1(): D1Database {
 	const chain = {
 		bind: () => ({
 			first: async () => null,
-			run: async () => ({}),
+			run: async () => ({ meta: { changes: 1 } }),
 			all: async () => ({ results: [] }),
 		}),
 	};

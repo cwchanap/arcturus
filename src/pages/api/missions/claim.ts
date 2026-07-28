@@ -33,12 +33,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			.limit(1);
 
 		const chipBalance = userRow?.chipBalance ?? 0;
-		const result = await claimMission(
-			d1,
-			locals.session.user.id,
-			body.missionDefId,
-			chipBalance,
-		);
+		const result = await claimMission(d1, locals.session.user.id, body.missionDefId, chipBalance);
 		return Response.json(result);
 	} catch (error) {
 		console.error('[MISSIONS_CLAIM] Failed to claim mission:', error);

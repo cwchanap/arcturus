@@ -1,0 +1,58 @@
+name: One-shot formatting fix
+
+on:
+  push:
+    branches:
+      - codex/hpa-173-mission-board-impl
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: codex/hpa-173-mission-board-impl
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fix invalid Astro example
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/superpowers/plans/2026-07-26-mission-board-2.md')
+          text = path.read_text()
+          old = '<!-- Same card structure as daily, larger -->'
+          new = '{/* Same card structure as daily, larger */}'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one invalid comment, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Format and verify
+        run: |
+          bun run format
+          bun run format:check
+          bun run lint
+
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/format-fix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'style: format Mission Board implementation (HPA-173)'
+          git push origin HEAD:codex/hpa-173-mission-board-impl

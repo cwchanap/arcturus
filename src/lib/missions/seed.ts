@@ -12,9 +12,7 @@ export async function seedStreakFromOldMission(d1: D1Database, userId: string): 
 
 	// Check old mission table for today's daily-login claim
 	const oldMission = await d1
-		.prepare(
-			`SELECT completedDate FROM mission WHERE userId = ? AND missionId = 'daily-login'`,
-		)
+		.prepare(`SELECT completedDate FROM mission WHERE userId = ? AND missionId = 'daily-login'`)
 		.bind(userId)
 		.first<{ completedDate: number | null }>();
 

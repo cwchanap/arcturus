@@ -24,44 +24,46 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|---------------|
-| `src/db/schema.ts` (edit) | Add `missionProgress`, `loginStreak`, `missionOverride` tables |
-| `src/lib/missions/types.ts` | All TS interfaces: `MissionMetric`, `MissionDefinition`, `MissionGameEvent`, `MissionView`, `BoardState`, `StreakView` |
-| `src/lib/missions/periods.ts` | Pure UTC period key functions: daily/weekly keys, yesterday, next-reset timestamps |
-| `src/lib/missions/streak.ts` | Pure streak logic: `STREAK_REWARDS`, `getStreakReward`, `computeEffectiveStreak`, `computeStreakTransition` |
-| `src/lib/missions/registry.ts` | Mission definitions: `DEFAULT_DAILY_MISSIONS`, `REROLL_POOL_DAILY`, `DEFAULT_WEEKLY_MISSIONS`, `ALL_DAILY_DEFINITIONS`, helper lookups |
-| `src/lib/missions/progress.ts` | `computeIncrement` (pure), `applyMissionProgress` (D1 batch), `buildProgressUpsertSQL` |
-| `src/lib/missions/board.ts` | `getBoardState` (read model), `applyOverrides`, `getActiveDailyMissionIds` |
-| `src/lib/missions/claim.ts` | `claimMission` (conditional UPDATE + chip grant), `claimLogin` (streak conditional UPDATE) |
-| `src/lib/missions/reroll.ts` | `performReroll`, `getReplacementPool` |
-| `src/lib/missions/seed.ts` | Deploy-day seeding: `seedStreakFromOldMission` |
-| `src/lib/missions/index.ts` | Barrel exports |
-| `src/lib/missions/*.test.ts` | Unit tests for pure modules |
-| `src/pages/api/missions/board.ts` | GET — full board state |
-| `src/pages/api/missions/claim.ts` | POST — claim quest reward |
-| `src/pages/api/missions/claim-login.ts` | POST — claim streak reward |
-| `src/pages/api/missions/reroll.ts` | POST — swap uncompleted daily quest |
-| `src/pages/api/missions/progress.ts` | DELETE — dev-only reset + seedStreak |
-| `src/pages/missions/index.astro` | Board page (SSR + client script) |
-| `src/pages/api/chips/update.ts` (edit) | Call `applyMissionProgress` after validated sync |
-| `src/pages/api/mp/settle.ts` (edit) | Call `applyMissionProgress` after settle |
-| `src/layouts/AppLayout.astro` (edit) | Nav links `/missions/daily` → `/missions` |
-| `src/pages/index.astro` (edit) | CTA buttons `/missions/daily` → `/missions` |
-| `e2e/global-setup.ts` (edit) | Navigate to `/missions` |
-| `e2e/missions.spec.ts` | E2E tests |
-| **Delete** `src/lib/missions.ts` | Old single-file mission system |
-| **Delete** `src/pages/missions/daily.astro` | Old daily mission page |
-| **Delete** `src/pages/api/missions/daily-login.ts` | Old daily login API |
+| File                                               | Responsibility                                                                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/db/schema.ts` (edit)                          | Add `missionProgress`, `loginStreak`, `missionOverride` tables                                                                         |
+| `src/lib/missions/types.ts`                        | All TS interfaces: `MissionMetric`, `MissionDefinition`, `MissionGameEvent`, `MissionView`, `BoardState`, `StreakView`                 |
+| `src/lib/missions/periods.ts`                      | Pure UTC period key functions: daily/weekly keys, yesterday, next-reset timestamps                                                     |
+| `src/lib/missions/streak.ts`                       | Pure streak logic: `STREAK_REWARDS`, `getStreakReward`, `computeEffectiveStreak`, `computeStreakTransition`                            |
+| `src/lib/missions/registry.ts`                     | Mission definitions: `DEFAULT_DAILY_MISSIONS`, `REROLL_POOL_DAILY`, `DEFAULT_WEEKLY_MISSIONS`, `ALL_DAILY_DEFINITIONS`, helper lookups |
+| `src/lib/missions/progress.ts`                     | `computeIncrement` (pure), `applyMissionProgress` (D1 batch), `buildProgressUpsertSQL`                                                 |
+| `src/lib/missions/board.ts`                        | `getBoardState` (read model), `applyOverrides`, `getActiveDailyMissionIds`                                                             |
+| `src/lib/missions/claim.ts`                        | `claimMission` (conditional UPDATE + chip grant), `claimLogin` (streak conditional UPDATE)                                             |
+| `src/lib/missions/reroll.ts`                       | `performReroll`, `getReplacementPool`                                                                                                  |
+| `src/lib/missions/seed.ts`                         | Deploy-day seeding: `seedStreakFromOldMission`                                                                                         |
+| `src/lib/missions/index.ts`                        | Barrel exports                                                                                                                         |
+| `src/lib/missions/*.test.ts`                       | Unit tests for pure modules                                                                                                            |
+| `src/pages/api/missions/board.ts`                  | GET — full board state                                                                                                                 |
+| `src/pages/api/missions/claim.ts`                  | POST — claim quest reward                                                                                                              |
+| `src/pages/api/missions/claim-login.ts`            | POST — claim streak reward                                                                                                             |
+| `src/pages/api/missions/reroll.ts`                 | POST — swap uncompleted daily quest                                                                                                    |
+| `src/pages/api/missions/progress.ts`               | DELETE — dev-only reset + seedStreak                                                                                                   |
+| `src/pages/missions/index.astro`                   | Board page (SSR + client script)                                                                                                       |
+| `src/pages/api/chips/update.ts` (edit)             | Call `applyMissionProgress` after validated sync                                                                                       |
+| `src/pages/api/mp/settle.ts` (edit)                | Call `applyMissionProgress` after settle                                                                                               |
+| `src/layouts/AppLayout.astro` (edit)               | Nav links `/missions/daily` → `/missions`                                                                                              |
+| `src/pages/index.astro` (edit)                     | CTA buttons `/missions/daily` → `/missions`                                                                                            |
+| `e2e/global-setup.ts` (edit)                       | Navigate to `/missions`                                                                                                                |
+| `e2e/missions.spec.ts`                             | E2E tests                                                                                                                              |
+| **Delete** `src/lib/missions.ts`                   | Old single-file mission system                                                                                                         |
+| **Delete** `src/pages/missions/daily.astro`        | Old daily mission page                                                                                                                 |
+| **Delete** `src/pages/api/missions/daily-login.ts` | Old daily login API                                                                                                                    |
 
 ---
 
 ## Task 1: DB Schema — Three New Tables
 
 **Files:**
+
 - Modify: `src/db/schema.ts` (append after the existing `mission` table definition, ~line 102)
 
 **Interfaces:**
+
 - Produces: exported Drizzle table objects `missionProgress`, `loginStreak`, `missionOverride` for use by all later tasks.
 
 - [ ] **Step 1: Add the three table definitions to `src/db/schema.ts`**
@@ -87,17 +89,14 @@ export const missionProgress = sqliteTable(
 	}),
 );
 
-export const loginStreak = sqliteTable(
-	'login_streak',
-	{
-		userId: text('userId')
-			.primaryKey()
-			.references(() => user.id, { onDelete: 'cascade' }),
-		currentStreak: integer('currentStreak').notNull().default(0),
-		longestStreak: integer('longestStreak').notNull().default(0),
-		lastClaimPeriodKey: text('lastClaimPeriodKey').notNull().default(''),
-	},
-);
+export const loginStreak = sqliteTable('login_streak', {
+	userId: text('userId')
+		.primaryKey()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	currentStreak: integer('currentStreak').notNull().default(0),
+	longestStreak: integer('longestStreak').notNull().default(0),
+	lastClaimPeriodKey: text('lastClaimPeriodKey').notNull().default(''),
+});
 
 export const missionOverride = sqliteTable(
 	'mission_override',
@@ -137,11 +136,13 @@ git commit -m "feat: add mission_progress, login_streak, mission_override tables
 ## Task 2: Types + Period Key Functions
 
 **Files:**
+
 - Create: `src/lib/missions/types.ts`
 - Create: `src/lib/missions/periods.ts`
 - Create: `src/lib/missions/periods.test.ts`
 
 **Interfaces:**
+
 - Produces: `MissionMetric`, `MissionDefinition`, `MissionGameEvent`, `MissionView`, `StreakView`, `BoardState`; `getDailyPeriodKey`, `getWeeklyPeriodKey`, `getDailyPeriodKeyForYesterday`, `getNextDailyReset`, `getNextWeeklyReset`.
 
 - [ ] **Step 1: Write `src/lib/missions/types.ts`**
@@ -294,6 +295,7 @@ describe('period keys', () => {
 ```bash
 bun test src/lib/missions/periods.test.ts
 ```
+
 Expected: FAIL — module not found.
 
 - [ ] **Step 4: Write `src/lib/missions/periods.ts`**
@@ -340,6 +342,7 @@ export function getNextWeeklyReset(date = new Date()): Date {
 ```bash
 bun test src/lib/missions/periods.test.ts
 ```
+
 Expected: PASS — all tests green.
 
 - [ ] **Step 6: Commit**
@@ -354,10 +357,12 @@ git commit -m "feat: add mission types and UTC period key functions (HPA-173)"
 ## Task 3: Streak Logic (Pure Functions)
 
 **Files:**
+
 - Create: `src/lib/missions/streak.ts`
 - Create: `src/lib/missions/streak.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getDailyPeriodKey`, `getDailyPeriodKeyForYesterday` from Task 2.
 - Produces: `STREAK_REWARDS`, `getStreakReward`, `computeEffectiveStreak`, `computeStreakTransition`.
 
@@ -522,6 +527,7 @@ describe('computeStreakTransition (on claim)', () => {
 ```bash
 bun test src/lib/missions/streak.test.ts
 ```
+
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write `src/lib/missions/streak.ts`**
@@ -640,6 +646,7 @@ export function computeEffectiveStreakFromStored(
 ```bash
 bun test src/lib/missions/streak.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -654,10 +661,12 @@ git commit -m "feat: add streak reward curve and effective streak logic (HPA-173
 ## Task 4: Mission Registry
 
 **Files:**
+
 - Create: `src/lib/missions/registry.ts`
 - Create: `src/lib/missions/registry.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MissionDefinition`, `MissionMetric` from Task 2.
 - Produces: `DEFAULT_DAILY_MISSIONS`, `REROLL_POOL_DAILY`, `DEFAULT_WEEKLY_MISSIONS`, `ALL_DAILY_DEFINITIONS`, `getMissionDef(id)`, `getAllMissionDefIds()`.
 
@@ -731,6 +740,7 @@ describe('mission registry', () => {
 ```bash
 bun test src/lib/missions/registry.test.ts
 ```
+
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write `src/lib/missions/registry.ts`**
@@ -850,6 +860,7 @@ export function getAllMissionDefIds(): string[] {
 ```bash
 bun test src/lib/missions/registry.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Verify DecoIcon names exist**
@@ -868,10 +879,12 @@ git commit -m "feat: add mission definitions registry (HPA-173)"
 ## Task 5: Progress Computation (Pure Functions)
 
 **Files:**
+
 - Create: `src/lib/missions/progress.ts`
 - Create: `src/lib/missions/progress.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MissionDefinition`, `MissionGameEvent` from Task 2.
 - Produces: `computeIncrement`, `clampProgress`.
 
@@ -882,11 +895,7 @@ import { describe, expect, test } from 'bun:test';
 import { computeIncrement, clampProgress } from './progress';
 import type { MissionDefinition, MissionGameEvent } from './types';
 
-function makeDef(
-	id: string,
-	metric: MissionDefinition['metric'],
-	target = 5,
-): MissionDefinition {
+function makeDef(id: string, metric: MissionDefinition['metric'], target = 5): MissionDefinition {
 	return {
 		id,
 		title: id,
@@ -952,32 +961,26 @@ describe('computeIncrement', () => {
 	test('roundsWon with outcome=loss → 0', () => {
 		const def = makeDef('d1', { kind: 'roundsWon' });
 		expect(
-			computeIncrement(
-				def,
-				{ ...baseEvent, outcome: 'loss', winsIncrement: 0 },
-				null,
-			),
+			computeIncrement(def, { ...baseEvent, outcome: 'loss', winsIncrement: 0 }, null),
 		).toEqual({ amount: 0 });
 	});
 
 	test('spinsCompleted matches slots only', () => {
 		const def = makeDef('d1', { kind: 'spinsCompleted' });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'slots' }, null),
-		).toEqual({ amount: 1 });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null),
-		).toEqual({ amount: 0 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'slots' }, null)).toEqual({ amount: 1 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null)).toEqual({
+			amount: 0,
+		});
 	});
 
 	test('mpHandsCompleted matches poker_mp', () => {
 		const def = makeDef('d1', { kind: 'mpHandsCompleted' });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'poker_mp' }, null),
-		).toEqual({ amount: 1 });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null),
-		).toEqual({ amount: 0 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker_mp' }, null)).toEqual({
+			amount: 1,
+		});
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null)).toEqual({
+			amount: 0,
+		});
 	});
 
 	test('netChipsEarned dropped for MVP — no test needed', () => {
@@ -1028,6 +1031,7 @@ describe('clampProgress', () => {
 ```bash
 bun test src/lib/missions/progress.test.ts
 ```
+
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write `src/lib/missions/progress.ts`** (pure functions only; DB functions added in Task 7)
@@ -1099,6 +1103,7 @@ export function parseMetadata(json: string | null | undefined): string[] {
 ```bash
 bun test src/lib/missions/progress.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1113,10 +1118,12 @@ git commit -m "feat: add mission progress computation logic (HPA-173)"
 ## Task 6: Board State Reader + Override/Reroll Pool Logic
 
 **Files:**
+
 - Create: `src/lib/missions/board.ts`
 - Create: `src/lib/missions/board.test.ts`
 
 **Interfaces:**
+
 - Consumes: `DEFAULT_DAILY_MISSIONS`, `DEFAULT_WEEKLY_MISSIONS`, `ALL_DAILY_DEFINITIONS` from Task 4; `computeEffectiveStreakFromStored` from Task 3; `computeIncrement`, `clampProgress` from Task 5; `getDailyPeriodKey`, `getWeeklyPeriodKey`, `getNextDailyReset`, `getNextWeeklyReset` from Task 2.
 - Produces: `applyOverrides`, `getReplacementPool`, `buildMissionView`.
 
@@ -1186,7 +1193,11 @@ describe('getReplacementPool', () => {
 describe('buildMissionView', () => {
 	test('not started → progress 0, not completed', () => {
 		const def = DEFAULT_DAILY_MISSIONS[0];
-		const view = buildMissionView(def, { progress: 0, completedAt: null, claimedAt: null, metadataJson: null }, false);
+		const view = buildMissionView(
+			def,
+			{ progress: 0, completedAt: null, claimedAt: null, metadataJson: null },
+			false,
+		);
 		expect(view.progress).toBe(0);
 		expect(view.completed).toBe(false);
 		expect(view.claimed).toBe(false);
@@ -1195,20 +1206,32 @@ describe('buildMissionView', () => {
 
 	test('completed but unclaimed → claimable', () => {
 		const def = DEFAULT_DAILY_MISSIONS[0];
-		const view = buildMissionView(def, { progress: 5, completedAt: new Date(), claimedAt: null, metadataJson: null }, false);
+		const view = buildMissionView(
+			def,
+			{ progress: 5, completedAt: new Date(), claimedAt: null, metadataJson: null },
+			false,
+		);
 		expect(view.completed).toBe(true);
 		expect(view.claimable).toBe(true);
 	});
 
 	test('completed and claimed → not claimable', () => {
 		const def = DEFAULT_DAILY_MISSIONS[0];
-		const view = buildMissionView(def, { progress: 5, completedAt: new Date(), claimedAt: new Date(), metadataJson: null }, false);
+		const view = buildMissionView(
+			def,
+			{ progress: 5, completedAt: new Date(), claimedAt: new Date(), metadataJson: null },
+			false,
+		);
 		expect(view.claimable).toBe(false);
 	});
 
 	test('isOverride flag passed through', () => {
 		const def = DEFAULT_DAILY_MISSIONS[0];
-		const view = buildMissionView(def, { progress: 0, completedAt: null, claimedAt: null, metadataJson: null }, true);
+		const view = buildMissionView(
+			def,
+			{ progress: 0, completedAt: null, claimedAt: null, metadataJson: null },
+			true,
+		);
 		expect(view.isOverride).toBe(true);
 	});
 });
@@ -1219,6 +1242,7 @@ describe('buildMissionView', () => {
 ```bash
 bun test src/lib/missions/board.test.ts
 ```
+
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Write `src/lib/missions/board.ts`**
@@ -1279,7 +1303,12 @@ export function getReplacementPool(activeMissionIds: string[]): MissionDefinitio
 
 export function buildMissionView(
 	def: MissionDefinition,
-	progress: { progress: number; completedAt: Date | null; claimedAt: Date | null; metadataJson: string | null },
+	progress: {
+		progress: number;
+		completedAt: Date | null;
+		claimedAt: Date | null;
+		metadataJson: string | null;
+	},
 	isOverride: boolean,
 ): MissionView {
 	const clamped = clampProgress(progress.progress, def.target);
@@ -1376,7 +1405,9 @@ export async function getBoardState(
 	});
 
 	const streakRow = await d1
-		.prepare(`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`)
+		.prepare(
+			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`,
+		)
 		.bind(userId)
 		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();
 
@@ -1419,6 +1450,7 @@ function emptyProgress(): ProgressRow {
 ```bash
 bun test src/lib/missions/board.test.ts
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1433,10 +1465,12 @@ git commit -m "feat: add board state reader and override logic (HPA-173)"
 ## Task 7: applyMissionProgress (D1 Batch)
 
 **Files:**
+
 - Modify: `src/lib/missions/progress.ts` (add `applyMissionProgress` + `buildProgressUpsertSQL`)
 - Create: `src/lib/missions/progress-integration.test.ts` (miniflare-based)
 
 **Interfaces:**
+
 - Consumes: `computeIncrement`, `clampProgress` from Task 5; `getBoardState.getOverrides`, `applyOverrides` from Task 6; `getDailyPeriodKey`, `getWeeklyPeriodKey` from Task 2.
 - Produces: `applyMissionProgress(d1, userId, event)` — called from chips/update and mp/settle.
 
@@ -1483,7 +1517,9 @@ export async function applyMissionProgress(
 		const currentProgress = existing?.progress ?? 0;
 		const newProgressRaw = currentProgress + result.amount;
 		const newProgress = clampProgress(newProgressRaw, def.target);
-		const metadataJson = result.metadata ? JSON.stringify(result.metadata) : existing?.metadataJson ?? null;
+		const metadataJson = result.metadata
+			? JSON.stringify(result.metadata)
+			: (existing?.metadataJson ?? null);
 
 		const stmt = buildProgressUpsertSQL(
 			d1,
@@ -1556,6 +1592,7 @@ import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 ```bash
 bun test src/lib/missions/
 ```
+
 Expected: All unit tests still pass.
 
 - [ ] **Step 4: Commit**
@@ -1570,10 +1607,12 @@ git commit -m "feat: add applyMissionProgress D1 batch function (HPA-173)"
 ## Task 8: Claim Logic (Conditional UPDATE)
 
 **Files:**
+
 - Create: `src/lib/missions/claim.ts`
 - Create: `src/lib/missions/claim.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getMissionDef` from Task 4; `getDailyPeriodKey`, `getWeeklyPeriodKey` from Task 2; `computeStreakTransition` from Task 3; `getDailyPeriodKeyForYesterday` from Task 2.
 - Produces: `claimMission(d1, userId, missionDefId)`, `claimLogin(d1, userId)`.
 
@@ -1664,7 +1703,12 @@ export async function claimMission(
 		.first<{ claimedAt: number | null }>();
 
 	if (row?.claimedAt) {
-		return { status: 'already-claimed', missionDefId, rewardChips: 0, chipBalance: currentChipBalance };
+		return {
+			status: 'already-claimed',
+			missionDefId,
+			rewardChips: 0,
+			chipBalance: currentChipBalance,
+		};
 	}
 	return { status: 'not-completed', missionDefId, rewardChips: 0, chipBalance: currentChipBalance };
 }
@@ -1680,7 +1724,9 @@ export async function claimLogin(
 	// Read current streak to compute transition values (not for race guard —
 	// the WHERE clause on the upsert handles the race)
 	const existing = await d1
-		.prepare(`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`)
+		.prepare(
+			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`,
+		)
 		.bind(userId)
 		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();
 
@@ -1760,6 +1806,7 @@ export async function claimLogin(
 ```bash
 bun test src/lib/missions/
 ```
+
 Expected: All tests pass.
 
 - [ ] **Step 4: Commit**
@@ -1774,10 +1821,12 @@ git commit -m "feat: add conditional claim and streak claim logic (HPA-173)"
 ## Task 9: Reroll Logic
 
 **Files:**
+
 - Create: `src/lib/missions/reroll.ts`
 - Create: `src/lib/missions/reroll.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getReplacementPool` from Task 6; `getDailyPeriodKey` from Task 2; `DEFAULT_DAILY_MISSIONS`, `ALL_DAILY_DEFINITIONS` from Task 4.
 - Produces: `performReroll(d1, userId, missionDefId)`.
 
@@ -1815,7 +1864,9 @@ export async function performReroll(
 
 	// Check: target mission must be uncompleted
 	const progress = await d1
-		.prepare(`SELECT completedAt FROM mission_progress WHERE userId = ? AND missionDefId = ? AND periodKey = ?`)
+		.prepare(
+			`SELECT completedAt FROM mission_progress WHERE userId = ? AND missionDefId = ? AND periodKey = ?`,
+		)
 		.bind(userId, missionDefId, periodKey)
 		.first<{ completedAt: number | null }>();
 
@@ -1870,6 +1921,7 @@ git commit -m "feat: add reroll logic with one-per-day enforcement (HPA-173)"
 ## Task 10: Barrel Exports
 
 **Files:**
+
 - Create: `src/lib/missions/index.ts`
 
 - [ ] **Step 1: Write `src/lib/missions/index.ts`**
@@ -1897,6 +1949,7 @@ git commit -m "feat: add missions barrel exports (HPA-173)"
 ## Task 11: API Endpoints
 
 **Files:**
+
 - Create: `src/pages/api/missions/board.ts`
 - Create: `src/pages/api/missions/claim.ts`
 - Create: `src/pages/api/missions/claim-login.ts`
@@ -1904,6 +1957,7 @@ git commit -m "feat: add missions barrel exports (HPA-173)"
 - Create: `src/pages/api/missions/progress.ts`
 
 **Interfaces:**
+
 - Consumes: `getBoardState` from Task 6; `claimMission`, `claimLogin` from Task 8; `performReroll` from Task 9.
 
 - [ ] **Step 1: Write `src/pages/api/missions/board.ts`**
@@ -2144,9 +2198,7 @@ export async function seedStreakFromOldMission(d1: D1Database, userId: string): 
 
 	// Check old mission table for today's daily-login claim
 	const oldMission = await d1
-		.prepare(
-			`SELECT completedDate FROM mission WHERE userId = ? AND missionId = 'daily-login'`,
-		)
+		.prepare(`SELECT completedDate FROM mission WHERE userId = ? AND missionId = 'daily-login'`)
 		.bind(userId)
 		.first<{ completedDate: number | null }>();
 
@@ -2173,6 +2225,7 @@ export async function seedStreakFromOldMission(d1: D1Database, userId: string): 
 - [ ] **Step 7: Add seed.ts to barrel exports**
 
 Add to `src/lib/missions/index.ts`:
+
 ```typescript
 export * from './seed';
 ```
@@ -2195,6 +2248,7 @@ git commit -m "feat: add mission API endpoints and deploy-day seeding (HPA-173)"
 ## Task 12: Integration — Wire into chips/update + mp/settle
 
 **Files:**
+
 - Modify: `src/pages/api/chips/update.ts`
 - Modify: `src/pages/api/mp/settle.ts`
 
@@ -2237,6 +2291,7 @@ import { applyMissionProgress } from '../../../../lib/missions';
 ```
 
 After the settle batch:
+
 ```typescript
 // Update mission progress for each settled entry
 for (const entry of newEntries) {
@@ -2274,6 +2329,7 @@ git commit -m "feat: wire mission progress into chip sync and MP settle (HPA-173
 ## Task 13: Board Page UI
 
 **Files:**
+
 - Create: `src/pages/missions/index.astro`
 
 - [ ] **Step 1: Write the board page**
@@ -2315,7 +2371,8 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 					<div>
 						<p class="deco-eyebrow-sm">Daily Login Streak</p>
 						<h2 class="deco-section-title text-2xl mt-1">
-							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span>
+							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span
+							>
 						</h2>
 						<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
 							{initialBoard.streak.current}-day streak · Best: {initialBoard.streak.longestStreak}
@@ -2340,62 +2397,79 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 
 			<!-- Daily Quests -->
 			<h2 class="deco-section-title text-xl mb-4">Daily Quests</h2>
-			<div id="daily-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8" data-testid="daily-grid">
-				{initialBoard.daily.map((mission) => (
-					<div class="deco-panel p-4 mission-card" data-testid={`mission-${mission.missionDefId}`} data-mission-id={mission.missionDefId}>
-						<div class="flex items-start justify-between mb-2">
-							<div class="flex items-center gap-2">
-								<DecoIcon name={mission.icon as any} size={20} class="text-[var(--deco-brass)]" />
-								<h3 class="font-body font-semibold">{mission.title}</h3>
-								{mission.isOverride && <span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>}
+			<div
+				id="daily-grid"
+				class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
+				data-testid="daily-grid"
+			>
+				{
+					initialBoard.daily.map((mission) => (
+						<div
+							class="deco-panel p-4 mission-card"
+							data-testid={`mission-${mission.missionDefId}`}
+							data-mission-id={mission.missionDefId}
+						>
+							<div class="flex items-start justify-between mb-2">
+								<div class="flex items-center gap-2">
+									<DecoIcon name={mission.icon as any} size={20} class="text-[var(--deco-brass)]" />
+									<h3 class="font-body font-semibold">{mission.title}</h3>
+									{mission.isOverride && (
+										<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>
+									)}
+								</div>
+								<button
+									class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
+									data-reroll-target={mission.missionDefId}
+									data-testid={`reroll-${mission.missionDefId}`}
+									style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
+								>
+									<DecoIcon name="star" size={16} />
+								</button>
 							</div>
-							<button
-								class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
-								data-reroll-target={mission.missionDefId}
-								data-testid={`reroll-${mission.missionDefId}`}
-								style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
-							>
-								<DecoIcon name="star" size={16} />
-							</button>
-						</div>
-						<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
-						<div class="flex items-center gap-2 mb-3">
-							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
-								<div
-									class="bg-[var(--deco-brass)] h-full transition-all"
-									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
-									data-testid={`progress-${mission.missionDefId}`}
-								></div>
+							<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
+							<div class="flex items-center gap-2 mb-3">
+								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
+									<div
+										class="bg-[var(--deco-brass)] h-full transition-all"
+										style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+										data-testid={`progress-${mission.missionDefId}`}
+									/>
+								</div>
+								<span
+									class="text-sm tabular-nums"
+									data-testid={`progress-text-${mission.missionDefId}`}
+								>
+									{mission.progress}/{mission.target}
+								</span>
 							</div>
-							<span class="text-sm tabular-nums" data-testid={`progress-text-${mission.missionDefId}`}>
-								{mission.progress}/{mission.target}
-							</span>
+							<div class="flex items-center justify-between">
+								<span class="text-[var(--deco-brass)] text-sm font-medium">
+									{mission.rewardChips.toLocaleString()} chips
+								</span>
+								<button
+									class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
+									data-claim-target={mission.missionDefId}
+									data-testid={`claim-${mission.missionDefId}`}
+									disabled={!mission.claimable}
+								>
+									{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+								</button>
+							</div>
 						</div>
-						<div class="flex items-center justify-between">
-							<span class="text-[var(--deco-brass)] text-sm font-medium">
-								{mission.rewardChips.toLocaleString()} chips
-							</span>
-							<button
-								class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
-								data-claim-target={mission.missionDefId}
-								data-testid={`claim-${mission.missionDefId}`}
-								disabled={!mission.claimable}
-							>
-								{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
-							</button>
-						</div>
-					</div>
-				))}
+					))
+				}
 			</div>
 
 			<!-- Weekly Goal -->
 			<h2 class="deco-section-title text-xl mb-4">Weekly Goal</h2>
 			<div id="weekly-section" data-testid="weekly-section">
-				{initialBoard.weekly.map((mission) => (
-					<div class="deco-panel p-6" data-testid={`mission-${mission.missionDefId}`}>
-						<!-- Same card structure as daily, larger -->
-					</div>
-				))}
+				{
+					initialBoard.weekly.map((mission) => (
+						<div class="deco-panel p-6" data-testid={`mission-${mission.missionDefId}`}>
+							{/* Same card structure as daily, larger */}
+						</div>
+					))
+				}
 			</div>
 		</div>
 	</section>
@@ -2469,6 +2543,7 @@ git commit -m "feat: add mission board page with SSR initial state (HPA-173)"
 ## Task 14: Migration — Nav Links + Remove Old Files
 
 **Files:**
+
 - Modify: `src/layouts/AppLayout.astro`
 - Modify: `src/pages/index.astro`
 - Modify: `e2e/global-setup.ts`
@@ -2479,6 +2554,7 @@ git commit -m "feat: add mission board page with SSR initial state (HPA-173)"
 - [ ] **Step 1: Update nav links in `src/layouts/AppLayout.astro`**
 
 Replace all `/missions/daily` with `/missions` (lines 73 and 111):
+
 ```
 /missions/daily → /missions
 ```
@@ -2525,6 +2601,7 @@ git commit -m "refactor: remove old daily mission system, update nav links (HPA-
 ## Task 15: E2E Tests
 
 **Files:**
+
 - Create: `e2e/missions.spec.ts`
 
 - [ ] **Step 1: Write E2E tests**
@@ -2635,26 +2712,26 @@ git commit -m "test: add mission board E2E tests (HPA-173)"
 
 ### Spec coverage
 
-| Spec section | Task(s) |
-|-------------|---------|
-| Data model (3 tables) | Task 1 |
-| Period key computation | Task 2 |
-| Streak system (rewards, effective streak, transition) | Task 3 |
-| Mission registry (definitions) | Task 4 |
-| Metric → event mapping (computeIncrement) | Task 5 |
-| Progress application (applyMissionProgress, clamp, conditional completedAt) | Task 7 |
-| Board state reader (overrides, replacement pool, getBoardState) | Task 6 |
-| Claim algorithm (conditional UPDATE, D1 batch) | Task 8 |
-| Reroll mechanism (one per day, replacement pool) | Task 9 |
-| API endpoints (board, claim, claim-login, reroll, dev reset) | Task 11 |
-| Deploy-day seeding | Task 11 (seed.ts) |
-| Integration (chips/update, mp/settle) | Task 12 |
-| SSR board page | Task 13 |
-| Nav links + remove old files | Task 14 |
-| E2E tests | Task 15 |
-| AC: validated events only | Task 12 (only when shouldRecordStats + isValidGameType) |
-| AC: no duplicate rewards | Task 8 (conditional UPDATE + changes() gate) |
-| AC: UTC resets | Task 2 (period keys) + Task 3 (effective streak on read) |
-| AC: daily login migration | Task 11 (seed.ts) + Task 14 (remove old) |
-| AC: unit tests | Tasks 2-9 |
-| AC: E2E coverage | Task 15 |
+| Spec section                                                                | Task(s)                                                  |
+| --------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Data model (3 tables)                                                       | Task 1                                                   |
+| Period key computation                                                      | Task 2                                                   |
+| Streak system (rewards, effective streak, transition)                       | Task 3                                                   |
+| Mission registry (definitions)                                              | Task 4                                                   |
+| Metric → event mapping (computeIncrement)                                   | Task 5                                                   |
+| Progress application (applyMissionProgress, clamp, conditional completedAt) | Task 7                                                   |
+| Board state reader (overrides, replacement pool, getBoardState)             | Task 6                                                   |
+| Claim algorithm (conditional UPDATE, D1 batch)                              | Task 8                                                   |
+| Reroll mechanism (one per day, replacement pool)                            | Task 9                                                   |
+| API endpoints (board, claim, claim-login, reroll, dev reset)                | Task 11                                                  |
+| Deploy-day seeding                                                          | Task 11 (seed.ts)                                        |
+| Integration (chips/update, mp/settle)                                       | Task 12                                                  |
+| SSR board page                                                              | Task 13                                                  |
+| Nav links + remove old files                                                | Task 14                                                  |
+| E2E tests                                                                   | Task 15                                                  |
+| AC: validated events only                                                   | Task 12 (only when shouldRecordStats + isValidGameType)  |
+| AC: no duplicate rewards                                                    | Task 8 (conditional UPDATE + changes() gate)             |
+| AC: UTC resets                                                              | Task 2 (period keys) + Task 3 (effective streak on read) |
+| AC: daily login migration                                                   | Task 11 (seed.ts) + Task 14 (remove old)                 |
+| AC: unit tests                                                              | Tasks 2-9                                                |
+| AC: E2E coverage                                                            | Task 15                                                  |

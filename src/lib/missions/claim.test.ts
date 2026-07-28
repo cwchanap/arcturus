@@ -135,7 +135,9 @@ async function getStreak(
 	userId: string,
 ): Promise<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string } | null> {
 	return d1
-		.prepare('SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?')
+		.prepare(
+			'SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?',
+		)
 		.bind(userId)
 		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();
 }

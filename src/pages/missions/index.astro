@@ -32,7 +32,8 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 					<div>
 						<p class="deco-eyebrow-sm">Daily Login Streak</p>
 						<h2 class="deco-section-title text-2xl mt-1">
-							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span>
+							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span
+							>
 						</h2>
 						<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
 							{initialBoard.streak.current}-day streak · Best: {initialBoard.streak.longest}
@@ -62,109 +63,113 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 				class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
 				data-testid="daily-grid"
 			>
-				{initialBoard.daily.map((mission) => (
-					<div
-						class="deco-panel p-4 mission-card"
-						data-testid={`mission-${mission.missionDefId}`}
-						data-mission-id={mission.missionDefId}
-					>
-						<div class="flex items-start justify-between mb-2">
-							<div class="flex items-center gap-2">
-								<span class="text-xl">{mission.icon}</span>
-								<h3 class="font-body font-semibold">{mission.title}</h3>
-								{mission.isOverride && (
-									<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>
-								)}
+				{
+					initialBoard.daily.map((mission) => (
+						<div
+							class="deco-panel p-4 mission-card"
+							data-testid={`mission-${mission.missionDefId}`}
+							data-mission-id={mission.missionDefId}
+						>
+							<div class="flex items-start justify-between mb-2">
+								<div class="flex items-center gap-2">
+									<span class="text-xl">{mission.icon}</span>
+									<h3 class="font-body font-semibold">{mission.title}</h3>
+									{mission.isOverride && (
+										<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>
+									)}
+								</div>
+								<button
+									class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
+									data-reroll-target={mission.missionDefId}
+									data-testid={`reroll-${mission.missionDefId}`}
+									style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
+									aria-label="Reroll mission"
+								>
+									<DecoIcon name="star" size={16} />
+								</button>
 							</div>
-							<button
-								class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
-								data-reroll-target={mission.missionDefId}
-								data-testid={`reroll-${mission.missionDefId}`}
-								style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
-								aria-label="Reroll mission"
-							>
-								<DecoIcon name="star" size={16} />
-							</button>
-						</div>
-						<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
-						<div class="flex items-center gap-2 mb-3">
-							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
-								<div
-									class="bg-[var(--deco-brass)] h-full transition-all"
-									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
-									data-testid={`progress-${mission.missionDefId}`}
-								></div>
+							<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
+							<div class="flex items-center gap-2 mb-3">
+								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
+									<div
+										class="bg-[var(--deco-brass)] h-full transition-all"
+										style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+										data-testid={`progress-${mission.missionDefId}`}
+									/>
+								</div>
+								<span
+									class="text-sm tabular-nums"
+									data-testid={`progress-text-${mission.missionDefId}`}
+								>
+									{mission.progress}/{mission.target}
+								</span>
 							</div>
-							<span
-								class="text-sm tabular-nums"
-								data-testid={`progress-text-${mission.missionDefId}`}
-							>
-								{mission.progress}/{mission.target}
-							</span>
+							<div class="flex items-center justify-between">
+								<span class="text-[var(--deco-brass)] text-sm font-medium">
+									{mission.rewardChips.toLocaleString()} chips
+								</span>
+								<button
+									class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
+									data-claim-target={mission.missionDefId}
+									data-testid={`claim-${mission.missionDefId}`}
+									disabled={!mission.claimable}
+								>
+									{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+								</button>
+							</div>
 						</div>
-						<div class="flex items-center justify-between">
-							<span class="text-[var(--deco-brass)] text-sm font-medium">
-								{mission.rewardChips.toLocaleString()} chips
-							</span>
-							<button
-								class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
-								data-claim-target={mission.missionDefId}
-								data-testid={`claim-${mission.missionDefId}`}
-								disabled={!mission.claimable}
-							>
-								{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
-							</button>
-						</div>
-					</div>
-				))}
+					))
+				}
 			</div>
 
 			<!-- Weekly Goal -->
 			<h2 class="deco-section-title text-xl mb-4">Weekly Goal</h2>
 			<div id="weekly-section" data-testid="weekly-section">
-				{initialBoard.weekly.map((mission) => (
-					<div
-						class="deco-panel p-6 mission-card"
-						data-testid={`mission-${mission.missionDefId}`}
-						data-mission-id={mission.missionDefId}
-					>
-						<div class="flex items-start justify-between mb-3">
-							<div class="flex items-center gap-2">
-								<span class="text-2xl">{mission.icon}</span>
-								<h3 class="font-body font-semibold text-lg">{mission.title}</h3>
+				{
+					initialBoard.weekly.map((mission) => (
+						<div
+							class="deco-panel p-6 mission-card"
+							data-testid={`mission-${mission.missionDefId}`}
+							data-mission-id={mission.missionDefId}
+						>
+							<div class="flex items-start justify-between mb-3">
+								<div class="flex items-center gap-2">
+									<span class="text-2xl">{mission.icon}</span>
+									<h3 class="font-body font-semibold text-lg">{mission.title}</h3>
+								</div>
+							</div>
+							<p class="deco-text-dim text-sm mb-4">{mission.description}</p>
+							<div class="flex items-center gap-3 mb-4">
+								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
+									<div
+										class="bg-[var(--deco-brass)] h-full transition-all"
+										style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+										data-testid={`progress-${mission.missionDefId}`}
+									/>
+								</div>
+								<span
+									class="text-sm tabular-nums"
+									data-testid={`progress-text-${mission.missionDefId}`}
+								>
+									{mission.progress}/{mission.target}
+								</span>
+							</div>
+							<div class="flex items-center justify-between">
+								<span class="text-[var(--deco-brass)] text-sm font-medium">
+									{mission.rewardChips.toLocaleString()} chips
+								</span>
+								<button
+									class="claim-btn btn-gold px-4 py-2 rounded text-sm"
+									data-claim-target={mission.missionDefId}
+									data-testid={`claim-${mission.missionDefId}`}
+									disabled={!mission.claimable}
+								>
+									{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+								</button>
 							</div>
 						</div>
-						<p class="deco-text-dim text-sm mb-4">{mission.description}</p>
-						<div class="flex items-center gap-3 mb-4">
-							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
-								<div
-									class="bg-[var(--deco-brass)] h-full transition-all"
-									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
-									data-testid={`progress-${mission.missionDefId}`}
-								></div>
-							</div>
-							<span
-								class="text-sm tabular-nums"
-								data-testid={`progress-text-${mission.missionDefId}`}
-							>
-								{mission.progress}/{mission.target}
-							</span>
-						</div>
-						<div class="flex items-center justify-between">
-							<span class="text-[var(--deco-brass)] text-sm font-medium">
-								{mission.rewardChips.toLocaleString()} chips
-							</span>
-							<button
-								class="claim-btn btn-gold px-4 py-2 rounded text-sm"
-								data-claim-target={mission.missionDefId}
-								data-testid={`claim-${mission.missionDefId}`}
-								disabled={!mission.claimable}
-							>
-								{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
-							</button>
-						</div>
-					</div>
-				))}
+					))
+				}
 			</div>
 		</div>
 	</section>
@@ -217,7 +222,10 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			return mission.completed ? 'Claim' : 'In Progress';
 		}
 
-		function renderMissionCard(mission: MissionView, opts: { weekly?: boolean; rerollAvailable?: boolean }): string {
+		function renderMissionCard(
+			mission: MissionView,
+			opts: { weekly?: boolean; rerollAvailable?: boolean },
+		): string {
 			const large = opts.weekly === true;
 			const pad = large ? 'p-6' : 'p-4';
 			const iconSize = large ? 'text-2xl' : 'text-xl';
@@ -296,7 +304,9 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 
 			const weeklySection = document.getElementById('weekly-section');
 			if (weeklySection) {
-				weeklySection.innerHTML = board.weekly.map((m) => renderMissionCard(m, { weekly: true })).join('');
+				weeklySection.innerHTML = board.weekly
+					.map((m) => renderMissionCard(m, { weekly: true }))
+					.join('');
 			}
 		}
 

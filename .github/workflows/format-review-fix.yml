@@ -27,16 +27,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Format review-fix files and verify
+      - name: Format repository and verify lint
         run: |
-          bunx prettier --write \
-            e2e/missions.spec.ts \
-            src/lib/missions/board-integration.test.ts \
-            src/lib/missions/claim-race.test.ts \
-            src/lib/missions/progress-mock.test.ts \
-            src/lib/missions/progress.ts \
-            src/server/cleanup.test.ts
-          bun run format:check
+          bun run format
           bun run lint
 
       - name: Remove one-shot workflow and commit

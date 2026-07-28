@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { applyMissionProgress } from '../../../lib/missions';
+import { applyMissionProgressBatch } from '../../../lib/missions';
 
 interface SettleEntry {
 	userId: string;
@@ -185,40 +185,30 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
 	await d1.batch(settleStatements);
 
-	for (const entry of newEntries) {
-		const outcome = entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push';
-		const event = {
+	// Update mission progress for all settled entries in a single batched
+	// call. Chip settlement above already committed; mission progress is
+	// best-effort relative to it, so a transient failure here is logged but
+	// does not fail the response (chips are already moved). This replaces
+	// the former per-player 3× serial retry loop, which serialized N × 3
+	// D1 round-trips on the settle response.
+	const missionEvents = newEntries.map((entry) => ({
+		userId: entry.userId,
+		event: {
 			gameType: 'poker_mp' as const,
-			outcome,
+			outcome: (entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push') as
+				| 'win'
+				| 'loss'
+				| 'push',
 			handCount: 1,
 			winsIncrement: entry.delta > 0 ? 1 : 0,
 			lossesIncrement: entry.delta < 0 ? 1 : 0,
 			delta: entry.delta,
-		};
-		// Lightweight in-process retry: mission progress is best-effort
-		// relative to chip settlement (which already succeeded in the
-		// batch above), but a transient D1 error shouldn't silently drop
-		// progress. Retry up to 3 times with short backoff, then surface
-		// the failure loudly if all attempts fail.
-		let lastError: unknown = null;
-		for (let attempt = 0; attempt < 3; attempt++) {
-			try {
-				await applyMissionProgress(d1, entry.userId, event);
-				lastError = null;
-				break;
-			} catch (missionError) {
-				lastError = missionError;
-				if (attempt < 2) {
-					await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
-				}
-			}
-		}
-		if (lastError) {
-			console.error(
-				'[MISSION_PROGRESS] Failed to update for MP settle after 3 attempts:',
-				lastError,
-			);
-		}
+		},
+	}));
+	try {
+		await applyMissionProgressBatch(d1, missionEvents);
+	} catch (missionError) {
+		console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
 	}
 
 	return new Response(JSON.stringify({ ok: true }), {

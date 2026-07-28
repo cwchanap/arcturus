@@ -67,71 +67,108 @@ export async function applyMissionProgress(
 	userId: string,
 	event: MissionGameEvent,
 ): Promise<void> {
-	if (!event.outcome) return;
+	await applyMissionProgressBatch(d1, [{ userId, event }]);
+}
+
+/**
+ * Apply mission progress for multiple users in one call.
+ *
+ * Used by `/api/mp/settle` so a multiplayer hand settlement updates every
+ * player's mission progress with a single D1 write batch instead of N
+ * serial per-user round-trips. The read phase (overrides + progress rows)
+ * runs per-user via `Promise.all` (the progress defIds depend on each
+ * user's overrides, so the reads can't be collapsed into one statement),
+ * but all write statements across all users are collected and submitted in
+ * one `d1.batch` call.
+ *
+ * Entries with no `outcome` are skipped (matches the `applyMissionProgress`
+ * guard). Duplicate userIds are handled safely — each produces its own
+ * upsert statements keyed on (userId, missionDefId, periodKey), and the
+ * SQL-side `MIN(progress + excluded.progress, target)` increment is
+ * concurrent-safe within the batch.
+ */
+export async function applyMissionProgressBatch(
+	d1: D1Database,
+	entries: { userId: string; event: MissionGameEvent }[],
+): Promise<void> {
+	const valid = entries.filter((e) => e.event.outcome);
+	if (valid.length === 0) return;
 
 	const dailyKey = getDailyPeriodKey();
 	const weeklyKey = getWeeklyPeriodKey();
-
-	const overrides = await getOverrides(d1, userId, dailyKey);
-	const activeDaily = applyOverrides(DEFAULT_DAILY_MISSIONS, overrides);
-	const allActive = [...activeDaily, ...DEFAULT_WEEKLY_MISSIONS];
-
-	const activeDefIds = allActive.map((d) => d.id);
-	const progressMap = await getProgressRows(d1, userId, activeDefIds, dailyKey, weeklyKey);
-
-	const statements: D1PreparedStatement[] = [];
 	const nowSeconds = Math.trunc(Date.now() / 1000);
 
-	for (const def of allActive) {
-		const periodKey = def.period === 'daily' ? dailyKey : weeklyKey;
-		const existing = progressMap.get(`${def.id}:${periodKey}`) ?? null;
-		const existingNormalized = existing
-			? { progress: existing.progress, metadataJson: existing.metadataJson }
-			: null;
-		const result = computeIncrement(def, event, existingNormalized);
-		if (result.amount === 0) continue;
+	// Read phase: per-user overrides + progress, parallelized across users.
+	// The progress defIds depend on each user's overrides (rerolled missions
+	// swap in a replacement id), so these reads can't be merged into one
+	// statement — but they run concurrently.
+	const readResults = await Promise.all(
+		valid.map(async ({ userId }) => {
+			const overrides = await getOverrides(d1, userId, dailyKey);
+			const activeDaily = applyOverrides(DEFAULT_DAILY_MISSIONS, overrides);
+			const allActive = [...activeDaily, ...DEFAULT_WEEKLY_MISSIONS];
+			const activeDefIds = allActive.map((d) => d.id);
+			const progressMap = await getProgressRows(d1, userId, activeDefIds, dailyKey, weeklyKey);
+			return { userId, allActive, progressMap };
+		}),
+	);
 
-		const currentProgress = existing?.progress ?? 0;
-		const newProgressRaw = currentProgress + result.amount;
-		const newProgress = clampProgress(newProgressRaw, def.target);
-		const metadataJson = result.metadata
-			? JSON.stringify(result.metadata)
-			: (existing?.metadataJson ?? null);
+	// Write phase: collect all statements across all users, submit in one batch.
+	const statements: D1PreparedStatement[] = [];
+	for (let i = 0; i < valid.length; i++) {
+		const { event } = valid[i]!;
+		const { userId, allActive, progressMap } = readResults[i]!;
+		for (const def of allActive) {
+			const periodKey = def.period === 'daily' ? dailyKey : weeklyKey;
+			const existing = progressMap.get(`${def.id}:${periodKey}`) ?? null;
+			const existingNormalized = existing
+				? { progress: existing.progress, metadataJson: existing.metadataJson }
+				: null;
+			const result = computeIncrement(def, event, existingNormalized);
+			if (result.amount === 0) continue;
 
-		if (def.metric.kind === 'gamesTried') {
-			// Per-game dedup: INSERT OR IGNORE a row into mission_game_tried,
-			// then UPSERT mission_progress with progress = COUNT(*) from the
-			// dedup table. This is concurrent-safe — two requests for
-			// different game types both insert their rows, and the COUNT
-			// reflects all committed rows. The metadata fast-path in
-			// computeIncrement skips the write when the game type is already
-			// known, but the dedup table is the source of truth for progress.
-			const dedupStmt = d1
-				.prepare(
-					'INSERT OR IGNORE INTO mission_game_tried (userId, missionDefId, periodKey, gameType, firstTriedAt) VALUES (?, ?, ?, ?, ?)',
-				)
-				.bind(userId, def.id, periodKey, event.gameType, nowSeconds);
-			const progressStmt = buildGamesTriedUpsertSQL(
-				d1,
-				userId,
-				def,
-				periodKey,
-				metadataJson,
-				nowSeconds,
-			);
-			statements.push(dedupStmt, progressStmt);
-		} else {
-			const stmt = buildProgressUpsertSQL(
-				d1,
-				userId,
-				def,
-				periodKey,
-				result.amount,
-				newProgress,
-				metadataJson,
-				nowSeconds,
-			);
-			statements.push(stmt);
+			const currentProgress = existing?.progress ?? 0;
+			const newProgressRaw = currentProgress + result.amount;
+			const newProgress = clampProgress(newProgressRaw, def.target);
+			const metadataJson = result.metadata
+				? JSON.stringify(result.metadata)
+				: (existing?.metadataJson ?? null);
+
+			if (def.metric.kind === 'gamesTried') {
+				// Per-game dedup: INSERT OR IGNORE a row into mission_game_tried,
+				// then UPSERT mission_progress with progress = COUNT(*) from the
+				// dedup table. This is concurrent-safe — two requests for
+				// different game types both insert their rows, and the COUNT
+				// reflects all committed rows. The metadata fast-path in
+				// computeIncrement skips the write when the game type is already
+				// known, but the dedup table is the source of truth for progress.
+				const dedupStmt = d1
+					.prepare(
+						'INSERT OR IGNORE INTO mission_game_tried (userId, missionDefId, periodKey, gameType, firstTriedAt) VALUES (?, ?, ?, ?, ?)',
+					)
+					.bind(userId, def.id, periodKey, event.gameType, nowSeconds);
+				const progressStmt = buildGamesTriedUpsertSQL(
+					d1,
+					userId,
+					def,
+					periodKey,
+					metadataJson,
+					nowSeconds,
+				);
+				statements.push(dedupStmt, progressStmt);
+			} else {
+				const stmt = buildProgressUpsertSQL(
+					d1,
+					userId,
+					def,
+					periodKey,
+					result.amount,
+					newProgress,
+					metadataJson,
+					nowSeconds,
+				);
+				statements.push(stmt);
+			}
 		}
 	}
 

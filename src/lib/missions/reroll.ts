@@ -3,6 +3,14 @@ import { getDailyPeriodKey } from './periods';
 import { getOverrides, applyOverrides, getReplacementPool } from './board';
 import { DEFAULT_DAILY_MISSIONS, getMissionDef } from './registry';
 
+// The set of mission ids that can appear on a user's daily board before any
+// reroll. Reroll must only accept ids from this set: the override row stores
+// `originalMissionDefId` and `applyOverrides` only maps ids that exist in
+// DEFAULT_DAILY_MISSIONS. Accepting a reroll-pool id (e.g. `daily-craps-3`)
+// would consume the user's one daily reroll and create an orphan override that
+// `applyOverrides` never reads, leaving the board unchanged.
+const BOARD_DAILY_IDS = new Set(DEFAULT_DAILY_MISSIONS.map((d) => d.id));
+
 export interface RerollResult {
 	status: 'rerolled' | 'reroll-used' | 'already-completed' | 'not-daily' | 'no-replacement';
 	originalMissionDefId?: string;
@@ -14,6 +22,12 @@ export async function performReroll(
 	userId: string,
 	missionDefId: string,
 ): Promise<RerollResult> {
+	// Reject ids that aren't on the user's rendered daily board. Checking
+	// BOARD_DAILY_IDS (not getMissionDef) prevents rerolling a reroll-pool
+	// mission that was never displayed.
+	if (!BOARD_DAILY_IDS.has(missionDefId)) {
+		return { status: 'not-daily' };
+	}
 	const def = getMissionDef(missionDefId);
 	if (!def || def.period !== 'daily') {
 		return { status: 'not-daily' };

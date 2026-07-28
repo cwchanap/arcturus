@@ -62,7 +62,11 @@ export function buildMissionView(
 	isOverride: boolean,
 ): MissionView {
 	const clamped = clampProgress(progress.progress, def.target);
-	const completed = progress.progress >= def.target;
+	// Derive `completed` from the clamped value, not the raw progress, so the
+	// two fields can never disagree if clampProgress ever changes semantics.
+	// Today clampProgress = max(0, min(p, target)), so this is equivalent to
+	// `raw >= target` for all target > 0, but keeps a single source of truth.
+	const completed = clamped >= def.target;
 	const claimed = progress.claimedAt !== null;
 	return {
 		missionDefId: def.id,

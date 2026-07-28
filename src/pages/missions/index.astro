@@ -201,6 +201,7 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			daily: MissionView[];
 			weekly: MissionView[];
 			rerollAvailable: boolean;
+			chipBalance: number;
 		};
 
 		function escapeHtml(value: string): string {
@@ -308,6 +309,12 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 					.map((m) => renderMissionCard(m, { weekly: true }))
 					.join('');
 			}
+
+			// Keep the shared header chip-balance pill(s) in sync with the
+			// latest server value so a claim doesn't leave the header stale.
+			document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
+				el.textContent = `${board.chipBalance.toLocaleString()} chips`;
+			});
 		}
 
 		async function postJson(url: string, body: unknown): Promise<boolean> {

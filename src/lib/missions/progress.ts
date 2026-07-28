@@ -98,17 +98,41 @@ export async function applyMissionProgress(
 			? JSON.stringify(result.metadata)
 			: (existing?.metadataJson ?? null);
 
-		const stmt = buildProgressUpsertSQL(
-			d1,
-			userId,
-			def,
-			periodKey,
-			result.amount,
-			newProgress,
-			metadataJson,
-			nowSeconds,
-		);
-		statements.push(stmt);
+		if (def.metric.kind === 'gamesTried') {
+			// Per-game dedup: INSERT OR IGNORE a row into mission_game_tried,
+			// then UPSERT mission_progress with progress = COUNT(*) from the
+			// dedup table. This is concurrent-safe — two requests for
+			// different game types both insert their rows, and the COUNT
+			// reflects all committed rows. The metadata fast-path in
+			// computeIncrement skips the write when the game type is already
+			// known, but the dedup table is the source of truth for progress.
+			const dedupStmt = d1
+				.prepare(
+					'INSERT OR IGNORE INTO mission_game_tried (userId, missionDefId, periodKey, gameType, firstTriedAt) VALUES (?, ?, ?, ?, ?)',
+				)
+				.bind(userId, def.id, periodKey, event.gameType, nowSeconds);
+			const progressStmt = buildGamesTriedUpsertSQL(
+				d1,
+				userId,
+				def,
+				periodKey,
+				metadataJson,
+				nowSeconds,
+			);
+			statements.push(dedupStmt, progressStmt);
+		} else {
+			const stmt = buildProgressUpsertSQL(
+				d1,
+				userId,
+				def,
+				periodKey,
+				result.amount,
+				newProgress,
+				metadataJson,
+				nowSeconds,
+			);
+			statements.push(stmt);
+		}
 	}
 
 	if (statements.length > 0) {
@@ -117,24 +141,15 @@ export async function applyMissionProgress(
 }
 
 /**
- * Build the mission_progress UPSERT.
+ * Build the mission_progress UPSERT for the atomic increment path.
  *
- * Two write strategies, selected by metric kind:
- *
- *  - Atomic increment (default): passes `amount` as `excluded.progress` and
- *    the ON CONFLICT branch computes `MIN(progress + excluded.progress,
- *    target)` directly in SQL. This closes the lost-update race where two
- *    concurrent requests both read the same stale `currentProgress`, each
- *    compute the same absolute `newProgress`, and the second overwrites the
- *    first. With the SQL-side increment the second call still adds its delta
- *    on top of the committed value. The first-write INSERT path stores
- *    `clampProgress(amount, target)` directly (0 + amount clamped).
- *
- *  - Absolute write (`gamesTried`): the metric deduplicates via metadata, so
- *    the increment must be computed JS-side from a read-then-write of the
- *    metadata blob. This is inherently non-atomic and acknowledged in the
- *    spec; for this path we keep the legacy absolute-write semantics, passing
- *    `newProgress` as `excluded.progress`.
+ * Passes `amount` as `excluded.progress` and the ON CONFLICT branch computes
+ * `MIN(progress + excluded.progress, target)` directly in SQL. This closes
+ * the lost-update race where two concurrent requests both read the same stale
+ * `currentProgress`, each compute the same absolute `newProgress`, and the
+ * second overwrites the first. With the SQL-side increment the second call
+ * still adds its delta on top of the committed value. The first-write INSERT
+ * path stores `clampProgress(amount, target)` directly (0 + amount clamped).
  */
 export function buildProgressUpsertSQL(
 	d1: D1Database,
@@ -147,29 +162,6 @@ export function buildProgressUpsertSQL(
 	nowSeconds: number,
 ): D1PreparedStatement {
 	const target = def.target;
-	const isAbsolute = def.metric.kind === 'gamesTried';
-
-	if (isAbsolute) {
-		const completedClause = newProgress >= target ? `${nowSeconds}` : 'NULL';
-		return d1
-			.prepare(
-				`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
-				 VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)
-				 ON CONFLICT (userId, missionDefId, periodKey) DO UPDATE SET
-				   progress = excluded.progress,
-				   metadataJson = excluded.metadataJson,
-				   completedAt = CASE
-				     WHEN excluded.progress >= ${target} AND mission_progress.completedAt IS NULL
-				     THEN ${nowSeconds}
-				     ELSE mission_progress.completedAt
-				   END`,
-			)
-			.bind(userId, def.id, periodKey, newProgress, metadataJson);
-	}
-
-	// Atomic increment path. excluded.progress is the increment amount; the
-	// INSERT values store it clamped to target so a single oversized event
-	// never persists progress > target.
 	const clampedAmount = Math.min(amount, target);
 	const completedClause = clampedAmount >= target ? `${nowSeconds}` : 'NULL';
 	return d1
@@ -186,4 +178,52 @@ export function buildProgressUpsertSQL(
 			   END`,
 		)
 		.bind(userId, def.id, periodKey, clampedAmount, metadataJson);
+}
+
+/**
+ * Build the mission_progress UPSERT for the `gamesTried` metric, which uses
+ * per-game dedup rows in `mission_game_tried`. Progress is computed as
+ * `COUNT(*)` from the dedup table at SQL time, so concurrent requests for
+ * different game types both contribute their row and the count reflects all
+ * committed rows. Must be preceded by an `INSERT OR IGNORE` into
+ * `mission_game_tried` in the same batch so the COUNT sees the new row.
+ */
+export function buildGamesTriedUpsertSQL(
+	d1: D1Database,
+	userId: string,
+	def: MissionDefinition,
+	periodKey: string,
+	metadataJson: string | null,
+	nowSeconds: number,
+): D1PreparedStatement {
+	const target = def.target;
+	return d1
+		.prepare(
+			`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
+			 VALUES (?, ?, ?,
+			   (SELECT COUNT(*) FROM mission_game_tried WHERE userId = ? AND missionDefId = ? AND periodKey = ?),
+			   ?,
+			   CASE WHEN (SELECT COUNT(*) FROM mission_game_tried WHERE userId = ? AND missionDefId = ? AND periodKey = ?) >= ${target} THEN ${nowSeconds} ELSE NULL END,
+			   NULL)
+			 ON CONFLICT(userId, missionDefId, periodKey) DO UPDATE SET
+			   progress = (SELECT COUNT(*) FROM mission_game_tried WHERE userId = mission_progress.userId AND missionDefId = mission_progress.missionDefId AND periodKey = mission_progress.periodKey),
+			   metadataJson = excluded.metadataJson,
+			   completedAt = CASE
+			     WHEN (SELECT COUNT(*) FROM mission_game_tried WHERE userId = mission_progress.userId AND missionDefId = mission_progress.missionDefId AND periodKey = mission_progress.periodKey) >= ${target} AND mission_progress.completedAt IS NULL
+			     THEN ${nowSeconds}
+			     ELSE mission_progress.completedAt
+			   END`,
+		)
+		.bind(
+			userId,
+			def.id,
+			periodKey,
+			userId,
+			def.id,
+			periodKey,
+			metadataJson,
+			userId,
+			def.id,
+			periodKey,
+		);
 }

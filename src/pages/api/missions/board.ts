@@ -13,14 +13,19 @@ export const GET: APIRoute = async ({ locals }) => {
 		return Response.json({ error: 'DATABASE_UNAVAILABLE' }, { status: 500 });
 	}
 
-	const db = createDb(d1);
-	const [userRow] = await db
-		.select({ chipBalance: user.chipBalance })
-		.from(user)
-		.where(eq(user.id, locals.session.user.id))
-		.limit(1);
+	try {
+		const db = createDb(d1);
+		const [userRow] = await db
+			.select({ chipBalance: user.chipBalance })
+			.from(user)
+			.where(eq(user.id, locals.session.user.id))
+			.limit(1);
 
-	const chipBalance = userRow?.chipBalance ?? 0;
-	const board = await getBoardState(d1, locals.session.user.id, chipBalance);
-	return Response.json(board);
+		const chipBalance = userRow?.chipBalance ?? 0;
+		const board = await getBoardState(d1, locals.session.user.id, chipBalance);
+		return Response.json(board);
+	} catch (error) {
+		console.error('[MISSIONS_BOARD] Failed to load board:', error);
+		return Response.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
+	}
 };

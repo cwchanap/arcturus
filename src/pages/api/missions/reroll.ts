@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
 import { performReroll } from '../../../lib/missions';
+import type { RerollResult } from '../../../lib/missions';
 
 export const POST: APIRoute = async ({ request, locals }) => {
 	if (!locals.session) {
@@ -21,7 +22,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		return Response.json({ error: 'INVALID_REQUEST_BODY' }, { status: 400 });
 	}
 
-	const result = await performReroll(d1, locals.session.user.id, body.missionDefId);
+	let result: RerollResult;
+	try {
+		result = await performReroll(d1, locals.session.user.id, body.missionDefId);
+	} catch (error) {
+		console.error('[MISSIONS_REROLL] Failed to perform reroll:', error);
+		return Response.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
+	}
 
 	if (result.status === 'reroll-used') {
 		return Response.json({ error: 'REROLL_USED' }, { status: 409 });

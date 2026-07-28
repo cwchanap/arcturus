@@ -1600,17 +1600,24 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			}
 
 			if (shouldRecordStats && isValidGameType(gameType)) {
-				try {
-					await applyMissionProgress(dbBinding, userId, {
-						gameType,
-						outcome: outcome as 'win' | 'loss' | 'push',
-						handCount: resolvedHandCount,
-						winsIncrement: actualWinsIncrement,
-						lossesIncrement: actualLossesIncrement,
-						delta: statsDeltaForTracking,
-					});
-				} catch (missionError) {
+				const missionWork = applyMissionProgress(dbBinding, userId, {
+					gameType,
+					outcome: outcome as 'win' | 'loss' | 'push',
+					handCount: resolvedHandCount,
+					winsIncrement: actualWinsIncrement,
+					lossesIncrement: actualLossesIncrement,
+					delta: statsDeltaForTracking,
+				}).catch((missionError) => {
 					console.error('[MISSION_PROGRESS] Failed to update:', missionError);
+				});
+				// Defer mission-progress writes via waitUntil when available so
+				// the response is not blocked. Fall back to awaiting synchronously
+				// when waitUntil is unavailable (e.g. local dev without ctx).
+				const ctx = locals.runtime?.ctx;
+				if (ctx?.waitUntil) {
+					ctx.waitUntil(missionWork);
+				} else {
+					await missionWork;
 				}
 			}
 

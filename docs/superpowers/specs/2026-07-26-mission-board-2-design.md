@@ -31,7 +31,7 @@ Create a repeatable progression loop that rewards players for returning, trying 
 
 The existing `src/lib/missions.ts` (single file, 208 lines) is replaced by a modular directory:
 
-```
+```text
 src/lib/missions/
 ├── registry.ts          # MissionDefinition[] + MissionMetric union
 ├── periods.ts           # getDailyPeriodKey, getWeeklyPeriodKey, next-reset timestamps
@@ -44,7 +44,7 @@ src/lib/missions/
 
 ### New files
 
-```
+```text
 src/pages/missions/index.astro           # Board page (streak banner + daily grid + weekly card)
 src/pages/api/missions/board.ts           # GET — full board state
 src/pages/api/missions/claim.ts           # POST — claim a quest reward
@@ -593,7 +593,7 @@ All mission endpoints follow the existing API patterns:
 | Mission not found in registry | `400 { error: 'MISSION_NOT_FOUND' }` |
 | Conflict (already claimed, reroll used, etc.) | `409 { error: 'CODE' }` with descriptive code |
 
-The `icon` field on `MissionDefinition` must use a valid `DecoIcon` name (see `src/components/DecoIcon.astro` for the allowed set). The registry should be validated against this set at impl time.
+The `icon` field on `MissionDefinition` must use a Unicode emoji from `GAME_TYPE_ICONS` (see `src/lib/game-stats/constants.ts` for the allowed set). The registry should be validated against this set at impl time.
 
 **Slots handCount note**: The slots `ChipSyncCoordinator` coalesces multiple spins into a single chip-sync request. The `handCount` field reflects the number of coalesced spins, so `daily-slots-20` counts accurately even when spins are batched.
 

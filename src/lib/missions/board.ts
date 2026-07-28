@@ -137,7 +137,17 @@ export async function getBoardState(
 	const dailyKey = getDailyPeriodKey();
 	const weeklyKey = getWeeklyPeriodKey();
 
-	const overrides = await getOverrides(d1, userId, dailyKey);
+	// The login_streak query is independent of overrides/progress, so start
+	// it alongside getOverrides and await both together.
+	const [overrides, streakRow] = await Promise.all([
+		getOverrides(d1, userId, dailyKey),
+		d1
+			.prepare(
+				`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ? LIMIT 1`,
+			)
+			.bind(userId)
+			.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>(),
+	]);
 	const activeDaily = applyOverrides(DEFAULT_DAILY_MISSIONS, overrides);
 	const activeDefIds = [...activeDaily, ...DEFAULT_WEEKLY_MISSIONS].map((d) => d.id);
 	const progressMap = await getProgressRows(d1, userId, activeDefIds, dailyKey, weeklyKey);
@@ -153,13 +163,6 @@ export async function getBoardState(
 		const progress = progressMap.get(`${def.id}:${weeklyKey}`) ?? emptyProgress();
 		return buildMissionView(def, progress, false);
 	});
-
-	const streakRow = await d1
-		.prepare(
-			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ? LIMIT 1`,
-		)
-		.bind(userId)
-		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();
 
 	const effective = computeEffectiveStreakFromStored(streakRow ?? null);
 

@@ -149,14 +149,22 @@ describe('applyMissionProgress (Miniflare D1 integration)', () => {
 		const firstRow = await getProgressRow(db!, userId, 'daily-blackjack-5');
 		expect(firstRow!.progress).toBe(5);
 		expect(firstRow!.completedAt).not.toBeNull();
-		const firstCompletedAt = firstRow!.completedAt;
+
+		// Seed a distinct completedAt that differs from the current second.
+		// Without this, both calls share the same nowSeconds, so an
+		// overwrite would be undetectable (the new value equals the old).
+		const seededCompletedAt = (firstRow!.completedAt ?? 0) - 100;
+		await db!
+			.prepare('UPDATE mission_progress SET completedAt = ? WHERE userId = ? AND missionDefId = ?')
+			.bind(seededCompletedAt, userId, 'daily-blackjack-5')
+			.run();
 
 		// Second call would exceed target — the CASE in the UPSERT must
-		// preserve the original completedAt rather than overwriting it.
+		// preserve the seeded completedAt rather than overwriting it.
 		await applyMissionProgress(db!, userId, makeEvent({ gameType: 'blackjack', handCount: 3 }));
 		const secondRow = await getProgressRow(db!, userId, 'daily-blackjack-5');
 		expect(secondRow!.progress).toBe(5);
-		expect(secondRow!.completedAt).toBe(firstCompletedAt);
+		expect(secondRow!.completedAt).toBe(seededCompletedAt);
 	});
 
 	test('does NOT increment a mission whose metric does not match the event', async () => {
@@ -193,6 +201,34 @@ describe('applyMissionProgress (Miniflare D1 integration)', () => {
 		const afterThird = await getProgressRow(db!, userId, 'weekly-games-3');
 		expect(afterThird!.progress).toBe(2);
 		expect(JSON.parse(afterThird!.metadataJson!)).toEqual(['blackjack', 'craps']);
+	});
+
+	test('gamesTried preserves both contributions when distinct game types arrive concurrently', async () => {
+		const userId = 'user-concurrent';
+		await insertUser(db!, userId);
+
+		// Two concurrent requests for different game types. With the old
+		// absolute-write approach, both read the same stale state and the
+		// second overwrote the first — losing one contribution. The per-game
+		// dedup table makes progress = COUNT(*) from mission_game_tried, so
+		// both rows contribute and progress ends at 2.
+		await Promise.all([
+			applyMissionProgress(db!, userId, makeEvent({ gameType: 'blackjack', handCount: 1 })),
+			applyMissionProgress(db!, userId, makeEvent({ gameType: 'craps', handCount: 1 })),
+		]);
+
+		const row = await getProgressRow(db!, userId, 'weekly-games-3');
+		expect(row).not.toBeNull();
+		expect(row!.progress).toBe(2);
+
+		// Both game types should be recorded in the dedup table.
+		const dedupRows = await db!
+			.prepare(
+				'SELECT gameType FROM mission_game_tried WHERE userId = ? AND missionDefId = ? ORDER BY gameType',
+			)
+			.bind(userId, 'weekly-games-3')
+			.all<{ gameType: string }>();
+		expect(dedupRows.results.map((r) => r.gameType)).toEqual(['blackjack', 'craps']);
 	});
 
 	test('skips entirely (writes nothing) when outcome is null', async () => {

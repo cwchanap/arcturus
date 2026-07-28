@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	runRetentionCleanup,
 	runScheduledJobs,
+	isDailyPeriodKey,
 	RETENTION_DAYS,
 	ROULETTE_RECEIPT_RETENTION_DAYS,
 	type ScheduledJobDeps,
@@ -24,6 +25,7 @@ function createMockDbBinding() {
 		},
 		'DELETE FROM mission_progress': { meta: { changes: 7 } },
 		'DELETE FROM mission_override': { meta: { changes: 1 } },
+		'DELETE FROM mission_game_tried': { meta: { changes: 4 } },
 	};
 	const binding = {
 		prepare(sql: string) {
@@ -52,14 +54,21 @@ describe('runRetentionCleanup', () => {
 	test('deletes from roulette_round and both chip_sync_receipt passes', async () => {
 		const { binding, calls } = createMockDbBinding();
 		await runRetentionCleanup(binding);
-		expect(calls).toHaveLength(5);
+		expect(calls).toHaveLength(6);
 		expect(calls[0].sql).toBe('DELETE FROM roulette_round WHERE createdAt < ?');
 		expect(calls[1].sql).toBe(
 			'DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN (?, ?)',
 		);
 		expect(calls[2].sql).toBe('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType = ?');
-		expect(calls[3].sql).toBe('DELETE FROM mission_progress WHERE periodKey < ?');
-		expect(calls[4].sql).toBe('DELETE FROM mission_override WHERE periodKey < ?');
+		expect(calls[3].sql).toBe(
+			"DELETE FROM mission_progress WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+		);
+		expect(calls[4].sql).toBe(
+			"DELETE FROM mission_override WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+		);
+		expect(calls[5].sql).toBe(
+			"DELETE FROM mission_game_tried WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+		);
 	});
 
 	test('excludes poker_mp and roulette receipts from the 30-day chip_sync_receipt delete', async () => {
@@ -107,22 +116,69 @@ describe('runRetentionCleanup', () => {
 	});
 
 	test('reaps mission_progress and mission_override by a 30-day-ago YYYY-MM-DD period key', async () => {
-		const { binding, calls } = createMockDbBinding();
-		await runRetentionCleanup(binding);
-		const expected = (() => {
-			const d = new Date();
-			d.setUTCDate(d.getUTCDate() - RETENTION_DAYS);
-			return d.toISOString().slice(0, 10);
-		})();
-		// Both mission deletes use the same YYYY-MM-DD cutoff string, computed
-		// deterministically from "30 days ago" in UTC. The cutoff format makes
-		// lexicographic comparison meaningful for daily keys; weekly keys
-		// (YYYY-Www) sort after any YYYY-MM-DD and so are deliberately spared.
-		expect(typeof calls[3].args[0]).toBe('string');
-		expect(calls[3].args[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-		expect(calls[4].args[0]).toBe(calls[3].args[0]);
-		// Same calendar day as the directly-computed expected cutoff.
-		expect(calls[3].args[0]).toBe(expected);
+		// Freeze the clock so the cutoff is deterministic — both the
+		// cleanup code and the expected-value derivation read from the
+		// same instant, so the assertion is exact even at midnight UTC.
+		const fixedMs = Date.UTC(2026, 6, 15, 12, 30, 0);
+		const RealDate = globalThis.Date;
+		globalThis.Date = class extends RealDate {
+			constructor(...args: number[]) {
+				if (args.length === 0) {
+					super(fixedMs);
+				} else {
+					super(...args);
+				}
+			}
+			static now() {
+				return fixedMs;
+			}
+		} as unknown as DateConstructor;
+		try {
+			const { binding, calls } = createMockDbBinding();
+			await runRetentionCleanup(binding);
+			const expected = (() => {
+				const d = new RealDate(fixedMs);
+				d.setUTCDate(d.getUTCDate() - RETENTION_DAYS);
+				return d.toISOString().slice(0, 10);
+			})();
+			// Both mission deletes use the same YYYY-MM-DD cutoff string,
+			// computed deterministically from the frozen instant. The SQL
+			// includes an explicit daily-only predicate (LIKE '____-__-__')
+			// so weekly keys (YYYY-Www) are never matched regardless of
+			// lexicographic ordering or year boundaries.
+			expect(calls[3].sql).toBe(
+				"DELETE FROM mission_progress WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+			);
+			expect(calls[4].sql).toBe(
+				"DELETE FROM mission_override WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+			);
+			expect(calls[5].sql).toBe(
+				"DELETE FROM mission_game_tried WHERE periodKey < ? AND periodKey LIKE '____-__-__'",
+			);
+			expect(typeof calls[3].args[0]).toBe('string');
+			expect(calls[3].args[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+			expect(calls[4].args[0]).toBe(calls[3].args[0]);
+			expect(calls[5].args[0]).toBe(calls[3].args[0]);
+			expect(calls[3].args[0]).toBe(expected);
+		} finally {
+			globalThis.Date = RealDate;
+		}
+	});
+
+	test('isDailyPeriodKey distinguishes daily from weekly keys across year boundaries', () => {
+		// Daily keys: YYYY-MM-DD format
+		expect(isDailyPeriodKey('2025-12-31')).toBe(true);
+		expect(isDailyPeriodKey('2026-01-01')).toBe(true);
+		expect(isDailyPeriodKey('2026-07-15')).toBe(true);
+		expect(isDailyPeriodKey('2024-02-29')).toBe(true); // leap day
+		// Weekly keys: YYYY-Www format — must NOT match the daily predicate
+		expect(isDailyPeriodKey('2025-W52')).toBe(false);
+		expect(isDailyPeriodKey('2026-W01')).toBe(false);
+		expect(isDailyPeriodKey('2026-W26')).toBe(false);
+		// Malformed / empty
+		expect(isDailyPeriodKey('')).toBe(false);
+		expect(isDailyPeriodKey('2026-07-15T12:00:00Z')).toBe(false);
+		expect(isDailyPeriodKey('2026-7-5')).toBe(false);
 	});
 
 	test('swallows errors from roulette_round delete and still cleans chip_sync_receipt', async () => {

@@ -61,9 +61,6 @@ describe('claim public types', () => {
 
 // ── Layer 2: Miniflare D1 integration ──────────────────────────────────────
 
-let mf: Miniflare | null = null;
-let db: D1Database | null = null;
-
 const MIGRATIONS_DIR = join(process.cwd(), 'drizzle');
 const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
 	.filter((f) => f.endsWith('.sql'))
@@ -143,6 +140,9 @@ async function getStreak(
 }
 
 describe('claimMission (Miniflare D1 integration)', () => {
+	let mf: Miniflare | null = null;
+	let db: D1Database | null = null;
+
 	beforeAll(async () => {
 		mf = new Miniflare({
 			modules: [
@@ -242,6 +242,9 @@ describe('claimMission (Miniflare D1 integration)', () => {
 });
 
 describe('claimLogin (Miniflare D1 integration)', () => {
+	let mf: Miniflare | null = null;
+	let db: D1Database | null = null;
+
 	beforeAll(async () => {
 		mf = new Miniflare({
 			modules: [
@@ -301,7 +304,7 @@ describe('claimLogin (Miniflare D1 integration)', () => {
 		expect(second.status).toBe('already-claimed');
 		expect(second.rewardChips).toBe(0);
 		expect(second.chipBalance).toBe(2000);
-		// Fast-path dayOfCycle is computed inline as ((currentStreak - 1) % 7) + 1.
+		// Fast-path dayOfCycle uses getDayOfCycle(currentStreak).
 		expect(second.dayOfCycle).toBe(1);
 		expect(second.currentStreak).toBe(1);
 		expect(second.longestStreak).toBe(1);

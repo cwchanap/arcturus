@@ -863,9 +863,9 @@ bun test src/lib/missions/registry.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 5: Verify DecoIcon names exist**
+- [ ] **Step 5: Verify icon emoji match `GAME_TYPE_ICONS`**
 
-Check `src/components/DecoIcon.astro` for the icon name set. Adjust any registry `icon` values that don't match.
+Check `src/lib/game-stats/constants.ts` for the `GAME_TYPE_ICONS` emoji registry. Adjust any registry `icon` values that don't match an emoji in that set.
 
 - [ ] **Step 6: Commit**
 
@@ -1526,6 +1526,7 @@ export async function applyMissionProgress(
 			userId,
 			def,
 			periodKey,
+			result.amount,
 			newProgress,
 			metadataJson,
 			nowSeconds,
@@ -1538,35 +1539,80 @@ export async function applyMissionProgress(
 	}
 }
 
+/**
+ * Build the mission_progress UPSERT.
+ *
+ * Two write strategies, selected by metric kind:
+ *
+ *  - Atomic increment (default): passes `amount` as `excluded.progress` and
+ *    the ON CONFLICT branch computes `MIN(progress + excluded.progress,
+ *    target)` directly in SQL. This closes the lost-update race where two
+ *    concurrent requests both read the same stale `currentProgress`, each
+ *    compute the same absolute `newProgress`, and the second overwrites the
+ *    first. With the SQL-side increment the second call still adds its delta
+ *    on top of the committed value. The first-write INSERT path stores
+ *    `clampProgress(amount, target)` directly (0 + amount clamped).
+ *
+ *  - Absolute write (`gamesTried`): the metric deduplicates via metadata, so
+ *    the increment must be computed JS-side from a read-then-write of the
+ *    metadata blob. This is inherently non-atomic and acknowledged in the
+ *    spec; for this path we keep the legacy absolute-write semantics, passing
+ *    `newProgress` as `excluded.progress`.
+ */
 export function buildProgressUpsertSQL(
 	d1: D1Database,
 	userId: string,
 	def: MissionDefinition,
 	periodKey: string,
+	amount: number,
 	newProgress: number,
 	metadataJson: string | null,
 	nowSeconds: number,
 ): D1PreparedStatement {
 	const target = def.target;
-	const completedClause = newProgress >= target ? `${nowSeconds}` : 'NULL';
+	const isAbsolute = def.metric.kind === 'gamesTried';
+
+	if (isAbsolute) {
+		const completedClause = newProgress >= target ? `${nowSeconds}` : 'NULL';
+		return d1
+			.prepare(
+				`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
+				 VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)
+				 ON CONFLICT (userId, missionDefId, periodKey) DO UPDATE SET
+				   progress = excluded.progress,
+				   metadataJson = excluded.metadataJson,
+				   completedAt = CASE
+				     WHEN excluded.progress >= ${target} AND mission_progress.completedAt IS NULL
+				     THEN ${nowSeconds}
+				     ELSE mission_progress.completedAt
+				   END`,
+			)
+			.bind(userId, def.id, periodKey, newProgress, metadataJson);
+	}
+
+	// Atomic increment path. excluded.progress is the increment amount; the
+	// INSERT values store it clamped to target so a single oversized event
+	// never persists progress > target.
+	const clampedAmount = Math.min(amount, target);
+	const completedClause = clampedAmount >= target ? `${nowSeconds}` : 'NULL';
 	return d1
 		.prepare(
 			`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)
 			 VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)
 			 ON CONFLICT (userId, missionDefId, periodKey) DO UPDATE SET
-			   progress = excluded.progress,
+			   progress = MIN(mission_progress.progress + excluded.progress, ${target}),
 			   metadataJson = excluded.metadataJson,
 			   completedAt = CASE
-			     WHEN excluded.progress >= ${target} AND mission_progress.completedAt IS NULL
-			     THEN excluded.completedAt
+			     WHEN MIN(mission_progress.progress + excluded.progress, ${target}) >= ${target} AND mission_progress.completedAt IS NULL
+			     THEN ${nowSeconds}
 			     ELSE mission_progress.completedAt
 			   END`,
 		)
-		.bind(userId, def.id, periodKey, newProgress, metadataJson);
+		.bind(userId, def.id, periodKey, clampedAmount, metadataJson);
 }
 ```
 
-> **Important:** The `completedAt` conditional uses `CASE WHEN ... AND mission_progress.completedAt IS NULL` so it is set exactly once — the first time progress reaches target. Subsequent over-counts don't re-set it. The `excluded.progress` is the new clamped value. The `CASE` checks if the NEW progress meets target AND the OLD completedAt is null.
+> **Important:** The default (increment) path binds the increment `amount` (clamped to target) as `excluded.progress`, and the `ON CONFLICT` branch computes `MIN(mission_progress.progress + excluded.progress, target)` directly in SQL. This is atomic — two concurrent requests both adding their delta will not lose updates, because the second call adds on top of the committed value rather than overwriting with a stale JS-computed absolute. The `completedAt` conditional uses `CASE WHEN ... AND mission_progress.completedAt IS NULL` so it is set exactly once. The absolute path (`gamesTried`) still uses the legacy read-then-write semantics because the dedup is metadata-driven.
 
 - [ ] **Step 2: Write integration test — `src/lib/missions/progress-integration.test.ts`**
 
@@ -2555,7 +2601,7 @@ git commit -m "feat: add mission board page with SSR initial state (HPA-173)"
 
 Replace all `/missions/daily` with `/missions` (lines 73 and 111):
 
-```
+```text
 /missions/daily → /missions
 ```
 

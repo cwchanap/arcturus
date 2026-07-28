@@ -186,18 +186,38 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	await d1.batch(settleStatements);
 
 	for (const entry of newEntries) {
-		try {
-			const outcome = entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push';
-			await applyMissionProgress(d1, entry.userId, {
-				gameType: 'poker_mp',
-				outcome,
-				handCount: 1,
-				winsIncrement: entry.delta > 0 ? 1 : 0,
-				lossesIncrement: entry.delta < 0 ? 1 : 0,
-				delta: entry.delta,
-			});
-		} catch (missionError) {
-			console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
+		const outcome = entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push';
+		const event = {
+			gameType: 'poker_mp' as const,
+			outcome,
+			handCount: 1,
+			winsIncrement: entry.delta > 0 ? 1 : 0,
+			lossesIncrement: entry.delta < 0 ? 1 : 0,
+			delta: entry.delta,
+		};
+		// Lightweight in-process retry: mission progress is best-effort
+		// relative to chip settlement (which already succeeded in the
+		// batch above), but a transient D1 error shouldn't silently drop
+		// progress. Retry up to 3 times with short backoff, then surface
+		// the failure loudly if all attempts fail.
+		let lastError: unknown = null;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				await applyMissionProgress(d1, entry.userId, event);
+				lastError = null;
+				break;
+			} catch (missionError) {
+				lastError = missionError;
+				if (attempt < 2) {
+					await new Promise((resolve) => setTimeout(resolve, 50 * (attempt + 1)));
+				}
+			}
+		}
+		if (lastError) {
+			console.error(
+				'[MISSION_PROGRESS] Failed to update for MP settle after 3 attempts:',
+				lastError,
+			);
 		}
 	}
 

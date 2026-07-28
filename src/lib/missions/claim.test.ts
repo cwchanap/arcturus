@@ -301,6 +301,10 @@ describe('claimLogin (Miniflare D1 integration)', () => {
 		expect(second.status).toBe('already-claimed');
 		expect(second.rewardChips).toBe(0);
 		expect(second.chipBalance).toBe(2000);
+		// Fast-path dayOfCycle is computed inline as ((currentStreak - 1) % 7) + 1.
+		expect(second.dayOfCycle).toBe(1);
+		expect(second.currentStreak).toBe(1);
+		expect(second.longestStreak).toBe(1);
 
 		// DB balance unchanged.
 		expect(await getChipBalance(db!, userId)).toBe(2000);

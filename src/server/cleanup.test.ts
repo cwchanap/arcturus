@@ -214,6 +214,58 @@ describe('runRetentionCleanup', () => {
 		expect(rouletteRoundDeleted).toBe(true);
 		expect(receiptDeleted).toBe(true);
 	});
+
+	test('swallows errors from the mission_progress delete and still reaps mission_override', async () => {
+		let overrideDeleted = false;
+		const binding = {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return {
+							run: async () => {
+								if (sql.startsWith('DELETE FROM mission_progress')) {
+									throw new Error('D1 error');
+								}
+								if (sql.startsWith('DELETE FROM mission_override')) {
+									overrideDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		await runRetentionCleanup(binding);
+		expect(overrideDeleted).toBe(true);
+	});
+
+	test('swallows errors from the mission_override delete', async () => {
+		let progressDeleted = false;
+		const binding = {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return {
+							run: async () => {
+								if (sql.startsWith('DELETE FROM mission_progress')) {
+									progressDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								if (sql.startsWith('DELETE FROM mission_override')) {
+									throw new Error('D1 error');
+								}
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		await runRetentionCleanup(binding);
+		expect(progressDeleted).toBe(true);
+	});
 });
 
 describe('runScheduledJobs', () => {

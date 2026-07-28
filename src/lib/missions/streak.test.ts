@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import {
 	STREAK_REWARDS,
 	getStreakReward,
+	getDayOfCycle,
 	computeEffectiveStreak,
 	computeStreakTransition,
+	computeEffectiveStreakFromStored,
 } from './streak';
+import { getDailyPeriodKey, getDailyPeriodKeyForYesterday } from './periods';
 
 describe('streak rewards', () => {
 	test('day 1 reward is 1000 (matches old daily login)', () => {
@@ -147,5 +150,87 @@ describe('computeStreakTransition (on claim)', () => {
 		});
 		expect(result.newStreak).toBe(6);
 		expect(result.newLongest).toBe(6);
+	});
+});
+
+describe('getDayOfCycle', () => {
+	test('day 1 → 1, day 7 → 7, day 8 cycles back to 1', () => {
+		expect(getDayOfCycle(1)).toBe(1);
+		expect(getDayOfCycle(7)).toBe(7);
+		expect(getDayOfCycle(8)).toBe(1);
+		expect(getDayOfCycle(14)).toBe(7);
+		expect(getDayOfCycle(15)).toBe(1);
+	});
+
+	test('matches the cycle used by getStreakReward', () => {
+		for (let streak = 1; streak <= 21; streak++) {
+			const day = getDayOfCycle(streak);
+			expect(getStreakReward(streak)).toBe(STREAK_REWARDS[day - 1]);
+		}
+	});
+});
+
+describe('computeEffectiveStreakFromStored', () => {
+	const today = getDailyPeriodKey();
+	const yesterday = getDailyPeriodKeyForYesterday();
+
+	test('null stored → broken streak, claimable, day-1 reward', () => {
+		const result = computeEffectiveStreakFromStored(null);
+		expect(result.displayStreak).toBe(0);
+		expect(result.claimableToday).toBe(true);
+		expect(result.dayOfCycle).toBe(1);
+		expect(result.rewardPreview).toBe(STREAK_REWARDS[0]);
+	});
+
+	test('stored lastClaimPeriodKey === today → not claimable, reward 0', () => {
+		const result = computeEffectiveStreakFromStored({
+			currentStreak: 4,
+			longestStreak: 6,
+			lastClaimPeriodKey: today,
+		});
+		expect(result.displayStreak).toBe(4);
+		expect(result.claimableToday).toBe(false);
+		expect(result.rewardPreview).toBe(0);
+		expect(result.dayOfCycle).toBe(getDayOfCycle(4));
+	});
+
+	test('stored lastClaimPeriodKey === yesterday → continuing, claimable', () => {
+		const result = computeEffectiveStreakFromStored({
+			currentStreak: 2,
+			longestStreak: 5,
+			lastClaimPeriodKey: yesterday,
+		});
+		expect(result.displayStreak).toBe(2);
+		expect(result.claimableToday).toBe(true);
+		expect(result.dayOfCycle).toBe(getDayOfCycle(3));
+		expect(result.rewardPreview).toBe(getStreakReward(3));
+	});
+
+	test('stored lastClaimPeriodKey older than yesterday → broken, day-1 reward', () => {
+		const result = computeEffectiveStreakFromStored({
+			currentStreak: 5,
+			longestStreak: 10,
+			lastClaimPeriodKey: '2020-01-01',
+		});
+		expect(result.displayStreak).toBe(0);
+		expect(result.claimableToday).toBe(true);
+		expect(result.dayOfCycle).toBe(1);
+		expect(result.rewardPreview).toBe(STREAK_REWARDS[0]);
+	});
+
+	test('preserves longestStreak from stored row regardless of claim state', () => {
+		const longestStreak = 42;
+		const claimed = computeEffectiveStreakFromStored({
+			currentStreak: 4,
+			longestStreak,
+			lastClaimPeriodKey: today,
+		});
+		expect(claimed.longestStreak).toBe(longestStreak);
+		const broken = computeEffectiveStreakFromStored({
+			currentStreak: 4,
+			longestStreak,
+			lastClaimPeriodKey: '2020-01-01',
+		});
+		expect(broken.longestStreak).toBe(longestStreak);
 	});
 });

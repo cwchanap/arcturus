@@ -29,7 +29,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'spinsCompleted' },
 		target: 20,
 		rewardChips: 500,
-		icon: '\u{2B50}', // star emoji
+		icon: '\u{1F3B0}', // slot machine emoji — matches GAME_TYPE_ICONS.slots
 	},
 	{
 		id: 'daily-mp-1',
@@ -39,7 +39,7 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		metric: { kind: 'mpHandsCompleted' },
 		target: 1,
 		rewardChips: 1000,
-		icon: '\u{1F3B4}', // flower playing card emoji
+		icon: '\u{2660}', // spade suit emoji — matches GAME_TYPE_ICONS.poker
 	},
 ];
 
@@ -62,7 +62,7 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'baccarat' },
 		target: 3,
 		rewardChips: 500,
-		icon: '\u{2666}', // diamond suit emoji
+		icon: '\u{1F3B4}', // flower playing card emoji — matches GAME_TYPE_ICONS.baccarat
 	},
 	{
 		id: 'daily-keno-5',
@@ -72,7 +72,7 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		metric: { kind: 'handsPlayed', gameType: 'keno' },
 		target: 5,
 		rewardChips: 600,
-		icon: '\u{1F4DD}', // memo emoji (lotto ticket)
+		icon: '\u{1F3B1}', // billiards emoji — matches GAME_TYPE_ICONS.keno
 	},
 ];
 

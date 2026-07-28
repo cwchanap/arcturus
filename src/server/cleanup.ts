@@ -141,14 +141,17 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 
 	// Mission board row retention. mission_progress and mission_override are
 	// partitioned by period key: daily keys use `YYYY-MM-DD`, weekly keys
-	// use `YYYY-Www`. Only daily rows are reaped — weekly rows self-roll
-	// over weekly and never grow large. The `isDailyPeriodKey` predicate
-	// (encoded in SQL as `periodKey LIKE '____-__-__'`) explicitly targets
-	// only daily-format keys, so weekly rows are unaffected regardless of
-	// lexicographic ordering or year boundaries. At ~6 rows/user/day the
-	// daily tables would otherwise grow ~1,850 rows/user/year, so reap any
-	// daily period key older than RETENTION_DAYS. Compare on periodKey
-	// rather than completedAt so uncompleted/abandoned rows also get reaped.
+	// use `YYYY-Www`. Only daily rows are reaped here — weekly rows are NOT
+	// reaped by this pass and accumulate indefinitely (~52 rows/user/year for
+	// each weekly mission). That growth rate is low enough to be acceptable
+	// for now, but weekly retention is not handled here. The
+	// `isDailyPeriodKey` predicate (encoded in SQL as `periodKey LIKE
+	// '____-__-__'`) explicitly targets only daily-format keys, so weekly
+	// rows are unaffected regardless of lexicographic ordering or year
+	// boundaries. At ~6 rows/user/day the daily tables would otherwise grow
+	// ~1,850 rows/user/year, so reap any daily period key older than
+	// RETENTION_DAYS. Compare on periodKey rather than completedAt so
+	// uncompleted/abandoned rows also get reaped.
 	const missionCutoffDate = new Date();
 	missionCutoffDate.setUTCDate(missionCutoffDate.getUTCDate() - RETENTION_DAYS);
 	const missionCutoffKey = getDailyPeriodKey(missionCutoffDate);

@@ -2308,52 +2308,65 @@ import { applyMissionProgress } from '../../../lib/missions';
 
 Insert just before `return buildSuccessResponse(newBalance, serverBalance, delta, newAchievements, warnings);` (line ~1601), inside the existing try block:
 
+> **Implementation deviation (approved):** The original spec called for `await applyMissionProgress(...)`. The shipped code defers the write via `ctx.waitUntil()` (fire-and-forget) when a request context is available, falling back to `await` only in local dev where `ctx` is absent. This avoids adding a D1 batch round-trip to every chip-sync response. The trade-off is a narrow race: the response can return before mission progress commits, so a client that immediately hits `/missions` may see stale progress, or attempt to claim a just-completed quest before the write lands. This was accepted because mission progress is best-effort relative to the chip balance update (which is awaited and authoritative), and the `/missions` board re-reads progress on load.
+
 ```typescript
 // Update mission progress from validated game event.
 // Single call site — replay-safe because replay branches return early above.
 // Only runs when outcome is present and gameType is valid (same guard as stats).
 if (shouldRecordStats && isValidGameType(gameType)) {
-	try {
-		await applyMissionProgress(dbBinding, userId, {
-			gameType,
-			outcome: outcome as 'win' | 'loss' | 'push',
-			handCount: resolvedHandCount,
-			winsIncrement: actualWinsIncrement,
-			lossesIncrement: actualLossesIncrement,
-			delta: statsDeltaForTracking,
-		});
-	} catch (missionError) {
+	const missionWork = applyMissionProgress(dbBinding, userId, {
+		gameType,
+		outcome: outcome as 'win' | 'loss' | 'push',
+		handCount: resolvedHandCount,
+		winsIncrement: actualWinsIncrement,
+		lossesIncrement: actualLossesIncrement,
+		delta: statsDeltaForTracking,
+	}).catch((missionError) => {
 		console.error('[MISSION_PROGRESS] Failed to update:', missionError);
+	});
+	// Defer mission-progress writes via waitUntil when available so
+	// the response is not blocked. Fall back to awaiting synchronously
+	// when waitUntil is unavailable (e.g. local dev without ctx).
+	const ctx = locals.runtime?.ctx;
+	if (ctx?.waitUntil) {
+		ctx.waitUntil(missionWork);
+	} else {
+		await missionWork;
 	}
 }
 ```
 
-- [ ] **Step 2: Wire `applyMissionProgress` into `/api/mp/settle.ts`**
+- [ ] **Step 2: Wire `applyMissionProgressBatch` into `/api/mp/settle.ts`**
 
-After the `d1.batch(settleStatements)` call succeeds (line ~185), add for each newly-applied entry:
+> **Implementation deviation (approved):** The original spec called for a per-entry `for` loop with one `applyMissionProgress` call per player. The shipped code uses a single `applyMissionProgressBatch(d1, entries)` call that parallelizes the per-user reads (`Promise.all`) and submits all write statements in one `d1.batch`. This avoids serializing N × (read + write) D1 round-trips on the settle response. The former 3× per-player retry loop was removed: chip settlement is already committed by the preceding `d1.batch(settleStatements)`, so mission progress is best-effort and a single try/catch around the batched call is sufficient (a transient D1 error is logged, not retried, and does not fail the response).
 
 ```typescript
-import { applyMissionProgress } from '../../../../lib/missions';
+import { applyMissionProgressBatch } from '../../../lib/missions';
 ```
 
 After the settle batch:
 
 ```typescript
-// Update mission progress for each settled entry
-for (const entry of newEntries) {
-	try {
-		const outcome = entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push';
-		await applyMissionProgress(d1, entry.userId, {
-			gameType: 'poker_mp',
-			outcome,
-			handCount: 1,
-			winsIncrement: entry.delta > 0 ? 1 : 0,
-			lossesIncrement: entry.delta < 0 ? 1 : 0,
-			delta: entry.delta,
-		});
-	} catch (missionError) {
-		console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
-	}
+// Update mission progress for all settled entries in one batched call.
+const missionEvents = newEntries.map((entry) => ({
+	userId: entry.userId,
+	event: {
+		gameType: 'poker_mp' as const,
+		outcome: (entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push') as
+			| 'win'
+			| 'loss'
+			| 'push',
+		handCount: 1,
+		winsIncrement: entry.delta > 0 ? 1 : 0,
+		lossesIncrement: entry.delta < 0 ? 1 : 0,
+		delta: entry.delta,
+	},
+}));
+try {
+	await applyMissionProgressBatch(d1, missionEvents);
+} catch (missionError) {
+	console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
 }
 ```
 

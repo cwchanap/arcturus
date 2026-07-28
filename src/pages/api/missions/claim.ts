@@ -24,14 +24,24 @@ export const POST: APIRoute = async ({ request, locals }) => {
 		return Response.json({ error: 'INVALID_REQUEST_BODY' }, { status: 400 });
 	}
 
-	const db = createDb(d1);
-	const [userRow] = await db
-		.select({ chipBalance: user.chipBalance })
-		.from(user)
-		.where(eq(user.id, locals.session.user.id))
-		.limit(1);
+	try {
+		const db = createDb(d1);
+		const [userRow] = await db
+			.select({ chipBalance: user.chipBalance })
+			.from(user)
+			.where(eq(user.id, locals.session.user.id))
+			.limit(1);
 
-	const chipBalance = userRow?.chipBalance ?? 0;
-	const result = await claimMission(d1, locals.session.user.id, body.missionDefId, chipBalance);
-	return Response.json(result);
+		const chipBalance = userRow?.chipBalance ?? 0;
+		const result = await claimMission(
+			d1,
+			locals.session.user.id,
+			body.missionDefId,
+			chipBalance,
+		);
+		return Response.json(result);
+	} catch (error) {
+		console.error('[MISSIONS_CLAIM] Failed to claim mission:', error);
+		return Response.json({ error: 'INTERNAL_ERROR' }, { status: 500 });
+	}
 };

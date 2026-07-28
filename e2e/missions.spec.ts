@@ -78,7 +78,7 @@ test.describe('Mission Board', () => {
 		// All progress should be 0
 		const progressTexts = await page.locator('[data-testid^="progress-text-"]').allTextContents();
 		for (const text of progressTexts) {
-			expect(text).toMatch(/^0\/\d+$/);
+			expect(text.trim()).toMatch(/^0\/\d+$/);
 		}
 	});
 });

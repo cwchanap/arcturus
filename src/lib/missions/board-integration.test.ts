@@ -322,7 +322,13 @@ describe('getBoardState (Miniflare D1 integration)', () => {
 		const userId = 'bs-override';
 		await insertUser(db!, userId);
 		const periodKey = getDailyPeriodKey();
-		await seedOverride(db!, userId, periodKey, 'daily-blackjack-5', REROLL_POOL_DAILY[0]!.id);
+		await seedOverride(
+			db!,
+			userId,
+			periodKey,
+			DEFAULT_DAILY_MISSIONS[0]!.id,
+			REROLL_POOL_DAILY[0]!.id,
+		);
 
 		const state = await getBoardState(db!, userId, 1000);
 

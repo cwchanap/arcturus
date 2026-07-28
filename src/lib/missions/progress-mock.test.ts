@@ -14,7 +14,7 @@
  *    → dedup INSERT + UPSERT, existing progress row → increment
  *  - buildProgressUpsertSQL: SQL template + bind params, completedAt clause
  *    when amount >= target, NULL when amount < target
- *  - buildGamesTriedUpsertSQL: SQL template + bind params (11 binds)
+ *  - buildGamesTriedUpsertSQL: SQL template + bind params (10 binds)
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -237,16 +237,7 @@ describe('buildProgressUpsertSQL (mocked D1)', () => {
 	test('produces an INSERT ... ON CONFLICT DO UPDATE statement with correct bind params', () => {
 		const mock = makeMockD1();
 		const def = makeDef();
-		const stmt = buildProgressUpsertSQL(
-			mock.binding,
-			'user-1',
-			def,
-			'2026-07-27',
-			1,
-			1,
-			null,
-			1000,
-		);
+		const stmt = buildProgressUpsertSQL(mock.binding, 'user-1', def, '2026-07-27', 1, null, 1000);
 		// The returned object is a bound statement from our mock.
 		expect(stmt).toHaveProperty('sql');
 		expect(stmt).toHaveProperty('args');
@@ -260,16 +251,7 @@ describe('buildProgressUpsertSQL (mocked D1)', () => {
 	test('uses nowSeconds as the completedAt literal when amount >= target', () => {
 		const mock = makeMockD1();
 		const def = makeDef({ target: 5 });
-		const stmt = buildProgressUpsertSQL(
-			mock.binding,
-			'user-2',
-			def,
-			'2026-07-27',
-			5,
-			5,
-			null,
-			9999,
-		);
+		const stmt = buildProgressUpsertSQL(mock.binding, 'user-2', def, '2026-07-27', 5, null, 9999);
 		const bound = stmt as unknown as { sql: string };
 		// completedClause is `${nowSeconds}` (the literal 9999) when
 		// clampedAmount >= target. The VALUES clause is
@@ -281,16 +263,7 @@ describe('buildProgressUpsertSQL (mocked D1)', () => {
 	test('uses NULL as the completedAt literal when amount < target', () => {
 		const mock = makeMockD1();
 		const def = makeDef({ target: 5 });
-		const stmt = buildProgressUpsertSQL(
-			mock.binding,
-			'user-3',
-			def,
-			'2026-07-27',
-			1,
-			1,
-			null,
-			9999,
-		);
+		const stmt = buildProgressUpsertSQL(mock.binding, 'user-3', def, '2026-07-27', 1, null, 9999);
 		const bound = stmt as unknown as { sql: string };
 		// completedClause is 'NULL' when clampedAmount < target. The VALUES
 		// clause is `VALUES (?, ?, ?, ?, ?, NULL, NULL)` — 5 bind params +
@@ -317,7 +290,7 @@ describe('buildGamesTriedUpsertSQL (mocked D1)', () => {
 		};
 	}
 
-	test('produces an INSERT with COUNT(*) subquery and 11 bind params', () => {
+	test('produces an INSERT with COUNT(*) subquery and 10 bind params', () => {
 		const mock = makeMockD1();
 		const def = makeDef();
 		const stmt = buildGamesTriedUpsertSQL(
@@ -332,7 +305,7 @@ describe('buildGamesTriedUpsertSQL (mocked D1)', () => {
 		expect(bound.sql).toContain('INSERT INTO mission_progress');
 		expect(bound.sql).toContain('SELECT COUNT(*) FROM mission_game_tried');
 		expect(bound.sql).toContain('ON CONFLICT');
-		// 11 bind params: userId, defId, periodKey (for VALUES COUNT subquery),
+		// 10 bind params: userId, defId, periodKey (for VALUES COUNT subquery),
 		// userId, defId, periodKey (for completedAt CASE subquery), metadataJson,
 		// userId, defId, periodKey (for ON CONFLICT COUNT subquery).
 		expect(bound.args).toEqual([

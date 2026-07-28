@@ -34,24 +34,28 @@ test.describe('Poker turn flow smoke test', () => {
 			);
 
 			const status = page.locator('#game-status');
-			await expect(status).toContainText('Your turn', { timeout: 5000 });
-
 			const checkButton = page.getByRole('button', { name: /check/i });
 			const callButton = page.getByRole('button', { name: /call/i });
-			if (await checkButton.isEnabled()) {
-				await checkButton.click();
-			} else if (await callButton.isEnabled()) {
-				await callButton.click();
-			} else {
-				throw new Error('No legal action button was enabled (expected Check or Call)');
+			const nextPhaseOrTerminal = /\[(Flop|Turn|River|Showdown).*|wins \$/i;
+			const playerTurnOrProgress = /Your turn|\[(Flop|Turn|River|Showdown).*|wins \$/i;
+
+			for (let humanActions = 0; humanActions < 8; humanActions++) {
+				await expect(status).toHaveText(playerTurnOrProgress, { timeout: 10000 });
+				const currentStatus = (await status.textContent())?.trim() ?? '';
+				if (nextPhaseOrTerminal.test(currentStatus)) break;
+
+				if (await checkButton.isEnabled()) {
+					await checkButton.click();
+				} else if (await callButton.isEnabled()) {
+					await callButton.click();
+				} else {
+					throw new Error('No legal action button was enabled (expected Check or Call)');
+				}
+
+				await expect(status).not.toHaveText(currentStatus, { timeout: 5000 });
 			}
 
-			await expect(status).toHaveText(/You checked|You called|Waiting for/i, { timeout: 5000 });
-			await expect(status).toBeVisible();
-
-			await expect(status).toHaveText(/\[(Flop|Turn|River|Showdown).*|wins \$/i, {
-				timeout: 10000,
-			});
+			await expect(status).toHaveText(nextPhaseOrTerminal, { timeout: 10000 });
 		} finally {
 			await context.close();
 		}

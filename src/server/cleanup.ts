@@ -15,6 +15,17 @@ import { getDailyPeriodKey } from '../lib/missions/periods';
 export const RETENTION_DAYS = 30;
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
+/**
+ * Daily period keys use the `YYYY-MM-DD` format (10 chars, hyphen-separated
+ * numeric). Weekly keys use `YYYY-Www` (8 chars, contains a `W`). This
+ * predicate lets cleanup target only daily rows explicitly, so weekly rows
+ * are never affected by daily retention — regardless of lexicographic
+ * ordering or year boundaries.
+ */
+export function isDailyPeriodKey(key: string): boolean {
+	return /^\d{4}-\d{2}-\d{2}$/.test(key);
+}
+
 // Roulette receipts serve as idempotency tombstones after roulette_round
 // rows are reaped at RETENTION_DAYS. They must outlive the round rows so
 // a replay of an old committed syncId (after the round is gone) is still
@@ -129,18 +140,21 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 	}
 
 	// Mission board row retention. mission_progress and mission_override are
-	// partitioned by a daily period key (YYYY-MM-DD); weekly keys sort after
-	// any YYYY-MM-DD so they are unaffected by this comparison and persist
-	// (they self-roll over weekly and never grow large). At ~6 rows/user/day
-	// the daily tables would otherwise grow ~1,850 rows/user/year, so reap
-	// any daily period key older than RETENTION_DAYS. Compare on periodKey
+	// partitioned by period key: daily keys use `YYYY-MM-DD`, weekly keys
+	// use `YYYY-Www`. Only daily rows are reaped — weekly rows self-roll
+	// over weekly and never grow large. The `isDailyPeriodKey` predicate
+	// (encoded in SQL as `periodKey LIKE '____-__-__'`) explicitly targets
+	// only daily-format keys, so weekly rows are unaffected regardless of
+	// lexicographic ordering or year boundaries. At ~6 rows/user/day the
+	// daily tables would otherwise grow ~1,850 rows/user/year, so reap any
+	// daily period key older than RETENTION_DAYS. Compare on periodKey
 	// rather than completedAt so uncompleted/abandoned rows also get reaped.
 	const missionCutoffDate = new Date();
 	missionCutoffDate.setUTCDate(missionCutoffDate.getUTCDate() - RETENTION_DAYS);
 	const missionCutoffKey = getDailyPeriodKey(missionCutoffDate);
 	try {
 		await dbBinding
-			.prepare('DELETE FROM mission_progress WHERE periodKey < ?')
+			.prepare("DELETE FROM mission_progress WHERE periodKey < ? AND periodKey LIKE '____-__-__'")
 			.bind(missionCutoffKey)
 			.run();
 	} catch (error) {
@@ -148,10 +162,18 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 	}
 	try {
 		await dbBinding
-			.prepare('DELETE FROM mission_override WHERE periodKey < ?')
+			.prepare("DELETE FROM mission_override WHERE periodKey < ? AND periodKey LIKE '____-__-__'")
 			.bind(missionCutoffKey)
 			.run();
 	} catch (error) {
 		console.warn('[CLEANUP] Failed to delete expired mission_override rows:', error);
+	}
+	try {
+		await dbBinding
+			.prepare("DELETE FROM mission_game_tried WHERE periodKey < ? AND periodKey LIKE '____-__-__'")
+			.bind(missionCutoffKey)
+			.run();
+	} catch (error) {
+		console.warn('[CLEANUP] Failed to delete expired mission_game_tried rows:', error);
 	}
 }

@@ -1,7 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { getMissionDef } from './registry';
 import { getDailyPeriodKey, getWeeklyPeriodKey, getDailyPeriodKeyForYesterday } from './periods';
-import { computeStreakTransition } from './streak';
+import { computeStreakTransition, getDayOfCycle } from './streak';
 
 export interface ClaimResult {
 	status: 'completed' | 'already-claimed' | 'not-completed' | 'not-found';
@@ -108,7 +108,7 @@ export async function claimLogin(
 			status: 'already-claimed',
 			currentStreak,
 			longestStreak,
-			dayOfCycle: ((currentStreak - 1) % 7) + 1,
+			dayOfCycle: getDayOfCycle(currentStreak),
 			rewardChips: 0,
 			chipBalance: currentChipBalance,
 		};
@@ -160,7 +160,7 @@ export async function claimLogin(
 		status: 'already-claimed',
 		currentStreak,
 		longestStreak,
-		dayOfCycle: ((currentStreak - 1) % 7) + 1,
+		dayOfCycle: getDayOfCycle(currentStreak),
 		rewardChips: 0,
 		chipBalance: currentChipBalance,
 	};

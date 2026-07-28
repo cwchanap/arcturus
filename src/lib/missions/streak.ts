@@ -3,12 +3,12 @@ import { getDailyPeriodKey, getDailyPeriodKeyForYesterday } from './periods';
 export const STREAK_REWARDS = [1000, 1250, 1500, 2000, 2500, 3500, 5000] as const;
 
 export function getStreakReward(currentStreak: number): number {
-	const dayOfCycle = ((currentStreak - 1) % STREAK_REWARDS.length) + 1;
-	return STREAK_REWARDS[dayOfCycle - 1];
+	return STREAK_REWARDS[getDayOfCycle(currentStreak) - 1];
 }
 
 export function getDayOfCycle(currentStreak: number): number {
-	return ((currentStreak - 1) % STREAK_REWARDS.length) + 1;
+	const streak = currentStreak > 0 ? currentStreak : 1;
+	return ((streak - 1) % STREAK_REWARDS.length) + 1;
 }
 
 export interface EffectiveStreakInput {

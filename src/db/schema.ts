@@ -120,6 +120,24 @@ export const missionProgress = sqliteTable(
 	}),
 );
 
+export const missionGameTried = sqliteTable(
+	'mission_game_tried',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		missionDefId: text('missionDefId').notNull(),
+		periodKey: text('periodKey').notNull(),
+		gameType: text('gameType').notNull(),
+		firstTriedAt: integer('firstTriedAt').notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({
+			columns: [table.userId, table.missionDefId, table.periodKey, table.gameType],
+		}),
+	}),
+);
+
 export const loginStreak = sqliteTable('login_streak', {
 	userId: text('userId')
 		.primaryKey()

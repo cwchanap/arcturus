@@ -45,6 +45,21 @@ function makeFakeD1(): D1Database {
 	return { prepare: () => chain } as unknown as D1Database;
 }
 
+/** Variant where the override INSERT reports 0 rows affected — emulates the
+ * ON CONFLICT DO NOTHING race loser (another request inserted the day's
+ * override between our read and write). Used to exercise the changes === 0
+ * race-guard branch in performReroll. */
+function makeFakeD1RaceLoser(): D1Database {
+	const chain = {
+		bind: () => ({
+			first: async () => null,
+			run: async () => ({ meta: { changes: 0 } }),
+			all: async () => ({ results: [] }),
+		}),
+	};
+	return { prepare: () => chain } as unknown as D1Database;
+}
+
 describe('performReroll no-replacement branch (mocked board)', () => {
 	test('returns no-replacement when the pool is empty', async () => {
 		poolOverride = [];
@@ -61,5 +76,18 @@ describe('performReroll no-replacement branch (mocked board)', () => {
 		const result = await performReroll(makeFakeD1(), 'user-mock-ok', 'daily-blackjack-5');
 		expect(result.status).toBe('rerolled');
 		expect(result.replacementMissionDefId).toBe('daily-craps-3');
+	});
+
+	test('returns reroll-used when the INSERT ON CONFLICT reports 0 rows (race loser)', async () => {
+		poolOverride = [{ id: 'daily-craps-3' }];
+
+		const result = await performReroll(
+			makeFakeD1RaceLoser(),
+			'user-race-loser',
+			'daily-blackjack-5',
+		);
+		expect(result.status).toBe('reroll-used');
+		expect(result.originalMissionDefId).toBeUndefined();
+		expect(result.replacementMissionDefId).toBeUndefined();
 	});
 });

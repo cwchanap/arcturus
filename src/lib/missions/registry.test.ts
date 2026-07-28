@@ -5,6 +5,7 @@ import {
 	DEFAULT_WEEKLY_MISSIONS,
 	ALL_DAILY_DEFINITIONS,
 	getMissionDef,
+	getAllMissionDefIds,
 } from './registry';
 
 describe('mission registry', () => {
@@ -55,6 +56,17 @@ describe('mission registry', () => {
 		const defaultIds = new Set(DEFAULT_DAILY_MISSIONS.map((m) => m.id));
 		for (const m of REROLL_POOL_DAILY) {
 			expect(defaultIds.has(m.id)).toBe(false);
+		}
+	});
+
+	test('getAllMissionDefIds returns every daily + weekly id with no duplicates', () => {
+		const ids = getAllMissionDefIds();
+		const expected = [...ALL_DAILY_DEFINITIONS, ...DEFAULT_WEEKLY_MISSIONS].map((m) => m.id);
+		expect(ids).toEqual(expected);
+		expect(new Set(ids).size).toBe(ids.length);
+		// Every id resolves via getMissionDef.
+		for (const id of ids) {
+			expect(getMissionDef(id)).toBeDefined();
 		}
 	});
 });

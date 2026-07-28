@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { computeIncrement, clampProgress } from './progress';
+import { computeIncrement, clampProgress, parseMetadata } from './progress';
 import type { MissionDefinition, MissionGameEvent } from './types';
 
 function makeDef(id: string, metric: MissionDefinition['metric'], target = 5): MissionDefinition {
@@ -129,5 +129,32 @@ describe('clampProgress', () => {
 	test('floors at 0', () => {
 		expect(clampProgress(-1, 5)).toBe(0);
 		expect(clampProgress(0, 5)).toBe(0);
+	});
+});
+
+describe('parseMetadata', () => {
+	test('returns [] for null/undefined/empty', () => {
+		expect(parseMetadata(null)).toEqual([]);
+		expect(parseMetadata(undefined)).toEqual([]);
+		expect(parseMetadata('')).toEqual([]);
+	});
+
+	test('parses a string array', () => {
+		expect(parseMetadata('["blackjack","craps"]')).toEqual(['blackjack', 'craps']);
+	});
+
+	test('returns [] for non-array JSON', () => {
+		expect(parseMetadata('{"foo":"bar"}')).toEqual([]);
+		expect(parseMetadata('"single-string"')).toEqual([]);
+		expect(parseMetadata('42')).toEqual([]);
+	});
+
+	test('returns [] for invalid JSON (defensive catch)', () => {
+		expect(parseMetadata('not-json')).toEqual([]);
+		expect(parseMetadata('["unterminated')).toEqual([]);
+	});
+
+	test('filters out non-string entries from a mixed array', () => {
+		expect(parseMetadata('["blackjack", 42, null, true, "craps"]')).toEqual(['blackjack', 'craps']);
 	});
 });

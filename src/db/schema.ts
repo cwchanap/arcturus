@@ -120,17 +120,14 @@ export const missionProgress = sqliteTable(
 	}),
 );
 
-export const loginStreak = sqliteTable(
-	'login_streak',
-	{
-		userId: text('userId')
-			.primaryKey()
-			.references(() => user.id, { onDelete: 'cascade' }),
-		currentStreak: integer('currentStreak').notNull().default(0),
-		longestStreak: integer('longestStreak').notNull().default(0),
-		lastClaimPeriodKey: text('lastClaimPeriodKey').notNull().default(''),
-	},
-);
+export const loginStreak = sqliteTable('login_streak', {
+	userId: text('userId')
+		.primaryKey()
+		.references(() => user.id, { onDelete: 'cascade' }),
+	currentStreak: integer('currentStreak').notNull().default(0),
+	longestStreak: integer('longestStreak').notNull().default(0),
+	lastClaimPeriodKey: text('lastClaimPeriodKey').notNull().default(''),
+});
 
 export const missionOverride = sqliteTable(
 	'mission_override',

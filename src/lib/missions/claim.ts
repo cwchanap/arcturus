@@ -71,7 +71,12 @@ export async function claimMission(
 		.first<{ claimedAt: number | null }>();
 
 	if (row?.claimedAt) {
-		return { status: 'already-claimed', missionDefId, rewardChips: 0, chipBalance: currentChipBalance };
+		return {
+			status: 'already-claimed',
+			missionDefId,
+			rewardChips: 0,
+			chipBalance: currentChipBalance,
+		};
 	}
 	return { status: 'not-completed', missionDefId, rewardChips: 0, chipBalance: currentChipBalance };
 }
@@ -87,7 +92,9 @@ export async function claimLogin(
 	// Read current streak to compute transition values (not for race guard —
 	// the WHERE clause on the upsert handles the race)
 	const existing = await d1
-		.prepare(`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`)
+		.prepare(
+			`SELECT currentStreak, longestStreak, lastClaimPeriodKey FROM login_streak WHERE userId = ?`,
+		)
 		.bind(userId)
 		.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>();
 

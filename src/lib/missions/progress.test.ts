@@ -2,11 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { computeIncrement, clampProgress } from './progress';
 import type { MissionDefinition, MissionGameEvent } from './types';
 
-function makeDef(
-	id: string,
-	metric: MissionDefinition['metric'],
-	target = 5,
-): MissionDefinition {
+function makeDef(id: string, metric: MissionDefinition['metric'], target = 5): MissionDefinition {
 	return {
 		id,
 		title: id,
@@ -72,32 +68,26 @@ describe('computeIncrement', () => {
 	test('roundsWon with outcome=loss → 0', () => {
 		const def = makeDef('d1', { kind: 'roundsWon' });
 		expect(
-			computeIncrement(
-				def,
-				{ ...baseEvent, outcome: 'loss', winsIncrement: 0 },
-				null,
-			),
+			computeIncrement(def, { ...baseEvent, outcome: 'loss', winsIncrement: 0 }, null),
 		).toEqual({ amount: 0 });
 	});
 
 	test('spinsCompleted matches slots only', () => {
 		const def = makeDef('d1', { kind: 'spinsCompleted' });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'slots' }, null),
-		).toEqual({ amount: 1 });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null),
-		).toEqual({ amount: 0 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'slots' }, null)).toEqual({ amount: 1 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null)).toEqual({
+			amount: 0,
+		});
 	});
 
 	test('mpHandsCompleted matches poker_mp', () => {
 		const def = makeDef('d1', { kind: 'mpHandsCompleted' });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'poker_mp' }, null),
-		).toEqual({ amount: 1 });
-		expect(
-			computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null),
-		).toEqual({ amount: 0 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker_mp' }, null)).toEqual({
+			amount: 1,
+		});
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null)).toEqual({
+			amount: 0,
+		});
 	});
 
 	test('netChipsEarned dropped for MVP — no test needed', () => {

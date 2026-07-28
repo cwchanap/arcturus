@@ -322,6 +322,38 @@ describe('runRetentionCleanup', () => {
 		await runRetentionCleanup(binding);
 		expect(progressDeleted).toBe(true);
 	});
+
+	test('swallows errors from the mission_game_tried delete', async () => {
+		let progressDeleted = false;
+		let overrideDeleted = false;
+		const binding = {
+			prepare(sql: string) {
+				return {
+					bind() {
+						return {
+							run: async () => {
+								if (sql.startsWith('DELETE FROM mission_progress')) {
+									progressDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								if (sql.startsWith('DELETE FROM mission_override')) {
+									overrideDeleted = true;
+									return { meta: { changes: 1 } };
+								}
+								if (sql.startsWith('DELETE FROM mission_game_tried')) {
+									throw new Error('D1 error');
+								}
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		await runRetentionCleanup(binding);
+		expect(progressDeleted).toBe(true);
+		expect(overrideDeleted).toBe(true);
+	});
 });
 
 describe('runScheduledJobs', () => {

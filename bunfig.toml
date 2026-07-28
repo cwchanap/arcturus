@@ -16,4 +16,5 @@ coveragePathIgnorePatterns = [
 	"src/lib/bootstrap-secret-header.test.ts",
 	"e2e/bootstrap-auth.ts",
 	"test/setup.ts",
+	"src/lib/missions/mock-d1.ts",
 ]

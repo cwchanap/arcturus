@@ -1,4 +1,19 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+/**
+ * Wait (with a bounded retrying assertion on #game-status) for the round to
+ * settle to a terminal outcome matching `regex`. Returns true if the status
+ * matched within `timeoutMs`, false on timeout — so callers can keep hitting
+ * when the hand hasn't busted yet without failing the test.
+ */
+async function statusSettledTo(page: Page, regex: RegExp, timeoutMs: number): Promise<boolean> {
+	try {
+		await expect(page.locator('#game-status')).toContainText(regex, { timeout: timeoutMs });
+		return true;
+	} catch {
+		return false;
+	}
+}
 
 test.describe('Mission Board', () => {
 	test.beforeEach(async ({ page, request }) => {
@@ -83,88 +98,91 @@ test.describe('Mission Board', () => {
 	});
 
 	test('blackjack game flow increments handsPlayed mission progress', async ({ page, request }) => {
-		// Reset mission state to start clean
-		await request.delete('/api/missions/progress', { data: {} });
+		// Retry single-hand attempts until a win is observed, so the roundsWon
+		// assertion is deterministic (no silent skip on push/loss). Each attempt
+		// resets mission progress so handsPlayed reflects exactly one hand.
+		const MAX_ATTEMPTS = 10;
+		let winAchieved = false;
+		for (let attempt = 0; attempt < MAX_ATTEMPTS && !winAchieved; attempt++) {
+			await request.delete('/api/missions/progress', { data: {} });
 
-		// Play a blackjack hand: deal, stand, wait for resolution
-		await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
-		await page.fill('#bet-amount', '50');
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await page.locator('#game-controls').waitFor({ state: 'visible' });
+			// Play a blackjack hand: deal, stand, wait for resolution
+			await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
+			await page.fill('#bet-amount', '50');
+			await page.getByRole('button', { name: 'Deal' }).click();
+			await page.locator('#game-controls').waitFor({ state: 'visible' });
 
-		// Stand immediately to let dealer play and resolve the hand
-		await page.locator('#btn-stand').click();
-		// Wait for the round to resolve — the new-round button appears
-		await page.locator('#btn-new-round').waitFor({ state: 'visible', timeout: 15000 });
+			// Stand immediately to let the dealer play and resolve the hand
+			await page.locator('#btn-stand').click();
+			// Wait for the round to resolve — the new-round button appears
+			await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 15000 });
 
-		// Read the game status to determine the outcome
-		const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
-		const isWin = /You win|BLACKJACK/i.test(status);
-		const isLoss = /Dealer wins|Bust/i.test(status);
-
-		// Navigate to the missions board and verify progress
-		await page.goto('/missions', { waitUntil: 'networkidle' });
-
-		// daily-blackjack-5 tracks handsPlayed — any resolved hand increments it
-		const bjProgress = await page.getByTestId('progress-text-daily-blackjack-5').textContent();
-		expect(bjProgress?.trim()).toBe('1/5');
-
-		// daily-win-3 tracks roundsWon — only wins increment it
-		const winProgress = await page.getByTestId('progress-text-daily-win-3').textContent();
-		if (isWin) {
-			expect(winProgress?.trim()).toBe('1/3');
-		} else if (isLoss) {
-			expect(winProgress?.trim()).toBe('0/3');
+			// Read the game status to determine the outcome
+			const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
+			if (/You win|BLACKJACK/i.test(status)) {
+				winAchieved = true;
+			}
 		}
-		// Push (tie) doesn't increment wins or losses — leave unasserted
+		expect(winAchieved, `expected a win within ${MAX_ATTEMPTS} attempts`).toBe(true);
+
+		// Navigate to the missions board and verify progress with retrying
+		// assertions (also gives the async chip-sync/mission write time to land).
+		await page.goto('/missions', { waitUntil: 'domcontentloaded' });
+
+		// daily-blackjack-5 tracks handsPlayed — one resolved hand → 1/5
+		await expect(page.getByTestId('progress-text-daily-blackjack-5')).toHaveText('1/5');
+		// daily-win-3 tracks roundsWon — one win → 1/3
+		await expect(page.getByTestId('progress-text-daily-win-3')).toHaveText('1/3');
 	});
 
 	test('blackjack loss does not increment roundsWon mission progress', async ({
 		page,
 		request,
 	}) => {
-		await request.delete('/api/missions/progress', { data: {} });
+		// Retry single-hand attempts until a loss is observed, so the roundsWon
+		// assertion is deterministic (no silent skip on win/push). Each attempt
+		// resets mission progress so handsPlayed reflects exactly one hand.
+		const MAX_ATTEMPTS = 10;
+		let lossAchieved = false;
+		for (let attempt = 0; attempt < MAX_ATTEMPTS && !lossAchieved; attempt++) {
+			await request.delete('/api/missions/progress', { data: {} });
 
-		await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
+			await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 
-		// Play a hand and force a loss by hitting until bust
-		await page.fill('#bet-amount', '50');
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await page.locator('#game-controls').waitFor({ state: 'visible' });
+			// Play a hand and force a loss by hitting until bust
+			await page.fill('#bet-amount', '50');
+			await page.getByRole('button', { name: 'Deal' }).click();
+			await page.locator('#game-controls').waitFor({ state: 'visible' });
 
-		// Hit repeatedly to try to bust (force a loss)
-		let busted = false;
-		for (let i = 0; i < 10; i++) {
-			const hitBtn = page.locator('#btn-hit');
-			if (!(await hitBtn.isVisible())) break;
-			await hitBtn.click();
-			await page.waitForTimeout(500);
-			const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
-			if (/Bust|Dealer wins/i.test(status)) {
-				busted = true;
-				break;
+			// Hit repeatedly to try to bust (force a loss). After each hit, use
+			// a retrying assertion on #game-status to detect the terminal
+			// "Dealer wins" outcome (set after the round-complete delay). If the
+			// status doesn't settle, the hand continues and we hit again.
+			for (let i = 0; i < 10; i++) {
+				const hitBtn = page.locator('#btn-hit');
+				if (await hitBtn.isDisabled()) break;
+				await hitBtn.click();
+				if (await statusSettledTo(page, /Dealer wins/i, 2000)) break;
 			}
-		}
 
-		// If we didn't bust from hitting, stand and let dealer play
-		if (!busted) {
+			// If we didn't bust from hitting, stand and let dealer play
 			const standBtn = page.locator('#btn-stand');
-			if (await standBtn.isVisible()) {
+			if ((await standBtn.isVisible()) && !(await page.locator('#btn-new-round').isVisible())) {
 				await standBtn.click();
 			}
-		}
 
-		await page.locator('#btn-new-round').waitFor({ state: 'visible', timeout: 15000 });
-		const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
-
-		// Only verify roundsWon if this was actually a loss
-		if (/Dealer wins|Bust/i.test(status)) {
-			await page.goto('/missions', { waitUntil: 'networkidle' });
-			const winProgress = await page.getByTestId('progress-text-daily-win-3').textContent();
-			expect(winProgress?.trim()).toBe('0/3');
-			// handsPlayed still increments regardless of outcome
-			const bjProgress = await page.getByTestId('progress-text-daily-blackjack-5').textContent();
-			expect(bjProgress?.trim()).toBe('1/5');
+			await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 15000 });
+			const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
+			if (/Dealer wins/i.test(status)) {
+				lossAchieved = true;
+			}
 		}
+		expect(lossAchieved, `expected a loss within ${MAX_ATTEMPTS} attempts`).toBe(true);
+
+		await page.goto('/missions', { waitUntil: 'domcontentloaded' });
+		// daily-win-3 tracks roundsWon — a loss does not increment it → 0/3
+		await expect(page.getByTestId('progress-text-daily-win-3')).toHaveText('0/3');
+		// daily-blackjack-5 tracks handsPlayed — one resolved hand → 1/5
+		await expect(page.getByTestId('progress-text-daily-blackjack-5')).toHaveText('1/5');
 	});
 });

@@ -271,8 +271,9 @@ describe('runRetentionCleanup', () => {
 		expect(receiptDeleted).toBe(true);
 	});
 
-	test('swallows errors from the mission_progress delete and still reaps mission_override', async () => {
+	test('swallows errors from the mission_progress delete and still reaps mission_override and mission_game_tried', async () => {
 		let overrideDeleted = false;
+		let gameTriedDeleted = false;
 		const binding = {
 			prepare(sql: string) {
 				return {
@@ -286,6 +287,10 @@ describe('runRetentionCleanup', () => {
 									overrideDeleted = true;
 									return { meta: { changes: 1 } };
 								}
+								if (sql.startsWith('DELETE FROM mission_game_tried')) {
+									gameTriedDeleted = true;
+									return { meta: { changes: 1 } };
+								}
 								return { meta: { changes: 0 } };
 							},
 						};
@@ -295,10 +300,12 @@ describe('runRetentionCleanup', () => {
 		} as unknown as D1Database;
 		await runRetentionCleanup(binding);
 		expect(overrideDeleted).toBe(true);
+		expect(gameTriedDeleted).toBe(true);
 	});
 
-	test('swallows errors from the mission_override delete', async () => {
+	test('swallows errors from the mission_override delete and still reaps mission_game_tried', async () => {
 		let progressDeleted = false;
+		let gameTriedDeleted = false;
 		const binding = {
 			prepare(sql: string) {
 				return {
@@ -312,6 +319,10 @@ describe('runRetentionCleanup', () => {
 								if (sql.startsWith('DELETE FROM mission_override')) {
 									throw new Error('D1 error');
 								}
+								if (sql.startsWith('DELETE FROM mission_game_tried')) {
+									gameTriedDeleted = true;
+									return { meta: { changes: 1 } };
+								}
 								return { meta: { changes: 0 } };
 							},
 						};
@@ -321,6 +332,7 @@ describe('runRetentionCleanup', () => {
 		} as unknown as D1Database;
 		await runRetentionCleanup(binding);
 		expect(progressDeleted).toBe(true);
+		expect(gameTriedDeleted).toBe(true);
 	});
 
 	test('swallows errors from the mission_game_tried delete', async () => {

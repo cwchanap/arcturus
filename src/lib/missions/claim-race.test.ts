@@ -17,34 +17,24 @@ import { describe, expect, test } from 'bun:test';
 import type { D1Database } from '@cloudflare/workers-types';
 import { claimLogin } from './claim';
 import { getDailyPeriodKey, getDailyPeriodKeyForYesterday } from './periods';
+import { makeMockD1 } from './mock-d1';
 
 /**
- * Fake D1 for the claimLogin race-loser path:
+ * Fake D1 for the claimLogin race-loser path, built on the shared `makeMockD1`
+ * helper:
  *  - The streak SELECT returns a row whose lastClaimPeriodKey is yesterday
  *    (so the fast path `lastClaimPeriodKey === today` does NOT fire and we
  *    proceed to the upsert).
- *  - `batch()` returns results[0].meta.changes === 0, emulating the
- *    ON CONFLICT WHERE clause matching 0 rows because a concurrent request
- *    just set lastClaimPeriodKey = today.
+ *  - `batch()` runs each statement's `.run()`, which defaults to
+ *    `{ meta: { changes: 0 } }` when no `onRun` handler is registered —
+ *    emulating the ON CONFLICT WHERE clause matching 0 rows because a
+ *    concurrent request just set lastClaimPeriodKey = today.
  */
 function makeRaceLoserD1(existingStreak: {
 	currentStreak: number;
 	longestStreak: number;
 	lastClaimPeriodKey: string;
 }): D1Database {
-	const yesterday = getDailyPeriodKeyForYesterday();
-	const chain = {
-		bind: () => ({
-			first: async () => existingStreak,
-			// batch is called on the d1 root, not on the prepared statement.
-			run: async () => ({ meta: { changes: 0 } }),
-			all: async () => ({ results: [] }),
-		}),
-	};
-	const d1 = {
-		prepare: () => chain,
-		batch: async () => [{ meta: { changes: 0 } }, { meta: { changes: 0 } }],
-	};
 	// Guard: the streak row's lastClaimPeriodKey must NOT be today, otherwise
 	// claimLogin takes the fast path and never reaches the batch.
 	if (existingStreak.lastClaimPeriodKey === getDailyPeriodKey()) {
@@ -52,9 +42,9 @@ function makeRaceLoserD1(existingStreak: {
 			`test setup error: lastClaimPeriodKey must != today to bypass the fast path (got ${existingStreak.lastClaimPeriodKey})`,
 		);
 	}
-	// Sanity: yesterday is the canonical non-today key used by the integration tests.
-	void yesterday;
-	return d1 as unknown as D1Database;
+	const mock = makeMockD1();
+	mock.onFirst('SELECT currentStreak', () => existingStreak);
+	return mock.binding;
 }
 
 describe('claimLogin race-loser branch (mocked D1)', () => {

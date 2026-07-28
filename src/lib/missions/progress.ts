@@ -127,9 +127,6 @@ export async function applyMissionProgressBatch(
 			const result = computeIncrement(def, event, existingNormalized);
 			if (result.amount === 0) continue;
 
-			const currentProgress = existing?.progress ?? 0;
-			const newProgressRaw = currentProgress + result.amount;
-			const newProgress = clampProgress(newProgressRaw, def.target);
 			const metadataJson = result.metadata
 				? JSON.stringify(result.metadata)
 				: (existing?.metadataJson ?? null);
@@ -163,7 +160,6 @@ export async function applyMissionProgressBatch(
 					def,
 					periodKey,
 					result.amount,
-					newProgress,
 					metadataJson,
 					nowSeconds,
 				);
@@ -194,7 +190,6 @@ export function buildProgressUpsertSQL(
 	def: MissionDefinition,
 	periodKey: string,
 	amount: number,
-	newProgress: number,
 	metadataJson: string | null,
 	nowSeconds: number,
 ): D1PreparedStatement {

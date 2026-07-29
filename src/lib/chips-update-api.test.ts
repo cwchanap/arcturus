@@ -311,15 +311,6 @@ function createMockChipSyncBinding({
 					continue;
 				}
 
-				// Receipt-gated mission progress INSERTs (no-op in this mock).
-				if (
-					statement.sql.startsWith('INSERT INTO mission_progress') ||
-					statement.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
-				) {
-					results.push({ meta: { changes: 0 } });
-					continue;
-				}
-
 				throw new Error(`Unexpected batch SQL: ${statement.sql}`);
 			}
 

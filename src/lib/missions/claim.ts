@@ -37,14 +37,31 @@ export async function claimMission(
 	// D1 batch runs ALL statements, but the WHERE changes() = 1 on the grant
 	// makes it a no-op when the claim didn't match. Atomic — no crash window.
 	// This matches the chip-sync cascade pattern (chip-sync-batch-sql.ts).
+	//
+	// Reroll race guard (daily only): a game-progress update can snapshot the
+	// original daily mission as active, race with a successful reroll that
+	// installs a replacement, and then complete the now-replaced original.
+	// Without this guard, claimMission() would still pay the original because
+	// it verified only registry membership + the progress row. The NOT EXISTS
+	// subquery makes the claim a no-op when the mission has been rerolled away,
+	// so the grant cascade (changes() = 1) also no-ops. Only daily missions can
+	// be rerolled; weekly missions have no override path.
+	const rerollGuard =
+		def.period === 'daily'
+			? ` AND NOT EXISTS (SELECT 1 FROM mission_override WHERE userId = ? AND periodKey = ? AND originalMissionDefId = ?)`
+			: '';
 	const claimStmt = d1
 		.prepare(
 			`UPDATE mission_progress
 			 SET claimedAt = ?
 			 WHERE userId = ? AND missionDefId = ? AND periodKey = ?
-			   AND claimedAt IS NULL AND progress >= ?`,
+			   AND claimedAt IS NULL AND progress >= ?${rerollGuard}`,
 		)
-		.bind(nowSeconds, userId, missionDefId, periodKey, def.target);
+		.bind(
+			...(def.period === 'daily'
+				? [nowSeconds, userId, missionDefId, periodKey, def.target, userId, periodKey, missionDefId]
+				: [nowSeconds, userId, missionDefId, periodKey, def.target]),
+		);
 
 	const grantStmt = d1
 		.prepare(`UPDATE user SET chipBalance = chipBalance + ? WHERE id = ? AND changes() = 1`)

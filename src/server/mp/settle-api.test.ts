@@ -30,6 +30,21 @@ function createMockD1(options: { balances: Map<string, number>; heldChips?: Map<
 						async run() {
 							throw new Error(`Unexpected run() SQL: ${sql}`);
 						},
+						// Mission read-phase queries (getOverrides, getProgressRows)
+						// use .all(). The settle mock doesn't track mission state,
+						// so return empty results — no overrides, no progress rows.
+						async all() {
+							if (sql.startsWith('SELECT originalMissionDefId')) {
+								return { results: [] };
+							}
+							if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+								return { results: [] };
+							}
+							throw new Error(`Unexpected all() SQL: ${sql}`);
+						},
+						async first() {
+							throw new Error(`Unexpected first() SQL: ${sql}`);
+						},
 					};
 				},
 			};
@@ -97,6 +112,17 @@ function createMockD1(options: { balances: Map<string, number>; heldChips?: Map<
 						balance: bal,
 					});
 					results.push({ results: [], meta: { changes: 1 } });
+					continue;
+				}
+
+				// Receipt-gated mission progress INSERTs (no-op in this mock —
+				// the mock doesn't track mission_progress state, and the tests
+				// only verify chip settlement + receipt invariants).
+				if (
+					sql.startsWith('INSERT INTO mission_progress') ||
+					sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+				) {
+					results.push({ results: [], meta: { changes: 0 } });
 					continue;
 				}
 

@@ -48,7 +48,7 @@ import {
 	CHIP_SYNC_RECEIPT_INSERT_SQL,
 	CHIP_SYNC_STATS_UPSERT_SQL,
 } from '../../../lib/chip-sync-batch-sql';
-import { applyMissionProgress } from '../../../lib/missions';
+import { prepareMissionProgressStatements } from '../../../lib/missions';
 
 type RowsAffectedResult = { meta?: { changes?: number }; rowsAffected?: number } | null | undefined;
 
@@ -230,6 +230,7 @@ async function updateChipSyncAchievementPayload(
 async function applyChipSyncBatch(
 	dbBinding: D1Database,
 	params: ChipSyncBatchParams,
+	extraStatements?: D1PreparedStatement[],
 ): Promise<number> {
 	const statements: D1PreparedStatement[] = [
 		dbBinding
@@ -287,6 +288,16 @@ async function applyChipSyncBatch(
 					params.biggestWinCandidate,
 				),
 		);
+	}
+
+	// Append receipt-gated mission progress statements AFTER the receipt
+	// INSERT so the EXISTS(chip_sync_receipt) gate sees the row within the
+	// same D1 transaction. If the optimistic-lock UPDATE misses (rowsAffected
+	// = 0), the receipt INSERT is a no-op (WHERE changes() = 1) and the
+	// mission gates evaluate false → mission writes also no-op. This
+	// durably couples mission progress to the idempotent chip event.
+	if (extraStatements && extraStatements.length > 0) {
+		statements.push(...extraStatements);
 	}
 
 	const results = await dbBinding.batch(statements);
@@ -1284,23 +1295,57 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 			let persistedReceipt: ChipSyncReceiptRecord | null = null;
 
 			if (canonicalSyncPayload !== null) {
-				const rowsAffected = await applyChipSyncBatch(dbBinding, {
-					userId,
-					gameType,
-					syncId: canonicalSyncPayload.syncId,
-					previousBalance: canonicalSyncPayload.previousBalance,
-					newBalance,
-					delta,
-					matchedBalanceValue: needsRepair ? rawServerBalance : serverBalance,
-					statsDelta: canonicalSyncPayload.statsDelta,
-					outcome: canonicalSyncPayload.outcome,
-					handCount: canonicalSyncPayload.handCount,
-					winsIncrement: canonicalSyncPayload.winsIncrement,
-					lossesIncrement: canonicalSyncPayload.lossesIncrement,
-					biggestWinCandidate: canonicalSyncPayload.biggestWinCandidate,
-					updatedAtUnixSeconds: Math.trunc(now / 1000),
-					shouldRecordStats,
-				});
+				// Build receipt-gated mission progress statements BEFORE the
+				// batch so they can be merged into the same atomic d1.batch as
+				// the chip_sync_receipt INSERT. Each statement is gated on
+				// EXISTS(chip_sync_receipt WHERE userId+syncId), so it no-ops
+				// when the optimistic-lock UPDATE misses and the receipt is
+				// not inserted. This closes the durability gap where a
+				// deferred mission write could fail silently and never be
+				// retried (the receipt replay path returns cached success
+				// without re-running progress).
+				let missionStatements: D1PreparedStatement[] = [];
+				if (shouldRecordStats && isValidGameType(gameType)) {
+					missionStatements = await prepareMissionProgressStatements(
+						dbBinding,
+						[
+							{
+								userId,
+								event: {
+									gameType,
+									outcome: outcome as 'win' | 'loss' | 'push',
+									handCount: resolvedHandCount,
+									winsIncrement: actualWinsIncrement,
+									lossesIncrement: actualLossesIncrement,
+									delta: statsDeltaForTracking,
+								},
+							},
+						],
+						new Map([[userId, canonicalSyncPayload.syncId]]),
+					);
+				}
+
+				const rowsAffected = await applyChipSyncBatch(
+					dbBinding,
+					{
+						userId,
+						gameType,
+						syncId: canonicalSyncPayload.syncId,
+						previousBalance: canonicalSyncPayload.previousBalance,
+						newBalance,
+						delta,
+						matchedBalanceValue: needsRepair ? rawServerBalance : serverBalance,
+						statsDelta: canonicalSyncPayload.statsDelta,
+						outcome: canonicalSyncPayload.outcome,
+						handCount: canonicalSyncPayload.handCount,
+						winsIncrement: canonicalSyncPayload.winsIncrement,
+						lossesIncrement: canonicalSyncPayload.lossesIncrement,
+						biggestWinCandidate: canonicalSyncPayload.biggestWinCandidate,
+						updatedAtUnixSeconds: Math.trunc(now / 1000),
+						shouldRecordStats,
+					},
+					missionStatements,
+				);
 
 				if (rowsAffected === 0) {
 					const replayReceipt = await readChipSyncReceipt(
@@ -1599,27 +1644,11 @@ export function createPostHandler(overrides: Partial<PostHandlerDeps> = {}) {
 				}
 			}
 
-			if (shouldRecordStats && isValidGameType(gameType)) {
-				const missionWork = applyMissionProgress(dbBinding, userId, {
-					gameType,
-					outcome: outcome as 'win' | 'loss' | 'push',
-					handCount: resolvedHandCount,
-					winsIncrement: actualWinsIncrement,
-					lossesIncrement: actualLossesIncrement,
-					delta: statsDeltaForTracking,
-				}).catch((missionError) => {
-					console.error('[MISSION_PROGRESS] Failed to update:', missionError);
-				});
-				// Defer mission-progress writes via waitUntil when available so
-				// the response is not blocked. Fall back to awaiting synchronously
-				// when waitUntil is unavailable (e.g. local dev without ctx).
-				const ctx = locals.runtime?.ctx;
-				if (ctx?.waitUntil) {
-					ctx.waitUntil(missionWork);
-				} else {
-					await missionWork;
-				}
-			}
+			// Mission progress is now written in the same atomic batch as the
+			// chip_sync_receipt INSERT (see prepareMissionProgressStatements
+			// call above). The previous deferred waitUntil path is removed —
+			// it could silently drop progress on transient failure with no
+			// retry on syncId replay.
 
 			return buildSuccessResponse(newBalance, serverBalance, delta, newAchievements, warnings);
 		} catch (error) {

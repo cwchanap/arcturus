@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { applyMissionProgressBatch } from '../../../lib/missions';
+import { prepareMissionProgressStatements } from '../../../lib/missions';
 
 interface SettleEntry {
 	userId: string;
@@ -164,6 +164,35 @@ export const POST: APIRoute = async ({ request, locals }) => {
 	//
 	// All entries (debits AND credits) are settled in a single atomic batch
 	// so there is no window where some players are settled but others aren't.
+	//
+	// Mission progress statements are built BEFORE the batch and appended
+	// AFTER each user's receipt INSERT, gated on EXISTS(chip_sync_receipt).
+	// This durably couples mission progress to the settle batch: if the batch
+	// commits, mission progress commits with it. The previous design ran
+	// mission progress in a separate best-effort call after the batch
+	// committed — a transient failure there was swallowed and never retried
+	// (the idempotency filter drops already-processed syncIds on retry).
+	const missionEvents = newEntries.map((entry) => ({
+		userId: entry.userId,
+		event: {
+			gameType: 'poker_mp' as const,
+			outcome: (entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push') as
+				| 'win'
+				| 'loss'
+				| 'push',
+			handCount: 1,
+			winsIncrement: entry.delta > 0 ? 1 : 0,
+			lossesIncrement: entry.delta < 0 ? 1 : 0,
+			delta: entry.delta,
+		},
+	}));
+	const missionGateMap = new Map(newEntries.map((e) => [e.userId, e.syncId]));
+	const missionStatements = await prepareMissionProgressStatements(
+		d1,
+		missionEvents,
+		missionGateMap,
+	);
+
 	const settleStatements = newEntries.flatMap((entry) => {
 		const chipBalance = currentBalances.get(entry.userId) ?? 0;
 		const held = heldChipsMap.get(entry.userId) ?? 0;
@@ -182,34 +211,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
 			makeReceiptBind(d1, entry, previousBalance, newBalance, outcome, nowSeconds),
 		];
 	});
+	// Append receipt-gated mission statements after all settle+receipt pairs
+	// so the EXISTS(chip_sync_receipt) gate sees each user's receipt row.
+	settleStatements.push(...missionStatements);
 
 	await d1.batch(settleStatements);
-
-	// Update mission progress for all settled entries in a single batched
-	// call. Chip settlement above already committed; mission progress is
-	// best-effort relative to it, so a transient failure here is logged but
-	// does not fail the response (chips are already moved). This replaces
-	// the former per-player 3× serial retry loop, which serialized N × 3
-	// D1 round-trips on the settle response.
-	const missionEvents = newEntries.map((entry) => ({
-		userId: entry.userId,
-		event: {
-			gameType: 'poker_mp' as const,
-			outcome: (entry.delta > 0 ? 'win' : entry.delta < 0 ? 'loss' : 'push') as
-				| 'win'
-				| 'loss'
-				| 'push',
-			handCount: 1,
-			winsIncrement: entry.delta > 0 ? 1 : 0,
-			lossesIncrement: entry.delta < 0 ? 1 : 0,
-			delta: entry.delta,
-		},
-	}));
-	try {
-		await applyMissionProgressBatch(d1, missionEvents);
-	} catch (missionError) {
-		console.error('[MISSION_PROGRESS] Failed to update for MP settle:', missionError);
-	}
 
 	return new Response(JSON.stringify({ ok: true }), {
 		headers: { 'content-type': 'application/json' },

@@ -166,6 +166,18 @@ function createMockChipSyncBinding({
 
 							throw new Error(`Unexpected first() query: ${sql}`);
 						},
+						// Mission read-phase queries (getOverrides, getProgressRows)
+						// use .all(). This mock doesn't track mission state, so
+						// return empty results — no overrides, no progress rows.
+						all: async () => {
+							if (sql.startsWith('SELECT originalMissionDefId')) {
+								return { results: [] };
+							}
+							if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+								return { results: [] };
+							}
+							throw new Error(`Unexpected all() query: ${sql}`);
+						},
 						run: async () => {
 							if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
 								const [achievementPayload, userId, syncId] = args as [string, string, string];
@@ -285,6 +297,26 @@ function createMockChipSyncBinding({
 						previousChanges = 0;
 						results.push({ meta: { changes: 0 } });
 					}
+					continue;
+				}
+
+				// Receipt-gated mission progress INSERTs (no-op in this mock —
+				// the mock doesn't track mission_progress state).
+				if (
+					statement.sql.startsWith('INSERT INTO mission_progress') ||
+					statement.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+				) {
+					previousChanges = 0;
+					results.push({ meta: { changes: 0 } });
+					continue;
+				}
+
+				// Receipt-gated mission progress INSERTs (no-op in this mock).
+				if (
+					statement.sql.startsWith('INSERT INTO mission_progress') ||
+					statement.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+				) {
+					results.push({ meta: { changes: 0 } });
 					continue;
 				}
 
@@ -1636,6 +1668,16 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							// Mission read-phase queries — return empty (mock doesn't track mission state).
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => {
 								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
 									const [achievementPayload, userId, syncId] = args as [string, string, string];
@@ -1750,6 +1792,15 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => ({ meta: { changes: 0 } }),
 						};
 					},
@@ -1807,6 +1858,16 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							// Mission read-phase queries — return empty (mock doesn't track mission state).
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => {
 								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
 									const [achievementPayload, userId, syncId] = args as [string, string, string];
@@ -1842,6 +1903,15 @@ describe('chips update API', () => {
 						results.push({ meta: { changes: 0 } });
 						continue;
 					}
+					// Receipt-gated mission progress INSERTs (no-op in this mock).
+					if (
+						stmt.sql.startsWith('INSERT INTO mission_progress') ||
+						stmt.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+					) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+
 					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
 				}
 
@@ -1918,6 +1988,15 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => ({ meta: { changes: 0 } }),
 						};
 					},
@@ -1938,6 +2017,15 @@ describe('chips update API', () => {
 						results.push({ meta: { changes: 0 } });
 						continue;
 					}
+					// Receipt-gated mission progress INSERTs (no-op in this mock).
+					if (
+						stmt.sql.startsWith('INSERT INTO mission_progress') ||
+						stmt.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+					) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+
 					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
 				}
 				return results;
@@ -2048,6 +2136,15 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => ({ meta: { changes: 0 } }),
 						};
 					},
@@ -2068,6 +2165,15 @@ describe('chips update API', () => {
 						results.push({ meta: { changes: 0 } });
 						continue;
 					}
+					// Receipt-gated mission progress INSERTs (no-op in this mock).
+					if (
+						stmt.sql.startsWith('INSERT INTO mission_progress') ||
+						stmt.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+					) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+
 					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
 				}
 
@@ -2136,6 +2242,16 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							// Mission read-phase queries — return empty (mock doesn't track mission state).
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => {
 								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
 									return { meta: { changes: 0 } };
@@ -2161,6 +2277,15 @@ describe('chips update API', () => {
 						results.push({ meta: { changes: 1 } });
 						continue;
 					}
+					// Receipt-gated mission progress INSERTs (no-op in this mock).
+					if (
+						stmt.sql.startsWith('INSERT INTO mission_progress') ||
+						stmt.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+					) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+
 					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
 				}
 				return results;
@@ -2243,6 +2368,16 @@ describe('chips update API', () => {
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
 							},
+							// Mission read-phase queries — return empty (mock doesn't track mission state).
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
+							},
 							run: async () => {
 								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
 									const [achievementPayload, userId, syncId] = args as [string, string, string];
@@ -2277,6 +2412,15 @@ describe('chips update API', () => {
 						results.push({ meta: { changes: 0 } });
 						continue;
 					}
+					// Receipt-gated mission progress INSERTs (no-op in this mock).
+					if (
+						stmt.sql.startsWith('INSERT INTO mission_progress') ||
+						stmt.sql.startsWith('INSERT OR IGNORE INTO mission_game_tried')
+					) {
+						results.push({ meta: { changes: 0 } });
+						continue;
+					}
+
 					throw new Error(`Unexpected batch SQL: ${stmt.sql}`);
 				}
 				return results;
@@ -2348,6 +2492,16 @@ describe('chips update API', () => {
 									return (receipts.get(`${args[0]}:${args[1]}`) ?? null) as T;
 								}
 								throw new Error(`Unexpected first() query: ${sql}`);
+							},
+							// Mission read-phase queries — return empty (mock doesn't track mission state).
+							all: async () => {
+								if (sql.startsWith('SELECT originalMissionDefId')) {
+									return { results: [] };
+								}
+								if (sql.startsWith('SELECT missionDefId, periodKey, progress')) {
+									return { results: [] };
+								}
+								throw new Error(`Unexpected all() query: ${sql}`);
 							},
 							run: async () => {
 								if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {

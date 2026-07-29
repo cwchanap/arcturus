@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { user } from '../../../db/schema';
 import { eq } from 'drizzle-orm';
 import { createDb } from '../../../lib/db';
-import { claimLogin } from '../../../lib/missions';
+import { claimLogin, seedStreakFromOldMission } from '../../../lib/missions';
 
 export const POST: APIRoute = async ({ locals }) => {
 	if (!locals.session) {
@@ -13,13 +13,21 @@ export const POST: APIRoute = async ({ locals }) => {
 		return Response.json({ error: 'DATABASE_UNAVAILABLE' }, { status: 500 });
 	}
 
-	// Note: deploy-day streak seeding (seedStreakFromOldMission) was previously
-	// invoked here on every request. It is a one-shot migration that has now
-	// run its course; keeping it per-request added a SELECT to every claim-login
-	// call forever. The function remains in src/lib/missions/seed.ts for
-	// reference and is still covered by its unit/integration tests.
-
+	// Lazy deploy-day streak seed: if the user already claimed the legacy
+	// `daily-login` mission today (pre-migration system that awarded 1,000
+	// chips) but has no `login_streak` row yet, seed one so claimLogin()'s
+	// `lastClaimPeriodKey === today` fast-path fires and we don't pay the new
+	// 1,000-chip day-one reward on top of the legacy one.
+	//
+	// This is a self-healing one-shot migration: the first statement is a PK
+	// lookup on `login_streak` that returns immediately once any streak row
+	// exists for the user, so the per-request cost collapses to one indexed
+	// SELECT after the user's first claim. It is kept here (not run as a
+	// separate bulk backfill) so users who never call claim-login again are
+	// not double-paid when they eventually do.
 	try {
+		await seedStreakFromOldMission(d1, locals.session.user.id);
+
 		const db = createDb(d1);
 		const [userRow] = await db
 			.select({ chipBalance: user.chipBalance })

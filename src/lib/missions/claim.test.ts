@@ -239,6 +239,52 @@ describe('claimMission (Miniflare D1 integration)', () => {
 		// claimedAt still null.
 		expect(await getClaimedAt(db!, userId, 'daily-blackjack-5', periodKey)).toBeNull();
 	});
+
+	test('reroll race guard: a completed daily mission that was rerolled away is NOT claimable', async () => {
+		// Reproduces the P2 race: progress snapshots the original mission as
+		// active, a reroll installs a replacement, then the in-flight progress
+		// batch completes the original. claimMission() must NOT pay the
+		// original — the NOT EXISTS guard on mission_override blocks it.
+		const userId = 'user-reroll-race';
+		await insertUser(db!, userId, 1000);
+
+		const periodKey = getDailyPeriodKey();
+		// Original mission completed by the racing progress batch.
+		await seedCompletedMission(db!, userId, 'daily-blackjack-5', periodKey, 5);
+		// Reroll installed a replacement for the original.
+		await db!
+			.prepare(
+				`INSERT INTO mission_override (userId, periodKey, originalMissionDefId, replacementMissionDefId, rerolledAt)
+				 VALUES (?, ?, ?, ?, ?)`,
+			)
+			.bind(userId, periodKey, 'daily-blackjack-5', 'daily-craps-3', Math.trunc(Date.now() / 1000))
+			.run();
+
+		const result = await claimMission(db!, userId, 'daily-blackjack-5', 1000);
+		// Claim blocked by the NOT EXISTS guard — no reward, no balance change.
+		expect(result.status).toBe('not-completed');
+		expect(result.rewardChips).toBe(0);
+		expect(result.chipBalance).toBe(1000);
+		expect(await getChipBalance(db!, userId)).toBe(1000);
+		// claimedAt stays null — the claim UPDATE was a no-op.
+		expect(await getClaimedAt(db!, userId, 'daily-blackjack-5', periodKey)).toBeNull();
+	});
+
+	test('reroll race guard: a completed daily mission with NO override is still claimable', async () => {
+		// Defense-in-depth: the guard must not block the normal path. No
+		// mission_override row → NOT EXISTS is true → claim proceeds.
+		const userId = 'user-no-override';
+		await insertUser(db!, userId, 1000);
+
+		const periodKey = getDailyPeriodKey();
+		await seedCompletedMission(db!, userId, 'daily-blackjack-5', periodKey, 5);
+
+		const result = await claimMission(db!, userId, 'daily-blackjack-5', 1000);
+		expect(result.status).toBe('completed');
+		expect(result.rewardChips).toBe(500);
+		expect(result.chipBalance).toBe(1500);
+		expect(await getChipBalance(db!, userId)).toBe(1500);
+	});
 });
 
 describe('claimLogin (Miniflare D1 integration)', () => {

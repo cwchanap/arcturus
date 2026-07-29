@@ -23,6 +23,20 @@ import {
 	reconcilePendingBiggestWin,
 } from './balance-sync-stats';
 
+// Crypto-strong syncId (matches keno/slots clients). Falls back to Math.random
+// only when crypto.randomUUID is unavailable. The server's chip_sync_receipt
+// PK (userId+syncId) guarantees exact-once dedup; a collision is benign.
+// Routing blackjack through the receipt-gated path durably couples mission
+// progress to the chip event instead of a separate best-effort write whose
+// errors are swallowed after stats commit.
+function makeSyncId(): string {
+	const rand =
+		typeof crypto !== 'undefined' && crypto.randomUUID
+			? crypto.randomUUID()
+			: Math.random().toString(36).slice(2, 10);
+	return `bj-${Date.now()}-${rand}`;
+}
+
 /**
  * Format outcome message for display, handling split hands.
  * Shows individual results for each hand when split, or single result otherwise.
@@ -157,6 +171,13 @@ export function initBlackjackClient(): void {
 	// Track follow-up sync attempts to prevent infinite retry loops
 	let followUpSyncAttempts = 0;
 	const MAX_FOLLOW_UP_ATTEMPTS = 3;
+
+	// Stable syncId for the current sync attempt. Generated when a new sync
+	// starts (retryCount === 0) and reused across rate-limit retries so the
+	// server deduplicates the retried request via chip_sync_receipt PK. A
+	// follow-up sync (new pendingStats after a successful sync) gets a fresh
+	// syncId because the delta+stats payload differs.
+	let currentSyncId = '';
 
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(serverSyncedBalance, settings.minBet, settings.maxBet);
@@ -999,6 +1020,16 @@ export function initBlackjackClient(): void {
 				}
 				isSyncInProgress = true;
 
+				// Generate a fresh syncId for a new sync attempt (retryCount === 0).
+				// Rate-limit retries (retryCount > 0) reuse currentSyncId so the
+				// server's chip_sync_receipt deduplicates the retried request — the
+				// delta+stats payload is identical. A follow-up sync (new pendingStats
+				// after a successful sync) calls performChipUpdate() with retryCount=0
+				// and gets a fresh syncId because the payload differs.
+				if (retryCount === 0) {
+					currentSyncId = makeSyncId();
+				}
+
 				try {
 					await doPerformChipUpdate(retryCount);
 				} finally {
@@ -1070,6 +1101,11 @@ export function initBlackjackClient(): void {
 						previousBalance: serverSyncedBalance,
 						delta: deltaForRequest,
 						gameType: 'blackjack',
+						// syncId routes this request through the receipt-gated atomic
+						// batch so mission progress commits with (or no-ops with) the
+						// chip+stats write instead of being a deferred best-effort call
+						// whose errors are swallowed after stats commit.
+						syncId: currentSyncId,
 						maxBet: settings.maxBet,
 						outcome: outcomeForStats,
 						handCount: finalHandCount,

@@ -26,7 +26,52 @@ async function ensureChipBalanceColumn(db: D1Database) {
 	chipBalanceColumnEnsured = true;
 }
 
+function createLegacySyncId(): string {
+	const randomPart =
+		typeof crypto !== 'undefined' && 'randomUUID' in crypto
+			? crypto.randomUUID()
+			: `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+	return `legacy_${randomPart}`;
+}
+
+async function withLegacyChipSyncId(request: Request): Promise<Request | null> {
+	if (
+		request.method !== 'POST' ||
+		new URL(request.url).pathname !== '/api/chips/update' ||
+		!request.headers.get('content-type')?.includes('application/json')
+	) {
+		return null;
+	}
+
+	try {
+		const body = (await request.clone().json()) as unknown;
+		if (
+			typeof body !== 'object' ||
+			body === null ||
+			Array.isArray(body) ||
+			Object.hasOwn(body, 'syncId')
+		) {
+			return null;
+		}
+
+		const headers = new Headers(request.headers);
+		headers.delete('content-length');
+
+		return new Request(request.url, {
+			method: request.method,
+			headers,
+			body: JSON.stringify({ ...body, syncId: createLegacySyncId() }),
+			redirect: request.redirect,
+			signal: request.signal,
+		});
+	} catch {
+		return null;
+	}
+}
+
 export const onRequest = defineMiddleware(async (context, next) => {
+	const rewrittenRequest = await withLegacyChipSyncId(context.request);
+	const continueRequest = () => (rewrittenRequest ? next(rewrittenRequest) : next());
 	const runtime = context.locals.runtime;
 	const env = runtime?.env ?? null;
 	const dbBinding = env?.DB ?? null;
@@ -34,7 +79,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 	if (!dbBinding || !env) {
 		context.locals.session = null;
 		context.locals.user = null;
-		return next();
+		return continueRequest();
 	}
 
 	if (dbBinding && env) {
@@ -114,5 +159,5 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		}
 	}
 
-	return next();
+	return continueRequest();
 });

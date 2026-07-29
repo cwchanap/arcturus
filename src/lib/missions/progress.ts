@@ -28,11 +28,21 @@ export function computeIncrement(
 	switch (metric.kind) {
 		case 'handsPlayed': {
 			if (metric.gameType && event.gameType !== metric.gameType) return { amount: 0 };
+			// poker_mp is excluded from generic handsPlayed because it has its
+			// own dedicated metric (mpHandsCompleted). Without this guard a
+			// multiplayer hand would double-count toward both "play N hands"
+			// and "finish N multiplayer hands".
 			if (!metric.gameType && event.gameType === 'poker_mp') return { amount: 0 };
 			return { amount: event.handCount };
 		}
 		case 'roundsWon': {
 			if (metric.gameType && event.gameType !== metric.gameType) return { amount: 0 };
+			// Intentionally NOT guarded against poker_mp: "Win 3 rounds in any
+			// game" should count a multiplayer poker win. Double-count via
+			// /api/chips/update is impossible because that endpoint rejects
+			// poker_mp (not in GAME_LIMITS), so a multiplayer hand can only
+			// settle through /api/mp/settle — a single path. See the asymmetry
+			// note on handsPlayed above for why that metric IS guarded.
 			const wins = event.winsIncrement > 0 ? event.winsIncrement : event.outcome === 'win' ? 1 : 0;
 			return { amount: wins };
 		}
@@ -45,6 +55,10 @@ export function computeIncrement(
 			return { amount: 1 };
 		}
 		case 'gamesTried': {
+			// Intentionally NOT guarded against poker_mp: "Play 3 different
+			// game modes" should count multiplayer poker as a distinct mode.
+			// Same single-path protection as roundsWon — poker_mp cannot
+			// enter through /api/chips/update.
 			const existingGames = parseMetadata(existing?.metadataJson);
 			if (existingGames.includes(event.gameType)) return { amount: 0 };
 			return { amount: 1, metadata: [...existingGames, event.gameType] };

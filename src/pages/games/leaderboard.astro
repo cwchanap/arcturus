@@ -18,7 +18,7 @@ import DecoIcon from '../../components/DecoIcon.astro';
 
 const session = Astro.locals.session;
 
-// Handle build-time and runtime edge cases (consistent with missions/daily.astro)
+// Handle build-time and runtime edge cases (consistent with missions/index.astro)
 if (!session || !Astro.locals.runtime?.env?.DB) {
 	if (!session) {
 		return Astro.redirect('/signin');

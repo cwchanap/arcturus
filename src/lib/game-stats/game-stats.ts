@@ -5,6 +5,7 @@
  * This is the main entry point for game statistics operations.
  */
 
+import type { D1Database } from '@cloudflare/workers-types';
 import type { Database } from '../db';
 import type {
 	GameType,
@@ -24,6 +25,7 @@ import {
 	getTotalPlayersForGame,
 } from './game-stats-repository';
 import { getBulkUserAchievements } from '../achievements/achievement-repository';
+import { applyMissionProgress } from '../missions/progress';
 
 /**
  * Calculate derived metrics from raw stats
@@ -84,6 +86,26 @@ export async function recordGameRound(
 		chipDelta,
 		biggestWinCandidate: computedBiggestWinCandidate,
 	});
+
+	// Receipt-backed chip syncs update stats and missions together in their
+	// raw D1 batch and do not call recordGameRound. This hook preserves
+	// mission progress for the legacy compatibility path that still records
+	// game rounds through Drizzle without a client-provided syncId.
+	const d1 = (db as Database & { $client?: D1Database }).$client;
+	if (d1) {
+		try {
+			await applyMissionProgress(d1, userId, {
+				gameType,
+				outcome,
+				handCount,
+				winsIncrement: actualWinsIncrement,
+				lossesIncrement: actualLossesIncrement,
+				delta: chipDelta,
+			});
+		} catch (missionError) {
+			console.error('[MISSION_PROGRESS] Failed to update legacy game round:', missionError);
+		}
+	}
 }
 
 /**
@@ -180,7 +202,7 @@ export async function getGameLeaderboardData(
 		getTotalPlayersForGame(db, gameType, rankingMetric),
 	]);
 
-	// Transform raw data into leaderboard entries with badges
+	// Transform raw data into game leaderboard entries with badges
 	const entries = transformToGameLeaderboardEntries(
 		rawPlayers,
 		gameType,

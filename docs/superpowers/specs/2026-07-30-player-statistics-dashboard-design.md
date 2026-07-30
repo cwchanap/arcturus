@@ -58,7 +58,7 @@ metadata, and pagination. HPA-171 does not create an event model or history back
 - Showing recent sessions, streaks, individual rounds, or game-history drill-down.
 - Backfilling historical events from `game_stats` or client-authoritative chip receipts.
 - Changing leaderboard metrics, seasonal ranking, or reward settlement.
-- Fixing the existing leaderboard behavior that includes zero-activity initialized rows.
+- Changing existing leaderboard eligibility or rank semantics.
 - Refactoring unrelated profile settings or achievement behavior.
 - Refactoring the ranked Blackjack private chip-formatting helpers.
 
@@ -70,8 +70,8 @@ metadata, and pagination. HPA-171 does not create an event model or history back
 | Ranked statistics | Remain separate and out of scope |
 | Game-card rank | **Wins Rank**, explicitly labelled |
 | Rank destination | `/games/leaderboard?game=<gameType>&metric=wins` |
-| Rank eligibility | Dashboard ranks only `handsPlayed > 0`; initialized zero-hand rows are `Unranked` |
-| Leaderboard eligibility mismatch | Existing zero-hand leaderboard inclusion is a pre-existing quirk and out of scope |
+| Rank eligibility | Dashboard ranks only `handsPlayed > 0`; zero-hand row handling is defensive because no current production writer creates such rows |
+| Rank comparison population | Higher-ranked rows intentionally match the existing wins leaderboard, including any legacy/manual zero-hand rows |
 | Discovery | Compact profile summary plus dedicated detailed page |
 | Detailed route | `/profile/statistics` |
 | Profile loading | Server rendered |
@@ -85,7 +85,7 @@ metadata, and pagination. HPA-171 does not create an event model or history back
 | Overall win rate | Sum wins / sum decided hands; never average game percentages |
 | Most-played tie-break | First tied game in canonical `GAME_TYPES` order |
 | Rank access | One correlated-count SQL statement, not a whole-table window sort or seven route calls |
-| Cross-field API validation | Client recomputes summary invariants from the canonical game array |
+| Client payload validation | Validate shape, ranges, and canonical completeness; server unit tests own aggregate-formula consistency |
 | Private caching | API and authenticated HTML responses use `private, no-store` |
 | Database migration | None |
 | Session/trend follow-up | HPA-174 |
@@ -135,9 +135,10 @@ is a deliberate interaction tradeoff, not a claim that SSR cannot perform the qu
   retry in place without discarding page context or keyboard focus.
 - The API provides one testable authentication and response contract for the detailed page.
 
-This choice adds a small controller, runtime validation, and accessibility state management. That
-cost is accepted for the in-page retry experience. It is not justified as an unmeasured performance
-optimization. If loading/retry requirements are later removed, SSR becomes a valid simplification.
+This choice adds a small controller, shape/domain validation, and accessibility state management.
+That cost is accepted for the in-page retry experience. It is not justified as an unmeasured
+performance optimization. If loading/retry requirements are later removed, SSR becomes a valid
+simplification.
 
 The compact profile summary remains SSR because it should appear in the initial profile HTML and its
 failure must not prevent the rest of the profile from rendering.
@@ -158,7 +159,8 @@ src/lib/game-stats/
 ├── player-statistics-types.ts         # Public dashboard contracts
 ├── game-stats.ts                      # calculateMetrics delegates to calculateWinRate
 ├── game-stats-repository.ts           # Existing aggregate delegate + bulk wins-rank raw SQL
-└── game-stats-repository.test.ts      # Aggregate compatibility and rank-query behavior
+├── game-stats-repository.test.ts      # Execution-wrapper, mapping, and error behavior
+└── game-stats-repository.sqlite.test.ts # Exact rank SQL against migrated in-memory SQLite
 
 src/components/profile/
 └── PlayerStatisticsSummary.astro      # Server-rendered compact summary
@@ -198,7 +200,6 @@ export interface PlayerGameStatistics {
   netProfit: number;
   biggestWin: number;
   winsRank: number | null;
-  hasActivity: boolean;
 }
 
 export interface PlayerStatisticsDashboard {
@@ -219,7 +220,9 @@ export async function getPlayerStatisticsDashboard(
 
 The pure builder accepts raw stat rows and an optional rank map. Both public service functions use
 the same builder, and the builder uses the shared metric/aggregate helpers, so profile, dashboard,
-leaderboard-derived metrics, and achievement totals cannot acquire parallel formulas.
+leaderboard-derived metrics, and achievement totals cannot acquire parallel formulas. The client
+validator does not recompute those formulas; it protects the render boundary through shape, range,
+and canonical-membership checks.
 
 ## 5. Existing metric and aggregation reuse
 
@@ -251,8 +254,10 @@ Reuse rules:
   through `calculateMetrics`; it is not used as the dashboard contract because it does not zero-fill.
 - Existing `getAggregateUserStats(db, userId)` remains available to achievement evaluation, but its
   reducer delegates to `aggregateGameStats`.
-- The HPA-171 builder calls `aggregateGameStats` on its already-fetched canonical rows rather than
-  calling `getAggregateUserStats`, which would perform a duplicate database read.
+- The HPA-171 builder first validates/filter-maps raw rows to canonical `GAME_TYPES`, rejects
+  duplicate canonical rows, ignores unknown game types, and zero-fills missing games. It then calls
+  `aggregateGameStats` on that canonical array rather than on raw persistence rows or through
+  `getAggregateUserStats`, which would perform a duplicate database read.
 - `aggregateGameStats` continues to compute aggregate `biggestWin` for achievements even though
   `PlayerStatisticsSummary` intentionally does not expose that field.
 
@@ -302,15 +307,23 @@ Equal-win players therefore receive deterministic unique positions rather than a
 rank.
 
 The outer `handsPlayed > 0` predicate is an intentional dashboard-only eligibility rule and is the
-one exception to exact parity with `getUserGameRank(..., 'wins')`. Existing single-game leaderboard
-functions remain unchanged in HPA-171: they may rank or list initialized zero-hand rows. The
-dashboard instead treats those rows as `Unranked` because the player has not actually played.
-Correcting leaderboard eligibility is a separate cleanup, not part of this implementation.
+one exception to exact parity with `getUserGameRank(..., 'wins')`. Current production writers create
+rows while incrementing `handsPlayed` by at least one; `initializeGameStats()` has no production
+caller. Zero-hand row handling is therefore defensive for historical, test, or manually inserted
+data rather than a normal runtime state. Existing single-game leaderboard functions remain
+unchanged in HPA-171.
 
-The statement performs one correlated rank count for each active game row owned by the current user,
-within one database call. The existing `(gameType, totalWins)` index can narrow each game's
-higher-win range; equal-win tie checks may still inspect matching rows. This scales more directly
-with the current user's canonical games than a whole-table multi-partition window sort.
+The inner correlated count deliberately does not add `higher.handsPlayed > 0`: it preserves the
+comparison population used by the linked wins leaderboard. Consequently, if legacy/manual
+zero-hand rows exist, an active zero-win player can rank behind an inactive zero-win row with a
+lower user ID. That tradeoff preserves leaderboard-link parity; cleaning up leaderboard eligibility
+is a separate issue.
+
+The statement performs one correlated rank count for each active game row owned by the current user
+within one database call. Its cost is the same basic higher/equal-row counting work as repeated
+`getUserGameRank(..., 'wins')` calls, but it removes per-game application/database round trips. The
+existing `(gameType, totalWins)` index can narrow each game's higher-win range; equal-win tie checks
+may still inspect matching rows.
 
 Implement the statement with Drizzle's raw `sql` template and explicitly validate/map returned rows.
 No first-class ORM rank abstraction is assumed. The existing `getUserGameRank` remains the
@@ -318,7 +331,8 @@ single-game implementation used by the leaderboard; HPA-171 does not force it th
 function.
 
 An active game with zero wins still receives its actual leaderboard position because the dashboard
-eligibility rule is activity, not minimum wins.
+eligibility rule is activity, not minimum wins. The zero-hand branch is covered defensively but must
+not dominate the implementation or test surface.
 
 ### 6.3 Unknown, duplicate, and integrity failures
 
@@ -351,16 +365,18 @@ purpose-built covering index in a follow-up. Do not add an unmeasured index in t
 
 ### 7.1 Canonical zero-fill
 
-Start from `GAME_TYPES`, not from database rows. For each canonical game:
+Start from `GAME_TYPES`, not from database rows. The builder:
 
-1. Find the matching raw row.
-2. Use persisted values when present.
-3. Otherwise construct zero values.
-4. Calculate win rate through `calculateWinRate`.
-5. Apply a rank only when `handsPlayed > 0`.
+1. Filters raw persistence rows to canonical game types and warns on unknown values.
+2. Throws on duplicate rows for one canonical game.
+3. Produces exactly one zero-filled entry for each `GAME_TYPES` item in canonical order.
+4. Calculates win rate through `calculateWinRate`.
+5. Applies a rank only when `handsPlayed > 0`.
+6. Runs `aggregateGameStats` and most-played selection over this canonical array, never over the raw
+   persistence rows.
 
-This guarantees exactly one output card per canonical game and stable ordering independent of D1
-row order.
+This guarantees cards and summary use the same supported-game input set and remain stable regardless
+of D1 row order or stray unknown game types.
 
 ### 7.2 Per-game win rate
 
@@ -401,11 +417,13 @@ This makes the result deterministic and avoids introducing another preference or
 
 ### 7.5 Activity and zero-win rank semantics
 
-`hasActivity` is exactly `handsPlayed > 0`. Row existence alone does not make a game active.
+Activity is derived at the rendering boundary as `handsPlayed > 0`; it is not a separate API field.
+Row existence alone does not make a game active.
 
 `Unranked` is reserved for zero-activity games or a genuinely unavailable rank. A player who has
-played a game but has zero wins may display a numeric last-place or near-last-place Wins Rank. That
-is intentional and matches the active-player comparison semantics of the current wins leaderboard.
+played a game but has zero wins may display a numeric last-place or near-last-place Wins Rank. The
+comparison includes the same rows as the current wins leaderboard, including any defensive
+legacy/manual zero-hand rows described in Section 6.2.
 
 ## 8. API design
 
@@ -430,9 +448,12 @@ The status and body contract is:
 - `401`: `{ error: 'Unauthorized' }`.
 - `500`: `{ error: 'Unable to load player statistics' }`.
 
-Every response is JSON with an explicit `content-type` header. The route never accepts a user ID,
-game type, or ranking metric from the request. It is always scoped to the authenticated account and
-the fixed MVP Wins Rank contract.
+Every response is JSON with explicit `content-type` and `cache-control` headers. Do not copy the
+existing LLM-settings helper pattern where `{ headers: requiredHeaders, ...init }` allows
+`init.headers` to replace required headers. Construct a `Headers` instance from `init.headers`, then
+set `content-type: application/json` and `cache-control: private, no-store` before creating the
+response. The route never accepts a user ID, game type, or ranking metric from the request. It is
+always scoped to the authenticated account and the fixed MVP Wins Rank contract.
 
 ### 8.2 Response
 
@@ -455,8 +476,7 @@ the fixed MVP Wins Rank contract.
       "winRate": 51.85185185185185,
       "netProfit": 3200,
       "biggestWin": 500,
-      "winsRank": 12,
-      "hasActivity": true
+      "winsRank": 12
     }
   ]
 }
@@ -473,7 +493,10 @@ Set `Cache-Control: private, no-store` on:
 - The authenticated `/profile` HTML response.
 - The authenticated `/profile/statistics` HTML response, including shell and error responses.
 
-The client fetch uses `credentials: 'same-origin'` and `cache: 'no-store'`.
+The client fetch uses `credentials: 'same-origin'` and `cache: 'no-store'`. `no-store` is the
+operative cache prohibition; `private` documents that these are account-specific responses. Adding
+this header to the existing `/profile` route is directly in scope because HPA-171 adds private
+performance data to that HTML response, not an unrelated profile refactor.
 
 Errors returned to the browser do not expose SQL, user IDs, or repository details. Repository,
 service, and integrity exceptions are logged server-side and produce one retryable dashboard error.
@@ -482,7 +505,8 @@ rendering account data anonymously.
 
 ### 8.4 Payload validation
 
-The client validates both shape and domain invariants before rendering.
+The client validates the transport/rendering boundary without reimplementing server business
+formulas.
 
 Summary invariants:
 
@@ -499,31 +523,24 @@ Game-array invariants:
 - `netProfit` is a signed safe integer.
 - `winRate` is finite and within `[0, 100]`.
 - `winsRank` is a positive safe integer or `null`.
-- `hasActivity === (handsPlayed > 0)`.
-- A zero-activity game has `winsRank === null`.
+- A game with `handsPlayed === 0` has `winsRank === null`.
 
-Cross-field invariants are hard validation failures, not advisory checks:
+The client does not recompute aggregate totals, win-rate formulas, or most-played tie-breaking.
+Those rules live in the shared server-side helpers and builder and are verified by unit tests.
+Recomputing them in the client would either duplicate formulas or import the same helpers into a
+tautological check.
 
-- `summary.totalHands === sum(games.handsPlayed)`.
-- `summary.totalWins === sum(games.totalWins)`.
-- `summary.totalLosses === sum(games.totalLosses)`.
-- `summary.totalNetProfit === sum(games.netProfit)`.
-- `summary.overallWinRate` equals the rate recomputed from summed wins and losses within an absolute
-  tolerance of `1e-9`.
-- `summary.mostPlayedGame` equals the highest-hand game with canonical `GAME_TYPES` tie-breaking, or
-  `null` when every card has zero hands.
-- Each per-game `winRate` equals the value recomputed from that card's wins and losses within an
-  absolute tolerance of `1e-9`.
-
-Malformed or internally inconsistent success payloads enter the same retryable error state as a
-failed fetch; they are never partially rendered.
+Malformed success payloads enter the same retryable error state as a failed fetch; they are never
+partially rendered.
 
 ## 9. Profile summary experience
 
 Place `Player Performance` immediately after the existing two-column **Account Details / Casino
 Tips** grid and before **AI Rival Settings**.
 
-The section is server rendered so these four metrics appear in initial HTML:
+The section includes a short `All-time casual play` clarification so its trust domain is visible on
+the more discoverable profile surface. It is server rendered so these four metrics appear in initial
+HTML:
 
 - Total hands.
 - Most-played game.
@@ -680,19 +697,30 @@ Cover:
 - Unknown game types are ignored.
 - Duplicate canonical rows throw the integrity exception.
 
-### 13.2 Repository tests
+### 13.2 Repository and real-SQLite rank tests
 
-Cover:
+The existing hand-rolled Drizzle-chain mock cannot prove the correctness of a raw SQL comparison.
+Use two layers:
 
-- The correlated-count query returns the current user's rank for multiple active games.
-- Equal wins use ascending user ID as deterministic tie-breaker.
-- Game partitions rank independently.
-- An active zero-win row receives a rank.
-- A zero-activity current-user row produces no dashboard rank entry.
-- Existing `getUserGameRank(..., 'wins')` behavior for zero-hand rows remains unchanged.
+1. Existing-style repository unit tests cover D1 execution-wrapper behavior, row validation/mapping,
+   empty results, unknown game types, and errors.
+2. Add `game-stats-repository.sqlite.test.ts` using an in-memory `bun:sqlite` database. A small
+   test-only migration loader applies the checked-in `drizzle/*.sql` sequence needed to create the
+   real schema. A D1-compatible prepare/bind/all adapter invokes `getBulkUserWinsRanks` so the test
+   executes the exact production SQL rather than a copied approximation.
+
+Seed multiple users and games and assert:
+
+- Higher wins rank first.
+- Equal wins use ascending user ID.
+- Game partitions are independent.
+- An active zero-win row receives the expected rank.
+- A defensive zero-hand subject row produces no dashboard rank, while a lower-ID zero-hand competitor
+  can still count ahead of an active zero-win subject to preserve leaderboard parity.
 - A user with no row for a game receives no rank entry.
-- Empty results produce an empty map.
-- Unexpected persisted game types are not returned as valid `GameType` keys.
+
+The duplicate-row builder test uses synthetic raw input because the database primary key makes that
+state unreachable through migrated SQLite.
 
 ### 13.3 Formatting tests
 
@@ -713,11 +741,10 @@ Cover rejection of:
 - Unsafe integer chip/count values.
 - Win rates outside `[0, 100]`.
 - Missing, duplicate, unknown, or noncanonical game entries.
-- `hasActivity` values that disagree with `handsPlayed`.
 - A non-null rank for a zero-activity game.
-- Summary totals that disagree with game-card sums.
-- Per-game or overall win rates outside the stated tolerance.
-- An incorrect most-played game or tie-break.
+
+Aggregate totals, win-rate formulas, and most-played tie-breaking are covered in shared-helper and
+builder tests, not recomputed in client-validator tests.
 
 ### 13.5 API, page, and failure-path tests
 
@@ -762,9 +789,10 @@ One focused implementation PR is appropriate because HPA-171 requires no migrati
 
 1. Extract shared metric/aggregate helpers and refactor existing callers with equivalence tests.
 2. Add dashboard contracts, zero-fill builder, integrity exception, and pure tests.
-3. Add the correlated-count Wins Rank repository query and tests.
+3. Add the correlated-count Wins Rank repository query, execution-wrapper tests, and real-SQLite
+   integration coverage.
 4. Add summary/dashboard orchestration services.
-5. Add authenticated API route, strict cross-field payload validator, and tests.
+5. Add authenticated API route, shape/domain payload validator, and tests.
 6. Extend shared formatting utilities.
 7. Add the profile summary component, exact insertion point, no-store header, and isolated failure.
 8. Add the protected detailed page, no-store shell, client controller, no-JavaScript fallback, and
@@ -779,11 +807,12 @@ The implementation must not begin the HPA-174 event-history model in the same PR
 - **Server-side account data:** both entrypoints use authenticated D1 queries only.
 - **Rank display:** each active card uses correlated-count Wins Rank and links to the matching
   leaderboard.
-- **Dashboard eligibility:** zero-hand initialized rows are intentionally `Unranked`; the existing
-  leaderboard quirk remains out of scope.
+- **Dashboard eligibility:** zero-hand row handling is defensive; no current production writer
+  creates such rows, and existing leaderboard eligibility remains out of scope.
 - **Graceful unranked behavior:** zero-activity ranks display `Unranked`; active zero-win ranks remain
   numeric.
-- **Aggregate consistency:** client validation rejects summaries that disagree with canonical games.
+- **SQL correctness:** the exact correlated rank query is exercised against migrated in-memory
+  SQLite, not only through mocked Drizzle chains.
 - **Integrity failures:** duplicates are logged and use generic API/profile failure states.
 - **Aggregate unit tests:** shared helper and pure builder tests cover calculations and compatibility.
 - **Populated, empty, and database-error E2E:** focused scenarios cover each state and retry.

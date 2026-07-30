@@ -231,7 +231,7 @@ should make duplicates impossible.
 - Detailed dashboard: two parallel queries.
 - No per-game reads and no seven-call rank loop.
 
-No schema or index migration is required for the expected seven-game dashboard workload. If later
+No schema or index migration is required for the current `GAME_TYPES` dashboard workload. If later
 profiling shows the window query is expensive at production scale, index optimization belongs to a
 measured follow-up rather than this MVP.
 
@@ -297,12 +297,21 @@ The route:
 1. Reads `locals.session`.
 2. Returns `401` JSON when unauthenticated.
 3. Resolves the D1 binding from `locals.runtime.env.DB`.
-4. Returns a generic JSON error if the database is unavailable.
+4. Returns `500` JSON if the database is unavailable.
 5. Calls `getPlayerStatisticsDashboard(db, session.user.id)`.
 6. Returns raw numeric values as `{ summary, games }`.
+7. Catches service/repository failures, logs them server-side, and returns the same generic `500`
+   response used for database unavailability.
 
-The route never accepts a user ID, game type, or ranking metric from the request. It is always scoped
-to the authenticated account and the fixed MVP Wins Rank contract.
+The status and body contract is:
+
+- `200`: `{ summary, games }`.
+- `401`: `{ error: 'Unauthorized' }`.
+- `500`: `{ error: 'Unable to load player statistics' }`.
+
+Every response is JSON with an explicit `content-type` header. The route never accepts a user ID,
+game type, or ranking metric from the request. It is always scoped to the authenticated account and
+the fixed MVP Wins Rank contract.
 
 ### 7.2 Response
 
@@ -375,13 +384,18 @@ When no games have activity:
 - Most-played game is `No games played yet`.
 - Overall win rate is `0.0%`.
 - Net profit is a neutral zero-chip value.
-- The section remains visible and links to the detailed page or lobby.
+- The section remains visible and keeps the `View detailed statistics` link. The detailed page owns
+  the lobby invitation.
 
 If its database read fails, only this section displays an unavailable state. Account details, AI
 settings, and achievements continue rendering. The failure is logged server-side without exposing
 private data.
 
 ## 9. Detailed dashboard experience
+
+`/profile/statistics` applies the same session guard as `/profile`. An unauthenticated page request
+redirects to `/signin` before rendering the shell; the API remains independently authenticated for
+session expiry and direct requests.
 
 ### 9.1 Page structure
 
@@ -415,8 +429,8 @@ The initial server-rendered shell contains labelled skeleton cards and a parent 
 
 ### 9.4 Populated and partial-activity state
 
-All seven canonical game cards remain visible. Played and untouched games may coexist; untouched
-cards are not mistaken for missing data.
+Every canonical `GAME_TYPES` card remains visible. Played and untouched games may coexist;
+untouched cards are not mistaken for missing data.
 
 ### 9.5 All-empty state
 
@@ -528,7 +542,7 @@ Profile coverage:
 Detailed-page coverage:
 
 - Populated dashboard.
-- All seven cards in canonical order.
+- One card for every `GAME_TYPES` entry in canonical order.
 - Mixed played and untouched cards.
 - Correct weighted summary values.
 - Wins Rank and unranked states.

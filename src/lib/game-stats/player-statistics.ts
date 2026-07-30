@@ -1,6 +1,8 @@
 import { aggregateGameStats, calculateWinRate } from './aggregation';
 import { GAME_TYPES, isValidGameType } from './constants';
+import { getAllUserGameStats, getBulkUserWinsRanks } from './game-stats-repository';
 import type { GameType } from './types';
+import type { Database } from '../db';
 import type {
 	PlayerGameStatistics,
 	PlayerStatisticsDashboard,
@@ -74,3 +76,36 @@ export function buildPlayerStatisticsDashboard(
 
 	return { summary: buildSummary(games), games };
 }
+
+export interface PlayerStatisticsDependencies {
+	getAllUserGameStats: typeof getAllUserGameStats;
+	getBulkUserWinsRanks: typeof getBulkUserWinsRanks;
+}
+
+export function createPlayerStatisticsService(
+	overrides: Partial<PlayerStatisticsDependencies> = {},
+) {
+	const dependencies: PlayerStatisticsDependencies = {
+		getAllUserGameStats,
+		getBulkUserWinsRanks,
+		...overrides,
+	};
+
+	return {
+		async getPlayerStatisticsSummary(db: Database, userId: string) {
+			const rows = await dependencies.getAllUserGameStats(db, userId);
+			return buildPlayerStatisticsDashboard(rows).summary;
+		},
+		async getPlayerStatisticsDashboard(db: Database, userId: string) {
+			const [rows, ranks] = await Promise.all([
+				dependencies.getAllUserGameStats(db, userId),
+				dependencies.getBulkUserWinsRanks(db, userId),
+			]);
+			return buildPlayerStatisticsDashboard(rows, ranks);
+		},
+	};
+}
+
+const defaultService = createPlayerStatisticsService();
+
+export const { getPlayerStatisticsSummary, getPlayerStatisticsDashboard } = defaultService;

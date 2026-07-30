@@ -17,6 +17,7 @@ let getGameStats!: GameStatsRepositoryModule['getGameStats'];
 let initializeGameStats!: GameStatsRepositoryModule['initializeGameStats'];
 let getTopPlayersForGame!: GameStatsRepositoryModule['getTopPlayersForGame'];
 let getAggregateUserStats!: GameStatsRepositoryModule['getAggregateUserStats'];
+let getBulkUserWinsRanks!: (db: Database, userId: string) => Promise<Map<GameType, number>>;
 
 beforeAll(async () => {
 	// Ensure this file always tests the real repository implementation, even when
@@ -30,6 +31,7 @@ beforeAll(async () => {
 	initializeGameStats = repository.initializeGameStats;
 	getTopPlayersForGame = repository.getTopPlayersForGame;
 	getAggregateUserStats = repository.getAggregateUserStats;
+	getBulkUserWinsRanks = repository.getBulkUserWinsRanks;
 });
 
 /**
@@ -42,6 +44,8 @@ function createMockDb({
 	countResolver,
 	capturedInsert,
 	capturedOrder,
+	allRows = [],
+	allError,
 }: {
 	userStats: any;
 	allStats: any[];
@@ -49,8 +53,14 @@ function createMockDb({
 	countResolver?: (condition: unknown) => number;
 	capturedInsert?: { values?: any };
 	capturedOrder?: { orderBy?: unknown };
+	allRows?: unknown[];
+	allError?: Error;
 }): Database {
 	return {
+		all: async () => {
+			if (allError) throw allError;
+			return allRows;
+		},
 		select: (columns?: any) => {
 			const hasCountColumn = columns && typeof columns === 'object' && 'count' in columns;
 
@@ -116,6 +126,47 @@ function createMockDb({
 		}),
 	} as unknown as Database;
 }
+
+describe('getBulkUserWinsRanks', () => {
+	test('maps valid wins ranks and ignores unsupported game types', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			allRows: [
+				{ gameType: 'blackjack', winsRank: 2 },
+				{ gameType: 'future-game', winsRank: 1 },
+			],
+		});
+
+		expect(await getBulkUserWinsRanks(mockDb, 'user-1')).toEqual(new Map([['blackjack', 2]]));
+	});
+
+	test('rejects invalid wins ranks returned by the database', async () => {
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			allRows: [{ gameType: 'blackjack', winsRank: 0 }],
+		});
+
+		await expect(getBulkUserWinsRanks(mockDb, 'user-1')).rejects.toThrow(
+			'Invalid wins rank returned by database',
+		);
+	});
+
+	test('propagates database execution errors', async () => {
+		const failure = new Error('database unavailable');
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			allError: failure,
+		});
+
+		await expect(getBulkUserWinsRanks(mockDb, 'user-1')).rejects.toBe(failure);
+	});
+});
 
 describe('getUserGameRank', () => {
 	test('returns null when user has no game stats', async () => {

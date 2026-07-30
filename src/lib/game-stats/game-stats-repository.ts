@@ -9,7 +9,7 @@ import { eq, and, desc, sql, gt, lt, or } from 'drizzle-orm';
 import { gameStats, user } from '../../db/schema';
 import type { Database } from '../db';
 import type { GameType, GameStats, RankingMetric } from './types';
-import { MIN_HANDS_FOR_WIN_RATE } from './constants';
+import { isValidGameType, MIN_HANDS_FOR_WIN_RATE } from './constants';
 import { aggregateGameStats } from './aggregation';
 
 /**
@@ -23,6 +23,11 @@ export interface RawGameStatsPlayer {
 	handsPlayed: number;
 	biggestWin: number;
 	netProfit: number;
+}
+
+interface RawWinsRankRow {
+	gameType: string;
+	winsRank: number;
 }
 
 /**
@@ -69,6 +74,44 @@ export async function getAllUserGameStats(db: Database, userId: string): Promise
 		netProfit: result.netProfit,
 		updatedAt: result.updatedAt,
 	}));
+}
+
+export async function getBulkUserWinsRanks(
+	db: Database,
+	userId: string,
+): Promise<Map<GameType, number>> {
+	const rows = await db.all<RawWinsRankRow>(sql`
+		SELECT
+			subject.gameType AS gameType,
+			1 + (
+				SELECT COUNT(*)
+				FROM game_stats AS higher
+				WHERE higher.gameType = subject.gameType
+					AND (
+						higher.totalWins > subject.totalWins
+						OR (
+							higher.totalWins = subject.totalWins
+							AND higher.userId < subject.userId
+						)
+					)
+			) AS winsRank
+		FROM game_stats AS subject
+		WHERE subject.userId = ${userId}
+			AND subject.handsPlayed > 0
+	`);
+
+	const ranks = new Map<GameType, number>();
+	for (const row of rows) {
+		if (!isValidGameType(row.gameType)) {
+			console.warn('[GAME_STATS] Ignoring rank for unsupported game type');
+			continue;
+		}
+		if (!Number.isSafeInteger(row.winsRank) || row.winsRank < 1) {
+			throw new Error('Invalid wins rank returned by database');
+		}
+		ranks.set(row.gameType, row.winsRank);
+	}
+	return ranks;
 }
 
 /**

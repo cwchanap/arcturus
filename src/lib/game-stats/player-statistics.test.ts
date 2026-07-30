@@ -1,10 +1,17 @@
 import { describe, expect, test } from 'bun:test';
+import type { Database } from '../db';
 import { GAME_TYPES } from './constants';
 import {
 	PlayerStatisticsIntegrityError,
 	buildPlayerStatisticsDashboard,
 } from './player-statistics';
-import type { PlayerStatisticsSourceRow } from './player-statistics-types';
+import * as playerStatistics from './player-statistics';
+import type {
+	PlayerStatisticsDashboard,
+	PlayerStatisticsSourceRow,
+	PlayerStatisticsSummary,
+} from './player-statistics-types';
+import type { GameStats, GameType } from './types';
 
 const updatedAt = new Date('2026-07-30T00:00:00Z');
 
@@ -122,5 +129,126 @@ describe('buildPlayerStatisticsDashboard', () => {
 			handsPlayed: 2,
 			winsRank: 8,
 		});
+	});
+});
+
+type PlayerStatisticsService = {
+	getPlayerStatisticsSummary(db: Database, userId: string): Promise<PlayerStatisticsSummary>;
+	getPlayerStatisticsDashboard(db: Database, userId: string): Promise<PlayerStatisticsDashboard>;
+};
+
+type PlayerStatisticsServiceFactory = (overrides: {
+	getAllUserGameStats: (db: Database, userId: string) => Promise<GameStats[]>;
+	getBulkUserWinsRanks: (db: Database, userId: string) => Promise<Map<GameType, number>>;
+}) => PlayerStatisticsService;
+
+function serviceFactory(): PlayerStatisticsServiceFactory | undefined {
+	return (playerStatistics as { createPlayerStatisticsService?: PlayerStatisticsServiceFactory })
+		.createPlayerStatisticsService;
+}
+
+describe('createPlayerStatisticsService', () => {
+	test('summary reads rows without loading ranks and returns the canonical summary', async () => {
+		const factory = serviceFactory();
+		expect(typeof factory).toBe('function');
+		if (!factory) return;
+
+		let rankRead = false;
+		const service = factory({
+			getAllUserGameStats: async () => [
+				row({
+					gameType: 'blackjack',
+					totalWins: 3,
+					totalLosses: 1,
+					handsPlayed: 4,
+					biggestWin: 30,
+					netProfit: 20,
+				}),
+			],
+			getBulkUserWinsRanks: async () => {
+				rankRead = true;
+				throw new Error('summary must not load ranks');
+			},
+		});
+
+		await expect(service.getPlayerStatisticsSummary({} as Database, 'user-1')).resolves.toEqual({
+			totalHands: 4,
+			totalWins: 3,
+			totalLosses: 1,
+			overallWinRate: 75,
+			totalNetProfit: 20,
+			mostPlayedGame: 'blackjack',
+		});
+		expect(rankRead).toBe(false);
+	});
+
+	test('dashboard starts row and rank reads before either resolves', async () => {
+		const factory = serviceFactory();
+		expect(typeof factory).toBe('function');
+		if (!factory) return;
+
+		const started: string[] = [];
+		let resolveRows!: (rows: GameStats[]) => void;
+		let resolveRanks!: (ranks: Map<GameType, number>) => void;
+		const rows = new Promise<GameStats[]>((resolve) => {
+			resolveRows = resolve;
+		});
+		const ranks = new Promise<Map<GameType, number>>((resolve) => {
+			resolveRanks = resolve;
+		});
+		const service = factory({
+			getAllUserGameStats: async () => {
+				started.push('rows');
+				return rows;
+			},
+			getBulkUserWinsRanks: async () => {
+				started.push('ranks');
+				return ranks;
+			},
+		});
+
+		const dashboard = service.getPlayerStatisticsDashboard({} as Database, 'user-1');
+		expect(started).toEqual(['rows', 'ranks']);
+		resolveRows([row({ gameType: 'roulette', totalWins: 2, handsPlayed: 2 })]);
+		resolveRanks(new Map([['roulette', 4]]));
+
+		const result = await dashboard;
+		expect(result.summary).toMatchObject({
+			totalHands: 2,
+			totalWins: 2,
+			overallWinRate: 100,
+		});
+		expect(result.games.find((game) => game.gameType === 'roulette')).toMatchObject({
+			gameType: 'roulette',
+			winsRank: 4,
+		});
+	});
+
+	test('propagates row and rank read failures', async () => {
+		const factory = serviceFactory();
+		expect(typeof factory).toBe('function');
+		if (!factory) return;
+
+		const rowFailure = new Error('rows unavailable');
+		const rankFailure = new Error('ranks unavailable');
+		const rowFailureService = factory({
+			getAllUserGameStats: async () => {
+				throw rowFailure;
+			},
+			getBulkUserWinsRanks: async () => new Map(),
+		});
+		const rankFailureService = factory({
+			getAllUserGameStats: async () => [],
+			getBulkUserWinsRanks: async () => {
+				throw rankFailure;
+			},
+		});
+
+		await expect(
+			rowFailureService.getPlayerStatisticsSummary({} as Database, 'user-1'),
+		).rejects.toBe(rowFailure);
+		await expect(
+			rankFailureService.getPlayerStatisticsDashboard({} as Database, 'user-1'),
+		).rejects.toBe(rankFailure);
 	});
 });

@@ -26,17 +26,15 @@ import {
 } from './game-stats-repository';
 import { getBulkUserAchievements } from '../achievements/achievement-repository';
 import { applyMissionProgress } from '../missions/progress';
+import { calculateWinRate } from './aggregation';
 
 /**
  * Calculate derived metrics from raw stats
  */
 export function calculateMetrics(stats: GameStats): GameStatsWithMetrics {
-	const totalDecided = stats.totalWins + stats.totalLosses;
-	const winRate = totalDecided > 0 ? (stats.totalWins / totalDecided) * 100 : 0;
-
 	return {
 		...stats,
-		winRate,
+		winRate: calculateWinRate(stats.totalWins, stats.totalLosses),
 	};
 }
 

@@ -193,6 +193,7 @@ describe('calculateMetrics', () => {
 
 		// Win rate is calculated on decided hands (6/6 = 100%)
 		expect(result.winRate).toBe(100);
+		expect(result.winRate).not.toBe(60);
 		// handsPlayed includes all hands (wins + losses + pushes)
 		expect(result.handsPlayed).toBe(10);
 	});

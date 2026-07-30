@@ -10,6 +10,7 @@ import { gameStats, user } from '../../db/schema';
 import type { Database } from '../db';
 import type { GameType, GameStats, RankingMetric } from './types';
 import { MIN_HANDS_FOR_WIN_RATE } from './constants';
+import { aggregateGameStats } from './aggregation';
 
 /**
  * Raw player data from game stats query
@@ -319,29 +320,7 @@ export async function getTotalPlayersForGame(
 export async function getAggregateUserStats(
 	db: Database,
 	userId: string,
-): Promise<{
-	totalWins: number;
-	totalLosses: number;
-	totalHandsPlayed: number;
-	biggestWin: number;
-	totalNetProfit: number;
-}> {
+): Promise<ReturnType<typeof aggregateGameStats>> {
 	const allStats = await getAllUserGameStats(db, userId);
-
-	return allStats.reduce(
-		(acc, stats) => ({
-			totalWins: acc.totalWins + stats.totalWins,
-			totalLosses: acc.totalLosses + stats.totalLosses,
-			totalHandsPlayed: acc.totalHandsPlayed + stats.handsPlayed,
-			biggestWin: Math.max(acc.biggestWin, stats.biggestWin),
-			totalNetProfit: acc.totalNetProfit + stats.netProfit,
-		}),
-		{
-			totalWins: 0,
-			totalLosses: 0,
-			totalHandsPlayed: 0,
-			biggestWin: 0,
-			totalNetProfit: 0,
-		},
-	);
+	return aggregateGameStats(allStats);
 }

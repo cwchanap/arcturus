@@ -558,9 +558,12 @@ describe('getAggregateUserStats', () => {
 		});
 
 		const result = await getAggregateUserStats(mockDb, 'user1');
-		expect(result.totalWins).toBe(7);
-		expect(result.totalHandsPlayed).toBe(13);
-		expect(result.biggestWin).toBe(500);
-		expect(result.totalNetProfit).toBe(30);
+		expect(result).toEqual({
+			totalWins: 7,
+			totalLosses: 6,
+			totalHandsPlayed: 13,
+			biggestWin: 500,
+			totalNetProfit: 30,
+		});
 	});
 });

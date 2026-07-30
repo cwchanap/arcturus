@@ -5,7 +5,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { formatChipBalance, formatChipBalanceWithDecimals } from './formatting';
+import {
+	formatChipBalance,
+	formatChipBalanceWithDecimals,
+	formatPercentage,
+	formatSignedChipResult,
+	formatWholeNumber,
+} from './formatting';
 
 describe('Chip Balance Formatting', () => {
 	test('formats small balances without commas', () => {
@@ -40,5 +46,25 @@ describe('Chip Balance Formatting', () => {
 		expect(formatChipBalance(-100)).toBe('-100');
 		expect(formatChipBalance(-1000)).toBe('-1,000');
 		expect(formatChipBalance(-12345)).toBe('-12,345');
+	});
+});
+
+describe('Player statistics formatting', () => {
+	test('formats signed chip results', () => {
+		expect(formatSignedChipResult(1200)).toBe('+1,200 chips');
+		expect(formatSignedChipResult(-400)).toBe('−400 chips');
+		expect(formatSignedChipResult(0)).toBe('0 chips');
+	});
+
+	test('formats whole numbers', () => {
+		expect(formatWholeNumber(12345)).toBe('12,345');
+	});
+
+	test('formats percentages to one decimal place', () => {
+		expect(formatPercentage(50.83333333333333)).toBe('50.8%');
+	});
+
+	test('rejects non-finite percentages', () => {
+		expect(() => formatPercentage(Number.NaN)).toThrow(RangeError);
 	});
 });

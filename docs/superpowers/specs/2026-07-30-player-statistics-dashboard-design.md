@@ -1,8 +1,8 @@
 # Player Statistics Dashboard Design
 
-**Status:** Approved (review revisions applied)
-**Date:** 2026-07-30
-**Issue:** [HPA-171 — Player statistics dashboard](https://linear.app/cwchanap/issue/HPA-171/player-statistics-dashboard)
+**Status:** Design complete; pending PR approval before implementation  
+**Date:** 2026-07-30  
+**Issue:** [HPA-171 — Player statistics dashboard](https://linear.app/cwchanap/issue/HPA-171/player-statistics-dashboard)  
 **Scope:** Aggregate all-time player statistics only. Verified session and trend history is owned by HPA-174.
 
 ## 1. Context
@@ -22,7 +22,7 @@ Existing calculations must be reused rather than duplicated:
 - `calculateMetrics()` is the current per-game derived-metric entry point.
 - `getAggregateUserStats()` currently reduces all game rows and is used by achievement evaluation.
 - HPA-171 will extract shared pure calculation helpers and make these existing functions delegate to
-  them, so the dashboard and achievements cannot drift.
+  them, so dashboard and achievement calculations cannot drift.
 
 Arcturus also has a separate authoritative ranked-results domain. Ranked Blackjack writes separate
 ranked statistics and must not be blended with the client-authoritative casual `game_stats`
@@ -58,7 +58,9 @@ metadata, and pagination. HPA-171 does not create an event model or history back
 - Showing recent sessions, streaks, individual rounds, or game-history drill-down.
 - Backfilling historical events from `game_stats` or client-authoritative chip receipts.
 - Changing leaderboard metrics, seasonal ranking, or reward settlement.
+- Fixing the existing leaderboard behavior that includes zero-activity initialized rows.
 - Refactoring unrelated profile settings or achievement behavior.
+- Refactoring the ranked Blackjack private chip-formatting helpers.
 
 ## 3. Resolved product decisions
 
@@ -68,18 +70,22 @@ metadata, and pagination. HPA-171 does not create an event model or history back
 | Ranked statistics | Remain separate and out of scope |
 | Game-card rank | **Wins Rank**, explicitly labelled |
 | Rank destination | `/games/leaderboard?game=<gameType>&metric=wins` |
+| Rank eligibility | Dashboard ranks only `handsPlayed > 0`; initialized zero-hand rows are `Unranked` |
+| Leaderboard eligibility mismatch | Existing zero-hand leaderboard inclusion is a pre-existing quirk and out of scope |
 | Discovery | Compact profile summary plus dedicated detailed page |
 | Detailed route | `/profile/statistics` |
 | Profile loading | Server rendered |
 | Detailed loading | Client fetch from authenticated `GET /api/profile/statistics` |
+| No-JavaScript behavior | Detailed data requires JavaScript; `<noscript>` explains this instead of leaving skeletons indefinitely |
 | Detailed layout | Responsive game-card grid |
 | Game ordering | Exact `GAME_TYPES` order |
 | Zero-activity card | Visible, zero-filled, `Not played yet`, `Unranked`, and `Play <Game>` |
 | Profile metrics | Total hands, most-played game, overall win rate, total net profit |
-| Aggregate biggest win | Intentionally omitted from the compact summary; shown per game on the detailed page |
+| Aggregate biggest win | Intentionally omitted from compact summary; shown per game on detailed page |
 | Overall win rate | Sum wins / sum decided hands; never average game percentages |
 | Most-played tie-break | First tied game in canonical `GAME_TYPES` order |
 | Rank access | One correlated-count SQL statement, not a whole-table window sort or seven route calls |
+| Cross-field API validation | Client recomputes summary invariants from the canonical game array |
 | Private caching | API and authenticated HTML responses use `private, no-store` |
 | Database migration | None |
 | Session/trend follow-up | HPA-174 |
@@ -127,7 +133,7 @@ is a deliberate interaction tradeoff, not a claim that SSR cannot perform the qu
 - With SSR, the loading state is not visible after navigation begins and retry is a full-page reload.
 - The client-fetched shell can remain available while the account-scoped data request fails, then
   retry in place without discarding page context or keyboard focus.
-- The API also provides one testable authentication and response contract for the detailed page.
+- The API provides one testable authentication and response contract for the detailed page.
 
 This choice adds a small controller, runtime validation, and accessibility state management. That
 cost is accepted for the in-page retry experience. It is not justified as an unmeasured performance
@@ -136,6 +142,11 @@ optimization. If loading/retry requirements are later removed, SSR becomes a val
 The compact profile summary remains SSR because it should appear in the initial profile HTML and its
 failure must not prevent the rest of the profile from rendering.
 
+The authenticated application already depends on JavaScript for interactive features. For the
+detailed statistics page, JavaScript is required to load account data. The shell includes a
+`<noscript>` message with a link back to `/profile`; it must not leave a permanent loading skeleton
+as the only no-JavaScript experience.
+
 ### 4.3 Proposed files and responsibilities
 
 ```text
@@ -143,7 +154,7 @@ src/lib/game-stats/
 ├── aggregation.ts                     # Shared calculateWinRate and aggregateGameStats helpers
 ├── aggregation.test.ts                # Existing/helper equivalence and aggregate edge cases
 ├── player-statistics.ts               # Zero-fill, most-played selection, service orchestration
-├── player-statistics.test.ts          # Dashboard ordering, tie-break, rank mapping
+├── player-statistics.test.ts          # Dashboard ordering, integrity, tie-break, rank mapping
 ├── player-statistics-types.ts         # Public dashboard contracts
 ├── game-stats.ts                      # calculateMetrics delegates to calculateWinRate
 ├── game-stats-repository.ts           # Existing aggregate delegate + bulk wins-rank raw SQL
@@ -153,13 +164,13 @@ src/components/profile/
 └── PlayerStatisticsSummary.astro      # Server-rendered compact summary
 
 src/pages/profile.astro                 # Compose summary; set private no-store; no inline dashboard logic
-src/pages/profile/statistics.astro      # Protected no-store shell, skeleton, empty/error containers
+src/pages/profile/statistics.astro      # Protected no-store shell, skeleton, noscript, error containers
 src/pages/api/profile/statistics.ts     # Authenticated private no-store JSON endpoint
 src/lib/profile-statistics-client.ts    # Fetch, validate, render, retry, focus management
 src/lib/formatting.ts                   # Shared integer, percentage, and signed-chip formatting
 
-e2e/profile.spec.ts                     # Existing profile coverage plus summary tests
-e2e/profile-statistics.spec.ts          # Detailed dashboard states and interaction
+e2e/profile.spec.ts                     # High-value profile placement and navigation coverage
+e2e/profile-statistics.spec.ts          # High-value detailed dashboard flows
 ```
 
 The exact split between focused type/helper files may be collapsed if responsibilities stay clear.
@@ -263,8 +274,7 @@ export async function getBulkUserWinsRanks(
 
 ### 6.2 Correlated-count query
 
-Do not use a window query that ranks every row in every game partition before filtering to the
-current user. Use one correlated-count statement equivalent to:
+Use one correlated-count statement equivalent to:
 
 ```sql
 SELECT
@@ -286,9 +296,16 @@ WHERE subject.userId = ?
   AND subject.handsPlayed > 0;
 ```
 
-This mirrors the existing wins-rank branch exactly: a player's rank is one plus the number of rows
-with more wins, or equal wins and a lexicographically lower user ID. Equal-win players therefore
-receive deterministic unique positions rather than a shared competition rank.
+The comparison inside the correlated count mirrors the existing wins-rank branch: a player's rank is
+one plus the number of rows with more wins, or equal wins and a lexicographically lower user ID.
+Equal-win players therefore receive deterministic unique positions rather than a shared competition
+rank.
+
+The outer `handsPlayed > 0` predicate is an intentional dashboard-only eligibility rule and is the
+one exception to exact parity with `getUserGameRank(..., 'wins')`. Existing single-game leaderboard
+functions remain unchanged in HPA-171: they may rank or list initialized zero-hand rows. The
+dashboard instead treats those rows as `Unranked` because the player has not actually played.
+Correcting leaderboard eligibility is a separate cleanup, not part of this implementation.
 
 The statement performs one correlated rank count for each active game row owned by the current user,
 within one database call. The existing `(gameType, totalWins)` index can narrow each game's
@@ -296,19 +313,29 @@ higher-win range; equal-win tie checks may still inspect matching rows. This sca
 with the current user's canonical games than a whole-table multi-partition window sort.
 
 Implement the statement with Drizzle's raw `sql` template and explicitly validate/map returned rows.
-No first-class ORM rank abstraction is assumed.
+No first-class ORM rank abstraction is assumed. The existing `getUserGameRank` remains the
+single-game implementation used by the leaderboard; HPA-171 does not force it through the new bulk
+function.
 
-The outer `handsPlayed > 0` predicate means zero-activity legacy rows do not produce discarded rank
-results. An active game with zero wins still receives its actual leaderboard position because the
-wins leaderboard has no minimum-hand or minimum-win eligibility threshold.
+An active game with zero wins still receives its actual leaderboard position because the dashboard
+eligibility rule is activity, not minimum wins.
 
-### 6.3 Unknown and duplicate data
+### 6.3 Unknown, duplicate, and integrity failures
 
 Unknown `gameType` values returned by persistence are not exposed. Log a warning without sensitive
 account data and ignore those rows.
 
 Multiple rows for the same canonical game are a data-integrity error because the schema's
-`(userId, gameType)` primary key should make them impossible.
+`(userId, gameType)` primary key should make them impossible. The pure builder throws a dedicated
+integrity exception rather than silently choosing or merging rows.
+
+Integrity exceptions follow the same generic failure paths as repository errors:
+
+- `/api/profile/statistics` logs the server-side exception and returns
+  `500 { "error": "Unable to load player statistics" }`.
+- `/profile` logs the exception and renders only the Player Performance unavailable state; the rest
+  of the profile continues rendering.
+- No stack, SQL, duplicate values, or user identifier is exposed to the browser.
 
 ### 6.4 Query count and migration
 
@@ -378,8 +405,7 @@ This makes the result deterministic and avoids introducing another preference or
 
 `Unranked` is reserved for zero-activity games or a genuinely unavailable rank. A player who has
 played a game but has zero wins may display a numeric last-place or near-last-place Wins Rank. That
-is intentional and matches the current wins leaderboard, which does not impose an eligibility
-threshold for this metric.
+is intentional and matches the active-player comparison semantics of the current wins leaderboard.
 
 ## 8. API design
 
@@ -395,8 +421,8 @@ The route:
 4. Returns `500` JSON if the database is unavailable.
 5. Calls `getPlayerStatisticsDashboard(db, session.user.id)`.
 6. Returns raw numeric values as `{ summary, games }`.
-7. Catches service/repository failures, logs them server-side, and returns the same generic `500`
-   response used for database unavailability.
+7. Catches repository, service, and integrity exceptions, logs them server-side, and returns the
+   same generic `500` response.
 
 The status and body contract is:
 
@@ -449,10 +475,10 @@ Set `Cache-Control: private, no-store` on:
 
 The client fetch uses `credentials: 'same-origin'` and `cache: 'no-store'`.
 
-Errors returned to the browser do not expose SQL, user IDs, or repository details. Repository
-exceptions are logged server-side and produce one retryable dashboard error. If the session expires
-after the page shell loads, a `401` redirects to `/signin` rather than rendering account data
-anonymously.
+Errors returned to the browser do not expose SQL, user IDs, or repository details. Repository,
+service, and integrity exceptions are logged server-side and produce one retryable dashboard error.
+If the session expires after the page shell loads, a `401` redirects to `/signin` rather than
+rendering account data anonymously.
 
 ### 8.4 Payload validation
 
@@ -476,8 +502,21 @@ Game-array invariants:
 - `hasActivity === (handsPlayed > 0)`.
 - A zero-activity game has `winsRank === null`.
 
-Malformed success payloads enter the same retryable error state as a failed fetch; they are never
-partially rendered.
+Cross-field invariants are hard validation failures, not advisory checks:
+
+- `summary.totalHands === sum(games.handsPlayed)`.
+- `summary.totalWins === sum(games.totalWins)`.
+- `summary.totalLosses === sum(games.totalLosses)`.
+- `summary.totalNetProfit === sum(games.netProfit)`.
+- `summary.overallWinRate` equals the rate recomputed from summed wins and losses within an absolute
+  tolerance of `1e-9`.
+- `summary.mostPlayedGame` equals the highest-hand game with canonical `GAME_TYPES` tie-breaking, or
+  `null` when every card has zero hands.
+- Each per-game `winRate` equals the value recomputed from that card's wins and losses within an
+  absolute tolerance of `1e-9`.
+
+Malformed or internally inconsistent success payloads enter the same retryable error state as a
+failed fetch; they are never partially rendered.
 
 ## 9. Profile summary experience
 
@@ -505,9 +544,9 @@ When no games have activity:
 - The section remains visible and keeps the `View detailed statistics` link. The detailed page owns
   the lobby invitation.
 
-If its database read fails, only this section displays an unavailable state. Account details, Casino
-Tips, AI settings, and achievements continue rendering. The failure is logged server-side without
-exposing private data.
+If its database read or pure-builder integrity validation fails, only this section displays an
+unavailable state. Account details, Casino Tips, AI settings, and achievements continue rendering.
+The failure is logged server-side without exposing private data.
 
 ## 10. Detailed dashboard experience
 
@@ -539,8 +578,18 @@ Each card contains:
 An active zero-win game displays its numeric Wins Rank when returned. Implementers must not replace
 that rank with `Unranked` merely because `totalWins === 0`.
 
-Net-profit styling communicates positive, negative, and neutral values with text/signs as well as
-colour. Cards use headings and description lists so metric labels remain associated with values.
+Net-profit presentation is standardized:
+
+- Positive: `+1,200 chips`.
+- Negative: `−400 chips`.
+- Zero: `0 chips`.
+
+Use a shared formatter with the same grouping behavior as `formatChipBalance`; do not create another
+page-private signed-chip formatter. Colour may reinforce the result but the sign and `chips` suffix
+carry the meaning. Percentage display uses one decimal with behavior equivalent to
+`value.toFixed(1)`, matching the existing leaderboard presentation.
+
+Cards use headings and description lists so metric labels remain associated with values.
 
 ### 10.3 Loading state
 
@@ -583,18 +632,23 @@ Extend `src/lib/formatting.ts` rather than adding page-local `Intl.NumberFormat`
 or expose focused helpers for:
 
 - Whole-number counts.
-- Chip amounts, including a signed presentation for net profit.
-- Percentages with a consistent one-decimal display policy.
+- Chip amounts.
+- Signed chip results using `+N chips`, `−N chips`, and `0 chips`.
+- Percentages with a consistent one-decimal display policy equivalent to `toFixed(1)`.
 
 The API retains raw numbers. Formatting occurs at the rendering boundary, and both the Astro summary
 and detailed-page client reuse the same helpers. Existing exports remain compatible with current
 callers.
 
+The private ranked Blackjack `formatSignedChips` remains unchanged in HPA-171. Consolidating that
+unrelated UI helper may be considered separately after the shared formatter exists.
+
 ## 12. Failure behavior and consistency
 
 - Profile-summary failure is isolated to the summary component.
-- The detailed API fails as one unit if either stats or ranks cannot be read. It does not present a
-  dashboard with silently missing ranks.
+- The detailed API fails as one unit if either stats or ranks cannot be read.
+- Builder integrity failures use the same generic API and profile-summary failure paths as repository
+  failures.
 - The two detailed queries run against the same request but are not an atomic snapshot. Minor
   concurrent-play skew is acceptable for an informational all-time dashboard; adding transaction or
   snapshot machinery is disproportionate to the MVP.
@@ -604,14 +658,17 @@ callers.
 
 ## 13. Testing strategy
 
+Pure calculations, payload invariants, and formatting receive comprehensive unit coverage. E2E
+coverage is intentionally limited to high-value user flows rather than duplicating every pure
+assertion or checking pixel-perfect grid details.
+
 ### 13.1 Shared helper and pure builder tests
 
 Cover:
 
 - `calculateMetrics` and the dashboard use the same `calculateWinRate` helper.
 - `getAggregateUserStats` preserves current achievement-facing totals through `aggregateGameStats`.
-- All canonical games are zero-filled exactly once.
-- Output order always matches `GAME_TYPES`.
+- All canonical games are zero-filled exactly once and in `GAME_TYPES` order.
 - Unordered raw rows map to the correct cards.
 - Weighted overall win rate uses summed wins and losses.
 - Pushes remain in hands but not the win-rate denominator.
@@ -620,9 +677,8 @@ Cover:
 - All-empty summary returns `mostPlayedGame: null`.
 - Missing ranks and zero-activity rows become unranked.
 - Active zero-win rows retain numeric ranks.
-- Rank rows map to the correct game.
 - Unknown game types are ignored.
-- Duplicate canonical rows fail loudly.
+- Duplicate canonical rows throw the integrity exception.
 
 ### 13.2 Repository tests
 
@@ -632,7 +688,8 @@ Cover:
 - Equal wins use ascending user ID as deterministic tie-breaker.
 - Game partitions rank independently.
 - An active zero-win row receives a rank.
-- A zero-activity current-user row produces no rank entry.
+- A zero-activity current-user row produces no dashboard rank entry.
+- Existing `getUserGameRank(..., 'wins')` behavior for zero-hand rows remains unchanged.
 - A user with no row for a game receives no rank entry.
 - Empty results produce an empty map.
 - Unexpected persisted game types are not returned as valid `GameType` keys.
@@ -641,9 +698,11 @@ Cover:
 
 Cover:
 
-- Positive, negative, and zero chip values.
-- Large counts.
-- Percentage rounding at one decimal.
+- Positive result displays `+1,200 chips`.
+- Negative result displays `−400 chips`.
+- Zero displays `0 chips`.
+- Large counts use grouping.
+- Percentage rounding uses one decimal.
 - No `NaN` or infinity leaks into display output.
 
 ### 13.4 Client payload-validation tests
@@ -656,54 +715,61 @@ Cover rejection of:
 - Missing, duplicate, unknown, or noncanonical game entries.
 - `hasActivity` values that disagree with `handsPlayed`.
 - A non-null rank for a zero-activity game.
+- Summary totals that disagree with game-card sums.
+- Per-game or overall win rates outside the stated tolerance.
+- An incorrect most-played game or tie-break.
 
-### 13.5 API and page-response tests
+### 13.5 API, page, and failure-path tests
 
 Cover:
 
-- Authenticated success response.
-- `401` without a session.
+- Authenticated API success response.
+- API `401` without a session.
 - Database binding unavailable.
-- Repository/service exception.
+- Repository and builder-integrity exceptions map to the generic API `500`.
+- Profile summary repository and integrity exceptions render only the unavailable section.
 - Private no-store cache headers on the API and both authenticated HTML pages.
-- The route has no input that can select another user's ID.
+- The API has no input that can select another user's ID.
+- The detailed shell contains the explicit no-JavaScript fallback.
 
-### 13.6 Playwright tests
+Failure injection strategy:
 
-Profile coverage:
+- Use Playwright `page.route()` interception for detailed API failure followed by retry; no production
+  test hook is needed.
+- Exercise profile SSR failure isolation in a route/component integration test by injecting or
+  mocking the statistics service dependency.
+- Do not add a production query parameter, cookie, or public endpoint solely to force SSR failures
+  from Playwright.
 
-- Populated summary in the exact location after Casino Tips and before AI Rival Settings.
-- All-empty summary.
-- Summary failure does not break the rest of the profile.
-- Detailed-page link.
+### 13.6 Focused Playwright coverage
 
-Detailed-page coverage:
+Keep E2E to these high-value flows:
 
-- Populated dashboard.
-- One card for every `GAME_TYPES` entry in canonical order.
-- Mixed played and untouched cards.
-- Correct weighted summary values.
-- Active zero-win Wins Rank and zero-activity `Unranked` states.
-- Rank links and play links.
-- Initial loading state.
-- Intercepted API failure followed by successful retry.
-- All-empty invitation while retaining the full grid.
-- Mobile layout.
-- Keyboard navigation and retry focus behavior.
+1. Profile summary placement after Casino Tips, before AI Rival Settings, and navigation to details.
+2. Populated detailed dashboard: canonical card order, representative metrics, numeric/Unranked
+   states, and representative rank/play links.
+3. All-empty detailed dashboard: invitation plus the complete zero-filled game grid.
+4. Intercepted API failure followed by successful retry and correct focus transition.
+5. Mobile/keyboard smoke flow verifying readable cards and operable navigation without
+   pixel-perfect layout assertions.
+
+Math, tie-breaks, complete payload validation, every formatter edge, and exhaustive per-card values
+belong to unit or integration tests rather than Playwright.
 
 ## 14. Delivery sequence
 
 One focused implementation PR is appropriate because HPA-171 requires no migration:
 
 1. Extract shared metric/aggregate helpers and refactor existing callers with equivalence tests.
-2. Add dashboard contracts, zero-fill builder, and pure tests.
+2. Add dashboard contracts, zero-fill builder, integrity exception, and pure tests.
 3. Add the correlated-count Wins Rank repository query and tests.
 4. Add summary/dashboard orchestration services.
-5. Add authenticated API route, strict payload validator, and tests.
+5. Add authenticated API route, strict cross-field payload validator, and tests.
 6. Extend shared formatting utilities.
 7. Add the profile summary component, exact insertion point, no-store header, and isolated failure.
-8. Add the protected detailed page, no-store shell, client controller, runtime states, and tests.
-9. Add Playwright coverage and run the full project verification suite.
+8. Add the protected detailed page, no-store shell, client controller, no-JavaScript fallback, and
+   runtime states.
+9. Add focused Playwright coverage and run the full project verification suite.
 
 The implementation must not begin the HPA-174 event-history model in the same PR.
 
@@ -713,12 +779,15 @@ The implementation must not begin the HPA-174 event-history model in the same PR
 - **Server-side account data:** both entrypoints use authenticated D1 queries only.
 - **Rank display:** each active card uses correlated-count Wins Rank and links to the matching
   leaderboard.
+- **Dashboard eligibility:** zero-hand initialized rows are intentionally `Unranked`; the existing
+  leaderboard quirk remains out of scope.
 - **Graceful unranked behavior:** zero-activity ranks display `Unranked`; active zero-win ranks remain
   numeric.
+- **Aggregate consistency:** client validation rejects summaries that disagree with canonical games.
+- **Integrity failures:** duplicates are logged and use generic API/profile failure states.
 - **Aggregate unit tests:** shared helper and pure builder tests cover calculations and compatibility.
-- **Populated, empty, and database-error E2E:** dedicated Playwright scenarios cover each state and
-  retry.
-- **Responsive and accessible:** semantic cards, keyboard operation, focus handling, and mobile grid
+- **Populated, empty, and database-error E2E:** focused scenarios cover each state and retry.
+- **Responsive and accessible:** semantic cards, keyboard operation, focus handling, and mobile smoke
   behavior are explicit requirements.
 - **Private caching:** API and authenticated HTML responses use `private, no-store`.
 - **Shared formatting:** no dashboard-local number/chip formatter is permitted.

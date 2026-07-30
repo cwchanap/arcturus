@@ -13,6 +13,26 @@ export function formatChipBalance(value: number): string {
 	return new Intl.NumberFormat('en-US').format(value);
 }
 
+function requireFinite(value: number): number {
+	if (!Number.isFinite(value)) throw new RangeError('Value must be finite');
+	return value;
+}
+
+export function formatWholeNumber(value: number): string {
+	return new Intl.NumberFormat('en-US').format(requireFinite(value));
+}
+
+export function formatPercentage(value: number): string {
+	return `${requireFinite(value).toFixed(1)}%`;
+}
+
+export function formatSignedChipResult(value: number): string {
+	const finite = requireFinite(value);
+	if (finite === 0) return '0 chips';
+	const sign = finite > 0 ? '+' : '−';
+	return `${sign}${formatChipBalance(Math.abs(finite))} chips`;
+}
+
 const MAX_FRACTION_DIGITS = 100;
 
 /**

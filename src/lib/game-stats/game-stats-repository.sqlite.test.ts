@@ -78,6 +78,9 @@ describe('getBulkUserWinsRanks (SQLite)', () => {
 					['poker', 2],
 				]),
 			);
+			expect(await getBulkUserWinsRanks(db, 'active-zero-wins')).toEqual(
+				new Map([['blackjack', 5]]),
+			);
 		} finally {
 			sqlite.close();
 		}

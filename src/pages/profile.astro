@@ -45,9 +45,35 @@ const clampedPercentage = () =>
 
 if (dbBinding) {
 	const db = createDb(dbBinding);
-	playerStatisticsState = await loadProfileStatisticsState(db, user.id);
-	try {
-		const result = await getLlmSettings(db, user.id);
+
+	// The three profile reads are independent — run them concurrently to keep
+	// profile TTFB to a single D1 round trip window instead of three sequential
+	// ones. Each loader captures its own error state so a failure in one does
+	// not mask or abort the others.
+	const [statsState, llmResult, achievementsResult] = await Promise.all([
+		loadProfileStatisticsState(db, user.id),
+		(async () => {
+			try {
+				return { ok: true as const, value: await getLlmSettings(db, user.id) };
+			} catch (error) {
+				console.error('Error loading AI settings:', error);
+				return { ok: false as const };
+			}
+		})(),
+		(async () => {
+			try {
+				return { ok: true as const, value: await getAchievementsWithStatus(db, user.id) };
+			} catch (error) {
+				console.error('Error loading achievements:', error);
+				return { ok: false as const };
+			}
+		})(),
+	]);
+
+	playerStatisticsState = statsState;
+
+	if (llmResult.ok) {
+		const result = llmResult.value;
 		aiSettings = {
 			provider: result.provider,
 			model: result.model,
@@ -55,14 +81,12 @@ if (dbBinding) {
 			geminiApiKey: result.geminiApiKey ?? null,
 			updatedAt: result.updatedAt,
 		};
-	} catch (error) {
-		console.error('Error loading AI settings:', error);
+	} else {
 		aiSettingsFetchError = true;
 	}
 
-	try {
-		// Fetch achievements
-		achievements = await getAchievementsWithStatus(db, user.id);
+	if (achievementsResult.ok) {
+		achievements = achievementsResult.value;
 		// Calculate progress from the already-fetched achievements (avoids duplicate DB query)
 		const unlocked = achievements.filter((a) => a.isUnlocked).length;
 		const total = achievements.length;
@@ -71,9 +95,7 @@ if (dbBinding) {
 			unlocked,
 			percentage: total > 0 ? (unlocked / total) * 100 : 0,
 		};
-		achievementsFetchError = false;
-	} catch (error) {
-		console.error('Error loading achievements:', error);
+	} else {
 		achievementsFetchError = true;
 	}
 }

@@ -59,9 +59,9 @@ HPA-175 therefore composes the deterministic Blackjack adapter and canonical ran
 | Game | Blackjack |
 | Challenge ruleset | `blackjack-daily-v1` |
 | Underlying hand rules | Existing immutable `blackjack-ranked-v1` adapter |
-| Starting challenge bankroll | 1,000 challenge chips |
+| Starting challenge bankroll | 1,000 available challenge chips |
 | Round count | 10 independently shuffled rounds |
-| Wager range | 10–1,000, additionally capped by current challenge bankroll |
+| Wager range | 10–1,000, additionally capped by currently available challenge chips |
 | Ranked attempts | One attempt per authenticated user per UTC day |
 | Practice | Unlimited and available to guests |
 | Practice randomness | Separate public practice seed; never the live ranked seed |
@@ -69,7 +69,7 @@ HPA-175 therefore composes the deterministic Blackjack adapter and canonical ran
 | Ranked entry cutoff | 23:30:00 UTC; no starts during the final 30 minutes |
 | Daily boundary | `[00:00:00 UTC, next 00:00:00 UTC)` |
 | Ranked seed reveal | Reveal only after the challenge ends |
-| Ranking | Ending bankroll, then rounds completed; exact ties share rank |
+| Ranking | Ending available bankroll, then rounds completed; exact ties share rank |
 | Completion time | Display-only; never a competitive tie-breaker |
 | Ranked rewards | None in the MVP |
 | Account wallet | Never read, debited, credited, or used for challenge decisions |
@@ -134,7 +134,7 @@ The main units are:
 
 - **Challenge catalog:** resolves a UTC period key and lazily creates exactly one immutable challenge record.
 - **Seed derivation:** derives one deterministic 32-byte hand seed for each round from the selected challenge master seed.
-- **Multi-round replay:** replays the complete accepted command log into challenge bankroll, round progress, active Blackjack state, and terminal status.
+- **Multi-round replay:** replays the complete accepted command log into available challenge bankroll, round progress, active Blackjack state, and terminal status.
 - **Coordinator:** handles authentication, entry cutoff, attempt uniqueness, idempotency, ownership, expiration, conditional writes, result creation, and response construction.
 - **Repository:** performs D1 reads and guarded transactional transitions.
 - **Scoring and leaderboard:** calculates shared competitive ranks and percentiles from immutable eligible results.
@@ -158,7 +158,7 @@ For a period key:
 
 A ranked start request is rejected when `now >= rankedEntryClosesAt`. Practice remains available until `endsAt`.
 
-The coordinator captures the server clock once when resolving the current challenge. A request received at or after midnight belongs to the new period. A previous challenge attempt can never remain active after its challenge ends.
+The coordinator captures the server clock once when resolving the current challenge. A request received at or after midnight belongs to the new period. A previous challenge attempt can never accept another command after its challenge ends.
 
 ### 6.2 Lazy creation
 
@@ -225,7 +225,7 @@ export type DailyChallengeCommandV1 =
 
 Commands use strict tagged-union validation. `sequence` is a non-negative safe integer. `wager` exists only on `start-round`. Unknown fields are rejected. The stored log is a JCS-canonicalized array with contiguous sequences beginning at zero.
 
-### 8.2 Replay state
+### 8.2 Replay state and bankroll semantics
 
 The pure replay function accepts:
 
@@ -237,17 +237,20 @@ challenge configuration
 
 and returns:
 
-- Current challenge bankroll.
+- Available challenge bankroll not currently committed to a wager.
 - Number of completed rounds.
 - Current round index.
 - Active internal Blackjack replay, if a hand is in progress.
 - Safe public Blackjack state, if a hand is in progress.
+- Total wager committed to the active round.
 - Next expected global sequence.
 - Legal next commands.
 - Attempt terminal classification.
 - Eligible score fields when complete.
 
-It does not read D1, use the wall clock, inspect account chips, generate identifiers, update statistics, or emit UI events.
+The available bankroll starts at 1,000. Initial, split, and double-down wagers are deducted when their commands are accepted. Payouts are credited only when the active round settles. The displayed challenge bankroll always means currently available chips; the active round shows its committed wager separately.
+
+The replay function does not read D1, use the wall clock, inspect account chips, generate identifiers, update statistics, or emit UI events.
 
 ### 8.3 Round transitions
 
@@ -256,33 +259,33 @@ A `start-round` command is legal only when:
 - The attempt is active and not terminal.
 - No Blackjack round is currently active.
 - `roundsCompleted < roundCount`.
-- The challenge bankroll is at least `minimumWager`.
-- The wager is an integer within configured limits and no greater than the current challenge bankroll.
+- The available challenge bankroll is at least `minimumWager`.
+- The wager is an integer within configured limits and no greater than the available challenge bankroll.
 
-The reducer derives the round seed from the implicit current round index, issues the existing Blackjack configuration using the selected wager, and creates the opening replay. A natural opening result may complete the round immediately in the same command.
+The reducer deducts the initial wager from available bankroll, derives the round seed from the implicit current round index, issues the existing Blackjack configuration using the selected wager, and creates the opening replay. A natural opening result may complete the round immediately in the same command; its payout is then credited in the same replay transition.
 
-Blackjack action commands are legal only while a round is active and are delegated to the existing adapter. Double-down and split availability use the remaining challenge bankroll after the round's already committed wager, not the account wallet.
+Blackjack action commands are legal only while a round is active and are delegated to the existing adapter. For public-state projection, the adapter receives the available challenge bankroll so double-down and split actions are omitted when their additional wager cannot be funded.
 
-When a round reaches a natural terminal outcome:
+When a split or double-down command is accepted, its additional wager is deducted from available bankroll before the command is appended. When a round reaches a natural terminal outcome:
 
 ```text
-newBankroll = bankrollBeforeRound - committedWager + payout
+availableBankroll += payout
 roundsCompleted += 1
 activeRound = null
 ```
 
-The next accepted command may start the next round.
+The initial and additional wagers were already deducted, so they are not subtracted again at settlement. The next accepted command may start the next round.
 
 ### 8.4 Attempt completion
 
 An attempt completes as an eligible ranked result when either:
 
 - Ten rounds have completed, or
-- The bankroll is below the 10-chip minimum wager after a completed round.
+- The available bankroll is below the 10-chip minimum wager after a completed round.
 
-A `forfeit` command is legal whenever the attempt is active. It terminates the attempt immediately as ineligible. Expiration also terminates the attempt as ineligible without appending a synthetic client command.
+A `forfeit` command is legal whenever the attempt is active. It terminates the attempt immediately as ineligible. Expiration also terminates the attempt as ineligible without appending a synthetic client command. Any wager already committed to an active round remains deducted; forfeits and expirations do not credit a payout.
 
-A partially completed attempt never receives a leaderboard score. Its immutable result records the ending bankroll, rounds completed, terminal reason, and `eligible = false` for history and idempotent recovery.
+A partially completed attempt never receives a leaderboard score. Its immutable result records available ending bankroll, rounds completed, terminal reason, duration, and `eligible = false` for history and idempotent recovery.
 
 ---
 
@@ -307,7 +310,7 @@ The server:
 5. Returns the existing attempt for an exact idempotent replay.
 6. Rejects reuse of the request ID for another challenge or payload.
 7. Looks up `(challengeId, userId)` and returns that attempt if the user already consumed today's ranked attempt under another request ID.
-8. Creates one active attempt with the fixed starting bankroll and an empty command log.
+8. Creates one active attempt with 1,000 available chips and an empty command log.
 9. Sets `expiresAt = createdAt + 1800`; the entry cutoff guarantees that this is not later than challenge end.
 
 The unique `(challengeId, userId)` constraint is the authoritative one-attempt rule. The attempt is consumed when the row is created, not when a score is submitted. Refreshing, clearing local storage, switching browsers, forfeiting, or allowing the attempt to expire cannot create another attempt.
@@ -336,9 +339,9 @@ Each new command transition:
 
 1. Enforces expiration and durable command limits.
 2. Replays the persisted state.
-3. Validates the command against legal commands and challenge bankroll.
+3. Validates the command against legal commands and available challenge bankroll.
 4. Computes the next canonical log, hash, projections, and possible result.
-5. Uses a guarded D1 write requiring the expected active status, sequence, and prior action-log hash.
+5. Uses a guarded D1 write requiring the expected active status, sequence, prior action-log hash, available bankroll, and rounds-completed projection.
 6. Inserts the result and marks the attempt terminal in the same batch when completion, forfeit, or expiration occurs.
 7. Rereads and classifies a losing concurrent request as replay, mismatch, sequence conflict, or already complete.
 
@@ -354,8 +357,9 @@ Every terminal ranked attempt has a canonical receipt containing:
 - Challenge configuration hash.
 - Ranked seed commitment.
 - Command-log hash.
-- Ending bankroll and rounds completed.
+- Available ending bankroll and rounds completed.
 - Eligibility and terminal reason.
+- Server-derived duration seconds.
 - Settlement timestamp.
 - Receipt hash.
 
@@ -372,7 +376,7 @@ The receipt hash is SHA-256 over the canonical receipt with `receiptHash` omitte
 2. roundsCompleted DESC
 ```
 
-`endingBankroll` is the displayed score. `roundsCompleted` distinguishes players who finish more of the challenge when both end with the same bankroll, especially after falling below the minimum wager.
+`endingBankroll` is the available challenge bankroll at terminal completion and is the displayed score. `roundsCompleted` distinguishes players who finish more of the challenge when both end with the same bankroll, especially after falling below the minimum wager.
 
 Players equal on both fields share the same competitive rank. The leaderboard uses competition ranking: if two players tie for rank 1, the next distinct score is rank 3.
 
@@ -382,7 +386,7 @@ For stable row ordering only, tied rows are ordered by:
 settledAt ASC, userId ASC
 ```
 
-This display order does not alter rank or percentile. Completion time is shown as optional context but is not a tie-breaker because it is affected by latency, device performance, accessibility needs, and automation.
+This display order does not alter rank or percentile. Completion duration is shown as optional context but is not a tie-breaker because it is affected by latency, device performance, accessibility needs, and automation.
 
 For an eligible result:
 
@@ -406,7 +410,7 @@ id                          primary key
 challengeKind               'blackjack-daily'
 periodKey                    YYYY-MM-DD
 challengeRulesetVersion
- gameRulesetVersion
+gameRulesetVersion
 scoreVersion
 configJson
 configHash
@@ -438,7 +442,7 @@ status                      active | completed | forfeited | expired
 actionLogJson
 actionLogHash
 nextSequence
-currentBankroll             derived projection for guarded transitions
+availableBankroll           derived projection for guarded transitions
 roundsCompleted             derived projection for guarded transitions
 expiresAt
 createdAt
@@ -455,7 +459,7 @@ INDEX(status, expiresAt)
 INDEX(userId, createdAt)
 ```
 
-`currentBankroll` and `roundsCompleted` are persisted transition projections for efficient responses and write guards. The canonical configuration, master seed, and command log remain the replay source of truth; projection disagreement is an internal invariant failure.
+`availableBankroll` and `roundsCompleted` are persisted transition projections for efficient responses and write guards. The canonical configuration, master seed, and command log remain the replay source of truth; projection disagreement is an internal invariant failure.
 
 ### 11.3 `daily_challenge_result`
 
@@ -467,6 +471,7 @@ endingBankroll
 roundsCompleted
 eligible                    boolean
 terminalReason              completed | bankroll-below-minimum | forfeited | expired
+durationSeconds             server-derived settledAt - attempt createdAt
 scoreVersion
 configHash
 rankedSeedCommitment
@@ -485,7 +490,7 @@ INDEX(challengeId, eligible, endingBankroll DESC, roundsCompleted DESC, settledA
 INDEX(userId, settledAt)
 ```
 
-The result does not foreign-key `attemptId` so old command logs can be reaped without deleting compact scores or challenge history.
+The result does not foreign-key `attemptId` so old command logs can be reaped without deleting compact scores or challenge history. `durationSeconds` is retained in the result because it remains displayable after the attempt row is cleaned up.
 
 ### 11.4 Rate limits
 
@@ -533,9 +538,9 @@ The leaderboard is public and contains:
 
 - Rank.
 - Player display name.
-- Ending-bankroll score.
+- Available ending-bankroll score.
 - Rounds completed.
-- Completion duration for display.
+- Server-derived completion duration for display.
 - Current-user marker when authenticated.
 - Total eligible players.
 - Current user's rank and percentile when available.
@@ -563,7 +568,7 @@ Practice:
 
 - Is available to guests.
 - Can be restarted without limits.
-- Uses the same 1,000-chip bankroll, 10 rounds, and wager rules.
+- Uses the same 1,000-chip available bankroll, 10 rounds, and wager rules.
 - Never calls ranked start, resume, or command write APIs.
 - Never writes D1 rows, account chips, statistics, achievements, missions, rewards, or leaderboard entries.
 - Is clearly labeled as a different scenario from the hidden ranked challenge.
@@ -585,7 +590,7 @@ The page contains:
 - Ranked and Practice mode selection.
 - Sign-in call to action when a guest selects Ranked.
 - One-attempt warning before the authenticated player starts.
-- Challenge bankroll, round progress, wager input, dealer/player hands, and actions.
+- Available challenge bankroll, active committed wager, round progress, wager input, dealer/player hands, and actions.
 - Resume state when a ranked attempt already exists.
 - An explicit Forfeit control with confirmation.
 - Verified result panel with score, rank, percentile, eligibility, and receipt hash.
@@ -655,7 +660,7 @@ Retention:
 - `daily_challenge` and `daily_challenge_result` are retained as compact historical competition data.
 - Terminal `daily_challenge_attempt` rows and their command logs are retained for 90 days, then deleted by scheduled cleanup.
 - Active attempts are never deleted by retention cleanup; they must first be expired.
-- Result rows retain hashes and score fields after the full command log is removed.
+- Result rows retain hashes, score fields, and completion duration after the full command log is removed.
 - Rate-limit rows use the existing short-lived cleanup.
 
 Operational logs record challenge creation races, attempt starts, accepted/replayed/rejected commands, expiration, terminal settlement, invariant failures, and rate limiting. They must never record raw seeds or command logs.
@@ -672,7 +677,7 @@ Operational logs record challenge creation races, attempt starts, accepted/repla
 - Same configuration, master seed, and command log produce byte-identical replay and score.
 - Legal/illegal `start-round`, hit, stand, double-down, split, and forfeit transitions.
 - Natural opening settlement.
-- Bankroll updates after wins, losses, pushes, Blackjack, splits, and doubles.
+- Available-bankroll deductions and payout credits after wins, losses, pushes, Blackjack, splits, and doubles.
 - Completion after ten rounds.
 - Completion below the minimum wager.
 - Score ordering, shared ranks, stable display ordering, and tied percentile.
@@ -688,12 +693,13 @@ Operational logs record challenge creation races, attempt starts, accepted/repla
 - New request ID after attempt creation recovers the consumed attempt rather than creating another.
 - Conditional command append under concurrent requests.
 - Exact command replay, payload mismatch, sequence-behind, and sequence-ahead behavior.
+- Projection guards reject stale available-bankroll or rounds-completed snapshots.
 - Terminal result and attempt status settle in one batch.
 - Duplicate terminal requests return one receipt.
 - Expiration is idempotent.
 - Forfeits and expirations never enter eligible leaderboard queries.
 - Leaderboard top 50, current-user-outside-top, rank, tie, and percentile queries.
-- Ninety-day attempt cleanup preserves compact result rows.
+- Ninety-day attempt cleanup preserves compact result rows and completion duration.
 - Seed disclosure is absent before end and present at/after end.
 
 ### 16.3 HTTP and client tests
@@ -712,7 +718,8 @@ Operational logs record challenge creation races, attempt starts, accepted/repla
 - Guest completes and restarts practice.
 - Guest selects Ranked and receives a sign-in call to action.
 - Authenticated player starts one ranked attempt.
-- Refresh resumes the same round and bankroll.
+- Starting a round reduces available bankroll and shows committed wager separately.
+- Refresh resumes the same round, available bankroll, and committed wager.
 - A second browser for the same account recovers the same attempt.
 - A second start cannot reset a completed, forfeited, or expired attempt.
 - Tampered commands and sequences are rejected without state mutation.

@@ -1,4 +1,21 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test as base, expect, type Page } from '@playwright/test';
+import { createIsolatedPage } from './isolated-page';
+
+const test = base.extend<{ missionPage: Page }>({
+	missionPage: async ({ browser, baseURL }, use) => {
+		const { context, page } = await createIsolatedPage(browser, baseURL, {
+			emailPrefix: 'mission',
+			namePrefix: 'Mission E2E',
+		});
+
+		try {
+			await context.request.delete('/api/missions/progress', { data: {} });
+			await use(page);
+		} finally {
+			await context.close();
+		}
+	},
+});
 
 /**
  * Wait (with a bounded retrying assertion on #game-status) for the round to
@@ -16,19 +33,14 @@ async function statusSettledTo(page: Page, regex: RegExp, timeoutMs: number): Pr
 }
 
 test.describe('Mission Board', () => {
-	test.beforeEach(async ({ page, request }) => {
-		// Reset mission state via dev endpoint
-		await request.delete('/api/missions/progress', { data: {} });
-	});
-
-	test('board loads with SSR (no empty flash)', async ({ page }) => {
+	test('board loads with SSR (no empty flash)', async ({ missionPage: page }) => {
 		await page.goto('/missions');
 		await expect(page.getByTestId('streak-banner')).toBeVisible();
 		await expect(page.getByTestId('daily-grid')).toBeVisible();
 		await expect(page.getByTestId('weekly-section')).toBeVisible();
 	});
 
-	test('streak claim grants chips, second claim is idempotent', async ({ page }) => {
+	test('streak claim grants chips, second claim is idempotent', async ({ missionPage: page }) => {
 		await page.goto('/missions');
 		const claimBtn = page.getByTestId('claim-login-btn');
 		await expect(claimBtn).toBeEnabled();
@@ -42,7 +54,8 @@ test.describe('Mission Board', () => {
 		await expect(claimBtn).toBeDisabled();
 	});
 
-	test('streak continuation via seedStreak', async ({ page, request }) => {
+	test('streak continuation via seedStreak', async ({ missionPage: page }) => {
+		const request = page.context().request;
 		// Seed: claimed yesterday with 2-day streak
 		await request.delete('/api/missions/progress', {
 			data: {
@@ -59,7 +72,8 @@ test.describe('Mission Board', () => {
 		await expect(page.getByTestId('streak-subtitle')).toContainText('3-day streak');
 	});
 
-	test('streak breakage via seedStreak', async ({ page, request }) => {
+	test('streak breakage via seedStreak', async ({ missionPage: page }) => {
+		const request = page.context().request;
 		// Seed: claimed 3 days ago with 5-day streak
 		await request.delete('/api/missions/progress', {
 			data: {
@@ -77,7 +91,7 @@ test.describe('Mission Board', () => {
 		await expect(page.getByTestId('streak-subtitle')).toContainText('1-day streak');
 	});
 
-	test('reroll swaps an uncompleted daily quest', async ({ page }) => {
+	test('reroll swaps an uncompleted daily quest', async ({ missionPage: page }) => {
 		await page.goto('/missions');
 		const rerollBtn = page.locator('[data-testid^="reroll-"]').first();
 		await rerollBtn.click();
@@ -86,7 +100,8 @@ test.describe('Mission Board', () => {
 		await expect(page.locator('[data-testid^="reroll-"]')).toHaveCount(0);
 	});
 
-	test('post-reset clears progress', async ({ page, request }) => {
+	test('post-reset clears progress', async ({ missionPage: page }) => {
+		const request = page.context().request;
 		await page.goto('/missions');
 		await request.delete('/api/missions/progress', { data: {} });
 		await page.reload();
@@ -97,7 +112,10 @@ test.describe('Mission Board', () => {
 		}
 	});
 
-	test('blackjack game flow increments handsPlayed mission progress', async ({ page, request }) => {
+	test('blackjack game flow increments handsPlayed mission progress', async ({
+		missionPage: page,
+	}) => {
+		const request = page.context().request;
 		// Retry single-hand attempts until a win is observed, so the roundsWon
 		// assertion is deterministic (no silent skip on push/loss). Each attempt
 		// resets mission progress so handsPlayed reflects exactly one hand.
@@ -136,9 +154,9 @@ test.describe('Mission Board', () => {
 	});
 
 	test('blackjack loss does not increment roundsWon mission progress', async ({
-		page,
-		request,
+		missionPage: page,
 	}) => {
+		const request = page.context().request;
 		// Retry single-hand attempts until a loss is observed, so the roundsWon
 		// assertion is deterministic (no silent skip on win/push). Each attempt
 		// resets mission progress so handsPlayed reflects exactly one hand.

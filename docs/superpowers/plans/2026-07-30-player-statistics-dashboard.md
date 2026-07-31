@@ -35,40 +35,41 @@
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `src/lib/game-stats/aggregation.ts` | Shared `calculateWinRate` and `aggregateGameStats` pure helpers |
-| `src/lib/game-stats/aggregation.test.ts` | Metric and aggregate helper coverage, including compatibility cases |
-| `src/lib/game-stats/game-stats.ts` | Delegate `calculateMetrics` to the shared win-rate helper |
-| `src/lib/game-stats/game-stats-repository.ts` | Delegate existing aggregate reduction; add correlated bulk Wins Rank SQL |
-| `src/lib/game-stats/game-stats-repository.test.ts` | Repository wrapper/mapping/error tests using existing mock style |
-| `src/lib/game-stats/game-stats-repository.sqlite.test.ts` | Execute exact rank SQL against migrated `bun:sqlite` |
-| `src/lib/game-stats/player-statistics-types.ts` | Public summary, game-card, dashboard, and source-row contracts |
-| `src/lib/game-stats/player-statistics.ts` | Canonical filtering, duplicate detection, zero-fill, summary building, service orchestration |
-| `src/lib/game-stats/player-statistics.test.ts` | Canonical builder, tie-break, rank, unknown-row, duplicate-row tests |
-| `src/lib/profile-statistics-loader.ts` | Isolated profile-summary loading state and error capture |
-| `src/lib/profile-statistics-loader.test.ts` | Success/failure state tests with injected loader |
-| `src/lib/formatting.ts` | Shared count, percentage, and signed-chip formatting |
-| `src/lib/formatting.test.ts` | Exact formatting contracts |
-| `src/lib/profile-statistics-payload.ts` | Runtime validation for detailed API payloads |
-| `src/lib/profile-statistics-payload.test.ts` | Shape/domain payload rejection tests |
-| `src/lib/profile-statistics-renderer.ts` | DOM rendering for summary and canonical game cards |
-| `src/lib/profile-statistics-renderer.test.ts` | happy-dom rendering and accessible-state tests |
-| `src/lib/profile-statistics-client.ts` | Fetch, redirect, loading/error/retry, and focus orchestration |
-| `src/lib/profile-statistics-client.test.ts` | happy-dom client state-machine tests with stubbed fetch |
-| `src/components/profile/PlayerStatisticsSummary.astro` | Compact server-rendered profile section |
-| `src/pages/profile.astro` | Load and insert summary; set no-store header |
-| `src/pages/profile/statistics.astro` | Protected detailed shell, skeleton, noscript fallback, client bootstrap |
-| `src/pages/api/profile/statistics.ts` | Authenticated JSON endpoint with required headers |
-| `src/pages/api/profile/statistics.test.ts` | API status/body/header tests through an injectable handler factory |
-| `e2e/profile.spec.ts` | Profile placement and detailed-page navigation |
-| `e2e/profile-statistics.spec.ts` | Populated, empty, retry, and mobile/keyboard flows via API interception |
+| File                                                      | Responsibility                                                                               |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `src/lib/game-stats/aggregation.ts`                       | Shared `calculateWinRate` and `aggregateGameStats` pure helpers                              |
+| `src/lib/game-stats/aggregation.test.ts`                  | Metric and aggregate helper coverage, including compatibility cases                          |
+| `src/lib/game-stats/game-stats.ts`                        | Delegate `calculateMetrics` to the shared win-rate helper                                    |
+| `src/lib/game-stats/game-stats-repository.ts`             | Delegate existing aggregate reduction; add correlated bulk Wins Rank SQL                     |
+| `src/lib/game-stats/game-stats-repository.test.ts`        | Repository wrapper/mapping/error tests using existing mock style                             |
+| `src/lib/game-stats/game-stats-repository.sqlite.test.ts` | Execute exact rank SQL against migrated `bun:sqlite`                                         |
+| `src/lib/game-stats/player-statistics-types.ts`           | Public summary, game-card, dashboard, and source-row contracts                               |
+| `src/lib/game-stats/player-statistics.ts`                 | Canonical filtering, duplicate detection, zero-fill, summary building, service orchestration |
+| `src/lib/game-stats/player-statistics.test.ts`            | Canonical builder, tie-break, rank, unknown-row, duplicate-row tests                         |
+| `src/lib/profile-statistics-loader.ts`                    | Isolated profile-summary loading state and error capture                                     |
+| `src/lib/profile-statistics-loader.test.ts`               | Success/failure state tests with injected loader                                             |
+| `src/lib/formatting.ts`                                   | Shared count, percentage, and signed-chip formatting                                         |
+| `src/lib/formatting.test.ts`                              | Exact formatting contracts                                                                   |
+| `src/lib/profile-statistics-payload.ts`                   | Runtime validation for detailed API payloads                                                 |
+| `src/lib/profile-statistics-payload.test.ts`              | Shape/domain payload rejection tests                                                         |
+| `src/lib/profile-statistics-renderer.ts`                  | DOM rendering for summary and canonical game cards                                           |
+| `src/lib/profile-statistics-renderer.test.ts`             | happy-dom rendering and accessible-state tests                                               |
+| `src/lib/profile-statistics-client.ts`                    | Fetch, redirect, loading/error/retry, and focus orchestration                                |
+| `src/lib/profile-statistics-client.test.ts`               | happy-dom client state-machine tests with stubbed fetch                                      |
+| `src/components/profile/PlayerStatisticsSummary.astro`    | Compact server-rendered profile section                                                      |
+| `src/pages/profile.astro`                                 | Load and insert summary; set no-store header                                                 |
+| `src/pages/profile/statistics.astro`                      | Protected detailed shell, skeleton, noscript fallback, client bootstrap                      |
+| `src/pages/api/profile/statistics.ts`                     | Authenticated JSON endpoint with required headers                                            |
+| `src/pages/api/profile/statistics.test.ts`                | API status/body/header tests through an injectable handler factory                           |
+| `e2e/profile.spec.ts`                                     | Profile placement and detailed-page navigation                                               |
+| `e2e/profile-statistics.spec.ts`                          | Populated, empty, retry, and mobile/keyboard flows via API interception                      |
 
 ---
 
 ### Task 1: Extract Shared Metric and Aggregate Helpers
 
 **Files:**
+
 - Create: `src/lib/game-stats/aggregation.ts`
 - Create: `src/lib/game-stats/aggregation.test.ts`
 - Modify: `src/lib/game-stats/game-stats.ts:32-43`
@@ -77,6 +78,7 @@
 - Modify: `src/lib/game-stats/game-stats-repository.test.ts`
 
 **Interfaces:**
+
 - Produces: `calculateWinRate(totalWins, totalLosses): number`.
 - Produces: `aggregateGameStats(stats): GameStatsAggregate`.
 - Preserves: `calculateMetrics(stats): GameStatsWithMetrics`.
@@ -147,9 +149,7 @@ export function calculateWinRate(totalWins: number, totalLosses: number): number
 	return decidedHands > 0 ? (totalWins / decidedHands) * 100 : 0;
 }
 
-export function aggregateGameStats(
-	stats: readonly AggregatableGameStats[],
-): GameStatsAggregate {
+export function aggregateGameStats(stats: readonly AggregatableGameStats[]): GameStatsAggregate {
 	return stats.reduce<GameStatsAggregate>(
 		(aggregate, row) => ({
 			totalWins: aggregate.totalWins + row.totalWins,
@@ -230,11 +230,13 @@ git commit -m "refactor: share game statistics calculations (HPA-171)"
 ### Task 2: Build the Canonical Dashboard Read Model
 
 **Files:**
+
 - Create: `src/lib/game-stats/player-statistics-types.ts`
 - Create: `src/lib/game-stats/player-statistics.ts`
 - Create: `src/lib/game-stats/player-statistics.test.ts`
 
 **Interfaces:**
+
 - Consumes: `calculateWinRate`, `aggregateGameStats`, `GAME_TYPES`, `isValidGameType`.
 - Produces: `PlayerStatisticsSummary`, `PlayerGameStatistics`, `PlayerStatisticsDashboard`.
 - Produces: `PlayerStatisticsIntegrityError`.
@@ -337,9 +339,7 @@ test('throws on duplicate canonical rows', () => {
 		netProfit: 10,
 		updatedAt,
 	};
-	expect(() => buildPlayerStatisticsDashboard([row, row])).toThrow(
-		PlayerStatisticsIntegrityError,
-	);
+	expect(() => buildPlayerStatisticsDashboard([row, row])).toThrow(PlayerStatisticsIntegrityError);
 });
 ```
 
@@ -447,11 +447,13 @@ git commit -m "feat: add canonical player statistics read model (HPA-171)"
 ### Task 3: Add the Correlated Wins Rank Query with Real SQLite Coverage
 
 **Files:**
+
 - Modify: `src/lib/game-stats/game-stats-repository.ts`
 - Modify: `src/lib/game-stats/game-stats-repository.test.ts`
 - Create: `src/lib/game-stats/game-stats-repository.sqlite.test.ts`
 
 **Interfaces:**
+
 - Produces: `getBulkUserWinsRanks(db, userId): Promise<Map<GameType, number>>`.
 - Preserves: existing `getUserGameRank` behavior for leaderboard callers.
 
@@ -572,12 +574,14 @@ git commit -m "feat: add bulk player wins ranks (HPA-171)"
 ### Task 4: Add Statistics Services and Isolated Profile Loading
 
 **Files:**
+
 - Modify: `src/lib/game-stats/player-statistics.ts`
 - Modify: `src/lib/game-stats/player-statistics.test.ts`
 - Create: `src/lib/profile-statistics-loader.ts`
 - Create: `src/lib/profile-statistics-loader.test.ts`
 
 **Interfaces:**
+
 - Produces: `getPlayerStatisticsSummary(db, userId)`.
 - Produces: `getPlayerStatisticsDashboard(db, userId)`.
 - Produces: `loadProfileStatisticsState(db, userId, load?)`.
@@ -661,10 +665,12 @@ git commit -m "feat: add player statistics services (HPA-171)"
 ### Task 5: Extend Shared Formatting Utilities
 
 **Files:**
+
 - Modify: `src/lib/formatting.ts`
 - Modify: `src/lib/formatting.test.ts`
 
 **Interfaces:**
+
 - Produces: `formatWholeNumber`, `formatPercentage`, `formatSignedChipResult`.
 - Preserves existing chip-balance formatter behavior.
 
@@ -718,12 +724,14 @@ git commit -m "feat: add player statistics formatters (HPA-171)"
 ### Task 6: Add the Authenticated API and Runtime Payload Validator
 
 **Files:**
+
 - Create: `src/pages/api/profile/statistics.ts`
 - Create: `src/pages/api/profile/statistics.test.ts`
 - Create: `src/lib/profile-statistics-payload.ts`
 - Create: `src/lib/profile-statistics-payload.test.ts`
 
 **Interfaces:**
+
 - Produces: `GET /api/profile/statistics` returning `{ summary, games }`.
 - Produces: `createStatisticsGetHandler(overrides?)`.
 - Produces: `parsePlayerStatisticsDashboard(value)`.
@@ -744,27 +752,32 @@ const nonNegativeSafeInteger = safeInteger.refine((value) => value >= 0, 'Expect
 const percentage = z.number().finite().min(0).max(100);
 const gameType = z.enum(GAME_TYPES);
 
-const summarySchema = z.object({
-	totalHands: nonNegativeSafeInteger,
-	totalWins: nonNegativeSafeInteger,
-	totalLosses: nonNegativeSafeInteger,
-	overallWinRate: percentage,
-	totalNetProfit: safeInteger,
-	mostPlayedGame: gameType.nullable(),
-}).strict();
+const summarySchema = z
+	.object({
+		totalHands: nonNegativeSafeInteger,
+		totalWins: nonNegativeSafeInteger,
+		totalLosses: nonNegativeSafeInteger,
+		overallWinRate: percentage,
+		totalNetProfit: safeInteger,
+		mostPlayedGame: gameType.nullable(),
+	})
+	.strict();
 
-const gameSchema = z.object({
-	gameType,
-	totalWins: nonNegativeSafeInteger,
-	totalLosses: nonNegativeSafeInteger,
-	handsPlayed: nonNegativeSafeInteger,
-	winRate: percentage,
-	netProfit: safeInteger,
-	biggestWin: nonNegativeSafeInteger,
-	winsRank: safeInteger.refine((value) => value > 0).nullable(),
-}).strict();
+const gameSchema = z
+	.object({
+		gameType,
+		totalWins: nonNegativeSafeInteger,
+		totalLosses: nonNegativeSafeInteger,
+		handsPlayed: nonNegativeSafeInteger,
+		winRate: percentage,
+		netProfit: safeInteger,
+		biggestWin: nonNegativeSafeInteger,
+		winsRank: safeInteger.refine((value) => value > 0).nullable(),
+	})
+	.strict();
 
-const dashboardSchema = z.object({ summary: summarySchema, games: z.array(gameSchema) })
+const dashboardSchema = z
+	.object({ summary: summarySchema, games: z.array(gameSchema) })
 	.strict()
 	.superRefine((dashboard, context) => {
 		if (dashboard.games.length !== GAME_TYPES.length) {
@@ -840,11 +853,13 @@ git commit -m "feat: add player statistics API contract (HPA-171)"
 ### Task 7: Add the Server-Rendered Profile Summary
 
 **Files:**
+
 - Create: `src/components/profile/PlayerStatisticsSummary.astro`
 - Modify: `src/pages/profile.astro:1-72,137-191`
 - Modify: `e2e/profile.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ProfileStatisticsState`, shared formatting, game labels.
 - Produces: compact `Player Performance` section after Account Details/Casino Tips and before AI Rival Settings.
 
@@ -856,7 +871,9 @@ import { GAME_TYPE_LABELS } from '../../lib/game-stats/constants';
 import type { ProfileStatisticsState } from '../../lib/profile-statistics-loader';
 import { formatPercentage, formatSignedChipResult, formatWholeNumber } from '../../lib/formatting';
 
-interface Props { state: ProfileStatisticsState; }
+interface Props {
+	state: ProfileStatisticsState;
+}
 const { state } = Astro.props;
 ---
 
@@ -875,10 +892,34 @@ const { state } = Astro.props;
 			</p>
 		) : (
 			<dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-				<div><dt class="deco-eyebrow-sm">Total Hands</dt><dd>{formatWholeNumber(state.summary.totalHands)}</dd></div>
-				<div><dt class="deco-eyebrow-sm">Most Played</dt><dd>{state.summary.mostPlayedGame ? GAME_TYPE_LABELS[state.summary.mostPlayedGame] : 'No games played yet'}</dd></div>
-				<div><dt class="deco-eyebrow-sm">Overall Win Rate</dt><dd>{formatPercentage(state.summary.overallWinRate)}</dd></div>
-				<div><dt class="deco-eyebrow-sm">Net Profit</dt><dd>{formatSignedChipResult(state.summary.totalNetProfit)}</dd></div>
+				<div>
+					<>
+						<dt class="deco-eyebrow-sm">Total Hands</dt>
+						<dd>{formatWholeNumber(state.summary.totalHands)}</dd>
+					</>
+				</div>
+				<div>
+					<>
+						<dt class="deco-eyebrow-sm">Most Played</dt>
+						<dd>
+							{state.summary.mostPlayedGame
+								? GAME_TYPE_LABELS[state.summary.mostPlayedGame]
+								: 'No games played yet'}
+						</dd>
+					</>
+				</div>
+				<div>
+					<>
+						<dt class="deco-eyebrow-sm">Overall Win Rate</dt>
+						<dd>{formatPercentage(state.summary.overallWinRate)}</dd>
+					</>
+				</div>
+				<div>
+					<>
+						<dt class="deco-eyebrow-sm">Net Profit</dt>
+						<dd>{formatSignedChipResult(state.summary.totalNetProfit)}</dd>
+					</>
+				</div>
 			</dl>
 		)
 	}
@@ -923,6 +964,7 @@ git commit -m "feat: add profile performance summary (HPA-171)"
 ### Task 8: Build the Detailed Renderer and Client State Machine
 
 **Files:**
+
 - Create: `src/lib/profile-statistics-renderer.ts`
 - Create: `src/lib/profile-statistics-renderer.test.ts`
 - Create: `src/lib/profile-statistics-client.ts`
@@ -930,6 +972,7 @@ git commit -m "feat: add profile performance summary (HPA-171)"
 - Create: `src/pages/profile/statistics.astro`
 
 **Interfaces:**
+
 - Produces: `renderPlayerStatisticsDashboard(root, dashboard)`.
 - Produces: `initPlayerStatisticsClient(root, options?)`.
 
@@ -1017,7 +1060,11 @@ Redirect unauthenticated users, set `private, no-store`, render a focusable head
 
 ```astro
 <noscript>
-	<style>[data-statistics-loading] { display: none !important; }</style>
+	<style>
+		[data-statistics-loading] {
+			display: none !important;
+		}
+	</style>
 	<p class="deco-panel mt-6 p-4">JavaScript is required to load detailed player statistics.</p>
 </noscript>
 ```
@@ -1039,11 +1086,13 @@ git commit -m "feat: add detailed player statistics dashboard (HPA-171)"
 ### Task 9: Add Focused End-to-End Coverage and Run Full Verification
 
 **Files:**
+
 - Modify: `e2e/profile.spec.ts`
 - Create: `e2e/profile-statistics.spec.ts`
 - Modify: detail-page/renderer selectors only when required by the assertions below
 
 **Interfaces:**
+
 - Produces: five high-value browser flows without production-only failure hooks.
 
 - [ ] **Step 1: Build a canonical intercepted API fixture**
@@ -1067,7 +1116,9 @@ Use a request counter: first intercepted API request returns 500, second returns
 Use a `375x667` viewport, tab through representative navigation, and assert:
 
 ```typescript
-expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+	true,
+);
 ```
 
 Do not assert pixel coordinates or exact column counts.

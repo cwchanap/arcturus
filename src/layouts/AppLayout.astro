@@ -77,11 +77,13 @@ const formattedChipBalance =
 						<div class="flex items-center gap-4">
 							{
 								user && (
-									<div class="deco-chip-pill hidden md:inline-flex">
-										<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
-										<span class="font-body font-medium tabular-nums" data-chip-balance>
-											{formattedChipBalance ? `${formattedChipBalance} chips` : '— chips'}
-										</span>
+									<div class="hidden md:block">
+										<div class="deco-chip-pill">
+											<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
+											<span class="font-body font-medium tabular-nums" data-chip-balance>
+												{formattedChipBalance ? `${formattedChipBalance} chips` : '— chips'}
+											</span>
+										</div>
 									</div>
 								)
 							}

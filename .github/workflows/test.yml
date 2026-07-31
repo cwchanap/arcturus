@@ -39,6 +39,9 @@ jobs:
       - name: Run unit tests
         run: bun run test:unit
 
+      - name: Run integration tests
+        run: bun run test:integration
+
       - name: Run unit tests with coverage
         run: bun run test:coverage
 

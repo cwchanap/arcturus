@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TEST_USER } from './auth.setup';
+import { AUTH_FILE, TEST_USER } from './auth.setup';
 import { bootstrapTestUser } from './bootstrap-auth';
 
 test.describe('Profile Page', () => {
@@ -61,6 +61,32 @@ test.describe('Profile Page', () => {
 		expect(casinoTipsIndex).toBeGreaterThanOrEqual(0);
 		expect(playerPerformanceIndex).toBeGreaterThan(casinoTipsIndex);
 		expect(aiRivalSettingsIndex).toBeGreaterThan(playerPerformanceIndex);
+	});
+
+	test('statistics no-JavaScript shell keeps one main landmark and fallback outside busy state', async ({
+		browser,
+		baseURL,
+	}) => {
+		const appUrl = baseURL ?? 'http://localhost:2000';
+		const context = await browser.newContext({
+			baseURL: appUrl,
+			javaScriptEnabled: false,
+			storageState: AUTH_FILE,
+		});
+		const page = await context.newPage();
+
+		await page.goto('/profile/statistics');
+
+		await expect(page).toHaveURL(/\/profile\/statistics$/);
+		await expect(page.locator('main')).toHaveCount(1);
+		await expect(page.locator('#player-statistics-root')).toHaveJSProperty('tagName', 'SECTION');
+		await expect(page.locator('noscript')).toHaveCount(1);
+		const fallback = page.locator('noscript p');
+		await expect(fallback).toHaveText('JavaScript is required to load detailed player statistics.');
+		await expect(fallback).toBeVisible();
+		await expect(fallback.locator('xpath=ancestor::*[@aria-busy="true"]')).toHaveCount(0);
+
+		await context.close();
 	});
 
 	test('displays AI rival settings section', async ({ page }) => {

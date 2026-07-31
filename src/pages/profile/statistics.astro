@@ -10,15 +10,17 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 
 <CasinoLayout title="Player Statistics - Arcturus Casino">
 	<section class="deco-atmosphere relative overflow-hidden">
-		<main
+		<section
 			id="player-statistics-root"
 			class="relative mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8"
+			aria-labelledby="player-statistics-heading"
 			aria-busy="true"
 		>
 			<header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 				<div>
 					<p class="deco-eyebrow-sm">All-time casual play</p>
 					<h1
+						id="player-statistics-heading"
 						class="deco-section-title mt-2 text-3xl sm:text-4xl"
 						data-statistics-heading
 						tabindex="-1"
@@ -115,18 +117,19 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 				>
 				</section>
 			</div>
-
-			<noscript>
-				<style>
-					[data-statistics-loading] {
-						display: none !important;
-					}
-				</style>
+		</section>
+		<noscript>
+			<style>
+				[data-statistics-loading] {
+					display: none !important;
+				}
+			</style>
+			<div class="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 				<p class="deco-panel mt-6 p-4">
 					JavaScript is required to load detailed player statistics.
 				</p>
-			</noscript>
-		</main>
+			</div>
+		</noscript>
 	</section>
 </CasinoLayout>
 

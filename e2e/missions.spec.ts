@@ -42,10 +42,9 @@ async function finishBlackjackHand(page: Page): Promise<void> {
 	const newRoundButton = page.locator('#btn-new-round');
 
 	await expect
-		.poll(
-			async () => (await newRoundButton.isVisible()) || (await standButton.isEnabled()),
-			{ timeout: 5000 },
-		)
+		.poll(async () => (await newRoundButton.isVisible()) || (await standButton.isEnabled()), {
+			timeout: 5000,
+		})
 		.toBe(true);
 
 	if (!(await newRoundButton.isVisible())) {

@@ -63,6 +63,16 @@ test.describe('Profile Page', () => {
 		expect(aiRivalSettingsIndex).toBeGreaterThan(playerPerformanceIndex);
 	});
 
+	test('marks authenticated profile HTML responses private and no-store', async ({ page }) => {
+		const profileResponse = await page.goto('/profile');
+		expect(profileResponse?.status()).toBe(200);
+		expect(profileResponse?.headers()['cache-control']).toBe('private, no-store');
+
+		const statisticsResponse = await page.goto('/profile/statistics');
+		expect(statisticsResponse?.status()).toBe(200);
+		expect(statisticsResponse?.headers()['cache-control']).toBe('private, no-store');
+	});
+
 	test('statistics no-JavaScript shell keeps one main landmark and fallback outside busy state', async ({
 		browser,
 		baseURL,

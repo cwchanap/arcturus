@@ -23,7 +23,7 @@ const user = Astro.locals.user;
 						<DecoIcon name="user" size={16} />
 					</span>
 				)}
-				<span class="font-body text-sm" style="color: var(--deco-ivory)">
+				<span class="font-body hidden text-sm sm:inline" style="color: var(--deco-ivory)">
 					{user.name}
 				</span>
 				<a href="/profile" class="deco-link">

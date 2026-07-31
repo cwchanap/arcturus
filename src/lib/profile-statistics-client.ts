@@ -6,6 +6,14 @@ export interface ProfileStatisticsClientOptions {
 	redirect?: (href: string) => void;
 }
 
+/**
+ * Upper bound on a statistics request before it is treated as stalled.
+ * `AbortSignal.timeout` keeps the signal armed across both the headers fetch
+ * and the body read, so a slow/stalled server rejects instead of leaving the
+ * loading state up indefinitely and the error path can surface.
+ */
+const STATISTICS_REQUEST_TIMEOUT_MS = 8_000;
+
 export async function initPlayerStatisticsClient(
 	root: HTMLElement,
 	options: ProfileStatisticsClientOptions = {},
@@ -21,7 +29,13 @@ export async function initPlayerStatisticsClient(
 		throw new Error('Player statistics shell is incomplete');
 	}
 
+	let isLoading = false;
 	const load = async (focusAfterRetry: boolean): Promise<void> => {
+		// Serialize requests: ignore re-entries while a load is in flight so the
+		// retry control (and any other caller) cannot kick off concurrent fetches.
+		if (isLoading) return;
+		isLoading = true;
+		retry.disabled = true;
 		loading.hidden = false;
 		error.hidden = true;
 		content.hidden = true;
@@ -30,6 +44,7 @@ export async function initPlayerStatisticsClient(
 			const response = await fetchImpl('/api/profile/statistics', {
 				credentials: 'same-origin',
 				cache: 'no-store',
+				signal: AbortSignal.timeout(STATISTICS_REQUEST_TIMEOUT_MS),
 			});
 			if (response.status === 401) {
 				redirect('/signin');
@@ -48,6 +63,11 @@ export async function initPlayerStatisticsClient(
 			error.hidden = false;
 			root.setAttribute('aria-busy', 'false');
 			if (focusAfterRetry) error.focus();
+		} finally {
+			// Re-arm on every completion path (success, error, and redirect) so the
+			// dashboard stays interactive and later calls are admitted.
+			isLoading = false;
+			retry.disabled = false;
 		}
 	};
 

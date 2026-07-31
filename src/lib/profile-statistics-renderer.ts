@@ -31,7 +31,7 @@ function appendMetric(
 	label: string,
 	value: string,
 	options: { primary?: boolean; valueAttribute?: string } = {},
-): void {
+): HTMLElement {
 	const item = element(
 		'div',
 		options.primary ? 'min-w-0' : 'min-w-0 border-t border-white/10 pt-3',
@@ -47,6 +47,7 @@ function appendMetric(
 	if (options.valueAttribute) description.setAttribute(options.valueAttribute, '');
 	item.append(term, description);
 	list.append(item);
+	return description;
 }
 
 function renderSummary(container: HTMLElement, dashboard: PlayerStatisticsDashboard): void {
@@ -80,12 +81,12 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 	const card = element('article', 'deco-panel flex min-h-full flex-col p-5 sm:p-6');
 	card.setAttribute('data-testid', `statistics-card-${gameType}`);
 
-	const header = element('header', 'flex items-start justify-between gap-4');
+	const header = element('header', 'flex min-w-0 items-start justify-between gap-4');
 	const identity = element('div', 'flex min-w-0 items-center gap-3');
 	const icon = textElement('span', GAME_TYPE_ICONS[gameType], 'text-3xl leading-none');
 	icon.setAttribute('aria-hidden', 'true');
 	const titleGroup = element('div', 'min-w-0');
-	const title = textElement('h2', label, 'deco-section-title text-xl');
+	const title = textElement('h2', label, 'deco-section-title text-xl break-words');
 	const status = textElement(
 		'p',
 		game.handsPlayed > 0 ? 'Played' : 'Not played yet',
@@ -99,11 +100,15 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 	const primary = element('dl', 'mt-6 grid grid-cols-3 gap-3');
 	appendMetric(primary, 'Hands Played', formatWholeNumber(game.handsPlayed), { primary: true });
 	appendMetric(primary, 'Win Rate', formatPercentage(game.winRate), { primary: true });
-	appendMetric(primary, 'Net Profit', formatSignedChipResult(game.netProfit), {
-		primary: true,
-	});
-	const profit = primary.lastElementChild?.querySelector('dd');
-	profit?.setAttribute('data-profit-result', profitResult(game.netProfit));
+	const netProfitValue = appendMetric(
+		primary,
+		'Net Profit',
+		formatSignedChipResult(game.netProfit),
+		{
+			primary: true,
+		},
+	);
+	netProfitValue.setAttribute('data-profit-result', profitResult(game.netProfit));
 
 	const secondary = element('dl', 'mt-5 grid grid-cols-2 gap-x-4 gap-y-3');
 	appendMetric(secondary, 'Wins', formatWholeNumber(game.totalWins));
@@ -113,7 +118,10 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 		valueAttribute: 'data-statistics-wins-rank',
 	});
 
-	const actions = element('div', 'mt-auto flex flex-wrap items-center gap-x-5 gap-y-3 pt-6');
+	const actions = element(
+		'div',
+		'mt-auto flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3 pt-6',
+	);
 	const leaderboard = textElement('a', 'View Wins leaderboard', 'deco-link');
 	leaderboard.setAttribute('href', `/games/leaderboard?game=${gameType}&metric=wins`);
 	leaderboard.setAttribute('data-statistics-leaderboard', '');

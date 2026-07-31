@@ -60,6 +60,10 @@ describe('Player statistics formatting', () => {
 		expect(formatWholeNumber(12345)).toBe('12,345');
 	});
 
+	test('rejects non-integer values for whole-number formatting', () => {
+		expect(() => formatWholeNumber(1.5)).toThrow(RangeError);
+	});
+
 	test('formats percentages to one decimal place', () => {
 		expect(formatPercentage(50.83333333333333)).toBe('50.8%');
 	});

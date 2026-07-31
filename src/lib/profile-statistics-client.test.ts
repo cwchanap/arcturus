@@ -108,12 +108,11 @@ describe('player statistics client', () => {
 
 		await initPlayerStatisticsClient(root, { fetchImpl });
 
-		expect(calls).toEqual([
-			{
-				input: '/api/profile/statistics',
-				init: { credentials: 'same-origin', cache: 'no-store' },
-			},
-		]);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].input).toBe('/api/profile/statistics');
+		expect(calls[0].init?.credentials).toBe('same-origin');
+		expect(calls[0].init?.cache).toBe('no-store');
+		expect(calls[0].init?.signal).toBeInstanceOf(AbortSignal);
 		expect(root.getAttribute('aria-busy')).toBe('false');
 		expect(root.querySelector<HTMLElement>('[data-statistics-loading]')?.hidden).toBe(true);
 		expect(root.querySelector<HTMLElement>('[data-statistics-error]')?.hidden).toBe(true);

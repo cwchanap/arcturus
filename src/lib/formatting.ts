@@ -19,7 +19,8 @@ function requireFinite(value: number): number {
 }
 
 export function formatWholeNumber(value: number): string {
-	return new Intl.NumberFormat('en-US').format(requireFinite(value));
+	if (!Number.isSafeInteger(value)) throw new RangeError('Value must be a safe integer');
+	return new Intl.NumberFormat('en-US').format(value);
 }
 
 export function formatPercentage(value: number): string {

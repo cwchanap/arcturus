@@ -1,6 +1,6 @@
 # Player Statistics Dashboard Design
 
-**Status:** Design complete; pending PR approval before implementation  
+**Status:** Implementation complete; currently under PR review  
 **Date:** 2026-07-30  
 **Issue:** [HPA-171 — Player statistics dashboard](https://linear.app/cwchanap/issue/HPA-171/player-statistics-dashboard)  
 **Scope:** Aggregate all-time player statistics only. Verified session and trend history is owned by HPA-174.

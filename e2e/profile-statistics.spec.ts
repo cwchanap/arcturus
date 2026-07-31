@@ -168,6 +168,11 @@ test.describe('Player Statistics Dashboard', () => {
 		await interceptStatistics(page, POPULATED_STATISTICS);
 		await page.goto('/profile/statistics');
 
+		const blackjackRankLink = page
+			.getByTestId('statistics-card-blackjack')
+			.getByRole('link', { name: 'View Wins leaderboard' });
+		await expect(blackjackRankLink).toBeVisible();
+
 		await page.keyboard.press('Tab');
 		await expect(page.locator('header a[href="/"]').first()).toBeFocused();
 		await page.keyboard.press('Tab');
@@ -177,11 +182,7 @@ test.describe('Player Statistics Dashboard', () => {
 		await page.keyboard.press('Tab');
 		await expect(page.locator('main a[href="/profile"]')).toBeFocused();
 		await page.keyboard.press('Tab');
-		await expect(
-			page.getByTestId('statistics-card-blackjack').getByRole('link', {
-				name: 'View Wins leaderboard',
-			}),
-		).toBeFocused();
+		await expect(blackjackRankLink).toBeFocused();
 
 		expect(
 			await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

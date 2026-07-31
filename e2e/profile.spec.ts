@@ -41,6 +41,28 @@ test.describe('Profile Page', () => {
 		await expect(page.locator('text=Invite friends for exclusive')).toBeVisible();
 	});
 
+	test('displays performance summary between casino tips and AI rival settings', async ({
+		page,
+	}) => {
+		const summary = page.locator('section[aria-labelledby="player-performance-heading"]');
+
+		await expect(summary).toBeVisible();
+		await expect(summary.getByText('All-time casual play')).toBeVisible();
+		await expect(summary.getByRole('link', { name: 'View detailed statistics' })).toHaveAttribute(
+			'href',
+			'/profile/statistics',
+		);
+
+		const sectionHeadings = await page.locator('main h2').allTextContents();
+		const casinoTipsIndex = sectionHeadings.indexOf('Casino Tips');
+		const playerPerformanceIndex = sectionHeadings.indexOf('Player Performance');
+		const aiRivalSettingsIndex = sectionHeadings.indexOf('AI Rival Settings');
+
+		expect(casinoTipsIndex).toBeGreaterThanOrEqual(0);
+		expect(playerPerformanceIndex).toBeGreaterThan(casinoTipsIndex);
+		expect(aiRivalSettingsIndex).toBeGreaterThan(playerPerformanceIndex);
+	});
+
 	test('displays AI rival settings section', async ({ page }) => {
 		// Check AI Rival Settings section
 		await expect(page.locator('text=AI Rival Settings')).toBeVisible();

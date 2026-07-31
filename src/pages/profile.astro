@@ -5,12 +5,20 @@ import DecoIcon from '../components/DecoIcon.astro';
 import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
 import { getAchievementsWithStatus } from '../lib/achievements/achievements';
 import type { AchievementWithStatus } from '../lib/achievements/types';
+import PlayerStatisticsSummary from '../components/profile/PlayerStatisticsSummary.astro';
+import {
+	loadProfileStatisticsState,
+	type ProfileStatisticsState,
+} from '../lib/profile-statistics-loader';
 
 const session = Astro.locals.session;
 
 if (!session) {
 	return Astro.redirect('/signin');
 }
+
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+let playerStatisticsState: ProfileStatisticsState = { status: 'error' };
 
 const { user } = session;
 const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'A';
@@ -37,6 +45,7 @@ const clampedPercentage = () =>
 
 if (dbBinding) {
 	const db = createDb(dbBinding);
+	playerStatisticsState = await loadProfileStatisticsState(db, user.id);
 	try {
 		const result = await getLlmSettings(db, user.id);
 		aiSettings = {
@@ -184,6 +193,8 @@ const aiSettingsPayload = JSON.stringify({
 					</div>
 				</div>
 			</div>
+
+			<PlayerStatisticsSummary state={playerStatisticsState} />
 
 			<div class="deco-panel mt-8 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

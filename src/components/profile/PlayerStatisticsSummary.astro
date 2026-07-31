@@ -1,0 +1,57 @@
+---
+import { GAME_TYPE_LABELS } from '../../lib/game-stats/constants';
+import { formatPercentage, formatSignedChipResult, formatWholeNumber } from '../../lib/formatting';
+import type { ProfileStatisticsState } from '../../lib/profile-statistics-loader';
+
+interface Props {
+	state: ProfileStatisticsState;
+}
+
+const { state } = Astro.props;
+---
+
+<section class="deco-panel mt-8 p-6" aria-labelledby="player-performance-heading">
+	<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+		<div>
+			<p class="deco-eyebrow-sm">All-time casual play</p>
+			<h2 id="player-performance-heading" class="deco-section-title text-lg">Player Performance</h2>
+		</div>
+		<a href="/profile/statistics" class="deco-link">View detailed statistics</a>
+	</div>
+	{
+		state.status === 'error' ? (
+			<p class="mt-6" role="status" style="color: var(--deco-rose)">
+				Player statistics are temporarily unavailable.
+			</p>
+		) : (
+			<dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+				<div>
+					<dt class="deco-eyebrow-sm">Total Hands</dt>
+					<dd class="deco-stat-value mt-1 tabular-nums">
+						{formatWholeNumber(state.summary.totalHands)}
+					</dd>
+				</div>
+				<div>
+					<dt class="deco-eyebrow-sm">Most Played</dt>
+					<dd class="deco-stat-value mt-1 tabular-nums">
+						{state.summary.mostPlayedGame
+							? GAME_TYPE_LABELS[state.summary.mostPlayedGame]
+							: 'No games played yet'}
+					</dd>
+				</div>
+				<div>
+					<dt class="deco-eyebrow-sm">Overall Win Rate</dt>
+					<dd class="deco-stat-value mt-1 tabular-nums">
+						{formatPercentage(state.summary.overallWinRate)}
+					</dd>
+				</div>
+				<div>
+					<dt class="deco-eyebrow-sm">Net Profit</dt>
+					<dd class="deco-stat-value mt-1 tabular-nums">
+						{formatSignedChipResult(state.summary.totalNetProfit)}
+					</dd>
+				</div>
+			</dl>
+		)
+	}
+</section>

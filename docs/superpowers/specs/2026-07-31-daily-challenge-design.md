@@ -223,7 +223,9 @@ export type DailyChallengeCommandV1 =
     };
 ```
 
-Commands use strict tagged-union validation. `sequence` is a non-negative safe integer. `wager` exists only on `start-round`. Unknown fields are rejected. The stored log is a JCS-canonicalized array with contiguous sequences beginning at zero.
+Commands use strict tagged-union validation. `sequence` is a non-negative safe integer. `wager` exists only on `start-round`. Unknown fields are rejected. The stored log is a JCS-canonicalized array with contiguous global sequences beginning at zero.
+
+The global sequence belongs to the whole Daily Challenge attempt. During pure replay, each `start-round` begins a new adapter action segment. Blackjack commands in that segment are converted to `RankedBlackjackActionLogEntryV1` values with fresh per-round sequences `0..n-1` before calling `blackjack-ranked-v1`; global sequence numbers are never passed directly to the adapter. The deterministic mapping is therefore `global command -> (roundIndex, perRoundActionIndex)`, where `roundIndex` is the number of preceding `start-round` commands and `perRoundActionIndex` is the number of preceding Blackjack actions in the current segment.
 
 ### 8.2 Replay state and bankroll semantics
 
@@ -269,12 +271,14 @@ Blackjack action commands are legal only while a round is active and are delegat
 When a split or double-down command is accepted, its additional wager is deducted from available bankroll before the command is appended. When a round reaches a natural terminal outcome:
 
 ```text
-availableBankroll += payout
+availableBankroll += outcome.payout
 roundsCompleted += 1
 activeRound = null
 ```
 
-The initial and additional wagers were already deducted, so they are not subtracted again at settlement. The next accepted command may start the next round.
+Credit the adapter's aggregate `outcome.payout`. It is the gross return including returned stakes across all hands; do not use `outcome.gameNetDelta`. The initial, split, and double-down wagers were already deducted when their commands were accepted, so settlement must never subtract them again. The next accepted command may start the next round.
+
+`blackjack-ranked-v1` computes Blackjack profit as `Math.floor((wager * 3) / 2)`. All challenge bankroll values remain whole-chip safe integers, but an odd wager can produce an ending bankroll that is not divisible by 5 or 10. Score formatting and tests must preserve that exact integer rather than rounding to a wager increment.
 
 ### 8.4 Attempt completion
 
@@ -337,7 +341,7 @@ The coordinator follows the ranked-session sequence contract:
 
 Each new command transition:
 
-1. Enforces expiration and durable command limits.
+1. Rejects or expires the attempt when `now >= expiresAt` or `now >= challenge.endsAt`, then enforces durable command limits. The challenge-end check is explicit defense in depth even though the start invariant guarantees `expiresAt <= challenge.endsAt`.
 2. Replays the persisted state.
 3. Validates the command against legal commands and available challenge bankroll.
 4. Computes the next canonical log, hash, projections, and possible result.
@@ -395,7 +399,7 @@ playersAtOrBelow = totalEligible - playersStrictlyAbove
 percentile = round(100 * playersAtOrBelow / totalEligible)
 ```
 
-The value is clamped to `1..100`. Equal scores receive equal percentile. The live leaderboard returns the top 50 plus the authenticated player's result/rank when outside the top 50.
+`totalEligible >= 1` by construction because percentile is calculated only for an existing eligible result. The value is clamped to `1..100`. Equal scores receive equal percentile. The live leaderboard returns the top 50 plus the authenticated player's result/rank when outside the top 50.
 
 Practice attempts, forfeits, and expired attempts are excluded from leaderboard counts and percentile denominators.
 
@@ -651,6 +655,7 @@ Security invariants:
 Expiration is both lazy and scheduled:
 
 - Start, resume, and command paths expire an overdue active attempt before returning.
+- Command handling checks both the attempt deadline and the parent challenge `endsAt`; no command can be accepted after challenge close.
 - The existing hourly Worker scheduled pipeline scans and expires overdue Daily Challenge attempts.
 - An expired attempt creates one immutable ineligible result and cannot be restarted.
 - Failure of the scheduled job does not permit late commands because request paths enforce the same clock rule.
@@ -675,9 +680,11 @@ Operational logs record challenge creation races, attempt starts, accepted/repla
 - Different round indexes produce different seeds.
 - Ranked and practice master seeds produce different round streams.
 - Same configuration, master seed, and command log produce byte-identical replay and score.
+- Global command sequences partition into deterministic round indexes and zero-based per-round adapter sequences.
 - Legal/illegal `start-round`, hit, stand, double-down, split, and forfeit transitions.
 - Natural opening settlement.
-- Available-bankroll deductions and payout credits after wins, losses, pushes, Blackjack, splits, and doubles.
+- Available-bankroll deductions and gross `outcome.payout` credits after wins, losses, pushes, Blackjack, splits, and doubles; `gameNetDelta` is never credited as the payout.
+- Odd-wager Blackjack floors 3:2 profit to a whole chip and preserves the exact resulting bankroll.
 - Completion after ten rounds.
 - Completion below the minimum wager.
 - Score ordering, shared ranks, stable display ordering, and tied percentile.
@@ -693,12 +700,14 @@ Operational logs record challenge creation races, attempt starts, accepted/repla
 - New request ID after attempt creation recovers the consumed attempt rather than creating another.
 - Conditional command append under concurrent requests.
 - Exact command replay, payload mismatch, sequence-behind, and sequence-ahead behavior.
+- A new command at or after `challenge.endsAt` cannot mutate the attempt even if its stored expiry is malformed or later.
 - Projection guards reject stale available-bankroll or rounds-completed snapshots.
 - Terminal result and attempt status settle in one batch.
 - Duplicate terminal requests return one receipt.
 - Expiration is idempotent.
 - Forfeits and expirations never enter eligible leaderboard queries.
 - Leaderboard top 50, current-user-outside-top, rank, tie, and percentile queries.
+- Percentile is computed only for an existing eligible result and therefore always has `totalEligible >= 1`.
 - Ninety-day attempt cleanup preserves compact result rows and completion duration.
 - Seed disclosure is absent before end and present at/after end.
 

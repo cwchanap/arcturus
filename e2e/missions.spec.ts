@@ -32,6 +32,29 @@ async function statusSettledTo(page: Page, regex: RegExp, timeoutMs: number): Pr
 	}
 }
 
+/**
+ * Finish a dealt Blackjack hand without assuming Stand is available. Natural
+ * blackjacks and immediate pushes resolve during Deal and correctly leave the
+ * player controls disabled, while ordinary hands require a Stand action.
+ */
+async function finishBlackjackHand(page: Page): Promise<void> {
+	const standButton = page.locator('#btn-stand');
+	const newRoundButton = page.locator('#btn-new-round');
+
+	await expect
+		.poll(
+			async () => (await newRoundButton.isVisible()) || (await standButton.isEnabled()),
+			{ timeout: 5000 },
+		)
+		.toBe(true);
+
+	if (!(await newRoundButton.isVisible())) {
+		await standButton.click();
+	}
+
+	await expect(newRoundButton).toBeVisible({ timeout: 15000 });
+}
+
 test.describe('Mission Board', () => {
 	test('board loads with SSR (no empty flash)', async ({ missionPage: page }) => {
 		await page.goto('/missions');
@@ -124,16 +147,12 @@ test.describe('Mission Board', () => {
 		for (let attempt = 0; attempt < MAX_ATTEMPTS && !winAchieved; attempt++) {
 			await request.delete('/api/missions/progress', { data: {} });
 
-			// Play a blackjack hand: deal, stand, wait for resolution
+			// Play a blackjack hand: deal, stand when needed, wait for resolution
 			await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 			await page.fill('#bet-amount', '50');
 			await page.getByRole('button', { name: 'Deal' }).click();
 			await page.locator('#game-controls').waitFor({ state: 'visible' });
-
-			// Stand immediately to let the dealer play and resolve the hand
-			await page.locator('#btn-stand').click();
-			// Wait for the round to resolve — the new-round button appears
-			await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 15000 });
+			await finishBlackjackHand(page);
 
 			// Read the game status to determine the outcome
 			const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
@@ -183,13 +202,9 @@ test.describe('Mission Board', () => {
 				if (await statusSettledTo(page, /Dealer wins/i, 2000)) break;
 			}
 
-			// If we didn't bust from hitting, stand and let dealer play
-			const standBtn = page.locator('#btn-stand');
-			if ((await standBtn.isVisible()) && !(await page.locator('#btn-new-round').isVisible())) {
-				await standBtn.click();
-			}
-
-			await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 15000 });
+			// Stand only when player action is still available; an immediate
+			// blackjack/push or a bust may already be resolving the round.
+			await finishBlackjackHand(page);
 			const status = (await page.locator('#game-status').textContent())?.trim() ?? '';
 			if (/Dealer wins/i.test(status)) {
 				lossAchieved = true;

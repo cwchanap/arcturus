@@ -1,14 +1,20 @@
-import { calculateHandValue } from '../../blackjack/handEvaluator';
-import type { Card, HandValue } from '../../blackjack/types';
 import { canonicalizeRanked, hashCanonical } from '../canonical';
 import type { RankedGameAdapter } from '../registry';
 import { shuffleRankedDeck } from '../random';
 import type { RankedBlackjackActionLogEntryV1 } from '../protocol';
 import { replayRankedBlackjack } from './engine';
+import { projectRankedBlackjackReplay } from './projection';
 import type {
 	RankedBlackjackConfigV1,
 	RankedBlackjackOutcomeV1,
+	RankedBlackjackPublicStateV1,
 	RankedBlackjackReplay,
+} from './types';
+
+export type {
+	RankedBlackjackPublicDealerV1,
+	RankedBlackjackPublicHandV1,
+	RankedBlackjackPublicStateV1,
 } from './types';
 
 export const BLACKJACK_RANKED_V1_CONFIG = Object.freeze({
@@ -25,28 +31,6 @@ export const BLACKJACK_RANKED_V1_CONFIG = Object.freeze({
 	normalWinProfitDenominator: 1,
 } as const);
 
-export interface RankedBlackjackPublicHandV1 {
-	readonly cards: readonly Card[];
-	readonly wager: number;
-	readonly value: HandValue;
-}
-
-export interface RankedBlackjackPublicDealerV1 {
-	readonly cards: readonly Card[];
-	readonly value: HandValue;
-}
-
-export interface RankedBlackjackPublicStateV1 {
-	readonly phase: 'player-turn' | 'complete';
-	readonly playerHands: readonly RankedBlackjackPublicHandV1[];
-	readonly activeHandIndex: number;
-	readonly dealer: RankedBlackjackPublicDealerV1;
-	readonly committedWager: number;
-	readonly nextSequence: number;
-	readonly availableActions: readonly ('hit' | 'stand' | 'double-down' | 'split')[];
-	readonly outcome: RankedBlackjackOutcomeV1 | null;
-}
-
 function isValidInitialWager(wager: number): boolean {
 	return (
 		Number.isSafeInteger(wager) &&
@@ -60,71 +44,6 @@ export function issueBlackjackConfig(wager: number): RankedBlackjackConfigV1 {
 		throw new RangeError('Initial wager is outside blackjack-ranked-v1 limits');
 	}
 	return Object.freeze({ ...BLACKJACK_RANKED_V1_CONFIG, initialWager: wager });
-}
-
-function projectHand(cards: readonly Card[], wager: number): RankedBlackjackPublicHandV1 {
-	const visibleCards = cards.map((card) => ({ ...card }));
-	return {
-		cards: visibleCards,
-		wager,
-		value: calculateHandValue(visibleCards),
-	};
-}
-
-function projectDealer(cards: readonly Card[]): RankedBlackjackPublicDealerV1 {
-	const visibleCards = cards.map((card) => ({ ...card }));
-	return {
-		cards: visibleCards,
-		value: calculateHandValue(visibleCards),
-	};
-}
-
-/**
- * Projects a replay into a public state. When `forceTerminal` is true the
- * dealer hole card is revealed and `phase` is forced to `'complete'` even
- * if the replay's underlying state is still in `'player-turn'` (e.g. an
- * expired/forfeited session where the player abandoned mid-hand).
- *
- * Contract caveat: `outcome` is forwarded verbatim from the replay, so
- * when `forceTerminal` is applied to a non-complete replay the returned
- * state has `phase: 'complete'` with `outcome: null`. The engine only
- * computes an outcome for replays that reached `'complete'` naturally,
- * so a forced-terminal projection of an incomplete session does NOT
- * carry a settlement outcome. Callers rendering an expired/forfeited
- * session MUST supply the authoritative outcome externally (the
- * coordinator's `render` path overrides `outcome` with the stored
- * `result.outcome` and clears `availableActions`). Do not interpret a
- * forced-terminal projection's `outcome` field as the settlement result.
- */
-function projectReplay(
-	replay: RankedBlackjackReplay,
-	accountBalance: number,
-	forceTerminal = false,
-): RankedBlackjackPublicStateV1 {
-	const isTerminal = forceTerminal || replay.state.phase === 'complete';
-	const dealerCards = isTerminal
-		? replay.state.dealerHand.cards
-		: replay.state.dealerHand.cards.slice(0, 1);
-	const availableBalance =
-		Number.isSafeInteger(accountBalance) && accountBalance >= 0 ? accountBalance : 0;
-	const availableActions = isTerminal
-		? []
-		: replay.legalActions
-				.filter(
-					({ additionalWager }) => additionalWager === 0 || availableBalance >= additionalWager,
-				)
-				.map(({ action }) => action);
-
-	return {
-		phase: isTerminal ? 'complete' : replay.state.phase,
-		playerHands: replay.state.playerHands.map(({ cards, wager }) => projectHand(cards, wager)),
-		activeHandIndex: replay.state.activeHandIndex,
-		dealer: projectDealer(dealerCards),
-		committedWager: replay.state.committedWager,
-		nextSequence: replay.nextSequence,
-		availableActions,
-		outcome: replay.outcome,
-	};
 }
 
 export const blackjackRankedV1Adapter: RankedGameAdapter<
@@ -148,10 +67,10 @@ export const blackjackRankedV1Adapter: RankedGameAdapter<
 		return replayRankedBlackjack(config, shuffleRankedDeck(seed), actions);
 	},
 	project(replay, accountBalance) {
-		return projectReplay(replay, accountBalance);
+		return projectRankedBlackjackReplay(replay, accountBalance);
 	},
 	projectTerminal(replay, accountBalance) {
-		return projectReplay(replay, accountBalance, true);
+		return projectRankedBlackjackReplay(replay, accountBalance, true);
 	},
 	terminalOutcome(replay) {
 		return replay.outcome;

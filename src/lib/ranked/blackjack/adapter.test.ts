@@ -5,6 +5,7 @@ import {
 	BLACKJACK_RANKED_V1_CONFIG,
 	issueBlackjackConfig,
 } from './adapter';
+import { projectRankedBlackjackReplay } from './projection';
 
 const seedFixture = Uint8Array.from({ length: 32 }, (_, index) => index);
 
@@ -141,4 +142,16 @@ describe('ranked Blackjack v1 replay projection', () => {
 			]);
 		},
 	);
+
+	test('project and projectTerminal delegate to projectRankedBlackjackReplay', async () => {
+		const replay = await blackjackRankedV1Adapter.replay(
+			Uint8Array.from({ length: 32 }, (_, index) => index + 5),
+			issueBlackjackConfig(100),
+			[],
+		);
+
+		expect(blackjackRankedV1Adapter.project(replay, 250)).toEqual(
+			projectRankedBlackjackReplay(replay, 250),
+		);
+	});
 });

@@ -1,4 +1,4 @@
-import type { Card } from '../../blackjack/types';
+import type { Card, HandValue } from '../../blackjack/types';
 import type { RankedBlackjackAction } from '../protocol';
 
 export type RankedBlackjackConfigV1 = {
@@ -61,5 +61,27 @@ export interface RankedBlackjackReplay {
 	readonly state: RankedBlackjackStateV1;
 	readonly nextSequence: number;
 	readonly legalActions: readonly RankedBlackjackLegalActionV1[];
+	readonly outcome: RankedBlackjackOutcomeV1 | null;
+}
+
+export interface RankedBlackjackPublicHandV1 {
+	readonly cards: readonly Card[];
+	readonly wager: number;
+	readonly value: HandValue;
+}
+
+export interface RankedBlackjackPublicDealerV1 {
+	readonly cards: readonly Card[];
+	readonly value: HandValue;
+}
+
+export interface RankedBlackjackPublicStateV1 {
+	readonly phase: 'player-turn' | 'complete';
+	readonly playerHands: readonly RankedBlackjackPublicHandV1[];
+	readonly activeHandIndex: number;
+	readonly dealer: RankedBlackjackPublicDealerV1;
+	readonly committedWager: number;
+	readonly nextSequence: number;
+	readonly availableActions: readonly RankedBlackjackAction[];
 	readonly outcome: RankedBlackjackOutcomeV1 | null;
 }

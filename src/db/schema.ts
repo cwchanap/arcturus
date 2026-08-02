@@ -410,3 +410,135 @@ export const rankedRateLimit = sqliteTable(
 		expiryIdx: index('ranked_rate_limit_expiry_idx').on(table.expiresAt),
 	}),
 );
+
+export const dailyChallenge = sqliteTable(
+	'daily_challenge',
+	{
+		id: text('id').primaryKey(),
+		challengeKind: text('challengeKind').notNull(),
+		periodKey: text('periodKey').notNull(),
+		challengeRulesetVersion: text('challengeRulesetVersion').notNull(),
+		gameRulesetVersion: text('gameRulesetVersion').notNull(),
+		scoreVersion: text('scoreVersion').notNull(),
+		configJson: text('configJson').notNull(),
+		configHash: text('configHash').notNull(),
+		// Server-only sensitive replay material. Never expose through public APIs or logs.
+		rankedSeed: text('rankedSeed').notNull(),
+		rankedSeedCommitment: text('rankedSeedCommitment').notNull(),
+		practiceSeed: text('practiceSeed').notNull(),
+		startsAt: integer('startsAt', { mode: 'timestamp' }).notNull(),
+		rankedEntryClosesAt: integer('rankedEntryClosesAt', { mode: 'timestamp' }).notNull(),
+		endsAt: integer('endsAt', { mode: 'timestamp' }).notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (challenge provisioning scheduler) must bind
+		// Math.trunc(Date.now() / 1000).
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		periodUnique: uniqueIndex('daily_challenge_kind_period_idx').on(
+			table.challengeKind,
+			table.periodKey,
+		),
+		endsAtIdx: index('daily_challenge_ends_at_idx').on(table.endsAt),
+	}),
+);
+
+export const dailyChallengeAttempt = sqliteTable(
+	'daily_challenge_attempt',
+	{
+		id: text('id').primaryKey(),
+		challengeId: text('challengeId')
+			.notNull()
+			.references(() => dailyChallenge.id, { onDelete: 'cascade' }),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		startRequestId: text('startRequestId').notNull(),
+		startPayloadHash: text('startPayloadHash').notNull(),
+		status: text('status').notNull(),
+		actionLogJson: text('actionLogJson').notNull(),
+		actionLogHash: text('actionLogHash').notNull(),
+		// Persisted transition projections for efficient responses and write guards.
+		// The canonical command log remains the replay source of truth.
+		nextCommandSequence: integer('nextCommandSequence').notNull().default(0),
+		availableBankroll: integer('availableBankroll').notNull(),
+		roundsCompleted: integer('roundsCompleted').notNull().default(0),
+		expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository transition/expiration) must bind
+		// Math.trunc(Date.now() / 1000).
+		settledAt: integer('settledAt', { mode: 'timestamp' }),
+	},
+	(table) => ({
+		challengeUserUnique: uniqueIndex('daily_challenge_attempt_challenge_user_idx').on(
+			table.challengeId,
+			table.userId,
+		),
+		userStartRequestUnique: uniqueIndex('daily_challenge_attempt_user_start_request_idx').on(
+			table.userId,
+			table.startRequestId,
+		),
+		statusExpiryIdx: index('daily_challenge_attempt_status_expiry_idx').on(
+			table.status,
+			table.expiresAt,
+		),
+		userCreatedIdx: index('daily_challenge_attempt_user_created_idx').on(
+			table.userId,
+			table.createdAt,
+		),
+	}),
+);
+
+export const dailyChallengeResult = sqliteTable(
+	'daily_challenge_result',
+	{
+		// Opaque correlation to an attempt row; intentionally NOT a foreign key
+		// so old command logs can be reaped without deleting compact scores.
+		attemptId: text('attemptId').notNull().unique(),
+		challengeId: text('challengeId')
+			.notNull()
+			.references(() => dailyChallenge.id, { onDelete: 'cascade' }),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		endingBankroll: integer('endingBankroll').notNull(),
+		roundsCompleted: integer('roundsCompleted').notNull(),
+		eligible: integer('eligible', { mode: 'boolean' }).notNull(),
+		terminalReason: text('terminalReason').notNull(),
+		durationSeconds: integer('durationSeconds').notNull(),
+		scoreVersion: text('scoreVersion').notNull(),
+		configHash: text('configHash').notNull(),
+		rankedSeedCommitment: text('rankedSeedCommitment').notNull(),
+		actionLogHash: text('actionLogHash').notNull(),
+		receiptHash: text('receiptHash').notNull(),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository terminal transition) must bind
+		// Math.trunc(Date.now() / 1000).
+		settledAt: integer('settledAt', { mode: 'timestamp' }).notNull(),
+	},
+	(table) => ({
+		pk: primaryKey({ columns: [table.challengeId, table.userId] }),
+		// NOTE: spec §11.3 specifies endingBankroll DESC, roundsCompleted DESC.
+		// drizzle-orm 0.44.5 does not expose .desc() on index column builders in
+		// the table config callback (table.col.desc is not a function), so the
+		// index is declared with ascending columns. Direction is a performance
+		// detail, not a constraint: SQLite can scan a btree in either direction,
+		// and the leaderboard competition-rank SQL applies
+		// `ORDER BY endingBankroll DESC, roundsCompleted DESC` at query time.
+		leaderboardIdx: index('daily_challenge_result_leaderboard_idx').on(
+			table.challengeId,
+			table.eligible,
+			table.endingBankroll,
+			table.roundsCompleted,
+			table.settledAt,
+			table.userId,
+		),
+		userSettledIdx: index('daily_challenge_result_user_settled_idx').on(
+			table.userId,
+			table.settledAt,
+		),
+	}),
+);

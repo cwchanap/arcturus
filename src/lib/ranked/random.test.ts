@@ -5,6 +5,7 @@ import {
 	createRankedSeed,
 	createSeedCommitment,
 	deriveRankedCounterBlock,
+	encodeUint64BigEndian,
 	shuffleRankedDeck,
 } from './random';
 
@@ -55,6 +56,19 @@ describe('ranked seed and HMAC stream', () => {
 		expect(() => deriveRankedCounterBlock(seed, -1n)).toThrow();
 		expect(() => deriveRankedCounterBlock(seed, 0x1_0000_0000_0000_0000n)).toThrow();
 		expect(deriveRankedCounterBlock(seed, 0xffff_ffff_ffff_ffffn)).toHaveLength(32);
+	});
+
+	test('encodeUint64BigEndian pins the unsigned 64-bit big-endian byte order', () => {
+		expect(bytesToHex(encodeUint64BigEndian(0n))).toBe('0000000000000000');
+		expect(bytesToHex(encodeUint64BigEndian(1n))).toBe('0000000000000001');
+		expect(bytesToHex(encodeUint64BigEndian(0x0102030405060708n))).toBe('0102030405060708');
+		expect(encodeUint64BigEndian(0n)).toHaveLength(8);
+	});
+
+	test('encodeUint64BigEndian rejects negative and overflowing values', () => {
+		expect(() => encodeUint64BigEndian(-1n)).toThrow();
+		expect(() => encodeUint64BigEndian(0x1_0000_0000_0000_0000n)).toThrow();
+		expect(() => encodeUint64BigEndian(0xffff_ffff_ffff_ffffn + 1n)).toThrow();
 	});
 
 	test('creates exactly 32 bytes of secure seed material', () => {

@@ -32,7 +32,7 @@ function assertUpperBound(exclusiveUpperBound: number): void {
 	}
 }
 
-function encodeUint64BigEndian(counter: bigint): Uint8Array {
+export function encodeUint64BigEndian(counter: bigint): Uint8Array {
 	if (typeof counter !== 'bigint' || counter < 0n || counter > MAX_UINT64) {
 		throw new RangeError('Counter must be an unsigned 64-bit integer');
 	}

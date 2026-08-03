@@ -1,14 +1,22 @@
 import { decodeCanonicalBase64Url } from '../ranked/canonical';
 import { BLACKJACK_DAILY_V1_CONFIG } from './config';
-import { parseDailyChallengeAttemptResponse } from './payload';
+import {
+	parseDailyChallengeAttemptResponse,
+	parseDailyChallengeChallengeResponse,
+	parseDailyChallengeHistoryResponse,
+	parseDailyChallengeLeaderboardResponse,
+} from './payload';
 import type {
 	DailyChallengeAttemptPublicStateV1,
 	DailyChallengeCommandV1,
 	DailyChallengePublicResponse,
 } from './protocol';
+import { createDailyChallengeSeedCommitment } from './random';
 import type { DailyChallengeReplayV1 } from './replay';
+import { createDailyChallengeRenderer } from './ui';
 import type {
 	DailyChallengeAction,
+	DailyChallengeMode,
 	DailyChallengeReplayScenario,
 	DailyChallengeRenderer,
 } from './ui';
@@ -416,4 +424,249 @@ export function createDailyChallengeLocalReplayController(
 			deps.renderer.renderLocalReplay(null);
 		},
 	};
+}
+
+export interface DailyChallengePageBootstrapDeps {
+	fetch?: typeof fetch;
+	storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+	createRequestId?: () => string;
+	createRenderer?: (root: HTMLElement) => DailyChallengeRenderer;
+	createClient?: (deps: DailyChallengeClientDeps) => DailyChallengeClient;
+	createLocalReplayController?: (
+		deps: DailyChallengeLocalReplayControllerDeps,
+	) => DailyChallengeLocalReplayController;
+}
+
+function createBrowserRequestId(): string {
+	if (
+		typeof globalThis.crypto !== 'undefined' &&
+		typeof globalThis.crypto.randomUUID === 'function'
+	) {
+		return globalThis.crypto.randomUUID();
+	}
+	return `dc-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+async function fetchDailyChallengeJson<T>(
+	fetchImpl: typeof fetch,
+	url: string,
+	parse: (value: unknown) => T,
+): Promise<T> {
+	let response: Response;
+	try {
+		response = await fetchImpl(url);
+	} catch (error) {
+		throw new TypeError(errorMessage(error));
+	}
+	let payload: unknown;
+	try {
+		payload = await response.json();
+	} catch {
+		throw new TypeError('Daily challenge response was not valid JSON');
+	}
+	if (!response.ok) {
+		throw new DailyChallengeResponseError(
+			responseErrorMessage(response, payload),
+			response.status >= 500,
+			response.status,
+			responseErrorCode(payload),
+		);
+	}
+	return parse(payload);
+}
+
+function pageFetch(fetchImpl: typeof fetch | undefined): typeof fetch {
+	return fetchImpl ?? (globalThis.fetch as typeof fetch);
+}
+
+function pageStorage(
+	storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined,
+): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> {
+	if (storage) return storage;
+	return globalThis.localStorage as Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
+}
+
+function pageRenderer(
+	root: HTMLElement,
+	createRenderer: ((root: HTMLElement) => DailyChallengeRenderer) | undefined,
+): DailyChallengeRenderer {
+	return createRenderer ? createRenderer(root) : createDailyChallengeRenderer(root);
+}
+
+export async function initDailyChallengePage(
+	root: HTMLElement,
+	deps: DailyChallengePageBootstrapDeps = {},
+): Promise<void> {
+	const fetchImpl = pageFetch(deps.fetch);
+	const renderer = pageRenderer(root, deps.createRenderer);
+	const createClient = deps.createClient ?? createDailyChallengeClient;
+	const createReplay =
+		deps.createLocalReplayController ?? createDailyChallengeLocalReplayController;
+
+	let mode: DailyChallengeMode = 'practice';
+	let rankedClient: DailyChallengeClient | null = null;
+
+	const challenge = await fetchDailyChallengeJson(
+		fetchImpl,
+		'/api/daily-challenges/current',
+		parseDailyChallengeChallengeResponse,
+	).catch((error: unknown) => {
+		renderer.renderError(errorMessage(error));
+		return null;
+	});
+	if (challenge === null) return;
+
+	renderer.renderChallenge(challenge);
+
+	const userId = root.dataset.userId;
+	if (userId !== undefined) {
+		rankedClient = createClient({
+			userId,
+			periodKey: challenge.periodKey,
+			fetch: fetchImpl,
+			storage: pageStorage(deps.storage),
+			renderer,
+			createRequestId: deps.createRequestId ?? createBrowserRequestId,
+		});
+	}
+	const replayController = createReplay({ challenge, renderer });
+
+	renderer.bind({
+		onSelectMode(nextMode) {
+			mode = nextMode;
+		},
+		onStartRanked() {
+			void rankedClient?.start();
+		},
+		onStartRound(wager) {
+			if (mode === 'ranked') {
+				void rankedClient?.command({ command: 'start-round', wager });
+			} else {
+				void replayController.startRound(wager);
+			}
+		},
+		onAction(action) {
+			if (mode === 'ranked') {
+				void rankedClient?.command({ command: action });
+			} else {
+				void replayController.action(action);
+			}
+		},
+		onForfeit() {
+			if (mode === 'ranked') {
+				void rankedClient?.command({ command: 'forfeited' });
+			} else {
+				void replayController.forfeit();
+			}
+		},
+		onRestartPractice() {
+			void replayController.restart();
+		},
+		onSelectReplayScenario(scenario) {
+			void replayController.selectScenario(scenario);
+		},
+	});
+
+	if (rankedClient !== null) {
+		await rankedClient.initialize();
+	}
+
+	await Promise.all([
+		fetchDailyChallengeJson(
+			fetchImpl,
+			`/api/daily-challenges/${challenge.periodKey}/leaderboard`,
+			parseDailyChallengeLeaderboardResponse,
+		)
+			.then((leaderboard) => renderer.renderLeaderboard(leaderboard))
+			.catch(() => {}),
+		fetchDailyChallengeJson(
+			fetchImpl,
+			'/api/daily-challenges/history?limit=7',
+			parseDailyChallengeHistoryResponse,
+		)
+			.then((history) => renderer.renderHistory(history))
+			.catch(() => {}),
+	]);
+}
+
+function renderRevealMetadata(root: HTMLElement, challenge: DailyChallengePublicResponse): void {
+	const commitmentEl = root.querySelector<HTMLElement>(
+		'[data-testid="daily-challenge-commitment"]',
+	);
+	if (commitmentEl) {
+		commitmentEl.textContent = challenge.rankedSeedCommitment;
+	}
+	const statusEl = root.querySelector<HTMLElement>('[data-testid="daily-challenge-reveal-status"]');
+	if (!statusEl) return;
+	const revealed = challenge.revealedRankedSeed;
+	if (revealed === null) {
+		statusEl.textContent = 'Ranked seed not yet revealed';
+		return;
+	}
+	let verified = false;
+	try {
+		const seed = decodeCanonicalBase64Url(revealed);
+		const recomputed = createDailyChallengeSeedCommitment(challenge.challengeRulesetVersion, seed);
+		verified = recomputed === challenge.rankedSeedCommitment;
+	} catch {
+		// A non-canonical revealed seed fails verification below.
+	}
+	statusEl.textContent = verified ? 'Commitment verified' : 'Commitment mismatch';
+}
+
+export async function initDailyChallengeHistoryPage(
+	root: HTMLElement,
+	deps: DailyChallengePageBootstrapDeps = {},
+): Promise<void> {
+	const periodKey = root.dataset.periodKey;
+	if (periodKey === undefined) return;
+
+	const fetchImpl = pageFetch(deps.fetch);
+	const renderer = pageRenderer(root, deps.createRenderer);
+	const createReplay =
+		deps.createLocalReplayController ?? createDailyChallengeLocalReplayController;
+
+	const challenge = await fetchDailyChallengeJson(
+		fetchImpl,
+		`/api/daily-challenges/${encodeURIComponent(periodKey)}`,
+		parseDailyChallengeChallengeResponse,
+	).catch((error: unknown) => {
+		renderer.renderError(errorMessage(error));
+		return null;
+	});
+	if (challenge === null) return;
+
+	renderer.renderChallenge(challenge);
+
+	const replayController = createReplay({ challenge, renderer });
+
+	renderer.bind({
+		onSelectMode() {},
+		onStartRanked() {},
+		onStartRound(wager) {
+			void replayController.startRound(wager);
+		},
+		onAction(action) {
+			void replayController.action(action);
+		},
+		onForfeit() {
+			void replayController.forfeit();
+		},
+		onRestartPractice() {
+			void replayController.restart();
+		},
+		onSelectReplayScenario(scenario) {
+			void replayController.selectScenario(scenario);
+		},
+	});
+
+	renderRevealMetadata(root, challenge);
+
+	await fetchDailyChallengeJson(
+		fetchImpl,
+		`/api/daily-challenges/${encodeURIComponent(periodKey)}/leaderboard`,
+		parseDailyChallengeLeaderboardResponse,
+	)
+		.then((leaderboard) => renderer.renderLeaderboard(leaderboard))
+		.catch(() => {});
 }

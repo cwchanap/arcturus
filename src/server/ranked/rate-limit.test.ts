@@ -230,4 +230,108 @@ describe('generalized helpers accept daily challenge operations', () => {
 			expect(result.retryAfter).toBeLessThanOrEqual(60);
 		}
 	});
+
+	test('consumeStandaloneRateLimit reports allowed on a fresh daily_challenge_command bucket', async () => {
+		const db = {
+			prepare(_sql: string) {
+				return {
+					bind(..._args: unknown[]) {
+						return {
+							async run() {
+								return { meta: { changes: 1 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+
+		const result = await consumeStandaloneRateLimit(
+			db,
+			'user-daily',
+			'daily_challenge_command',
+			1000,
+		);
+		expect(result).toEqual({ kind: 'allowed' });
+	});
+
+	test('consumeStandaloneRateLimit reports rate-limited when the daily_challenge_command bucket is full', async () => {
+		const db = {
+			prepare(_sql: string) {
+				return {
+					bind(..._args: unknown[]) {
+						return {
+							async run() {
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+
+		const result = await consumeStandaloneRateLimit(
+			db,
+			'user-daily',
+			'daily_challenge_command',
+			1000,
+		);
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBeGreaterThan(0);
+			expect(result.retryAfter).toBeLessThanOrEqual(60);
+		}
+	});
+
+	test('consumeStandaloneRateLimit reports allowed on a fresh daily_challenge_resume bucket', async () => {
+		const db = {
+			prepare(_sql: string) {
+				return {
+					bind(..._args: unknown[]) {
+						return {
+							async run() {
+								return { meta: { changes: 1 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+
+		const result = await consumeStandaloneRateLimit(
+			db,
+			'user-daily',
+			'daily_challenge_resume',
+			1000,
+		);
+		expect(result).toEqual({ kind: 'allowed' });
+	});
+
+	test('consumeStandaloneRateLimit reports rate-limited when the daily_challenge_resume bucket is full', async () => {
+		const db = {
+			prepare(_sql: string) {
+				return {
+					bind(..._args: unknown[]) {
+						return {
+							async run() {
+								return { meta: { changes: 0 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+
+		const result = await consumeStandaloneRateLimit(
+			db,
+			'user-daily',
+			'daily_challenge_resume',
+			1000,
+		);
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBeGreaterThan(0);
+			expect(result.retryAfter).toBeLessThanOrEqual(60);
+		}
+	});
 });

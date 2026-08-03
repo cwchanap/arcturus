@@ -16,7 +16,11 @@ import {
 	runDailyChallengeExpiration,
 	runDailyChallengeRetention,
 } from './server/daily-challenge/expiration';
-import { createDailyChallengeStartRateLimiter } from './server/daily-challenge/http';
+import {
+	createDailyChallengeCommandRateLimiter,
+	createDailyChallengeResumeRateLimiter,
+	createDailyChallengeStartRateLimiter,
+} from './server/daily-challenge/http';
 import { createDailyChallengeRepository } from './server/daily-challenge/repository';
 import { Arcturus as ArcturusDO } from './server/mp/arcturus';
 import { reconcileMultiplayerMembership } from './server/mp/membership';
@@ -68,6 +72,8 @@ const scheduledJobDeps: ScheduledJobDeps = {
 				console.warn('[DAILY_CHALLENGE]', entry);
 			},
 			consumeStartRateLimit: createDailyChallengeStartRateLimiter(db),
+			consumeCommandRateLimit: createDailyChallengeCommandRateLimiter(db),
+			consumeResumeRateLimit: createDailyChallengeResumeRateLimiter(db),
 		});
 		await runDailyChallengeExpiration(
 			repository,

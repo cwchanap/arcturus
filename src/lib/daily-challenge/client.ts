@@ -53,7 +53,7 @@ export interface StoredDailyChallengeAttempt {
 
 export type DailyChallengeClientCommand =
 	| { command: 'start-round'; wager: number }
-	| { command: 'hit' | 'stand' | 'double-down' | 'split' | 'forfeited' };
+	| { command: 'hit' | 'stand' | 'double-down' | 'split' | 'forfeit' };
 
 export interface DailyChallengeClientDeps {
 	userId: string;
@@ -566,7 +566,7 @@ export async function initDailyChallengePage(
 		},
 		onForfeit() {
 			if (mode === 'ranked') {
-				void rankedClient?.command({ command: 'forfeited' });
+				void rankedClient?.command({ command: 'forfeit' });
 			} else {
 				void replayController.forfeit();
 			}

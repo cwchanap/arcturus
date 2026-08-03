@@ -9,6 +9,9 @@ export const DAILY_CHALLENGE_RATE_LIMITS = Object.freeze({
 	daily_challenge_start: Object.freeze({ limit: 6, windowSeconds: 60 }),
 	daily_challenge_command: Object.freeze({ limit: 30, windowSeconds: 60 }),
 	daily_challenge_resume: Object.freeze({ limit: 120, windowSeconds: 60 }),
+	// Declared for the design-contract policy table, but no server endpoint
+	// consumes it yet: practice and historical replay run entirely in the
+	// browser with no write API, so there is nothing to enforce against.
 	daily_challenge_replay: Object.freeze({ limit: 120, windowSeconds: 60 }),
 } as const);
 

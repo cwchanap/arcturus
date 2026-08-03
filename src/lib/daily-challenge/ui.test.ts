@@ -166,7 +166,6 @@ function leaderboardFixture(
 		entries: [
 			{
 				rank: 1,
-				userId: 'user-1',
 				playerName: 'Alice',
 				endingBankroll: 2000,
 				roundsCompleted: 10,
@@ -175,7 +174,6 @@ function leaderboardFixture(
 			},
 			{
 				rank: 2,
-				userId: 'user-2',
 				playerName: 'Bob',
 				endingBankroll: 1800,
 				roundsCompleted: 10,
@@ -184,12 +182,12 @@ function leaderboardFixture(
 			},
 			{
 				rank: 3,
-				userId: 'user-3',
 				playerName: 'Cara',
 				endingBankroll: 1500,
 				roundsCompleted: 9,
 				durationSeconds: 340,
 				settledAt: 1_742_000_200,
+				isCurrentUser: true,
 			},
 		],
 		currentUser: { rank: 3, totalEligible: 200, percentile: 95.5 },
@@ -642,6 +640,9 @@ describe('daily challenge renderer — leaderboard and history', () => {
 		expect(rows[0]?.textContent).toContain('Alice');
 		expect(rows[0]?.textContent).toContain('$2,000');
 		expect(rows[2]?.textContent).toContain('#3');
+		expect(rows[2]?.textContent).toContain('(you)');
+		expect((rows[2] as HTMLElement).dataset.isCurrentUser).toBe('true');
+		expect((rows[0] as HTMLElement).dataset.isCurrentUser).toBeUndefined();
 		expect(get('daily-challenge-current-standing').hidden).toBe(false);
 		expect(get('daily-challenge-current-standing').textContent).toContain('#3');
 		expect(get('daily-challenge-current-standing').textContent).toContain('95.5%');

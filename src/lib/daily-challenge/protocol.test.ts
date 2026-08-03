@@ -445,12 +445,12 @@ describe('dailyChallengeLeaderboardResponseSchema', () => {
 			entries: [
 				{
 					rank: 1,
-					userId: 'user-1',
 					playerName: 'Alice',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
 					durationSeconds: 300,
 					settledAt: 1742000000,
+					isCurrentUser: true,
 				},
 			],
 			currentUser: { rank: 1, totalEligible: 50, percentile: 100 },
@@ -474,7 +474,6 @@ describe('dailyChallengeLeaderboardResponseSchema', () => {
 			entries: [
 				{
 					rank: 1,
-					userId: 'user-1',
 					playerName: 'Alice',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
@@ -483,7 +482,6 @@ describe('dailyChallengeLeaderboardResponseSchema', () => {
 				},
 				{
 					rank: 1,
-					userId: 'user-2',
 					playerName: 'Bob',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
@@ -494,6 +492,25 @@ describe('dailyChallengeLeaderboardResponseSchema', () => {
 			currentUser: null,
 		};
 		expect(dailyChallengeLeaderboardResponseSchema.safeParse(leaderboard).success).toBe(true);
+	});
+
+	test('rejects a public leaderboard entry exposing a raw userId', () => {
+		const leaderboard = {
+			periodKey: '2026-03-14',
+			entries: [
+				{
+					rank: 1,
+					userId: 'user-1',
+					playerName: 'Alice',
+					endingBankroll: 2000,
+					roundsCompleted: 10,
+					durationSeconds: 300,
+					settledAt: 1742000000,
+				},
+			],
+			currentUser: null,
+		};
+		expect(dailyChallengeLeaderboardResponseSchema.safeParse(leaderboard).success).toBe(false);
 	});
 });
 

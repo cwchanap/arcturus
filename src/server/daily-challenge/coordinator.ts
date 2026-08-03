@@ -77,15 +77,19 @@ export function createDailyChallengeLogEntry(
 	};
 }
 
-export interface DailyChallengeStartRateConsumption {
+export interface DailyChallengeRateConsumption {
 	kind: 'allowed';
 	statement: D1PreparedStatement;
 	retryAfter: number;
 }
 
-export interface DailyChallengeStartRateLimited {
+export interface DailyChallengeRateLimited {
 	kind: 'rate-limited';
 	retryAfter: number;
+}
+
+export interface DailyChallengeResumeRateConsumption {
+	kind: 'allowed';
 }
 
 export interface DailyChallengeCoordinatorDeps {
@@ -96,7 +100,15 @@ export interface DailyChallengeCoordinatorDeps {
 	consumeStartRateLimit(
 		userId: string,
 		nowSeconds: number,
-	): Promise<DailyChallengeStartRateConsumption | DailyChallengeStartRateLimited>;
+	): Promise<DailyChallengeRateConsumption | DailyChallengeRateLimited>;
+	consumeCommandRateLimit(
+		userId: string,
+		nowSeconds: number,
+	): Promise<DailyChallengeRateConsumption | DailyChallengeRateLimited>;
+	consumeResumeRateLimit(
+		userId: string,
+		nowSeconds: number,
+	): Promise<DailyChallengeResumeRateConsumption | DailyChallengeRateLimited>;
 }
 
 export interface DailyChallengeCoordinator {
@@ -633,6 +645,11 @@ export function createDailyChallengeCoordinator(
 	}): Promise<DailyChallengeAttemptPublicStateV1> => {
 		const nowSeconds = asNowSeconds(deps.now());
 		const { attempt, challenge } = await loadOwnedAttempt(userId, attemptId);
+		const rate = await deps.consumeResumeRateLimit(userId, nowSeconds);
+		if (rate.kind === 'rate-limited') {
+			log('daily_challenge_rate_limited', { userId });
+			throw new DailyChallengeServiceError('RATE_LIMITED', { retryAfter: rate.retryAfter });
+		}
 		if (attempt.status === 'active' && isAttemptExpired(attempt, challenge, nowSeconds)) {
 			return runExpiryTransition(attempt, challenge, nowSeconds);
 		}
@@ -644,6 +661,8 @@ export function createDailyChallengeCoordinator(
 		challenge: DailyChallengeRecord,
 		body: DailyChallengeCommandV1,
 		nowSeconds: number,
+		rateLimitStatement: D1PreparedStatement,
+		retryAfter: number,
 	): Promise<DailyChallengeAttemptPublicStateV1> => {
 		const { replay: currentReplay, seed } = replayAttempt(challenge, attempt);
 		assertProjectionIntegrity(attempt, currentReplay, {
@@ -691,9 +710,15 @@ export function createDailyChallengeCoordinator(
 			roundsCompleted: nextReplay.roundsCompleted,
 			nowSeconds,
 			terminal,
+			rateLimitStatement,
+			retryAfter,
 		};
 
 		const result = await deps.repository.runCommandTransition(input);
+		if (result.kind === 'rate-limited') {
+			log('daily_challenge_rate_limited', { userId: attempt.userId });
+			throw new DailyChallengeServiceError('RATE_LIMITED', { retryAfter: result.retryAfter });
+		}
 		if (result.kind === 'applied') {
 			log(terminal ? 'daily_challenge_settled' : 'daily_challenge_command_accepted', {
 				userId: attempt.userId,
@@ -774,7 +799,20 @@ export function createDailyChallengeCoordinator(
 			return runExpiryTransition(attempt, challenge, nowSeconds);
 		}
 
-		return applyCommandTransition(attempt, challenge, validBody, nowSeconds);
+		const rate = await deps.consumeCommandRateLimit(userId, nowSeconds);
+		if (rate.kind === 'rate-limited') {
+			log('daily_challenge_rate_limited', { userId });
+			throw new DailyChallengeServiceError('RATE_LIMITED', { retryAfter: rate.retryAfter });
+		}
+
+		return applyCommandTransition(
+			attempt,
+			challenge,
+			validBody,
+			nowSeconds,
+			rate.statement,
+			rate.retryAfter,
+		);
 	};
 
 	const expire = async (attemptId: string): Promise<DailyChallengeAttemptPublicStateV1> => {
@@ -807,7 +845,15 @@ export function createDailyChallengeCoordinator(
 		const read = await deps.repository.readLeaderboard(challenge.id, userId ?? undefined);
 		return {
 			periodKey: challenge.periodKey,
-			entries: [...read.entries],
+			entries: read.entries.map((entry) => ({
+				rank: entry.rank,
+				playerName: entry.playerName,
+				endingBankroll: entry.endingBankroll,
+				roundsCompleted: entry.roundsCompleted,
+				durationSeconds: entry.durationSeconds,
+				settledAt: entry.settledAt,
+				...(entry.userId === userId ? { isCurrentUser: true } : {}),
+			})),
 			currentUser: read.currentUser,
 		};
 	};

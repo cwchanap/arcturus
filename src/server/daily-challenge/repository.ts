@@ -145,6 +145,8 @@ export interface DailyChallengeCommandTransitionInput {
 	roundsCompleted: number;
 	nowSeconds: number;
 	terminal?: DailyChallengeTerminalTransition;
+	rateLimitStatement?: D1PreparedStatement;
+	retryAfter?: number;
 }
 
 export interface DailyChallengeResultRecord {
@@ -170,7 +172,8 @@ export interface DailyChallengeResultRecord {
 
 export type DailyChallengeCommandTransitionResult =
 	| { kind: 'applied'; result: DailyChallengeResultRecord | null }
-	| { kind: 'not-applied' };
+	| { kind: 'not-applied' }
+	| { kind: 'rate-limited'; retryAfter: number };
 
 export interface DailyChallengeLeaderboardEntry {
 	rank: number;
@@ -287,6 +290,29 @@ WHERE id = ?
 	AND actionLogHash = ?
 	AND availableBankroll = ?
 	AND roundsCompleted = ?`;
+
+// Command transitions that consumed an authenticated command rate-limit unit
+// couple the guarded attempt update to the rate-limit continuation statement
+// inside the same atomic batch: the update only applies when the preceding
+// continuation statement matched exactly one rate-limit row (count still
+// within the approved limit), mirroring the start-transition guard.
+const UPDATE_ATTEMPT_WITH_RATE_SQL = `UPDATE daily_challenge_attempt
+SET actionLogJson = ?,
+	actionLogHash = ?,
+	nextCommandSequence = ?,
+	availableBankroll = ?,
+	roundsCompleted = ?,
+	status = ?,
+	updatedAt = ?,
+	settledAt = ?
+WHERE id = ?
+	AND userId = ?
+	AND status = 'active'
+	AND nextCommandSequence = ?
+	AND actionLogHash = ?
+	AND availableBankroll = ?
+	AND roundsCompleted = ?
+	AND changes() = 1`;
 
 const INSERT_RESULT_AFTER_TERMINAL_SQL = `INSERT INTO daily_challenge_result (
 	attemptId, challengeId, userId, endingBankroll, roundsCompleted,
@@ -814,8 +840,9 @@ async function executeCommandTransition(
 	const status = terminal ? terminalReasonToStatus(terminal.terminalReason) : 'active';
 	const settledAt = terminal ? input.nowSeconds : null;
 
+	const withRate = input.rateLimitStatement !== undefined;
 	const updateStatement = db
-		.prepare(UPDATE_ATTEMPT_SQL)
+		.prepare(withRate ? UPDATE_ATTEMPT_WITH_RATE_SQL : UPDATE_ATTEMPT_SQL)
 		.bind(
 			input.nextActionLogJson,
 			input.nextActionLogHash,
@@ -833,7 +860,12 @@ async function executeCommandTransition(
 			input.expectedRoundsCompleted,
 		);
 
-	const statements: D1PreparedStatement[] = [updateStatement];
+	const statements: D1PreparedStatement[] = [];
+	if (withRate && input.rateLimitStatement !== undefined) {
+		statements.push(input.rateLimitStatement);
+	}
+	const updateIndex = statements.length;
+	statements.push(updateStatement);
 	const labels: string[] = ['command attempt update'];
 	if (terminal) {
 		statements.push(
@@ -861,10 +893,20 @@ async function executeCommandTransition(
 	}
 
 	const results = await db.batch(statements);
-	const updateChanges = readChanges(results[0], labels[0]);
+	if (withRate) {
+		const rateChanges = readChanges(results[0], 'command rate');
+		if (rateChanges === 0) {
+			const deniedUpdateChanges = readChanges(results[updateIndex], labels[updateIndex]);
+			if (deniedUpdateChanges !== 0) {
+				return invariant('Denied daily challenge command rate allowed attempt update');
+			}
+			return { kind: 'rate-limited', retryAfter: input.retryAfter ?? 0 };
+		}
+	}
+	const updateChanges = readChanges(results[updateIndex], labels[updateIndex]);
 	if (updateChanges === 0) {
 		if (terminal) {
-			const insertChanges = readChanges(results[1], labels[1]);
+			const insertChanges = readChanges(results[updateIndex + 1], labels[updateIndex + 1]);
 			if (insertChanges !== 0) {
 				return invariant('Daily challenge terminal result applied without attempt update');
 			}
@@ -872,7 +914,7 @@ async function executeCommandTransition(
 		return { kind: 'not-applied' };
 	}
 	if (!terminal) return { kind: 'applied', result: null };
-	const insertChanges = readChanges(results[1], labels[1]);
+	const insertChanges = readChanges(results[updateIndex + 1], labels[updateIndex + 1]);
 	if (insertChanges !== 1) {
 		return invariant('Daily challenge terminal update did not store its result');
 	}

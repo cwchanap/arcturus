@@ -321,6 +321,48 @@ export function createDailyChallengeStartRateLimiter(
 	};
 }
 
+export function createDailyChallengeCommandRateLimiter(
+	db: D1Database,
+): DailyChallengeCoordinatorDeps['consumeCommandRateLimit'] {
+	return async (userId, nowSeconds) => {
+		const result = await consumeStandaloneRateLimit(
+			db,
+			userId,
+			'daily_challenge_command',
+			nowSeconds,
+		);
+		if (result.kind === 'rate-limited') {
+			return { kind: 'rate-limited', retryAfter: result.retryAfter };
+		}
+		return {
+			kind: 'allowed',
+			statement: buildRateLimitContinuationStatement(db, {
+				userId,
+				operation: 'daily_challenge_command',
+				nowSeconds,
+			}),
+			retryAfter: getRetryAfterSeconds('daily_challenge_command', nowSeconds),
+		};
+	};
+}
+
+export function createDailyChallengeResumeRateLimiter(
+	db: D1Database,
+): DailyChallengeCoordinatorDeps['consumeResumeRateLimit'] {
+	return async (userId, nowSeconds) => {
+		const result = await consumeStandaloneRateLimit(
+			db,
+			userId,
+			'daily_challenge_resume',
+			nowSeconds,
+		);
+		if (result.kind === 'rate-limited') {
+			return { kind: 'rate-limited', retryAfter: result.retryAfter };
+		}
+		return { kind: 'allowed' };
+	};
+}
+
 export const dailyChallengeHttpHandlers = createDailyChallengeHttpHandlers({
 	createCoordinator({ db }) {
 		return createDailyChallengeCoordinator({
@@ -333,6 +375,8 @@ export const dailyChallengeHttpHandlers = createDailyChallengeHttpHandlers({
 				console.warn('[DAILY_CHALLENGE]', entry);
 			},
 			consumeStartRateLimit: createDailyChallengeStartRateLimiter(db),
+			consumeCommandRateLimit: createDailyChallengeCommandRateLimiter(db),
+			consumeResumeRateLimit: createDailyChallengeResumeRateLimiter(db),
 		});
 	},
 });

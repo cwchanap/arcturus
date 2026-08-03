@@ -190,12 +190,12 @@ export type DailyChallengePublicResponse = z.infer<typeof dailyChallengeChalleng
 export const dailyChallengeLeaderboardEntrySchema = z
 	.object({
 		rank: dailyChallengeSafeIntegerSchema.min(1),
-		userId: z.string().min(1),
 		playerName: z.string().min(1),
 		endingBankroll: dailyChallengeBankrollSchema,
 		roundsCompleted: dailyChallengeSafeIntegerSchema.min(0),
 		durationSeconds: dailyChallengeSafeIntegerSchema.min(0),
 		settledAt: dailyChallengeSafeIntegerSchema.min(0),
+		isCurrentUser: z.boolean().optional(),
 	})
 	.strict();
 

@@ -488,29 +488,51 @@ function createFakeRandom(): FakeRandom {
 }
 
 interface FakeRateLimiter {
-	consume: DailyChallengeCoordinatorDeps['consumeStartRateLimit'];
-	calls: Array<{ userId: string; nowSeconds: number }>;
+	consumeStart: DailyChallengeCoordinatorDeps['consumeStartRateLimit'];
+	consumeCommand: DailyChallengeCoordinatorDeps['consumeCommandRateLimit'];
+	consumeResume: DailyChallengeCoordinatorDeps['consumeResumeRateLimit'];
+	startCalls: Array<{ userId: string; nowSeconds: number }>;
+	commandCalls: Array<{ userId: string; nowSeconds: number }>;
+	resumeCalls: Array<{ userId: string; nowSeconds: number }>;
 	setAllowed(): void;
 	setRateLimited(retryAfter: number): void;
 }
 
 function createFakeRateLimiter(): FakeRateLimiter {
-	const calls: Array<{ userId: string; nowSeconds: number }> = [];
+	const startCalls: Array<{ userId: string; nowSeconds: number }> = [];
+	const commandCalls: Array<{ userId: string; nowSeconds: number }> = [];
+	const resumeCalls: Array<{ userId: string; nowSeconds: number }> = [];
 	let mode: { kind: 'allowed' } | { kind: 'rate-limited'; retryAfter: number } = {
 		kind: 'allowed',
 	};
 	return {
-		calls,
+		startCalls,
+		commandCalls,
+		resumeCalls,
 		setAllowed: () => {
 			mode = { kind: 'allowed' };
 		},
 		setRateLimited: (retryAfter) => {
 			mode = { kind: 'rate-limited', retryAfter };
 		},
-		consume: async (userId, nowSeconds) => {
-			calls.push({ userId, nowSeconds });
+		consumeStart: async (userId, nowSeconds) => {
+			startCalls.push({ userId, nowSeconds });
 			if (mode.kind === 'allowed') {
 				return { kind: 'allowed', statement: {} as D1PreparedStatement, retryAfter: 60 };
+			}
+			return { kind: 'rate-limited', retryAfter: mode.retryAfter };
+		},
+		consumeCommand: async (userId, nowSeconds) => {
+			commandCalls.push({ userId, nowSeconds });
+			if (mode.kind === 'allowed') {
+				return { kind: 'allowed', statement: {} as D1PreparedStatement, retryAfter: 60 };
+			}
+			return { kind: 'rate-limited', retryAfter: mode.retryAfter };
+		},
+		consumeResume: async (userId, nowSeconds) => {
+			resumeCalls.push({ userId, nowSeconds });
+			if (mode.kind === 'allowed') {
+				return { kind: 'allowed' };
 			}
 			return { kind: 'rate-limited', retryAfter: mode.retryAfter };
 		},
@@ -538,7 +560,9 @@ function createBundle(repository: FakeRepository, initialSeconds = NOW_SECONDS):
 		log: (entry) => {
 			logs.push(entry);
 		},
-		consumeStartRateLimit: rateLimiter.consume,
+		consumeStartRateLimit: rateLimiter.consumeStart,
+		consumeCommandRateLimit: rateLimiter.consumeCommand,
+		consumeResumeRateLimit: rateLimiter.consumeResume,
 	};
 	return {
 		deps,
@@ -633,10 +657,10 @@ describe('daily challenge coordinator start classification', () => {
 		const body: DailyChallengeStartRequest = { requestId: 'request-exact-0000001' };
 
 		const first = await coordinator.start({ userId: USER_ID, body });
-		const firstCalls = rateLimiter.calls.length;
+		const firstCalls = rateLimiter.startCalls.length;
 		const second = await coordinator.start({ userId: USER_ID, body });
 
-		expect(rateLimiter.calls.length).toBe(firstCalls);
+		expect(rateLimiter.startCalls.length).toBe(firstCalls);
 		expect(second.attemptId).toBe(first.attemptId);
 		expect(second.startRequestId).toBe(body.requestId);
 		expect(second.status).toBe('active');
@@ -733,6 +757,8 @@ describe('daily challenge coordinator start classification', () => {
 		const repository = new FakeRepository();
 		const { deps } = createBundle(repository);
 		expect(Object.keys(deps).sort()).toEqual([
+			'consumeCommandRateLimit',
+			'consumeResumeRateLimit',
 			'consumeStartRateLimit',
 			'log',
 			'now',
@@ -777,6 +803,29 @@ describe('daily challenge coordinator resume and render', () => {
 		expect(state.activeRound).not.toBeNull();
 		expect(state.receipt).toBeNull();
 	});
+
+	test('resume consumes the resume bucket before replaying or rendering', async () => {
+		const attempt = fixtureAttempt([startRound(0, DEFAULT_WAGER)]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+
+		await coordinator.resume({ userId: USER_ID, attemptId: attempt.id });
+
+		expect(rateLimiter.resumeCalls).toEqual([{ userId: USER_ID, nowSeconds: NOW_SECONDS }]);
+	});
+
+	test('a denied resume rate limit returns RATE_LIMITED before replay', async () => {
+		const attempt = fixtureAttempt([startRound(0, DEFAULT_WAGER)]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+		rateLimiter.setRateLimited(90);
+
+		await expectDailyError(
+			coordinator.resume({ userId: USER_ID, attemptId: attempt.id }),
+			'RATE_LIMITED',
+		);
+		expect(rateLimiter.resumeCalls).toHaveLength(1);
+	});
 });
 
 describe('daily challenge coordinator command classification', () => {
@@ -793,6 +842,74 @@ describe('daily challenge coordinator command classification', () => {
 		});
 
 		expect(state.nextCommandSequence).toBe(1);
+		expect(repository.commandTransitions).toHaveLength(0);
+	});
+
+	test('an on-time command consumes the command bucket before the guarded transition', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+
+		const state = await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: cmd(1, 'forfeit'),
+		});
+
+		expect(state.status).toBe('forfeited');
+		expect(state.receipt?.eligible).toBe(false);
+		expect(rateLimiter.commandCalls).toEqual([{ userId: USER_ID, nowSeconds: NOW_SECONDS }]);
+		const transition = repository.commandTransitions.at(-1);
+		expect(transition?.rateLimitStatement).toBeDefined();
+		expect(transition?.retryAfter).toBe(60);
+	});
+
+	test('an exact behind-sequence replay never consumes the command bucket', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+
+		const state = await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: opener,
+		});
+
+		expect(state.nextCommandSequence).toBe(1);
+		expect(rateLimiter.commandCalls).toEqual([]);
+		expect(repository.commandTransitions).toHaveLength(0);
+	});
+
+	test('a sequence mismatch never consumes the command bucket', async () => {
+		const attempt = fixtureAttempt([]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({ userId: USER_ID, attemptId: attempt.id, body: cmd(5, 'stand') }),
+			'SEQUENCE_MISMATCH',
+		);
+		expect(rateLimiter.commandCalls).toEqual([]);
+	});
+
+	test('a denied command rate limit returns RATE_LIMITED before the guarded transition', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, rateLimiter } = createBundle(repository);
+		rateLimiter.setRateLimited(45);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'forfeit'),
+			}),
+			'RATE_LIMITED',
+		);
+		expect(rateLimiter.commandCalls).toHaveLength(1);
 		expect(repository.commandTransitions).toHaveLength(0);
 	});
 
@@ -1129,9 +1246,122 @@ describe('daily challenge coordinator leaderboard and history', () => {
 		});
 
 		expect(board.entries).toHaveLength(1);
-		expect(board.entries[0].userId).toBe(USER_ID);
+		expect(board.entries[0]).toMatchObject({
+			rank: 1,
+			playerName: USER_ID,
+			endingBankroll: 1500,
+			roundsCompleted: 10,
+			durationSeconds: 120,
+			settledAt: NOW_SECONDS,
+			isCurrentUser: true,
+		});
+		expect(Object.hasOwn(board.entries[0], 'userId')).toBe(false);
 		expect(board.currentUser?.rank).toBe(1);
 		expect(board.currentUser?.totalEligible).toBe(1);
+	});
+
+	test('leaderboard strips userId from every public entry and marks only the current user', async () => {
+		const challenge = baseChallenge();
+		const repository = new FakeRepository({
+			challenges: [challenge],
+			results: [
+				{
+					attemptId: 'a',
+					challengeId: challenge.id,
+					userId: USER_ID,
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+					eligible: true,
+					terminalReason: 'completed',
+					durationSeconds: 120,
+					scoreVersion: 'blackjack-daily-score-v1',
+					configHash: challenge.configHash,
+					rankedSeedCommitment: challenge.rankedSeedCommitment,
+					actionLogHash: 'a'.repeat(64),
+					receiptHash: 'b'.repeat(64),
+					createdAt: NOW_SECONDS,
+					settledAt: NOW_SECONDS,
+					periodKey: challenge.periodKey,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					gameRulesetVersion: 'blackjack-ranked-v1',
+				},
+				{
+					attemptId: 'b',
+					challengeId: challenge.id,
+					userId: OTHER_USER_ID,
+					endingBankroll: 1400,
+					roundsCompleted: 10,
+					eligible: true,
+					terminalReason: 'completed',
+					durationSeconds: 200,
+					scoreVersion: 'blackjack-daily-score-v1',
+					configHash: challenge.configHash,
+					rankedSeedCommitment: challenge.rankedSeedCommitment,
+					actionLogHash: 'c'.repeat(64),
+					receiptHash: 'd'.repeat(64),
+					createdAt: NOW_SECONDS,
+					settledAt: NOW_SECONDS + 10,
+					periodKey: challenge.periodKey,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					gameRulesetVersion: 'blackjack-ranked-v1',
+				},
+			],
+		});
+		const { coordinator } = createBundle(repository);
+
+		const board = await coordinator.leaderboard({
+			periodKey: challenge.periodKey,
+			userId: USER_ID,
+			limit: 10,
+		});
+
+		expect(board.entries).toHaveLength(2);
+		expect(board.entries[0]?.isCurrentUser).toBe(true);
+		expect(board.entries[1]?.isCurrentUser).toBeUndefined();
+		for (const entry of board.entries) {
+			expect(Object.hasOwn(entry, 'userId')).toBe(false);
+		}
+	});
+
+	test('a guest leaderboard response exposes no userId and no current-user marker', async () => {
+		const challenge = baseChallenge();
+		const repository = new FakeRepository({
+			challenges: [challenge],
+			results: [
+				{
+					attemptId: 'a',
+					challengeId: challenge.id,
+					userId: USER_ID,
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+					eligible: true,
+					terminalReason: 'completed',
+					durationSeconds: 120,
+					scoreVersion: 'blackjack-daily-score-v1',
+					configHash: challenge.configHash,
+					rankedSeedCommitment: challenge.rankedSeedCommitment,
+					actionLogHash: 'a'.repeat(64),
+					receiptHash: 'b'.repeat(64),
+					createdAt: NOW_SECONDS,
+					settledAt: NOW_SECONDS,
+					periodKey: challenge.periodKey,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					gameRulesetVersion: 'blackjack-ranked-v1',
+				},
+			],
+		});
+		const { coordinator } = createBundle(repository);
+
+		const board = await coordinator.leaderboard({
+			periodKey: challenge.periodKey,
+			userId: null,
+			limit: 10,
+		});
+
+		expect(board.entries).toHaveLength(1);
+		expect(board.entries[0]?.isCurrentUser).toBeUndefined();
+		expect(Object.hasOwn(board.entries[0], 'userId')).toBe(false);
+		expect(board.currentUser).toBeNull();
 	});
 
 	test('history returns the user settled results', async () => {

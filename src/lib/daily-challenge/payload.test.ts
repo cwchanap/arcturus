@@ -428,7 +428,6 @@ describe('parseDailyChallengeLeaderboardResponse', () => {
 			entries: [
 				{
 					rank: 1,
-					userId: 'user-1',
 					playerName: 'Alice',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
@@ -457,7 +456,6 @@ describe('parseDailyChallengeLeaderboardResponse', () => {
 			entries: [
 				{
 					rank: 1,
-					userId: 'user-1',
 					playerName: 'Alice',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
@@ -466,12 +464,28 @@ describe('parseDailyChallengeLeaderboardResponse', () => {
 				},
 				{
 					rank: 1,
-					userId: 'user-2',
 					playerName: 'Bob',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
 					durationSeconds: 350,
 					settledAt: 1_742_000_501,
+				},
+			],
+		});
+		expect(parseDailyChallengeLeaderboardResponse(value)).toEqual(value);
+	});
+
+	test('accepts a current-user marker on exactly one entry', () => {
+		const value = leaderboardResponse({
+			entries: [
+				{
+					rank: 1,
+					playerName: 'Alice',
+					endingBankroll: 2000,
+					roundsCompleted: 10,
+					durationSeconds: 300,
+					settledAt: 1_742_000_500,
+					isCurrentUser: true,
 				},
 			],
 		});
@@ -485,7 +499,6 @@ describe('parseDailyChallengeLeaderboardResponse', () => {
 					entries: [
 						{
 							rank: 0,
-							userId: 'user-1',
 							playerName: 'Alice',
 							endingBankroll: 2000,
 							roundsCompleted: 10,
@@ -496,6 +509,26 @@ describe('parseDailyChallengeLeaderboardResponse', () => {
 				}),
 			),
 		).toThrow();
+	});
+
+	test('rejects a public leaderboard entry exposing a raw userId', () => {
+		expect(() =>
+			parseDailyChallengeLeaderboardResponse(
+				leaderboardResponse({
+					entries: [
+						{
+							rank: 1,
+							userId: 'user-1',
+							playerName: 'Alice',
+							endingBankroll: 2000,
+							roundsCompleted: 10,
+							durationSeconds: 300,
+							settledAt: 1_742_000_500,
+						},
+					],
+				}),
+			),
+		).toThrow(/unrecognized/i);
 	});
 
 	test('rejects a leaderboard response leaking a live rankedSeed', () => {

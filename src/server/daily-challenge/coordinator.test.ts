@@ -1180,6 +1180,40 @@ describe('daily challenge coordinator ranked seed reveal', () => {
 		expect(response.revealedRankedSeed).toBeNull();
 	});
 
+	test('a live challenge response exposes the stored canonical practice seed', async () => {
+		const repository = new FakeRepository();
+		const { coordinator } = createBundle(repository);
+
+		const response = await coordinator.getCurrent({ userId: null });
+
+		expect(response.practiceSeed).toBe(baseChallenge().practiceSeed);
+		expect(decodeCanonicalBase64Url(response.practiceSeed)).toEqual(
+			decodeCanonicalBase64Url(baseChallenge().practiceSeed),
+		);
+	});
+
+	test('a closed challenge response keeps exposing the practice seed', async () => {
+		const pastWindow = getDailyChallengeWindow(NOW_SECONDS - 86_400);
+		const pastChallenge = baseChallenge({
+			id: 'test-challenge-past-0001',
+			periodKey: pastWindow.periodKey,
+			startsAt: pastWindow.startsAt,
+			rankedEntryClosesAt: pastWindow.rankedEntryClosesAt,
+			endsAt: pastWindow.endsAt,
+			createdAt: pastWindow.startsAt,
+		});
+		const repository = new FakeRepository({ challenges: [pastChallenge] });
+		const { coordinator } = createBundle(repository);
+
+		const response = await coordinator.getByPeriod({
+			periodKey: pastWindow.periodKey,
+			userId: null,
+		});
+
+		expect(response.revealedRankedSeed).toBe(pastChallenge.rankedSeed);
+		expect(response.practiceSeed).toBe(pastChallenge.practiceSeed);
+	});
+
 	test('a closed challenge response reveals the stored canonical seed', async () => {
 		const pastWindow = getDailyChallengeWindow(NOW_SECONDS - 86_400);
 		const pastChallenge = baseChallenge({

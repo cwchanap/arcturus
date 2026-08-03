@@ -416,6 +416,7 @@ export function createDailyChallengeCoordinator(
 			endsAt: challenge.endsAt,
 			configHash: challenge.configHash,
 			rankedSeedCommitment: challenge.rankedSeedCommitment,
+			practiceSeed: challenge.practiceSeed,
 			revealedRankedSeed: nowSeconds >= challenge.endsAt ? challenge.rankedSeed : null,
 			attempt: attempt ? await renderAttempt(attempt, challenge) : null,
 		};

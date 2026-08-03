@@ -15,14 +15,14 @@ export const dailyChallengeSequenceSchema = z
 export const dailyChallengeBankrollSchema = dailyChallengeSafeIntegerSchema.min(0);
 export const dailyChallengeHex64Schema = z.string().regex(/^[0-9a-f]{64}$/);
 
-const dailyChallengeRevealedSeedSchema = z.string().refine((value) => {
+const dailyChallengeCanonicalSeedSchema = z.string().refine((value) => {
 	try {
 		decodeCanonicalBase64Url(value);
 		return true;
 	} catch {
 		return false;
 	}
-}, 'Invalid canonical base64url revealed seed');
+}, 'Invalid canonical base64url daily challenge seed');
 
 export const dailyChallengeStartRequestSchema = z
 	.object({ requestId: dailyChallengeRequestIdSchema })
@@ -179,7 +179,8 @@ export const dailyChallengeChallengeResponseSchema = z
 		endsAt: dailyChallengeSafeIntegerSchema.min(0),
 		configHash: dailyChallengeHex64Schema,
 		rankedSeedCommitment: dailyChallengeHex64Schema,
-		revealedRankedSeed: dailyChallengeRevealedSeedSchema.nullable().optional(),
+		practiceSeed: dailyChallengeCanonicalSeedSchema,
+		revealedRankedSeed: dailyChallengeCanonicalSeedSchema.nullable().optional(),
 		attempt: dailyChallengeAttemptPublicStateSchema.nullable(),
 	})
 	.strict();

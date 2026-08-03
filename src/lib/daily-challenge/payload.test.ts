@@ -15,6 +15,7 @@ const HEX_64_A = 'a'.repeat(64);
 const HEX_64_B = 'b'.repeat(64);
 const HEX_64_C = 'c'.repeat(64);
 const HEX_64_D = 'd'.repeat(64);
+const PRACTICE_SEED = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => 64 + index));
 
 const activeRoundFixture = {
 	phase: 'player-turn',
@@ -305,6 +306,7 @@ describe('parseDailyChallengeChallengeResponse — happy paths', () => {
 			endsAt: 1_742_000_000 + 86_400,
 			configHash: HEX_64_A,
 			rankedSeedCommitment: HEX_64_B,
+			practiceSeed: PRACTICE_SEED,
 			attempt: null,
 			...overrides,
 		};
@@ -351,6 +353,7 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 			endsAt: 1_742_000_000 + 86_400,
 			configHash: HEX_64_A,
 			rankedSeedCommitment: HEX_64_B,
+			practiceSeed: PRACTICE_SEED,
 			attempt: null,
 			...overrides,
 		};
@@ -406,6 +409,15 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 				nowMs,
 			),
 		).toThrow(/revealedRankedSeed|reveal/i);
+	});
+
+	test('rejects a challenge response carrying a malformed practice seed', () => {
+		expect(() =>
+			parseDailyChallengeChallengeResponse({
+				...liveChallengeResponse(),
+				practiceSeed: 'not-canonical!!',
+			}),
+		).toThrow(/practiceSeed|practice seed/i);
 	});
 });
 

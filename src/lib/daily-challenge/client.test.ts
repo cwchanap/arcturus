@@ -3,16 +3,29 @@ import { decodeCanonicalBase64Url } from '../ranked/canonical';
 import {
 	DailyChallengeServiceError,
 	type DailyChallengeCommandV1,
+	type DailyChallengeHistoryResponse,
+	type DailyChallengeLeaderboardResponse,
 	type DailyChallengePublicResponse,
 } from './protocol';
 import type { DailyChallengeReplayV1 } from './replay';
+import type {
+	DailyChallengeAction,
+	DailyChallengeRendererHandlers,
+	DailyChallengeReplayScenario,
+} from './ui';
 import {
 	buildDailyChallengeStorageKeys,
 	createDailyChallengeClient,
 	createDailyChallengeLocalReplayController,
-	type DailyChallengeClientDeps,
-	type DailyChallengeRenderer,
+	initDailyChallengeHistoryPage,
+	initDailyChallengePage,
 	type DailyChallengeAttemptPublicStateV1,
+	type DailyChallengeClient,
+	type DailyChallengeClientCommand,
+	type DailyChallengeClientDeps,
+	type DailyChallengeLocalReplayController,
+	type DailyChallengeLocalReplayControllerDeps,
+	type DailyChallengeRenderer,
 } from './client';
 
 const ATTEMPT_ID = 'abcdefghijklmnopqrstuv';
@@ -829,5 +842,462 @@ describe('daily challenge local replay controller', () => {
 		await controller.startRound(100);
 
 		expect(captured[0]?.seed).toEqual(decodeCanonicalBase64Url(RANKED_SEED));
+	});
+});
+
+function createPageRenderer(): {
+	renderer: DailyChallengeRenderer;
+	challenges: DailyChallengePublicResponse[];
+	leaderboards: DailyChallengeLeaderboardResponse[];
+	histories: DailyChallengeHistoryResponse[];
+	errors: string[];
+	bound: { handlers: DailyChallengeRendererHandlers | null };
+} {
+	const challenges: DailyChallengePublicResponse[] = [];
+	const leaderboards: DailyChallengeLeaderboardResponse[] = [];
+	const histories: DailyChallengeHistoryResponse[] = [];
+	const errors: string[] = [];
+	const bound: { handlers: DailyChallengeRendererHandlers | null } = { handlers: null };
+	const renderer: DailyChallengeRenderer = {
+		bind(handlers) {
+			bound.handlers = handlers;
+		},
+		renderChallenge(challenge) {
+			challenges.push(challenge);
+		},
+		renderAttempt() {},
+		renderLeaderboard(leaderboard) {
+			leaderboards.push(leaderboard);
+		},
+		renderHistory(history) {
+			histories.push(history);
+		},
+		renderLocalReplay() {},
+		setPending() {},
+		renderError(message) {
+			errors.push(message);
+		},
+	};
+	return { renderer, challenges, leaderboards, histories, errors, bound };
+}
+
+function createPageClientHarness(): {
+	created: Array<Pick<DailyChallengeClientDeps, 'userId' | 'periodKey'>>;
+	commands: DailyChallengeClientCommand[];
+	starts: number;
+	initialized: number;
+	createClient: (deps: DailyChallengeClientDeps) => DailyChallengeClient;
+} {
+	const created: Array<Pick<DailyChallengeClientDeps, 'userId' | 'periodKey'>> = [];
+	const commands: DailyChallengeClientCommand[] = [];
+	const state = { starts: 0, initialized: 0 };
+	const harness = {
+		created,
+		commands,
+		createClient: (() => {
+			throw new Error('unused');
+		}) as (deps: DailyChallengeClientDeps) => DailyChallengeClient,
+		get starts(): number {
+			return state.starts;
+		},
+		get initialized(): number {
+			return state.initialized;
+		},
+	};
+	harness.createClient = ((deps: DailyChallengeClientDeps) => {
+		created.push({ userId: deps.userId, periodKey: deps.periodKey });
+		return {
+			async initialize() {
+				state.initialized++;
+			},
+			async start() {
+				state.starts++;
+			},
+			async command(command) {
+				commands.push(command);
+			},
+		};
+	}) as (deps: DailyChallengeClientDeps) => DailyChallengeClient;
+	return harness;
+}
+
+function createPageLocalHarness(): {
+	scenarios: DailyChallengeReplayScenario[];
+	startRounds: number[];
+	actions: DailyChallengeAction[];
+	forfeits: number;
+	restarts: number;
+	createLocalReplayController: (
+		deps: DailyChallengeLocalReplayControllerDeps,
+	) => DailyChallengeLocalReplayController;
+} {
+	const scenarios: DailyChallengeReplayScenario[] = [];
+	const startRounds: number[] = [];
+	const actions: DailyChallengeAction[] = [];
+	const state = { forfeits: 0, restarts: 0 };
+	const harness = {
+		scenarios,
+		startRounds,
+		actions,
+		createLocalReplayController: (() => {
+			throw new Error('unused');
+		}) as (deps: DailyChallengeLocalReplayControllerDeps) => DailyChallengeLocalReplayController,
+		get forfeits(): number {
+			return state.forfeits;
+		},
+		get restarts(): number {
+			return state.restarts;
+		},
+	};
+	harness.createLocalReplayController = ((_deps: DailyChallengeLocalReplayControllerDeps) => ({
+		async selectScenario(scenario) {
+			scenarios.push(scenario);
+		},
+		async startRound(wager) {
+			startRounds.push(wager);
+		},
+		async action(action) {
+			actions.push(action);
+		},
+		async forfeit() {
+			state.forfeits++;
+		},
+		async restart() {
+			state.restarts++;
+		},
+	})) as (deps: DailyChallengeLocalReplayControllerDeps) => DailyChallengeLocalReplayController;
+	return harness;
+}
+
+describe('daily challenge page bootstrap — initDailyChallengePage', () => {
+	function challengeFixture(
+		overrides: Partial<DailyChallengePublicResponse> = {},
+	): DailyChallengePublicResponse {
+		return {
+			periodKey: PERIOD_KEY,
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1_742_000_000,
+			rankedEntryClosesAt: 1_742_086_200,
+			endsAt: 1_742_086_400,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed: PRACTICE_SEED,
+			revealedRankedSeed: null,
+			attempt: null,
+			...overrides,
+		};
+	}
+
+	function leaderboardFixture(
+		overrides: Partial<DailyChallengeLeaderboardResponse> = {},
+	): DailyChallengeLeaderboardResponse {
+		return {
+			periodKey: PERIOD_KEY,
+			entries: [
+				{
+					rank: 1,
+					userId: 'user-1',
+					playerName: 'Alice',
+					endingBankroll: 2000,
+					roundsCompleted: 10,
+					durationSeconds: 300,
+					settledAt: 1_742_001_000,
+				},
+			],
+			currentUser: null,
+			...overrides,
+		};
+	}
+
+	function historyFixture(
+		overrides: Partial<DailyChallengeHistoryResponse> = {},
+	): DailyChallengeHistoryResponse {
+		return {
+			entries: [
+				{
+					periodKey: PERIOD_KEY,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					endingBankroll: 1200,
+					roundsCompleted: 10,
+					terminalReason: 'completed',
+					eligible: true,
+					settledAt: 1_742_001_000,
+				},
+			],
+			...overrides,
+		};
+	}
+
+	function currentPageFetch(url: RequestInfo | URL): Response {
+		const path = String(url);
+		if (path === '/api/daily-challenges/current') return jsonResponse(challengeFixture());
+		if (path === `/api/daily-challenges/${PERIOD_KEY}/leaderboard`) {
+			return jsonResponse(leaderboardFixture());
+		}
+		if (path === '/api/daily-challenges/history?limit=7') {
+			return jsonResponse(historyFixture());
+		}
+		return jsonResponse({ error: 'CHALLENGE_NOT_FOUND' }, 404);
+	}
+
+	test('a guest fetches current, renders it, and resolves leaderboard and history by periodKey', async () => {
+		const urls: string[] = [];
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			urls.push(String(url));
+			return currentPageFetch(url);
+		});
+		const { renderer, challenges, leaderboards, histories, bound } = createPageRenderer();
+		const { created, createClient } = createPageClientHarness();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: {} } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient,
+			createLocalReplayController,
+		});
+
+		expect(challenges).toEqual([challengeFixture()]);
+		expect(urls).toHaveLength(3);
+		expect(urls).toContain('/api/daily-challenges/current');
+		expect(urls).toContain(`/api/daily-challenges/${PERIOD_KEY}/leaderboard`);
+		expect(urls).toContain('/api/daily-challenges/history?limit=7');
+		expect(leaderboards).toEqual([leaderboardFixture()]);
+		expect(histories).toEqual([historyFixture()]);
+		expect(created).toEqual([]);
+		expect(bound.handlers).not.toBeNull();
+	});
+
+	test('an authenticated visitor creates a ranked client and practice actions stay local', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => currentPageFetch(url));
+		const { renderer, bound } = createPageRenderer();
+		const clientHarness = createPageClientHarness();
+		const replayHarness = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient: clientHarness.createClient,
+			createLocalReplayController: replayHarness.createLocalReplayController,
+		});
+
+		expect(clientHarness.created).toEqual([{ userId: USER_ID, periodKey: PERIOD_KEY }]);
+		expect(clientHarness.initialized).toBe(1);
+
+		const handlers = bound.handlers;
+		expect(handlers).not.toBeNull();
+		handlers?.onStartRound(250);
+		handlers?.onAction('stand');
+		handlers?.onForfeit();
+		handlers?.onRestartPractice();
+		handlers?.onSelectReplayScenario('practice-scenario');
+		expect(replayHarness.startRounds).toEqual([250]);
+		expect(replayHarness.actions).toEqual(['stand']);
+		expect(replayHarness.forfeits).toBe(1);
+		expect(replayHarness.restarts).toBe(1);
+		expect(replayHarness.scenarios).toEqual(['practice-scenario']);
+		expect(clientHarness.commands).toEqual([]);
+		expect(clientHarness.starts).toBe(0);
+	});
+
+	test('ranked mode dispatches writes to the ranked client', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => currentPageFetch(url));
+		const { renderer, bound } = createPageRenderer();
+		const clientHarness = createPageClientHarness();
+		const replayHarness = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient: clientHarness.createClient,
+			createLocalReplayController: replayHarness.createLocalReplayController,
+		});
+
+		const handlers = bound.handlers;
+		handlers?.onStartRanked();
+		handlers?.onSelectMode('ranked');
+		handlers?.onStartRound(100);
+		handlers?.onAction('double-down');
+		handlers?.onForfeit();
+
+		expect(clientHarness.starts).toBe(1);
+		expect(clientHarness.commands).toEqual([
+			{ command: 'start-round', wager: 100 },
+			{ command: 'double-down' },
+			{ command: 'forfeited' },
+		]);
+		expect(replayHarness.startRounds).toEqual([]);
+		expect(replayHarness.actions).toEqual([]);
+
+		handlers?.onSelectMode('practice');
+		handlers?.onStartRound(50);
+		expect(replayHarness.startRounds).toEqual([50]);
+	});
+
+	test('a failing current fetch surfaces an error and never fetches side data', async () => {
+		const fetchImpl = mock(async () => jsonResponse({ error: 'INTERNAL_ERROR' }, 500));
+		const { renderer, errors } = createPageRenderer();
+		const { created, createClient } = createPageClientHarness();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient,
+			createLocalReplayController,
+		});
+
+		expect(errors).toHaveLength(1);
+		expect(created).toEqual([]);
+	});
+});
+
+describe('daily challenge page bootstrap — initDailyChallengeHistoryPage', () => {
+	function challengeFixture(
+		overrides: Partial<DailyChallengePublicResponse> = {},
+	): DailyChallengePublicResponse {
+		return {
+			periodKey: PERIOD_KEY,
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1_742_000_000,
+			rankedEntryClosesAt: 1_742_086_200,
+			endsAt: 1_742_086_400,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed: PRACTICE_SEED,
+			revealedRankedSeed: null,
+			attempt: null,
+			...overrides,
+		};
+	}
+
+	function historyPageFetch(url: RequestInfo | URL): Response {
+		const path = String(url);
+		if (path === `/api/daily-challenges/${PERIOD_KEY}`) {
+			return jsonResponse(challengeFixture({ revealedRankedSeed: RANKED_SEED }));
+		}
+		if (path === `/api/daily-challenges/${PERIOD_KEY}/leaderboard`) {
+			return jsonResponse({
+				periodKey: PERIOD_KEY,
+				entries: [
+					{
+						rank: 1,
+						userId: 'user-1',
+						playerName: 'Alice',
+						endingBankroll: 2000,
+						roundsCompleted: 10,
+						durationSeconds: 300,
+						settledAt: 1_742_001_000,
+					},
+				],
+				currentUser: null,
+			});
+		}
+		return jsonResponse({ error: 'CHALLENGE_NOT_FOUND' }, 404);
+	}
+
+	test('fetches the closed detail and renders challenge, metadata, and leaderboard', async () => {
+		const urls: string[] = [];
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			urls.push(String(url));
+			return historyPageFetch(url);
+		});
+		const { renderer, challenges, leaderboards, bound } = createPageRenderer();
+		const { startRounds, createLocalReplayController } = createPageLocalHarness();
+		const root = {
+			dataset: { periodKey: PERIOD_KEY },
+			querySelector: () => null,
+		} as unknown as HTMLElement;
+
+		await initDailyChallengeHistoryPage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createLocalReplayController,
+		});
+
+		expect(urls).toEqual([
+			`/api/daily-challenges/${PERIOD_KEY}`,
+			`/api/daily-challenges/${PERIOD_KEY}/leaderboard`,
+		]);
+		expect(challenges).toEqual([challengeFixture({ revealedRankedSeed: RANKED_SEED })]);
+		expect(leaderboards).toHaveLength(1);
+
+		const handlers = bound.handlers;
+		expect(handlers).not.toBeNull();
+		handlers?.onStartRanked();
+		handlers?.onStartRound(100);
+		expect(startRounds).toEqual([100]);
+	});
+
+	test('a missing period key never fetches anything', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => historyPageFetch(url));
+		const { renderer } = createPageRenderer();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: {} } as HTMLElement;
+
+		await initDailyChallengeHistoryPage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createLocalReplayController,
+		});
+
+		expect(fetchImpl).toHaveBeenCalledTimes(0);
+	});
+
+	test('a live un-revealed detail renders reveal metadata through the real renderer metadata query', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			const path = String(url);
+			if (path === `/api/daily-challenges/${PERIOD_KEY}`) {
+				return jsonResponse(challengeFixture({ revealedRankedSeed: null }));
+			}
+			if (path === `/api/daily-challenges/${PERIOD_KEY}/leaderboard`) {
+				return jsonResponse({ periodKey: PERIOD_KEY, entries: [], currentUser: null });
+			}
+			return jsonResponse({ error: 'CHALLENGE_NOT_FOUND' }, 404);
+		});
+		const revealStatus: string[] = [];
+		const commitment: string[] = [];
+		const { renderer, challenges } = createPageRenderer();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = {
+			dataset: { periodKey: PERIOD_KEY },
+			querySelector(selector: string): HTMLElement | null {
+				if (selector === '[data-testid="daily-challenge-reveal-status"]') {
+					return {
+						set textContent(value: string) {
+							revealStatus.push(value);
+						},
+					} as HTMLElement;
+				}
+				if (selector === '[data-testid="daily-challenge-commitment"]') {
+					return {
+						set textContent(value: string) {
+							commitment.push(value);
+						},
+					} as HTMLElement;
+				}
+				return null;
+			},
+		} as unknown as HTMLElement;
+
+		await initDailyChallengeHistoryPage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createLocalReplayController,
+		});
+
+		expect(challenges).toHaveLength(1);
+		expect(revealStatus).toEqual(['Ranked seed not yet revealed']);
+		expect(commitment).toEqual(['b'.repeat(64)]);
 	});
 });

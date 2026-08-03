@@ -1,0 +1,331 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import { getDailyChallengeWindow } from '../../lib/daily-challenge/config';
+
+const user = Astro.locals.user;
+
+if (user) {
+	Astro.response.headers.set('Cache-Control', 'private, no-store');
+} else {
+	Astro.response.headers.set(
+		'Cache-Control',
+		'public, max-age=0, s-maxage=60, stale-while-revalidate=300',
+	);
+	Astro.response.headers.set('Vary', 'Cookie');
+}
+
+const currentPeriod = getDailyChallengeWindow(Math.trunc(Date.now() / 1000)).periodKey;
+---
+
+<CasinoLayout title="Daily Challenge - Arcturus Casino">
+	<main
+		id="daily-challenge-root"
+		data-user-id={user?.id}
+		class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
+	>
+		<header class="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+			<div>
+				<a
+					href="/games"
+					class="mb-3 inline-block text-[var(--deco-muted)] transition-colors hover:text-[var(--deco-brass)]"
+				>
+					← Back to Games
+				</a>
+				<div class="flex flex-wrap items-center gap-3">
+					<h1 class="deco-section-title text-4xl">Daily Challenge</h1>
+					<span
+						class="rounded-full border border-[var(--deco-brass)] bg-[var(--deco-brass-dim)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-brass-bright)]"
+					>
+						Blackjack
+					</span>
+				</div>
+				<p
+					data-testid="daily-challenge-close"
+					class="mt-3 max-w-2xl text-sm leading-6 text-[var(--deco-muted)]"
+				>
+					Ranked entry closes at 23:30 UTC.
+				</p>
+			</div>
+			<div
+				class="grid grid-cols-2 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4"
+			>
+				<div>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Challenge date</p>
+					<p class="text-xl font-bold text-[var(--deco-ivory)]">{currentPeriod}</p>
+				</div>
+				<div>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Reset</p>
+					<p class="text-xl font-bold text-[var(--deco-ivory)]">00:00 UTC</p>
+				</div>
+			</div>
+		</header>
+
+		<div class="mb-6 flex flex-wrap items-center gap-3">
+			<button
+				type="button"
+				data-testid="daily-challenge-mode-practice"
+				class="deco-btn deco-btn-primary"
+			>
+				Practice
+			</button>
+			<button type="button" data-testid="daily-challenge-mode-ranked" class="deco-btn">
+				Ranked
+			</button>
+			<a
+				href="/signin"
+				data-testid="daily-challenge-sign-in-cta"
+				class="deco-btn deco-btn-outline"
+				hidden
+			>
+				Sign in to play Ranked
+			</a>
+		</div>
+
+		<div data-testid="daily-challenge-practice-notices" class="mb-6 space-y-2" hidden>
+			<p data-testid="daily-challenge-practice-different" class="text-sm text-[var(--deco-muted)]">
+				Practice uses a different scenario from today&rsquo;s ranked attempt.
+			</p>
+			<p data-testid="daily-challenge-shared-seed-notice" class="text-sm text-[var(--deco-muted)]">
+				Shared daily scenarios are not resistant to player-to-player spoilers.
+			</p>
+		</div>
+
+		<div data-testid="daily-challenge-ranked-notices" class="mb-6 space-y-2" hidden>
+			<p
+				data-testid="daily-challenge-once-warning"
+				class="rounded-lg border border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm text-[var(--deco-brass)]"
+			>
+				You get one ranked attempt per daily challenge.
+			</p>
+		</div>
+
+		<section data-testid="daily-challenge-controls" hidden>
+			<div
+				class="mb-6 grid grid-cols-3 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4"
+			>
+				<div>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Bankroll</p>
+					<p
+						data-testid="daily-challenge-bankroll"
+						class="text-2xl font-bold text-[var(--deco-brass)]"
+					>
+						—
+					</p>
+				</div>
+				<div>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Committed wager</p>
+					<p
+						data-testid="daily-challenge-committed-wager"
+						class="text-2xl font-bold text-[var(--deco-ivory)]"
+					>
+						—
+					</p>
+				</div>
+				<div>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Progress</p>
+					<p
+						data-testid="daily-challenge-round-progress"
+						class="text-2xl font-bold text-[var(--deco-ivory)]"
+					>
+						—
+					</p>
+				</div>
+			</div>
+
+			<div class="felt-table relative mb-6 rounded-3xl p-8" style="min-height: 480px">
+				<div class="absolute top-14 left-1/2 w-full max-w-2xl -translate-x-1/2 px-4">
+					<div
+						class="rounded-2xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm"
+					>
+						<div class="mb-1 text-center">
+							<div class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">Dealer</div>
+							<div
+								data-testid="daily-challenge-dealer-value"
+								class="inline-block rounded-full bg-[var(--deco-obsidian)] px-3 py-0.5 text-lg font-bold text-[var(--deco-ivory)]"
+							>
+								?
+							</div>
+						</div>
+						<div
+							data-testid="daily-challenge-dealer-hand"
+							class="flex min-h-[64px] flex-wrap justify-center gap-2"
+						>
+						</div>
+					</div>
+				</div>
+				<div class="absolute bottom-6 left-1/2 w-full max-w-2xl -translate-x-1/2 px-4">
+					<div
+						class="rounded-2xl border-2 border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm"
+					>
+						<div class="mb-2 text-center text-xs uppercase tracking-wider text-[var(--deco-muted)]">
+							Your Hands
+						</div>
+						<div data-testid="daily-challenge-player-hands" class="flex flex-col gap-3"></div>
+					</div>
+				</div>
+			</div>
+
+			<p
+				data-testid="daily-challenge-status"
+				role="status"
+				aria-live="polite"
+				class="mb-4 text-center text-lg font-semibold text-[var(--deco-brass)]"
+			>
+			</p>
+
+			<div class="mb-6 flex flex-wrap items-end justify-center gap-3">
+				<label
+					class="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--deco-muted)]"
+				>
+					Wager
+					<input
+						data-testid="daily-challenge-wager"
+						type="number"
+						min="10"
+						max="1000"
+						step="10"
+						value="100"
+						class="w-32 rounded-lg border border-[var(--deco-line)] bg-[var(--deco-obsidian)] px-3 py-2 text-lg font-bold text-[var(--deco-ivory)]"
+					/>
+				</label>
+				<button
+					type="button"
+					data-testid="daily-challenge-start-ranked"
+					class="deco-btn deco-btn-primary"
+				>
+					Start Ranked
+				</button>
+				<button
+					type="button"
+					data-testid="daily-challenge-start-round"
+					class="deco-btn deco-btn-primary"
+				>
+					Start Round
+				</button>
+				<button type="button" data-testid="daily-challenge-action-hit" class="deco-btn">
+					Hit
+				</button>
+				<button type="button" data-testid="daily-challenge-action-stand" class="deco-btn">
+					Stand
+				</button>
+				<button type="button" data-testid="daily-challenge-action-double-down" class="deco-btn">
+					Double Down
+				</button>
+				<button type="button" data-testid="daily-challenge-action-split" class="deco-btn">
+					Split
+				</button>
+				<button
+					type="button"
+					data-testid="daily-challenge-forfeit"
+					class="deco-btn deco-btn-outline"
+				>
+					Forfeit
+				</button>
+				<button
+					type="button"
+					data-testid="daily-challenge-forfeit-confirm"
+					class="deco-btn deco-btn-primary"
+					hidden
+				>
+					Confirm Forfeit
+				</button>
+				<button type="button" data-testid="daily-challenge-forfeit-cancel" class="deco-btn" hidden>
+					Cancel
+				</button>
+			</div>
+
+			<div class="mb-6 flex flex-wrap justify-center gap-3">
+				<button type="button" data-testid="daily-challenge-restart-practice" class="deco-btn">
+					Restart Practice
+				</button>
+				<button
+					type="button"
+					data-testid="daily-challenge-replay-scenario-practice"
+					class="deco-btn deco-btn-outline"
+				>
+					Practice Scenario
+				</button>
+				<button
+					type="button"
+					data-testid="daily-challenge-replay-scenario-exact-ranked"
+					class="deco-btn deco-btn-outline"
+				>
+					Exact Ranked Replay
+				</button>
+			</div>
+
+			<section
+				data-testid="daily-challenge-receipt"
+				class="deco-panel deco-frame mx-auto mb-6 max-w-md p-6 text-center"
+				hidden
+			>
+				<p class="deco-section-eyebrow mb-2">Result</p>
+				<p
+					data-testid="daily-challenge-receipt-eligibility"
+					class="text-lg font-bold text-[var(--deco-brass)]"
+				>
+				</p>
+				<p
+					data-testid="daily-challenge-receipt-bankroll"
+					class="mt-2 text-3xl font-bold text-[var(--deco-ivory)]"
+				>
+				</p>
+				<p
+					data-testid="daily-challenge-receipt-rounds"
+					class="mt-1 text-sm text-[var(--deco-muted)]"
+				>
+				</p>
+				<p
+					data-testid="daily-challenge-rank"
+					class="mt-2 text-xl font-bold text-[var(--deco-brass)]"
+				>
+				</p>
+				<p data-testid="daily-challenge-percentile" class="text-sm text-[var(--deco-muted)]"></p>
+			</section>
+		</section>
+
+		<section class="mb-10" data-testid="daily-challenge-leaderboard">
+			<div class="mb-4">
+				<p class="deco-section-eyebrow">Today&rsquo;s Best</p>
+				<h2 class="deco-section-title text-3xl">Top Results</h2>
+			</div>
+			<p
+				data-testid="daily-challenge-current-standing"
+				class="mb-3 inline-block rounded-lg border border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)]"
+				hidden
+			>
+			</p>
+			<ol
+				data-testid="daily-challenge-leaderboard-rows"
+				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
+			>
+			</ol>
+		</section>
+
+		<section data-testid="daily-challenge-history">
+			<div class="mb-4">
+				<p class="deco-section-eyebrow">Past Days</p>
+				<h2 class="deco-section-title text-3xl">Your Last 7 Days</h2>
+			</div>
+			<ol
+				data-testid="daily-challenge-history-rows"
+				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
+			>
+			</ol>
+		</section>
+
+		<noscript>
+			<div class="deco-panel deco-frame mt-10 p-6 text-center text-sm text-[var(--deco-muted)]">
+				The Daily Challenge needs JavaScript to load today&rsquo;s scenario, leaderboard, and replay
+				controls. Enable JavaScript and reload this page.
+			</div>
+		</noscript>
+	</main>
+</CasinoLayout>
+
+<script>
+	import { initDailyChallengePage } from '../../lib/daily-challenge/client';
+
+	const root = document.querySelector<HTMLElement>('#daily-challenge-root');
+	if (root) void initDailyChallengePage(root);
+</script>

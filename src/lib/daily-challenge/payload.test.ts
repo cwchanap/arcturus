@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { encodeBase64Url } from '../ranked/canonical';
 import {
 	parseDailyChallengeAttemptResponse,
 	parseDailyChallengeChallengeResponse,
@@ -322,6 +323,19 @@ describe('parseDailyChallengeChallengeResponse — happy paths', () => {
 		const value = challengeResponse({ attempt: terminalAttempt() });
 		expect(parseDailyChallengeChallengeResponse(value)).toEqual(value);
 	});
+
+	test('accepts a live challenge response with a null revealed seed', () => {
+		const value = challengeResponse({ revealedRankedSeed: null });
+		const nowMs = (1_742_000_000 + 1000) * 1000;
+		expect(parseDailyChallengeChallengeResponse(value, nowMs)).toEqual(value);
+	});
+
+	test('accepts a closed challenge response with the canonical revealed seed', () => {
+		const seed = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => index));
+		const value = challengeResponse({ revealedRankedSeed: seed });
+		const nowMs = (1_742_000_000 + 86_400) * 1000;
+		expect(parseDailyChallengeChallengeResponse(value, nowMs)).toEqual(value);
+	});
 });
 
 describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
@@ -382,6 +396,16 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 		expect(() =>
 			parseDailyChallengeChallengeResponse({ ...liveChallengeResponse(), unknown: true }),
 		).toThrow();
+	});
+
+	test('rejects a closed challenge response carrying a malformed revealed seed', () => {
+		const nowMs = (1_742_000_000 + 86_400) * 1000;
+		expect(() =>
+			parseDailyChallengeChallengeResponse(
+				{ ...liveChallengeResponse(), revealedRankedSeed: 'not-canonical!!' },
+				nowMs,
+			),
+		).toThrow(/revealedRankedSeed|reveal/i);
 	});
 });
 

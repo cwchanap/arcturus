@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { decodeCanonicalBase64Url } from '../ranked/canonical';
 import type { RankedBlackjackPublicStateV1 } from '../ranked/blackjack/types';
 
 export const dailyChallengeRequestIdSchema = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/);
@@ -13,6 +14,15 @@ export const dailyChallengeSequenceSchema = z
 	.refine((value) => Number.isSafeInteger(value) && value >= 0 && !Object.is(value, -0));
 export const dailyChallengeBankrollSchema = dailyChallengeSafeIntegerSchema.min(0);
 export const dailyChallengeHex64Schema = z.string().regex(/^[0-9a-f]{64}$/);
+
+const dailyChallengeRevealedSeedSchema = z.string().refine((value) => {
+	try {
+		decodeCanonicalBase64Url(value);
+		return true;
+	} catch {
+		return false;
+	}
+}, 'Invalid canonical base64url revealed seed');
 
 export const dailyChallengeStartRequestSchema = z
 	.object({ requestId: dailyChallengeRequestIdSchema })
@@ -169,6 +179,7 @@ export const dailyChallengeChallengeResponseSchema = z
 		endsAt: dailyChallengeSafeIntegerSchema.min(0),
 		configHash: dailyChallengeHex64Schema,
 		rankedSeedCommitment: dailyChallengeHex64Schema,
+		revealedRankedSeed: dailyChallengeRevealedSeedSchema.nullable().optional(),
 		attempt: dailyChallengeAttemptPublicStateSchema.nullable(),
 	})
 	.strict();

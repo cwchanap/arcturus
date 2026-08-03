@@ -74,7 +74,7 @@ export function parseDailyChallengeChallengeResponse(
 	assertNoLiveRankedSeed(value);
 	if (isPlainObject(value)) {
 		assertNoActiveRoundNextSequence(value.attempt);
-		if (Object.prototype.hasOwnProperty.call(value, 'revealedRankedSeed')) {
+		if (value.revealedRankedSeed != null) {
 			const endsAt =
 				typeof value.endsAt === 'number' && Number.isFinite(value.endsAt)
 					? value.endsAt

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { encodeBase64Url } from '../ranked/canonical';
 import {
 	DAILY_CHALLENGE_ERROR_STATUS,
 	dailyChallengeActiveRoundSchema,
@@ -337,6 +338,60 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
+	});
+
+	test('accepts a live challenge response with a null revealed seed', () => {
+		const challenge = {
+			periodKey: '2026-03-14',
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1742000000,
+			rankedEntryClosesAt: 1742000000 + 24 * 60 * 60 - 1800,
+			endsAt: 1742000000 + 24 * 60 * 60,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			revealedRankedSeed: null,
+			attempt: null,
+		};
+		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
+	});
+
+	test('accepts a closed challenge response with a canonical base64url revealed seed', () => {
+		const challenge = {
+			periodKey: '2026-03-14',
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1742000000,
+			rankedEntryClosesAt: 1742000000 + 24 * 60 * 60 - 1800,
+			endsAt: 1742000000 + 24 * 60 * 60,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			revealedRankedSeed: encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => index)),
+			attempt: null,
+		};
+		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
+	});
+
+	test('rejects a malformed non-canonical revealed seed', () => {
+		const challenge = {
+			periodKey: '2026-03-14',
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1742000000,
+			rankedEntryClosesAt: 1742000000 + 24 * 60 * 60 - 1800,
+			endsAt: 1742000000 + 24 * 60 * 60,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			revealedRankedSeed: 'not-canonical!!',
+			attempt: null,
+		};
+		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(false);
 	});
 
 	test('rejects unknown challenge response fields', () => {

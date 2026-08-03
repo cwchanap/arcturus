@@ -1169,3 +1169,83 @@ describe('daily challenge coordinator leaderboard and history', () => {
 		expect(history.entries[0].periodKey).toBe(challenge.periodKey);
 	});
 });
+
+describe('daily challenge coordinator ranked seed reveal', () => {
+	test('a live challenge response never exposes the ranked seed', async () => {
+		const repository = new FakeRepository();
+		const { coordinator } = createBundle(repository);
+
+		const response = await coordinator.getCurrent({ userId: USER_ID });
+
+		expect(response.revealedRankedSeed).toBeNull();
+	});
+
+	test('a closed challenge response reveals the stored canonical seed', async () => {
+		const pastWindow = getDailyChallengeWindow(NOW_SECONDS - 86_400);
+		const pastChallenge = baseChallenge({
+			id: 'test-challenge-past-0001',
+			periodKey: pastWindow.periodKey,
+			startsAt: pastWindow.startsAt,
+			rankedEntryClosesAt: pastWindow.rankedEntryClosesAt,
+			endsAt: pastWindow.endsAt,
+			createdAt: pastWindow.startsAt,
+		});
+		const repository = new FakeRepository({ challenges: [pastChallenge] });
+		const { coordinator } = createBundle(repository);
+
+		const response = await coordinator.getByPeriod({
+			periodKey: pastWindow.periodKey,
+			userId: null,
+		});
+
+		expect(response.revealedRankedSeed).toBe(pastChallenge.rankedSeed);
+		expect(decodeCanonicalBase64Url(response.revealedRankedSeed!)).toEqual(
+			decodeCanonicalBase64Url(pastChallenge.rankedSeed),
+		);
+	});
+
+	test('a challenge response at the exact close boundary reveals the seed', async () => {
+		const pastWindow = getDailyChallengeWindow(NOW_SECONDS - 86_400);
+		const pastChallenge = baseChallenge({
+			id: 'test-challenge-past-0001',
+			periodKey: pastWindow.periodKey,
+			startsAt: pastWindow.startsAt,
+			rankedEntryClosesAt: pastWindow.rankedEntryClosesAt,
+			endsAt: pastWindow.endsAt,
+			createdAt: pastWindow.startsAt,
+		});
+		const repository = new FakeRepository({ challenges: [pastChallenge] });
+		const { coordinator } = createBundle(repository, pastWindow.endsAt);
+
+		const response = await coordinator.getByPeriod({
+			periodKey: pastWindow.periodKey,
+			userId: null,
+		});
+
+		expect(response.revealedRankedSeed).toBe(pastChallenge.rankedSeed);
+	});
+
+	test('coordinator log entries never carry the ranked seed', async () => {
+		const repository = new FakeRepository();
+		const { coordinator, logs } = createBundle(repository);
+
+		const started = await coordinator.start({
+			userId: USER_ID,
+			body: { requestId: 'request-log-seed-0001' },
+		});
+		await coordinator.command({
+			userId: USER_ID,
+			attemptId: started.attemptId,
+			body: startRound(0, DEFAULT_WAGER),
+		});
+
+		const persisted = await repository.findChallengeByPeriodKey(
+			'blackjack-daily',
+			WINDOW.periodKey,
+		);
+		expect(persisted).not.toBeNull();
+		const seed = persisted!.rankedSeed;
+		expect(logs.length).toBeGreaterThan(0);
+		expect(logs.every((entry) => !JSON.stringify(entry).includes(seed))).toBe(true);
+	});
+});

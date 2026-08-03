@@ -77,14 +77,14 @@ export function createRankedBlackjackRenderer(root: HTMLElement): RankedBlackjac
 	};
 
 	const renderDealer = (response: RankedBlackjackResponseV1): void => {
-		renderBlackjackDealer(document, dealerHand, dealerValue, response.state.dealer, {
+		renderBlackjackDealer(root.ownerDocument, dealerHand, dealerValue, response.state.dealer, {
 			testIdPrefix: RANKED_PRESENTATION_OPTIONS.testIdPrefix,
 		});
 	};
 
 	const renderPlayers = (response: RankedBlackjackResponseV1): void => {
 		renderBlackjackPlayerHands(
-			document,
+			root.ownerDocument,
 			playerHands,
 			response.state.playerHands,
 			response.state.activeHandIndex,

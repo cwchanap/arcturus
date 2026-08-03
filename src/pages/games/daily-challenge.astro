@@ -1,6 +1,7 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import { getDailyChallengeWindow } from '../../lib/daily-challenge/config';
+import { hashUserId } from '../../lib/public-game-session';
 
 // Guest access is an intentional exception for the Daily Challenge page: unauthenticated
 // visitors can browse the current challenge, leaderboard, and history, and play practice
@@ -29,7 +30,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 <CasinoLayout title="Daily Challenge - Arcturus Casino">
 	<main
 		id="daily-challenge-root"
-		data-user-id={user?.id ?? 'guest'}
+		data-user-id={user ? hashUserId(user.id) : 'guest'}
 		class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
 	>
 		<header class="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">

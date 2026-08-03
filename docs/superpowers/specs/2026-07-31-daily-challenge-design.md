@@ -780,7 +780,7 @@ Do not share ranked wallet controls, local-storage keys, receipts, countdown sem
 
 Local practice and historical replay require deterministic shuffle/replay code and the existing `@noble/hashes` dependency in the browser. This is safe—the algorithm is public and the live ranked seed remains the secret—but it is a bundle-size cost.
 
-The public page must lazy-load the deterministic engine only when the user enters Practice, starts/resumes Ranked gameplay, or opens historical replay. Initial challenge metadata, history, and leaderboard rendering must not eagerly load the replay engine. The implementation PR records the compressed lazy-chunk size and verifies that shared hash code is not duplicated into multiple chunks unnecessarily.
+The public page must lazy-load the deterministic engine only when the user enters Practice or opens historical replay. Initial challenge metadata, history, and leaderboard rendering, and live Ranked gameplay must not eagerly load the replay engine. The implementation PR records the compressed lazy-chunk size and verifies that shared hash code is not duplicated into multiple chunks unnecessarily.
 
 ---
 

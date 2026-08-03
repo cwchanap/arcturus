@@ -186,7 +186,9 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 		practiceNoticesEl.hidden = mode !== 'practice';
 		rankedNoticesEl.hidden = mode !== 'ranked';
 		forfeitEl.hidden =
-			view === 'ranked' ? rankedAttempt?.activeRound === null : localReplay?.status !== 'active';
+			view === 'ranked'
+				? rankedAttempt === null || rankedAttempt?.activeRound === null
+				: localReplay?.status !== 'active';
 		forfeitConfirmEl.hidden = !forfeitConfirmVisible;
 		forfeitCancelEl.hidden = !forfeitConfirmVisible;
 		restartPracticeEl.hidden = false;
@@ -314,8 +316,9 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 	};
 
 	const startRound = (): void => {
+		if (wagerEl.value === '') return;
 		const parsed = Number(wagerEl.value);
-		if (!Number.isNaN(parsed)) handlers?.onStartRound(Math.trunc(parsed));
+		if (Number.isFinite(parsed)) handlers?.onStartRound(Math.trunc(parsed));
 	};
 
 	return {

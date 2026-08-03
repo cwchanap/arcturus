@@ -25,6 +25,9 @@ export function getDailyChallengeWindow(nowSeconds: number) {
 		throw new TypeError('Daily Challenge time must be a non-negative safe integer');
 	}
 	const date = new Date(nowSeconds * 1000);
+	if (Number.isNaN(date.getTime())) {
+		throw new RangeError('Daily Challenge time must resolve to a valid date');
+	}
 	const periodKey = getDailyPeriodKey(date);
 	const startsAt = Math.trunc(Date.parse(`${periodKey}T00:00:00.000Z`) / 1000);
 	const endsAt = startsAt + 24 * 60 * 60;

@@ -10,6 +10,7 @@ import {
 } from '../../lib/daily-challenge/protocol';
 import { replayDailyChallenge } from '../../lib/daily-challenge/replay';
 import { createDailyChallengeSeedCommitment } from '../../lib/daily-challenge/random';
+import { calculateDailyChallengePercentile } from '../../lib/daily-challenge/scoring';
 import {
 	canonicalizeRanked,
 	decodeCanonicalBase64Url,
@@ -378,12 +379,10 @@ class FakeRepository {
 		const userIndex = eligible.findIndex((result) => result.userId === userId);
 		if (userIndex === -1) return null;
 		const totalEligible = eligible.length;
-		const playersAtOrBelow = totalEligible - userIndex;
-		const percentile = Math.min(
-			100,
-			Math.max(1, Math.round((100 * playersAtOrBelow) / totalEligible)),
-		);
-		return { rank: userIndex + 1, percentile };
+		return {
+			rank: userIndex + 1,
+			percentile: calculateDailyChallengePercentile(totalEligible, userIndex),
+		};
 	}
 
 	async readLeaderboard(
@@ -407,12 +406,14 @@ class FakeRepository {
 		const userIndex = eligible.findIndex((result) => result.userId === currentUserId);
 		if (userIndex === -1) return { entries, currentUser: null };
 		const totalEligible = eligible.length;
-		const playersAtOrBelow = totalEligible - userIndex;
-		const percentile = Math.min(
-			100,
-			Math.max(1, Math.round((100 * playersAtOrBelow) / totalEligible)),
-		);
-		return { entries, currentUser: { rank: userIndex + 1, totalEligible, percentile } };
+		return {
+			entries,
+			currentUser: {
+				rank: userIndex + 1,
+				totalEligible,
+				percentile: calculateDailyChallengePercentile(totalEligible, userIndex),
+			},
+		};
 	}
 
 	async listChallengeHistory(

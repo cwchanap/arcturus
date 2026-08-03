@@ -75,7 +75,9 @@ function isValidWager(wager: number, config: DailyChallengeConfigV1): boolean {
 	);
 }
 
-function replayRound(round: MutableInternalRound): RankedBlackjackReplay {
+function replayRound(
+	round: Pick<MutableInternalRound, 'initialWager' | 'deck' | 'adapterActions'>,
+): RankedBlackjackReplay {
 	return replayRankedBlackjack(
 		issueBlackjackConfig(round.initialWager),
 		round.deck.slice(),
@@ -127,14 +129,15 @@ function applyStartRound(state: MutableReplayState, wager: number): void {
 	state.availableBankroll -= wager;
 	const roundIndex = state.roundsCompleted;
 	const deck = state.deckSource(roundIndex);
+	const adapterActions: RankedBlackjackActionLogEntryV1[] = [];
+	const replay = replayRound({ initialWager: wager, deck, adapterActions });
 	const round: MutableInternalRound = {
 		roundIndex,
 		initialWager: wager,
-		adapterActions: [],
-		replay: undefined as unknown as RankedBlackjackReplay,
+		adapterActions,
+		replay,
 		deck,
 	};
-	round.replay = replayRound(round);
 	state.activeRound = round;
 	maybeSettleActiveRound(state);
 }

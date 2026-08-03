@@ -69,16 +69,16 @@ const scheduledJobDeps: ScheduledJobDeps = {
 				console.warn('[DAILY_CHALLENGE]', entry);
 			},
 			// Expiration only calls coordinator.expire(), which never touches the rate
-			// limiters. Provide no-op stubs to avoid creating unnecessary D1-backed
-			// buckets on every cron tick.
+			// limiters. Throw on any invocation so an accidental scheduled-path call
+			// fails loudly at runtime instead of silently masking a bug.
 			async consumeStartRateLimit() {
-				return { kind: 'allowed' as const, statement: null as never, retryAfter: 0 };
+				throw new Error('Daily Challenge expiration must not consume start rate limits');
 			},
 			async consumeCommandRateLimit() {
-				return { kind: 'allowed' as const, statement: null as never, retryAfter: 0 };
+				throw new Error('Daily Challenge expiration must not consume command rate limits');
 			},
 			async consumeResumeRateLimit() {
-				return { kind: 'allowed' as const };
+				throw new Error('Daily Challenge expiration must not consume resume rate limits');
 			},
 		});
 		await runDailyChallengeExpiration(

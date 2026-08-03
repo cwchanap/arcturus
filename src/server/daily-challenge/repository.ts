@@ -231,6 +231,8 @@ export interface DailyChallengeRepository {
 		challengeId: string,
 		userId: string,
 	): Promise<DailyChallengeAttemptRecord | null>;
+	findAttemptById(attemptId: string): Promise<DailyChallengeAttemptRecord | null>;
+	findChallengeById(challengeId: string): Promise<DailyChallengeRecord | null>;
 	runStartTransition(
 		input: DailyChallengeStartTransitionInput,
 	): Promise<DailyChallengeStartTransitionResult>;
@@ -919,6 +921,27 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 				.bind(challengeId, userId)
 				.first<DailyChallengeAttemptRow>();
 			return row === null ? null : parseAttemptRow(row);
+		},
+		async findAttemptById(attemptId) {
+			const row = await db
+				.prepare('SELECT * FROM daily_challenge_attempt WHERE id = ? LIMIT 1')
+				.bind(attemptId)
+				.first<DailyChallengeAttemptRow>();
+			return row === null ? null : parseAttemptRow(row);
+		},
+		async findChallengeById(challengeId) {
+			const row = await db
+				.prepare('SELECT * FROM daily_challenge WHERE id = ? LIMIT 1')
+				.bind(challengeId)
+				.first<DailyChallengeRow>();
+			if (row === null) return null;
+			if (
+				row.challengeKind !== 'blackjack-daily' ||
+				row.challengeRulesetVersion !== 'blackjack-daily-v1'
+			) {
+				return null;
+			}
+			return parseChallengeRow(row);
 		},
 		runStartTransition(input) {
 			return executeStartTransition(db, input);

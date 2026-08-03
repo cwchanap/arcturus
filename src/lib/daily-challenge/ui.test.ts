@@ -295,6 +295,7 @@ function mountShell({ authenticated = true }: { authenticated?: boolean } = {}):
 	document.body.replaceChildren();
 	const root = document.createElement('main');
 	if (authenticated) root.dataset.userId = 'user-1';
+	else root.dataset.userId = 'guest';
 	root.innerHTML = `
 		<p data-testid="daily-challenge-close"></p>
 		<div class="mode-row">
@@ -403,7 +404,7 @@ describe('daily challenge renderer — mode selection', () => {
 		const { root, get, renderer, handlers } = mount({ authenticated: false });
 		renderer.renderChallenge(challengeFixture());
 
-		expect(root.dataset.userId).toBeUndefined();
+		expect(root.dataset.userId).toBe('guest');
 		expect(get('daily-challenge-mode-practice').hidden).toBe(false);
 		expect(get('daily-challenge-mode-ranked').hidden).toBe(true);
 		const cta = get('daily-challenge-sign-in-cta') as HTMLAnchorElement;
@@ -435,10 +436,14 @@ describe('daily challenge renderer — mode selection', () => {
 		expect(get('daily-challenge-once-warning').textContent).toContain('one ranked attempt');
 	});
 
-	test('shows the ranked entry close time from the challenge window', () => {
+	test('shows the ranked entry close time derived from the challenge window', () => {
 		const { get, renderer } = mount();
-		renderer.renderChallenge(challengeFixture());
-		expect(get('daily-challenge-close').textContent).toBe('Ranked entry closes at 23:30 UTC.');
+		const challenge = challengeFixture();
+		renderer.renderChallenge(challenge);
+		const expectedTime = new Date(challenge.rankedEntryClosesAt * 1000).toISOString().slice(11, 16);
+		expect(get('daily-challenge-close').textContent).toBe(
+			`Ranked entry closes at ${expectedTime} UTC.`,
+		);
 	});
 
 	test('exact ranked replay scenario is disabled on a live challenge and enabled post-close', () => {
@@ -446,11 +451,17 @@ describe('daily challenge renderer — mode selection', () => {
 		renderer.renderChallenge(challengeFixture());
 		(get('daily-challenge-mode-practice') as HTMLButtonElement).click();
 
-		expect(get('daily-challenge-replay-scenario-exact-ranked').disabled).toBe(true);
-		expect(get('daily-challenge-replay-scenario-practice').disabled).toBe(false);
+		expect(
+			(get('daily-challenge-replay-scenario-exact-ranked') as HTMLButtonElement).disabled,
+		).toBe(true);
+		expect((get('daily-challenge-replay-scenario-practice') as HTMLButtonElement).disabled).toBe(
+			false,
+		);
 
 		renderer.renderChallenge(closedChallengeFixture());
-		expect(get('daily-challenge-replay-scenario-exact-ranked').disabled).toBe(false);
+		expect(
+			(get('daily-challenge-replay-scenario-exact-ranked') as HTMLButtonElement).disabled,
+		).toBe(false);
 	});
 
 	test('practice scenario selection invokes the replay scenario handler', () => {
@@ -787,7 +798,7 @@ describe('daily challenge renderer — keyboard, focus, and live region', () => 
 		const { get, renderer, handlers } = mount();
 		renderer.renderChallenge(challengeFixture());
 		renderer.renderLocalReplay(null);
-		(get('daily-challenge-wager' as 'w') as HTMLInputElement).value = '250';
+		(get('daily-challenge-wager') as HTMLInputElement).value = '250';
 		(get('daily-challenge-start-round') as HTMLButtonElement).click();
 		expect(handlers.calls.onStartRound).toEqual([250]);
 

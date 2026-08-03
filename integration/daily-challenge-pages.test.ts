@@ -49,7 +49,7 @@ function authedLocals(): App.Locals {
 }
 
 describe('daily challenge current page — cache and session behavior', () => {
-	test('a guest gets a publicly cacheable shell with Vary: Cookie and no user id', async () => {
+	test('a guest gets a publicly cacheable shell with Vary: Cookie and a guest surrogate user id', async () => {
 		const container = await AstroContainer.create();
 		const response = await container.renderToResponse(DailyChallengePage, {
 			locals: guestLocals(),
@@ -66,7 +66,7 @@ describe('daily challenge current page — cache and session behavior', () => {
 
 		const root = window.document.querySelector('#daily-challenge-root');
 		expect(root).not.toBeNull();
-		expect(root?.getAttribute('data-user-id')).toBeNull();
+		expect(root?.getAttribute('data-user-id')).toBe('guest');
 		expect(window.document.querySelector('[data-testid="daily-challenge-wager"]')).not.toBeNull();
 		expect(
 			window.document.querySelector('[data-testid="daily-challenge-leaderboard-rows"]'),
@@ -116,7 +116,7 @@ describe('daily challenge historical page — period validation and cache behavi
 
 		const root = window.document.querySelector('#daily-challenge-root');
 		expect(root?.getAttribute('data-period-key')).toBe('2026-07-30');
-		expect(root?.getAttribute('data-user-id')).toBeNull();
+		expect(root?.getAttribute('data-user-id')).toBe('guest');
 
 		const startRanked = window.document.querySelector<HTMLButtonElement>(
 			'[data-testid="daily-challenge-start-ranked"]',

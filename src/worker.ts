@@ -16,11 +16,6 @@ import {
 	runDailyChallengeExpiration,
 	runDailyChallengeRetention,
 } from './server/daily-challenge/expiration';
-import {
-	createDailyChallengeCommandRateLimiter,
-	createDailyChallengeResumeRateLimiter,
-	createDailyChallengeStartRateLimiter,
-} from './server/daily-challenge/http';
 import { createDailyChallengeRepository } from './server/daily-challenge/repository';
 import { Arcturus as ArcturusDO } from './server/mp/arcturus';
 import { reconcileMultiplayerMembership } from './server/mp/membership';
@@ -64,16 +59,27 @@ const scheduledJobDeps: ScheduledJobDeps = {
 		const repository = createDailyChallengeRepository(db);
 		const coordinator = createDailyChallengeCoordinator({
 			repository,
-			now: () => new Date(),
+			// Use the scheduled job's authoritative clock, not wall-clock time, so
+			// expiration decisions are consistent with the cursor that selected the rows.
+			now: () => new Date(nowSeconds * 1000),
 			randomBytes(length) {
 				return crypto.getRandomValues(new Uint8Array(length));
 			},
 			log(entry) {
 				console.warn('[DAILY_CHALLENGE]', entry);
 			},
-			consumeStartRateLimit: createDailyChallengeStartRateLimiter(db),
-			consumeCommandRateLimit: createDailyChallengeCommandRateLimiter(db),
-			consumeResumeRateLimit: createDailyChallengeResumeRateLimiter(db),
+			// Expiration only calls coordinator.expire(), which never touches the rate
+			// limiters. Provide no-op stubs to avoid creating unnecessary D1-backed
+			// buckets on every cron tick.
+			async consumeStartRateLimit() {
+				return { kind: 'allowed' as const, statement: null as never, retryAfter: 0 };
+			},
+			async consumeCommandRateLimit() {
+				return { kind: 'allowed' as const, statement: null as never, retryAfter: 0 };
+			},
+			async consumeResumeRateLimit() {
+				return { kind: 'allowed' as const };
+			},
 		});
 		await runDailyChallengeExpiration(
 			repository,

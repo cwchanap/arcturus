@@ -40,79 +40,79 @@
 
 ### Pure and browser-safe domain
 
-| File | Responsibility |
-|---|---|
-| `src/lib/ranked/blackjack/types.ts` | Shared internal and public Blackjack types |
-| `src/lib/ranked/blackjack/projection.ts` | Balance-neutral public projection for ranked and Daily Challenge |
-| `src/lib/ranked/blackjack/projection.test.ts` | Projection secrecy, funding, terminal, and adapter-equivalence tests |
-| `src/lib/ranked/blackjack/adapter.ts` | Preserve adapter contract while delegating projection |
-| `src/lib/ranked/blackjack/adapter.test.ts` | Existing adapter compatibility assertions |
-| `src/lib/ranked/random.ts` | Export the shared unsigned 64-bit big-endian encoder |
-| `src/lib/ranked/random.test.ts` | Encoder and existing random-stream compatibility |
-| `src/lib/daily-challenge/protocol.ts` | Strict commands, responses, identifiers, receipts, and error codes |
-| `src/lib/daily-challenge/protocol.test.ts` | Schema, identifier, response-shape, and error mapping tests |
-| `src/lib/daily-challenge/config.ts` | Immutable v1 config and UTC challenge-window helpers |
-| `src/lib/daily-challenge/config.test.ts` | Config identity and UTC-boundary vectors |
-| `src/lib/daily-challenge/random.ts` | Versioned seed registry, commitments, and per-round derivation |
-| `src/lib/daily-challenge/random.test.ts` | Known seed/commitment/HMAC vectors and version failure |
-| `src/lib/daily-challenge/replay.ts` | Pure multi-round command replay and virtual-bankroll state |
-| `src/lib/daily-challenge/replay.test.ts` | Round segmentation, actions, bankroll, terminal precedence, and replay vectors |
-| `src/lib/daily-challenge/scoring.ts` | Score comparison and percentile helpers |
-| `src/lib/daily-challenge/scoring.test.ts` | Shared ranks, stable display order, and percentile tests |
+| File                                          | Responsibility                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------ |
+| `src/lib/ranked/blackjack/types.ts`           | Shared internal and public Blackjack types                                     |
+| `src/lib/ranked/blackjack/projection.ts`      | Balance-neutral public projection for ranked and Daily Challenge               |
+| `src/lib/ranked/blackjack/projection.test.ts` | Projection secrecy, funding, terminal, and adapter-equivalence tests           |
+| `src/lib/ranked/blackjack/adapter.ts`         | Preserve adapter contract while delegating projection                          |
+| `src/lib/ranked/blackjack/adapter.test.ts`    | Existing adapter compatibility assertions                                      |
+| `src/lib/ranked/random.ts`                    | Export the shared unsigned 64-bit big-endian encoder                           |
+| `src/lib/ranked/random.test.ts`               | Encoder and existing random-stream compatibility                               |
+| `src/lib/daily-challenge/protocol.ts`         | Strict commands, responses, identifiers, receipts, and error codes             |
+| `src/lib/daily-challenge/protocol.test.ts`    | Schema, identifier, response-shape, and error mapping tests                    |
+| `src/lib/daily-challenge/config.ts`           | Immutable v1 config and UTC challenge-window helpers                           |
+| `src/lib/daily-challenge/config.test.ts`      | Config identity and UTC-boundary vectors                                       |
+| `src/lib/daily-challenge/random.ts`           | Versioned seed registry, commitments, and per-round derivation                 |
+| `src/lib/daily-challenge/random.test.ts`      | Known seed/commitment/HMAC vectors and version failure                         |
+| `src/lib/daily-challenge/replay.ts`           | Pure multi-round command replay and virtual-bankroll state                     |
+| `src/lib/daily-challenge/replay.test.ts`      | Round segmentation, actions, bankroll, terminal precedence, and replay vectors |
+| `src/lib/daily-challenge/scoring.ts`          | Score comparison and percentile helpers                                        |
+| `src/lib/daily-challenge/scoring.test.ts`     | Shared ranks, stable display order, and percentile tests                       |
 
 ### D1 and server orchestration
 
-| File | Responsibility |
-|---|---|
-| `src/db/schema.ts` | Three Daily Challenge tables and indexes |
-| `drizzle/0012_daily_challenge.sql` | Generated D1 migration on the current migration sequence |
-| `src/server/daily-challenge/test-d1.ts` | Daily aliases/helpers over the existing migrated Miniflare harness |
-| `src/server/daily-challenge/schema.integration.test.ts` | Real schema constraints and indexes |
-| `src/server/daily-challenge/repository.ts` | Challenge, attempt, result, leaderboard, history, and cleanup persistence |
-| `src/server/daily-challenge/repository.integration.test.ts` | Real D1 races, guarded transitions, ranking, and retention |
-| `src/server/daily-challenge/coordinator.ts` | Current/history reads, start/resume/command, render, and expiry orchestration |
-| `src/server/daily-challenge/coordinator.test.ts` | Clock, idempotency, classification, receipt, and recovery tests |
-| `src/server/daily-challenge/http.ts` | Injectable handlers, validation, status mapping, and cache policy |
-| `src/server/daily-challenge/http.test.ts` | Auth, parsing, cache, privacy, and route-contract tests |
-| `src/server/daily-challenge/expiration.ts` | Bounded expiry and 90-day attempt retention |
-| `src/server/daily-challenge/expiration.test.ts` | Pagination, poison-row progress, and retention tests |
-| `src/server/ranked/rate-limit.ts` | Generic authenticated operations plus compatibility exports |
-| `src/server/ranked/rate-limit.test.ts` | Ranked compatibility and Daily Challenge policy tests |
-| `src/server/cleanup.ts` | Independent Daily Challenge scheduled jobs |
-| `src/server/cleanup.test.ts` | Scheduled ordering and error isolation |
-| `src/worker.ts` | Production coordinator/repository wiring |
+| File                                                        | Responsibility                                                                |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `src/db/schema.ts`                                          | Three Daily Challenge tables and indexes                                      |
+| `drizzle/0015_daily_challenge.sql`                          | Generated D1 migration on the current migration sequence                      |
+| `src/server/daily-challenge/test-d1.ts`                     | Daily aliases/helpers over the existing migrated Miniflare harness            |
+| `src/server/daily-challenge/schema.integration.test.ts`     | Real schema constraints and indexes                                           |
+| `src/server/daily-challenge/repository.ts`                  | Challenge, attempt, result, leaderboard, history, and cleanup persistence     |
+| `src/server/daily-challenge/repository.integration.test.ts` | Real D1 races, guarded transitions, ranking, and retention                    |
+| `src/server/daily-challenge/coordinator.ts`                 | Current/history reads, start/resume/command, render, and expiry orchestration |
+| `src/server/daily-challenge/coordinator.test.ts`            | Clock, idempotency, classification, receipt, and recovery tests               |
+| `src/server/daily-challenge/http.ts`                        | Injectable handlers, validation, status mapping, and cache policy             |
+| `src/server/daily-challenge/http.test.ts`                   | Auth, parsing, cache, privacy, and route-contract tests                       |
+| `src/server/daily-challenge/expiration.ts`                  | Bounded expiry and 90-day attempt retention                                   |
+| `src/server/daily-challenge/expiration.test.ts`             | Pagination, poison-row progress, and retention tests                          |
+| `src/server/ranked/rate-limit.ts`                           | Generic authenticated operations plus compatibility exports                   |
+| `src/server/ranked/rate-limit.test.ts`                      | Ranked compatibility and Daily Challenge policy tests                         |
+| `src/server/cleanup.ts`                                     | Independent Daily Challenge scheduled jobs                                    |
+| `src/server/cleanup.test.ts`                                | Scheduled ordering and error isolation                                        |
+| `src/worker.ts`                                             | Production coordinator/repository wiring                                      |
 
 ### API routes
 
-| File | Endpoint |
-|---|---|
-| `src/pages/api/daily-challenges/current/index.ts` | `GET /api/daily-challenges/current` |
-| `src/pages/api/daily-challenges/current/attempts.ts` | `POST /api/daily-challenges/current/attempts` |
-| `src/pages/api/daily-challenges/history.ts` | `GET /api/daily-challenges/history` |
-| `src/pages/api/daily-challenges/[periodKey]/index.ts` | `GET /api/daily-challenges/:periodKey` |
-| `src/pages/api/daily-challenges/[periodKey]/leaderboard.ts` | `GET /api/daily-challenges/:periodKey/leaderboard` |
-| `src/pages/api/daily-challenge-attempts/[attemptId]/index.ts` | `GET /api/daily-challenge-attempts/:attemptId` |
+| File                                                             | Endpoint                                                 |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| `src/pages/api/daily-challenges/current/index.ts`                | `GET /api/daily-challenges/current`                      |
+| `src/pages/api/daily-challenges/current/attempts.ts`             | `POST /api/daily-challenges/current/attempts`            |
+| `src/pages/api/daily-challenges/history.ts`                      | `GET /api/daily-challenges/history`                      |
+| `src/pages/api/daily-challenges/[periodKey]/index.ts`            | `GET /api/daily-challenges/:periodKey`                   |
+| `src/pages/api/daily-challenges/[periodKey]/leaderboard.ts`      | `GET /api/daily-challenges/:periodKey/leaderboard`       |
+| `src/pages/api/daily-challenge-attempts/[attemptId]/index.ts`    | `GET /api/daily-challenge-attempts/:attemptId`           |
 | `src/pages/api/daily-challenge-attempts/[attemptId]/commands.ts` | `POST /api/daily-challenge-attempts/:attemptId/commands` |
 
 ### Browser experience
 
-| File | Responsibility |
-|---|---|
-| `src/lib/blackjack/presentation.ts` | Shared card, hand-value, dealer, and player-hand rendering |
-| `src/lib/blackjack/presentation.test.ts` | Generic presentation and ranked-ID compatibility |
-| `src/lib/ranked/blackjack/ui.ts` | Ranked-specific wallet, receipt, stats, and achievements using shared presentation |
-| `src/lib/ranked/blackjack/ui.test.ts` | Preserve existing ranked UI behavior |
-| `src/lib/daily-challenge/payload.ts` | Runtime validation for challenge/attempt/leaderboard/history responses |
-| `src/lib/daily-challenge/payload.test.ts` | Strict public payload validation |
-| `src/lib/daily-challenge/client.ts` | Current metadata, ranked storage, retry/resume recovery, and local replay orchestration |
-| `src/lib/daily-challenge/client.test.ts` | Start substitution, uncertain command, expiry recovery, and storage races |
-| `src/lib/daily-challenge/ui.ts` | Mode selection, game HUD, receipts, leaderboard, and history rendering |
-| `src/lib/daily-challenge/ui.test.ts` | happy-dom UI and accessibility states |
-| `src/pages/games/daily-challenge.astro` | Current Daily Challenge shell |
-| `src/pages/games/daily-challenge/[periodKey].astro` | Closed challenge verification/replay shell |
-| `src/pages/games/index.astro` | Daily Challenge discovery card/link |
-| `src/pages/games/blackjack.astro` | Daily Challenge link without changing Casual behavior |
-| `e2e/daily-challenge.spec.ts` | Guest, authenticated, recovery, standings, and history flows |
+| File                                                | Responsibility                                                                          |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `src/lib/blackjack/presentation.ts`                 | Shared card, hand-value, dealer, and player-hand rendering                              |
+| `src/lib/blackjack/presentation.test.ts`            | Generic presentation and ranked-ID compatibility                                        |
+| `src/lib/ranked/blackjack/ui.ts`                    | Ranked-specific wallet, receipt, stats, and achievements using shared presentation      |
+| `src/lib/ranked/blackjack/ui.test.ts`               | Preserve existing ranked UI behavior                                                    |
+| `src/lib/daily-challenge/payload.ts`                | Runtime validation for challenge/attempt/leaderboard/history responses                  |
+| `src/lib/daily-challenge/payload.test.ts`           | Strict public payload validation                                                        |
+| `src/lib/daily-challenge/client.ts`                 | Current metadata, ranked storage, retry/resume recovery, and local replay orchestration |
+| `src/lib/daily-challenge/client.test.ts`            | Start substitution, uncertain command, expiry recovery, and storage races               |
+| `src/lib/daily-challenge/ui.ts`                     | Mode selection, game HUD, receipts, leaderboard, and history rendering                  |
+| `src/lib/daily-challenge/ui.test.ts`                | happy-dom UI and accessibility states                                                   |
+| `src/pages/games/daily-challenge.astro`             | Current Daily Challenge shell                                                           |
+| `src/pages/games/daily-challenge/[periodKey].astro` | Closed challenge verification/replay shell                                              |
+| `src/pages/games/index.astro`                       | Daily Challenge discovery card/link                                                     |
+| `src/pages/games/blackjack.astro`                   | Daily Challenge link without changing Casual behavior                                   |
+| `e2e/daily-challenge.spec.ts`                       | Guest, authenticated, recovery, standings, and history flows                            |
 
 ---
 
@@ -223,8 +223,7 @@ export function projectRankedBlackjackReplay(
 		? []
 		: replay.legalActions
 				.filter(
-					({ additionalWager }) =>
-						additionalWager === 0 || safeAvailableBalance >= additionalWager,
+					({ additionalWager }) => additionalWager === 0 || safeAvailableBalance >= additionalWager,
 				)
 				.map(({ action }) => action);
 
@@ -436,9 +435,7 @@ export const dailyChallengeCommandSchema = z.discriminatedUnion('command', [
 		.object({
 			sequence: dailyChallengeSequenceSchema,
 			command: z.literal('start-round'),
-			wager: z
-				.number()
-				.refine((value) => Number.isSafeInteger(value) && !Object.is(value, -0)),
+			wager: z.number().refine((value) => Number.isSafeInteger(value) && !Object.is(value, -0)),
 		})
 		.strict(),
 	z
@@ -494,10 +491,7 @@ function requireSeedVersion(version: string): DailyChallengeSeedVersion {
 	return resolved;
 }
 
-export function createDailyChallengeSeedCommitment(
-	version: string,
-	seed: Uint8Array,
-): string {
+export function createDailyChallengeSeedCommitment(version: string, seed: Uint8Array): string {
 	assertDailyChallengeSeed(seed);
 	const resolved = requireSeedVersion(version);
 	return sha256Hex(concatBytes(resolved.seedCommitmentDomain, seed));
@@ -748,7 +742,7 @@ git commit -m "feat: add deterministic daily challenge replay (HPA-175)"
 **Files:**
 
 - Modify: `src/db/schema.ts`
-- Create: `drizzle/0012_daily_challenge.sql`
+- Create: `drizzle/0015_daily_challenge.sql`
 - Create: `src/server/daily-challenge/test-d1.ts`
 - Create: `src/server/daily-challenge/schema.integration.test.ts`
 
@@ -831,9 +825,9 @@ Define attempt and result exactly as approved, using `nextCommandSequence` in th
 bun run db:generate -- --name=daily_challenge
 ```
 
-Expected on current `main`: `drizzle/0012_daily_challenge.sql`.
+Expected on current `main`: `drizzle/0015_daily_challenge.sql`.
 
-If a newer `main` already owns `0012`, keep the generated next sequence and update the plan path in the implementation PR description. Do not manually renumber migration metadata.
+If a newer `main` already owns `0015`, keep the generated next sequence and update the plan path in the implementation PR description. Do not manually renumber migration metadata.
 
 Inspect that the generated SQL contains all three tables, constraints, and indexes and no unrelated schema changes.
 
@@ -853,7 +847,7 @@ Expected: PASS; local migration applies cleanly from the checked-in sequence.
 ```bash
 git add \
 	src/db/schema.ts \
-	drizzle/0012_daily_challenge.sql \
+	drizzle/0015_daily_challenge.sql \
 	src/server/daily-challenge/test-d1.ts \
 	src/server/daily-challenge/schema.integration.test.ts
 git commit -m "feat: add daily challenge persistence schema (HPA-175)"
@@ -1223,10 +1217,7 @@ export interface DailyChallengeCoordinator {
 		userId: string;
 		body: DailyChallengeStartRequest;
 	}): Promise<DailyChallengeAttemptPublicStateV1>;
-	resume(input: {
-		userId: string;
-		attemptId: string;
-	}): Promise<DailyChallengeAttemptPublicStateV1>;
+	resume(input: { userId: string; attemptId: string }): Promise<DailyChallengeAttemptPublicStateV1>;
 	command(input: {
 		userId: string;
 		attemptId: string;
@@ -1238,10 +1229,7 @@ export interface DailyChallengeCoordinator {
 		userId: string | null;
 		limit: number;
 	}): Promise<DailyChallengeLeaderboardResponse>;
-	history(input: {
-		userId: string | null;
-		limit: number;
-	}): Promise<DailyChallengeHistoryResponse>;
+	history(input: { userId: string | null; limit: number }): Promise<DailyChallengeHistoryResponse>;
 }
 ```
 

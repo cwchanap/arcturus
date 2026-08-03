@@ -51,6 +51,9 @@ interface MutableInternalRound {
 	initialWager: number;
 	adapterActions: RankedBlackjackActionLogEntryV1[];
 	replay: RankedBlackjackReplay;
+	// Deck is deterministic per roundIndex (derived from the master seed), so it is computed
+	// once when the round starts and reused for every subsequent replay of that round.
+	deck: readonly Card[];
 }
 
 interface MutableReplayState {
@@ -72,14 +75,10 @@ function isValidWager(wager: number, config: DailyChallengeConfigV1): boolean {
 	);
 }
 
-function replayRound(
-	state: MutableReplayState,
-	round: MutableInternalRound,
-): RankedBlackjackReplay {
-	const deck = state.deckSource(round.roundIndex);
+function replayRound(round: MutableInternalRound): RankedBlackjackReplay {
 	return replayRankedBlackjack(
 		issueBlackjackConfig(round.initialWager),
-		deck.slice(),
+		round.deck.slice(),
 		round.adapterActions,
 	);
 }
@@ -127,13 +126,15 @@ function applyStartRound(state: MutableReplayState, wager: number): void {
 
 	state.availableBankroll -= wager;
 	const roundIndex = state.roundsCompleted;
+	const deck = state.deckSource(roundIndex);
 	const round: MutableInternalRound = {
 		roundIndex,
 		initialWager: wager,
 		adapterActions: [],
 		replay: undefined as unknown as RankedBlackjackReplay,
+		deck,
 	};
-	round.replay = replayRound(state, round);
+	round.replay = replayRound(round);
 	state.activeRound = round;
 	maybeSettleActiveRound(state);
 }
@@ -159,7 +160,7 @@ function applyBlackjackAction(state: MutableReplayState, action: RankedBlackjack
 	}
 
 	round.adapterActions.push({ sequence: round.adapterActions.length, action });
-	round.replay = replayRound(state, round);
+	round.replay = replayRound(round);
 	maybeSettleActiveRound(state);
 }
 

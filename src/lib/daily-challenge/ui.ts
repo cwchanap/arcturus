@@ -80,7 +80,15 @@ function roundProgressLabel(roundsCompleted: number): string {
 	return `Round ${current} of ${roundCount}`;
 }
 
+function formatCloseTime(rankedEntryClosesAt: number): string {
+	const date = new Date(rankedEntryClosesAt * 1000);
+	const time = date.toISOString().slice(11, 16);
+	return `Ranked entry closes at ${time} UTC.`;
+}
+
 type ViewState = 'none' | 'ranked' | 'replay';
+
+const ACTION_ORDER: readonly DailyChallengeAction[] = ['hit', 'stand', 'double-down', 'split'];
 
 export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeRenderer {
 	const get = (testId: string): HTMLElement => {
@@ -170,7 +178,8 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 		forfeitEl.disabled = pending;
 		restartPracticeEl.disabled = pending;
 		replayPracticeEl.disabled = pending;
-		replayExactRankedEl.disabled = pending || challenge?.revealedRankedSeed === null;
+		replayExactRankedEl.disabled =
+			pending || challenge === null || challenge.revealedRankedSeed === null;
 	};
 
 	const syncHidden = (): void => {
@@ -181,6 +190,11 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 		forfeitConfirmEl.hidden = !forfeitConfirmVisible;
 		forfeitCancelEl.hidden = !forfeitConfirmVisible;
 		restartPracticeEl.hidden = false;
+		// Hide the start-ranked button for guests and when a ranked attempt is already active.
+		startRankedEl.hidden =
+			root.dataset.userId === undefined ||
+			root.dataset.userId === 'guest' ||
+			rankedAttempt?.status === 'active';
 	};
 
 	const renderActiveRound = (round: DailyChallengeActiveRoundV1): void => {
@@ -229,7 +243,7 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 			renderActiveRound(activeRound);
 			statusEl.textContent = '';
 			if (!previousRankedRoundActive) {
-				const firstAction = actionOrder.find((action) =>
+				const firstAction = ACTION_ORDER.find((action) =>
 					attempt.activeRound?.availableActions.includes(action),
 				);
 				if (firstAction) actionEls[firstAction].focus();
@@ -293,8 +307,6 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 		}
 	};
 
-	const actionOrder: readonly DailyChallengeAction[] = ['hit', 'stand', 'double-down', 'split'];
-
 	const selectMode = (next: DailyChallengeMode): void => {
 		mode = next;
 		syncHidden();
@@ -341,13 +353,12 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 
 		renderChallenge(nextChallenge: DailyChallengePublicResponse): void {
 			challenge = nextChallenge;
-			const authenticated = root.dataset.userId !== undefined;
+			const authenticated = root.dataset.userId !== undefined && root.dataset.userId !== 'guest';
 			practiceModeEl.hidden = false;
 			rankedModeEl.hidden = !authenticated;
 			signInCtaEl.hidden = authenticated;
 			controlsEl.hidden = false;
-			if (!authenticated) startRankedEl.hidden = true;
-			closeEl.textContent = 'Ranked entry closes at 23:30 UTC.';
+			closeEl.textContent = formatCloseTime(nextChallenge.rankedEntryClosesAt);
 			practiceDifferentEl.textContent =
 				'Practice uses a different scenario from today\u2019s ranked attempt.';
 			sharedSeedNoticeEl.textContent =

@@ -24,7 +24,7 @@ async function indexNames(tableName: string): Promise<string[]> {
 	return rows.results.map((row) => row.name).sort();
 }
 
-async function indexColumns(tableName: string, indexName: string): Promise<string[]> {
+async function indexColumns(indexName: string): Promise<string[]> {
 	const rows = await db.prepare(`PRAGMA index_info('${indexName}')`).all<{ name: string }>();
 	return rows.results.map((row) => row.name);
 }
@@ -240,15 +240,14 @@ describe('daily challenge persistence schema', () => {
 	test('creates status/expiry and leaderboard indexes on attempt and result', async () => {
 		const attemptIndexes = await indexNames('daily_challenge_attempt');
 		expect(attemptIndexes).toContain('daily_challenge_attempt_status_expiry_idx');
-		expect(
-			await indexColumns('daily_challenge_attempt', 'daily_challenge_attempt_status_expiry_idx'),
-		).toEqual(['status', 'expiresAt']);
+		expect(await indexColumns('daily_challenge_attempt_status_expiry_idx')).toEqual([
+			'status',
+			'expiresAt',
+		]);
 
 		const resultIndexes = await indexNames('daily_challenge_result');
 		expect(resultIndexes).toContain('daily_challenge_result_leaderboard_idx');
-		expect(
-			await indexColumns('daily_challenge_result', 'daily_challenge_result_leaderboard_idx'),
-		).toEqual([
+		expect(await indexColumns('daily_challenge_result_leaderboard_idx')).toEqual([
 			'challengeId',
 			'eligible',
 			'endingBankroll',
@@ -257,8 +256,9 @@ describe('daily challenge persistence schema', () => {
 			'userId',
 		]);
 		expect(resultIndexes).toContain('daily_challenge_result_user_settled_idx');
-		expect(
-			await indexColumns('daily_challenge_result', 'daily_challenge_result_user_settled_idx'),
-		).toEqual(['userId', 'settledAt']);
+		expect(await indexColumns('daily_challenge_result_user_settled_idx')).toEqual([
+			'userId',
+			'settledAt',
+		]);
 	});
 });

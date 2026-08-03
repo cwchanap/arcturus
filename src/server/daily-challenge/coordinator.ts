@@ -28,7 +28,6 @@ import {
 	sha256Hex,
 } from '../../lib/ranked/canonical';
 import {
-	DAILY_CHALLENGE_LEADERBOARD_LIMIT,
 	type DailyChallengeAttemptRecord,
 	type DailyChallengeCommandTransitionInput,
 	type DailyChallengeRecord,
@@ -388,14 +387,10 @@ export function createDailyChallengeCoordinator(
 		let rank: number | null = null;
 		let percentile: number | null = null;
 		if (result.eligible) {
-			const standing = await deps.repository.readLeaderboard(
-				challenge.id,
-				DAILY_CHALLENGE_LEADERBOARD_LIMIT,
-				attempt.userId,
-			);
-			if (standing.currentUser) {
-				rank = standing.currentUser.rank;
-				percentile = standing.currentUser.percentile;
+			const standing = await deps.repository.findStanding(challenge.id, attempt.userId);
+			if (standing) {
+				rank = standing.rank;
+				percentile = standing.percentile;
 			}
 		}
 		return {
@@ -676,16 +671,7 @@ export function createDailyChallengeCoordinator(
 		});
 
 		const nextActionLog: DailyChallengeCommandV1[] = [...attempt.actionLog, body];
-		let nextReplay: DailyChallengeReplayV1;
-		try {
-			nextReplay = replayDailyChallenge(challenge.config, seed, nextActionLog);
-		} catch (error) {
-			if (error instanceof DailyChallengeServiceError) {
-				log('daily_challenge_command_rejected', { userId: attempt.userId, attemptId: attempt.id });
-				throw error;
-			}
-			throw error;
-		}
+		const nextReplay = replayDailyChallenge(challenge.config, seed, nextActionLog);
 
 		const nextActionLogJson = canonicalizeRanked(nextActionLog);
 		const nextActionLogHash = hashCanonical(nextActionLog);

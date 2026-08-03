@@ -22,7 +22,7 @@ interface DailyChallengeInsertDefaults {
 const DAILY_CHALLENGE_DEFAULTS: DailyChallengeInsertDefaults = {
 	challengeRulesetVersion: 'blackjack-daily-v1',
 	gameRulesetVersion: 'blackjack-ranked-v1',
-	scoreVersion: 'daily-score-v1',
+	scoreVersion: 'blackjack-daily-score-v1',
 	configJson: '{}',
 	configHash: 'config-hash',
 	rankedSeed: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
@@ -157,7 +157,7 @@ const DAILY_CHALLENGE_RESULT_DEFAULTS: DailyChallengeResultInsertDefaults = {
 	eligible: 1,
 	terminalReason: 'completed',
 	durationSeconds: 120,
-	scoreVersion: 'daily-score-v1',
+	scoreVersion: 'blackjack-daily-score-v1',
 	configHash: 'config-hash',
 	rankedSeedCommitment: 'seed-commitment',
 	actionLogHash: 'action-log-hash',

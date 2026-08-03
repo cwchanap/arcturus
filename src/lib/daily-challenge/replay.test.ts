@@ -374,6 +374,42 @@ describe('replayDailyChallenge error handling and determinism', () => {
 		).toThrow(throwsDailyError('SEQUENCE_MISMATCH'));
 	});
 
+	test('rejects a start-round command while a round is still active', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+		);
+
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				[startRound(0, 100), startRound(1, 100)],
+				singleDeckSource(deck),
+			),
+		).toThrow(throwsDailyError('INVALID_COMMAND'));
+	});
+
+	test('rejects a blackjack action issued with no active round', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+		);
+
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				[cmd(0, 'stand')],
+				singleDeckSource(deck),
+			),
+		).toThrow(throwsDailyError('INVALID_COMMAND'));
+	});
+
 	test('is byte-identical for identical inputs', () => {
 		const deck = deckWithDraws(
 			card('10', 'hearts'),

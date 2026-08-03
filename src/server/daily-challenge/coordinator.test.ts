@@ -368,6 +368,24 @@ class FakeRepository {
 		return this.results.get(attemptId) ?? null;
 	}
 
+	async findStanding(
+		challengeId: string,
+		userId: string,
+	): Promise<{ rank: number; percentile: number } | null> {
+		const eligible = [...this.results.values()]
+			.filter((result) => result.challengeId === challengeId && result.eligible)
+			.sort((a, b) => b.endingBankroll - a.endingBankroll || b.roundsCompleted - a.roundsCompleted);
+		const userIndex = eligible.findIndex((result) => result.userId === userId);
+		if (userIndex === -1) return null;
+		const totalEligible = eligible.length;
+		const playersAtOrBelow = totalEligible - userIndex;
+		const percentile = Math.min(
+			100,
+			Math.max(1, Math.round((100 * playersAtOrBelow) / totalEligible)),
+		);
+		return { rank: userIndex + 1, percentile };
+	}
+
 	async readLeaderboard(
 		challengeId: string,
 		limit: number,
@@ -728,7 +746,7 @@ describe('daily challenge coordinator lazy catalog', () => {
 describe('daily challenge coordinator start classification', () => {
 	test('rejects start after the ranked entry cutoff', async () => {
 		const repository = new FakeRepository();
-		const { coordinator, clock } = createBundle(repository, WINDOW.rankedEntryClosesAt);
+		const { coordinator } = createBundle(repository, WINDOW.rankedEntryClosesAt);
 
 		await expectDailyError(
 			coordinator.start({ userId: USER_ID, body: { requestId: 'request-cutoff-000001' } }),
@@ -816,7 +834,7 @@ describe('daily challenge coordinator start classification', () => {
 
 	test('a fresh attempt expires no later than the challenge end', async () => {
 		const repository = new FakeRepository();
-		const { coordinator, clock } = createBundle(repository, WINDOW.rankedEntryClosesAt - 1);
+		const { coordinator } = createBundle(repository, WINDOW.rankedEntryClosesAt - 1);
 
 		const attempt = await coordinator.start({
 			userId: USER_ID,
@@ -1229,7 +1247,7 @@ describe('daily challenge coordinator expiry semantics', () => {
 	test('challenge end independently blocks commands even before attempt ttl', async () => {
 		const attempt = { ...baseAttempt({ expiresAt: WINDOW.endsAt + 3600 }), actionLog: [] };
 		const repository = new FakeRepository({ attempts: [attempt] });
-		const { coordinator, clock } = createBundle(repository, WINDOW.endsAt);
+		const { coordinator } = createBundle(repository, WINDOW.endsAt);
 
 		const state = await coordinator.command({
 			userId: USER_ID,

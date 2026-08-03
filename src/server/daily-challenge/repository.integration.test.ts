@@ -24,7 +24,6 @@ import {
 	DailyChallengeRepositoryInvariantError,
 	createDailyChallengeRepository,
 	type DailyChallengeCommandTransitionInput,
-	type DailyChallengeCommandTransitionResult,
 	type DailyChallengeExpirationCursor,
 	type DailyChallengeStartTransitionInput,
 	type DailyChallengeTerminalTransition,
@@ -273,7 +272,7 @@ describe('daily challenge catalog', () => {
 			.prepare('UPDATE daily_challenge SET configHash = ? WHERE id = ?')
 			.bind('0'.repeat(64), record.id)
 			.run();
-		expect(
+		await expect(
 			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
 		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
 	});
@@ -286,7 +285,7 @@ describe('daily challenge catalog', () => {
 			.prepare('UPDATE daily_challenge SET configJson = ? WHERE id = ?')
 			.bind(JSON.stringify(BLACKJACK_DAILY_V1_CONFIG), record.id)
 			.run();
-		expect(
+		await expect(
 			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
 		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
 	});
@@ -448,9 +447,9 @@ describe('daily challenge start transition', () => {
 			.prepare('UPDATE daily_challenge_attempt SET actionLogHash = ? WHERE id = ?')
 			.bind('0'.repeat(64), ATTEMPT_ID)
 			.run();
-		expect(repository.findAttemptByUserAndRequestId(USER_ID, REQUEST_ID_A)).rejects.toBeInstanceOf(
-			DailyChallengeRepositoryInvariantError,
-		);
+		await expect(
+			repository.findAttemptByUserAndRequestId(USER_ID, REQUEST_ID_A),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
 	});
 
 	test('a second user may start an independent attempt on the same challenge', async () => {
@@ -1026,7 +1025,7 @@ describe('daily challenge terminal result persistence', () => {
 			.prepare('UPDATE daily_challenge_result SET receiptHash = ? WHERE attemptId = ?')
 			.bind('0'.repeat(64), ATTEMPT_ID)
 			.run();
-		expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
 			DailyChallengeRepositoryInvariantError,
 		);
 	});
@@ -1171,9 +1170,7 @@ describe('daily challenge leaderboard', () => {
 		expect(board.entries).toEqual([]);
 		expect(board.currentUser).toBeNull();
 	});
-});
 
-describe('daily challenge history', () => {
 	test('a bounded leaderboard limit caps the returned entries', async () => {
 		const challenge = await seedChallenge();
 		for (let index = 0; index < 5; index += 1) {
@@ -1196,7 +1193,9 @@ describe('daily challenge history', () => {
 		const full = await repository.readLeaderboard(challenge.id, 50);
 		expect(full.entries).toHaveLength(5);
 	});
+});
 
+describe('daily challenge history', () => {
 	test('returns one challenge-centric entry per day with top score, participants, and user result', async () => {
 		const challengeA = await seedChallenge(buildChallengeRecord());
 		const challengeB = await seedChallenge(
@@ -1422,6 +1421,3 @@ describe('daily challenge retention', () => {
 		expect(await countChallenges()).toBe(1);
 	});
 });
-
-// keep unused-symbol guards compatible with the imported transition-result type.
-export type __KeepCommandTransitionResult = DailyChallengeCommandTransitionResult;

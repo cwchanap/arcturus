@@ -299,65 +299,44 @@ export function createDailyChallengeHttpHandlers(
 export function createDailyChallengeStartRateLimiter(
 	db: D1Database,
 ): DailyChallengeCoordinatorDeps['consumeStartRateLimit'] {
-	return async (userId, nowSeconds) => {
-		const result = await consumeStandaloneRateLimit(
-			db,
-			userId,
-			'daily_challenge_start',
-			nowSeconds,
-		);
-		if (result.kind === 'rate-limited') {
-			return { kind: 'rate-limited', retryAfter: result.retryAfter };
-		}
-		return {
-			kind: 'allowed',
-			statement: buildRateLimitContinuationStatement(db, {
-				userId,
-				operation: 'daily_challenge_start',
-				nowSeconds,
-			}),
-			retryAfter: getRetryAfterSeconds('daily_challenge_start', nowSeconds),
-		};
-	};
+	return createDailyChallengeRateLimiter(db, 'daily_challenge_start', true);
 }
 
 export function createDailyChallengeCommandRateLimiter(
 	db: D1Database,
 ): DailyChallengeCoordinatorDeps['consumeCommandRateLimit'] {
-	return async (userId, nowSeconds) => {
-		const result = await consumeStandaloneRateLimit(
-			db,
-			userId,
-			'daily_challenge_command',
-			nowSeconds,
-		);
-		if (result.kind === 'rate-limited') {
-			return { kind: 'rate-limited', retryAfter: result.retryAfter };
-		}
-		return {
-			kind: 'allowed',
-			statement: buildRateLimitContinuationStatement(db, {
-				userId,
-				operation: 'daily_challenge_command',
-				nowSeconds,
-			}),
-			retryAfter: getRetryAfterSeconds('daily_challenge_command', nowSeconds),
-		};
-	};
+	return createDailyChallengeRateLimiter(db, 'daily_challenge_command', true);
 }
 
 export function createDailyChallengeResumeRateLimiter(
 	db: D1Database,
 ): DailyChallengeCoordinatorDeps['consumeResumeRateLimit'] {
+	return createDailyChallengeRateLimiter(db, 'daily_challenge_resume', false);
+}
+
+function createDailyChallengeRateLimiter(
+	db: D1Database,
+	operation: 'daily_challenge_start' | 'daily_challenge_command' | 'daily_challenge_resume',
+	includeContinuation: boolean,
+):
+	| DailyChallengeCoordinatorDeps['consumeStartRateLimit']
+	| DailyChallengeCoordinatorDeps['consumeCommandRateLimit']
+	| DailyChallengeCoordinatorDeps['consumeResumeRateLimit'] {
 	return async (userId, nowSeconds) => {
-		const result = await consumeStandaloneRateLimit(
-			db,
-			userId,
-			'daily_challenge_resume',
-			nowSeconds,
-		);
+		const result = await consumeStandaloneRateLimit(db, userId, operation, nowSeconds);
 		if (result.kind === 'rate-limited') {
 			return { kind: 'rate-limited', retryAfter: result.retryAfter };
+		}
+		if (includeContinuation) {
+			return {
+				kind: 'allowed',
+				statement: buildRateLimitContinuationStatement(db, {
+					userId,
+					operation,
+					nowSeconds,
+				}),
+				retryAfter: getRetryAfterSeconds(operation, nowSeconds),
+			};
 		}
 		return { kind: 'allowed' };
 	};

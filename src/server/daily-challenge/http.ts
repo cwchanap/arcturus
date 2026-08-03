@@ -214,7 +214,7 @@ export function createDailyChallengeHttpHandlers(
 			const periodKey = parsePeriodKey(params?.periodKey);
 			const coordinator = coordinatorFor(deps, locals);
 			const response = await coordinator.getByPeriod({ periodKey, userId });
-			const closed = response.endsAt <= Math.trunc(Date.now() / 1000);
+			const closed = response.revealedRankedSeed !== null;
 			return renderReadResponse(response, closed ? 'closed-detail' : 'live-detail', userId);
 		} catch (error) {
 			return dailyChallengeJsonError(error);

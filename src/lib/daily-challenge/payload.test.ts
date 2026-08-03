@@ -551,11 +551,15 @@ describe('parseDailyChallengeHistoryResponse', () => {
 				{
 					periodKey: PERIOD_KEY,
 					challengeRulesetVersion: 'blackjack-daily-v1',
-					endingBankroll: 1200,
-					roundsCompleted: 10,
-					terminalReason: 'completed',
-					eligible: true,
-					settledAt: 1_742_001_000,
+					topEndingBankroll: 1200,
+					participantCount: 42,
+					userResult: {
+						endingBankroll: 900,
+						roundsCompleted: 10,
+						terminalReason: 'completed',
+						eligible: true,
+						settledAt: 1_742_001_000,
+					},
 				},
 			],
 			...overrides,
@@ -571,7 +575,22 @@ describe('parseDailyChallengeHistoryResponse', () => {
 		expect(parseDailyChallengeHistoryResponse(value)).toEqual(value);
 	});
 
-	test('rejects a history entry with an unknown terminalReason', () => {
+	test('accepts a challenge day with no user result and no top score', () => {
+		const value = historyResponse({
+			entries: [
+				{
+					periodKey: PERIOD_KEY,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: null,
+					participantCount: 0,
+					userResult: null,
+				},
+			],
+		});
+		expect(parseDailyChallengeHistoryResponse(value)).toEqual(value);
+	});
+
+	test('rejects a history user result with an unknown terminalReason', () => {
 		expect(() =>
 			parseDailyChallengeHistoryResponse(
 				historyResponse({
@@ -579,11 +598,15 @@ describe('parseDailyChallengeHistoryResponse', () => {
 						{
 							periodKey: PERIOD_KEY,
 							challengeRulesetVersion: 'blackjack-daily-v1',
-							endingBankroll: 1200,
-							roundsCompleted: 10,
-							terminalReason: 'mystery',
-							eligible: true,
-							settledAt: 1_742_001_000,
+							topEndingBankroll: 1200,
+							participantCount: 42,
+							userResult: {
+								endingBankroll: 900,
+								roundsCompleted: 10,
+								terminalReason: 'mystery',
+								eligible: true,
+								settledAt: 1_742_001_000,
+							},
 						},
 					],
 				}),

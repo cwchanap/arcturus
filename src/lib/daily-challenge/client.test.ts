@@ -420,6 +420,37 @@ describe('daily challenge recovery client — initialize resume', () => {
 	});
 });
 
+describe('daily challenge recovery client — discovered attempt adoption', () => {
+	test('adopting an active attempt stores it and renders without fetching', () => {
+		const storage = new RecordingStorage();
+		storage.values.set(keys.startRequest, storedStartIntent());
+		const { client, fetchMock } = createHarness({ storage });
+
+		client.adopt(activeAttempt());
+
+		expect(fetchMock).toHaveBeenCalledTimes(0);
+		expect(storage.getItem(keys.activeAttempt)).toBe(storedActiveAttempt());
+		expect(storage.getItem(keys.startRequest)).toBeNull();
+	});
+
+	test('adopting a terminal attempt renders the receipt and clears storage', () => {
+		const storage = new RecordingStorage();
+		storage.values.set(keys.activeAttempt, storedActiveAttempt());
+		storage.values.set(keys.startRequest, storedStartIntent());
+		const events: string[] = [];
+		const { client, storage: adoptedStorage } = createHarness({
+			storage,
+			renderer: createRenderer(events),
+		});
+
+		client.adopt(terminalAttempt());
+
+		expect(events).toEqual(['render-terminal']);
+		expect(adoptedStorage.getItem(keys.activeAttempt)).toBeNull();
+		expect(adoptedStorage.getItem(keys.startRequest)).toBeNull();
+	});
+});
+
 describe('daily challenge recovery client — command recovery', () => {
 	test('retries an uncertain command once then resumes authoritative state', async () => {
 		const storage = new RecordingStorage();
@@ -939,14 +970,17 @@ function createPageClientHarness(): {
 	commands: DailyChallengeClientCommand[];
 	starts: number;
 	initialized: number;
+	adopted: DailyChallengeAttemptPublicStateV1[];
 	createClient: (deps: DailyChallengeClientDeps) => DailyChallengeClient;
 } {
 	const created: Array<Pick<DailyChallengeClientDeps, 'userId' | 'periodKey'>> = [];
 	const commands: DailyChallengeClientCommand[] = [];
+	const adopted: DailyChallengeAttemptPublicStateV1[] = [];
 	const state = { starts: 0, initialized: 0 };
 	const harness = {
 		created,
 		commands,
+		adopted,
 		createClient: (() => {
 			throw new Error('unused');
 		}) as (deps: DailyChallengeClientDeps) => DailyChallengeClient,
@@ -962,6 +996,9 @@ function createPageClientHarness(): {
 		return {
 			async initialize() {
 				state.initialized++;
+			},
+			adopt(attempt) {
+				adopted.push(attempt);
 			},
 			async start() {
 				state.starts++;
@@ -1072,11 +1109,15 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 				{
 					periodKey: PERIOD_KEY,
 					challengeRulesetVersion: 'blackjack-daily-v1',
-					endingBankroll: 1200,
-					roundsCompleted: 10,
-					terminalReason: 'completed',
-					eligible: true,
-					settledAt: 1_742_001_000,
+					topEndingBankroll: 1500,
+					participantCount: 42,
+					userResult: {
+						endingBankroll: 1200,
+						roundsCompleted: 10,
+						terminalReason: 'completed',
+						eligible: true,
+						settledAt: 1_742_001_000,
+					},
 				},
 			],
 			...overrides,
@@ -1155,6 +1196,54 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		expect(replayHarness.scenarios).toEqual(['practice-scenario']);
 		expect(clientHarness.commands).toEqual([]);
 		expect(clientHarness.starts).toBe(0);
+	});
+
+	test('an authenticated visitor with a discovered attempt adopts it without initializing', async () => {
+		const attempt = activeAttempt();
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			if (String(url) === '/api/daily-challenges/current') {
+				return jsonResponse(challengeFixture({ attempt }));
+			}
+			return currentPageFetch(url);
+		});
+		const { renderer } = createPageRenderer();
+		const clientHarness = createPageClientHarness();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient: clientHarness.createClient,
+			createLocalReplayController,
+		});
+
+		expect(clientHarness.initialized).toBe(0);
+		expect(clientHarness.adopted).toEqual([attempt]);
+	});
+
+	test('an authenticated visitor adopts a terminal discovered attempt without fetching resume', async () => {
+		const terminal = terminalAttempt();
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			if (String(url) === '/api/daily-challenges/current') {
+				return jsonResponse(challengeFixture({ attempt: terminal }));
+			}
+			return currentPageFetch(url);
+		});
+		const { renderer } = createPageRenderer();
+		const clientHarness = createPageClientHarness();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient: clientHarness.createClient,
+			createLocalReplayController,
+		});
+
+		expect(clientHarness.initialized).toBe(0);
+		expect(clientHarness.adopted).toEqual([terminal]);
 	});
 
 	test('ranked mode dispatches writes to the ranked client', async () => {

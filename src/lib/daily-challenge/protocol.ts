@@ -219,15 +219,25 @@ export type DailyChallengeLeaderboardResponse = z.infer<
 	typeof dailyChallengeLeaderboardResponseSchema
 >;
 
-export const dailyChallengeHistoryEntrySchema = z
+export const dailyChallengeHistoryUserResultSchema = z
 	.object({
-		periodKey: dailyChallengePeriodKeySchema,
-		challengeRulesetVersion: z.literal('blackjack-daily-v1'),
 		endingBankroll: dailyChallengeBankrollSchema,
 		roundsCompleted: dailyChallengeSafeIntegerSchema.min(0),
 		terminalReason: z.enum(['completed', 'bankroll-below-minimum', 'forfeited', 'expired']),
 		eligible: z.boolean(),
 		settledAt: dailyChallengeSafeIntegerSchema.min(0),
+	})
+	.strict();
+
+export type DailyChallengeHistoryUserResult = z.infer<typeof dailyChallengeHistoryUserResultSchema>;
+
+export const dailyChallengeHistoryEntrySchema = z
+	.object({
+		periodKey: dailyChallengePeriodKeySchema,
+		challengeRulesetVersion: z.literal('blackjack-daily-v1'),
+		topEndingBankroll: dailyChallengeBankrollSchema.nullable(),
+		participantCount: dailyChallengeSafeIntegerSchema.min(0),
+		userResult: dailyChallengeHistoryUserResultSchema.nullable(),
 	})
 	.strict();
 

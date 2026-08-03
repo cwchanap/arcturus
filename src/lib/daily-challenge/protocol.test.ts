@@ -521,11 +521,22 @@ describe('dailyChallengeHistoryResponseSchema', () => {
 				{
 					periodKey: '2026-03-14',
 					challengeRulesetVersion: 'blackjack-daily-v1',
-					endingBankroll: 1200,
-					roundsCompleted: 10,
-					terminalReason: 'completed',
-					eligible: true,
-					settledAt: 1742000000,
+					topEndingBankroll: 1200,
+					participantCount: 42,
+					userResult: {
+						endingBankroll: 900,
+						roundsCompleted: 10,
+						terminalReason: 'completed',
+						eligible: true,
+						settledAt: 1742000000,
+					},
+				},
+				{
+					periodKey: '2026-03-13',
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: null,
+					participantCount: 0,
+					userResult: null,
 				},
 			],
 		};
@@ -539,12 +550,32 @@ describe('dailyChallengeHistoryResponseSchema', () => {
 					{
 						periodKey: '2026-03-14',
 						challengeRulesetVersion: 'blackjack-daily-v1',
-						endingBankroll: 1200,
-						roundsCompleted: 10,
-						terminalReason: 'completed',
-						eligible: true,
-						settledAt: 1742000000,
+						topEndingBankroll: 1200,
+						participantCount: 42,
+						userResult: null,
 						extra: true,
+					},
+				],
+			}).success,
+		).toBe(false);
+	});
+
+	test('rejects a user result with an unknown terminalReason', () => {
+		expect(
+			dailyChallengeHistoryResponseSchema.safeParse({
+				entries: [
+					{
+						periodKey: '2026-03-14',
+						challengeRulesetVersion: 'blackjack-daily-v1',
+						topEndingBankroll: 1200,
+						participantCount: 42,
+						userResult: {
+							endingBankroll: 900,
+							roundsCompleted: 10,
+							terminalReason: 'mystery',
+							eligible: true,
+							settledAt: 1742000000,
+						},
 					},
 				],
 			}).success,

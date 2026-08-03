@@ -196,14 +196,20 @@ export interface DailyChallengeLeaderboardRead {
 	currentUser: DailyChallengeCurrentUserStanding | null;
 }
 
-export interface DailyChallengeHistoryEntry {
-	periodKey: string;
-	challengeRulesetVersion: 'blackjack-daily-v1';
+export interface DailyChallengeHistoryUserResult {
 	endingBankroll: number;
 	roundsCompleted: number;
 	terminalReason: DailyChallengeTerminalReason;
 	eligible: boolean;
 	settledAt: number;
+}
+
+export interface DailyChallengeHistoryEntry {
+	periodKey: string;
+	challengeRulesetVersion: 'blackjack-daily-v1';
+	topEndingBankroll: number | null;
+	participantCount: number;
+	userResult: DailyChallengeHistoryUserResult | null;
 }
 
 export interface DailyChallengeHistoryRead {
@@ -245,6 +251,7 @@ export interface DailyChallengeRepository {
 	findResultByAttempt(attemptId: string): Promise<DailyChallengeResultRecord | null>;
 	readLeaderboard(
 		challengeId: string,
+		limit: number,
 		currentUserId?: string | null,
 	): Promise<DailyChallengeLeaderboardRead>;
 	listChallengeHistory(
@@ -371,22 +378,36 @@ const TOTAL_ELIGIBLE_SQL = `SELECT COUNT(*) AS total
 	FROM daily_challenge_result
 	WHERE challengeId = ? AND eligible = 1`;
 
-const HISTORY_USER_SQL = `SELECT
-		c.periodKey, c.challengeRulesetVersion, r.endingBankroll, r.roundsCompleted,
-		r.terminalReason, r.eligible, r.settledAt
-	FROM daily_challenge_result AS r
-	JOIN daily_challenge AS c ON c.id = r.challengeId
-	WHERE r.userId = ?
-	ORDER BY r.settledAt DESC
-	LIMIT ?`;
-
-const HISTORY_GLOBAL_SQL = `SELECT
-		c.periodKey, c.challengeRulesetVersion, r.endingBankroll, r.roundsCompleted,
-		r.terminalReason, r.eligible, r.settledAt
-	FROM daily_challenge_result AS r
-	JOIN daily_challenge AS c ON c.id = r.challengeId
-	ORDER BY r.settledAt DESC
-	LIMIT ?`;
+const HISTORY_SQL = `WITH recent AS (
+	SELECT id, periodKey, challengeRulesetVersion, endsAt
+	FROM daily_challenge
+	WHERE challengeKind = 'blackjack-daily'
+	ORDER BY endsAt DESC, periodKey DESC
+	LIMIT ?
+)
+SELECT
+	c.periodKey,
+	c.challengeRulesetVersion,
+	(
+		SELECT endingBankroll
+		FROM daily_challenge_result
+		WHERE challengeId = c.id AND eligible = 1
+		ORDER BY endingBankroll DESC, roundsCompleted DESC, settledAt ASC, userId ASC
+		LIMIT 1
+	) AS topEndingBankroll,
+	(
+		SELECT COUNT(*)
+		FROM daily_challenge_result
+		WHERE challengeId = c.id AND eligible = 1
+	) AS participantCount,
+	r.endingBankroll AS userEndingBankroll,
+	r.roundsCompleted AS userRoundsCompleted,
+	r.terminalReason AS userTerminalReason,
+	r.eligible AS userEligible,
+	r.settledAt AS userSettledAt
+FROM recent AS c
+LEFT JOIN daily_challenge_result AS r ON r.challengeId = c.id AND r.userId = ?
+ORDER BY c.periodKey DESC`;
 
 const LIST_EXPIRED_ATTEMPTS_SQL = `SELECT id, expiresAt
 	FROM daily_challenge_attempt
@@ -404,7 +425,7 @@ const LIST_EXPIRED_ATTEMPTS_FIRST_SQL = `SELECT id, expiresAt
 const DELETE_TERMINAL_BEFORE_SQL = `DELETE FROM daily_challenge_attempt
 	WHERE status <> 'active' AND settledAt < ?`;
 
-const DAILY_CHALLENGE_LEADERBOARD_LIMIT = 50;
+export const DAILY_CHALLENGE_LEADERBOARD_LIMIT = 50;
 const DAILY_CHALLENGE_HISTORY_MAX_LIMIT = 100;
 const DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE = 100;
 
@@ -451,11 +472,13 @@ type DailyChallengeLeaderboardRow = {
 type DailyChallengeHistoryRow = {
 	periodKey: string;
 	challengeRulesetVersion: string;
-	endingBankroll: number;
-	roundsCompleted: number;
-	terminalReason: string;
-	eligible: number | boolean;
-	settledAt: number;
+	topEndingBankroll: number | null;
+	participantCount: number;
+	userEndingBankroll: number | null;
+	userRoundsCompleted: number | null;
+	userTerminalReason: string | null;
+	userEligible: number | boolean | null;
+	userSettledAt: number | null;
 };
 
 function invariant(message: string): never {
@@ -789,6 +812,43 @@ function parseLeaderboardRow(row: DailyChallengeLeaderboardRow): DailyChallengeL
 	};
 }
 
+function parseHistoryUserResult(
+	row: DailyChallengeHistoryRow,
+): DailyChallengeHistoryUserResult | null {
+	if (row.userEndingBankroll === null) {
+		if (
+			row.userRoundsCompleted !== null ||
+			row.userTerminalReason !== null ||
+			row.userEligible !== null ||
+			row.userSettledAt !== null
+		) {
+			return invariant('Corrupt daily challenge history user result');
+		}
+		return null;
+	}
+	if (
+		row.userRoundsCompleted === null ||
+		row.userTerminalReason === null ||
+		row.userEligible === null ||
+		row.userSettledAt === null
+	) {
+		return invariant('Corrupt daily challenge history user result');
+	}
+	const reason = dailyChallengeTerminalReasonSchema.safeParse(row.userTerminalReason);
+	if (!reason.success) return invariant('Corrupt daily challenge history user terminal reason');
+	const eligible = coerceBoolean(row.userEligible, 'history user eligible');
+	assertSafeNonNegativeInteger(row.userEndingBankroll, 'history user endingBankroll');
+	assertSafeNonNegativeInteger(row.userRoundsCompleted, 'history user roundsCompleted');
+	assertSafeNonNegativeInteger(row.userSettledAt, 'history user settledAt');
+	return {
+		endingBankroll: row.userEndingBankroll,
+		roundsCompleted: row.userRoundsCompleted,
+		terminalReason: reason.data,
+		eligible,
+		settledAt: row.userSettledAt,
+	};
+}
+
 function parseHistoryRow(row: DailyChallengeHistoryRow): DailyChallengeHistoryEntry {
 	if (row.challengeRulesetVersion !== 'blackjack-daily-v1') {
 		return invariant('Unsupported persisted daily challenge history ruleset');
@@ -796,20 +856,16 @@ function parseHistoryRow(row: DailyChallengeHistoryRow): DailyChallengeHistoryEn
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(row.periodKey)) {
 		return invariant('Corrupt daily challenge history period key');
 	}
-	const reason = dailyChallengeTerminalReasonSchema.safeParse(row.terminalReason);
-	if (!reason.success) return invariant('Corrupt daily challenge history terminal reason');
-	const eligible = coerceBoolean(row.eligible, 'history eligible');
-	assertSafeNonNegativeInteger(row.endingBankroll, 'history endingBankroll');
-	assertSafeNonNegativeInteger(row.roundsCompleted, 'history roundsCompleted');
-	assertSafeNonNegativeInteger(row.settledAt, 'history settledAt');
+	if (row.topEndingBankroll !== null) {
+		assertSafeNonNegativeInteger(row.topEndingBankroll, 'history top endingBankroll');
+	}
+	assertSafeNonNegativeInteger(row.participantCount, 'history participant count');
 	return {
 		periodKey: row.periodKey,
 		challengeRulesetVersion: 'blackjack-daily-v1',
-		endingBankroll: row.endingBankroll,
-		roundsCompleted: row.roundsCompleted,
-		terminalReason: reason.data,
-		eligible,
-		settledAt: row.settledAt,
+		topEndingBankroll: row.topEndingBankroll,
+		participantCount: row.participantCount,
+		userResult: parseHistoryUserResult(row),
 	};
 }
 
@@ -998,13 +1054,16 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 				.first<DailyChallengeResultRow>();
 			return row === null ? null : parseResultRow(row);
 		},
-		async readLeaderboard(challengeId, currentUserId) {
+		async readLeaderboard(challengeId, limit, currentUserId) {
 			if (typeof challengeId !== 'string' || challengeId.length === 0) {
 				return invariant('Invalid daily challenge leaderboard challenge id');
 			}
+			if (!Number.isSafeInteger(limit) || limit < 1) {
+				return invariant('Invalid daily challenge leaderboard limit');
+			}
 			const rows = await db
 				.prepare(LEADERBOARD_SQL)
-				.bind(challengeId, DAILY_CHALLENGE_LEADERBOARD_LIMIT)
+				.bind(challengeId, limit)
 				.all<DailyChallengeLeaderboardRow>();
 			const entries = rows.results.map(parseLeaderboardRow);
 			if (!currentUserId) return { entries, currentUser: null };
@@ -1035,12 +1094,10 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 				return invariant('Invalid daily challenge history limit');
 			}
 			const boundedLimit = Math.min(limit, DAILY_CHALLENGE_HISTORY_MAX_LIMIT);
-			const rows = currentUserId
-				? await db
-						.prepare(HISTORY_USER_SQL)
-						.bind(currentUserId, boundedLimit)
-						.all<DailyChallengeHistoryRow>()
-				: await db.prepare(HISTORY_GLOBAL_SQL).bind(boundedLimit).all<DailyChallengeHistoryRow>();
+			const rows = await db
+				.prepare(HISTORY_SQL)
+				.bind(boundedLimit, currentUserId ?? null)
+				.all<DailyChallengeHistoryRow>();
 			return { entries: rows.results.map(parseHistoryRow) };
 		},
 		async listExpiredAttempts(nowSeconds, cursor) {

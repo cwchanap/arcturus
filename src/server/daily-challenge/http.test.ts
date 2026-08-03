@@ -63,6 +63,7 @@ function challengeResponse(
 		configHash: HEX64,
 		rankedSeedCommitment: HEX64,
 		practiceSeed: PRACTICE_SEED,
+		revealedRankedSeed: null,
 		attempt: null,
 		...overrides,
 	};
@@ -74,6 +75,7 @@ function closedChallengeResponse(): DailyChallengePublicResponse {
 		startsAt: base - 7200,
 		rankedEntryClosesAt: base - 3600,
 		endsAt: base - 3600,
+		revealedRankedSeed: PRACTICE_SEED,
 	});
 }
 

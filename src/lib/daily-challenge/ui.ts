@@ -382,8 +382,29 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 				...history.entries.map((entry) => {
 					const row = document.createElement('li');
 					row.dataset.testid = 'daily-challenge-history-row';
-					row.dataset.eligible = String(entry.eligible);
-					row.textContent = `${entry.periodKey} \u00b7 ${formatCurrency(entry.endingBankroll)} \u00b7 ${entry.roundsCompleted} rounds \u00b7 ${terminalReasonLabel(entry.terminalReason)}`;
+					if (entry.userResult) {
+						row.dataset.eligible = String(entry.userResult.eligible);
+					}
+					const link = document.createElement('a');
+					link.dataset.testid = 'daily-challenge-history-link';
+					link.href = `/games/daily-challenge/${entry.periodKey}`;
+					const parts = [
+						entry.periodKey,
+						entry.topEndingBankroll !== null
+							? `Top ${formatCurrency(entry.topEndingBankroll)}`
+							: 'No scores yet',
+						`${entry.participantCount} ${entry.participantCount === 1 ? 'player' : 'players'}`,
+					];
+					if (entry.userResult) {
+						const { userResult } = entry;
+						parts.push(
+							`You: ${formatCurrency(userResult.endingBankroll)} \u00b7 ${userResult.roundsCompleted} rounds \u00b7 ${terminalReasonLabel(userResult.terminalReason)}`,
+						);
+					} else {
+						parts.push('Not played');
+					}
+					link.textContent = parts.join(' \u00b7 ');
+					row.appendChild(link);
 					return row;
 				}),
 			);

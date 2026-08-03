@@ -51,6 +51,8 @@ export interface ScheduledJobDeps {
 	): Promise<void>;
 	rankedRateCleanup(db: D1Database, nowSeconds: number): Promise<void>;
 	retentionCleanup(db: D1Database): Promise<void>;
+	dailyChallengeExpiration(db: D1Database, nowSeconds: number): Promise<void>;
+	dailyChallengeRetention(db: D1Database, nowSeconds: number): Promise<void>;
 	nowSeconds(): number;
 	warn(message: string, error?: unknown): void;
 }
@@ -58,7 +60,9 @@ export interface ScheduledJobDeps {
 /**
  * Run each scheduled database job behind its own error boundary. Ranked
  * history is deliberately absent: HPA-170 keeps sessions and results as
- * replayable audit material.
+ * replayable audit material. Daily Challenge expiration flips active-but-
+ * expired attempts to terminal; retention then reaps terminal attempt rows
+ * older than 90 days (results and challenges are preserved).
  */
 export async function runScheduledJobs(
 	env: ScheduledJobEnv,
@@ -84,6 +88,16 @@ export async function runScheduledJobs(
 		await deps.retentionCleanup(db);
 	} catch (error) {
 		deps.warn('[SCHEDULED] Retention cleanup failed', error);
+	}
+	try {
+		await deps.dailyChallengeExpiration(db, deps.nowSeconds());
+	} catch (error) {
+		deps.warn('[SCHEDULED] Daily Challenge expiration failed', error);
+	}
+	try {
+		await deps.dailyChallengeRetention(db, deps.nowSeconds());
+	} catch (error) {
+		deps.warn('[SCHEDULED] Daily Challenge retention failed', error);
 	}
 }
 

@@ -370,12 +370,13 @@ class FakeRepository {
 
 	async readLeaderboard(
 		challengeId: string,
+		limit: number,
 		currentUserId?: string | null,
 	): Promise<DailyChallengeLeaderboardRead> {
 		const eligible = [...this.results.values()]
 			.filter((result) => result.challengeId === challengeId && result.eligible)
 			.sort((a, b) => b.endingBankroll - a.endingBankroll || b.roundsCompleted - a.roundsCompleted);
-		const entries = eligible.map((result, index) => ({
+		const entries = eligible.slice(0, limit).map((result, index) => ({
 			rank: index + 1,
 			userId: result.userId,
 			playerName: result.userId,
@@ -400,20 +401,45 @@ class FakeRepository {
 		limit: number,
 		currentUserId?: string | null,
 	): Promise<DailyChallengeHistoryRead> {
-		const rows = [...this.results.values()]
-			.filter((result) => (currentUserId ? result.userId === currentUserId : true))
-			.sort((a, b) => b.settledAt - a.settledAt)
+		const challenges = [...this.challenges.values()]
+			.sort((a, b) => b.endsAt - a.endsAt)
 			.slice(0, limit);
 		return {
-			entries: rows.map((result) => ({
-				periodKey: result.periodKey,
-				challengeRulesetVersion: result.challengeRulesetVersion,
-				endingBankroll: result.endingBankroll,
-				roundsCompleted: result.roundsCompleted,
-				terminalReason: result.terminalReason,
-				eligible: result.eligible,
-				settledAt: result.settledAt,
-			})),
+			entries: challenges.map((challenge) => {
+				const eligible = [...this.results.values()].filter(
+					(result) => result.challengeId === challenge.id && result.eligible,
+				);
+				const top =
+					eligible.length === 0
+						? null
+						: eligible.reduce((best, result) =>
+								result.endingBankroll > best.endingBankroll ||
+								(result.endingBankroll === best.endingBankroll &&
+									result.roundsCompleted > best.roundsCompleted)
+									? result
+									: best,
+							);
+				const userResult = currentUserId
+					? ([...this.results.values()].find(
+							(result) => result.challengeId === challenge.id && result.userId === currentUserId,
+						) ?? null)
+					: null;
+				return {
+					periodKey: challenge.periodKey,
+					challengeRulesetVersion: challenge.challengeRulesetVersion,
+					topEndingBankroll: top ? top.endingBankroll : null,
+					participantCount: eligible.length,
+					userResult: userResult
+						? {
+								endingBankroll: userResult.endingBankroll,
+								roundsCompleted: userResult.roundsCompleted,
+								terminalReason: userResult.terminalReason,
+								eligible: userResult.eligible,
+								settledAt: userResult.settledAt,
+							}
+						: null,
+				};
+			}),
 		};
 	}
 
@@ -447,6 +473,66 @@ class FakeRepository {
 			settledAt: attempt.settledAt,
 			actionLog: attempt.actionLog.map((entry) => ({ ...entry })),
 		};
+	}
+}
+
+interface ConcurrentWinnerState {
+	challenge: DailyChallengeRecord;
+	actionLog: DailyChallengeCommandV1[];
+	status: 'completed' | 'forfeited' | 'expired';
+	nextCommandSequence?: number;
+}
+
+class ConcurrentTerminalRepository extends FakeRepository {
+	private raceUsed = false;
+
+	constructor(
+		options: FakeOptions,
+		private readonly winner: ConcurrentWinnerState,
+	) {
+		super(options);
+	}
+
+	override async runCommandTransition(
+		input: DailyChallengeCommandTransitionInput,
+	): Promise<DailyChallengeCommandTransitionResult> {
+		if (this.raceUsed) return super.runCommandTransition(input);
+		this.raceUsed = true;
+		const current = this.attempts.get(input.attemptId);
+		if (!current) return { kind: 'not-applied' };
+		const actionLogJson = canonicalizeRanked(this.winner.actionLog);
+		const updated: AttemptState = {
+			...current,
+			actionLogJson,
+			actionLogHash: hashCanonical(this.winner.actionLog),
+			nextCommandSequence: this.winner.nextCommandSequence ?? this.winner.actionLog.length,
+			status: this.winner.status,
+			updatedAt: input.nowSeconds,
+			settledAt: input.nowSeconds,
+			actionLog: this.winner.actionLog.map((entry) => ({ ...entry })),
+		};
+		this.attempts.set(current.id, updated);
+		this.results.set(input.attemptId, {
+			attemptId: input.attemptId,
+			challengeId: current.challengeId,
+			userId: current.userId,
+			endingBankroll: updated.availableBankroll,
+			roundsCompleted: updated.roundsCompleted,
+			eligible: false,
+			terminalReason: this.winner.status === 'expired' ? 'expired' : 'forfeited',
+			durationSeconds: 1,
+			scoreVersion: 'blackjack-daily-score-v1',
+			configHash: this.winner.challenge.configHash,
+			rankedSeedCommitment: this.winner.challenge.rankedSeedCommitment,
+			actionLogHash: hashCanonical(this.winner.actionLog),
+			receiptHash: 'c'.repeat(64),
+			createdAt: input.nowSeconds,
+			settledAt: input.nowSeconds,
+			periodKey: this.winner.challenge.periodKey,
+			challengeRulesetVersion: this.winner.challenge.challengeRulesetVersion,
+			gameRulesetVersion: this.winner.challenge.gameRulesetVersion,
+		});
+		return { kind: 'not-applied' };
 	}
 }
 
@@ -1190,6 +1276,84 @@ describe('daily challenge coordinator expiry semantics', () => {
 	});
 });
 
+describe('daily challenge coordinator concurrent terminal classification', () => {
+	test('an exact terminal replay that loses the race returns the immutable terminal response', async () => {
+		const challenge = baseChallenge();
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentTerminalRepository(
+			{ challenges: [challenge], attempts: [attempt] },
+			{
+				challenge,
+				actionLog: [opener, cmd(1, 'forfeit')],
+				status: 'forfeited',
+			},
+		);
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: cmd(1, 'forfeit'),
+		});
+
+		expect(state.status).toBe('forfeited');
+		expect(state.receipt).not.toBeNull();
+		expect(state.receipt?.terminalReason).toBe('forfeited');
+		expect(state.receipt?.receiptHash).toBe('c'.repeat(64));
+		expect(state.activeRound).toBeNull();
+	});
+
+	test('a different command at a terminal recorded sequence returns IDENTIFIER_REUSE_MISMATCH', async () => {
+		const challenge = baseChallenge();
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentTerminalRepository(
+			{ challenges: [challenge], attempts: [attempt] },
+			{
+				challenge,
+				actionLog: [opener, cmd(1, 'forfeit')],
+				status: 'forfeited',
+			},
+		);
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'hit'),
+			}),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+
+	test('a sequence at the terminal boundary of an expired racing attempt returns ATTEMPT_COMPLETE', async () => {
+		const challenge = baseChallenge();
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentTerminalRepository(
+			{ challenges: [challenge], attempts: [attempt] },
+			{
+				challenge,
+				actionLog: [opener],
+				status: 'expired',
+				nextCommandSequence: 1,
+			},
+		);
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'hit'),
+			}),
+			'ATTEMPT_COMPLETE',
+		);
+	});
+});
+
 describe('daily challenge coordinator terminal receipt integrity', () => {
 	test('a terminal receipt remains byte-identical across renders', async () => {
 		const opener = startRound(0, DEFAULT_WAGER);
@@ -1364,7 +1528,7 @@ describe('daily challenge coordinator leaderboard and history', () => {
 		expect(board.currentUser).toBeNull();
 	});
 
-	test('history returns the user settled results', async () => {
+	test('history returns one challenge-centric entry per day with the user result attached', async () => {
 		const challenge = baseChallenge();
 		const repository = new FakeRepository({
 			challenges: [challenge],
@@ -1396,7 +1560,56 @@ describe('daily challenge coordinator leaderboard and history', () => {
 		const history = await coordinator.history({ userId: USER_ID, limit: 10 });
 
 		expect(history.entries).toHaveLength(1);
-		expect(history.entries[0].periodKey).toBe(challenge.periodKey);
+		expect(history.entries[0]).toMatchObject({
+			periodKey: challenge.periodKey,
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			topEndingBankroll: 1500,
+			participantCount: 1,
+		});
+		expect(history.entries[0].userResult).toMatchObject({
+			endingBankroll: 1500,
+			roundsCompleted: 10,
+			terminalReason: 'completed',
+			eligible: true,
+			settledAt: NOW_SECONDS,
+		});
+	});
+
+	test('a guest history omits every user result', async () => {
+		const challenge = baseChallenge();
+		const repository = new FakeRepository({
+			challenges: [challenge],
+			results: [
+				{
+					attemptId: 'a',
+					challengeId: challenge.id,
+					userId: USER_ID,
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+					eligible: true,
+					terminalReason: 'completed',
+					durationSeconds: 120,
+					scoreVersion: 'blackjack-daily-score-v1',
+					configHash: challenge.configHash,
+					rankedSeedCommitment: challenge.rankedSeedCommitment,
+					actionLogHash: 'a'.repeat(64),
+					receiptHash: 'b'.repeat(64),
+					createdAt: NOW_SECONDS,
+					settledAt: NOW_SECONDS,
+					periodKey: challenge.periodKey,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					gameRulesetVersion: 'blackjack-ranked-v1',
+				},
+			],
+		});
+		const { coordinator } = createBundle(repository);
+
+		const history = await coordinator.history({ userId: null, limit: 10 });
+
+		expect(history.entries).toHaveLength(1);
+		expect(history.entries[0].topEndingBankroll).toBe(1500);
+		expect(history.entries[0].participantCount).toBe(1);
+		expect(history.entries[0].userResult).toBeNull();
 	});
 });
 

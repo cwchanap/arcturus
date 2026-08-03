@@ -67,6 +67,7 @@ export interface DailyChallengeClientDeps {
 
 export interface DailyChallengeClient {
 	initialize(): Promise<void>;
+	adopt(attempt: DailyChallengeAttemptPublicStateV1): void;
 	start(): Promise<void>;
 	command(command: DailyChallengeClientCommand): Promise<void>;
 }
@@ -260,6 +261,21 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 		}
 	};
 
+	const adopt = (attempt: DailyChallengeAttemptPublicStateV1): void => {
+		if (attempt.status === 'active') {
+			deps.storage.setItem(
+				keys.activeAttempt,
+				JSON.stringify({
+					attemptId: attempt.attemptId,
+					periodKey: deps.periodKey,
+					startRequestId: attempt.startRequestId,
+				}),
+			);
+		}
+		removeStartIntentIfMatch(attempt.startRequestId);
+		accept(attempt);
+	};
+
 	const start = async (): Promise<void> => {
 		if (pending || current?.status === 'active') return;
 		const stored = parseStoredStartIntent(deps.storage.getItem(keys.startRequest));
@@ -343,7 +359,7 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 		}
 	};
 
-	return { initialize, start, command };
+	return { initialize, adopt, start, command };
 }
 
 export interface DailyChallengeLocalReplayControllerDeps {
@@ -580,7 +596,11 @@ export async function initDailyChallengePage(
 	});
 
 	if (rankedClient !== null) {
-		await rankedClient.initialize();
+		if (challenge.attempt !== null) {
+			rankedClient.adopt(challenge.attempt);
+		} else {
+			await rankedClient.initialize();
+		}
 	}
 
 	await Promise.all([

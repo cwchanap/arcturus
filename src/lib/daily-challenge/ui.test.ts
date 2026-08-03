@@ -203,20 +203,22 @@ function historyFixture(
 			{
 				periodKey: PERIOD_KEY,
 				challengeRulesetVersion: 'blackjack-daily-v1',
-				endingBankroll: 1200,
-				roundsCompleted: 10,
-				terminalReason: 'completed',
-				eligible: true,
-				settledAt: 1_742_001_000,
+				topEndingBankroll: 1500,
+				participantCount: 42,
+				userResult: {
+					endingBankroll: 1200,
+					roundsCompleted: 10,
+					terminalReason: 'completed',
+					eligible: true,
+					settledAt: 1_742_001_000,
+				},
 			},
 			{
 				periodKey: '2026-03-13',
 				challengeRulesetVersion: 'blackjack-daily-v1',
-				endingBankroll: 900,
-				roundsCompleted: 4,
-				terminalReason: 'forfeited',
-				eligible: false,
-				settledAt: 1_733_001_000,
+				topEndingBankroll: null,
+				participantCount: 0,
+				userResult: null,
 			},
 		],
 		...overrides,
@@ -654,7 +656,7 @@ describe('daily challenge renderer — leaderboard and history', () => {
 		expect(get('daily-challenge-current-standing').hidden).toBe(true);
 	});
 
-	test('renders a history row per past attempt with period, bankroll, rounds, and reason', () => {
+	test('renders one challenge-centric history row per day with top score, players, and user result', () => {
 		const { get, renderer } = mount();
 		renderer.renderHistory(historyFixture());
 
@@ -663,11 +665,31 @@ describe('daily challenge renderer — leaderboard and history', () => {
 		);
 		expect(rows).toHaveLength(2);
 		expect(rows[0]?.textContent).toContain('2026-03-14');
-		expect(rows[0]?.textContent).toContain('$1,200');
+		expect(rows[0]?.textContent).toContain('Top $1,500');
+		expect(rows[0]?.textContent).toContain('42 players');
+		expect(rows[0]?.textContent).toContain('You: $1,200');
 		expect(rows[0]?.textContent).toContain('10 rounds');
 		expect(rows[0]?.textContent).toContain('Completed');
-		expect(rows[1]?.textContent).toContain('Forfeited');
 		expect((rows[0] as HTMLElement).dataset.eligible).toBe('true');
+		expect(rows[1]?.textContent).toContain('No scores yet');
+		expect(rows[1]?.textContent).toContain('Not played');
+		expect((rows[1] as HTMLElement).dataset.eligible).toBeUndefined();
+	});
+
+	test('renders each history row as a link to the daily challenge archive page', () => {
+		const { get, renderer } = mount();
+		renderer.renderHistory(historyFixture());
+
+		const links = get('daily-challenge-history-rows').querySelectorAll(
+			'[data-testid="daily-challenge-history-link"]',
+		);
+		expect(links).toHaveLength(2);
+		expect((links[0] as HTMLAnchorElement).getAttribute('href')).toBe(
+			`/games/daily-challenge/${PERIOD_KEY}`,
+		);
+		expect((links[1] as HTMLAnchorElement).getAttribute('href')).toBe(
+			'/games/daily-challenge/2026-03-13',
+		);
 	});
 });
 

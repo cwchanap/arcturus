@@ -27,15 +27,16 @@ import {
 	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
-import type {
-	DailyChallengeAttemptRecord,
-	DailyChallengeCommandTransitionInput,
-	DailyChallengeRecord,
-	DailyChallengeRepository,
-	DailyChallengeResultRecord,
-	DailyChallengeTerminalTransition,
-	NewDailyChallengeAttemptRecord,
-	NewDailyChallengeRecord,
+import {
+	DAILY_CHALLENGE_LEADERBOARD_LIMIT,
+	type DailyChallengeAttemptRecord,
+	type DailyChallengeCommandTransitionInput,
+	type DailyChallengeRecord,
+	type DailyChallengeRepository,
+	type DailyChallengeResultRecord,
+	type DailyChallengeTerminalTransition,
+	type NewDailyChallengeAttemptRecord,
+	type NewDailyChallengeRecord,
 } from './repository';
 
 export const DAILY_CHALLENGE_LOG_EVENTS = Object.freeze([
@@ -387,7 +388,11 @@ export function createDailyChallengeCoordinator(
 		let rank: number | null = null;
 		let percentile: number | null = null;
 		if (result.eligible) {
-			const standing = await deps.repository.readLeaderboard(challenge.id, attempt.userId);
+			const standing = await deps.repository.readLeaderboard(
+				challenge.id,
+				DAILY_CHALLENGE_LEADERBOARD_LIMIT,
+				attempt.userId,
+			);
 			if (standing.currentUser) {
 				rank = standing.currentUser.rank;
 				percentile = standing.currentUser.percentile;
@@ -732,6 +737,15 @@ export function createDailyChallengeCoordinator(
 		const current = await deps.repository.findAttemptById(attempt.id);
 		if (!current) return internalError('Daily Challenge command reread lost its attempt');
 		if (current.status !== 'active') {
+			if (body.sequence < current.nextCommandSequence) {
+				const stored = current.actionLog[body.sequence];
+				if (stored && canonicalizeRanked(stored) === canonicalizeRanked(body)) {
+					log('daily_challenge_replayed', { userId: attempt.userId, attemptId: attempt.id });
+					return renderAttempt(current, challenge);
+				}
+				log('daily_challenge_command_rejected', { userId: attempt.userId, attemptId: attempt.id });
+				throw new DailyChallengeServiceError('IDENTIFIER_REUSE_MISMATCH');
+			}
 			throw new DailyChallengeServiceError('ATTEMPT_COMPLETE');
 		}
 		if (body.sequence < current.nextCommandSequence) {
@@ -839,10 +853,9 @@ export function createDailyChallengeCoordinator(
 		userId: string | null;
 		limit: number;
 	}): Promise<DailyChallengeLeaderboardResponse> => {
-		void limit;
 		const challenge = await deps.repository.findChallengeByPeriodKey('blackjack-daily', periodKey);
 		if (!challenge) throw new DailyChallengeServiceError('CHALLENGE_NOT_FOUND');
-		const read = await deps.repository.readLeaderboard(challenge.id, userId ?? undefined);
+		const read = await deps.repository.readLeaderboard(challenge.id, limit, userId ?? undefined);
 		return {
 			periodKey: challenge.periodKey,
 			entries: read.entries.map((entry) => ({

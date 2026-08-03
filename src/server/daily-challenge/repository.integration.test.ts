@@ -1060,7 +1060,7 @@ describe('daily challenge leaderboard', () => {
 			settledAt: NOW_SECONDS + 30,
 		});
 
-		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id);
+		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id, 50);
 
 		expect(board.entries.map((entry) => entry.rank)).toEqual([1, 1, 3]);
 	});
@@ -1086,6 +1086,7 @@ describe('daily challenge leaderboard', () => {
 
 		const board = await createDailyChallengeRepository(db).readLeaderboard(
 			challenge.id,
+			50,
 			'lb-tie-a',
 		);
 
@@ -1117,7 +1118,11 @@ describe('daily challenge leaderboard', () => {
 			settledAt: NOW_SECONDS + 99,
 		});
 
-		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id, USER_ID);
+		const board = await createDailyChallengeRepository(db).readLeaderboard(
+			challenge.id,
+			50,
+			USER_ID,
+		);
 
 		expect(board.entries).toHaveLength(50);
 		expect(board.currentUser?.rank).toBe(51);
@@ -1147,6 +1152,7 @@ describe('daily challenge leaderboard', () => {
 
 		const board = await createDailyChallengeRepository(db).readLeaderboard(
 			challenge.id,
+			50,
 			'lb-inelig',
 		);
 
@@ -1157,18 +1163,73 @@ describe('daily challenge leaderboard', () => {
 
 	test('a live leaderboard with no results is empty with a null current user', async () => {
 		const challenge = await seedChallenge();
-		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id, USER_ID);
+		const board = await createDailyChallengeRepository(db).readLeaderboard(
+			challenge.id,
+			50,
+			USER_ID,
+		);
 		expect(board.entries).toEqual([]);
 		expect(board.currentUser).toBeNull();
 	});
 });
 
 describe('daily challenge history', () => {
-	test('returns bounded recent results for the authenticated user ordered by settledAt desc', async () => {
+	test('a bounded leaderboard limit caps the returned entries', async () => {
+		const challenge = await seedChallenge();
+		for (let index = 0; index < 5; index += 1) {
+			const userId = `lb-limit-${String(index).padStart(2, '0')}`;
+			await seedNamedUser(userId, `Limit${index}`);
+			await seedLeaderboardResult({
+				userId,
+				attemptId: `${userId}-attempt00000000001`,
+				challengeId: challenge.id,
+				endingBankroll: 2000 - index,
+				settledAt: NOW_SECONDS + index,
+			});
+		}
+
+		const repository = createDailyChallengeRepository(db);
+		const three = await repository.readLeaderboard(challenge.id, 3);
+		expect(three.entries).toHaveLength(3);
+		expect(three.entries.map((entry) => entry.endingBankroll)).toEqual([2000, 1999, 1998]);
+
+		const full = await repository.readLeaderboard(challenge.id, 50);
+		expect(full.entries).toHaveLength(5);
+	});
+
+	test('returns one challenge-centric entry per day with top score, participants, and user result', async () => {
 		const challengeA = await seedChallenge(buildChallengeRecord());
 		const challengeB = await seedChallenge(
-			buildChallengeRecord({ id: CHALLENGE_ID_NEXT, periodKey: PERIOD_KEY_NEXT }),
+			buildChallengeRecord({
+				id: CHALLENGE_ID_NEXT,
+				periodKey: PERIOD_KEY_NEXT,
+				endsAt: getDailyChallengeWindow(NOW_SECONDS + 86_400).endsAt,
+			}),
 		);
+		await seedNamedUser('hist-top-a', 'TopA');
+		await seedLeaderboardResult({
+			userId: 'hist-top-a',
+			attemptId: 'hist-b-top-a-attempt000000001',
+			challengeId: challengeB.id,
+			endingBankroll: 1500,
+			settledAt: NOW_SECONDS + 150,
+		});
+		await seedLeaderboardResult({
+			userId: USER_ID,
+			attemptId: 'hist-b-user-attempt0000000001',
+			challengeId: challengeB.id,
+			endingBankroll: 800,
+			settledAt: NOW_SECONDS + 200,
+		});
+		await seedLeaderboardResult({
+			userId: OTHER_USER_ID,
+			attemptId: 'hist-b-inelig-attempt0000001',
+			challengeId: challengeB.id,
+			endingBankroll: 9999,
+			settledAt: NOW_SECONDS + 250,
+			eligible: false,
+			terminalReason: 'forfeited',
+		});
 		await seedLeaderboardResult({
 			userId: USER_ID,
 			attemptId: 'hist-a-attempt0000000000001',
@@ -1176,24 +1237,35 @@ describe('daily challenge history', () => {
 			endingBankroll: 1200,
 			settledAt: NOW_SECONDS + 100,
 		});
-		await seedLeaderboardResult({
-			userId: USER_ID,
-			attemptId: 'hist-b-attempt0000000000001',
-			challengeId: challengeB.id,
-			endingBankroll: 800,
-			settledAt: NOW_SECONDS + 200,
-		});
 
 		const repository = createDailyChallengeRepository(db);
 		const full = await repository.listChallengeHistory(10, USER_ID);
 		expect(full.entries.map((entry) => entry.periodKey)).toEqual([PERIOD_KEY_NEXT, PERIOD_KEY]);
+		expect(full.entries[0]).toMatchObject({
+			periodKey: PERIOD_KEY_NEXT,
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			topEndingBankroll: 1500,
+			participantCount: 2,
+		});
+		expect(full.entries[0]?.userResult).toMatchObject({
+			endingBankroll: 800,
+			roundsCompleted: 10,
+			terminalReason: 'completed',
+			eligible: true,
+		});
+		expect(full.entries[1]).toMatchObject({
+			periodKey: PERIOD_KEY,
+			topEndingBankroll: 1200,
+			participantCount: 1,
+		});
+		expect(full.entries[1]?.userResult?.endingBankroll).toBe(1200);
 
 		const bounded = await repository.listChallengeHistory(1, USER_ID);
 		expect(bounded.entries).toHaveLength(1);
 		expect(bounded.entries[0]?.periodKey).toBe(PERIOD_KEY_NEXT);
 	});
 
-	test('without a current user it returns the most recent global results', async () => {
+	test('a guest history omits user results and still reports top score and participants', async () => {
 		const challenge = await seedChallenge();
 		await seedNamedUser('hist-other', 'Other');
 		await seedLeaderboardResult({
@@ -1207,6 +1279,29 @@ describe('daily challenge history', () => {
 		const history = await createDailyChallengeRepository(db).listChallengeHistory(10);
 		expect(history.entries).toHaveLength(1);
 		expect(history.entries[0]?.periodKey).toBe(PERIOD_KEY);
+		expect(history.entries[0]?.topEndingBankroll).toBe(500);
+		expect(history.entries[0]?.participantCount).toBe(1);
+		expect(history.entries[0]?.userResult).toBeNull();
+	});
+
+	test('a challenge day with no eligible results reports no top score and zero participants', async () => {
+		const challenge = await seedChallenge();
+		await seedNamedUser('hist-elig-none', 'Nobody');
+		await seedLeaderboardResult({
+			userId: 'hist-elig-none',
+			attemptId: 'hist-elig-none-attempt0000001',
+			challengeId: challenge.id,
+			endingBankroll: 700,
+			settledAt: NOW_SECONDS + 5,
+			eligible: false,
+			terminalReason: 'expired',
+		});
+
+		const history = await createDailyChallengeRepository(db).listChallengeHistory(10, USER_ID);
+		expect(history.entries).toHaveLength(1);
+		expect(history.entries[0]?.topEndingBankroll).toBeNull();
+		expect(history.entries[0]?.participantCount).toBe(0);
+		expect(history.entries[0]?.userResult).toBeNull();
 	});
 });
 

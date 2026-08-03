@@ -534,7 +534,7 @@ describe('daily challenge recovery client — command recovery', () => {
 		expect(renderer.responses.at(-1)?.status).toBe('completed');
 	});
 
-	test('does not retry a definitive validation error and surfaces it', async () => {
+	test('recovers a SEQUENCE_MISMATCH by resuming authoritative attempt state', async () => {
 		const storage = new RecordingStorage();
 		storage.values.set(keys.activeAttempt, storedActiveAttempt());
 		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
@@ -548,8 +548,10 @@ describe('daily challenge recovery client — command recovery', () => {
 
 		await client.command({ command: 'stand' });
 
-		expect(fetchMock).toHaveBeenCalledTimes(1);
-		expect(renderer.errors.length).toBe(1);
+		// One command POST rejected with SEQUENCE_MISMATCH, then one resume GET
+		// to reconcile the client with the authoritative attempt state.
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(renderer.errors.length).toBe(0);
 	});
 
 	test('does not retry a definitive INVALID_COMMAND error', async () => {

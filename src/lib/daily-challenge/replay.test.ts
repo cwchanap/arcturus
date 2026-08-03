@@ -36,8 +36,14 @@ function singleDeckSource(deck: Card[]): (roundIndex: number) => Card[] {
 	return () => deck;
 }
 
-function throwsDailyError(code: string) {
-	return expect.objectContaining({ code });
+function expectDailyError(code: string, fn: () => unknown): void {
+	try {
+		fn();
+	} catch (error) {
+		expect((error as { code?: string }).code).toBe(code);
+		return;
+	}
+	throw new Error(`Expected a Daily Challenge error with code ${code}, but none was thrown`);
 }
 
 describe('replayDailyChallenge round segmentation', () => {
@@ -310,14 +316,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INVALID_WAGER', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 5)],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INVALID_WAGER'));
+		);
 	});
 
 	test('rejects a static wager above the configured maximum', () => {
@@ -328,14 +334,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INVALID_WAGER', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 1500)],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INVALID_WAGER'));
+		);
 	});
 
 	test('rejects a dynamic double-down funding gap with a distinct error', () => {
@@ -346,14 +352,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('7', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INSUFFICIENT_CHALLENGE_BANKROLL', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 600), cmd(1, 'double-down')],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INSUFFICIENT_CHALLENGE_BANKROLL'));
+		);
 	});
 
 	test('rejects a non-contiguous command sequence', () => {
@@ -364,14 +370,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('SEQUENCE_MISMATCH', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(5, 100)],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('SEQUENCE_MISMATCH'));
+		);
 	});
 
 	test('rejects a start-round command while a round is still active', () => {
@@ -382,14 +388,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INVALID_COMMAND', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 100), startRound(1, 100)],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INVALID_COMMAND'));
+		);
 	});
 
 	test('rejects a blackjack action issued with no active round', () => {
@@ -400,14 +406,14 @@ describe('replayDailyChallenge error handling and determinism', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INVALID_COMMAND', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[cmd(0, 'stand')],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INVALID_COMMAND'));
+		);
 	});
 
 	test('is byte-identical for identical inputs', () => {
@@ -453,14 +459,14 @@ describe('replayDailyChallenge terminal guard errors', () => {
 		}
 		commands.push(startRound(10, 200));
 
-		expect(() =>
+		expectDailyError('ATTEMPT_COMPLETE', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				commands,
 				singleDeckSource(lossDeck()),
 			),
-		).toThrow(throwsDailyError('ATTEMPT_COMPLETE'));
+		);
 	});
 
 	test('rejects a blackjack action after the challenge is terminal', () => {
@@ -471,25 +477,25 @@ describe('replayDailyChallenge terminal guard errors', () => {
 		}
 		commands.push(cmd(10, 'stand'));
 
-		expect(() =>
+		expectDailyError('ATTEMPT_COMPLETE', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				commands,
 				singleDeckSource(lossDeck()),
 			),
-		).toThrow(throwsDailyError('ATTEMPT_COMPLETE'));
+		);
 	});
 
 	test('rejects a start-round wager exceeding the available bankroll', () => {
-		expect(() =>
+		expectDailyError('INSUFFICIENT_CHALLENGE_BANKROLL', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 600), cmd(1, 'stand'), startRound(2, 500)],
 				singleDeckSource(lossDeck()),
 			),
-		).toThrow(throwsDailyError('INSUFFICIENT_CHALLENGE_BANKROLL'));
+		);
 	});
 
 	test('rejects a blackjack action that is not in the legal actions', () => {
@@ -500,13 +506,13 @@ describe('replayDailyChallenge terminal guard errors', () => {
 			card('8', 'spades'),
 		);
 
-		expect(() =>
+		expectDailyError('INVALID_COMMAND', () =>
 			replayDailyChallenge(
 				BLACKJACK_DAILY_V1_CONFIG,
 				MASTER_SEED,
 				[startRound(0, 100), cmd(1, 'split')],
 				singleDeckSource(deck),
 			),
-		).toThrow(throwsDailyError('INVALID_COMMAND'));
+		);
 	});
 });

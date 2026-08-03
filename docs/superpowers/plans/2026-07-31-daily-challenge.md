@@ -137,7 +137,7 @@
 Add the existing public card/hand/dealer/state interfaces to `src/lib/ranked/blackjack/types.ts`:
 
 ```typescript
-import type { HandValue } from '../../blackjack/types';
+import type { Card, HandValue } from '../../blackjack/types';
 
 export interface RankedBlackjackPublicHandV1 {
 	readonly cards: readonly Card[];

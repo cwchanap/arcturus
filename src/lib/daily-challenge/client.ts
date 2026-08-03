@@ -319,6 +319,9 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 	const isAttemptComplete = (error: unknown): boolean =>
 		error instanceof DailyChallengeResponseError && error.code === 'ATTEMPT_COMPLETE';
 
+	const isSequenceMismatch = (error: unknown): boolean =>
+		error instanceof DailyChallengeResponseError && error.code === 'SEQUENCE_MISMATCH';
+
 	const command = async (action: DailyChallengeClientCommand): Promise<void> => {
 		if (pending || !current || current.status !== 'active') return;
 		const attemptId = current.attemptId;
@@ -339,16 +342,20 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 					await recoverTerminal(attemptId);
 					return;
 				}
-				if (!isUncertain(firstError)) throw firstError;
-				try {
-					response = await transport(commandUrl, requestInit);
-				} catch (retryError) {
-					if (isAttemptComplete(retryError)) {
-						await recoverTerminal(attemptId);
-						return;
-					}
-					if (!isUncertain(retryError)) throw retryError;
+				if (isSequenceMismatch(firstError)) {
 					response = await getAttempt(attemptId);
+				} else {
+					if (!isUncertain(firstError)) throw firstError;
+					try {
+						response = await transport(commandUrl, requestInit);
+					} catch (retryError) {
+						if (isAttemptComplete(retryError)) {
+							await recoverTerminal(attemptId);
+							return;
+						}
+						if (!isUncertain(retryError) && !isSequenceMismatch(retryError)) throw retryError;
+						response = await getAttempt(attemptId);
+					}
 				}
 			}
 			accept(response);

@@ -14,6 +14,7 @@ import {
 	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
+import { DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE } from './expiration';
 
 export type DailyChallengeConfig = typeof BLACKJACK_DAILY_V1_CONFIG;
 
@@ -431,7 +432,6 @@ const DELETE_TERMINAL_BEFORE_SQL = `DELETE FROM daily_challenge_attempt
 
 export const DAILY_CHALLENGE_LEADERBOARD_LIMIT = 50;
 const DAILY_CHALLENGE_HISTORY_MAX_LIMIT = 100;
-const DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE = 100;
 
 const dailyChallengeTerminalReasonSchema = z.enum([
 	'completed',
@@ -990,6 +990,25 @@ async function executeCommandTransition(
 }
 
 export function createDailyChallengeRepository(db: D1Database): DailyChallengeRepository {
+	const readCurrentUserStanding = async (
+		challengeId: string,
+		userId: string,
+	): Promise<{ rank: number; totalEligible: number; percentile: number } | null> => {
+		const [rankRow, totalRow] = await Promise.all([
+			db.prepare(CURRENT_USER_RANK_SQL).bind(challengeId, userId).first<{ rank: number }>(),
+			db.prepare(TOTAL_ELIGIBLE_SQL).bind(challengeId).first<{ total: number }>(),
+		]);
+		if (!rankRow || !totalRow) return null;
+		const totalEligible = totalRow.total;
+		if (!Number.isSafeInteger(totalEligible) || totalEligible < 1) return null;
+		const rank = rankRow.rank;
+		if (!Number.isSafeInteger(rank) || rank < 1) {
+			return invariant('Corrupt daily challenge current-user rank');
+		}
+		const percentile = calculateDailyChallengePercentile(totalEligible, rank - 1);
+		return { rank, totalEligible, percentile };
+	};
+
 	return {
 		async findChallengeByPeriodKey(challengeKind, periodKey) {
 			const row = await db
@@ -1062,18 +1081,9 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 			return row === null ? null : parseResultRow(row);
 		},
 		async findStanding(challengeId, userId) {
-			const [rankRow, totalRow] = await Promise.all([
-				db.prepare(CURRENT_USER_RANK_SQL).bind(challengeId, userId).first<{ rank: number }>(),
-				db.prepare(TOTAL_ELIGIBLE_SQL).bind(challengeId).first<{ total: number }>(),
-			]);
-			if (!rankRow || !totalRow) return null;
-			const totalEligible = totalRow.total;
-			if (!Number.isSafeInteger(totalEligible) || totalEligible < 1) return null;
-			const rank = rankRow.rank;
-			if (!Number.isSafeInteger(rank) || rank < 1) {
-				return invariant('Corrupt daily challenge current-user rank');
-			}
-			return { rank, percentile: calculateDailyChallengePercentile(totalEligible, rank - 1) };
+			const standing = await readCurrentUserStanding(challengeId, userId);
+			if (!standing) return null;
+			return { rank: standing.rank, percentile: standing.percentile };
 		},
 		async readLeaderboard(challengeId, limit, currentUserId) {
 			if (typeof challengeId !== 'string' || challengeId.length === 0) {
@@ -1088,27 +1098,9 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 				.all<DailyChallengeLeaderboardRow>();
 			const entries = rows.results.map(parseLeaderboardRow);
 			if (!currentUserId) return { entries, currentUser: null };
-			const [rankRow, totalRow] = await Promise.all([
-				db
-					.prepare(CURRENT_USER_RANK_SQL)
-					.bind(challengeId, currentUserId)
-					.first<{ rank: number }>(),
-				db.prepare(TOTAL_ELIGIBLE_SQL).bind(challengeId).first<{ total: number }>(),
-			]);
-			if (!rankRow || !totalRow) return { entries, currentUser: null };
-			const totalEligible = totalRow.total;
-			if (!Number.isSafeInteger(totalEligible) || totalEligible < 1) {
-				return { entries, currentUser: null };
-			}
-			const rank = rankRow.rank;
-			if (!Number.isSafeInteger(rank) || rank < 1) {
-				return invariant('Corrupt daily challenge current-user rank');
-			}
-			const percentile = calculateDailyChallengePercentile(totalEligible, rank - 1);
-			return {
-				entries,
-				currentUser: { rank, totalEligible, percentile },
-			};
+			const standing = await readCurrentUserStanding(challengeId, currentUserId);
+			if (!standing) return { entries, currentUser: null };
+			return { entries, currentUser: standing };
 		},
 		async listChallengeHistory(limit, currentUserId) {
 			if (!Number.isSafeInteger(limit) || limit < 1) {

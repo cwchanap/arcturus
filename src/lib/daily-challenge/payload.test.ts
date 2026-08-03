@@ -493,21 +493,33 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 
 	test('rejects a closed challenge response carrying a malformed revealed seed', () => {
 		const nowMs = (1_742_000_000 + 86_400) * 1000;
-		expect(() =>
+		let caught: unknown;
+		try {
 			parseDailyChallengeChallengeResponse(
 				{ ...liveChallengeResponse(), revealedRankedSeed: 'not-canonical!!' },
 				nowMs,
-			),
-		).toThrow(/revealedRankedSeed|reveal/i);
+			);
+		} catch (error) {
+			caught = error;
+		}
+		const issues = (caught as { issues: { path: PropertyKey[] }[] }).issues;
+		expect(Array.isArray(issues)).toBe(true);
+		expect(issues.some((issue) => issue.path.includes('revealedRankedSeed'))).toBe(true);
 	});
 
 	test('rejects a challenge response carrying a malformed practice seed', () => {
-		expect(() =>
+		let caught: unknown;
+		try {
 			parseDailyChallengeChallengeResponse({
 				...liveChallengeResponse(),
 				practiceSeed: 'not-canonical!!',
-			}),
-		).toThrow(/practiceSeed|practice seed/i);
+			});
+		} catch (error) {
+			caught = error;
+		}
+		const issues = (caught as { issues: { path: PropertyKey[] }[] }).issues;
+		expect(Array.isArray(issues)).toBe(true);
+		expect(issues.some((issue) => issue.path.includes('practiceSeed'))).toBe(true);
 	});
 });
 

@@ -334,6 +334,31 @@ describe('generalized helpers accept daily challenge operations', () => {
 			expect(result.retryAfter).toBeLessThanOrEqual(60);
 		}
 	});
+
+	test('getRetryAfterSeconds rejects negative and fractional nowSeconds with TypeError', () => {
+		expect(() => getRetryAfterSeconds('daily_challenge_start', -1)).toThrow(TypeError);
+		expect(() => getRetryAfterSeconds('daily_challenge_start', 0.5)).toThrow(TypeError);
+	});
+
+	test('consumeStandaloneRateLimit rejects an invariant-violating meta.changes of 2', async () => {
+		const db = {
+			prepare(_sql: string) {
+				return {
+					bind(..._args: unknown[]) {
+						return {
+							async run() {
+								return { meta: { changes: 2 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+
+		await expect(
+			consumeStandaloneRateLimit(db, 'user-daily', 'daily_challenge_start', 1000),
+		).rejects.toThrow('Authenticated rate-limit mutation count invariant failed');
+	});
 });
 
 describe('assertNowSeconds invariants', () => {

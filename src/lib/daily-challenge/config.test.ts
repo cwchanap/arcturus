@@ -64,10 +64,14 @@ describe('getDailyChallengeWindow', () => {
 		expect(window.endsAt).toBe(midnight + 24 * 60 * 60);
 	});
 
-	test.each([-1, 0.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
-		'rejects an invalid now value %p',
-		(nowSeconds) => {
-			expect(() => getDailyChallengeWindow(nowSeconds)).toThrow();
-		},
-	);
+	test.each([
+		-1,
+		0.5,
+		Number.NaN,
+		Number.POSITIVE_INFINITY,
+		Number.MAX_SAFE_INTEGER + 1,
+		Number.MAX_SAFE_INTEGER,
+	])('rejects an invalid now value %p', (nowSeconds) => {
+		expect(() => getDailyChallengeWindow(nowSeconds)).toThrow();
+	});
 });

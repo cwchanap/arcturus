@@ -3,6 +3,7 @@ import { Window } from 'happy-dom';
 import { describe, expect, test } from 'vitest';
 import DailyChallengeHistoryPage from '../src/pages/games/daily-challenge/[periodKey].astro';
 import DailyChallengePage from '../src/pages/games/daily-challenge.astro';
+import { hashUserId } from '../src/lib/public-game-session';
 
 const GUEST_CACHE_CONTROL = 'public, max-age=0, s-maxage=60, stale-while-revalidate=300';
 
@@ -93,7 +94,7 @@ describe('daily challenge current page — cache and session behavior', () => {
 		expect(response.headers.get('vary')).toBeNull();
 
 		const root = window.document.querySelector('#daily-challenge-root');
-		expect(root?.getAttribute('data-user-id')).toBe(user.id);
+		expect(root?.getAttribute('data-user-id')).toBe(hashUserId(user.id));
 	});
 });
 
@@ -148,7 +149,7 @@ describe('daily challenge historical page — period validation and cache behavi
 		expect(response.headers.get('cache-control')).toBe('private, no-store');
 
 		const root = window.document.querySelector('#daily-challenge-root');
-		expect(root?.getAttribute('data-user-id')).toBe(user.id);
+		expect(root?.getAttribute('data-user-id')).toBe(hashUserId(user.id));
 	});
 
 	test('a malformed period key returns 404 with no-store', async () => {

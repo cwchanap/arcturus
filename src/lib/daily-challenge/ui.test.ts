@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import type {
+	DailyChallengeActiveRoundV1,
 	DailyChallengeAttemptPublicStateV1,
 	DailyChallengeHistoryResponse,
 	DailyChallengeLeaderboardResponse,
@@ -42,7 +43,7 @@ const PERIOD_KEY = '2026-03-14';
 const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYn';
 const RANKED_SEED = 'AwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKis';
 
-const ACTIVE_ROUND = {
+const ACTIVE_ROUND: DailyChallengeActiveRoundV1 = {
 	phase: 'player-turn',
 	playerHands: [
 		{

@@ -364,7 +364,10 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 				...leaderboard.entries.map((entry) => {
 					const row = document.createElement('li');
 					row.dataset.testid = 'daily-challenge-leaderboard-row';
-					row.textContent = `#${entry.rank} ${entry.playerName} ${formatCurrency(entry.endingBankroll)}`;
+					if (entry.isCurrentUser) {
+						row.dataset.isCurrentUser = 'true';
+					}
+					row.textContent = `#${entry.rank} ${entry.playerName} ${formatCurrency(entry.endingBankroll)}${entry.isCurrentUser ? ' (you)' : ''}`;
 					return row;
 				}),
 			);

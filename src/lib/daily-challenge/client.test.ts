@@ -578,6 +578,59 @@ describe('daily challenge recovery client — command recovery', () => {
 		expect(storage.getItem(keys.startRequest)).toBeNull();
 	});
 
+	test('a ranked forfeit submits the forfeit command and renders the ineligible terminal receipt', async () => {
+		const storage = new RecordingStorage();
+		storage.values.set(keys.activeAttempt, storedActiveAttempt());
+		const bodies: string[] = [];
+		const renderer = createRenderer();
+		const { client } = createHarness({
+			storage,
+			renderer,
+			fetch: async (_url, init) => {
+				if (init?.method !== 'POST') return jsonResponse(activeAttempt());
+				bodies.push(String(init?.body));
+				return jsonResponse(
+					terminalAttempt({
+						status: 'forfeited',
+						nextCommandSequence: 1,
+						availableBankroll: 900,
+						roundsCompleted: 0,
+						rank: null,
+						percentile: null,
+						receipt: {
+							attemptId: ATTEMPT_ID,
+							challengeId: CHALLENGE_ID,
+							periodKey: PERIOD_KEY,
+							challengeRulesetVersion: 'blackjack-daily-v1',
+							gameRulesetVersion: 'blackjack-ranked-v1',
+							scoreVersion: 'blackjack-daily-score-v1',
+							configHash: 'a'.repeat(64),
+							rankedSeedCommitment: 'b'.repeat(64),
+							actionLogHash: 'c'.repeat(64),
+							endingBankroll: 900,
+							roundsCompleted: 0,
+							eligible: false,
+							terminalReason: 'forfeited',
+							durationSeconds: 120,
+							settledAt: 1_742_001_000,
+							receiptHash: 'd'.repeat(64),
+						},
+					}),
+				);
+			},
+		});
+		await client.initialize();
+
+		await client.command({ command: 'forfeit' });
+
+		expect(bodies).toEqual([JSON.stringify({ sequence: 0, command: 'forfeit' })]);
+		const terminal = renderer.responses.at(-1);
+		expect(terminal?.status).toBe('forfeited');
+		expect(terminal?.receipt?.terminalReason).toBe('forfeited');
+		expect(terminal?.receipt?.eligible).toBe(false);
+		expect(storage.getItem(keys.activeAttempt)).toBeNull();
+	});
+
 	test('does not send a command when there is no active attempt', async () => {
 		const storage = new RecordingStorage();
 		const { client, fetchMock } = createHarness({ storage });
@@ -999,7 +1052,6 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 			entries: [
 				{
 					rank: 1,
-					userId: 'user-1',
 					playerName: 'Alice',
 					endingBankroll: 2000,
 					roundsCompleted: 10,
@@ -1130,7 +1182,7 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		expect(clientHarness.commands).toEqual([
 			{ command: 'start-round', wager: 100 },
 			{ command: 'double-down' },
-			{ command: 'forfeited' },
+			{ command: 'forfeit' },
 		]);
 		expect(replayHarness.startRounds).toEqual([]);
 		expect(replayHarness.actions).toEqual([]);
@@ -1192,7 +1244,6 @@ describe('daily challenge page bootstrap — initDailyChallengeHistoryPage', () 
 				entries: [
 					{
 						rank: 1,
-						userId: 'user-1',
 						playerName: 'Alice',
 						endingBankroll: 2000,
 						roundsCompleted: 10,

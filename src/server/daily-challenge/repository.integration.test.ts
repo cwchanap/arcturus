@@ -14,7 +14,12 @@ import {
 	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
-import { buildRateLimitStatement, RANKED_RATE_LIMITS } from '../ranked/rate-limit';
+import {
+	buildRateLimitContinuationStatement,
+	buildRateLimitStatement,
+	consumeStandaloneRateLimit,
+	RANKED_RATE_LIMITS,
+} from '../ranked/rate-limit';
 import {
 	DailyChallengeRepositoryInvariantError,
 	createDailyChallengeRepository,
@@ -640,6 +645,75 @@ describe('daily challenge command transition', () => {
 		expect(reread?.roundsCompleted).toBe(0);
 		expect(reread?.actionLog).toEqual(nextLog);
 		expect(reread?.settledAt).toBeNull();
+	});
+
+	test('a command with a matched rate continuation applies the guarded transition', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const nextLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+
+		const consume = await consumeStandaloneRateLimit(
+			db,
+			USER_ID,
+			'daily_challenge_command',
+			NOW_SECONDS,
+		);
+		expect(consume.kind).toBe('allowed');
+
+		const result = await repository.runCommandTransition({
+			...commandTransition({
+				current: INITIAL_PROJECTION,
+				next: {
+					sequence: 1,
+					actionLog: nextLog,
+					availableBankroll: 990,
+					roundsCompleted: 0,
+				},
+			}),
+			rateLimitStatement: buildRateLimitContinuationStatement(db, {
+				userId: USER_ID,
+				operation: 'daily_challenge_command',
+				nowSeconds: NOW_SECONDS,
+			}),
+			retryAfter: 60,
+		});
+
+		expect(result).toEqual({ kind: 'applied', result: null });
+		const reread = await repository.findAttemptByChallengeAndUser(CHALLENGE_ID, USER_ID);
+		expect(reread?.nextCommandSequence).toBe(1);
+		expect(reread?.availableBankroll).toBe(990);
+	});
+
+	test('a command whose rate continuation does not match returns rate-limited without mutating', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const nextLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+
+		const result = await repository.runCommandTransition({
+			...commandTransition({
+				current: INITIAL_PROJECTION,
+				next: {
+					sequence: 1,
+					actionLog: nextLog,
+					availableBankroll: 990,
+					roundsCompleted: 0,
+				},
+			}),
+			rateLimitStatement: buildRateLimitContinuationStatement(db, {
+				userId: USER_ID,
+				operation: 'daily_challenge_command',
+				nowSeconds: NOW_SECONDS,
+			}),
+			retryAfter: 60,
+		});
+
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBe(60);
+		}
+		const reread = await repository.findAttemptByChallengeAndUser(CHALLENGE_ID, USER_ID);
+		expect(reread?.nextCommandSequence).toBe(0);
+		expect(reread?.availableBankroll).toBe(BLACKJACK_DAILY_V1_CONFIG.startingBankroll);
 	});
 
 	test('one winning concurrent command leaves the loser not-applied', async () => {

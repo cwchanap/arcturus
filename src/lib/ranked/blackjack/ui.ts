@@ -1,14 +1,17 @@
 import { initAchievementToast } from '../../achievement-toast';
 import { getAchievementById } from '../../achievements/achievement-rules';
-import { getSuitSymbol, isRedSuit } from '../../card-format';
 import type { RankedBlackjackAction } from '../protocol';
 import type {
-	RankedBlackjackPublicCardV1,
-	RankedBlackjackPublicHandValueV1,
 	RankedBlackjackRenderer,
 	RankedBlackjackRendererHandlers,
 	RankedBlackjackResponseV1,
 } from './client';
+import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../../blackjack/presentation';
+
+const RANKED_PRESENTATION_OPTIONS = {
+	testIdPrefix: 'ranked',
+	formatWager: (value: number) => `$${new Intl.NumberFormat('en-US').format(value)}`,
+} as const;
 
 const ACTIONS: readonly RankedBlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 
@@ -25,23 +28,6 @@ function formatChips(value: number): string {
 function formatSignedChips(value: number): string {
 	if (value === 0) return '$0';
 	return `${value > 0 ? '+' : '-'}${formatChips(Math.abs(value))}`;
-}
-
-function formatHandValue(value: RankedBlackjackPublicHandValueV1): string {
-	if (value.isBust) return `Bust ${value.value}`;
-	if (value.isSoft) return `Soft ${value.value}`;
-	return String(value.value);
-}
-
-function createCard(card: RankedBlackjackPublicCardV1, testId: string): HTMLElement {
-	const element = document.createElement('div');
-	element.dataset.testid = testId;
-	element.className =
-		'playing-card flex h-24 w-16 flex-col items-center justify-center rounded-lg bg-white text-xl font-bold shadow-lg';
-	element.classList.add(isRedSuit(card.suit) ? 'text-red-700' : 'text-slate-900');
-	element.setAttribute('aria-label', `${card.rank} of ${card.suit}`);
-	element.textContent = `${card.rank}${getSuitSymbol(card.suit)}`;
-	return element;
 }
 
 export function createRankedBlackjackRenderer(root: HTMLElement): RankedBlackjackRenderer {
@@ -91,38 +77,19 @@ export function createRankedBlackjackRenderer(root: HTMLElement): RankedBlackjac
 	};
 
 	const renderDealer = (response: RankedBlackjackResponseV1): void => {
-		dealerHand.replaceChildren(
-			...response.state.dealer.cards.map((card) => createCard(card, 'ranked-dealer-card')),
-		);
-		dealerValue.textContent = formatHandValue(response.state.dealer.value);
+		renderBlackjackDealer(document, dealerHand, dealerValue, response.state.dealer, {
+			testIdPrefix: RANKED_PRESENTATION_OPTIONS.testIdPrefix,
+		});
 	};
 
 	const renderPlayers = (response: RankedBlackjackResponseV1): void => {
-		const renderedHands = response.state.playerHands.map((hand, index) => {
-			const section = document.createElement('section');
-			section.dataset.testid = 'ranked-player-hand';
-			section.dataset.active = String(index === response.state.activeHandIndex);
-			section.className =
-				index === response.state.activeHandIndex
-					? 'rounded-xl border-2 border-[var(--deco-brass)] p-4'
-					: 'rounded-xl border border-[var(--deco-line)] p-4';
-
-			const label = document.createElement('p');
-			label.className = 'mb-2 text-sm text-[var(--deco-muted)]';
-			label.textContent = `Hand ${index + 1} · ${formatChips(hand.wager)}`;
-
-			const value = document.createElement('p');
-			value.dataset.testid = 'ranked-player-value';
-			value.className = 'mb-3 font-bold text-[var(--deco-brass)]';
-			value.textContent = formatHandValue(hand.value);
-
-			const cards = document.createElement('div');
-			cards.className = 'flex flex-wrap justify-center gap-2';
-			cards.replaceChildren(...hand.cards.map((card) => createCard(card, 'ranked-player-card')));
-			section.replaceChildren(label, value, cards);
-			return section;
-		});
-		playerHands.replaceChildren(...renderedHands);
+		renderBlackjackPlayerHands(
+			document,
+			playerHands,
+			response.state.playerHands,
+			response.state.activeHandIndex,
+			RANKED_PRESENTATION_OPTIONS,
+		);
 	};
 
 	const renderReceipt = (response: RankedBlackjackResponseV1): void => {

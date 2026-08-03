@@ -2,6 +2,11 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import { getDailyChallengeWindow } from '../../lib/daily-challenge/config';
 
+// Guest access is an intentional exception for the Daily Challenge page: unauthenticated
+// visitors can browse the current challenge, leaderboard, and history, and play practice
+// scenarios. Other game pages redirect to /signin, but this page serves a public, cacheable
+// summary. The 'guest' surrogate user ID keeps data-user-id present on cached HTML so the
+// client can distinguish guests from a missing attribute.
 const user = Astro.locals.user;
 
 if (user) {
@@ -14,13 +19,17 @@ if (user) {
 	Astro.response.headers.set('Vary', 'Cookie');
 }
 
-const currentPeriod = getDailyChallengeWindow(Math.trunc(Date.now() / 1000)).periodKey;
+const currentWindow = getDailyChallengeWindow(Math.trunc(Date.now() / 1000));
+const currentPeriod = currentWindow.periodKey;
+const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
+	.toISOString()
+	.slice(11, 16);
 ---
 
 <CasinoLayout title="Daily Challenge - Arcturus Casino">
 	<main
 		id="daily-challenge-root"
-		data-user-id={user?.id}
+		data-user-id={user?.id ?? 'guest'}
 		class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
 	>
 		<header class="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -43,7 +52,7 @@ const currentPeriod = getDailyChallengeWindow(Math.trunc(Date.now() / 1000)).per
 					data-testid="daily-challenge-close"
 					class="mt-3 max-w-2xl text-sm leading-6 text-[var(--deco-muted)]"
 				>
-					Ranked entry closes at 23:30 UTC.
+					Ranked entry closes at {entryClosesAt} UTC.
 				</p>
 			</div>
 			<div

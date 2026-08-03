@@ -194,6 +194,94 @@ describe('parseDailyChallengeAttemptResponse — status/receipt consistency', ()
 	});
 });
 
+describe('parseDailyChallengeAttemptResponse — terminal-state field combinations', () => {
+	test('rejects a completed attempt whose receipt is marked ineligible', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({ receipt: buildReceipt({ eligible: false }) }),
+			),
+		).toThrow(/eligible/i);
+	});
+
+	test('rejects a forfeited attempt whose receipt is marked eligible', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'forfeited',
+					rank: null,
+					percentile: null,
+					receipt: buildReceipt({ terminalReason: 'forfeited', eligible: true }),
+				}),
+			),
+		).toThrow(/eligible/i);
+	});
+
+	test('rejects a forfeited attempt that exposes a rank', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'forfeited',
+					rank: 4,
+					percentile: null,
+					receipt: buildReceipt({ terminalReason: 'forfeited', eligible: false }),
+				}),
+			),
+		).toThrow(/rank/i);
+	});
+
+	test('rejects a forfeited attempt that exposes a percentile', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'forfeited',
+					rank: null,
+					percentile: 50,
+					receipt: buildReceipt({ terminalReason: 'forfeited', eligible: false }),
+				}),
+			),
+		).toThrow(/percentile/i);
+	});
+
+	test('rejects an expired attempt whose receipt is marked eligible', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'expired',
+					rank: null,
+					percentile: null,
+					receipt: buildReceipt({ terminalReason: 'expired', eligible: true }),
+				}),
+			),
+		).toThrow(/eligible/i);
+	});
+
+	test('rejects an expired attempt that exposes a rank', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'expired',
+					rank: 7,
+					percentile: null,
+					receipt: buildReceipt({ terminalReason: 'expired', eligible: false }),
+				}),
+			),
+		).toThrow(/rank/i);
+	});
+
+	test('rejects an expired attempt that exposes a percentile', () => {
+		expect(() =>
+			parseDailyChallengeAttemptResponse(
+				terminalAttempt({
+					status: 'expired',
+					rank: null,
+					percentile: 12.5,
+					receipt: buildReceipt({ terminalReason: 'expired', eligible: false }),
+				}),
+			),
+		).toThrow(/percentile/i);
+	});
+});
+
 describe('parseDailyChallengeAttemptResponse — nested nextSequence rejection', () => {
 	test('rejects an attempt whose activeRound exposes nextSequence', () => {
 		const leaking = activeAttempt({
@@ -307,6 +395,7 @@ describe('parseDailyChallengeChallengeResponse — happy paths', () => {
 			configHash: HEX_64_A,
 			rankedSeedCommitment: HEX_64_B,
 			practiceSeed: PRACTICE_SEED,
+			revealedRankedSeed: null,
 			attempt: null,
 			...overrides,
 		};
@@ -354,6 +443,7 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 			configHash: HEX_64_A,
 			rankedSeedCommitment: HEX_64_B,
 			practiceSeed: PRACTICE_SEED,
+			revealedRankedSeed: null,
 			attempt: null,
 			...overrides,
 		};

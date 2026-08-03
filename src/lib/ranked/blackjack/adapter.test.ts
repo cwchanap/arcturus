@@ -153,5 +153,8 @@ describe('ranked Blackjack v1 replay projection', () => {
 		expect(blackjackRankedV1Adapter.project(replay, 250)).toEqual(
 			projectRankedBlackjackReplay(replay, 250),
 		);
+		expect(blackjackRankedV1Adapter.projectTerminal(replay, 250)).toEqual(
+			projectRankedBlackjackReplay(replay, 250, true),
+		);
 	});
 });

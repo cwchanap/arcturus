@@ -30,6 +30,14 @@ describe('createDailyChallengeSeedCommitment', () => {
 		expect(() => createDailyChallengeSeedCommitment('blackjack-daily-v2', seed)).toThrow();
 	});
 
+	test.each(['constructor', 'toString', 'valueOf', 'hasOwnProperty'])(
+		'rejects inherited Object.prototype name %p as a version',
+		(version) => {
+			expect(() => createDailyChallengeSeedCommitment(version, seed)).toThrow(RangeError);
+			expect(() => deriveDailyChallengeRoundSeed(version, seed, 0)).toThrow(RangeError);
+		},
+	);
+
 	test.each([new Uint8Array(), new Uint8Array(31), new Uint8Array(33)])(
 		'rejects a seed that is not exactly 32 bytes (%p bytes)',
 		(invalidSeed) => {

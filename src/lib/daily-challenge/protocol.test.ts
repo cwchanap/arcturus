@@ -46,6 +46,15 @@ describe('daily challenge identifiers', () => {
 	test.each(['2026-3-14', '20260314', 'abcd-ef-gh'])('rejects period key %p', (value) => {
 		expect(dailyChallengePeriodKeySchema.safeParse(value).success).toBe(false);
 	});
+
+	// The schema is intentionally opaque: it only validates the YYYY-MM-DD shape and does
+	// not parse the value as a calendar date. Calendar validity (e.g. impossible month/day)
+	// is enforced separately by the archive page, which round-trips the key through Date and
+	// rejects values that do not reproduce the same ISO date. Assert a format-valid but
+	// calendar-impossible key is accepted here to pin the opaque-format contract.
+	test('accepts a format-valid but calendar-impossible period key (opaque format only)', () => {
+		expect(dailyChallengePeriodKeySchema.safeParse('2026-13-40').success).toBe(true);
+	});
 });
 
 describe('daily challenge sequence', () => {
@@ -337,6 +346,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
 			practiceSeed,
+			revealedRankedSeed: null,
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
@@ -359,6 +369,24 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
+	});
+
+	test('rejects a challenge response missing the revealedRankedSeed key (required, nullable)', () => {
+		const challenge = {
+			periodKey: '2026-03-14',
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1742000000,
+			rankedEntryClosesAt: 1742000000 + 24 * 60 * 60 - 1800,
+			endsAt: 1742000000 + 24 * 60 * 60,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed,
+			attempt: null,
+		};
+		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(false);
 	});
 
 	test('accepts a closed challenge response with a canonical base64url revealed seed', () => {
@@ -412,6 +440,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
 			practiceSeed: 'not-canonical!!',
+			revealedRankedSeed: null,
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(false);
@@ -431,6 +460,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 				configHash: 'a'.repeat(64),
 				rankedSeedCommitment: 'b'.repeat(64),
 				practiceSeed,
+				revealedRankedSeed: null,
 				attempt: null,
 				rankedSeed: 'must-not-leak',
 			}).success,
@@ -467,7 +497,7 @@ describe('dailyChallengeLeaderboardResponseSchema', () => {
 		expect(dailyChallengeLeaderboardResponseSchema.safeParse(leaderboard).success).toBe(true);
 	});
 
-	test('rejects tied entries sharing the same rank only via competition ranking', () => {
+	test('accepts tied entries sharing the same rank via competition ranking', () => {
 		// competition ranking: equal scores -> equal rank, next rank skipped
 		const leaderboard = {
 			periodKey: '2026-03-14',

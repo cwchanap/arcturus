@@ -461,7 +461,7 @@ describe('daily challenge recovery client — command recovery', () => {
 			new TypeError('network'),
 		];
 		let getCount = 0;
-		const fetchImplementation = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const fetchImplementation = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method !== 'POST') {
 				getCount += 1;
 				return jsonResponse(activeAttempt({ nextCommandSequence: getCount === 1 ? 0 : 1 }));
@@ -505,7 +505,7 @@ describe('daily challenge recovery client — command recovery', () => {
 		storage.values.set(keys.activeAttempt, storedActiveAttempt());
 		const calls: string[] = [];
 		let resumedOnce = false;
-		const fetchImplementation = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+		const fetchImplementation = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method === 'POST') {
 				calls.push('command');
 				return errorResponse('ATTEMPT_COMPLETE', 409);
@@ -723,7 +723,7 @@ describe('daily challenge recovery client — payload validation defense-in-dept
 		const storage = new RecordingStorage();
 		storage.values.set(keys.activeAttempt, storedActiveAttempt());
 		const malformed = activeAttempt();
-		// Remove a required field to make the schema reject it.
+		// Set the value outside the valid range so schema validation rejects it.
 		(malformed as Record<string, unknown>).availableBankroll = -1;
 		const fetchImplementation = mock(async (_url: RequestInfo | URL, init?: RequestInit) => {
 			if (init?.method !== 'POST') return jsonResponse(activeAttempt({ nextCommandSequence: 1 }));
@@ -1145,7 +1145,7 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		const { renderer, challenges, leaderboards, histories, bound } = createPageRenderer();
 		const { created, createClient } = createPageClientHarness();
 		const { createLocalReplayController } = createPageLocalHarness();
-		const root = { dataset: {} } as HTMLElement;
+		const root = { dataset: { userId: 'guest' } } as HTMLElement;
 
 		await initDailyChallengePage(root, {
 			fetch: fetchImpl,
@@ -1383,7 +1383,7 @@ describe('daily challenge page bootstrap — initDailyChallengeHistoryPage', () 
 		const fetchImpl = mock(async (url: RequestInfo | URL) => historyPageFetch(url));
 		const { renderer } = createPageRenderer();
 		const { createLocalReplayController } = createPageLocalHarness();
-		const root = { dataset: {} } as HTMLElement;
+		const root = { dataset: { userId: 'guest' } } as HTMLElement;
 
 		await initDailyChallengeHistoryPage(root, {
 			fetch: fetchImpl,

@@ -55,6 +55,27 @@ function assertAttemptCrossField(parsed: DailyChallengeAttemptPublicStateV1): vo
 	if (!allowed.has(parsed.receipt.terminalReason)) {
 		throw new TypeError('Daily challenge receipt terminal reason disagrees with attempt status');
 	}
+	// Terminal-state field combinations: eligibility and standing must agree with status.
+	// A completed attempt (terminalReason completed or bankroll-below-minimum) is always
+	// eligible; forfeited and expired attempts are never eligible and must not expose a
+	// leaderboard standing.
+	if (parsed.status === 'completed') {
+		if (!parsed.receipt.eligible) {
+			throw new TypeError('Completed daily challenge attempt must be eligible');
+		}
+	} else {
+		if (parsed.receipt.eligible) {
+			throw new TypeError('Forfeited or expired daily challenge attempt must not be eligible');
+		}
+		if (parsed.rank !== null) {
+			throw new TypeError('Forfeited or expired daily challenge attempt must not expose a rank');
+		}
+		if (parsed.percentile !== null) {
+			throw new TypeError(
+				'Forfeited or expired daily challenge attempt must not expose a percentile',
+			);
+		}
+	}
 }
 
 export function parseDailyChallengeAttemptResponse(

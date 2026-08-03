@@ -119,9 +119,15 @@ export const dailyChallengeActiveRoundSchema = z
 
 export type DailyChallengeActiveRoundV1 = z.infer<typeof dailyChallengeActiveRoundSchema>;
 
-const _activeRoundCompat: Omit<RankedBlackjackPublicStateV1, 'nextSequence'> =
-	{} as DailyChallengeActiveRoundV1;
-void _activeRoundCompat;
+// Pure type-level compatibility assertion: the daily-challenge active round shape must stay
+// assignable to the ranked blackjack public state (minus nextSequence). _Assert enforces a
+// compile error if the relationship ever breaks, with no runtime binding.
+type _AssertCompat<T extends true> = T;
+type _ActiveRoundCompat = _AssertCompat<
+	DailyChallengeActiveRoundV1 extends Omit<RankedBlackjackPublicStateV1, 'nextSequence'>
+		? true
+		: false
+>;
 
 export const dailyChallengeReceiptSchema = z
 	.object({
@@ -180,7 +186,7 @@ export const dailyChallengeChallengeResponseSchema = z
 		configHash: dailyChallengeHex64Schema,
 		rankedSeedCommitment: dailyChallengeHex64Schema,
 		practiceSeed: dailyChallengeCanonicalSeedSchema,
-		revealedRankedSeed: dailyChallengeCanonicalSeedSchema.nullable().optional(),
+		revealedRankedSeed: dailyChallengeCanonicalSeedSchema.nullable(),
 		attempt: dailyChallengeAttemptPublicStateSchema.nullable(),
 	})
 	.strict();

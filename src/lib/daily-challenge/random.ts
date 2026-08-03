@@ -26,9 +26,12 @@ function assertDailyChallengeSeed(seed: Uint8Array): void {
 }
 
 function requireSeedVersion(version: string): DailyChallengeSeedVersion {
-	const resolved = SEED_VERSIONS[version];
-	if (!resolved) throw new RangeError(`Unsupported Daily Challenge seed version: ${version}`);
-	return resolved;
+	// Use an own-key check so inherited Object.prototype names (constructor, toString,
+	// valueOf, etc.) do not resolve to prototype methods and bypass the unsupported check.
+	if (!Object.prototype.hasOwnProperty.call(SEED_VERSIONS, version)) {
+		throw new RangeError(`Unsupported Daily Challenge seed version: ${version}`);
+	}
+	return SEED_VERSIONS[version];
 }
 
 export function createDailyChallengeSeedCommitment(version: string, seed: Uint8Array): string {

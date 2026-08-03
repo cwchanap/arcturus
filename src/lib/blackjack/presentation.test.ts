@@ -74,9 +74,24 @@ describe('createBlackjackCardElement', () => {
 			{ rank: '10', suit: 'hearts' },
 			'ranked-dealer-card',
 		);
+		expect(card.getAttribute('role')).toBe('img');
 		expect(card.getAttribute('aria-label')).toBe('10 of hearts');
 		expect(card.textContent).toBe('10♥');
 		expect(card.dataset.testid).toBe('ranked-dealer-card');
+	});
+
+	test('is queryable by the img role with the expected accessible name', () => {
+		document.body.replaceChildren();
+		const card = createBlackjackCardElement(
+			document,
+			{ rank: 'K', suit: 'spades' },
+			'ranked-player-card',
+		);
+		document.body.append(card);
+
+		const byRole = document.querySelector('[role="img"]');
+		expect(byRole).toBe(card);
+		expect(byRole?.getAttribute('aria-label')).toBe('K of spades');
 	});
 
 	test('uses the document passed in (decouples from the global)', () => {

@@ -1,4 +1,10 @@
 import { getDailyPeriodKey } from '../missions/periods';
+import type { DailyChallengeConfigV1 } from './replay';
+
+// The ranked-entry cutoff must be at least the attempt TTL so an attempt started just before
+// the cutoff cannot outlive the ranked-entry window. Deriving the offset from the TTL keeps
+// that invariant pinned to a single source of truth.
+const attemptTtlSeconds = 1800 as const;
 
 export const BLACKJACK_DAILY_V1_CONFIG = Object.freeze({
 	challengeKind: 'blackjack-daily',
@@ -10,9 +16,9 @@ export const BLACKJACK_DAILY_V1_CONFIG = Object.freeze({
 	roundCount: 10,
 	minimumWager: 10,
 	maximumWager: 1000,
-	attemptTtlSeconds: 1800,
-	rankedEntryCloseOffsetSeconds: 1800,
-} as const);
+	attemptTtlSeconds,
+	rankedEntryCloseOffsetSeconds: attemptTtlSeconds,
+} as const satisfies DailyChallengeConfigV1);
 
 export function getDailyChallengeWindow(nowSeconds: number) {
 	if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {

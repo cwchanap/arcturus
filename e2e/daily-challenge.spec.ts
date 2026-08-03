@@ -9,8 +9,25 @@ import { encodeBase64Url } from '../src/lib/ranked/canonical';
 import { createIsolatedPage } from './isolated-page';
 
 const DAILY_CHALLENGE_PAGE = '/games/daily-challenge';
-const HISTORY_PAGE = '/games/daily-challenge/2026-08-02';
-const HISTORY_PERIOD_KEY = '2026-08-02';
+// Derive the archived day as the previous UTC calendar day so the history/reveal
+// scenario stays consistent regardless of when the suite runs.
+const previousUtcDay = new Date();
+previousUtcDay.setUTCDate(previousUtcDay.getUTCDate() - 1);
+const HISTORY_PERIOD_KEY = `${previousUtcDay.getUTCFullYear()}-${String(
+	previousUtcDay.getUTCMonth() + 1,
+).padStart(2, '0')}-${String(previousUtcDay.getUTCDate()).padStart(2, '0')}`;
+const HISTORY_PAGE = `/games/daily-challenge/${HISTORY_PERIOD_KEY}`;
+// Noon UTC on the archived day, as epoch seconds, for fixture timestamps.
+const HISTORY_SETTLED_AT = Math.floor(
+	Date.UTC(
+		previousUtcDay.getUTCFullYear(),
+		previousUtcDay.getUTCMonth(),
+		previousUtcDay.getUTCDate(),
+		12,
+		0,
+		0,
+	) / 1000,
+);
 const ROUND_COUNT = 10;
 const RANKED_WAGER = 10;
 const ATTEMPTS_START_PATH = '/api/daily-challenges/current/attempts';
@@ -183,21 +200,19 @@ const TIED_LEADERBOARD = dailyChallengeLeaderboardResponseSchema.parse({
 	entries: [
 		{
 			rank: 1,
-			userId: 'tied-user-a-00000000000000000000',
 			playerName: 'Alice',
 			endingBankroll: 980,
 			roundsCompleted: 10,
 			durationSeconds: 0,
-			settledAt: 1785790000,
+			settledAt: HISTORY_SETTLED_AT,
 		},
 		{
 			rank: 1,
-			userId: 'tied-user-b-00000000000000000000',
 			playerName: 'Bob',
 			endingBankroll: 980,
 			roundsCompleted: 10,
 			durationSeconds: 0,
-			settledAt: 1785790000,
+			settledAt: HISTORY_SETTLED_AT,
 		},
 	],
 	currentUser: null,

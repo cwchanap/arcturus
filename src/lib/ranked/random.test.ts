@@ -62,6 +62,7 @@ describe('ranked seed and HMAC stream', () => {
 		expect(bytesToHex(encodeUint64BigEndian(0n))).toBe('0000000000000000');
 		expect(bytesToHex(encodeUint64BigEndian(1n))).toBe('0000000000000001');
 		expect(bytesToHex(encodeUint64BigEndian(0x0102030405060708n))).toBe('0102030405060708');
+		expect(bytesToHex(encodeUint64BigEndian(0xffff_ffff_ffff_ffffn))).toBe('ffffffffffffffff');
 		expect(encodeUint64BigEndian(0n)).toHaveLength(8);
 	});
 

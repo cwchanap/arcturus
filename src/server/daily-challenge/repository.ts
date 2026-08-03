@@ -249,6 +249,10 @@ export interface DailyChallengeRepository {
 		input: DailyChallengeCommandTransitionInput,
 	): Promise<DailyChallengeCommandTransitionResult>;
 	findResultByAttempt(attemptId: string): Promise<DailyChallengeResultRecord | null>;
+	findStanding(
+		challengeId: string,
+		userId: string,
+	): Promise<{ rank: number; percentile: number } | null>;
 	readLeaderboard(
 		challengeId: string,
 		limit: number,
@@ -922,7 +926,7 @@ async function executeCommandTransition(
 	}
 	const updateIndex = statements.length;
 	statements.push(updateStatement);
-	const labels: string[] = ['command attempt update'];
+	const labels: string[] = ['command attempt'];
 	if (terminal) {
 		statements.push(
 			db
@@ -956,7 +960,10 @@ async function executeCommandTransition(
 			if (deniedUpdateChanges !== 0) {
 				return invariant('Denied daily challenge command rate allowed attempt update');
 			}
-			return { kind: 'rate-limited', retryAfter: input.retryAfter ?? 0 };
+			if (input.retryAfter === undefined || input.retryAfter === 0) {
+				return invariant('Daily challenge command rate-limited without a retry-after');
+			}
+			return { kind: 'rate-limited', retryAfter: input.retryAfter };
 		}
 	}
 	const updateChanges = readChanges(results[updateIndex], labels[updateIndex]);
@@ -1053,6 +1060,20 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 				.bind(attemptId)
 				.first<DailyChallengeResultRow>();
 			return row === null ? null : parseResultRow(row);
+		},
+		async findStanding(challengeId, userId) {
+			const [rankRow, totalRow] = await Promise.all([
+				db.prepare(CURRENT_USER_RANK_SQL).bind(challengeId, userId).first<{ rank: number }>(),
+				db.prepare(TOTAL_ELIGIBLE_SQL).bind(challengeId).first<{ total: number }>(),
+			]);
+			if (!rankRow || !totalRow) return null;
+			const totalEligible = totalRow.total;
+			if (!Number.isSafeInteger(totalEligible) || totalEligible < 1) return null;
+			const rank = rankRow.rank;
+			if (!Number.isSafeInteger(rank) || rank < 1) {
+				return invariant('Corrupt daily challenge current-user rank');
+			}
+			return { rank, percentile: calculateDailyChallengePercentile(totalEligible, rank - 1) };
 		},
 		async readLeaderboard(challengeId, limit, currentUserId) {
 			if (typeof challengeId !== 'string' || challengeId.length === 0) {

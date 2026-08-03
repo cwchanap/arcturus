@@ -479,28 +479,35 @@ async function fetchDailyChallengeJson<T>(
 	fetchImpl: typeof fetch,
 	url: string,
 	parse: (value: unknown) => T,
+	timeoutMs: number = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	let response: Response;
-	try {
-		response = await fetchImpl(url);
-	} catch (error) {
-		throw new TypeError(errorMessage(error));
-	}
 	let payload: unknown;
 	try {
-		payload = await response.json();
-	} catch {
-		throw new TypeError('Daily challenge response was not valid JSON');
+		try {
+			response = await fetchImpl(url, { signal: controller.signal });
+		} catch (error) {
+			throw new TypeError(errorMessage(error));
+		}
+		try {
+			payload = await response.json();
+		} catch {
+			throw new TypeError('Daily challenge response was not valid JSON');
+		}
+		if (!response.ok) {
+			throw new DailyChallengeResponseError(
+				responseErrorMessage(response, payload),
+				response.status >= 500,
+				response.status,
+				responseErrorCode(payload),
+			);
+		}
+		return parse(payload);
+	} finally {
+		clearTimeout(timer);
 	}
-	if (!response.ok) {
-		throw new DailyChallengeResponseError(
-			responseErrorMessage(response, payload),
-			response.status >= 500,
-			response.status,
-			responseErrorCode(payload),
-		);
-	}
-	return parse(payload);
 }
 
 function pageFetch(fetchImpl: typeof fetch | undefined): typeof fetch {
@@ -547,7 +554,7 @@ export async function initDailyChallengePage(
 	renderer.renderChallenge(challenge);
 
 	const userId = root.dataset.userId;
-	if (userId !== undefined) {
+	if (userId !== undefined && userId !== 'guest') {
 		rankedClient = createClient({
 			userId,
 			periodKey: challenge.periodKey,
@@ -610,14 +617,14 @@ export async function initDailyChallengePage(
 			parseDailyChallengeLeaderboardResponse,
 		)
 			.then((leaderboard) => renderer.renderLeaderboard(leaderboard))
-			.catch(() => {}),
+			.catch((error) => console.error('Daily challenge leaderboard fetch failed', error)),
 		fetchDailyChallengeJson(
 			fetchImpl,
 			'/api/daily-challenges/history?limit=7',
 			parseDailyChallengeHistoryResponse,
 		)
 			.then((history) => renderer.renderHistory(history))
-			.catch(() => {}),
+			.catch((error) => console.error('Daily challenge history fetch failed', error)),
 	]);
 }
 
@@ -700,5 +707,5 @@ export async function initDailyChallengeHistoryPage(
 		parseDailyChallengeLeaderboardResponse,
 	)
 		.then((leaderboard) => renderer.renderLeaderboard(leaderboard))
-		.catch(() => {});
+		.catch((error) => console.error('Daily challenge leaderboard fetch failed', error));
 }

@@ -40,6 +40,9 @@ export function createBlackjackCardElement(
 	element.dataset.testid = testId;
 	element.className = CARD_BASE_CLASS;
 	element.classList.add(isRedSuit(card.suit) ? 'text-red-700' : 'text-slate-900');
+	// role="img" exposes the aria-label as the card's accessible name consistently across
+	// assistive tech, since a bare div has no implicit role and would not expose the label.
+	element.setAttribute('role', 'img');
 	element.setAttribute('aria-label', `${card.rank} of ${card.suit}`);
 	element.textContent = `${card.rank}${getSuitSymbol(card.suit)}`;
 	return element;

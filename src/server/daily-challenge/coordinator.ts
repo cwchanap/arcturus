@@ -400,6 +400,7 @@ export function createDailyChallengeCoordinator(
 	const renderChallengeResponse = async (
 		challenge: DailyChallengeRecord,
 		userId: string | null,
+		nowSeconds: number,
 	): Promise<DailyChallengePublicResponse> => {
 		const attempt = userId
 			? await deps.repository.findAttemptByChallengeAndUser(challenge.id, userId)
@@ -415,6 +416,7 @@ export function createDailyChallengeCoordinator(
 			endsAt: challenge.endsAt,
 			configHash: challenge.configHash,
 			rankedSeedCommitment: challenge.rankedSeedCommitment,
+			revealedRankedSeed: nowSeconds >= challenge.endsAt ? challenge.rankedSeed : null,
 			attempt: attempt ? await renderAttempt(attempt, challenge) : null,
 		};
 	};
@@ -476,7 +478,7 @@ export function createDailyChallengeCoordinator(
 	}): Promise<DailyChallengePublicResponse> => {
 		const nowSeconds = asNowSeconds(deps.now());
 		const challenge = await getOrCreateCurrentChallenge(nowSeconds);
-		return renderChallengeResponse(challenge, userId);
+		return renderChallengeResponse(challenge, userId, nowSeconds);
 	};
 
 	const getByPeriod = async ({
@@ -487,10 +489,9 @@ export function createDailyChallengeCoordinator(
 		userId: string | null;
 	}): Promise<DailyChallengePublicResponse> => {
 		const nowSeconds = asNowSeconds(deps.now());
-		void nowSeconds;
 		const challenge = await deps.repository.findChallengeByPeriodKey('blackjack-daily', periodKey);
 		if (!challenge) throw new DailyChallengeServiceError('CHALLENGE_NOT_FOUND');
-		return renderChallengeResponse(challenge, userId);
+		return renderChallengeResponse(challenge, userId, nowSeconds);
 	};
 
 	const start = async ({

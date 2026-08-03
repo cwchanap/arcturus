@@ -1,7 +1,15 @@
 import { describe, expect, mock, test } from 'bun:test';
+import { decodeCanonicalBase64Url } from '../ranked/canonical';
+import {
+	DailyChallengeServiceError,
+	type DailyChallengeCommandV1,
+	type DailyChallengePublicResponse,
+} from './protocol';
+import type { DailyChallengeReplayV1 } from './replay';
 import {
 	buildDailyChallengeStorageKeys,
 	createDailyChallengeClient,
+	createDailyChallengeLocalReplayController,
 	type DailyChallengeClientDeps,
 	type DailyChallengeRenderer,
 	type DailyChallengeAttemptPublicStateV1,
@@ -14,6 +22,8 @@ const USER_ID = 'test-user-1';
 const PERIOD_KEY = '2026-03-14';
 const NEXT_PERIOD_KEY = '2026-03-15';
 const keys = buildDailyChallengeStorageKeys(USER_ID, PERIOD_KEY);
+const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYn';
+const RANKED_SEED = 'AwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKis';
 
 const activeRoundFixture = {
 	phase: 'player-turn',
@@ -132,14 +142,23 @@ function createRenderer(events: string[] = []): DailyChallengeRenderer & {
 	responses: DailyChallengeAttemptPublicStateV1[];
 	pending: boolean[];
 	errors: string[];
+	localReplays: Array<DailyChallengeReplayV1 | null>;
 } {
 	return {
 		responses: [],
 		pending: [],
 		errors: [],
-		render(response) {
+		localReplays: [],
+		bind() {},
+		renderChallenge() {},
+		renderAttempt(response) {
 			if (response) this.responses.push(response);
 			events.push(response?.receipt ? 'render-terminal' : 'render');
+		},
+		renderLeaderboard() {},
+		renderHistory() {},
+		renderLocalReplay(replay) {
+			this.localReplays.push(replay);
 		},
 		setPending(pending) {
 			this.pending.push(pending);
@@ -646,5 +665,169 @@ describe('daily challenge recovery client — payload validation defense-in-dept
 		// Treated as uncertain: retry, then resume. Never rendered.
 		expect(fetchMock.mock.calls.map(([url]) => String(url))).toHaveLength(3);
 		expect(renderer.responses.at(-1)?.nextCommandSequence).toBe(1);
+	});
+});
+
+describe('daily challenge local replay controller', () => {
+	function challengeFixture(
+		overrides: Partial<DailyChallengePublicResponse> = {},
+	): DailyChallengePublicResponse {
+		return {
+			periodKey: PERIOD_KEY,
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1_742_000_000,
+			rankedEntryClosesAt: 1_742_086_200,
+			endsAt: 1_742_086_400,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed: PRACTICE_SEED,
+			revealedRankedSeed: null,
+			attempt: null,
+			...overrides,
+		};
+	}
+
+	function replayFixture(overrides: Partial<DailyChallengeReplayV1> = {}): DailyChallengeReplayV1 {
+		return {
+			availableBankroll: 750,
+			roundsCompleted: 1,
+			rounds: [],
+			activeRound: null,
+			activeRoundPublic: null,
+			nextCommandSequence: 1,
+			status: 'active',
+			terminalReason: null,
+			eligible: null,
+			...overrides,
+		};
+	}
+
+	function createControllerHarness(challenge: DailyChallengePublicResponse = challengeFixture()): {
+		controller: ReturnType<typeof createDailyChallengeLocalReplayController>;
+		renderer: ReturnType<typeof createRenderer>;
+		loadReplay: ReturnType<typeof mock>;
+		captured: Array<{ seed: Uint8Array; commands: DailyChallengeCommandV1[] }>;
+	} {
+		const renderer = createRenderer();
+		const captured: Array<{ seed: Uint8Array; commands: DailyChallengeCommandV1[] }> = [];
+		const loadReplay = mock(async () => ({
+			replayDailyChallenge(
+				_config: unknown,
+				seed: Uint8Array,
+				commands: DailyChallengeCommandV1[],
+			) {
+				captured.push({ seed, commands: commands.map((entry) => ({ ...entry })) });
+				return replayFixture();
+			},
+		}));
+		const controller = createDailyChallengeLocalReplayController({
+			challenge,
+			renderer,
+			loadReplay,
+		});
+		return { controller, renderer, loadReplay, captured };
+	}
+
+	test('practice scenario selection prepares the local run without importing replay', async () => {
+		const { controller, renderer, loadReplay, captured } = createControllerHarness();
+
+		await controller.selectScenario('practice-scenario');
+
+		expect(loadReplay).toHaveBeenCalledTimes(0);
+		expect(captured).toEqual([]);
+		expect(renderer.localReplays.at(-1)).toBeNull();
+	});
+
+	test('start-round lazily loads the pure replay and renders the sequenced result', async () => {
+		const { controller, renderer, loadReplay, captured } = createControllerHarness();
+
+		await controller.selectScenario('practice-scenario');
+		await controller.startRound(250);
+
+		expect(loadReplay).toHaveBeenCalledTimes(1);
+		expect(captured).toHaveLength(1);
+		expect(captured[0]?.commands).toEqual([{ sequence: 0, command: 'start-round', wager: 250 }]);
+		expect(captured[0]?.seed).toEqual(decodeCanonicalBase64Url(PRACTICE_SEED));
+		expect(renderer.localReplays.at(-1)).toEqual(replayFixture());
+	});
+
+	test('action and forfeit append sequenced commands to the run', async () => {
+		const { controller, captured } = createControllerHarness();
+
+		await controller.selectScenario('practice-scenario');
+		await controller.startRound(250);
+		await controller.action('hit');
+		await controller.forfeit();
+
+		expect(captured.at(-1)?.commands).toEqual([
+			{ sequence: 0, command: 'start-round', wager: 250 },
+			{ sequence: 1, command: 'hit' },
+			{ sequence: 2, command: 'forfeit' },
+		]);
+	});
+
+	test('restart clears the command log and re-sequences from zero', async () => {
+		const { controller, captured } = createControllerHarness();
+
+		await controller.selectScenario('practice-scenario');
+		await controller.startRound(250);
+		await controller.restart();
+		await controller.startRound(50);
+
+		expect(captured.at(-1)?.commands).toEqual([{ sequence: 0, command: 'start-round', wager: 50 }]);
+	});
+
+	test('a failing replay reports an error and does not commit the command', async () => {
+		const renderer = createRenderer();
+		const loadReplay = mock(async () => ({
+			replayDailyChallenge() {
+				throw new DailyChallengeServiceError('INVALID_WAGER');
+			},
+		}));
+		const controller = createDailyChallengeLocalReplayController({
+			challenge: challengeFixture(),
+			renderer,
+			loadReplay,
+		});
+
+		await controller.selectScenario('practice-scenario');
+		await controller.startRound(250);
+
+		expect(renderer.errors).toEqual(['INVALID_WAGER']);
+		expect(renderer.localReplays.at(-1)).toBeNull();
+	});
+
+	test('commands before a scenario is selected never load or run replay', async () => {
+		const { controller, renderer, loadReplay } = createControllerHarness();
+
+		await controller.startRound(100);
+
+		expect(loadReplay).toHaveBeenCalledTimes(0);
+		expect(renderer.localReplays).toEqual([]);
+		expect(renderer.errors).toEqual(['Select a practice scenario first.']);
+	});
+
+	test('exact-ranked replay is unavailable on a live challenge', async () => {
+		const { controller, renderer, loadReplay } = createControllerHarness();
+
+		await controller.selectScenario('exact-ranked-scenario');
+
+		expect(loadReplay).toHaveBeenCalledTimes(0);
+		expect(renderer.localReplays).toEqual([]);
+		expect(renderer.errors).toHaveLength(1);
+	});
+
+	test('exact-ranked replay uses the revealed ranked seed after close', async () => {
+		const { controller, captured } = createControllerHarness(
+			challengeFixture({ revealedRankedSeed: RANKED_SEED }),
+		);
+
+		await controller.selectScenario('exact-ranked-scenario');
+		await controller.startRound(100);
+
+		expect(captured[0]?.seed).toEqual(decodeCanonicalBase64Url(RANKED_SEED));
 	});
 });

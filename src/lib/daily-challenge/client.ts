@@ -1,7 +1,19 @@
+import { decodeCanonicalBase64Url } from '../ranked/canonical';
+import { BLACKJACK_DAILY_V1_CONFIG } from './config';
 import { parseDailyChallengeAttemptResponse } from './payload';
-import type { DailyChallengeAttemptPublicStateV1 } from './protocol';
+import type {
+	DailyChallengeAttemptPublicStateV1,
+	DailyChallengeCommandV1,
+	DailyChallengePublicResponse,
+} from './protocol';
+import type { DailyChallengeReplayV1 } from './replay';
+import type {
+	DailyChallengeAction,
+	DailyChallengeReplayScenario,
+	DailyChallengeRenderer,
+} from './ui';
 
-export type { DailyChallengeAttemptPublicStateV1 };
+export type { DailyChallengeAttemptPublicStateV1, DailyChallengeRenderer };
 
 export const DAILY_CHALLENGE_START_KEY_PREFIX = 'arcturus:daily-challenge:start:';
 export const DAILY_CHALLENGE_ATTEMPT_KEY_PREFIX = 'arcturus:daily-challenge:attempt:';
@@ -34,12 +46,6 @@ export interface StoredDailyChallengeAttempt {
 export type DailyChallengeClientCommand =
 	| { command: 'start-round'; wager: number }
 	| { command: 'hit' | 'stand' | 'double-down' | 'split' | 'forfeited' };
-
-export interface DailyChallengeRenderer {
-	render(response: DailyChallengeAttemptPublicStateV1 | null): void;
-	setPending(pending: boolean): void;
-	renderError(message: string): void;
-}
 
 export interface DailyChallengeClientDeps {
 	userId: string;
@@ -162,7 +168,7 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 
 	const accept = (response: DailyChallengeAttemptPublicStateV1): void => {
 		current = response;
-		deps.renderer.render(response);
+		deps.renderer.renderAttempt(response);
 		if (response.status !== 'active' && response.receipt !== null) {
 			removeActiveAttemptIfMatch(response.attemptId);
 			removeStartIntentIfMatch(response.startRequestId);
@@ -228,7 +234,7 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 		if (pending) return;
 		const stored = parseStoredActiveAttempt(deps.storage.getItem(keys.activeAttempt));
 		if (!stored) {
-			deps.renderer.render(null);
+			deps.renderer.renderAttempt(null);
 			return;
 		}
 		setPending(true);
@@ -326,4 +332,88 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 	};
 
 	return { initialize, start, command };
+}
+
+export interface DailyChallengeLocalReplayControllerDeps {
+	challenge: DailyChallengePublicResponse;
+	renderer: DailyChallengeRenderer;
+	loadReplay?: () => Promise<typeof import('./replay')>;
+}
+
+export interface DailyChallengeLocalReplayController {
+	selectScenario(scenario: DailyChallengeReplayScenario): Promise<void>;
+	startRound(wager: number): Promise<void>;
+	action(action: DailyChallengeAction): Promise<void>;
+	forfeit(): Promise<void>;
+	restart(): Promise<void>;
+}
+
+export function createDailyChallengeLocalReplayController(
+	deps: DailyChallengeLocalReplayControllerDeps,
+): DailyChallengeLocalReplayController {
+	const loadReplay = deps.loadReplay ?? (async () => import('./replay'));
+
+	let masterSeed: Uint8Array | null = null;
+	let commands: DailyChallengeCommandV1[] = [];
+
+	const applyCommand = async (command: DailyChallengeCommandV1): Promise<void> => {
+		if (masterSeed === null) {
+			deps.renderer.renderError('Select a practice scenario first.');
+			return;
+		}
+		const module = await loadReplay();
+		const candidate = [...commands, command];
+		try {
+			const replay: DailyChallengeReplayV1 = module.replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				masterSeed,
+				candidate,
+			);
+			commands = candidate;
+			deps.renderer.renderLocalReplay(replay);
+		} catch (error) {
+			deps.renderer.renderError(errorMessage(error));
+		}
+	};
+
+	return {
+		async selectScenario(nextScenario: DailyChallengeReplayScenario): Promise<void> {
+			let seed: string;
+			if (nextScenario === 'practice-scenario') {
+				seed = deps.challenge.practiceSeed;
+			} else {
+				const revealed = deps.challenge.revealedRankedSeed;
+				if (revealed === null) {
+					deps.renderer.renderError('The ranked replay seed is not available yet.');
+					return;
+				}
+				seed = revealed;
+			}
+			try {
+				masterSeed = decodeCanonicalBase64Url(seed);
+			} catch {
+				deps.renderer.renderError('The daily challenge seed is not canonical.');
+				return;
+			}
+			commands = [];
+			deps.renderer.renderLocalReplay(null);
+		},
+
+		async startRound(wager: number): Promise<void> {
+			await applyCommand({ sequence: commands.length, command: 'start-round', wager });
+		},
+
+		async action(action: DailyChallengeAction): Promise<void> {
+			await applyCommand({ sequence: commands.length, command: action });
+		},
+
+		async forfeit(): Promise<void> {
+			await applyCommand({ sequence: commands.length, command: 'forfeit' });
+		},
+
+		async restart(): Promise<void> {
+			commands = [];
+			deps.renderer.renderLocalReplay(null);
+		},
+	};
 }

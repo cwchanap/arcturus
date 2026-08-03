@@ -9,6 +9,7 @@ import {
 	type DailyChallengePublicResponse,
 	type DailyChallengeStartRequest,
 } from '../../lib/daily-challenge/protocol';
+import { encodeBase64Url } from '../../lib/ranked/canonical';
 import type { DailyChallengeCoordinator } from './coordinator';
 import { createDailyChallengeHttpHandlers, dailyChallengeJsonError } from './http';
 
@@ -19,6 +20,7 @@ const REQUEST_ID = 'start-request-0001';
 const CHALLENGE_ID = 'challenge-00000001';
 const PERIOD_KEY = '2026-08-02';
 const HEX64 = 'a'.repeat(64);
+const PRACTICE_SEED = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => 64 + index));
 const START_BODY: DailyChallengeStartRequest = { requestId: REQUEST_ID };
 
 function nowSeconds(): number {
@@ -60,6 +62,7 @@ function challengeResponse(
 		endsAt: base + 3600,
 		configHash: HEX64,
 		rankedSeedCommitment: HEX64,
+		practiceSeed: PRACTICE_SEED,
 		attempt: null,
 		...overrides,
 	};

@@ -17,6 +17,7 @@ import {
 
 const requestId = 'request_12345678';
 const attemptId = 'abcdefghijklmnopqrstuv'; // 22 chars
+const practiceSeed = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => 64 + index));
 
 describe('daily challenge identifiers', () => {
 	test.each([requestId, 'a'.repeat(16), 'a'.repeat(128)])('accepts requestId %p', (value) => {
@@ -335,6 +336,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			endsAt: 1742000000 + 24 * 60 * 60,
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed,
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(true);
@@ -352,6 +354,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			endsAt: 1742000000 + 24 * 60 * 60,
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed,
 			revealedRankedSeed: null,
 			attempt: null,
 		};
@@ -370,6 +373,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			endsAt: 1742000000 + 24 * 60 * 60,
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed,
 			revealedRankedSeed: encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => index)),
 			attempt: null,
 		};
@@ -388,7 +392,26 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 			endsAt: 1742000000 + 24 * 60 * 60,
 			configHash: 'a'.repeat(64),
 			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed,
 			revealedRankedSeed: 'not-canonical!!',
+			attempt: null,
+		};
+		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(false);
+	});
+
+	test('rejects a malformed non-canonical practice seed', () => {
+		const challenge = {
+			periodKey: '2026-03-14',
+			challengeKind: 'blackjack-daily',
+			challengeRulesetVersion: 'blackjack-daily-v1',
+			gameRulesetVersion: 'blackjack-ranked-v1',
+			scoreVersion: 'blackjack-daily-score-v1',
+			startsAt: 1742000000,
+			rankedEntryClosesAt: 1742000000 + 24 * 60 * 60 - 1800,
+			endsAt: 1742000000 + 24 * 60 * 60,
+			configHash: 'a'.repeat(64),
+			rankedSeedCommitment: 'b'.repeat(64),
+			practiceSeed: 'not-canonical!!',
 			attempt: null,
 		};
 		expect(dailyChallengeChallengeResponseSchema.safeParse(challenge).success).toBe(false);
@@ -407,6 +430,7 @@ describe('dailyChallengeChallengeResponseSchema', () => {
 				endsAt: 1742000000,
 				configHash: 'a'.repeat(64),
 				rankedSeedCommitment: 'b'.repeat(64),
+				practiceSeed,
 				attempt: null,
 				rankedSeed: 'must-not-leak',
 			}).success,

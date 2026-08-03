@@ -291,14 +291,11 @@ export function createDailyChallengeHttpHandlers(
 	return { current, detail, start, resume, command, leaderboard, history };
 }
 
-// TODO(HPA-175 Task 9): replace with the generalized daily_challenge_start rate-limit policy.
-// This permissive placeholder always allows a start and hands the repository a no-op statement
-// (a side-effect-free UPDATE that still reports one changed row so the batched start transition
-// treats the rate token as consumed). Task 9 swaps this single function for the real policy.
+// TODO(HPA-175 Task 9): replace with generalized daily_challenge_start rate limit.
 function createPermissiveStartRateLimiter(
 	db: D1Database,
 ): DailyChallengeCoordinatorDeps['consumeStartRateLimit'] {
-	const statement = db.prepare('UPDATE user SET chipBalance = chipBalance WHERE id = ?');
+	const statement = db.prepare('UPDATE user SET id = id WHERE id = ?');
 	return async (userId) => ({ kind: 'allowed', statement: statement.bind(userId), retryAfter: 60 });
 }
 

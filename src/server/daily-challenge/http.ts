@@ -10,6 +10,11 @@ import {
 	type DailyChallengeStartRequest,
 } from '../../lib/daily-challenge/protocol';
 import {
+	buildRateLimitContinuationStatement,
+	consumeStandaloneRateLimit,
+	getRetryAfterSeconds,
+} from '../ranked/rate-limit';
+import {
 	createDailyChallengeCoordinator,
 	type DailyChallengeCoordinator,
 	type DailyChallengeCoordinatorDeps,
@@ -291,12 +296,29 @@ export function createDailyChallengeHttpHandlers(
 	return { current, detail, start, resume, command, leaderboard, history };
 }
 
-// TODO(HPA-175 Task 9): replace with generalized daily_challenge_start rate limit.
-function createPermissiveStartRateLimiter(
+export function createDailyChallengeStartRateLimiter(
 	db: D1Database,
 ): DailyChallengeCoordinatorDeps['consumeStartRateLimit'] {
-	const statement = db.prepare('UPDATE user SET id = id WHERE id = ?');
-	return async (userId) => ({ kind: 'allowed', statement: statement.bind(userId), retryAfter: 60 });
+	return async (userId, nowSeconds) => {
+		const result = await consumeStandaloneRateLimit(
+			db,
+			userId,
+			'daily_challenge_start',
+			nowSeconds,
+		);
+		if (result.kind === 'rate-limited') {
+			return { kind: 'rate-limited', retryAfter: result.retryAfter };
+		}
+		return {
+			kind: 'allowed',
+			statement: buildRateLimitContinuationStatement(db, {
+				userId,
+				operation: 'daily_challenge_start',
+				nowSeconds,
+			}),
+			retryAfter: getRetryAfterSeconds('daily_challenge_start', nowSeconds),
+		};
+	};
 }
 
 export const dailyChallengeHttpHandlers = createDailyChallengeHttpHandlers({
@@ -310,7 +332,7 @@ export const dailyChallengeHttpHandlers = createDailyChallengeHttpHandlers({
 			log(entry) {
 				console.warn('[DAILY_CHALLENGE]', entry);
 			},
-			consumeStartRateLimit: createPermissiveStartRateLimiter(db),
+			consumeStartRateLimit: createDailyChallengeStartRateLimiter(db),
 		});
 	},
 });

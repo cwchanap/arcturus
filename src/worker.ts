@@ -11,6 +11,13 @@ import {
 	type ScheduledJobDeps,
 	type ScheduledJobEnv,
 } from './server/cleanup';
+import { createDailyChallengeCoordinator } from './server/daily-challenge/coordinator';
+import {
+	runDailyChallengeExpiration,
+	runDailyChallengeRetention,
+} from './server/daily-challenge/expiration';
+import { createDailyChallengeStartRateLimiter } from './server/daily-challenge/http';
+import { createDailyChallengeRepository } from './server/daily-challenge/repository';
 import { Arcturus as ArcturusDO } from './server/mp/arcturus';
 import { reconcileMultiplayerMembership } from './server/mp/membership';
 import { createRankedCoordinator } from './server/ranked/coordinator';
@@ -49,6 +56,28 @@ const scheduledJobDeps: ScheduledJobDeps = {
 	},
 	rankedRateCleanup: runRankedRateLimitCleanup,
 	retentionCleanup: runRetentionCleanup,
+	async dailyChallengeExpiration(db, nowSeconds) {
+		const repository = createDailyChallengeRepository(db);
+		const coordinator = createDailyChallengeCoordinator({
+			repository,
+			now: () => new Date(),
+			randomBytes(length) {
+				return crypto.getRandomValues(new Uint8Array(length));
+			},
+			log(entry) {
+				console.warn('[DAILY_CHALLENGE]', entry);
+			},
+			consumeStartRateLimit: createDailyChallengeStartRateLimiter(db),
+		});
+		await runDailyChallengeExpiration(
+			repository,
+			(attemptId) => coordinator.expire(attemptId),
+			nowSeconds,
+		);
+	},
+	async dailyChallengeRetention(db, nowSeconds) {
+		await runDailyChallengeRetention(createDailyChallengeRepository(db), nowSeconds);
+	},
 	nowSeconds: () => Math.trunc(Date.now() / 1000),
 	warn(message, error) {
 		console.warn(message, error);

@@ -472,6 +472,15 @@ describe('daily challenge renderer — mode selection', () => {
 		(get('daily-challenge-replay-scenario-practice') as HTMLButtonElement).click();
 		expect(handlers.calls.onSelectReplayScenario).toEqual(['practice-scenario']);
 	});
+
+	test('exact ranked replay scenario selection invokes the replay scenario handler', () => {
+		const { get, renderer, handlers } = mount();
+		renderer.renderChallenge(closedChallengeFixture());
+		(get('daily-challenge-mode-practice') as HTMLButtonElement).click();
+
+		(get('daily-challenge-replay-scenario-exact-ranked') as HTMLButtonElement).click();
+		expect(handlers.calls.onSelectReplayScenario).toEqual(['exact-ranked-scenario']);
+	});
 });
 
 describe('daily challenge renderer — practice notices', () => {
@@ -701,6 +710,87 @@ describe('daily challenge renderer — leaderboard and history', () => {
 		expect((links[1] as HTMLAnchorElement).getAttribute('href')).toBe(
 			'/games/daily-challenge/2026-03-13',
 		);
+	});
+
+	test('renders bankroll-below-minimum, forfeited, and expired terminal reason labels in history', () => {
+		const { get, renderer } = mount();
+		renderer.renderHistory({
+			entries: [
+				{
+					periodKey: PERIOD_KEY,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: 1500,
+					participantCount: 42,
+					userResult: {
+						endingBankroll: 0,
+						roundsCompleted: 5,
+						terminalReason: 'bankroll-below-minimum',
+						eligible: true,
+						settledAt: 1_742_001_000,
+					},
+				},
+				{
+					periodKey: '2026-03-13',
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: null,
+					participantCount: 0,
+					userResult: {
+						endingBankroll: 900,
+						roundsCompleted: 0,
+						terminalReason: 'forfeited',
+						eligible: false,
+						settledAt: 1_742_001_000,
+					},
+				},
+				{
+					periodKey: '2026-03-12',
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: null,
+					participantCount: 0,
+					userResult: {
+						endingBankroll: 1000,
+						roundsCompleted: 0,
+						terminalReason: 'expired',
+						eligible: false,
+						settledAt: 1_742_001_000,
+					},
+				},
+			],
+		});
+
+		const rows = get('daily-challenge-history-rows').querySelectorAll(
+			'[data-testid="daily-challenge-history-row"]',
+		);
+		expect(rows).toHaveLength(3);
+		expect(rows[0]?.textContent).toContain('Bankroll below minimum');
+		expect(rows[1]?.textContent).toContain('Forfeited');
+		expect(rows[2]?.textContent).toContain('Expired');
+	});
+
+	test('renders an unknown terminal reason as-is via the default switch case', () => {
+		const { get, renderer } = mount();
+		renderer.renderHistory({
+			entries: [
+				{
+					periodKey: PERIOD_KEY,
+					challengeRulesetVersion: 'blackjack-daily-v1',
+					topEndingBankroll: 1500,
+					participantCount: 42,
+					userResult: {
+						endingBankroll: 1000,
+						roundsCompleted: 10,
+						terminalReason: 'unknown-reason' as 'completed',
+						eligible: true,
+						settledAt: 1_742_001_000,
+					},
+				},
+			],
+		});
+
+		const rows = get('daily-challenge-history-rows').querySelectorAll(
+			'[data-testid="daily-challenge-history-row"]',
+		);
+		expect(rows[0]?.textContent).toContain('unknown-reason');
 	});
 });
 

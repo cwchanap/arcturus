@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	DAILY_CHALLENGE_ATTEMPT_RETENTION_DAYS,
+	DAILY_CHALLENGE_EXPIRATION_MAX_PAGES,
 	DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE,
 	runDailyChallengeExpiration,
 	runDailyChallengeRetention,
@@ -218,5 +219,39 @@ describe('runDailyChallengeRetention', () => {
 			Date.now = realDateNow;
 		}
 		expect(calls).toEqual([{ cutoff: fixedNow - 90 * 24 * 60 * 60 }]);
+	});
+});
+
+describe('runDailyChallengeExpiration page budget', () => {
+	test('logs a warning when the backlog is not drained within the page budget', async () => {
+		const fullPage = Array.from({ length: DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE }, (_, i) =>
+			rowFor(`budget-row-${String(i).padStart(4, '0')}`, i),
+		);
+		const calls: ListCall[] = [];
+		const repository = {
+			listExpiredAttempts(
+				nowSeconds: number,
+				cursor?: DailyChallengeExpirationCursor | null,
+			): Promise<readonly DailyChallengeExpirationRow[]> {
+				calls.push({ nowSeconds, cursor: cursor ?? null });
+				return Promise.resolve(fullPage);
+			},
+		} as unknown as DailyChallengeRepository;
+
+		const warnings: string[] = [];
+		const realWarn = console.warn;
+		console.warn = (message: string) => {
+			warnings.push(message);
+		};
+		try {
+			await runDailyChallengeExpiration(repository, async () => undefined, 1_800_000_000);
+		} finally {
+			console.warn = realWarn;
+		}
+
+		expect(calls).toHaveLength(DAILY_CHALLENGE_EXPIRATION_MAX_PAGES);
+		expect(warnings).toEqual([
+			'[DAILY_CHALLENGE] expiration hit page budget without draining the backlog',
+		]);
 	});
 });

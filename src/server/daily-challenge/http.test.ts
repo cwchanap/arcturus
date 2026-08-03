@@ -11,7 +11,13 @@ import {
 } from '../../lib/daily-challenge/protocol';
 import { encodeBase64Url } from '../../lib/ranked/canonical';
 import type { DailyChallengeCoordinator } from './coordinator';
-import { createDailyChallengeHttpHandlers, dailyChallengeJsonError } from './http';
+import {
+	createDailyChallengeCommandRateLimiter,
+	createDailyChallengeHttpHandlers,
+	createDailyChallengeResumeRateLimiter,
+	createDailyChallengeStartRateLimiter,
+	dailyChallengeJsonError,
+} from './http';
 
 const USER_ID = 'daily-http-user';
 const OTHER_USER_ID = 'daily-http-other';
@@ -730,5 +736,92 @@ describe('dailyChallengeHttpHandlers default factory', () => {
 
 		expect(response.status).toBe(401);
 		expect(await json(response)).toEqual({ error: 'UNAUTHORIZED' });
+	});
+});
+
+function createMockD1(changes: number): D1Database {
+	const bound = {
+		run: async () => ({ meta: { changes } }),
+		bind: () => bound,
+	};
+	const stmt = {
+		run: async () => ({ meta: { changes } }),
+		bind: () => bound,
+	};
+	return {
+		prepare: () => stmt,
+	} as never;
+}
+
+describe('daily challenge HTTP rate limiter factories', () => {
+	test('createDailyChallengeStartRateLimiter returns allowed with a continuation statement', async () => {
+		const db = createMockD1(1);
+		const limiter = createDailyChallengeStartRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('allowed');
+		if (result.kind === 'allowed') {
+			expect(result.statement).toBeDefined();
+			expect(result.retryAfter).toBeGreaterThan(0);
+		}
+	});
+
+	test('createDailyChallengeStartRateLimiter returns rate-limited with retryAfter', async () => {
+		const db = createMockD1(0);
+		const limiter = createDailyChallengeStartRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBeGreaterThan(0);
+		}
+	});
+
+	test('createDailyChallengeCommandRateLimiter returns allowed with a continuation statement', async () => {
+		const db = createMockD1(1);
+		const limiter = createDailyChallengeCommandRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('allowed');
+		if (result.kind === 'allowed') {
+			expect(result.statement).toBeDefined();
+			expect(result.retryAfter).toBeGreaterThan(0);
+		}
+	});
+
+	test('createDailyChallengeCommandRateLimiter returns rate-limited with retryAfter', async () => {
+		const db = createMockD1(0);
+		const limiter = createDailyChallengeCommandRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBeGreaterThan(0);
+		}
+	});
+
+	test('createDailyChallengeResumeRateLimiter returns allowed without a continuation statement', async () => {
+		const db = createMockD1(1);
+		const limiter = createDailyChallengeResumeRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('allowed');
+	});
+
+	test('createDailyChallengeResumeRateLimiter returns rate-limited with retryAfter', async () => {
+		const db = createMockD1(0);
+		const limiter = createDailyChallengeResumeRateLimiter(db);
+
+		const result = await limiter(USER_ID, 1000);
+
+		expect(result.kind).toBe('rate-limited');
+		if (result.kind === 'rate-limited') {
+			expect(result.retryAfter).toBeGreaterThan(0);
+		}
 	});
 });

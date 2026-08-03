@@ -1744,3 +1744,450 @@ describe('daily challenge coordinator ranked seed reveal', () => {
 		expect(logs.every((entry) => !JSON.stringify(entry).includes(seed))).toBe(true);
 	});
 });
+
+class ConcurrentStartRepository extends FakeRepository {
+	private concurrentWinner: AttemptState | null = null;
+
+	setConcurrentWinner(attempt: AttemptState): void {
+		this.concurrentWinner = attempt;
+	}
+
+	override async runStartTransition(
+		input: DailyChallengeStartTransitionInput,
+	): Promise<DailyChallengeStartTransitionResult> {
+		this.startTransitions.push(input);
+		if (this.concurrentWinner) {
+			this.attempts.set(this.concurrentWinner.id, {
+				...this.concurrentWinner,
+				actionLog: this.concurrentWinner.actionLog.map((entry) => ({ ...entry })),
+			});
+		}
+		return { kind: 'not-created' };
+	}
+}
+
+class RateLimitedStartRepository extends FakeRepository {
+	override async runStartTransition(
+		input: DailyChallengeStartTransitionInput,
+	): Promise<DailyChallengeStartTransitionResult> {
+		this.startTransitions.push(input);
+		return { kind: 'rate-limited', retryAfter: 99 };
+	}
+}
+
+class RateLimitedCommandRepository extends FakeRepository {
+	override async runCommandTransition(
+		input: DailyChallengeCommandTransitionInput,
+	): Promise<DailyChallengeCommandTransitionResult> {
+		this.commandTransitions.push(input);
+		return { kind: 'rate-limited', retryAfter: 77 };
+	}
+}
+
+interface ConcurrentActiveWinnerState {
+	actionLog: DailyChallengeCommandV1[];
+	nextCommandSequence: number;
+}
+
+class ConcurrentActiveRepository extends FakeRepository {
+	private raceUsed = false;
+
+	constructor(
+		options: FakeOptions,
+		private readonly winner: ConcurrentActiveWinnerState,
+	) {
+		super(options);
+	}
+
+	override async runCommandTransition(
+		input: DailyChallengeCommandTransitionInput,
+	): Promise<DailyChallengeCommandTransitionResult> {
+		if (this.raceUsed) return super.runCommandTransition(input);
+		this.raceUsed = true;
+		const current = this.attempts.get(input.attemptId);
+		if (!current) return { kind: 'not-applied' };
+		const projections = computeProjections(ACTIVE_SEED, this.winner.actionLog);
+		this.attempts.set(current.id, {
+			...current,
+			actionLog: this.winner.actionLog.map((entry) => ({ ...entry })),
+			actionLogJson: projections.actionLogJson,
+			actionLogHash: projections.actionLogHash,
+			nextCommandSequence: this.winner.nextCommandSequence,
+			availableBankroll: projections.availableBankroll,
+			roundsCompleted: projections.roundsCompleted,
+			updatedAt: input.nowSeconds,
+		});
+		return { kind: 'not-applied' };
+	}
+}
+
+describe('daily challenge coordinator invariant guards', () => {
+	test('asNowSeconds throws INTERNAL_ERROR for a negative clock', async () => {
+		const repository = new FakeRepository();
+		const { coordinator } = createBundle(repository, -10);
+
+		await expectDailyError(coordinator.getCurrent({ userId: USER_ID }), 'INTERNAL_ERROR');
+	});
+
+	test('requireRandomBytes throws INTERNAL_ERROR when the byte count is wrong', async () => {
+		const repository = new FakeRepository({ challenges: [] });
+		const logs: DailyChallengeLogEntry[] = [];
+		const deps: DailyChallengeCoordinatorDeps = {
+			repository,
+			now: () => new Date(NOW_SECONDS * 1000),
+			randomBytes: () => new Uint8Array(10),
+			log: (entry) => {
+				logs.push(entry);
+			},
+			consumeStartRateLimit: async () => ({
+				kind: 'allowed',
+				statement: {} as D1PreparedStatement,
+				retryAfter: 60,
+			}),
+			consumeCommandRateLimit: async () => ({
+				kind: 'allowed',
+				statement: {} as D1PreparedStatement,
+				retryAfter: 60,
+			}),
+			consumeResumeRateLimit: async () => ({ kind: 'allowed' }),
+		};
+		const coordinator = createDailyChallengeCoordinator(deps);
+
+		await expectDailyError(coordinator.getCurrent({ userId: USER_ID }), 'INTERNAL_ERROR');
+	});
+
+	test('renderAttempt throws INTERNAL_ERROR when a terminal attempt has no stored result', async () => {
+		const attempt = {
+			...baseAttempt({ status: 'completed', settledAt: NOW_SECONDS }),
+			actionLog: [],
+		};
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator, logs } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.resume({ userId: USER_ID, attemptId: attempt.id }),
+			'INTERNAL_ERROR',
+		);
+		expect(logs.some((entry) => entry.event === 'daily_challenge_invariant_violation')).toBe(true);
+	});
+});
+
+describe('daily challenge coordinator start conflict edge cases', () => {
+	test('an exact replay mismatch with an exhausted start rate limit returns RATE_LIMITED', async () => {
+		const pastPeriod = getDailyChallengeWindow(NOW_SECONDS - 86_400);
+		const pastChallenge = baseChallenge({
+			id: 'test-challenge-past-001',
+			periodKey: pastPeriod.periodKey,
+			startsAt: pastPeriod.startsAt,
+			rankedEntryClosesAt: pastPeriod.rankedEntryClosesAt,
+			endsAt: pastPeriod.endsAt,
+			createdAt: NOW_SECONDS - 86_400,
+		});
+		const pastAttempt = baseAttempt({
+			id: 'attemptpastaaaaaaaaaaaaaa',
+			challengeId: pastChallenge.id,
+			startRequestId: 'request-shared-rate-001',
+			status: 'completed',
+			settledAt: NOW_SECONDS - 86_400 + 60,
+		});
+		const repository = new FakeRepository({
+			challenges: [pastChallenge, baseChallenge()],
+			attempts: [{ ...pastAttempt, actionLog: [] }],
+		});
+		const { coordinator, rateLimiter } = createBundle(repository);
+		rateLimiter.setRateLimited(120);
+
+		await expectDailyError(
+			coordinator.start({ userId: USER_ID, body: { requestId: 'request-shared-rate-001' } }),
+			'RATE_LIMITED',
+		);
+	});
+
+	test('an exact replay of an expired active attempt runs the expiry transition', async () => {
+		const body: DailyChallengeStartRequest = { requestId: 'request-expired-exact-001' };
+		const startPayloadHash = hashCanonical(body);
+		const attempt = {
+			...baseAttempt({
+				startRequestId: body.requestId,
+				startPayloadHash,
+				expiresAt: NOW_SECONDS - 1,
+			}),
+			actionLog: [],
+		};
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.start({ userId: USER_ID, body });
+
+		expect(state.status).toBe('expired');
+		expect(state.receipt?.terminalReason).toBe('expired');
+	});
+
+	test('a todays expired active attempt runs the expiry transition on start', async () => {
+		const existing = {
+			...baseAttempt({
+				startRequestId: 'request-other-today-001',
+				expiresAt: NOW_SECONDS - 1,
+			}),
+			actionLog: [],
+		};
+		const repository = new FakeRepository({ attempts: [existing] });
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.start({
+			userId: USER_ID,
+			body: { requestId: 'request-fresh-today-001' },
+		});
+
+		expect(state.status).toBe('expired');
+		expect(state.receipt?.terminalReason).toBe('expired');
+	});
+
+	test('a rate-limited start transition returns RATE_LIMITED after the pre-consume check passes', async () => {
+		const repository = new RateLimitedStartRepository();
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.start({ userId: USER_ID, body: { requestId: 'request-transition-rate-001' } }),
+			'RATE_LIMITED',
+		);
+	});
+});
+
+describe('daily challenge coordinator start transition reread', () => {
+	test('a not-created transition rereads by request ID and rejects a mismatched winner', async () => {
+		const body: DailyChallengeStartRequest = { requestId: 'request-concurrent-mismatch-001' };
+		const concurrentWinner: AttemptState = {
+			...baseAttempt({
+				id: 'attemptconcurrentmism01',
+				challengeId: 'test-challenge-other-001',
+				startRequestId: body.requestId,
+				startPayloadHash: 'mismatched-payload-hash',
+			}),
+			actionLog: [],
+		};
+		const repository = new ConcurrentStartRepository();
+		repository.setConcurrentWinner(concurrentWinner);
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.start({ userId: USER_ID, body }),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+
+	test('a not-created transition rereads by request ID and expires an active expired winner', async () => {
+		const body: DailyChallengeStartRequest = { requestId: 'request-concurrent-replay-001' };
+		const startPayloadHash = hashCanonical(body);
+		const concurrentWinner: AttemptState = {
+			...baseAttempt({
+				id: 'attemptconcurrentrepl01',
+				startRequestId: body.requestId,
+				startPayloadHash,
+				expiresAt: NOW_SECONDS - 1,
+			}),
+			actionLog: [],
+		};
+		const repository = new ConcurrentStartRepository();
+		repository.setConcurrentWinner(concurrentWinner);
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.start({ userId: USER_ID, body });
+
+		expect(state.status).toBe('expired');
+		expect(state.receipt?.terminalReason).toBe('expired');
+	});
+
+	test('a not-created transition rereads by request ID and replays an active winner', async () => {
+		const body: DailyChallengeStartRequest = { requestId: 'request-concurrent-active-001' };
+		const startPayloadHash = hashCanonical(body);
+		const concurrentWinner: AttemptState = {
+			...baseAttempt({
+				id: 'attemptconcurrentact001',
+				startRequestId: body.requestId,
+				startPayloadHash,
+			}),
+			actionLog: [],
+		};
+		const repository = new ConcurrentStartRepository();
+		repository.setConcurrentWinner(concurrentWinner);
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.start({ userId: USER_ID, body });
+
+		expect(state.status).toBe('active');
+		expect(state.attemptId).toBe(concurrentWinner.id);
+	});
+
+	test('a not-created transition rereads by challenge+user and expires an active expired winner', async () => {
+		const body: DailyChallengeStartRequest = { requestId: 'request-concurrent-challenge-001' };
+		const concurrentWinner: AttemptState = {
+			...baseAttempt({
+				id: 'attemptconcurrentchl001',
+				startRequestId: 'request-other-challenge-001',
+				expiresAt: NOW_SECONDS - 1,
+			}),
+			actionLog: [],
+		};
+		const repository = new ConcurrentStartRepository();
+		repository.setConcurrentWinner(concurrentWinner);
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.start({ userId: USER_ID, body });
+
+		expect(state.status).toBe('expired');
+		expect(state.receipt?.terminalReason).toBe('expired');
+	});
+
+	test('a not-created transition with no classifiable winner throws INTERNAL_ERROR', async () => {
+		const repository = new ConcurrentStartRepository();
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.start({ userId: USER_ID, body: { requestId: 'request-unclassified-001' } }),
+			'INTERNAL_ERROR',
+		);
+	});
+});
+
+describe('daily challenge coordinator command transition reread', () => {
+	test('a rate-limited command transition returns RATE_LIMITED', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new RateLimitedCommandRepository({ attempts: [attempt] });
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'forfeit'),
+			}),
+			'RATE_LIMITED',
+		);
+	});
+
+	test('a not-applied transition replays an active reread at a behind sequence', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentActiveRepository(
+			{ attempts: [attempt] },
+			{ actionLog: [opener, cmd(1, 'forfeit')], nextCommandSequence: 2 },
+		);
+		const { coordinator } = createBundle(repository);
+
+		const state = await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: cmd(1, 'forfeit'),
+		});
+
+		expect(state.status).toBe('active');
+		expect(state.nextCommandSequence).toBe(2);
+	});
+
+	test('a not-applied transition rejects a mismatched behind-sequence command on an active reread', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentActiveRepository(
+			{ attempts: [attempt] },
+			{ actionLog: [opener, cmd(1, 'forfeit')], nextCommandSequence: 2 },
+		);
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'hit'),
+			}),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+
+	test('a not-applied transition returns SEQUENCE_MISMATCH when the reread sequence is lower', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentActiveRepository(
+			{ attempts: [attempt] },
+			{ actionLog: [], nextCommandSequence: 0 },
+		);
+		const { coordinator } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'stand'),
+			}),
+			'SEQUENCE_MISMATCH',
+			0,
+		);
+	});
+
+	test('a not-applied transition with matching sequence throws INTERNAL_ERROR as an invariant violation', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new ConcurrentActiveRepository(
+			{ attempts: [attempt] },
+			{ actionLog: [opener], nextCommandSequence: 1 },
+		);
+		const { coordinator, logs } = createBundle(repository);
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: cmd(1, 'stand'),
+			}),
+			'INTERNAL_ERROR',
+		);
+		expect(logs.some((entry) => entry.event === 'daily_challenge_invariant_violation')).toBe(true);
+	});
+});
+
+describe('daily challenge coordinator terminal command replay', () => {
+	test('a behind-sequence command on a terminal attempt replays the stored command', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator } = createBundle(repository);
+
+		await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: cmd(1, 'forfeit'),
+		});
+
+		const state = await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: opener,
+		});
+
+		expect(state.status).toBe('forfeited');
+		expect(state.nextCommandSequence).toBe(2);
+	});
+
+	test('a behind-sequence mismatched command on a terminal attempt rejects with IDENTIFIER_REUSE_MISMATCH', async () => {
+		const opener = startRound(0, DEFAULT_WAGER);
+		const attempt = fixtureAttempt([opener]);
+		const repository = new FakeRepository({ attempts: [attempt] });
+		const { coordinator } = createBundle(repository);
+
+		await coordinator.command({
+			userId: USER_ID,
+			attemptId: attempt.id,
+			body: cmd(1, 'forfeit'),
+		});
+
+		await expectDailyError(
+			coordinator.command({
+				userId: USER_ID,
+				attemptId: attempt.id,
+				body: startRound(0, DEFAULT_WAGER * 2),
+			}),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+});

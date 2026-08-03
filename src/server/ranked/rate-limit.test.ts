@@ -335,3 +335,76 @@ describe('generalized helpers accept daily challenge operations', () => {
 		}
 	});
 });
+
+describe('assertNowSeconds invariants', () => {
+	test('buildRateLimitStatement throws TypeError for a negative nowSeconds', () => {
+		const db = {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async run() {
+								return { meta: { changes: 1 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		expect(() =>
+			buildRateLimitStatement(db, {
+				userId: 'user-inv',
+				operation: 'ranked_start',
+				nowSeconds: -1,
+			}),
+		).toThrow(TypeError);
+	});
+
+	test('buildRateLimitStatement throws TypeError for a non-integer nowSeconds', () => {
+		const db = {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async run() {
+								return { meta: { changes: 1 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		expect(() =>
+			buildRateLimitStatement(db, {
+				userId: 'user-inv',
+				operation: 'ranked_start',
+				nowSeconds: 1.5,
+			}),
+		).toThrow(TypeError);
+	});
+
+	test('getRetryAfterSeconds throws TypeError for a negative nowSeconds', () => {
+		expect(() => getRetryAfterSeconds('ranked_start', -1)).toThrow(TypeError);
+	});
+});
+
+describe('consumeStandaloneRateLimit invariant failure', () => {
+	test('throws when the mutation count is neither 0 nor 1', async () => {
+		const db = {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async run() {
+								return { meta: { changes: 2 } };
+							},
+						};
+					},
+				};
+			},
+		} as unknown as D1Database;
+		await expect(consumeStandaloneRateLimit(db, 'user-inv', 'ranked_start', 1000)).rejects.toThrow(
+			'Authenticated rate-limit mutation count invariant failed',
+		);
+	});
+});

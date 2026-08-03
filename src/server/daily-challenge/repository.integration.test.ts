@@ -1421,3 +1421,507 @@ describe('daily challenge retention', () => {
 		expect(await countChallenges()).toBe(1);
 	});
 });
+
+describe('daily challenge findAttemptById', () => {
+	test('returns the persisted attempt for a known id', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const found = await repository.findAttemptById(ATTEMPT_ID);
+		expect(found).not.toBeNull();
+		expect(found?.id).toBe(ATTEMPT_ID);
+		expect(found?.status).toBe('active');
+	});
+
+	test('returns null when no attempt exists for the id', async () => {
+		const repository = createDailyChallengeRepository(db);
+		expect(await repository.findAttemptById('nonexistent-attempt-id')).toBeNull();
+	});
+});
+
+describe('daily challenge findChallengeById', () => {
+	test('returns the persisted challenge for a known id', async () => {
+		const record = await seedChallenge();
+		const repository = createDailyChallengeRepository(db);
+		const found = await repository.findChallengeById(record.id);
+		expect(found).not.toBeNull();
+		expect(found?.id).toBe(record.id);
+		expect(found?.config).toEqual(BLACKJACK_DAILY_V1_CONFIG);
+	});
+
+	test('returns null when no challenge exists for the id', async () => {
+		const repository = createDailyChallengeRepository(db);
+		expect(await repository.findChallengeById('nonexistent-challenge-id')).toBeNull();
+	});
+
+	test('returns null for an unsupported challenge ruleset version', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET challengeRulesetVersion = ? WHERE id = ?')
+			.bind('something-else', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		expect(await repository.findChallengeById(record.id)).toBeNull();
+	});
+});
+
+describe('daily challenge findChallengeByPeriodKey unsupported version', () => {
+	test('returns null when the persisted ruleset version is unsupported', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET challengeRulesetVersion = ? WHERE id = ?')
+			.bind('something-else', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		expect(await repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY)).toBeNull();
+	});
+});
+
+describe('daily challenge findStanding', () => {
+	test('returns rank and percentile for a user with an eligible result', async () => {
+		const challenge = await seedChallenge();
+		await seedLeaderboardResult({
+			userId: USER_ID,
+			attemptId: 'standing-attempt00000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1500,
+			settledAt: NOW_SECONDS + 10,
+		});
+		const repository = createDailyChallengeRepository(db);
+		const standing = await repository.findStanding(challenge.id, USER_ID);
+		expect(standing).not.toBeNull();
+		expect(standing?.rank).toBe(1);
+		expect(standing?.percentile).toBe(calculateDailyChallengePercentile(1, 0));
+	});
+
+	test('returns null for a user with no result', async () => {
+		const challenge = await seedChallenge();
+		const repository = createDailyChallengeRepository(db);
+		expect(await repository.findStanding(challenge.id, USER_ID)).toBeNull();
+	});
+});
+
+describe('daily challenge readLeaderboard invalid inputs', () => {
+	test('rejects an empty challenge id', async () => {
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.readLeaderboard('', 50)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('rejects a zero limit', async () => {
+		const challenge = await seedChallenge();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.readLeaderboard(challenge.id, 0)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('rejects a negative limit', async () => {
+		const challenge = await seedChallenge();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.readLeaderboard(challenge.id, -1)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge listChallengeHistory invalid limit', () => {
+	test('rejects a zero limit', async () => {
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.listChallengeHistory(0)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('rejects a negative limit', async () => {
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.listChallengeHistory(-1)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge terminal validation invariants', () => {
+	async function seedForTerminal(): Promise<{
+		challenge: NewDailyChallengeRecord;
+		finalLog: DailyChallengeCommandV1[];
+	}> {
+		const { challenge } = await seedActiveAttempt();
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+		return { challenge, finalLog };
+	}
+
+	test('rejects an invalid terminal challenge id', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			challengeId: 'short',
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('rejects an invalid terminal challenge ruleset version', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			challengeRulesetVersion: 'wrong' as 'blackjack-daily-v1',
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('rejects an invalid terminal game ruleset version', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			gameRulesetVersion: 'wrong' as 'blackjack-ranked-v1',
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('rejects an invalid terminal score version', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			scoreVersion: 'wrong' as 'blackjack-daily-score-v1',
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('rejects an invalid terminal period key', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			periodKey: 'not-a-date',
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('rejects a terminal receipt hash mismatch', async () => {
+		const { challenge, finalLog } = await seedForTerminal();
+		const repository = createDailyChallengeRepository(db);
+		const terminal = {
+			...terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+			receiptHash: '0'.repeat(64),
+		};
+		await expect(
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+					terminal,
+				}),
+			),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+});
+
+describe('daily challenge command transition action-log hash mismatch', () => {
+	test('rejects a next action log whose hash does not match the JSON', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const nextLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+		const input = {
+			...commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: nextLog, availableBankroll: 990, roundsCompleted: 0 },
+			}),
+			nextActionLogHash: hashLog([]),
+		};
+		await expect(repository.runCommandTransition(input)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge parseChallengeRow invariants', () => {
+	test('invalid config JSON triggers an invariant error on read', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET configJson = ? WHERE id = ?')
+			.bind('not-json{', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('invalid ranked seed triggers an invariant error on read', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET rankedSeed = ? WHERE id = ?')
+			.bind('not-valid-base64!', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('unsupported game ruleset version triggers an invariant error on read', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET gameRulesetVersion = ? WHERE id = ?')
+			.bind('wrong', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('unsupported score version triggers an invariant error on read', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET scoreVersion = ? WHERE id = ?')
+			.bind('wrong', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('negative startsAt triggers an invariant error on read', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET startsAt = ? WHERE id = ?')
+			.bind(-1, record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+});
+
+describe('daily challenge parseAttemptRow invariants', () => {
+	test('a corrupt next command sequence triggers an invariant error on read', async () => {
+		await seedActiveAttempt();
+		await db
+			.prepare('UPDATE daily_challenge_attempt SET nextCommandSequence = ? WHERE id = ?')
+			.bind(-1, ATTEMPT_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findAttemptById(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('corrupt action log JSON triggers an invariant error on read', async () => {
+		await seedActiveAttempt();
+		await db
+			.prepare('UPDATE daily_challenge_attempt SET actionLogJson = ? WHERE id = ?')
+			.bind('not-json', ATTEMPT_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findAttemptById(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge parseResultRow invariants', () => {
+	async function seedTerminalResult(): Promise<NewDailyChallengeRecord> {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+		await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+				}),
+			}),
+		);
+		return challenge;
+	}
+
+	test('a non-boolean eligible value triggers an invariant error on read', async () => {
+		const challenge = await seedTerminalResult();
+		await db
+			.prepare('UPDATE daily_challenge_result SET eligible = ? WHERE attemptId = ?')
+			.bind(2, ATTEMPT_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('an unsupported challenge ruleset version triggers an invariant error on read', async () => {
+		await seedTerminalResult();
+		await db
+			.prepare('UPDATE daily_challenge SET challengeRulesetVersion = ? WHERE id = ?')
+			.bind('wrong', CHALLENGE_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('an unsupported game ruleset version triggers an invariant error on read', async () => {
+		await seedTerminalResult();
+		await db
+			.prepare('UPDATE daily_challenge SET gameRulesetVersion = ? WHERE id = ?')
+			.bind('wrong', CHALLENGE_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('an unsupported score version triggers an invariant error on read', async () => {
+		await seedTerminalResult();
+		await db
+			.prepare('UPDATE daily_challenge_result SET scoreVersion = ? WHERE attemptId = ?')
+			.bind('wrong', ATTEMPT_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('a corrupt period key triggers an invariant error on read', async () => {
+		await seedTerminalResult();
+		await db
+			.prepare('UPDATE daily_challenge SET periodKey = ? WHERE id = ?')
+			.bind('not-a-date', CHALLENGE_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge parseHistoryRow invariants', () => {
+	test('an unsupported history ruleset version triggers an invariant error', async () => {
+		await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET challengeRulesetVersion = ? WHERE id = ?')
+			.bind('wrong', CHALLENGE_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.listChallengeHistory(10)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('a corrupt history period key triggers an invariant error', async () => {
+		await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET periodKey = ? WHERE id = ?')
+			.bind('bad', CHALLENGE_ID)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.listChallengeHistory(10)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge parseLeaderboardRow empty player name', () => {
+	test('an empty player name triggers an invariant error on read', async () => {
+		const challenge = await seedChallenge();
+		await insertDailyChallengeTestUser(db, {
+			id: 'empty-name-user',
+			name: '',
+			chipBalance: 10000,
+		});
+		await seedLeaderboardResult({
+			userId: 'empty-name-user',
+			attemptId: 'empty-name-attempt0000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS + 10,
+		});
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.readLeaderboard(challenge.id, 50)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});

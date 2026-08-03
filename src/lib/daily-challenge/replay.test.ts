@@ -435,3 +435,78 @@ describe('replayDailyChallenge error handling and determinism', () => {
 		expect(JSON.stringify(first)).toBe(JSON.stringify(second));
 	});
 });
+
+describe('replayDailyChallenge terminal guard errors', () => {
+	const lossDeck = () =>
+		deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('10', 'clubs'),
+			card('Q', 'spades'),
+		);
+
+	test('rejects a start-round command after the challenge is terminal', () => {
+		const commands: DailyChallengeCommandV1[] = [];
+		for (let round = 0; round < 5; round += 1) {
+			commands.push(startRound(round * 2, 200));
+			commands.push(cmd(round * 2 + 1, 'stand'));
+		}
+		commands.push(startRound(10, 200));
+
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				commands,
+				singleDeckSource(lossDeck()),
+			),
+		).toThrow(throwsDailyError('ATTEMPT_COMPLETE'));
+	});
+
+	test('rejects a blackjack action after the challenge is terminal', () => {
+		const commands: DailyChallengeCommandV1[] = [];
+		for (let round = 0; round < 5; round += 1) {
+			commands.push(startRound(round * 2, 200));
+			commands.push(cmd(round * 2 + 1, 'stand'));
+		}
+		commands.push(cmd(10, 'stand'));
+
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				commands,
+				singleDeckSource(lossDeck()),
+			),
+		).toThrow(throwsDailyError('ATTEMPT_COMPLETE'));
+	});
+
+	test('rejects a start-round wager exceeding the available bankroll', () => {
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				[startRound(0, 600), cmd(1, 'stand'), startRound(2, 500)],
+				singleDeckSource(lossDeck()),
+			),
+		).toThrow(throwsDailyError('INSUFFICIENT_CHALLENGE_BANKROLL'));
+	});
+
+	test('rejects a blackjack action that is not in the legal actions', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+		);
+
+		expect(() =>
+			replayDailyChallenge(
+				BLACKJACK_DAILY_V1_CONFIG,
+				MASTER_SEED,
+				[startRound(0, 100), cmd(1, 'split')],
+				singleDeckSource(deck),
+			),
+		).toThrow(throwsDailyError('INVALID_COMMAND'));
+	});
+});

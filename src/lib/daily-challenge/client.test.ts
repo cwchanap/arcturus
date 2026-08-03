@@ -1298,6 +1298,74 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		expect(errors).toHaveLength(1);
 		expect(created).toEqual([]);
 	});
+
+	test('createBrowserRequestId uses crypto.randomUUID when createRequestId is not provided', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => currentPageFetch(url));
+		const { renderer } = createPageRenderer();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+		let capturedCreateRequestId: (() => string) | null = null;
+		const createClient = (deps: DailyChallengeClientDeps): DailyChallengeClient => {
+			capturedCreateRequestId = deps.createRequestId;
+			return {
+				async initialize() {},
+				adopt() {},
+				async start() {},
+				async command() {},
+			};
+		};
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient,
+			createLocalReplayController,
+		});
+
+		expect(capturedCreateRequestId).not.toBeNull();
+		const id = capturedCreateRequestId!();
+		expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+	});
+
+	test('createBrowserRequestId falls back to a random string when crypto.randomUUID is unavailable', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => currentPageFetch(url));
+		const { renderer } = createPageRenderer();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+		let capturedCreateRequestId: (() => string) | null = null;
+		const createClient = (deps: DailyChallengeClientDeps): DailyChallengeClient => {
+			capturedCreateRequestId = deps.createRequestId;
+			return {
+				async initialize() {},
+				adopt() {},
+				async start() {},
+				async command() {},
+			};
+		};
+
+		const originalCryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+		Object.defineProperty(globalThis, 'crypto', {
+			value: {},
+			configurable: true,
+			writable: true,
+		});
+		try {
+			await initDailyChallengePage(root, {
+				fetch: fetchImpl,
+				createRenderer: () => renderer,
+				createClient,
+				createLocalReplayController,
+			});
+
+			expect(capturedCreateRequestId).not.toBeNull();
+			const id = capturedCreateRequestId!();
+			expect(id).toMatch(/^dc-/);
+		} finally {
+			if (originalCryptoDescriptor) {
+				Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+			}
+		}
+	});
 });
 
 describe('daily challenge page bootstrap — initDailyChallengeHistoryPage', () => {
@@ -1439,5 +1507,53 @@ describe('daily challenge page bootstrap — initDailyChallengeHistoryPage', () 
 		expect(challenges).toHaveLength(1);
 		expect(revealStatus).toEqual(['Ranked seed not yet revealed']);
 		expect(commitment).toEqual(['b'.repeat(64)]);
+	});
+
+	test('a failing challenge detail fetch surfaces an error and skips the leaderboard', async () => {
+		const fetchImpl = mock(async () => jsonResponse({ error: 'CHALLENGE_NOT_FOUND' }, 404));
+		const { renderer, errors, leaderboards } = createPageRenderer();
+		const { createLocalReplayController } = createPageLocalHarness();
+		const root = {
+			dataset: { periodKey: PERIOD_KEY },
+			querySelector: () => null,
+		} as unknown as HTMLElement;
+
+		await initDailyChallengeHistoryPage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createLocalReplayController,
+		});
+
+		expect(errors).toHaveLength(1);
+		expect(leaderboards).toHaveLength(0);
+	});
+
+	test('bound handlers dispatch start-round, action, forfeit, and restart to the replay controller', async () => {
+		const fetchImpl = mock(async (url: RequestInfo | URL) => historyPageFetch(url));
+		const { renderer, bound } = createPageRenderer();
+		const replayHarness = createPageLocalHarness();
+		const root = {
+			dataset: { periodKey: PERIOD_KEY },
+			querySelector: () => null,
+		} as unknown as HTMLElement;
+
+		await initDailyChallengeHistoryPage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createLocalReplayController: replayHarness.createLocalReplayController,
+		});
+
+		const handlers = bound.handlers;
+		expect(handlers).not.toBeNull();
+		handlers?.onStartRound(100);
+		handlers?.onAction('hit');
+		handlers?.onForfeit();
+		handlers?.onRestartPractice();
+		handlers?.onSelectReplayScenario('practice-scenario');
+		expect(replayHarness.startRounds).toEqual([100]);
+		expect(replayHarness.actions).toEqual(['hit']);
+		expect(replayHarness.forfeits).toBe(1);
+		expect(replayHarness.restarts).toBe(1);
+		expect(replayHarness.scenarios).toEqual(['practice-scenario']);
 	});
 });

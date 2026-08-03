@@ -4,7 +4,10 @@ import {
 	BLACKJACK_DAILY_V1_CONFIG,
 	getDailyChallengeWindow,
 } from '../../lib/daily-challenge/config';
+import { type DailyChallengeTerminalReason } from '../../lib/daily-challenge/protocol';
 import { createDailyChallengeSeedCommitment } from '../../lib/daily-challenge/random';
+import { calculateDailyChallengePercentile } from '../../lib/daily-challenge/scoring';
+import type { DailyChallengeCommandV1 } from '../../lib/daily-challenge/protocol';
 import {
 	canonicalizeRanked,
 	encodeBase64Url,
@@ -15,11 +18,20 @@ import { buildRateLimitStatement, RANKED_RATE_LIMITS } from '../ranked/rate-limi
 import {
 	DailyChallengeRepositoryInvariantError,
 	createDailyChallengeRepository,
+	type DailyChallengeCommandTransitionInput,
+	type DailyChallengeCommandTransitionResult,
+	type DailyChallengeExpirationCursor,
 	type DailyChallengeStartTransitionInput,
+	type DailyChallengeTerminalTransition,
 	type NewDailyChallengeAttemptRecord,
 	type NewDailyChallengeRecord,
 } from './repository';
-import { createDailyChallengeTestD1, insertDailyChallengeTestUser } from './test-d1';
+import {
+	createDailyChallengeTestD1,
+	insertDailyChallengeAttempt,
+	insertDailyChallengeResult,
+	insertDailyChallengeTestUser,
+} from './test-d1';
 
 const USER_ID = 'daily-challenge-repository-user';
 const OTHER_USER_ID = 'daily-challenge-other-user';
@@ -457,3 +469,790 @@ describe('daily challenge start transition', () => {
 		expect(other?.userId).toBe(OTHER_USER_ID);
 	});
 });
+
+const TERMINAL_SETTLED_AT = NOW_SECONDS + 300;
+const RETENTION_CUTOFF = NOW_SECONDS - 90 * 86_400;
+
+interface ActiveProjection {
+	sequence: number;
+	actionLog: readonly DailyChallengeCommandV1[];
+	availableBankroll: number;
+	roundsCompleted: number;
+}
+
+const INITIAL_PROJECTION: ActiveProjection = {
+	sequence: 0,
+	actionLog: [],
+	availableBankroll: BLACKJACK_DAILY_V1_CONFIG.startingBankroll,
+	roundsCompleted: 0,
+};
+
+function canonLog(log: readonly DailyChallengeCommandV1[]): string {
+	return canonicalizeRanked(log);
+}
+
+function hashLog(log: readonly DailyChallengeCommandV1[]): string {
+	return hashCanonical(log);
+}
+
+async function seedActiveAttempt(
+	overrides: { userId?: string; attempt?: Partial<NewDailyChallengeAttemptRecord> } = {},
+): Promise<{ challenge: NewDailyChallengeRecord; attempt: NewDailyChallengeAttemptRecord }> {
+	const challenge = await seedChallenge();
+	const repository = createDailyChallengeRepository(db);
+	const userId = overrides.userId ?? USER_ID;
+	const attempt = buildAttemptRecord({ ...overrides.attempt, userId });
+	const result = await repository.runStartTransition(startInput({ userId, attempt }));
+	if (result.kind !== 'created') throw new Error('seedActiveAttempt start failed');
+	return { challenge, attempt };
+}
+
+function commandTransition(opts: {
+	userId?: string;
+	attemptId?: string;
+	current: ActiveProjection;
+	next: ActiveProjection;
+	nowSeconds?: number;
+	terminal?: DailyChallengeTerminalTransition;
+}): DailyChallengeCommandTransitionInput {
+	return {
+		userId: opts.userId ?? USER_ID,
+		attemptId: opts.attemptId ?? ATTEMPT_ID,
+		expectedSequence: opts.current.sequence,
+		expectedActionLogHash: hashLog(opts.current.actionLog),
+		expectedAvailableBankroll: opts.current.availableBankroll,
+		expectedRoundsCompleted: opts.current.roundsCompleted,
+		nextActionLogJson: canonLog(opts.next.actionLog),
+		nextActionLogHash: hashLog(opts.next.actionLog),
+		nextCommandSequence: opts.next.sequence,
+		availableBankroll: opts.next.availableBankroll,
+		roundsCompleted: opts.next.roundsCompleted,
+		nowSeconds: opts.nowSeconds ?? TERMINAL_SETTLED_AT,
+		terminal: opts.terminal,
+	};
+}
+
+function terminalBundle(opts: {
+	challenge: NewDailyChallengeRecord;
+	actionLogHash: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	eligible?: boolean;
+	terminalReason?: DailyChallengeTerminalReason;
+	durationSeconds?: number;
+	settledAt?: number;
+}): DailyChallengeTerminalTransition {
+	const eligible = opts.eligible ?? true;
+	const terminalReason = opts.terminalReason ?? 'completed';
+	const durationSeconds = opts.durationSeconds ?? 300;
+	const settledAt = opts.settledAt ?? TERMINAL_SETTLED_AT;
+	const source = {
+		attemptId: ATTEMPT_ID,
+		challengeId: opts.challenge.id,
+		periodKey: PERIOD_KEY,
+		challengeRulesetVersion: 'blackjack-daily-v1' as const,
+		gameRulesetVersion: 'blackjack-ranked-v1' as const,
+		scoreVersion: 'blackjack-daily-score-v1' as const,
+		configHash: opts.challenge.configHash,
+		rankedSeedCommitment: opts.challenge.rankedSeedCommitment,
+		actionLogHash: opts.actionLogHash,
+		endingBankroll: opts.endingBankroll,
+		roundsCompleted: opts.roundsCompleted,
+		eligible,
+		terminalReason,
+		durationSeconds,
+		settledAt,
+	};
+	return {
+		challengeId: opts.challenge.id,
+		periodKey: PERIOD_KEY,
+		challengeRulesetVersion: 'blackjack-daily-v1',
+		gameRulesetVersion: 'blackjack-ranked-v1',
+		scoreVersion: 'blackjack-daily-score-v1',
+		configHash: opts.challenge.configHash,
+		rankedSeedCommitment: opts.challenge.rankedSeedCommitment,
+		eligible,
+		terminalReason,
+		durationSeconds,
+		receiptHash: hashCanonical(source),
+	};
+}
+
+async function seedNamedUser(id: string, name: string): Promise<void> {
+	await insertDailyChallengeTestUser(db, { id, name, chipBalance: 10000 });
+}
+
+async function countResults(): Promise<number> {
+	const row = await db
+		.prepare('SELECT COUNT(*) AS count FROM daily_challenge_result')
+		.first<{ count: number }>();
+	return row?.count ?? 0;
+}
+
+async function seedLeaderboardResult(opts: {
+	userId: string;
+	attemptId: string;
+	challengeId: string;
+	endingBankroll: number;
+	roundsCompleted?: number;
+	eligible?: boolean;
+	terminalReason?: string;
+	settledAt: number;
+	durationSeconds?: number;
+}): Promise<void> {
+	await insertDailyChallengeResult(db, {
+		attemptId: opts.attemptId,
+		challengeId: opts.challengeId,
+		userId: opts.userId,
+		endingBankroll: opts.endingBankroll,
+		roundsCompleted: opts.roundsCompleted ?? 10,
+		eligible: opts.eligible === false ? 0 : 1,
+		terminalReason: opts.terminalReason ?? 'completed',
+		settledAt: opts.settledAt,
+	});
+}
+
+describe('daily challenge command transition', () => {
+	test('applies an active command when the expected projection matches', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const nextLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: {
+					sequence: 1,
+					actionLog: nextLog,
+					availableBankroll: 990,
+					roundsCompleted: 0,
+				},
+			}),
+		);
+
+		expect(result).toEqual({ kind: 'applied', result: null });
+		expect(await readUserBalance(USER_ID)).toEqual({ chipBalance: 10000, heldChips: 0 });
+
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('active');
+		expect(reread?.nextCommandSequence).toBe(1);
+		expect(reread?.availableBankroll).toBe(990);
+		expect(reread?.roundsCompleted).toBe(0);
+		expect(reread?.actionLog).toEqual(nextLog);
+		expect(reread?.settledAt).toBeNull();
+	});
+
+	test('one winning concurrent command leaves the loser not-applied', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const leftLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+		const rightLog: DailyChallengeCommandV1[] = [
+			{ sequence: 0, command: 'start-round', wager: 25 },
+		];
+
+		const [left, right] = await Promise.all([
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: leftLog, availableBankroll: 990, roundsCompleted: 0 },
+				}),
+			),
+			repository.runCommandTransition(
+				commandTransition({
+					current: INITIAL_PROJECTION,
+					next: { sequence: 1, actionLog: rightLog, availableBankroll: 975, roundsCompleted: 0 },
+				}),
+			),
+		]);
+
+		expect([left.kind, right.kind].sort()).toEqual(['applied', 'not-applied']);
+		const reread = await repository.findAttemptByChallengeAndUser(CHALLENGE_ID, USER_ID);
+		expect(reread?.nextCommandSequence).toBe(1);
+	});
+
+	test('a stale projection cannot mutate state', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const nextLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'start-round', wager: 10 }];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: {
+					sequence: 0,
+					actionLog: [],
+					availableBankroll: 700,
+					roundsCompleted: 0,
+				},
+				next: { sequence: 1, actionLog: nextLog, availableBankroll: 690, roundsCompleted: 0 },
+			}),
+		);
+
+		expect(result).toEqual({ kind: 'not-applied' });
+		const reread = await repository.findAttemptByChallengeAndUser(CHALLENGE_ID, USER_ID);
+		expect(reread?.nextCommandSequence).toBe(0);
+		expect(reread?.availableBankroll).toBe(BLACKJACK_DAILY_V1_CONFIG.startingBankroll);
+	});
+
+	test('a stale sequence or hash projection is rejected', async () => {
+		await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+
+		const staleSequence = await repository.runCommandTransition(
+			commandTransition({
+				current: { sequence: 2, actionLog: [], availableBankroll: 1000, roundsCompleted: 0 },
+				next: {
+					sequence: 3,
+					actionLog: [{ sequence: 2, command: 'start-round', wager: 10 }],
+					availableBankroll: 990,
+					roundsCompleted: 0,
+				},
+			}),
+		);
+		expect(staleSequence).toEqual({ kind: 'not-applied' });
+
+		const staleHash = await repository.runCommandTransition(
+			commandTransition({
+				current: { sequence: 0, actionLog: [], availableBankroll: 990, roundsCompleted: 0 },
+				next: {
+					sequence: 1,
+					actionLog: [{ sequence: 0, command: 'start-round', wager: 10 }],
+					availableBankroll: 980,
+					roundsCompleted: 0,
+				},
+			}),
+		);
+		expect(staleHash).toEqual({ kind: 'not-applied' });
+	});
+});
+
+describe('daily challenge terminal result persistence', () => {
+	test('a completed terminal transition persists status completed, settledAt, and one verified result', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [
+			{ sequence: 0, command: 'start-round', wager: 50 },
+			{ sequence: 1, command: 'stand' },
+		];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+				}),
+			}),
+		);
+
+		expect(result.kind).toBe('applied');
+		expect(result.result?.terminalReason).toBe('completed');
+		expect(result.result?.endingBankroll).toBe(1500);
+		expect(result.result?.roundsCompleted).toBe(10);
+		expect(result.result?.eligible).toBe(true);
+		expect(result.result?.receiptHash).toHaveLength(64);
+		expect(await countResults()).toBe(1);
+
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('completed');
+		expect(reread?.settledAt).toBe(TERMINAL_SETTLED_AT);
+
+		const byAttempt = await repository.findResultByAttempt(ATTEMPT_ID);
+		expect(byAttempt?.attemptId).toBe(ATTEMPT_ID);
+		expect(byAttempt?.receiptHash).toBe(result.result?.receiptHash);
+	});
+
+	test('terminal update and result insert are atomic: a stale guard stores neither', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: { sequence: 0, actionLog: [], availableBankroll: 999, roundsCompleted: 0 },
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+				}),
+			}),
+		);
+
+		expect(result).toEqual({ kind: 'not-applied' });
+		expect(await countResults()).toBe(0);
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('active');
+		expect(reread?.settledAt).toBeNull();
+	});
+
+	test('an exact duplicate terminal leaves exactly one result', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+		const input = commandTransition({
+			current: INITIAL_PROJECTION,
+			next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+			nowSeconds: TERMINAL_SETTLED_AT,
+			terminal: terminalBundle({
+				challenge,
+				actionLogHash: hashLog(finalLog),
+				endingBankroll: 1500,
+				roundsCompleted: 10,
+			}),
+		});
+
+		const first = await repository.runCommandTransition(input);
+		const second = await repository.runCommandTransition(input);
+
+		expect(first.kind).toBe('applied');
+		expect(second).toEqual({ kind: 'not-applied' });
+		expect(await countResults()).toBe(1);
+	});
+
+	test('a result survives attempt deletion because it carries no foreign key', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+		const terminal = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+				}),
+			}),
+		);
+		expect(terminal.kind).toBe('applied');
+		const receiptHash = terminal.result?.receiptHash;
+
+		await db.prepare('DELETE FROM daily_challenge_attempt WHERE id = ?').bind(ATTEMPT_ID).run();
+
+		expect(await countResults()).toBe(1);
+		const byAttempt = await repository.findResultByAttempt(ATTEMPT_ID);
+		expect(byAttempt?.receiptHash).toBe(receiptHash);
+	});
+
+	test('a bankroll-below-minimum terminal persists status completed with that reason', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 5, roundsCompleted: 3 },
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 5,
+					roundsCompleted: 3,
+					terminalReason: 'bankroll-below-minimum',
+				}),
+			}),
+		);
+
+		expect(result.kind).toBe('applied');
+		expect(result.result?.terminalReason).toBe('bankroll-below-minimum');
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('completed');
+	});
+
+	test('a forfeit terminal keeps the forfeit command in the log and status forfeited', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const forfeitLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'forfeit' }];
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: {
+					sequence: 1,
+					actionLog: forfeitLog,
+					availableBankroll: 1000,
+					roundsCompleted: 0,
+				},
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(forfeitLog),
+					endingBankroll: 1000,
+					roundsCompleted: 0,
+					terminalReason: 'forfeited',
+					eligible: false,
+				}),
+			}),
+		);
+
+		expect(result.kind).toBe('applied');
+		expect(result.result?.terminalReason).toBe('forfeited');
+		expect(result.result?.eligible).toBe(false);
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('forfeited');
+		expect(reread?.actionLog).toEqual(forfeitLog);
+	});
+
+	test('an expiry terminal does not append a command and persists status expired', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+
+		const result = await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: INITIAL_PROJECTION,
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(INITIAL_PROJECTION.actionLog),
+					endingBankroll: BLACKJACK_DAILY_V1_CONFIG.startingBankroll,
+					roundsCompleted: 0,
+					terminalReason: 'expired',
+					eligible: false,
+					durationSeconds: BLACKJACK_DAILY_V1_CONFIG.attemptTtlSeconds,
+				}),
+			}),
+		);
+
+		expect(result.kind).toBe('applied');
+		expect(result.result?.terminalReason).toBe('expired');
+		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
+		expect(reread?.status).toBe('expired');
+		expect(reread?.nextCommandSequence).toBe(0);
+		expect(reread?.actionLog).toEqual([]);
+		expect(result.result?.durationSeconds).toBe(BLACKJACK_DAILY_V1_CONFIG.attemptTtlSeconds);
+	});
+
+	test('a corrupt result receipt hash triggers an invariant error on reread', async () => {
+		const { challenge } = await seedActiveAttempt();
+		const repository = createDailyChallengeRepository(db);
+		const finalLog: DailyChallengeCommandV1[] = [{ sequence: 0, command: 'stand' }];
+		await repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				nowSeconds: TERMINAL_SETTLED_AT,
+				terminal: terminalBundle({
+					challenge,
+					actionLogHash: hashLog(finalLog),
+					endingBankroll: 1500,
+					roundsCompleted: 10,
+				}),
+			}),
+		);
+		await db
+			.prepare('UPDATE daily_challenge_result SET receiptHash = ? WHERE attemptId = ?')
+			.bind('0'.repeat(64), ATTEMPT_ID)
+			.run();
+		expect(repository.findResultByAttempt(ATTEMPT_ID)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+});
+
+describe('daily challenge leaderboard', () => {
+	test('competition rank is 1, 1, 3 for a tied top pair', async () => {
+		const challenge = await seedChallenge();
+		await seedNamedUser('lb-tie-a', 'Alpha');
+		await seedNamedUser('lb-tie-b', 'Bravo');
+		await seedNamedUser('lb-tie-c', 'Charlie');
+		await seedLeaderboardResult({
+			userId: 'lb-tie-a',
+			attemptId: 'lb-tie-a-attempt0000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS + 10,
+		});
+		await seedLeaderboardResult({
+			userId: 'lb-tie-b',
+			attemptId: 'lb-tie-b-attempt0000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS + 20,
+		});
+		await seedLeaderboardResult({
+			userId: 'lb-tie-c',
+			attemptId: 'lb-tie-c-attempt0000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1000,
+			settledAt: NOW_SECONDS + 30,
+		});
+
+		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id);
+
+		expect(board.entries.map((entry) => entry.rank)).toEqual([1, 1, 3]);
+	});
+
+	test('ties share rank and percentile, and use settledAt/userId only for row order', async () => {
+		const challenge = await seedChallenge();
+		await seedNamedUser('lb-tie-a', 'Alpha');
+		await seedNamedUser('lb-tie-b', 'Bravo');
+		await seedLeaderboardResult({
+			userId: 'lb-tie-a',
+			attemptId: 'lb-tie-a-attempt0000000002',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS + 20,
+		});
+		await seedLeaderboardResult({
+			userId: 'lb-tie-b',
+			attemptId: 'lb-tie-b-attempt0000000002',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS + 10,
+		});
+
+		const board = await createDailyChallengeRepository(db).readLeaderboard(
+			challenge.id,
+			'lb-tie-a',
+		);
+
+		expect(board.entries.map((entry) => entry.userId)).toEqual(['lb-tie-b', 'lb-tie-a']);
+		expect(board.entries.map((entry) => entry.rank)).toEqual([1, 1]);
+		expect(board.currentUser?.rank).toBe(1);
+		expect(board.currentUser?.totalEligible).toBe(2);
+		expect(board.currentUser?.percentile).toBe(calculateDailyChallengePercentile(2, 0));
+	});
+
+	test('top 50 entries plus a current user standing outside the top 50', async () => {
+		const challenge = await seedChallenge();
+		for (let index = 0; index < 50; index += 1) {
+			const userId = `lb-top-${String(index).padStart(2, '0')}`;
+			await seedNamedUser(userId, `Top${index}`);
+			await seedLeaderboardResult({
+				userId,
+				attemptId: `${userId}-attempt00000000001`,
+				challengeId: challenge.id,
+				endingBankroll: 2000 - index,
+				settledAt: NOW_SECONDS + index,
+			});
+		}
+		await seedLeaderboardResult({
+			userId: USER_ID,
+			attemptId: 'lb-current-attempt0000000001',
+			challengeId: challenge.id,
+			endingBankroll: 100,
+			settledAt: NOW_SECONDS + 99,
+		});
+
+		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id, USER_ID);
+
+		expect(board.entries).toHaveLength(50);
+		expect(board.currentUser?.rank).toBe(51);
+		expect(board.currentUser?.totalEligible).toBe(51);
+		expect(board.currentUser?.percentile).toBe(calculateDailyChallengePercentile(51, 50));
+	});
+
+	test('ineligible results are excluded from the leaderboard and the count', async () => {
+		const challenge = await seedChallenge();
+		await seedNamedUser('lb-elig', 'Eligible');
+		await seedNamedUser('lb-inelig', 'Ineligible');
+		await seedLeaderboardResult({
+			userId: 'lb-elig',
+			attemptId: 'lb-elig-attempt00000000001',
+			challengeId: challenge.id,
+			endingBankroll: 1100,
+			settledAt: NOW_SECONDS,
+		});
+		await seedLeaderboardResult({
+			userId: 'lb-inelig',
+			attemptId: 'lb-inelig-attempt000000001',
+			challengeId: challenge.id,
+			endingBankroll: 9999,
+			settledAt: NOW_SECONDS,
+			eligible: false,
+		});
+
+		const board = await createDailyChallengeRepository(db).readLeaderboard(
+			challenge.id,
+			'lb-inelig',
+		);
+
+		expect(board.entries).toHaveLength(1);
+		expect(board.entries[0]?.userId).toBe('lb-elig');
+		expect(board.currentUser).toBeNull();
+	});
+
+	test('a live leaderboard with no results is empty with a null current user', async () => {
+		const challenge = await seedChallenge();
+		const board = await createDailyChallengeRepository(db).readLeaderboard(challenge.id, USER_ID);
+		expect(board.entries).toEqual([]);
+		expect(board.currentUser).toBeNull();
+	});
+});
+
+describe('daily challenge history', () => {
+	test('returns bounded recent results for the authenticated user ordered by settledAt desc', async () => {
+		const challengeA = await seedChallenge(buildChallengeRecord());
+		const challengeB = await seedChallenge(
+			buildChallengeRecord({ id: CHALLENGE_ID_NEXT, periodKey: PERIOD_KEY_NEXT }),
+		);
+		await seedLeaderboardResult({
+			userId: USER_ID,
+			attemptId: 'hist-a-attempt0000000000001',
+			challengeId: challengeA.id,
+			endingBankroll: 1200,
+			settledAt: NOW_SECONDS + 100,
+		});
+		await seedLeaderboardResult({
+			userId: USER_ID,
+			attemptId: 'hist-b-attempt0000000000001',
+			challengeId: challengeB.id,
+			endingBankroll: 800,
+			settledAt: NOW_SECONDS + 200,
+		});
+
+		const repository = createDailyChallengeRepository(db);
+		const full = await repository.listChallengeHistory(10, USER_ID);
+		expect(full.entries.map((entry) => entry.periodKey)).toEqual([PERIOD_KEY_NEXT, PERIOD_KEY]);
+
+		const bounded = await repository.listChallengeHistory(1, USER_ID);
+		expect(bounded.entries).toHaveLength(1);
+		expect(bounded.entries[0]?.periodKey).toBe(PERIOD_KEY_NEXT);
+	});
+
+	test('without a current user it returns the most recent global results', async () => {
+		const challenge = await seedChallenge();
+		await seedNamedUser('hist-other', 'Other');
+		await seedLeaderboardResult({
+			userId: 'hist-other',
+			attemptId: 'hist-other-attempt000000001',
+			challengeId: challenge.id,
+			endingBankroll: 500,
+			settledAt: NOW_SECONDS + 5,
+		});
+
+		const history = await createDailyChallengeRepository(db).listChallengeHistory(10);
+		expect(history.entries).toHaveLength(1);
+		expect(history.entries[0]?.periodKey).toBe(PERIOD_KEY);
+	});
+});
+
+describe('daily challenge retention', () => {
+	test('listExpiredAttempts returns an ordered page of 100 expired active attempts', async () => {
+		const challenge = await seedChallenge();
+		for (let index = 0; index < 101; index += 1) {
+			const userId = `exp-user-${String(index).padStart(3, '0')}`;
+			await seedNamedUser(userId, `Expired${index}`);
+			await insertDailyChallengeAttempt(db, {
+				id: `exp-attempt-${String(index).padStart(3, '0')}`.padEnd(22, '0'),
+				challengeId: challenge.id,
+				userId,
+				startRequestId: `req-${index}-padding-padding`,
+				status: 'active',
+				expiresAt: NOW_SECONDS - 100 + index,
+				createdAt: NOW_SECONDS - 10_000,
+				updatedAt: NOW_SECONDS - 10_000,
+			});
+		}
+
+		const repository = createDailyChallengeRepository(db);
+		const firstPage = await repository.listExpiredAttempts(NOW_SECONDS);
+
+		expect(firstPage).toHaveLength(100);
+		expect(firstPage[0]?.id).toBe('exp-attempt-000'.padEnd(22, '0'));
+		expect(firstPage.at(-1)?.id).toBe('exp-attempt-099'.padEnd(22, '0'));
+		expect(firstPage[0]?.expiresAt).toBe(NOW_SECONDS - 100);
+	});
+
+	test('a cursor advances past a poison row so later attempts are not blocked', async () => {
+		const challenge = await seedChallenge();
+		const ids = [
+			'poison-row-padding-padding00',
+			'later-row-padding-padding0',
+			'last-row-padding-padding00',
+		];
+		for (let index = 0; index < 3; index += 1) {
+			const userId = `cursor-user-${index}`;
+			await seedNamedUser(userId, `Cursor${index}`);
+			await insertDailyChallengeAttempt(db, {
+				id: ids[index],
+				challengeId: challenge.id,
+				userId,
+				startRequestId: `req-cursor-${index}-padding-pad`,
+				status: 'active',
+				expiresAt: NOW_SECONDS - (3 - index),
+				createdAt: NOW_SECONDS - 10_000,
+				updatedAt: NOW_SECONDS - 10_000,
+			});
+		}
+
+		const repository = createDailyChallengeRepository(db);
+		const firstPage = await repository.listExpiredAttempts(NOW_SECONDS);
+		expect(firstPage.map((row) => row.id)).toEqual(ids);
+
+		const poison = firstPage[0];
+		const cursor: DailyChallengeExpirationCursor = { expiresAt: poison.expiresAt, id: poison.id };
+		const nextPage = await repository.listExpiredAttempts(NOW_SECONDS, cursor);
+		expect(nextPage.map((row) => row.id)).toEqual(ids.slice(1));
+	});
+
+	test('deleteTerminalAttemptsBefore deletes only old terminal attempts and preserves results and challenges', async () => {
+		const challenge = await seedChallenge();
+		const oldAttemptId = 'del-old-terminal-padding001';
+		const newAttemptId = 'del-new-terminal-padding001';
+		const activeAttemptId = 'del-active-terminal-padd01';
+		await insertDailyChallengeAttempt(db, {
+			id: oldAttemptId,
+			challengeId: challenge.id,
+			userId: USER_ID,
+			startRequestId: 'req-del-old-padding-padding',
+			status: 'completed',
+			expiresAt: RETENTION_CUTOFF - 1,
+			createdAt: RETENTION_CUTOFF - 100,
+			updatedAt: RETENTION_CUTOFF - 1,
+			settledAt: RETENTION_CUTOFF - 1,
+		});
+		await insertDailyChallengeAttempt(db, {
+			id: newAttemptId,
+			challengeId: challenge.id,
+			userId: OTHER_USER_ID,
+			startRequestId: 'req-del-new-padding-padding',
+			status: 'completed',
+			expiresAt: RETENTION_CUTOFF + 1,
+			createdAt: RETENTION_CUTOFF + 100,
+			updatedAt: RETENTION_CUTOFF + 1,
+			settledAt: RETENTION_CUTOFF + 1,
+		});
+		await seedNamedUser('del-active-user', 'DelActive');
+		await insertDailyChallengeAttempt(db, {
+			id: activeAttemptId,
+			challengeId: challenge.id,
+			userId: 'del-active-user',
+			startRequestId: 'req-del-active-padding-pad',
+			status: 'active',
+			expiresAt: RETENTION_CUTOFF - 10_000,
+			createdAt: RETENTION_CUTOFF - 20_000,
+			updatedAt: RETENTION_CUTOFF - 10_000,
+		});
+		await insertDailyChallengeResult(db, {
+			attemptId: oldAttemptId,
+			challengeId: challenge.id,
+			userId: USER_ID,
+			endingBankroll: 1500,
+			settledAt: RETENTION_CUTOFF - 1,
+		});
+
+		const deleted =
+			await createDailyChallengeRepository(db).deleteTerminalAttemptsBefore(RETENTION_CUTOFF);
+
+		expect(deleted).toBe(1);
+		const remaining = await db
+			.prepare('SELECT id FROM daily_challenge_attempt ORDER BY id')
+			.all<{ id: string }>();
+		expect(remaining.results.map((row) => row.id)).toEqual([activeAttemptId, newAttemptId]);
+		expect(await countResults()).toBe(1);
+		expect(await countChallenges()).toBe(1);
+	});
+});
+
+// keep unused-symbol guards compatible with the imported transition-result type.
+export type __KeepCommandTransitionResult = DailyChallengeCommandTransitionResult;

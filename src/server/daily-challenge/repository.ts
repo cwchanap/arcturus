@@ -1,11 +1,17 @@
 import { z } from 'zod';
 import { BLACKJACK_DAILY_V1_CONFIG } from '../../lib/daily-challenge/config';
-import type { DailyChallengeCommandV1 } from '../../lib/daily-challenge/protocol';
-import { dailyChallengeCommandLogSchema } from '../../lib/daily-challenge/protocol';
+import {
+	type DailyChallengeCommandV1,
+	type DailyChallengeReceiptV1,
+	type DailyChallengeTerminalReason,
+	dailyChallengeCommandLogSchema,
+} from '../../lib/daily-challenge/protocol';
+import { calculateDailyChallengePercentile } from '../../lib/daily-challenge/scoring';
 import {
 	type RankedJson,
 	canonicalizeRanked,
 	decodeCanonicalBase64Url,
+	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
 
@@ -111,6 +117,106 @@ export type DailyChallengeStartTransitionResult =
 	| { kind: 'not-created' }
 	| { kind: 'rate-limited'; retryAfter: number };
 
+export interface DailyChallengeTerminalTransition {
+	challengeId: string;
+	periodKey: string;
+	challengeRulesetVersion: 'blackjack-daily-v1';
+	gameRulesetVersion: 'blackjack-ranked-v1';
+	scoreVersion: 'blackjack-daily-score-v1';
+	configHash: string;
+	rankedSeedCommitment: string;
+	eligible: boolean;
+	terminalReason: DailyChallengeTerminalReason;
+	durationSeconds: number;
+	receiptHash: string;
+}
+
+export interface DailyChallengeCommandTransitionInput {
+	userId: string;
+	attemptId: string;
+	expectedSequence: number;
+	expectedActionLogHash: string;
+	expectedAvailableBankroll: number;
+	expectedRoundsCompleted: number;
+	nextActionLogJson: string;
+	nextActionLogHash: string;
+	nextCommandSequence: number;
+	availableBankroll: number;
+	roundsCompleted: number;
+	nowSeconds: number;
+	terminal?: DailyChallengeTerminalTransition;
+}
+
+export interface DailyChallengeResultRecord {
+	attemptId: string;
+	challengeId: string;
+	userId: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	eligible: boolean;
+	terminalReason: DailyChallengeTerminalReason;
+	durationSeconds: number;
+	scoreVersion: 'blackjack-daily-score-v1';
+	configHash: string;
+	rankedSeedCommitment: string;
+	actionLogHash: string;
+	receiptHash: string;
+	createdAt: number;
+	settledAt: number;
+	periodKey: string;
+	challengeRulesetVersion: 'blackjack-daily-v1';
+	gameRulesetVersion: 'blackjack-ranked-v1';
+}
+
+export type DailyChallengeCommandTransitionResult =
+	| { kind: 'applied'; result: DailyChallengeResultRecord | null }
+	| { kind: 'not-applied' };
+
+export interface DailyChallengeLeaderboardEntry {
+	rank: number;
+	userId: string;
+	playerName: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	durationSeconds: number;
+	settledAt: number;
+}
+
+export interface DailyChallengeCurrentUserStanding {
+	rank: number;
+	totalEligible: number;
+	percentile: number;
+}
+
+export interface DailyChallengeLeaderboardRead {
+	entries: readonly DailyChallengeLeaderboardEntry[];
+	currentUser: DailyChallengeCurrentUserStanding | null;
+}
+
+export interface DailyChallengeHistoryEntry {
+	periodKey: string;
+	challengeRulesetVersion: 'blackjack-daily-v1';
+	endingBankroll: number;
+	roundsCompleted: number;
+	terminalReason: DailyChallengeTerminalReason;
+	eligible: boolean;
+	settledAt: number;
+}
+
+export interface DailyChallengeHistoryRead {
+	entries: readonly DailyChallengeHistoryEntry[];
+}
+
+export interface DailyChallengeExpirationCursor {
+	readonly expiresAt: number;
+	readonly id: string;
+}
+
+export interface DailyChallengeExpirationRow {
+	readonly id: string;
+	readonly expiresAt: number;
+}
+
 export interface DailyChallengeRepository {
 	findChallengeByPeriodKey(
 		challengeKind: 'blackjack-daily',
@@ -128,6 +234,23 @@ export interface DailyChallengeRepository {
 	runStartTransition(
 		input: DailyChallengeStartTransitionInput,
 	): Promise<DailyChallengeStartTransitionResult>;
+	runCommandTransition(
+		input: DailyChallengeCommandTransitionInput,
+	): Promise<DailyChallengeCommandTransitionResult>;
+	findResultByAttempt(attemptId: string): Promise<DailyChallengeResultRecord | null>;
+	readLeaderboard(
+		challengeId: string,
+		currentUserId?: string | null,
+	): Promise<DailyChallengeLeaderboardRead>;
+	listChallengeHistory(
+		limit: number,
+		currentUserId?: string | null,
+	): Promise<DailyChallengeHistoryRead>;
+	listExpiredAttempts(
+		nowSeconds: number,
+		cursor?: DailyChallengeExpirationCursor | null,
+	): Promise<readonly DailyChallengeExpirationRow[]>;
+	deleteTerminalAttemptsBefore(cutoffSeconds: number): Promise<number>;
 }
 
 const INSERT_CHALLENGE_SQL = `INSERT INTO daily_challenge (
@@ -145,6 +268,167 @@ const INSERT_ATTEMPT_SQL = `INSERT INTO daily_challenge_attempt (
 SELECT ?, ?, ?, ?, ?, 'active', ?, ?, 0, ?, 0, ?, ?, ?
 WHERE changes() = 1
 ON CONFLICT DO NOTHING`;
+
+const UPDATE_ATTEMPT_SQL = `UPDATE daily_challenge_attempt
+SET actionLogJson = ?,
+	actionLogHash = ?,
+	nextCommandSequence = ?,
+	availableBankroll = ?,
+	roundsCompleted = ?,
+	status = ?,
+	updatedAt = ?,
+	settledAt = ?
+WHERE id = ?
+	AND userId = ?
+	AND status = 'active'
+	AND nextCommandSequence = ?
+	AND actionLogHash = ?
+	AND availableBankroll = ?
+	AND roundsCompleted = ?`;
+
+const INSERT_RESULT_AFTER_TERMINAL_SQL = `INSERT INTO daily_challenge_result (
+	attemptId, challengeId, userId, endingBankroll, roundsCompleted,
+	eligible, terminalReason, durationSeconds, scoreVersion, configHash,
+	rankedSeedCommitment, actionLogHash, receiptHash, createdAt, settledAt
+)
+SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+WHERE changes() = 1`;
+
+const FIND_RESULT_BY_ATTEMPT_SQL = `SELECT
+		r.attemptId, r.challengeId, r.userId, r.endingBankroll, r.roundsCompleted,
+		r.eligible, r.terminalReason, r.durationSeconds, r.scoreVersion, r.configHash,
+		r.rankedSeedCommitment, r.actionLogHash, r.receiptHash, r.createdAt, r.settledAt,
+		c.periodKey, c.challengeRulesetVersion, c.gameRulesetVersion
+	FROM daily_challenge_result AS r
+	JOIN daily_challenge AS c ON c.id = r.challengeId
+	WHERE r.attemptId = ?
+	LIMIT 1`;
+
+const LEADERBOARD_SQL = `WITH ranked AS (
+	SELECT
+		r.challengeId,
+		r.userId,
+		u.name AS playerName,
+		r.endingBankroll,
+		r.roundsCompleted,
+		r.durationSeconds,
+		r.settledAt,
+		RANK() OVER (
+			ORDER BY r.endingBankroll DESC, r.roundsCompleted DESC
+		) AS rank
+	FROM daily_challenge_result AS r
+	JOIN user AS u ON u.id = r.userId
+	WHERE r.challengeId = ?
+		AND r.eligible = 1
+)
+SELECT *
+FROM ranked
+ORDER BY
+	endingBankroll DESC,
+	roundsCompleted DESC,
+	settledAt ASC,
+	userId ASC
+LIMIT ?`;
+
+const CURRENT_USER_RANK_SQL = `SELECT rank FROM (
+	SELECT userId, RANK() OVER (
+			ORDER BY endingBankroll DESC, roundsCompleted DESC
+		) AS rank
+	FROM daily_challenge_result
+	WHERE challengeId = ? AND eligible = 1
+) WHERE userId = ?
+LIMIT 1`;
+
+const TOTAL_ELIGIBLE_SQL = `SELECT COUNT(*) AS total
+	FROM daily_challenge_result
+	WHERE challengeId = ? AND eligible = 1`;
+
+const HISTORY_USER_SQL = `SELECT
+		c.periodKey, c.challengeRulesetVersion, r.endingBankroll, r.roundsCompleted,
+		r.terminalReason, r.eligible, r.settledAt
+	FROM daily_challenge_result AS r
+	JOIN daily_challenge AS c ON c.id = r.challengeId
+	WHERE r.userId = ?
+	ORDER BY r.settledAt DESC
+	LIMIT ?`;
+
+const HISTORY_GLOBAL_SQL = `SELECT
+		c.periodKey, c.challengeRulesetVersion, r.endingBankroll, r.roundsCompleted,
+		r.terminalReason, r.eligible, r.settledAt
+	FROM daily_challenge_result AS r
+	JOIN daily_challenge AS c ON c.id = r.challengeId
+	ORDER BY r.settledAt DESC
+	LIMIT ?`;
+
+const LIST_EXPIRED_ATTEMPTS_SQL = `SELECT id, expiresAt
+	FROM daily_challenge_attempt
+	WHERE status = 'active' AND expiresAt <= ?
+		AND (expiresAt > ? OR (expiresAt = ? AND id > ?))
+	ORDER BY expiresAt ASC, id ASC
+	LIMIT `;
+
+const LIST_EXPIRED_ATTEMPTS_FIRST_SQL = `SELECT id, expiresAt
+	FROM daily_challenge_attempt
+	WHERE status = 'active' AND expiresAt <= ?
+	ORDER BY expiresAt ASC, id ASC
+	LIMIT `;
+
+const DELETE_TERMINAL_BEFORE_SQL = `DELETE FROM daily_challenge_attempt
+	WHERE status <> 'active' AND settledAt < ?`;
+
+const DAILY_CHALLENGE_LEADERBOARD_LIMIT = 50;
+const DAILY_CHALLENGE_HISTORY_MAX_LIMIT = 100;
+const DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE = 100;
+
+const dailyChallengeTerminalReasonSchema = z.enum([
+	'completed',
+	'bankroll-below-minimum',
+	'forfeited',
+	'expired',
+]);
+
+type DailyChallengeReceiptSource = Omit<DailyChallengeReceiptV1, 'receiptHash'>;
+
+type DailyChallengeResultRow = {
+	attemptId: string;
+	challengeId: string;
+	userId: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	eligible: number | boolean;
+	terminalReason: string;
+	durationSeconds: number;
+	scoreVersion: string;
+	configHash: string;
+	rankedSeedCommitment: string;
+	actionLogHash: string;
+	receiptHash: string;
+	createdAt: number;
+	settledAt: number;
+	periodKey: string;
+	challengeRulesetVersion: string;
+	gameRulesetVersion: string;
+};
+
+type DailyChallengeLeaderboardRow = {
+	rank: number;
+	userId: string;
+	playerName: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	durationSeconds: number;
+	settledAt: number;
+};
+
+type DailyChallengeHistoryRow = {
+	periodKey: string;
+	challengeRulesetVersion: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	terminalReason: string;
+	eligible: number | boolean;
+	settledAt: number;
+};
 
 function invariant(message: string): never {
 	throw new DailyChallengeRepositoryInvariantError(message);
@@ -313,6 +597,291 @@ async function executeStartTransition(
 	return { kind: 'not-created' };
 }
 
+function terminalReasonToStatus(
+	reason: DailyChallengeTerminalReason,
+): 'completed' | 'forfeited' | 'expired' {
+	if (reason === 'forfeited') return 'forfeited';
+	if (reason === 'expired') return 'expired';
+	return 'completed';
+}
+
+function coerceBoolean(value: number | boolean, label: string): boolean {
+	if (value === true) return true;
+	if (value === false) return false;
+	if (value === 1) return true;
+	if (value === 0) return false;
+	return invariant(`Corrupt daily challenge ${label}`);
+}
+
+function buildReceiptSource(
+	input: DailyChallengeCommandTransitionInput,
+	terminal: DailyChallengeTerminalTransition,
+): DailyChallengeReceiptSource {
+	return {
+		attemptId: input.attemptId,
+		challengeId: terminal.challengeId,
+		periodKey: terminal.periodKey,
+		challengeRulesetVersion: terminal.challengeRulesetVersion,
+		gameRulesetVersion: terminal.gameRulesetVersion,
+		scoreVersion: terminal.scoreVersion,
+		configHash: terminal.configHash,
+		rankedSeedCommitment: terminal.rankedSeedCommitment,
+		actionLogHash: input.nextActionLogHash,
+		endingBankroll: input.availableBankroll,
+		roundsCompleted: input.roundsCompleted,
+		eligible: terminal.eligible,
+		terminalReason: terminal.terminalReason,
+		durationSeconds: terminal.durationSeconds,
+		settledAt: input.nowSeconds,
+	};
+}
+
+function validateTerminal(
+	input: DailyChallengeCommandTransitionInput,
+	terminal: DailyChallengeTerminalTransition,
+): DailyChallengeTerminalTransition {
+	if (
+		typeof terminal.challengeId !== 'string' ||
+		!/^[A-Za-z0-9_-]{16,64}$/.test(terminal.challengeId)
+	) {
+		return invariant('Invalid daily challenge terminal challenge id');
+	}
+	if (terminal.challengeRulesetVersion !== 'blackjack-daily-v1') {
+		return invariant('Invalid daily challenge terminal challenge ruleset');
+	}
+	if (terminal.gameRulesetVersion !== 'blackjack-ranked-v1') {
+		return invariant('Invalid daily challenge terminal game ruleset');
+	}
+	if (terminal.scoreVersion !== 'blackjack-daily-score-v1') {
+		return invariant('Invalid daily challenge terminal score version');
+	}
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(terminal.periodKey)) {
+		return invariant('Invalid daily challenge terminal period key');
+	}
+	dailyChallengeHex64Schema.parse(terminal.configHash);
+	dailyChallengeHex64Schema.parse(terminal.rankedSeedCommitment);
+	dailyChallengeHex64Schema.parse(terminal.receiptHash);
+	assertSafeNonNegativeInteger(terminal.durationSeconds, 'terminal duration');
+	assertSafeNonNegativeInteger(input.nowSeconds, 'terminal settledAt');
+	const source = buildReceiptSource(input, terminal);
+	if (hashCanonical(source) !== terminal.receiptHash) {
+		return invariant('Daily challenge terminal receipt hash mismatch');
+	}
+	return terminal;
+}
+
+function parseResultRow(row: DailyChallengeResultRow): DailyChallengeResultRecord {
+	if (row.challengeRulesetVersion !== 'blackjack-daily-v1') {
+		return invariant('Unsupported persisted daily challenge result challenge ruleset');
+	}
+	if (row.gameRulesetVersion !== 'blackjack-ranked-v1') {
+		return invariant('Unsupported persisted daily challenge result game ruleset');
+	}
+	if (row.scoreVersion !== 'blackjack-daily-score-v1') {
+		return invariant('Unsupported persisted daily challenge result score version');
+	}
+	const reason = dailyChallengeTerminalReasonSchema.safeParse(row.terminalReason);
+	if (!reason.success) return invariant('Corrupt daily challenge result terminal reason');
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(row.periodKey)) {
+		return invariant('Corrupt daily challenge result period key');
+	}
+	const eligible = coerceBoolean(row.eligible, 'result eligible');
+	assertSafeNonNegativeInteger(row.endingBankroll, 'result endingBankroll');
+	assertSafeNonNegativeInteger(row.roundsCompleted, 'result roundsCompleted');
+	assertSafeNonNegativeInteger(row.durationSeconds, 'result durationSeconds');
+	assertSafeNonNegativeInteger(row.createdAt, 'result createdAt');
+	assertSafeNonNegativeInteger(row.settledAt, 'result settledAt');
+	dailyChallengeHex64Schema.parse(row.configHash);
+	dailyChallengeHex64Schema.parse(row.rankedSeedCommitment);
+	dailyChallengeHex64Schema.parse(row.actionLogHash);
+	dailyChallengeHex64Schema.parse(row.receiptHash);
+	const source: DailyChallengeReceiptSource = {
+		attemptId: row.attemptId,
+		challengeId: row.challengeId,
+		periodKey: row.periodKey,
+		challengeRulesetVersion: 'blackjack-daily-v1',
+		gameRulesetVersion: 'blackjack-ranked-v1',
+		scoreVersion: 'blackjack-daily-score-v1',
+		configHash: row.configHash,
+		rankedSeedCommitment: row.rankedSeedCommitment,
+		actionLogHash: row.actionLogHash,
+		endingBankroll: row.endingBankroll,
+		roundsCompleted: row.roundsCompleted,
+		eligible,
+		terminalReason: reason.data,
+		durationSeconds: row.durationSeconds,
+		settledAt: row.settledAt,
+	};
+	if (hashCanonical(source) !== row.receiptHash) {
+		return invariant('Corrupt daily challenge result receipt hash');
+	}
+	return {
+		attemptId: row.attemptId,
+		challengeId: row.challengeId,
+		userId: row.userId,
+		endingBankroll: row.endingBankroll,
+		roundsCompleted: row.roundsCompleted,
+		eligible,
+		terminalReason: reason.data,
+		durationSeconds: row.durationSeconds,
+		scoreVersion: 'blackjack-daily-score-v1',
+		configHash: row.configHash,
+		rankedSeedCommitment: row.rankedSeedCommitment,
+		actionLogHash: row.actionLogHash,
+		receiptHash: row.receiptHash,
+		createdAt: row.createdAt,
+		settledAt: row.settledAt,
+		periodKey: row.periodKey,
+		challengeRulesetVersion: 'blackjack-daily-v1',
+		gameRulesetVersion: 'blackjack-ranked-v1',
+	};
+}
+
+function parseLeaderboardRow(row: DailyChallengeLeaderboardRow): DailyChallengeLeaderboardEntry {
+	assertSafeNonNegativeInteger(row.rank, 'leaderboard rank');
+	if (row.rank < 1) return invariant('Corrupt daily challenge leaderboard rank');
+	if (typeof row.userId !== 'string' || row.userId.length === 0) {
+		return invariant('Corrupt daily challenge leaderboard user id');
+	}
+	if (typeof row.playerName !== 'string' || row.playerName.length === 0) {
+		return invariant('Corrupt daily challenge leaderboard player name');
+	}
+	assertSafeNonNegativeInteger(row.endingBankroll, 'leaderboard endingBankroll');
+	assertSafeNonNegativeInteger(row.roundsCompleted, 'leaderboard roundsCompleted');
+	assertSafeNonNegativeInteger(row.durationSeconds, 'leaderboard durationSeconds');
+	assertSafeNonNegativeInteger(row.settledAt, 'leaderboard settledAt');
+	return {
+		rank: row.rank,
+		userId: row.userId,
+		playerName: row.playerName,
+		endingBankroll: row.endingBankroll,
+		roundsCompleted: row.roundsCompleted,
+		durationSeconds: row.durationSeconds,
+		settledAt: row.settledAt,
+	};
+}
+
+function parseHistoryRow(row: DailyChallengeHistoryRow): DailyChallengeHistoryEntry {
+	if (row.challengeRulesetVersion !== 'blackjack-daily-v1') {
+		return invariant('Unsupported persisted daily challenge history ruleset');
+	}
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(row.periodKey)) {
+		return invariant('Corrupt daily challenge history period key');
+	}
+	const reason = dailyChallengeTerminalReasonSchema.safeParse(row.terminalReason);
+	if (!reason.success) return invariant('Corrupt daily challenge history terminal reason');
+	const eligible = coerceBoolean(row.eligible, 'history eligible');
+	assertSafeNonNegativeInteger(row.endingBankroll, 'history endingBankroll');
+	assertSafeNonNegativeInteger(row.roundsCompleted, 'history roundsCompleted');
+	assertSafeNonNegativeInteger(row.settledAt, 'history settledAt');
+	return {
+		periodKey: row.periodKey,
+		challengeRulesetVersion: 'blackjack-daily-v1',
+		endingBankroll: row.endingBankroll,
+		roundsCompleted: row.roundsCompleted,
+		terminalReason: reason.data,
+		eligible,
+		settledAt: row.settledAt,
+	};
+}
+
+function assertCommandTransitionInput(input: DailyChallengeCommandTransitionInput): void {
+	assertSafeNonNegativeInteger(input.expectedSequence, 'transition expected sequence');
+	assertSafeNonNegativeInteger(input.expectedAvailableBankroll, 'transition expected bankroll');
+	assertSafeNonNegativeInteger(input.expectedRoundsCompleted, 'transition expected rounds');
+	assertSafeNonNegativeInteger(input.nextCommandSequence, 'transition next sequence');
+	assertSafeNonNegativeInteger(input.availableBankroll, 'transition next bankroll');
+	assertSafeNonNegativeInteger(input.roundsCompleted, 'transition next rounds');
+	assertSafeNonNegativeInteger(input.nowSeconds, 'transition now');
+	dailyChallengeHex64Schema.parse(input.expectedActionLogHash);
+	dailyChallengeHex64Schema.parse(input.nextActionLogHash);
+}
+
+async function executeCommandTransition(
+	db: D1Database,
+	input: DailyChallengeCommandTransitionInput,
+): Promise<DailyChallengeCommandTransitionResult> {
+	assertCommandTransitionInput(input);
+	const actionLogJson = parseCanonicalJson(input.nextActionLogJson, 'transition action-log JSON');
+	dailyChallengeCommandLogSchema.parse(actionLogJson);
+	if (sha256Hex(input.nextActionLogJson) !== input.nextActionLogHash) {
+		return invariant('Daily challenge transition action-log hash mismatch');
+	}
+
+	const terminal = input.terminal ? validateTerminal(input, input.terminal) : undefined;
+	const status = terminal ? terminalReasonToStatus(terminal.terminalReason) : 'active';
+	const settledAt = terminal ? input.nowSeconds : null;
+
+	const updateStatement = db
+		.prepare(UPDATE_ATTEMPT_SQL)
+		.bind(
+			input.nextActionLogJson,
+			input.nextActionLogHash,
+			input.nextCommandSequence,
+			input.availableBankroll,
+			input.roundsCompleted,
+			status,
+			input.nowSeconds,
+			settledAt,
+			input.attemptId,
+			input.userId,
+			input.expectedSequence,
+			input.expectedActionLogHash,
+			input.expectedAvailableBankroll,
+			input.expectedRoundsCompleted,
+		);
+
+	const statements: D1PreparedStatement[] = [updateStatement];
+	const labels: string[] = ['command attempt update'];
+	if (terminal) {
+		statements.push(
+			db
+				.prepare(INSERT_RESULT_AFTER_TERMINAL_SQL)
+				.bind(
+					input.attemptId,
+					terminal.challengeId,
+					input.userId,
+					input.availableBankroll,
+					input.roundsCompleted,
+					terminal.eligible ? 1 : 0,
+					terminal.terminalReason,
+					terminal.durationSeconds,
+					terminal.scoreVersion,
+					terminal.configHash,
+					terminal.rankedSeedCommitment,
+					input.nextActionLogHash,
+					terminal.receiptHash,
+					input.nowSeconds,
+					input.nowSeconds,
+				),
+		);
+		labels.push('terminal result insert');
+	}
+
+	const results = await db.batch(statements);
+	const updateChanges = readChanges(results[0], labels[0]);
+	if (updateChanges === 0) {
+		if (terminal) {
+			const insertChanges = readChanges(results[1], labels[1]);
+			if (insertChanges !== 0) {
+				return invariant('Daily challenge terminal result applied without attempt update');
+			}
+		}
+		return { kind: 'not-applied' };
+	}
+	if (!terminal) return { kind: 'applied', result: null };
+	const insertChanges = readChanges(results[1], labels[1]);
+	if (insertChanges !== 1) {
+		return invariant('Daily challenge terminal update did not store its result');
+	}
+	const resultRow = await db
+		.prepare(FIND_RESULT_BY_ATTEMPT_SQL)
+		.bind(input.attemptId)
+		.first<DailyChallengeResultRow>();
+	if (resultRow === null) return invariant('Daily challenge terminal result did not persist');
+	return { kind: 'applied', result: parseResultRow(resultRow) };
+}
+
 export function createDailyChallengeRepository(db: D1Database): DailyChallengeRepository {
 	return {
 		async findChallengeByPeriodKey(challengeKind, periodKey) {
@@ -353,6 +922,85 @@ export function createDailyChallengeRepository(db: D1Database): DailyChallengeRe
 		},
 		runStartTransition(input) {
 			return executeStartTransition(db, input);
+		},
+		runCommandTransition(input) {
+			return executeCommandTransition(db, input);
+		},
+		async findResultByAttempt(attemptId) {
+			const row = await db
+				.prepare(FIND_RESULT_BY_ATTEMPT_SQL)
+				.bind(attemptId)
+				.first<DailyChallengeResultRow>();
+			return row === null ? null : parseResultRow(row);
+		},
+		async readLeaderboard(challengeId, currentUserId) {
+			if (typeof challengeId !== 'string' || challengeId.length === 0) {
+				return invariant('Invalid daily challenge leaderboard challenge id');
+			}
+			const rows = await db
+				.prepare(LEADERBOARD_SQL)
+				.bind(challengeId, DAILY_CHALLENGE_LEADERBOARD_LIMIT)
+				.all<DailyChallengeLeaderboardRow>();
+			const entries = rows.results.map(parseLeaderboardRow);
+			if (!currentUserId) return { entries, currentUser: null };
+			const [rankRow, totalRow] = await Promise.all([
+				db
+					.prepare(CURRENT_USER_RANK_SQL)
+					.bind(challengeId, currentUserId)
+					.first<{ rank: number }>(),
+				db.prepare(TOTAL_ELIGIBLE_SQL).bind(challengeId).first<{ total: number }>(),
+			]);
+			if (!rankRow || !totalRow) return { entries, currentUser: null };
+			const totalEligible = totalRow.total;
+			if (!Number.isSafeInteger(totalEligible) || totalEligible < 1) {
+				return { entries, currentUser: null };
+			}
+			const rank = rankRow.rank;
+			if (!Number.isSafeInteger(rank) || rank < 1) {
+				return invariant('Corrupt daily challenge current-user rank');
+			}
+			const percentile = calculateDailyChallengePercentile(totalEligible, rank - 1);
+			return {
+				entries,
+				currentUser: { rank, totalEligible, percentile },
+			};
+		},
+		async listChallengeHistory(limit, currentUserId) {
+			if (!Number.isSafeInteger(limit) || limit < 1) {
+				return invariant('Invalid daily challenge history limit');
+			}
+			const boundedLimit = Math.min(limit, DAILY_CHALLENGE_HISTORY_MAX_LIMIT);
+			const rows = currentUserId
+				? await db
+						.prepare(HISTORY_USER_SQL)
+						.bind(currentUserId, boundedLimit)
+						.all<DailyChallengeHistoryRow>()
+				: await db.prepare(HISTORY_GLOBAL_SQL).bind(boundedLimit).all<DailyChallengeHistoryRow>();
+			return { entries: rows.results.map(parseHistoryRow) };
+		},
+		async listExpiredAttempts(nowSeconds, cursor) {
+			assertSafeNonNegativeInteger(nowSeconds, 'expiration cutoff');
+			if (cursor) {
+				assertSafeNonNegativeInteger(cursor.expiresAt, 'expiration cursor expiresAt');
+				if (typeof cursor.id !== 'string' || cursor.id.length === 0) {
+					return invariant('Invalid daily challenge expiration cursor id');
+				}
+				const rows = await db
+					.prepare(`${LIST_EXPIRED_ATTEMPTS_SQL}${DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE}`)
+					.bind(nowSeconds, cursor.expiresAt, cursor.expiresAt, cursor.id)
+					.all<{ id: string; expiresAt: number }>();
+				return rows.results.map(({ id, expiresAt }) => ({ id, expiresAt }));
+			}
+			const rows = await db
+				.prepare(`${LIST_EXPIRED_ATTEMPTS_FIRST_SQL}${DAILY_CHALLENGE_EXPIRATION_PAGE_SIZE}`)
+				.bind(nowSeconds)
+				.all<{ id: string; expiresAt: number }>();
+			return rows.results.map(({ id, expiresAt }) => ({ id, expiresAt }));
+		},
+		async deleteTerminalAttemptsBefore(cutoffSeconds) {
+			assertSafeNonNegativeInteger(cutoffSeconds, 'retention cutoff');
+			const result = await db.prepare(DELETE_TERMINAL_BEFORE_SQL).bind(cutoffSeconds).run();
+			return result.meta.changes ?? 0;
 		},
 	};
 }

@@ -345,6 +345,8 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 			practiceModeEl.hidden = false;
 			rankedModeEl.hidden = !authenticated;
 			signInCtaEl.hidden = authenticated;
+			controlsEl.hidden = false;
+			if (!authenticated) startRankedEl.hidden = true;
 			closeEl.textContent = 'Ranked entry closes at 23:30 UTC.';
 			practiceDifferentEl.textContent =
 				'Practice uses a different scenario from today\u2019s ranked attempt.';

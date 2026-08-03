@@ -187,6 +187,10 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 		url: string,
 		init: RequestInit,
 	): Promise<DailyChallengeAttemptPublicStateV1> => {
+		// Call fetch bare: `deps.fetch(...)` is a member call whose receiver
+		// would be the deps object, and the DOM `fetch` throws "Illegal
+		// invocation" when invoked on a non-Window receiver in strict modules.
+		const { fetch: fetchImpl } = deps;
 		const controller = new AbortController();
 		const callerSignal = init.signal;
 		const onCallerAbort = (): void => controller.abort(callerSignal?.reason);
@@ -201,7 +205,7 @@ export function createDailyChallengeClient(deps: DailyChallengeClientDeps): Dail
 		let response: Response;
 		let payload: unknown;
 		try {
-			response = await deps.fetch(url, { ...init, signal: controller.signal });
+			response = await fetchImpl(url, { ...init, signal: controller.signal });
 			try {
 				payload = await response.json();
 			} catch {
@@ -369,18 +373,26 @@ export function createDailyChallengeLocalReplayController(
 			deps.renderer.renderError('Select a practice scenario first.');
 			return;
 		}
-		const module = await loadReplay();
-		const candidate = [...commands, command];
+		// Flip pending synchronously (before the dynamic replay import) so
+		// controls disable on click and the UI never exposes the stale
+		// pre-command state as a settled round.
+		deps.renderer.setPending(true);
 		try {
-			const replay: DailyChallengeReplayV1 = module.replayDailyChallenge(
-				BLACKJACK_DAILY_V1_CONFIG,
-				masterSeed,
-				candidate,
-			);
-			commands = candidate;
-			deps.renderer.renderLocalReplay(replay);
-		} catch (error) {
-			deps.renderer.renderError(errorMessage(error));
+			const module = await loadReplay();
+			const candidate = [...commands, command];
+			try {
+				const replay: DailyChallengeReplayV1 = module.replayDailyChallenge(
+					BLACKJACK_DAILY_V1_CONFIG,
+					masterSeed,
+					candidate,
+				);
+				commands = candidate;
+				deps.renderer.renderLocalReplay(replay);
+			} catch (error) {
+				deps.renderer.renderError(errorMessage(error));
+			}
+		} finally {
+			deps.renderer.setPending(false);
 		}
 	};
 

@@ -409,6 +409,8 @@ describe('daily challenge renderer — mode selection', () => {
 		const cta = get('daily-challenge-sign-in-cta') as HTMLAnchorElement;
 		expect(cta.hidden).toBe(false);
 		expect(cta.getAttribute('href')).toBe('/signin');
+		expect(get('daily-challenge-controls').hidden).toBe(false);
+		expect((get('daily-challenge-start-ranked') as HTMLButtonElement).hidden).toBe(true);
 
 		(get('daily-challenge-mode-practice') as HTMLButtonElement).click();
 		expect(handlers.calls.onSelectMode).toEqual(['practice']);

@@ -1563,15 +1563,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			challengeId: 'short',
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Invalid daily challenge terminal challenge id');
 	});
 
 	test('rejects an invalid terminal challenge ruleset version', async () => {
@@ -1586,15 +1586,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			challengeRulesetVersion: 'wrong' as 'blackjack-daily-v1',
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Invalid daily challenge terminal challenge ruleset');
 	});
 
 	test('rejects an invalid terminal game ruleset version', async () => {
@@ -1609,15 +1609,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			gameRulesetVersion: 'wrong' as 'blackjack-ranked-v1',
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Invalid daily challenge terminal game ruleset');
 	});
 
 	test('rejects an invalid terminal score version', async () => {
@@ -1632,15 +1632,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			scoreVersion: 'wrong' as 'blackjack-daily-score-v1',
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Invalid daily challenge terminal score version');
 	});
 
 	test('rejects an invalid terminal period key', async () => {
@@ -1655,15 +1655,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			periodKey: 'not-a-date',
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Invalid daily challenge terminal period key');
 	});
 
 	test('rejects a terminal receipt hash mismatch', async () => {
@@ -1678,15 +1678,15 @@ describe('daily challenge terminal validation invariants', () => {
 			}),
 			receiptHash: '0'.repeat(64),
 		};
-		await expect(
-			repository.runCommandTransition(
-				commandTransition({
-					current: INITIAL_PROJECTION,
-					next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
-					terminal,
-				}),
-			),
-		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		const promise = repository.runCommandTransition(
+			commandTransition({
+				current: INITIAL_PROJECTION,
+				next: { sequence: 1, actionLog: finalLog, availableBankroll: 1500, roundsCompleted: 10 },
+				terminal,
+			}),
+		);
+		await expect(promise).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+		await expect(promise).rejects.toThrow('Daily challenge terminal receipt hash mismatch');
 	});
 });
 
@@ -1818,7 +1818,7 @@ describe('daily challenge parseResultRow invariants', () => {
 	}
 
 	test('a non-boolean eligible value triggers an invariant error on read', async () => {
-		const challenge = await seedTerminalResult();
+		await seedTerminalResult();
 		await db
 			.prepare('UPDATE daily_challenge_result SET eligible = ? WHERE attemptId = ?')
 			.bind(2, ATTEMPT_ID)

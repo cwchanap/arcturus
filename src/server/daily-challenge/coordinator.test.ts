@@ -1258,6 +1258,10 @@ describe('daily challenge coordinator expiry semantics', () => {
 
 		expect(state.status).toBe('expired');
 		expect(state.receipt?.terminalReason).toBe('expired');
+		// The stored attempt expiry (endsAt + 3600) is later than the challenge
+		// end, so the immutable receipt must clamp the duration to the
+		// challenge close, not the stored expiry.
+		expect(state.receipt?.durationSeconds).toBe(WINDOW.endsAt - attempt.createdAt);
 	});
 
 	test('effective expired duration uses the deadline, not the discovery time', async () => {

@@ -1,5 +1,8 @@
 import { z } from 'zod';
-import { BLACKJACK_DAILY_V1_CONFIG } from '../../lib/daily-challenge/config';
+import {
+	BLACKJACK_DAILY_V1_CONFIG,
+	getDailyChallengeWindowForPeriodKey,
+} from '../../lib/daily-challenge/config';
 import {
 	type DailyChallengeCommandV1,
 	type DailyChallengeReceiptV1,
@@ -521,6 +524,27 @@ function parseChallengeRow(row: DailyChallengeRow): DailyChallengeRecord {
 	assertSafeNonNegativeInteger(row.rankedEntryClosesAt, 'challenge rankedEntryClosesAt');
 	assertSafeNonNegativeInteger(row.endsAt, 'challenge endsAt');
 	assertSafeNonNegativeInteger(row.createdAt, 'challenge createdAt');
+	// Re-derive the canonical UTC window from the persisted periodKey and
+	// require exact equality for all three scheduling timestamps. The
+	// coordinator trusts these persisted values for ranked-entry cutoff,
+	// attempt expiration, and ranked-seed disclosure, so a malformed migration
+	// or corrupted row could otherwise allow late entries, expire attempts
+	// early, or reveal the ranked seed before the intended UTC boundary. The
+	// migration has no corresponding CHECK constraints, making this parser the
+	// fail-closed boundary.
+	let expectedWindow: ReturnType<typeof getDailyChallengeWindowForPeriodKey>;
+	try {
+		expectedWindow = getDailyChallengeWindowForPeriodKey(row.periodKey);
+	} catch {
+		return invariant('Corrupt daily challenge period key');
+	}
+	if (
+		row.startsAt !== expectedWindow.startsAt ||
+		row.rankedEntryClosesAt !== expectedWindow.rankedEntryClosesAt ||
+		row.endsAt !== expectedWindow.endsAt
+	) {
+		return invariant('Corrupt daily challenge window does not match period key');
+	}
 	try {
 		const configJson = parseCanonicalJson(row.configJson, 'challenge config JSON');
 		const config = blackjackDailyV1ConfigSchema.parse(configJson);

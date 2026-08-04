@@ -1800,6 +1800,69 @@ describe('daily challenge parseChallengeRow invariants', () => {
 			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
 		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
 	});
+
+	test('a startsAt that drifts from the period-key window triggers an invariant error', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET startsAt = ? WHERE id = ?')
+			.bind(record.startsAt + 1, record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('a rankedEntryClosesAt that drifts from the period-key window triggers an invariant error', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET rankedEntryClosesAt = ? WHERE id = ?')
+			.bind(record.rankedEntryClosesAt + 1, record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('an endsAt that drifts from the period-key window triggers an invariant error', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET endsAt = ? WHERE id = ?')
+			.bind(record.endsAt + 1, record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('a well-formatted but non-existent period key triggers an invariant error', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET periodKey = ? WHERE id = ?')
+			.bind('2025-02-30', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
+
+	test('a malformed period key triggers an invariant error', async () => {
+		const record = await seedChallenge();
+		await db
+			.prepare('UPDATE daily_challenge SET periodKey = ? WHERE id = ?')
+			.bind('not-a-date', record.id)
+			.run();
+		const repository = createDailyChallengeRepository(db);
+		await expect(repository.findChallengeById(record.id)).rejects.toBeInstanceOf(
+			DailyChallengeRepositoryInvariantError,
+		);
+	});
 });
 
 describe('daily challenge parseAttemptRow invariants', () => {

@@ -250,7 +250,13 @@ function buildTerminalTransition(
 	nextActionLogHash: string,
 ): DailyChallengeTerminalTransition {
 	const eligible = reason === 'completed' || reason === 'bankroll-below-minimum';
-	const deadline = reason === 'expired' ? attempt.expiresAt : nowSeconds;
+	// Expiration can be triggered either by the attempt TTL elapsing or by the
+	// challenge window closing early (isAttemptExpired checks both). The
+	// immutable receipt must record a duration bounded by the effective
+	// deadline, not the stored attempt expiry — which may be later than the
+	// challenge end and would otherwise overstate duration beyond settledAt.
+	const deadline =
+		reason === 'expired' ? Math.min(attempt.expiresAt, challenge.endsAt) : nowSeconds;
 	const durationSeconds = deadline - attempt.createdAt;
 	const receiptSource = {
 		attemptId: attempt.id,

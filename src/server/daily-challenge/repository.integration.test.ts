@@ -226,9 +226,12 @@ describe('daily challenge catalog', () => {
 	test('concurrent lazy creation store exactly one seed pair', async () => {
 		const repository = createDailyChallengeRepository(db);
 		const winner = buildChallengeRecord();
+		const loserSeed = buildSeedPair();
 		const loser = buildChallengeRecord({
 			id: 'daily-challenge-loser-0001',
-			rankedSeed: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+			rankedSeed: loserSeed.rankedSeed,
+			rankedSeedCommitment: loserSeed.commitment,
+			practiceSeed: loserSeed.practiceSeed,
 		});
 
 		const [winnerResult, loserResult] = await Promise.all([
@@ -251,9 +254,12 @@ describe('daily challenge catalog', () => {
 		const winner = buildChallengeRecord();
 		await repository.insertChallengeIfAbsent(winner);
 
+		const loserSeed = buildSeedPair();
 		const loser = buildChallengeRecord({
 			id: 'daily-challenge-loser-0002',
-			rankedSeed: encodeBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+			rankedSeed: loserSeed.rankedSeed,
+			rankedSeedCommitment: loserSeed.commitment,
+			practiceSeed: loserSeed.practiceSeed,
 		});
 		expect(await repository.insertChallengeIfAbsent(loser)).toBe('existing');
 
@@ -284,6 +290,32 @@ describe('daily challenge catalog', () => {
 		await db
 			.prepare('UPDATE daily_challenge SET configJson = ? WHERE id = ?')
 			.bind(JSON.stringify(BLACKJACK_DAILY_V1_CONFIG), record.id)
+			.run();
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('a mismatched ranked seed commitment triggers an invariant error on read', async () => {
+		const repository = createDailyChallengeRepository(db);
+		const record = buildChallengeRecord();
+		await repository.insertChallengeIfAbsent(record);
+		await db
+			.prepare('UPDATE daily_challenge SET rankedSeedCommitment = ? WHERE id = ?')
+			.bind('0'.repeat(64), record.id)
+			.run();
+		await expect(
+			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),
+		).rejects.toBeInstanceOf(DailyChallengeRepositoryInvariantError);
+	});
+
+	test('a practice seed matching the ranked seed triggers an invariant error on read', async () => {
+		const repository = createDailyChallengeRepository(db);
+		const record = buildChallengeRecord();
+		await repository.insertChallengeIfAbsent(record);
+		await db
+			.prepare('UPDATE daily_challenge SET practiceSeed = rankedSeed WHERE id = ?')
+			.bind(record.id)
 			.run();
 		await expect(
 			repository.findChallengeByPeriodKey('blackjack-daily', PERIOD_KEY),

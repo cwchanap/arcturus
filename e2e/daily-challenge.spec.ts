@@ -124,7 +124,7 @@ async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled'> {
 					.getByTestId('daily-challenge-start-round')
 					.isEnabled()
 					.catch(() => false);
-				state = committed === '\u2014' && startRoundEnabled ? 'settled' : 'waiting';
+				state = committed === '—' && startRoundEnabled ? 'settled' : 'waiting';
 			}
 			return state;
 		})
@@ -230,7 +230,10 @@ test.describe('daily challenge guest practice', () => {
 		browser,
 		baseURL,
 	}) => {
-		const context = await browser.newContext({ baseURL });
+		const context = await browser.newContext({
+			baseURL,
+			storageState: { cookies: [], origins: [] },
+		});
 		const page = await context.newPage();
 		const writes = collectChallengeWrites(page);
 		try {
@@ -244,9 +247,9 @@ test.describe('daily challenge guest practice', () => {
 				'SIGN IN TO PLAY RANKED',
 			);
 			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
-			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('\u2014');
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
-			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText('\u2014');
+			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('—');
+			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('—');
+			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText('—');
 
 			await page.getByTestId('daily-challenge-replay-scenario-practice').click();
 			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
@@ -258,7 +261,7 @@ test.describe('daily challenge guest practice', () => {
 				await page.getByTestId('daily-challenge-action-stand').click();
 			}
 			await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
+			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('—');
 
 			await page.getByTestId('daily-challenge-restart-practice').click();
 			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
@@ -293,7 +296,7 @@ test.describe('daily challenge ranked attempt', () => {
 		try {
 			await expect(page.getByTestId('daily-challenge-sign-in-cta')).toBeHidden();
 			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeVisible();
-			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('\u2014');
+			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('—');
 			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
 				'Start your ranked attempt to begin.',
 			);
@@ -410,7 +413,7 @@ test.describe('daily challenge ranked attempt', () => {
 			).toHaveCount(1);
 			await expect(page.getByTestId('daily-challenge-current-standing')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-current-standing')).toHaveText(
-				/^#\d+ \u00b7 \d+%$/,
+				/^#\d+ · \d+%$/,
 			);
 			await expect(
 				page.getByTestId('daily-challenge-history-row').filter({ hasText: periodKey }),
@@ -432,7 +435,7 @@ test.describe('daily challenge ranked attempt', () => {
 			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(
 				formatCurrency(receiptBankroll as number),
 			);
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
+			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('—');
 		} finally {
 			await context.close();
 		}
@@ -483,9 +486,9 @@ test.describe('daily challenge uncertain and terminal command recovery', () => {
 					formatCurrency(RANKED_WAGER),
 				);
 			} else {
-				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
+				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('—');
 			}
-			await expect(page.getByTestId('daily-challenge-bankroll')).not.toHaveText('\u2014');
+			await expect(page.getByTestId('daily-challenge-bankroll')).not.toHaveText('—');
 			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('failed');
 			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('TypeError');
 		} finally {

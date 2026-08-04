@@ -219,6 +219,17 @@ export function createDailyChallengeRenderer(root: HTMLElement): DailyChallengeR
 		view = 'ranked';
 		rankedAttempt = attempt;
 		forfeitConfirmVisible = false;
+		// When a ranked attempt exists, ensure mode is 'ranked' so the page
+		// routes Start Round / action / forfeit to the ranked client instead
+		// of the local replay controller. This covers start, adopt,
+		// initialize/resume, and command responses — all flow through here.
+		// Without this, mode stays 'practice' after starting or refreshing
+		// with an active attempt, silently consuming the daily attempt while
+		// commands go to the wrong controller.
+		if (attempt !== null && mode !== 'ranked') {
+			mode = 'ranked';
+			handlers?.onSelectMode('ranked');
+		}
 		controlsEl.hidden = false;
 		receiptEl.hidden = true;
 		clearHands();

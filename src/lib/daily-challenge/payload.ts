@@ -88,26 +88,16 @@ export function parseDailyChallengeAttemptResponse(
 	return parsed;
 }
 
-export function parseDailyChallengeChallengeResponse(
-	value: unknown,
-	now: number = Date.now(),
-): DailyChallengePublicResponse {
+export function parseDailyChallengeChallengeResponse(value: unknown): DailyChallengePublicResponse {
 	assertNoLiveRankedSeed(value);
 	if (isPlainObject(value)) {
 		assertNoActiveRoundNextSequence(value.attempt);
-		if (value.revealedRankedSeed != null) {
-			const endsAt =
-				typeof value.endsAt === 'number' && Number.isFinite(value.endsAt)
-					? value.endsAt
-					: Number.POSITIVE_INFINITY;
-			const nowSeconds = Math.trunc(now / 1000);
-			if (endsAt > nowSeconds) {
-				throw new TypeError(
-					'Daily challenge response must not reveal the ranked seed before close',
-				);
-			}
-		}
 	}
+	// The server is the authoritative boundary for seed disclosure timing.
+	// The browser clock cannot securely enforce disclosure (clock skew rejects
+	// server-authorized post-close reveals, and the response carries its own
+	// endsAt which could be tampered with). Trust the server's decision to
+	// include revealedRankedSeed and let the schema validate its format.
 	const parsed = dailyChallengeChallengeResponseSchema.parse(value);
 	if (parsed.attempt !== null) {
 		assertAttemptCrossField(parsed.attempt);

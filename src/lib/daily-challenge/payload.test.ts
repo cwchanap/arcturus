@@ -417,15 +417,13 @@ describe('parseDailyChallengeChallengeResponse — happy paths', () => {
 
 	test('accepts a live challenge response with a null revealed seed', () => {
 		const value = challengeResponse({ revealedRankedSeed: null });
-		const nowMs = (1_742_000_000 + 1000) * 1000;
-		expect(parseDailyChallengeChallengeResponse(value, nowMs)).toEqual(value);
+		expect(parseDailyChallengeChallengeResponse(value)).toEqual(value);
 	});
 
 	test('accepts a closed challenge response with the canonical revealed seed', () => {
 		const seed = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => index));
 		const value = challengeResponse({ revealedRankedSeed: seed });
-		const nowMs = (1_742_000_000 + 86_400) * 1000;
-		expect(parseDailyChallengeChallengeResponse(value, nowMs)).toEqual(value);
+		expect(parseDailyChallengeChallengeResponse(value)).toEqual(value);
 	});
 });
 
@@ -455,14 +453,19 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 		).toThrow(/ranked seed/i);
 	});
 
-	test('rejects a pre-close challenge response that reveals the ranked seed', () => {
-		const nowMs = (1_742_000_000 + 1000) * 1000; // 1s after start, before endsAt
-		expect(() =>
-			parseDailyChallengeChallengeResponse(
-				{ ...liveChallengeResponse(), revealedRankedSeed: 'b'.repeat(64) },
-				nowMs,
-			),
-		).toThrow(/reveal/i);
+	test('accepts a server-authorized revealed seed regardless of the browser clock (server is the disclosure boundary)', () => {
+		// The parser no longer gates seed disclosure on Date.now() or endsAt.
+		// The server is the authoritative boundary for when to reveal; the
+		// client trusts the server's decision and only validates the format.
+		// This test pins that contract: a response with a revealed seed is
+		// accepted even when endsAt is far in the future.
+		const seed = encodeBase64Url(Uint8Array.from({ length: 32 }, (_, index) => index));
+		const value = {
+			...liveChallengeResponse(),
+			endsAt: Number.MAX_SAFE_INTEGER,
+			revealedRankedSeed: seed,
+		};
+		expect(parseDailyChallengeChallengeResponse(value)).toEqual(value);
 	});
 
 	test('rejects a challenge response whose embedded attempt leaks activeRound.nextSequence', () => {
@@ -492,13 +495,12 @@ describe('parseDailyChallengeChallengeResponse — defense-in-depth', () => {
 	});
 
 	test('rejects a closed challenge response carrying a malformed revealed seed', () => {
-		const nowMs = (1_742_000_000 + 86_400) * 1000;
 		let caught: unknown;
 		try {
-			parseDailyChallengeChallengeResponse(
-				{ ...liveChallengeResponse(), revealedRankedSeed: 'not-canonical!!' },
-				nowMs,
-			);
+			parseDailyChallengeChallengeResponse({
+				...liveChallengeResponse(),
+				revealedRankedSeed: 'not-canonical!!',
+			});
 		} catch (error) {
 			caught = error;
 		}

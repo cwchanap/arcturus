@@ -35,8 +35,8 @@ const USER_ID = 'test-user-1';
 const PERIOD_KEY = '2026-03-14';
 const NEXT_PERIOD_KEY = '2026-03-15';
 const keys = buildDailyChallengeStorageKeys(USER_ID, PERIOD_KEY);
-const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYn';
-const RANKED_SEED = 'AwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKis';
+const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA';
+const RANKED_SEED = 'UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE';
 
 const activeRoundFixture = {
 	phase: 'player-turn',
@@ -951,7 +951,14 @@ function createPageRenderer(): {
 		renderChallenge(challenge) {
 			challenges.push(challenge);
 		},
-		renderAttempt() {},
+		renderAttempt(attempt) {
+			// Mirror the real renderer's mode-routing fix: a non-null attempt
+			// switches mode to 'ranked' via onSelectMode so the page routes
+			// commands to the ranked client.
+			if (attempt !== null) {
+				bound.handlers?.onSelectMode('ranked');
+			}
+		},
 		renderLeaderboard(leaderboard) {
 			leaderboards.push(leaderboard);
 		},
@@ -1281,6 +1288,60 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		handlers?.onSelectMode('practice');
 		handlers?.onStartRound(50);
 		expect(replayHarness.startRounds).toEqual([50]);
+	});
+
+	test('adopting an active attempt routes subsequent commands to the ranked client without manual mode switch', async () => {
+		// The mock client's adopt calls renderer.renderAttempt, which switches
+		// mode to 'ranked' via onSelectMode. This verifies the full flow:
+		// challenge response carries an active attempt → adopt → renderAttempt
+		// → mode switches → commands route to rankedClient, not replayController.
+		const attempt = activeAttempt();
+		const fetchImpl = mock(async (url: RequestInfo | URL) => {
+			if (String(url) === '/api/daily-challenges/current') {
+				return jsonResponse(challengeFixture({ attempt }));
+			}
+			return currentPageFetch(url);
+		});
+		const { renderer, bound } = createPageRenderer();
+		const clientHarness = createPageClientHarness();
+		const replayHarness = createPageLocalHarness();
+		const root = { dataset: { userId: USER_ID } } as HTMLElement;
+
+		// Wire the mock client's adopt to call renderAttempt on the renderer,
+		// mirroring the real client behavior that triggers the mode switch.
+		const realCreateClient = clientHarness.createClient;
+		clientHarness.createClient = ((deps: DailyChallengeClientDeps) => {
+			const inner = realCreateClient(deps);
+			return {
+				...inner,
+				adopt(attemptParam: DailyChallengeAttemptPublicStateV1) {
+					inner.adopt(attemptParam);
+					deps.renderer.renderAttempt(attemptParam);
+				},
+			} as DailyChallengeClient;
+		}) as (deps: DailyChallengeClientDeps) => DailyChallengeClient;
+
+		await initDailyChallengePage(root, {
+			fetch: fetchImpl,
+			createRenderer: () => renderer,
+			createClient: clientHarness.createClient,
+			createLocalReplayController: replayHarness.createLocalReplayController,
+		});
+
+		expect(clientHarness.adopted).toEqual([attempt]);
+
+		const handlers = bound.handlers;
+		handlers?.onStartRound(100);
+		handlers?.onAction('stand');
+		handlers?.onForfeit();
+
+		expect(clientHarness.commands).toEqual([
+			{ command: 'start-round', wager: 100 },
+			{ command: 'stand' },
+			{ command: 'forfeit' },
+		]);
+		expect(replayHarness.startRounds).toEqual([]);
+		expect(replayHarness.actions).toEqual([]);
 	});
 
 	test('a failing current fetch surfaces an error and never fetches side data', async () => {

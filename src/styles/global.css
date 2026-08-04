@@ -20,6 +20,14 @@ body {
 	outline-offset: 2px;
 }
 
+/* Author-level [hidden] override: .deco-btn and other display:flex/inline-flex
+   classes win the UA-stylesheet [hidden] { display: none } cascade by equal
+   specificity + later source order, leaving dynamically hidden buttons
+   visible. !important restores the hidden semantics for every element. */
+[hidden] {
+	display: none !important;
+}
+
 /* Card styling */
 .playing-card {
 	aspect-ratio: 2.5 / 3.5;

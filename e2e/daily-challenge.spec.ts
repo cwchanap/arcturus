@@ -244,7 +244,7 @@ test.describe('daily challenge guest practice', () => {
 			await expect(page.getByTestId('daily-challenge-mode-ranked')).toBeHidden();
 			await expect(page.getByTestId('daily-challenge-sign-in-cta')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-sign-in-cta')).toContainText(
-				'SIGN IN TO PLAY RANKED',
+				'Sign in to play Ranked',
 			);
 			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
 			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('\u2014');

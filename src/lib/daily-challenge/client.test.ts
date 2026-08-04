@@ -1426,6 +1426,8 @@ describe('daily challenge page bootstrap — initDailyChallengePage', () => {
 		} finally {
 			if (originalCryptoDescriptor) {
 				Object.defineProperty(globalThis, 'crypto', originalCryptoDescriptor);
+			} else {
+				delete (globalThis as { crypto?: unknown }).crypto;
 			}
 		}
 	});

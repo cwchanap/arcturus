@@ -1803,6 +1803,7 @@ class ConcurrentActiveRepository extends FakeRepository {
 	override async runCommandTransition(
 		input: DailyChallengeCommandTransitionInput,
 	): Promise<DailyChallengeCommandTransitionResult> {
+		this.commandTransitions.push(input);
 		if (this.raceUsed) return super.runCommandTransition(input);
 		this.raceUsed = true;
 		const current = this.attempts.get(input.attemptId);
@@ -1888,6 +1889,7 @@ describe('daily challenge coordinator start conflict edge cases', () => {
 			id: 'attemptpastaaaaaaaaaaaaaa',
 			challengeId: pastChallenge.id,
 			startRequestId: 'request-shared-rate-001',
+			startPayloadHash: hashCanonical({ requestId: 'request-shared-rate-001' }),
 			status: 'completed',
 			settledAt: NOW_SECONDS - 86_400 + 60,
 		});
@@ -2073,14 +2075,14 @@ describe('daily challenge coordinator command transition reread', () => {
 		const attempt = fixtureAttempt([opener]);
 		const repository = new ConcurrentActiveRepository(
 			{ attempts: [attempt] },
-			{ actionLog: [opener, cmd(1, 'forfeit')], nextCommandSequence: 2 },
+			{ actionLog: [opener, cmd(1, 'hit')], nextCommandSequence: 2 },
 		);
 		const { coordinator } = createBundle(repository);
 
 		const state = await coordinator.command({
 			userId: USER_ID,
 			attemptId: attempt.id,
-			body: cmd(1, 'forfeit'),
+			body: cmd(1, 'hit'),
 		});
 
 		expect(state.status).toBe('active');
@@ -2092,7 +2094,7 @@ describe('daily challenge coordinator command transition reread', () => {
 		const attempt = fixtureAttempt([opener]);
 		const repository = new ConcurrentActiveRepository(
 			{ attempts: [attempt] },
-			{ actionLog: [opener, cmd(1, 'forfeit')], nextCommandSequence: 2 },
+			{ actionLog: [opener, cmd(1, 'hit')], nextCommandSequence: 2 },
 		);
 		const { coordinator } = createBundle(repository);
 
@@ -2100,7 +2102,7 @@ describe('daily challenge coordinator command transition reread', () => {
 			coordinator.command({
 				userId: USER_ID,
 				attemptId: attempt.id,
-				body: cmd(1, 'hit'),
+				body: cmd(1, 'stand'),
 			}),
 			'IDENTIFIER_REUSE_MISMATCH',
 		);

@@ -739,17 +739,29 @@ describe('dailyChallengeHttpHandlers default factory', () => {
 	});
 });
 
-function createMockD1(changes: number): D1Database {
-	const bound = {
-		run: async () => ({ meta: { changes } }),
-		bind: () => bound,
-	};
-	const stmt = {
-		run: async () => ({ meta: { changes } }),
-		bind: () => bound,
+interface RecordedStatement {
+	sql: string;
+	binds: unknown[];
+}
+
+function createMockD1(changes: number): D1Database & {
+	_statements: RecordedStatement[];
+} {
+	const statements: RecordedStatement[] = [];
+	const createBound = (sql: string, binds: unknown[]): D1PreparedStatement => {
+		const bound = {
+			run: async () => ({ meta: { changes } }),
+			bind: (...values: unknown[]) => {
+				const next = createBound(sql, [...binds, ...values]);
+				statements.push({ sql, binds: [...binds, ...values] });
+				return next;
+			},
+		};
+		return bound as unknown as D1PreparedStatement;
 	};
 	return {
-		prepare: () => stmt,
+		prepare: (sql: string) => createBound(sql, []),
+		_statements: statements,
 	} as never;
 }
 
@@ -765,6 +777,8 @@ describe('daily challenge HTTP rate limiter factories', () => {
 			expect(result.statement).toBeDefined();
 			expect(result.retryAfter).toBeGreaterThan(0);
 		}
+		expect(db._statements).toHaveLength(2);
+		expect(db._statements.every((stmt) => stmt.binds[1] === 'daily_challenge_start')).toBe(true);
 	});
 
 	test('createDailyChallengeStartRateLimiter returns rate-limited with retryAfter', async () => {
@@ -777,6 +791,8 @@ describe('daily challenge HTTP rate limiter factories', () => {
 		if (result.kind === 'rate-limited') {
 			expect(result.retryAfter).toBeGreaterThan(0);
 		}
+		expect(db._statements).toHaveLength(1);
+		expect(db._statements[0].binds[1]).toBe('daily_challenge_start');
 	});
 
 	test('createDailyChallengeCommandRateLimiter returns allowed with a continuation statement', async () => {
@@ -790,6 +806,8 @@ describe('daily challenge HTTP rate limiter factories', () => {
 			expect(result.statement).toBeDefined();
 			expect(result.retryAfter).toBeGreaterThan(0);
 		}
+		expect(db._statements).toHaveLength(2);
+		expect(db._statements.every((stmt) => stmt.binds[1] === 'daily_challenge_command')).toBe(true);
 	});
 
 	test('createDailyChallengeCommandRateLimiter returns rate-limited with retryAfter', async () => {
@@ -802,6 +820,8 @@ describe('daily challenge HTTP rate limiter factories', () => {
 		if (result.kind === 'rate-limited') {
 			expect(result.retryAfter).toBeGreaterThan(0);
 		}
+		expect(db._statements).toHaveLength(1);
+		expect(db._statements[0].binds[1]).toBe('daily_challenge_command');
 	});
 
 	test('createDailyChallengeResumeRateLimiter returns allowed without a continuation statement', async () => {
@@ -811,6 +831,9 @@ describe('daily challenge HTTP rate limiter factories', () => {
 		const result = await limiter(USER_ID, 1000);
 
 		expect(result.kind).toBe('allowed');
+		expect('statement' in result).toBe(false);
+		expect(db._statements).toHaveLength(1);
+		expect(db._statements[0].binds[1]).toBe('daily_challenge_resume');
 	});
 
 	test('createDailyChallengeResumeRateLimiter returns rate-limited with retryAfter', async () => {
@@ -823,5 +846,7 @@ describe('daily challenge HTTP rate limiter factories', () => {
 		if (result.kind === 'rate-limited') {
 			expect(result.retryAfter).toBeGreaterThan(0);
 		}
+		expect(db._statements).toHaveLength(1);
+		expect(db._statements[0].binds[1]).toBe('daily_challenge_resume');
 	});
 });

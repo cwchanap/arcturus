@@ -7,10 +7,12 @@ import {
 	dailyChallengeCommandLogSchema,
 	dailyChallengeSeedSchema,
 } from '../../lib/daily-challenge/protocol';
+import { createDailyChallengeSeedCommitment } from '../../lib/daily-challenge/random';
 import { calculateDailyChallengePercentile } from '../../lib/daily-challenge/scoring';
 import {
 	type RankedJson,
 	canonicalizeRanked,
+	decodeCanonicalBase64Url,
 	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
@@ -528,6 +530,23 @@ function parseChallengeRow(row: DailyChallengeRow): DailyChallengeRecord {
 		dailyChallengeSeedSchema.parse(row.rankedSeed);
 		dailyChallengeSeedSchema.parse(row.practiceSeed);
 		dailyChallengeHex64Schema.parse(row.rankedSeedCommitment);
+		// Validate the seed pair as one coherent unit: the commitment must be
+		// derivable from the persisted ranked seed, and the public practice
+		// seed must differ from the hidden ranked seed. A malformed migration
+		// or corrupted row could otherwise pass per-field validation yet make
+		// post-close verification fail—or publish the live ranked seed as the
+		// practice seed without failing closed.
+		const rankedSeedBytes = decodeCanonicalBase64Url(row.rankedSeed);
+		const expectedCommitment = createDailyChallengeSeedCommitment(
+			row.challengeRulesetVersion,
+			rankedSeedBytes,
+		);
+		if (expectedCommitment !== row.rankedSeedCommitment) {
+			return invariant('Corrupt daily challenge ranked seed commitment');
+		}
+		if (row.practiceSeed === row.rankedSeed) {
+			return invariant('Corrupt daily challenge practice seed matches ranked seed');
+		}
 		return { ...row, config };
 	} catch (error) {
 		if (error instanceof DailyChallengeRepositoryInvariantError) throw error;

@@ -47,12 +47,6 @@ function isAttemptStart(url: string, method: string): boolean {
 	return pathname(url) === ATTEMPTS_START_PATH && method === 'POST';
 }
 
-function isAttemptRead(url: string, method: string): boolean {
-	return (
-		/^\/api\/daily-challenge-attempts\/[A-Za-z0-9_-]{22}$/.test(pathname(url)) && method === 'GET'
-	);
-}
-
 function isAttemptCommand(url: string, method: string): boolean {
 	return (
 		/^\/api\/daily-challenge-attempts\/[A-Za-z0-9_-]{22}\/commands$/.test(pathname(url)) &&
@@ -341,17 +335,29 @@ test.describe('daily challenge ranked attempt', () => {
 				expect(bankrollBefore).not.toBeNull();
 				expect(progressBefore).toBe(roundLabel(nextRound - 1));
 
-				const resumePromise = page.waitForResponse((response) =>
-					isAttemptRead(response.url(), response.request().method()),
+				// On reload the client fetches /api/daily-challenges/current, which
+				// already embeds the authenticated user's active attempt. The client
+				// calls rankedClient.adopt(challenge.attempt) and intentionally skips
+				// the extra attempt-resume GET, so we wait for the current-challenge
+				// response and inspect its attempt field rather than the GET that
+				// never fires.
+				const currentChallengePromise = page.waitForResponse(
+					(response) =>
+						pathname(response.url()) === '/api/daily-challenges/current' &&
+						response.request().method() === 'GET',
 				);
 				await page.reload({ waitUntil: 'domcontentloaded' });
-				const resumeResponse = await resumePromise;
-				expect(resumeResponse.ok()).toBe(true);
-				const resumed = dailyChallengeAttemptPublicStateSchema.parse(await resumeResponse.json());
-				expect(resumed.attemptId).toBe(attemptId);
-				expect(resumed.roundsCompleted).toBe(nextRound - 1);
-				expect(resumed.availableBankroll).toBe(bankrollBefore);
-				expect(resumed.activeRound?.committedWager).toBe(RANKED_WAGER);
+				const currentChallengeResponse = await currentChallengePromise;
+				expect(currentChallengeResponse.ok()).toBe(true);
+				const currentChallenge = dailyChallengeChallengeResponseSchema.parse(
+					await currentChallengeResponse.json(),
+				);
+				expect(currentChallenge.attempt).not.toBeNull();
+				const resumed = currentChallenge.attempt;
+				expect(resumed?.attemptId).toBe(attemptId);
+				expect(resumed?.roundsCompleted).toBe(nextRound - 1);
+				expect(resumed?.availableBankroll).toBe(bankrollBefore);
+				expect(resumed?.activeRound?.committedWager).toBe(RANKED_WAGER);
 				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText(
 					formatCurrency(RANKED_WAGER),
 				);

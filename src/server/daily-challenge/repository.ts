@@ -5,12 +5,12 @@ import {
 	type DailyChallengeReceiptV1,
 	type DailyChallengeTerminalReason,
 	dailyChallengeCommandLogSchema,
+	dailyChallengeSeedSchema,
 } from '../../lib/daily-challenge/protocol';
 import { calculateDailyChallengePercentile } from '../../lib/daily-challenge/scoring';
 import {
 	type RankedJson,
 	canonicalizeRanked,
-	decodeCanonicalBase64Url,
 	hashCanonical,
 	sha256Hex,
 } from '../../lib/ranked/canonical';
@@ -40,14 +40,6 @@ const dailyChallengeStatusSchema = z.enum(['active', 'completed', 'forfeited', '
 const dailyChallengeSafeIntegerSchema = z
 	.number()
 	.refine((value) => Number.isSafeInteger(value) && !Object.is(value, -0));
-const dailyChallengeSeedSchema = z.string().refine((value) => {
-	try {
-		decodeCanonicalBase64Url(value);
-		return true;
-	} catch {
-		return false;
-	}
-}, 'Invalid canonical base64url seed');
 const dailyChallengeHex64Schema = z.string().regex(/^[0-9a-f]{64}$/);
 
 export class DailyChallengeRepositoryInvariantError extends Error {

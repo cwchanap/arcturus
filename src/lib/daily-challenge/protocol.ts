@@ -17,12 +17,14 @@ export const dailyChallengeHex64Schema = z.string().regex(/^[0-9a-f]{64}$/);
 
 const dailyChallengeCanonicalSeedSchema = z.string().refine((value) => {
 	try {
-		decodeCanonicalBase64Url(value);
-		return true;
+		const decoded = decodeCanonicalBase64Url(value);
+		return decoded.length === 32;
 	} catch {
 		return false;
 	}
-}, 'Invalid canonical base64url daily challenge seed');
+}, 'Invalid canonical base64url daily challenge seed (must decode to 32 bytes)');
+
+export const dailyChallengeSeedSchema = dailyChallengeCanonicalSeedSchema;
 
 export const dailyChallengeStartRequestSchema = z
 	.object({ requestId: dailyChallengeRequestIdSchema })

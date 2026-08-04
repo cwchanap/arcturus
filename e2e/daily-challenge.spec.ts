@@ -3,6 +3,7 @@ import {
 	dailyChallengeAttemptPublicStateSchema,
 	dailyChallengeChallengeResponseSchema,
 	dailyChallengeLeaderboardResponseSchema,
+	dailyChallengePeriodKeySchema,
 } from '../src/lib/daily-challenge/protocol';
 import { createDailyChallengeSeedCommitment } from '../src/lib/daily-challenge/random';
 import { encodeBase64Url } from '../src/lib/ranked/canonical';
@@ -166,6 +167,18 @@ async function startRankedAttempt(
 	const response = await responsePromise;
 	expect(response.ok()).toBe(true);
 	return dailyChallengeAttemptPublicStateSchema.parse(await response.json());
+}
+
+// DailyChallengeAttemptPublicStateV1 does not carry periodKey. Fetch it from
+// the current challenge response so fixtures and leaderboard URLs use the
+// authoritative value rather than a non-existent field.
+async function fetchCurrentPeriodKey(page: Page): Promise<string> {
+	const result = await page.evaluate(async () => {
+		const res = await fetch('/api/daily-challenges/current');
+		const data = (await res.json()) as { periodKey: string };
+		return data.periodKey;
+	});
+	return dailyChallengePeriodKeySchema.parse(result);
 }
 
 const RANKED_SEED = new Uint8Array(32).fill(0x51);
@@ -368,7 +381,7 @@ test.describe('daily challenge ranked attempt', () => {
 
 			// The leaderboard and standing render from a page-load fetch, so a
 			// reload after completion surfaces the finished entry.
-			const periodKey = started.periodKey;
+			const periodKey = await fetchCurrentPeriodKey(page);
 			const leaderboardPromise = page.waitForResponse(
 				(response) => pathname(response.url()) === `/api/daily-challenges/${periodKey}/leaderboard`,
 			);
@@ -489,6 +502,7 @@ test.describe('daily challenge uncertain and terminal command recovery', () => {
 			await page.getByTestId('daily-challenge-wager').fill(String(RANKED_WAGER));
 			const started = await startRankedAttempt(page);
 			const attemptId = started.attemptId;
+			const periodKey = await fetchCurrentPeriodKey(page);
 
 			const terminal = dailyChallengeAttemptPublicStateSchema.parse({
 				attemptId,
@@ -504,7 +518,7 @@ test.describe('daily challenge uncertain and terminal command recovery', () => {
 				receipt: {
 					attemptId,
 					challengeId: started.challengeId,
-					periodKey: started.periodKey,
+					periodKey,
 					challengeRulesetVersion: 'blackjack-daily-v1',
 					gameRulesetVersion: 'blackjack-ranked-v1',
 					scoreVersion: 'blackjack-daily-score-v1',

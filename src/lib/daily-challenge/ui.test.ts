@@ -40,8 +40,8 @@ const ATTEMPT_ID = 'abcdefghijklmnopqrstuv';
 const CHALLENGE_ID = 'challenge_12345678';
 const PERIOD_KEY = '2026-03-14';
 
-const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYn';
-const RANKED_SEED = 'AwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKis';
+const PRACTICE_SEED = 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA';
+const RANKED_SEED = 'UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE';
 
 const ACTIVE_ROUND: DailyChallengeActiveRoundV1 = {
 	phase: 'player-turn',
@@ -598,6 +598,46 @@ describe('daily challenge renderer — ranked attempt HUD', () => {
 			),
 		).toHaveLength(1);
 		expect(get('daily-challenge-player-hands').textContent).toContain('Hand 1 · $100');
+	});
+});
+
+describe('daily challenge renderer — mode routing on attempt render', () => {
+	test('renderAttempt with an active attempt switches mode to ranked and notifies the page', () => {
+		const { get, renderer, handlers } = mount();
+		renderer.renderChallenge(challengeFixture());
+		handlers.calls.onSelectMode = [];
+		renderer.renderAttempt(attemptFixture());
+
+		expect(handlers.calls.onSelectMode).toEqual(['ranked']);
+		expect(get('daily-challenge-ranked-notices').hidden).toBe(false);
+	});
+
+	test('renderAttempt with a terminal attempt switches mode to ranked', () => {
+		const { renderer, handlers } = mount();
+		renderer.renderChallenge(challengeFixture());
+		handlers.calls.onSelectMode = [];
+		renderer.renderAttempt(terminalAttemptFixture());
+
+		expect(handlers.calls.onSelectMode).toEqual(['ranked']);
+	});
+
+	test('renderAttempt with a null attempt does not switch mode', () => {
+		const { renderer, handlers } = mount();
+		renderer.renderChallenge(challengeFixture());
+		handlers.calls.onSelectMode = [];
+		renderer.renderAttempt(null);
+
+		expect(handlers.calls.onSelectMode).toEqual([]);
+	});
+
+	test('renderAttempt does not re-notify when mode is already ranked', () => {
+		const { get, renderer, handlers } = mount();
+		renderer.renderChallenge(challengeFixture());
+		(get('daily-challenge-mode-ranked') as HTMLButtonElement).click();
+		handlers.calls.onSelectMode = [];
+		renderer.renderAttempt(attemptFixture());
+
+		expect(handlers.calls.onSelectMode).toEqual([]);
 	});
 });
 

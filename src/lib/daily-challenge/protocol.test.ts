@@ -11,6 +11,7 @@ import {
 	dailyChallengeLeaderboardResponseSchema,
 	dailyChallengePeriodKeySchema,
 	dailyChallengeRequestIdSchema,
+	dailyChallengeSeedSchema,
 	dailyChallengeSequenceSchema,
 	dailyChallengeStartRequestSchema,
 } from './protocol';
@@ -54,6 +55,31 @@ describe('daily challenge identifiers', () => {
 	// calendar-impossible key is accepted here to pin the opaque-format contract.
 	test('accepts a format-valid but calendar-impossible period key (opaque format only)', () => {
 		expect(dailyChallengePeriodKeySchema.safeParse('2026-13-40').success).toBe(true);
+	});
+});
+
+describe('daily challenge seed schema — canonical base64url with 32-byte length', () => {
+	test('accepts a canonical 32-byte seed', () => {
+		expect(dailyChallengeSeedSchema.safeParse(practiceSeed).success).toBe(true);
+	});
+
+	test('rejects a 31-byte canonical seed', () => {
+		const shortSeed = encodeBase64Url(Uint8Array.from({ length: 31 }, (_, index) => index));
+		expect(dailyChallengeSeedSchema.safeParse(shortSeed).success).toBe(false);
+	});
+
+	test('rejects a 33-byte canonical seed', () => {
+		const longSeed = encodeBase64Url(Uint8Array.from({ length: 33 }, (_, index) => index));
+		expect(dailyChallengeSeedSchema.safeParse(longSeed).success).toBe(false);
+	});
+
+	test('rejects a short canonical one-byte seed', () => {
+		const oneByteSeed = encodeBase64Url(Uint8Array.from([0]));
+		expect(dailyChallengeSeedSchema.safeParse(oneByteSeed).success).toBe(false);
+	});
+
+	test('rejects a non-canonical string', () => {
+		expect(dailyChallengeSeedSchema.safeParse('not-canonical!!').success).toBe(false);
 	});
 });
 

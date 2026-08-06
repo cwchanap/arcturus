@@ -39,7 +39,8 @@ Existing rooms, memberships, held chips, multiplayer receipts, and old WebSocket
 - Remove the host role; any connected eligible seated player may start.
 - Retain a 60-second turn timeout, 30-second reconnect grace, and five-minute empty-room cleanup.
 - Keep the existing repository layout and make isolation a dependency rule rather than introducing a new top-level package structure.
-- Reduce the protocol to messages and fields with a current producer and consumer.
+- Reduce the protocol to messages and fields with a current producer and human-facing consumer.
+- Make the room understandable after refresh or reconnect by identifying the viewer's seat, highlighting the active seat, and revealing showdown cards when appropriate.
 - Replace the old Durable Object class/namespace only after behavior and cross-system deletion are green.
 - Keep one representative two-user E2E happy path.
 
@@ -77,6 +78,9 @@ Existing rooms, memberships, held chips, multiplayer receipts, and old WebSocket
 | Reconnect grace | 30 seconds for the same authenticated user |
 | Disconnect expiry | Fold first when required, settle locally if that ends the hand, then clear the seat |
 | Disconnected all-in player | Retain the seat until immediate showdown/hand completion, then clear |
+| Transition finalization | Every hand-completing path uses one DO helper: emit result, sweep expired seats, persist, broadcast, reschedule |
+| Viewer identity | Each socket receives `yourSeat: number | null` |
+| Showdown | `hand_ended` reveals eligible hole cards only for contested showdowns |
 | Empty cleanup | Delete room storage after five minutes with no seat and no socket |
 | Corrupt state | Delete room storage and require recreation |
 | Compatibility | None |
@@ -92,8 +96,10 @@ Keep the existing project structure:
 src/lib/mp-poker/
   engine.ts            # pure room/hand state transitions and local stacks
   engine.test.ts
-  protocol.ts          # current WebSocket messages only
+  protocol.ts          # schemas plus pure public-state/result projections
   protocol.test.ts
+  timers.ts             # pure timeout constants and next-alarm calculation
+  timers.test.ts
   client.ts            # browser WebSocket wrapper
   client.test.ts
   roomCode.ts          # room code generation/validation
@@ -121,6 +127,7 @@ src/server/mp/multiplayer-poker-room.ts
         |
         +--> src/lib/mp-poker/engine.ts
         +--> src/lib/mp-poker/protocol.ts
+        +--> src/lib/mp-poker/timers.ts
         +--> shared poker card/evaluator primitives
 
 forbidden dependencies:
@@ -208,8 +215,15 @@ export interface HandWinner {
 	amount: number;
 }
 
+export interface ShowdownCard {
+	userId: string;
+	seatIndex: number;
+	cards: [Card, Card];
+}
+
 export interface HandResult {
 	winners: HandWinner[];
+	showdownCards: ShowdownCard[];
 }
 
 export interface RoomTransition {
@@ -240,10 +254,11 @@ After payout:
 
 - `phase` becomes `waiting`;
 - `hand` becomes `null`;
-- `HandResult` is emitted;
-- expired disconnected seats are cleared.
+- `HandResult` is returned to the Durable Object.
 
-The WebSocket `hand_ended` projection removes `userId` and exposes only `{ seatIndex, amount }`.
+`HandResult.showdownCards` is empty for a fold-out and contains the non-folded eligible players' two-card hands for a contested showdown. Internal result entries retain `userId`; the WebSocket projection removes it.
+
+Expired disconnected seats are cleared by the Durable Object's shared transition-finalization helper after the payout is already applied.
 
 ### 5.6 Disconnect ordering
 
@@ -253,11 +268,13 @@ At reconnect expiry:
 2. If that fold ends the hand, calculate and apply payout **before** clearing any seat.
 3. Clear expired folded or non-participating seats.
 4. Keep an expired all-in/non-folded seat until the hand completes.
-5. After any later action completes the hand, apply payout and then clear expired disconnected seats.
+5. After any later action **or alarm-driven fold** completes the hand, apply payout and then clear every now-unprotected expired disconnected seat.
 
 `finishHand` and showdown evaluation therefore remain independent of live seat identity, while local stack credit remains tied to the original user occupying the original seat.
 
-No alarm busy-loop is allowed: reconnect deadlines already expired for retained active-hand seats are omitted from the next-alarm calculation. The next action or immediate all-in runout performs final cleanup.
+The Durable Object routes action handling, `forceFold`, and turn-timeout folding through one `applyTransition` helper. That helper sets the returned room, emits `hand_ended` when present, sweeps expired seats after payout, persists, broadcasts personalized room state, and reschedules alarms. This prevents a retained disconnected all-in winner from becoming a permanent ghost seat when another player's turn timeout ends the hand.
+
+No alarm busy-loop is allowed: reconnect deadlines already expired for retained active-hand seats are omitted from the next-alarm calculation.
 
 ---
 
@@ -303,22 +320,42 @@ error
 	pot: number;
 	board: ProtocolCard[];
 	currentSeat: number | null;
+	yourSeat: number | null;
 }
 ```
 
-`currentSeat` is retained and consumed by the room page through a `data-current-seat` attribute used by the E2E flow.
+`currentSeat` and `yourSeat` are both rendered by the room page. The page highlights the active seat and the viewer's own seat, so a reconnecting player can identify their stack and turn without exposing user IDs. The call amount remains derivable as `max(seats[].committed) - your committed`.
 
 `betToCall` and `timeRemainingMs` are removed because the current UI does not consume them. They should return only with a concrete UI use case.
 
-### 6.3 Projection helper
-
-The Durable Object file exports one pure helper:
+`hand_ended` retains:
 
 ```ts
-export function toRoomStateMessage(room: Room): RoomStateMessage;
+{
+	type: 'hand_ended';
+	winners: Array<{ seatIndex: number; amount: number }>;
+	showdownCards: Array<{ seatIndex: number; cards: [ProtocolCard, ProtocolCard] }>;
+}
 ```
 
-It is the single place that projects private engine state into the public room state. It strips `userId`, private hole cards, deck, and internal sets. This is a focused serialization helper, not a generic presenter framework.
+`showdownCards` is empty for fold-outs and rendered in the hand log for contested showdowns.
+
+### 6.3 Projection helpers
+
+Pure projection stays beside the protocol schemas in `src/lib/mp-poker/protocol.ts`:
+
+```ts
+export function toRoomStateMessage(
+	room: Room,
+	viewerUserId: string,
+): RoomStateMessage;
+
+export function toHandEndedMessage(result: HandResult): HandEndedMessage;
+```
+
+`toRoomStateMessage` strips `userId`, private hole cards, deck, and internal sets while deriving `yourSeat` for one socket. Because the message is personalized, the Durable Object sends room state per socket rather than broadcasting one shared payload.
+
+`toHandEndedMessage` removes internal result user IDs while retaining contested-showdown cards. These are focused serialization helpers, not a presenter framework.
 
 Private hole cards continue to be sent only through `hand_started` to the matching authenticated socket.
 
@@ -333,7 +370,9 @@ Delete:
 - emote messages;
 - ping/pong messages;
 - membership/settlement error codes;
-- unused hand-ended pots/showdown payload fields.
+- unused `hand_ended.pots`.
+
+`hand_ended.showdownCards` is retained and gains a page renderer because it is required for a usable contested showdown.
 
 ---
 
@@ -394,14 +433,24 @@ One scheduler considers:
 
 It does not consider settlement retry, escrow release, membership release, or frozen-room recovery.
 
-The alarm handler processes:
+Timeout constants and next-deadline calculation live in the pure `src/lib/mp-poker/timers.ts` module. The Worker-only file owns only storage, sockets, and handler orchestration.
 
-1. reconnect expiry and fold/payout ordering;
-2. turn expiry;
-3. empty-room deletion;
-4. one persistence write, one broadcast, and one reschedule where practical.
+The Durable Object has one private transition-finalization seam:
 
-Tests use fake time and direct alarm/helper invocation.
+```ts
+private async applyTransition(transition: RoomTransition, now: number): Promise<void>;
+```
+
+It is called by normal actions, disconnect `forceFold`, and turn-timeout folding. In order it:
+
+1. accepts the engine's already-paid room;
+2. emits `hand_ended` when a result exists;
+3. sweeps all expired seats no longer protected by an active hand;
+4. persists state;
+5. sends personalized room state to every socket;
+6. computes and schedules the next alarm.
+
+The alarm handler processes reconnect expiry, turn expiry, and empty-room deletion through that same seam. Tests use fake time and direct alarm/helper invocation.
 
 ### 7.5 Corrupt state
 
@@ -465,8 +514,10 @@ It performs no D1 access.
 The existing page:
 
 - renders room-local stack and committed chips;
+- highlights the seat matching `yourSeat`;
+- highlights the active seat matching `currentSeat`;
+- renders `showdownCards` in the hand log for contested showdowns;
 - handles only retained server messages;
-- writes `room_state.currentSeat` to `data-current-seat`;
 - does not add host UI, timers, rebuys, chat, emotes, or history.
 
 ---
@@ -558,7 +609,11 @@ Add:
 - disconnected all-in winner is paid, then cleared;
 - identity mismatch never credits a replacement occupant.
 
-### 12.2 Durable Object
+### 12.2 Protocol and timers
+
+Cover personalized `yourSeat`, public-state privacy, fold-out versus showdown-card projection, retained/removed schemas, exact timeout constants, and next-alarm selection.
+
+### 12.3 Durable Object
 
 Cover:
 
@@ -569,6 +624,8 @@ Cover:
 - reconnect within grace;
 - expired fold → payout → clear ordering;
 - all-in disconnected seat retention;
+- turn-timeout hand completion clears a previously retained expired all-in winner;
+- every hand-completing path uses the shared transition finalizer;
 - turn timeout;
 - earliest deadline;
 - empty cleanup;
@@ -576,11 +633,11 @@ Cover:
 
 No real-time sleeps.
 
-### 12.3 Routes
+### 12.4 Routes
 
 Route tests use stubs, not D1 or Ranked fixtures.
 
-### 12.4 E2E
+### 12.5 E2E
 
 One two-context flow:
 
@@ -588,7 +645,7 @@ One two-context flow:
 A creates 2-seat 5/10 room
 A and B take seats with 1,000 chips
 A or B starts
-page exposes currentSeat
+page identifies both yourSeat and currentSeat
 current actor folds
 both observe hand_ended
 pot returns to zero immediately
@@ -607,7 +664,7 @@ Delete the 30-second Playwright disconnect test.
 | Room-local stacks | Engine model and tests |
 | No wallet/progression/Ranked dependency | Cross-system audit and deletion |
 | Delete escrow/membership/recovery | DO and schema deletion |
-| Every protocol field consumed | Minimal protocol and page current-seat consumer |
+| Every protocol field consumed | Personalized own/active-seat UI and showdown renderer |
 | Normal reconnect | 30-second grace tests |
 | No rare crash recovery | Corrupt room reset |
 | No compatibility/data migration | New namespace and explicit D1 recreation |
@@ -615,7 +672,21 @@ Delete the 30-second Playwright disconnect test.
 
 ---
 
-## 14. Implementation boundaries
+## 14. Delivery risks and controls
+
+| Risk | Control |
+|---|---|
+| Alarm-driven hand completion leaves a retained disconnected seat occupied | Route actions, force-folds, and turn timeouts through one transition-finalization helper; add the explicit all-in-winner timeout test |
+| Removing `userId` makes the room ambiguous after refresh | Add personalized `yourSeat` and render own-seat plus active-seat highlights |
+| Protocol pruning makes contested showdowns unreadable | Retain and render `hand_ended.showdownCards` only for actual showdowns |
+| Repository has no clean project-wide TypeScript gate | Capture and normalize a `tsc --noEmit` baseline, then reject new errors in touched multiplayer/wallet/Ranked paths |
+| Schema deletion misses positional SQL fixtures | Use the preflight grep as the authoritative checklist and run the full suite immediately after deletion |
+| Rules regress while tests are adapted to local stacks | Change only setup/stack assertions in existing rules tests; any changed legality/pot/tie/odd-chip expected value is a review finding, not a silent edit |
+| E2E stays broken during the riskiest deletion work | Rewrite and run the happy-path E2E immediately after protocol/UI changes, before Ranked and schema deletion |
+
+---
+
+## 15. Implementation boundaries
 
 Do not introduce:
 

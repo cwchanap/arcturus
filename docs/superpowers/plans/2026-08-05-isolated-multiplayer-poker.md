@@ -2,78 +2,97 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Keep private-room Texas Hold'em playable while replacing persistent wallet escrow and cross-system recovery with one isolated room-local multiplayer module.
+**Goal:** Keep private-room Texas Hold'em playable while replacing persistent wallet escrow and cross-system recovery with room-local stacks in the repository's existing multiplayer folders.
 
-**Architecture:** Move the pure room engine, protocol, browser client, room-code helpers, and Durable Object into `src/modules/multiplayer-poker`. The Durable Object owns room-local stacks, WebSockets, persistence, reconnect grace, turn timeout, and empty-room cleanup; Astro routes remain thin authenticated adapters. Delete D1 membership, escrow, settlement callbacks, Ranked Blackjack exclusion, progression effects, protocol compatibility, and rare-failure retry machinery in the same breaking branch.
+**Architecture:** Rewrite `src/lib/mp-poker/engine.ts` and the existing Durable Object behavior in place first so every intermediate commit builds. Then remove Ranked and route membership coupling, delete the persistent multiplayer economy and all `heldChips` fixtures, reduce the protocol/UI, and rename the Durable Object class/binding last. Pure poker logic remains under `src/lib/mp-poker`; Worker-only room runtime remains under `src/server/mp`.
 
-**Tech Stack:** Astro 5 SSR, Cloudflare Workers, Cloudflare Durable Objects with hibernatable WebSockets, TypeScript, Zod 4, Bun test runner, Miniflare/Vitest where already used, Playwright, Drizzle ORM, Cloudflare D1, Wrangler 4.
+**Tech Stack:** Astro 5 SSR, Cloudflare Workers, Cloudflare Durable Objects with hibernatable WebSockets, TypeScript, Zod 4, Bun, Miniflare/Vitest where already used, Playwright, Drizzle ORM, Cloudflare D1, Wrangler 4.
 
 ## Global Constraints
 
-- Private rooms remain the only multiplayer product: create, share code, join, seat, and play.
-- Starting stack is exactly `bigBlind * 100` room-local chips.
+- Starting stack is exactly `bigBlind * 100`.
 - Room phases are exactly `waiting` and `in-hand`.
 - Turn timeout is exactly 60 seconds.
 - Reconnect grace is exactly 30 seconds.
-- Empty-room cleanup delay is exactly five minutes.
-- Any connected eligible seated player may start a hand; there is no host role.
+- Empty-room cleanup is exactly five minutes.
+- Any connected eligible seated player may start; there is no host role.
 - Multiplayer must not read or write D1, `user.chipBalance`, missions, achievements, statistics, leaderboards, or Ranked Blackjack state.
-- No backward-compatibility layer, old WebSocket parser, old Durable Object alias, or data migration.
-- D1 reset and old-room invalidation are accepted.
-- Keep the existing `/games/poker-mp` and `/api/mp/rooms` URLs; do not spend scope renaming routes.
-- Do not introduce a generic realtime-game framework, Durable Object base class, repository, event bus, or configurable stack policy.
-- Preserve existing poker action legality, hand evaluation, side-pot calculation, and odd-chip allocation unless a local-stack test proves a required change.
-- Use tabs, single quotes, semicolons, and the repository's current ESLint and Prettier rules.
+- Keep `src/lib/mp-poker` for pure/browser code and `src/server/mp` for Worker-only room code.
+- Keep camelCase TypeScript filenames such as `roomCode.ts`.
+- Keep the existing `/games/poker-mp` and `/api/mp/rooms` URLs.
+- No backward-compatibility layer, dual path, old-state parser, or data migration.
+- New Durable Object namespace uses `new_sqlite_classes`; SQLite-backed objects may still use `storage.get/put`.
+- Do not introduce a generic realtime framework, Durable Object base class, repository, event bus, barrel package, or configurable stack policy.
+- Preserve existing poker legality, shuffle, side-pot, showdown, and odd-chip behavior unless a local-stack regression test requires a targeted correction.
+- Every commit below must pass its listed focused tests and `bun run build` before continuing.
 
 ---
 
-## File structure
+## Preflight: authoritative blast-radius audit
+
+Before Task 1, run:
+
+```bash
+git grep -nE \
+	'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET|reconcileMultiplayer|poker_mp|mpHandsCompleted|pendingEscrow|pendingLock|SETTLEMENT_FAILED' \
+	-- src e2e scripts drizzle wrangler.toml README.md CLAUDE.md AGENTS.md \
+	| tee /tmp/hpa-542-coupling.txt
+```
+
+Classify every line in `/tmp/hpa-542-coupling.txt` as:
+
+```text
+DELETE
+EDIT
+HISTORICAL_DOC_ONLY
+```
+
+The known runtime/test paths in Tasks 3–6 are a starting list. The fresh grep output is authoritative; do not finish Task 6 while an unclassified runtime/test match remains.
+
+---
+
+## Final file shape
 
 | Action | Path | Responsibility |
 |---|---|---|
-| Create via move | `src/modules/multiplayer-poker/room.ts` | Pure room-local poker state and transitions |
-| Create via move | `src/modules/multiplayer-poker/room.test.ts` | Room, action, stack, pot, and payout tests |
-| Create via move | `src/modules/multiplayer-poker/protocol.ts` | Minimal Zod WebSocket protocol |
-| Create via move | `src/modules/multiplayer-poker/protocol.test.ts` | Producer/consumer protocol coverage |
-| Create via move | `src/modules/multiplayer-poker/client.ts` | Browser WebSocket wrapper |
-| Create via move | `src/modules/multiplayer-poker/client.test.ts` | Client connection and parsing tests |
-| Create via move | `src/modules/multiplayer-poker/room-code.ts` | Room-code generation and validation |
-| Create via move | `src/modules/multiplayer-poker/room-code.test.ts` | Room-code tests |
-| Create via rewrite | `src/modules/multiplayer-poker/durable-object.ts` | Room storage, sockets, reconnect, and alarms |
-| Create | `src/modules/multiplayer-poker/durable-object.test.ts` | Deterministic object behavior tests |
-| Create | `src/modules/multiplayer-poker/index.ts` | Narrow public exports |
+| Modify in place | `src/lib/mp-poker/engine.ts` | Pure room-local state and poker transitions |
+| Modify in place | `src/lib/mp-poker/engine.test.ts` | Local-stack, legality, pot, payout, and disconnect tests |
+| Modify in place | `src/lib/mp-poker/protocol.ts` | Minimal current WebSocket protocol |
+| Modify in place | `src/lib/mp-poker/protocol.test.ts` | Retained/removed protocol coverage |
+| Modify in place | `src/lib/mp-poker/client.ts` | Browser WebSocket wrapper |
+| Modify in place | `src/lib/mp-poker/client.test.ts` | Client connection and parsing tests |
+| Keep | `src/lib/mp-poker/roomCode.ts` | Room-code generation and validation |
+| Rename last | `src/server/mp/arcturus.ts` → `src/server/mp/multiplayer-poker-room.ts` | Durable Object runtime |
+| Replace tests | `src/server/mp/multiplayer-poker-room.test.ts` | Projection, reconnect, alarm, and persistence behavior |
 | Modify | `src/pages/api/mp/rooms/index.ts` | Thin create-room adapter |
 | Modify | `src/pages/api/mp/rooms/[code].ts` | Thin metadata adapter |
 | Modify | `src/pages/api/mp/rooms/[code]/ws.ts` | Thin authenticated WebSocket adapter |
-| Modify | `src/pages/games/poker-mp/index.astro` | Existing lobby using the isolated create route |
-| Modify | `src/pages/games/poker-mp/[code].astro` | Local-stack room UI |
-| Modify | `src/worker.ts` | Export new object and remove Ranked membership composition |
-| Modify | `src/env.d.ts` | Rename object binding and remove `MP_AUTH_SECRET` |
-| Modify | `wrangler.toml` | New object binding and breaking migration |
-| Modify | `src/db/schema.ts` | Remove `heldChips` and `mpMembership` |
-| Delete | `drizzle/0008_last_living_lightning.sql` | Obsolete `heldChips` migration |
-| Delete | `drizzle/0008_mp_membership.sql` | Obsolete membership migration |
-| Delete | `src/server/mp/membership.ts` and test | Persistent room lock and reconciliation |
-| Delete | `src/server/mp/settlement.ts` and test | Persistent hand settlement payload |
+| Modify | `src/pages/games/poker-mp/[code].astro` | Room-local stack UI and current-seat projection |
+| Delete | `src/server/mp/membership.ts` and test | Persistent membership/reconciliation |
+| Delete | `src/server/mp/settlement.ts` and test | Persistent settlement payload |
+| Delete | `src/lib/mp-poker/roomExists.ts` and test | D1 membership repair probe |
 | Delete | `src/pages/api/mp/{lock,snapshot,settle,release-escrow}.ts` | Internal economy callbacks |
-| Delete | callback, lock, escrow, recovery, and frozen-room tests under `src/server/mp/` | Compatibility and rare-failure coverage |
-| Modify | Ranked, wallet, roulette, missions, cleanup, configuration, and documentation files listed below | Remove cross-system multiplayer concepts |
-| Modify | `e2e/multiplayer-poker.spec.ts` | One fast local-stack happy path |
+| Delete | callback/escrow/recovery tests under `src/server/mp/` | Obsolete hardening coverage |
+| Modify | Ranked, wallet, roulette, missions, cleanup, schema, fixtures, docs | Remove cross-system multiplayer concepts |
+| Modify | `e2e/multiplayer-poker.spec.ts` | One fast two-user happy path |
 
-The design reference is `docs/superpowers/specs/2026-08-05-isolated-multiplayer-poker-design.md`.
+Design reference: `docs/superpowers/specs/2026-08-05-isolated-multiplayer-poker-design.md`.
 
 ---
 
-### Task 1: Replace the poker room engine with room-local stacks
+### Task 1: Convert the engine and Durable Object behavior to local stacks in place
 
 **Files:**
 
-- Move and rewrite: `src/lib/mp-poker/engine.ts` → `src/modules/multiplayer-poker/room.ts`
-- Move and rewrite: `src/lib/mp-poker/engine.test.ts` → `src/modules/multiplayer-poker/room.test.ts`
+- Modify: `src/lib/mp-poker/engine.ts`
+- Modify: `src/lib/mp-poker/engine.test.ts`
+- Modify: `src/server/mp/arcturus.ts`
+- Delete: `src/server/mp/reconnect-guard.test.ts`
+- Delete: `src/server/mp/turn-timeout.test.ts`
+- Create: `src/server/mp/arcturus.test.ts`
 
 **Interfaces:**
 
-- Consumes: `Card` from `src/lib/poker/types.ts` and `determineShowdownWinners` from `src/lib/poker/handEvaluator.ts`.
 - Produces:
 
 ```ts
@@ -83,15 +102,28 @@ export interface RoomConfig {
 	bigBlind: number;
 }
 
-export type RoomPhase = 'waiting' | 'in-hand';
+export interface SeatState {
+	seatIndex: number;
+	userId: string | null;
+	displayName: string | null;
+	chips: number;
+	connected: boolean;
+	disconnectedAt: number | null;
+}
+
+export interface HandWinner {
+	userId: string;
+	seatIndex: number;
+	amount: number;
+}
 
 export interface HandResult {
-	winners: Array<{ seatIndex: number; amount: number }>;
+	winners: HandWinner[];
 }
 
 export interface RoomTransition {
 	room: Room;
-	handResult?: HandResult;
+	handResult: HandResult | null;
 }
 
 export function createRoom(config: RoomConfig): Room;
@@ -103,334 +135,241 @@ export function leaveSeat(room: Room, userId: string): Room;
 export function startHand(room: Room, args: { deckSeed: string }): Room;
 export function applyAction(room: Room, userId: string, action: ActionInput): RoomTransition;
 export function forceFold(room: Room, userId: string): RoomTransition;
+export function clearDisconnectedSeat(room: Room, userId: string): Room;
 ```
 
-- [ ] **Step 1: Move the engine and test files before changing behavior**
+- The Durable Object remains `class Arcturus` with binding `env.arcturus` throughout this task.
+- No route or Ranked binding rename happens here.
 
-```bash
-mkdir -p src/modules/multiplayer-poker
-git mv src/lib/mp-poker/engine.ts src/modules/multiplayer-poker/room.ts
-git mv src/lib/mp-poker/engine.test.ts src/modules/multiplayer-poker/room.test.ts
-sed -i.bak "s#from './engine'#from './room'#" src/modules/multiplayer-poker/room.test.ts
-rm src/modules/multiplayer-poker/room.test.ts.bak
-```
+- [ ] **Step 1: Add failing local-stack tests without moving files**
 
-- [ ] **Step 2: Replace seating tests with the local-stack contract**
-
-Add these first assertions:
+Replace wallet-oriented setup in `engine.test.ts` with:
 
 ```ts
-test('takeSeat grants exactly one hundred big blinds', () => {
-	let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
-	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
-	expect(room.phase).toBe('waiting');
-	expect(room.seats[0].chips).toBe(1000);
-});
-
-test('leave and retake resets the local stack', () => {
-	let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
-	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
-	room = { ...room, seats: room.seats.map((seat, index) => index === 0 ? { ...seat, chips: 125 } : seat) };
-	room = leaveSeat(room, 'u1');
-	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
-	expect(room.seats[0].chips).toBe(1000);
-});
-```
-
-- [ ] **Step 3: Run the local-stack tests and verify the old API fails**
-
-```bash
-bun test src/modules/multiplayer-poker/room.test.ts --test-name-pattern 'one hundred big blinds|resets the local stack'
-```
-
-Expected: FAIL because `hostUserId` and `mainBalance` are still required and seats do not own local chips.
-
-- [ ] **Step 4: Simplify configuration, phase, and seat types**
-
-Make `RoomConfig` contain only `maxSeats`, `smallBlind`, and `bigBlind`. Validate 2, 4, or 6 seats; positive safe-integer blinds; `bigBlind >= smallBlind * 2`; and a safe `bigBlind * 100` starting stack.
-
-Use only:
-
-```ts
-export type RoomPhase = 'waiting' | 'in-hand';
-
-export interface SeatState {
-	seatIndex: number;
-	userId: string | null;
-	displayName: string | null;
-	chips: number;
-	connected: boolean;
-	disconnectedAt: number | null;
-}
-```
-
-Delete `mainBalance`, `hostUserId`, `handLog`, `settling`, and `frozen`.
-
-- [ ] **Step 5: Change hand start to use connected local stacks**
-
-Change the signature to `startHand(room, { deckSeed })`. Build eligibility from connected seats where `chips >= bigBlind`. Post blinds by decrementing seat chips and recording the same amounts in `hand.committed`.
-
-Add and run:
-
-```ts
-test('startHand debits blinds from seat chips', () => {
+function createHeadsUpRoom() {
 	let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
 	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
 	room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
-	room = startHand(room, { deckSeed: 'blind-test' });
-	expect(room.seats[0].chips + room.seats[1].chips).toBe(1985);
-	expect(Object.values(room.hand!.committed).reduce((sum, amount) => sum + amount, 0)).toBe(15);
-});
-```
-
-```bash
-bun test src/modules/multiplayer-poker/room.test.ts --test-name-pattern 'debits blinds'
-```
-
-Expected after implementation: PASS.
-
-- [ ] **Step 6: Debit every betting action from `seat.chips`**
-
-For call, bet, raise, and all-in, calculate affordability from the current seat's chips. Subtract the paid amount from the seat and add it to `hand.committed`. Preserve existing action-order, minimum-raise, and short-all-in reopening rules.
-
-Add an invariant helper in tests:
-
-```ts
-function totalRoomChips(room: Room): number {
-	return room.seats.reduce((sum, seat) => sum + seat.chips, 0) +
-		Object.values(room.hand?.committed ?? {}).reduce((sum, amount) => sum + amount, 0);
+	return room;
 }
-```
 
-Assert total room chips remain constant throughout actions.
+test('taking a seat grants 100 big blinds', () => {
+	const room = takeSeat(
+		createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 }),
+		{ userId: 'u1', displayName: 'Alice', seatIndex: 0 },
+	);
+	expect(room.seats[0].chips).toBe(1_000);
+});
 
-- [ ] **Step 7: Finish and pay out a hand synchronously**
-
-Change `applyAction` and `forceFold` to return `RoomTransition`. When fold-out or showdown completes:
-
-1. Build pots with existing side-pot rules.
-2. Allocate odd chips using existing dealer-relative order.
-3. Add awarded amounts directly to winner seats.
-4. Clear `room.hand`.
-5. Set `phase: 'waiting'`.
-6. Return `{ room, handResult: { winners } }`.
-
-Add:
-
-```ts
-test('fold-out pays the winner and returns to waiting', () => {
-	let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
-	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
-	room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
-	room = startHand(room, { deckSeed: 'fold-out' });
+test('fold-out pays locally and returns to waiting', () => {
+	const room = startHand(createHeadsUpRoom(), { deckSeed: 'fold-out' });
 	const transition = applyAction(room, 'u1', { action: 'fold' });
 	expect(transition.room.phase).toBe('waiting');
 	expect(transition.room.hand).toBeNull();
-	expect(transition.handResult?.winners).toEqual([{ seatIndex: 1, amount: 15 }]);
-	expect(transition.room.seats[1].chips).toBe(1005);
+	expect(transition.handResult).toEqual({
+		winners: [{ userId: 'u2', seatIndex: 1, amount: 15 }],
+	});
+	expect(transition.room.seats[0].chips).toBe(995);
+	expect(transition.room.seats[1].chips).toBe(1_005);
 });
 ```
 
-- [ ] **Step 8: Adapt force-fold and disconnected-seat payout safety**
-
-Keep `seatIndexMap` captured at deal time. Force-folding a disconnected player must not allow that cleared seat to win a pot. Add one test that force-folds, clears the seat after completion, and asserts all awarded seat indices still refer to occupied eligible winners.
-
-- [ ] **Step 9: Delete wallet and settlement-only engine tests**
-
-Delete test cases centered on snapshot omission, late seating during snapshot fetch, settling-phase leave, frozen phase, hand-log persistence, or settlement payload preparation.
-
-Retain and adapt legal actions, streets, short all-ins, side pots, ties, odd chips, all-in runout, and disconnect force-fold tests.
-
-- [ ] **Step 10: Run and inspect the focused room suite**
-
-```bash
-bun test src/modules/multiplayer-poker/room.test.ts
-! grep -E 'hostUserId|mainBalance|snapshots|handStacks|handLog|settling|frozen' \
-	src/modules/multiplayer-poker/room.ts
-```
-
-Expected: room tests PASS and the absence check succeeds.
-
-- [ ] **Step 11: Commit**
-
-```bash
-git add -A src/lib/mp-poker src/modules/multiplayer-poker
-git commit -m 'refactor(mp): use room-local poker stacks'
-```
-
----
-
-### Task 2: Move and reduce the protocol, client, and room-code API
-
-**Files:**
-
-- Move: `src/lib/mp-poker/protocol.ts` → `src/modules/multiplayer-poker/protocol.ts`
-- Move: `src/lib/mp-poker/protocol.test.ts` → `src/modules/multiplayer-poker/protocol.test.ts`
-- Move: `src/lib/mp-poker/client.ts` → `src/modules/multiplayer-poker/client.ts`
-- Move: `src/lib/mp-poker/client.test.ts` → `src/modules/multiplayer-poker/client.test.ts`
-- Move: `src/lib/mp-poker/roomCode.ts` → `src/modules/multiplayer-poker/room-code.ts`
-- Move: `src/lib/mp-poker/roomCode.test.ts` → `src/modules/multiplayer-poker/room-code.test.ts`
-- Create: `src/modules/multiplayer-poker/index.ts`
-- Delete: `src/lib/mp-poker/roomExists.ts`
-- Delete: `src/lib/mp-poker/roomExists.test.ts`
-- Modify imports in current pages, routes, and `src/server/mp/arcturus.ts`
-
-**Interfaces:**
-
-- Consumes: `RoomTransition` and public room projection from Task 1.
-- Produces: `ClientMessage`, `ServerMessage`, `MultiplayerPokerClient`, room-code helpers, and the module public entry point.
-
-- [ ] **Step 1: Move files with Git history**
-
-```bash
-git mv src/lib/mp-poker/protocol.ts src/modules/multiplayer-poker/protocol.ts
-git mv src/lib/mp-poker/protocol.test.ts src/modules/multiplayer-poker/protocol.test.ts
-git mv src/lib/mp-poker/client.ts src/modules/multiplayer-poker/client.ts
-git mv src/lib/mp-poker/client.test.ts src/modules/multiplayer-poker/client.test.ts
-git mv src/lib/mp-poker/roomCode.ts src/modules/multiplayer-poker/room-code.ts
-git mv src/lib/mp-poker/roomCode.test.ts src/modules/multiplayer-poker/room-code.test.ts
-git rm src/lib/mp-poker/roomExists.ts src/lib/mp-poker/roomExists.test.ts
-```
-
-Update moved room-code test imports from `./roomCode` to `./room-code`.
-
-- [ ] **Step 2: Write the reduced-protocol tests first**
-
-Replace protocol tests with positive cases for four client and four server message types. Add explicit rejection:
+Add the disconnect payout contract:
 
 ```ts
-test('rejects removed messages', () => {
-	expect(() => ClientMessage.parse({ type: 'emote', emoteId: 'good_game' })).toThrow();
-	expect(() => ServerMessage.parse({ type: 'state_delta', patch: {} })).toThrow();
+test('force-fold pays the remaining user before an expired seat is cleared', () => {
+	let room = startHand(createHeadsUpRoom(), { deckSeed: 'disconnect-fold' });
+	room = {
+		...room,
+		seats: room.seats.map((seat) =>
+			seat.userId === 'u1'
+				? { ...seat, connected: false, disconnectedAt: 1_000 }
+				: seat,
+		),
+	};
+	const transition = forceFold(room, 'u1');
+	expect(transition.handResult?.winners).toEqual([
+		{ userId: 'u2', seatIndex: 1, amount: 15 },
+	]);
+	const cleared = clearDisconnectedSeat(transition.room, 'u1');
+	expect(cleared.seats[0].userId).toBeNull();
+	expect(cleared.seats[1].chips).toBe(1_005);
 });
 ```
 
-- [ ] **Step 3: Run protocol tests and verify removed messages still parse**
-
-```bash
-bun test src/modules/multiplayer-poker/protocol.test.ts
-```
-
-Expected: FAIL because the old schemas still accept removed protocol branches.
-
-- [ ] **Step 4: Reduce `protocol.ts`**
-
-Keep client messages `take_seat`, `leave_seat`, `start_hand`, and `action` only. Keep server messages `room_state`, `hand_started`, `hand_ended`, and `error` only.
-
-Delete `PROTOCOL_VERSION`, `EMOTES`, `state_delta`, `kicked`, `hand_aborted`, emotes, ping/pong, membership/settlement error codes, and unused message fields.
-
-Public seat schema must include `seatIndex`, `displayName`, `chips`, `committed`, `folded`, `allIn`, and `connected`, but not `userId` or `disconnectedAt`.
-
-- [ ] **Step 5: Retain the small browser client without adding reconnect machinery**
-
-Keep explicit `connect`, `send`, `on`, `onDisconnect`, and `close`. Preserve malformed-message dropping and superseded-socket handling. Do not add automatic retry, backoff, heartbeat, or protocol negotiation.
-
-Run:
-
-```bash
-bun test src/modules/multiplayer-poker/client.test.ts
-```
-
-Expected: PASS after imports and schemas are updated.
-
-- [ ] **Step 6: Add the narrow public entry point**
-
-Create `src/modules/multiplayer-poker/index.ts`:
+Add an identity guard:
 
 ```ts
-export { MultiplayerPokerClient } from './client';
-export { ClientMessage, ServerMessage } from './protocol';
-export { generateRoomCode, isValidRoomCode } from './room-code';
-export type { ClientMessage as ClientMessageValue, ServerMessage as ServerMessageValue } from './protocol';
+test('never credits a replacement occupant for an old hand winner', () => {
+	const room = startHand(createHeadsUpRoom(), { deckSeed: 'identity-guard' });
+	const replaced = {
+		...room,
+		seats: room.seats.map((seat) =>
+			seat.seatIndex === 1
+				? { ...seat, userId: 'replacement', displayName: 'Replacement' }
+				: seat,
+		),
+	};
+	const transition = applyAction(replaced, 'u1', { action: 'fold' });
+	expect(transition.room.seats[1].chips).toBe(990);
+});
 ```
 
-Task 3 adds the Durable Object and metadata exports.
+Retain/adapt existing tests for legal actions, streets, side pots, short all-ins, ties, odd chips, and runout.
 
-- [ ] **Step 7: Update all old imports**
-
-List old imports:
+- [ ] **Step 2: Run the engine suite and verify the contract fails**
 
 ```bash
-git grep -n 'lib/mp-poker' -- src || true
+bun test src/lib/mp-poker/engine.test.ts
 ```
 
-Pages and routes import public values from `modules/multiplayer-poker`. Until Task 3 moves the object, `src/server/mp/arcturus.ts` may import internal room/protocol files directly from `../../modules/multiplayer-poker`.
+Expected: FAIL because the old API requires `hostUserId`, `mainBalance`, and snapshots, and completed hands enter `settling`.
 
-- [ ] **Step 8: Run focused tests and absence checks**
+- [ ] **Step 3: Replace wallet-oriented room types**
 
-```bash
-bun test \
-	src/modules/multiplayer-poker/protocol.test.ts \
-	src/modules/multiplayer-poker/client.test.ts \
-	src/modules/multiplayer-poker/room-code.test.ts
-! git grep -E 'PROTOCOL_VERSION|state_delta|emote_received|hand_aborted|type: .ping.|type: .pong.' -- src
-```
-
-Expected: tests PASS and no obsolete runtime symbol remains.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add -A src/lib/mp-poker src/modules/multiplayer-poker src/pages src/server/mp/arcturus.ts
-git commit -m 'refactor(mp): reduce and relocate room protocol'
-```
-
----
-
-### Task 3: Replace the Durable Object with the isolated room runtime
-
-**Files:**
-
-- Move and rewrite: `src/server/mp/arcturus.ts` → `src/modules/multiplayer-poker/durable-object.ts`
-- Create: `src/modules/multiplayer-poker/durable-object.test.ts`
-- Delete: `src/server/mp/reconnect-guard.test.ts`
-- Rewrite: `src/server/mp/turn-timeout.test.ts` into the module object test, then delete the old file
-- Modify: `src/modules/multiplayer-poker/index.ts`
-- Modify: `src/worker.ts`
-- Modify: `src/env.d.ts`
-- Modify: `wrangler.toml`
-
-**Interfaces:**
-
-- Consumes: room transitions and protocol from Tasks 1–2.
-- Produces: `MultiplayerPokerRoom`, `RoomMetadata`, `MULTIPLAYER_POKER_ROOMS` binding, and persisted room state with only room/deadline data.
-
-- [ ] **Step 1: Move the class and create an object test seam**
-
-```bash
-git mv src/server/mp/arcturus.ts src/modules/multiplayer-poker/durable-object.ts
-git rm src/server/mp/reconnect-guard.test.ts
-```
-
-Extract pure deadline selection used by the class:
+Use:
 
 ```ts
-export interface RoomDeadlines {
-	turnDeadline: number | null;
-	emptyDeadline: number | null;
+export interface Room {
+	config: RoomConfig;
+	phase: 'waiting' | 'in-hand';
+	seats: SeatState[];
+	hand: HandState | null;
+	lastDealerSeat: number;
 }
-
-export function nextAlarmAt(room: Room, deadlines: RoomDeadlines): number | null;
 ```
 
-The function chooses the earliest turn deadline, disconnected-seat expiry, or empty deadline.
+Delete from the engine:
 
-- [ ] **Step 2: Write deadline tests before deleting retry branches**
-
-Create `durable-object.test.ts` with cases proving turn deadline, reconnect expiry, and empty deadline ordering. Include a test where no deadline returns `null`.
-
-```bash
-bun test src/modules/multiplayer-poker/durable-object.test.ts
+```text
+hostUserId
+mainBalance
+handStacks
+handLog
+settling
+frozen
 ```
 
-Expected initially: FAIL because the helper does not exist.
+`createRoom` accepts only 2/4/6 seats, positive safe-integer blinds, `bigBlind >= smallBlind * 2`, and a safe-integer `bigBlind * 100`.
 
-- [ ] **Step 3: Replace persisted state**
+- [ ] **Step 4: Implement local debit and hand start**
 
-Use only:
+`takeSeat` assigns:
 
 ```ts
-interface PersistedRoomState {
+chips: room.config.bigBlind * 100
+```
+
+`startHand` selects only occupied connected seats with `chips >= bigBlind`. It posts blinds by subtracting from `SeatState.chips` and adding to `hand.committed`.
+
+Action affordability uses the current seat stack:
+
+```ts
+const seatIndex = room.seats.findIndex((seat) => seat.userId === userId);
+if (seatIndex < 0) throw new EngineError('INVALID_ACTION', 'player is not seated');
+const remaining = room.seats[seatIndex].chips;
+const committedNow = hand.committed[userId] ?? 0;
+const toCall = hand.currentBet - committedNow;
+```
+
+Call/bet/raise/all-in update the seat and committed map in one immutable transition.
+
+- [ ] **Step 5: Make winner discovery independent of live seats**
+
+For fold-out:
+
+```ts
+const remainingUserIds = Object.keys(hand.holeCards).filter(
+	(userId) => !hand.folded.has(userId),
+);
+if (remainingUserIds.length !== 1) {
+	throw new EngineError('INVALID_ACTION', 'fold-out requires one remaining player');
+}
+const winnerUserId = remainingUserIds[0];
+const winnerSeatIndex = hand.seatIndexMap[winnerUserId];
+```
+
+For showdown, construct eligible players from `hand.holeCards` and `hand.seatIndexMap`, not `room.seats[seatIndex].userId`.
+
+Keep `buildSidePots` engine-local and remove its unused live-seat argument.
+
+- [ ] **Step 6: Apply payout with identity matching**
+
+Use:
+
+```ts
+function completeHand(room: Room, winners: HandWinner[]): RoomTransition {
+	const awardByUserId = new Map(winners.map((winner) => [winner.userId, winner]));
+	const seats = room.seats.map((seat) => {
+		if (!seat.userId) return seat;
+		const winner = awardByUserId.get(seat.userId);
+		if (!winner || winner.seatIndex !== seat.seatIndex) return seat;
+		return { ...seat, chips: seat.chips + winner.amount };
+	});
+	return {
+		room: { ...room, phase: 'waiting', seats, hand: null },
+		handResult: { winners },
+	};
+}
+```
+
+`applyAction` and `forceFold` return `RoomTransition`.
+
+- [ ] **Step 7: Implement explicit disconnect cleanup**
+
+Use:
+
+```ts
+export function clearDisconnectedSeat(room: Room, userId: string): Room {
+	const protectedByActiveHand =
+		room.hand !== null &&
+		room.hand.holeCards[userId] !== undefined &&
+		!room.hand.folded.has(userId);
+	if (protectedByActiveHand) return room;
+	return {
+		...room,
+		seats: room.seats.map((seat) =>
+			seat.userId === userId
+				? {
+						seatIndex: seat.seatIndex,
+						userId: null,
+						displayName: null,
+						chips: 0,
+						connected: false,
+						disconnectedAt: null,
+					}
+				: seat,
+		),
+	};
+}
+```
+
+The Durable Object must call `forceFold` before this helper. If the fold returns a result, payout has already occurred. Expired all-in/non-folded seats remain until hand completion.
+
+- [ ] **Step 8: Rewrite the Durable Object in place**
+
+Keep filename/class/binding unchanged. Remove from `arcturus.ts`:
+
+```text
+buildSettlePayload
+fetchSnapshot
+runSettlement
+releaseEscrow
+releaseMembership
+doSecret
+currentHandId
+pendingLockReleases
+pendingEscrowReleases
+isStartingHand
+settling/frozen recovery
+host transfer
+host-only start
+```
+
+Persist only:
+
+```ts
+interface PersistedState {
 	room: PersistedRoom;
 	roomCode: string;
 	turnDeadline: number | null;
@@ -438,222 +377,243 @@ interface PersistedRoomState {
 }
 ```
 
-Delete `doSecret`, `currentHandId`, `pendingLockReleases`, `pendingEscrowReleases`, `isStartingHand`, settlement state, external callbacks, and retry counters.
+`start_hand` calls `startHand(this.room, { deckSeed: crypto.randomUUID() })` with no external fetch. Any connected eligible seated user may start.
 
-- [ ] **Step 4: Simplify initialization and metadata**
-
-`POST /init` validates `RoomConfig`, creates the room, persists it, and schedules empty cleanup. It returns `{ ok: true }` without a secret.
-
-`GET /metadata` returns:
+For an action:
 
 ```ts
-export interface RoomMetadata {
-	roomCode: string;
-	maxSeats: number;
-	smallBlind: number;
-	bigBlind: number;
-	occupancy: number;
+const transition = applyAction(this.room, identity.userId, parsed);
+this.room = transition.room;
+if (transition.handResult) this.broadcastHandEnded(transition.handResult);
+for (const userId of expiredDisconnectedUserIds) {
+	this.room = clearDisconnectedSeat(this.room, userId);
 }
+await this.persistAndBroadcast();
 ```
 
-Duplicate initialization returns 409.
+At disconnect expiry, fold first, then call `clearDisconnectedSeat` for each expired user.
 
-- [ ] **Step 5: Rewrite WebSocket message handling around pure transitions**
+- [ ] **Step 9: Replace detached timeout tests with runtime-helper tests**
 
-For `take_seat`, call `takeSeat`. For `leave_seat`, call `leaveSeat`. For `start_hand`, require the requester to be connected and seated, generate `crypto.randomUUID()` as the seed, and call `startHand`. For `action`, call `applyAction`.
-
-After every accepted mutation:
-
-1. Persist.
-2. Send private `hand_started` cards where applicable.
-3. Broadcast `hand_ended` if the transition contains a result.
-4. Broadcast the latest `room_state`.
-5. Schedule the next alarm.
-
-There is no fetch to D1 or application APIs.
-
-- [ ] **Step 6: Implement reconnect and close behavior**
-
-On upgrade, restore a seat only when the same `userId` reconnects within 30 seconds. On close, mark the matching seat disconnected and set the timestamp. Do not release a membership row.
-
-Use hibernatable WebSocket attachments containing only `userId` and `displayName`.
-
-- [ ] **Step 7: Replace the alarm handler**
-
-At alarm time:
-
-- Force-fold a connected current actor whose 60-second deadline elapsed.
-- Force-fold and clear seats whose 30-second disconnect grace elapsed.
-- Delete room storage when the five-minute empty deadline elapsed and the room still has no seat or socket.
-- Persist and broadcast once after all due mutations.
-- Schedule the next deadline.
-
-No alarm branch performs network I/O.
-
-- [ ] **Step 8: Handle corrupt state by resetting**
-
-Wrap persisted-state restoration in schema/shape validation. On failure, delete the persisted key, clear in-memory state, and return room-not-found until recreated. Do not preserve old room shapes.
-
-Add a test with malformed persisted data and assert storage deletion.
-
-- [ ] **Step 9: Rename class, binding, and Worker export**
-
-Update `src/worker.ts` to import and return `MultiplayerPokerRoom`.
-
-Update `src/env.d.ts`:
-
-```ts
-MULTIPLAYER_POKER_ROOMS: DurableObjectNamespace;
-```
-
-Remove `arcturus` and `MP_AUTH_SECRET`.
-
-Update `wrangler.toml`:
-
-```toml
-[[durable_objects.bindings]]
-name = "MULTIPLAYER_POKER_ROOMS"
-class_name = "MultiplayerPokerRoom"
-
-[[migrations]]
-tag = "v2"
-deleted_classes = ["Arcturus"]
-new_sqlite_classes = ["MultiplayerPokerRoom"]
-```
-
-Keep the existing v1 migration entry; append v2.
-
-- [ ] **Step 10: Export the object from the module**
-
-Add to `index.ts`:
-
-```ts
-export { MultiplayerPokerRoom } from './durable-object';
-export type { RoomMetadata } from './durable-object';
-```
-
-- [ ] **Step 11: Run module tests and build**
+Delete:
 
 ```bash
-bun test src/modules/multiplayer-poker
+git rm src/server/mp/reconnect-guard.test.ts src/server/mp/turn-timeout.test.ts
+```
+
+Create `src/server/mp/arcturus.test.ts`. Export and test:
+
+```ts
+export const TURN_TIMEOUT_MS = 60_000;
+export const RECONNECT_TIMEOUT_MS = 30_000;
+export const EMPTY_ROOM_TIMEOUT_MS = 5 * 60_000;
+
+export function getNextAlarmAt(
+	room: Room,
+	turnDeadline: number | null,
+	emptyDeadline: number | null,
+	now: number,
+): number | null;
+```
+
+`getNextAlarmAt` must omit already-expired reconnect deadlines for users protected by an active hand, preventing immediate alarm loops.
+
+Cover init state, persistence decode, reconnect within grace, expired fold/payout/clear ordering, all-in seat retention, turn timeout, empty deadline, and corrupt-state deletion using fakes/direct helpers.
+
+- [ ] **Step 10: Run focused tests and build**
+
+```bash
+bun test src/lib/mp-poker/engine.test.ts src/server/mp/arcturus.test.ts
 bun run build
-! git grep -E '\bArcturus\b|pendingLockReleases|pendingEscrowReleases|SETTLEMENT_FAILED' -- src wrangler.toml
 ```
 
-Expected: tests PASS, build exits 0, and obsolete object/retry symbols are absent.
-
-- [ ] **Step 12: Commit**
+Expected: PASS. Verify the active runtime no longer calls economy endpoints:
 
 ```bash
-git add -A src/modules/multiplayer-poker src/worker.ts src/env.d.ts wrangler.toml src/server/mp
-git commit -m 'refactor(mp): replace wallet-coupled room object'
+! git grep -E \
+	'fetchSnapshot|runSettlement|releaseEscrow|releaseMembership|pendingEscrow|pendingLock|SETTLEMENT_FAILED' \
+	-- src/server/mp/arcturus.ts src/lib/mp-poker/engine.ts
+```
+
+- [ ] **Step 11: Commit the buildable vertical slice**
+
+```bash
+git add src/lib/mp-poker/engine.ts src/lib/mp-poker/engine.test.ts \
+	src/server/mp/arcturus.ts src/server/mp/arcturus.test.ts
+git add -u src/server/mp
+git commit -m 'refactor(mp): use room-local poker stacks'
 ```
 
 ---
 
-### Task 4: Collapse multiplayer routes and update the room UI
+### Task 2: Reduce the protocol and expose current actor through the existing UI
 
 **Files:**
 
-- Modify: `src/pages/api/mp/rooms/index.ts`
-- Modify: `src/pages/api/mp/rooms/[code].ts`
-- Modify: `src/pages/api/mp/rooms/[code]/ws.ts`
-- Modify: `src/server/mp/rooms-api.test.ts`
-- Modify: `src/server/mp/ws-route-logic.test.ts`
-- Modify: `src/pages/games/poker-mp/index.astro`
+- Modify: `src/lib/mp-poker/protocol.ts`
+- Modify: `src/lib/mp-poker/protocol.test.ts`
+- Modify: `src/lib/mp-poker/client.ts`
+- Modify: `src/lib/mp-poker/client.test.ts`
+- Modify: `src/server/mp/arcturus.ts`
+- Modify: `src/server/mp/arcturus.test.ts`
 - Modify: `src/pages/games/poker-mp/[code].astro`
 
 **Interfaces:**
 
-- Consumes: public helpers and `MULTIPLAYER_POKER_ROOMS` from Tasks 2–3.
-- Produces: thin create, metadata, and upgrade routes with no D1 dependency; UI shows room-local stacks.
+- Produces only four client message types and four server message types.
+- Produces:
 
-- [ ] **Step 1: Rewrite create-route tests without D1 or Ranked fixtures**
-
-Delete Miniflare D1 setup and membership assertions. Keep exact cases:
-
-- unauthenticated → 401;
-- malformed JSON → 400 `INVALID_JSON`;
-- invalid seats or blinds → 400 `INVALID_CONFIG`;
-- missing binding → 503 `DO_UNAVAILABLE`;
-- successful init → 201 with `MP-XXXXXX`;
-- collision then success → 201;
-- five collisions → 500 `CODE_GENERATION_FAILED`;
-- object fetch throw → 502 `DO_UNAVAILABLE`.
-
-The locals fixture contains only `user` and `runtime.env.MULTIPLAYER_POKER_ROOMS`.
-
-- [ ] **Step 2: Run create-route tests and confirm old dependencies fail**
-
-```bash
-bun test src/server/mp/rooms-api.test.ts
+```ts
+export function toRoomStateMessage(room: Room): Extract<ServerMessage, { type: 'room_state' }>;
 ```
 
-Expected: FAIL because the route still creates D1 and membership dependencies.
-
-- [ ] **Step 3: Simplify `POST /api/mp/rooms`**
-
-Implement authentication, parse/validate, binding check, code generation, and up to five `/init` attempts. Forward object errors without creating or cleaning any D1 row.
+- [ ] **Step 1: Write protocol failures first**
 
 Use:
 
 ```ts
-const namespace = locals.runtime.env.MULTIPLAYER_POKER_ROOMS;
-const stub = namespace.get(namespace.idFromName(code));
+test('accepts retained messages', () => {
+	expect(ClientMessage.parse({ type: 'take_seat', seatIndex: 0 }).type).toBe('take_seat');
+	expect(ClientMessage.parse({ type: 'leave_seat' }).type).toBe('leave_seat');
+	expect(ClientMessage.parse({ type: 'start_hand' }).type).toBe('start_hand');
+	expect(ClientMessage.parse({ type: 'action', action: 'fold' }).type).toBe('action');
+});
+
+test('rejects removed messages', () => {
+	expect(() => ClientMessage.parse({ type: 'emote', emoteId: 'good_game' })).toThrow();
+	expect(() => ServerMessage.parse({ type: 'state_delta', patch: {} })).toThrow();
+	expect(() => ServerMessage.parse({ type: 'ping' })).toThrow();
+});
 ```
 
-- [ ] **Step 4: Rewrite WebSocket-route tests around adapter responsibilities**
+A valid room state contains `phase`, public seats, `pot`, `board`, and `currentSeat`.
 
-Remove Ranked, membership, escrow, and cleanup scenarios. Cover invalid code, unauthenticated, cross-origin, malformed origin, non-upgrade, missing binding, object throw, object status forwarding, trusted `x-arcturus-user-id`/display-name replacement, and successful 101 forwarding.
-
-- [ ] **Step 5: Simplify metadata and WebSocket routes**
-
-Metadata performs auth, code validation, binding lookup, and `/metadata` forwarding.
-
-WebSocket performs auth, code/origin/upgrade validation, strips incoming `x-arcturus-*` headers, injects trusted identity headers, and forwards to `/ws`. It never opens D1.
-
-- [ ] **Step 6: Run route tests**
+- [ ] **Step 2: Run and verify failure**
 
 ```bash
-bun test src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
+bun test src/lib/mp-poker/protocol.test.ts
 ```
 
-Expected: PASS with no D1 fixture setup in either file.
+Expected: FAIL because obsolete messages still parse.
 
-- [ ] **Step 7: Update the room page for local stacks and reduced messages**
+- [ ] **Step 3: Implement the minimal schemas**
 
-Import `MultiplayerPokerClient` from `../../../modules/multiplayer-poker`.
+Client:
 
-Render each seat as:
+```text
+take_seat
+leave_seat
+start_hand
+action
+```
+
+Server:
+
+```text
+room_state
+hand_started
+hand_ended
+error
+```
+
+Remove:
+
+```text
+PROTOCOL_VERSION
+EMOTES
+state_delta
+kicked
+hand_aborted
+ping/pong
+membership and settlement error codes
+hand_ended.pots
+hand_ended.showdownCards
+room_state.betToCall
+room_state.timeRemainingMs
+```
+
+Keep `room_state.currentSeat`.
+
+- [ ] **Step 4: Centralize the public projection**
+
+In `arcturus.ts`:
 
 ```ts
-div.textContent = `Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ${s.chips} chips — ${s.committed} committed`;
+export function toRoomStateMessage(
+	room: Room,
+): Extract<ServerMessage, { type: 'room_state' }> {
+	const hand = room.hand;
+	return {
+		type: 'room_state',
+		phase: room.phase,
+		seats: room.seats.map((seat) => ({
+			seatIndex: seat.seatIndex,
+			displayName: seat.displayName,
+			chips: seat.chips,
+			committed: seat.userId && hand ? (hand.committed[seat.userId] ?? 0) : 0,
+			folded: Boolean(seat.userId && hand?.folded.has(seat.userId)),
+			allIn: Boolean(seat.userId && hand?.allIn.has(seat.userId)),
+			connected: seat.connected,
+		})),
+		pot: hand ? Object.values(hand.committed).reduce((sum, value) => sum + value, 0) : 0,
+		board: hand?.board ?? [],
+		currentSeat: hand?.currentSeat ?? null,
+	};
+}
 ```
 
-Handle only `room_state`, `hand_started`, `hand_ended`, and `error`. Preserve existing action buttons and test IDs. Remove assumptions about settlement completion; the first post-result room state already contains awarded stacks and pot zero.
+Add a test asserting `userId`, deck, and private hole cards are absent.
 
-- [ ] **Step 8: Update the lobby import and copy**
+- [ ] **Step 5: Update the page consumer**
 
-Keep the current create/join form and URLs. Make copy clear that chips are room-local and do not affect the account balance.
+Render:
 
-- [ ] **Step 9: Run focused route and page checks**
+```ts
+div.textContent = s.displayName
+	? `Seat ${s.seatIndex}: ${s.displayName} — ${s.chips} chips — ${s.committed} committed`
+	: `Seat ${s.seatIndex}: (empty)`;
+```
+
+On every `room_state`:
+
+```ts
+root.dataset.currentSeat =
+	msg.currentSeat === null ? '' : String(msg.currentSeat);
+```
+
+Keep handling only the four retained server messages.
+
+- [ ] **Step 6: Keep client behavior narrow**
+
+Retain successful connect, parsed delivery, malformed-message drop, send-only-while-open, disconnect callback, and superseded-socket behavior. Do not add reconnect/backoff.
+
+- [ ] **Step 7: Run focused tests and build**
 
 ```bash
-bun test src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
+bun test src/lib/mp-poker/protocol.test.ts src/lib/mp-poker/client.test.ts \
+	src/server/mp/arcturus.test.ts
 bun run build
-! git grep -E 'mpMembership|reconcileMultiplayerMembership|hasActiveRankedSession|heldChips' -- src/pages/api/mp/rooms src/pages/games/poker-mp
 ```
 
-- [ ] **Step 10: Commit**
+Verify removed symbols are absent from runtime:
 
 ```bash
-git add -A src/pages/api/mp/rooms src/pages/games/poker-mp src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
-git commit -m 'refactor(mp): make room routes thin adapters'
+! git grep -E \
+	'PROTOCOL_VERSION|state_delta|emote_received|hand_aborted|type: .ping.|type: .pong.' \
+	-- src/lib/mp-poker src/server/mp src/pages/games/poker-mp
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/lib/mp-poker src/server/mp/arcturus.ts src/server/mp/arcturus.test.ts \
+	'src/pages/games/poker-mp/[code].astro'
+git commit -m 'refactor(mp): reduce room protocol'
 ```
 
 ---
 
-### Task 5: Remove Ranked Blackjack's multiplayer exclusion
+### Task 3: Remove Ranked Blackjack's multiplayer dependency
 
 **Files:**
 
@@ -669,54 +629,10 @@ git commit -m 'refactor(mp): make room routes thin adapters'
 - Modify: `src/lib/ranked/protocol.ts`
 - Modify: `src/lib/ranked/protocol.test.ts`
 - Modify: `src/worker.ts`
-- Modify: `src/server/cleanup.ts` scheduled dependency type only
-- Modify: `src/server/cleanup.test.ts` scheduled dependency stubs only
+- Modify: `src/server/cleanup.ts`
+- Modify: `src/server/cleanup.test.ts`
 
 **Interfaces:**
-
-- Consumes: existing Ranked repository and adapter only.
-- Produces: a Ranked coordinator with no `reconcileMembership`, `membershipDb`, or `membershipNamespace` dependency.
-
-- [ ] **Step 1: Replace membership-conflict tests with an overlap-allowed construction test**
-
-Delete tests expecting `MULTIPLAYER_CONFLICT` or `MULTIPLAYER_ESCROW_ORPHANED`.
-
-Add:
-
-```ts
-test('starts without a multiplayer membership dependency', async () => {
-	const coordinator = createRankedCoordinator({
-		repository,
-		getAdapter,
-		now: () => new Date('2026-08-05T12:00:00Z'),
-		randomBytes: deterministicRandomBytes,
-	});
-	const response = await coordinator.start({
-		userId: 'u1',
-		body: {
-			requestId: 'request-00000001',
-			gameType: 'blackjack',
-			rulesetVersion: 'blackjack-ranked-v1',
-			wager: 100,
-		},
-	});
-	expect(response.status).toBe('active');
-});
-```
-
-The assertion is that construction and start require no multiplayer dependency.
-
-- [ ] **Step 2: Run coordinator tests and verify dependency removal fails**
-
-```bash
-bun test src/server/ranked/coordinator.test.ts
-```
-
-Expected: FAIL because `RankedCoordinatorDeps` still requires membership fields.
-
-- [ ] **Step 3: Remove membership types and checks from the coordinator**
-
-Use:
 
 ```ts
 export interface RankedCoordinatorDeps {
@@ -728,414 +644,676 @@ export interface RankedCoordinatorDeps {
 }
 ```
 
-Delete `MembershipResolution`, classification/resolution helpers, and every membership call from start, resume, act, and expire.
+- [ ] **Step 1: Replace conflict tests**
 
-- [ ] **Step 4: Simplify Ranked HTTP construction**
+Delete tests expecting:
 
-Change bindings to:
+```text
+MULTIPLAYER_CONFLICT
+MULTIPLAYER_ESCROW_ORPHANED
+```
+
+Add a construction/start test that supplies no membership dependency and uses the exact current ranked request helper.
+
+- [ ] **Step 2: Verify failure**
+
+```bash
+bun test src/server/ranked/coordinator.test.ts src/server/ranked/http.test.ts
+```
+
+Expected: FAIL because production types/factories still require membership fields.
+
+- [ ] **Step 3: Remove coordinator membership logic**
+
+Delete:
+
+```text
+MembershipResolution
+reconcileMembership
+membershipDb
+membershipNamespace
+classifyMembership
+resolveMembership
+reconcileCurrentActionMembership
+```
+
+Remove calls from start, resume, action, and expiration.
+
+- [ ] **Step 4: Simplify HTTP and Worker construction**
+
+`RankedHttpCoordinatorBindings` contains only `db`. Remove the membership import and namespace plumbing.
+
+Change scheduled dependency:
 
 ```ts
-export interface RankedHttpCoordinatorBindings {
-	db: D1Database;
-}
+rankedExpiration(db: D1Database, nowSeconds: number): Promise<void>;
 ```
 
-`coordinatorFor` passes only `{ db }`. Remove the membership import and object namespace from production construction and HTTP tests.
+Update `src/worker.ts` and cleanup tests to call the two-argument function.
 
-- [ ] **Step 5: Remove membership handling from expiration and the Worker**
+- [ ] **Step 5: Remove Ranked protocol errors**
 
-Change scheduled Ranked expiration dependencies to receive only `(db, nowSeconds)`. Remove the object namespace argument from `ScheduledJobDeps.rankedExpiration`, `runScheduledJobs`, Worker construction, and cleanup tests.
+Delete both multiplayer errors from status maps, schemas, and tests.
 
-- [ ] **Step 6: Remove Ranked protocol error codes**
+- [ ] **Step 6: Remove Ranked `heldChips` guards**
 
-Delete `MULTIPLAYER_CONFLICT` and `MULTIPLAYER_ESCROW_ORPHANED` from `RANKED_ERROR_STATUS`, types, tests, logging assertions, and response fixtures.
+Ranked account projections and guarded updates use only `chipBalance` and existing Ranked concurrency conditions.
 
-- [ ] **Step 7: Remove `heldChips` predicates from Ranked repository SQL**
+Delete `heldChips` from Ranked test schemas and insert helpers.
 
-Where Ranked account settlement/start currently requires `heldChips = 0`, retain only the relevant account balance and active-session conditions. Update `test-d1.ts` schemas and repository integration expectations.
-
-- [ ] **Step 8: Run Ranked and scheduled-job tests**
+- [ ] **Step 7: Run Ranked and scheduled tests**
 
 ```bash
-bun test \
-	src/server/ranked/coordinator.test.ts \
-	src/server/ranked/http.test.ts \
-	src/server/ranked/expiration.test.ts \
-	src/server/ranked/repository.integration.test.ts \
-	src/lib/ranked/protocol.test.ts \
-	src/server/cleanup.test.ts
-! git grep -E 'reconcileMultiplayerMembership|MULTIPLAYER_CONFLICT|MULTIPLAYER_ESCROW_ORPHANED|membershipNamespace|membershipDb' -- src/server/ranked src/lib/ranked src/worker.ts
+bun test src/server/ranked src/lib/ranked src/server/cleanup.test.ts
+bun run build
 ```
 
-Expected: tests PASS and the absence check succeeds.
-
-- [ ] **Step 9: Commit**
+Verify:
 
 ```bash
-git add -A src/server/ranked src/lib/ranked src/worker.ts src/server/cleanup.ts src/server/cleanup.test.ts
+! git grep -E \
+	'reconcileMultiplayerMembership|MULTIPLAYER_CONFLICT|MULTIPLAYER_ESCROW_ORPHANED|membershipNamespace|membershipDb|heldChips' \
+	-- src/server/ranked src/lib/ranked src/worker.ts
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/server/ranked src/lib/ranked src/worker.ts \
+	src/server/cleanup.ts src/server/cleanup.test.ts
 git commit -m 'refactor(ranked): remove multiplayer exclusion'
 ```
 
 ---
 
-### Task 6: Delete the persistent multiplayer economy and wallet guards
+### Task 4: Thin room routes and delete persistent membership
 
 **Files:**
 
+- Modify: `src/pages/api/mp/rooms/index.ts`
+- Modify: `src/pages/api/mp/rooms/[code].ts`
+- Modify: `src/pages/api/mp/rooms/[code]/ws.ts`
+- Rewrite: `src/server/mp/rooms-api.test.ts`
+- Rewrite: `src/server/mp/ws-route-logic.test.ts`
 - Delete: `src/server/mp/membership.ts`
 - Delete: `src/server/mp/membership.test.ts`
-- Delete: `src/server/mp/settlement.ts`
-- Delete: `src/server/mp/settlement.test.ts`
-- Delete: `src/server/mp/lock.test.ts`
-- Delete: `src/server/mp/snapshot-api.test.ts`
-- Delete: `src/server/mp/settle-api.test.ts`
-- Delete: `src/server/mp/release-escrow.test.ts`
 - Delete: `src/pages/api/mp/lock.ts`
-- Delete: `src/pages/api/mp/snapshot.ts`
-- Delete: `src/pages/api/mp/settle.ts`
-- Delete: `src/pages/api/mp/release-escrow.ts`
-- Modify: `src/db/schema.ts`
-- Delete: `drizzle/0008_last_living_lightning.sql`
-- Delete: `drizzle/0008_mp_membership.sql`
-- Modify: `src/pages/api/chips/update.ts`
-- Modify: `src/lib/chips-update-api.test.ts`
-- Modify: `src/pages/api/roulette/spin.ts`
-- Modify: `src/lib/roulette/spin-batch-sql.ts`
-- Modify: `src/lib/roulette/spin-api.test.ts`
-- Modify: `src/lib/roulette/spin-cascade.integration.test.ts`
+- Delete: `src/server/mp/lock.test.ts`
+- Delete: `src/lib/mp-poker/roomExists.ts`
+- Delete: `src/lib/mp-poker/roomExists.test.ts`
 
 **Interfaces:**
 
-- Consumes: isolated multiplayer from Tasks 1–4 and Ranked decoupling from Task 5.
-- Produces: D1 schema and single-player wallet paths with no multiplayer escrow concept.
+- Binding remains `env.arcturus` in this task.
+- Routes have no D1 dependency.
 
-- [ ] **Step 1: Delete obsolete multiplayer economy code and tests**
+- [ ] **Step 1: Rewrite create-route tests with stubs**
+
+Use:
+
+```ts
+function makeLocals(namespace?: DurableObjectNamespace) {
+	return {
+		user: { id: 'rooms-api-user', name: 'Room Creator' },
+		runtime: { env: { arcturus: namespace } },
+	};
+}
+```
+
+Cover unauthorized, malformed JSON, invalid config, missing binding, init success, collision retry, exhausted collisions, non-409 object error, and thrown fetch.
+
+- [ ] **Step 2: Verify failure**
+
+```bash
+bun test src/server/mp/rooms-api.test.ts
+```
+
+Expected: FAIL because the route still imports D1/membership/Ranked helpers.
+
+- [ ] **Step 3: Replace create route**
+
+Validate:
+
+```ts
+const valid =
+	(body.maxSeats === 2 || body.maxSeats === 4 || body.maxSeats === 6) &&
+	Number.isSafeInteger(body.smallBlind) &&
+	Number.isSafeInteger(body.bigBlind) &&
+	body.smallBlind > 0 &&
+	body.bigBlind >= body.smallBlind * 2 &&
+	Number.isSafeInteger(body.bigBlind * 100);
+```
+
+Generate/init up to five codes, retry only 409, and return 201 with the code. No database access.
+
+- [ ] **Step 4: Rewrite WebSocket route tests**
+
+Use stub namespace/forwarded headers. Cover invalid code, unauthorized, cross-origin, malformed origin, non-upgrade, missing binding, trusted identity forwarding, successful 101, non-101 forwarding, and thrown fetch.
+
+- [ ] **Step 5: Replace WebSocket route**
+
+Keep validation and trusted headers. Delete every D1/membership/escrow branch. Forward to `env.arcturus`.
+
+- [ ] **Step 6: Keep metadata route thin**
+
+Validate code/auth/binding and forward `/metadata`.
+
+- [ ] **Step 7: Delete membership files**
 
 ```bash
 git rm \
 	src/server/mp/membership.ts \
 	src/server/mp/membership.test.ts \
-	src/server/mp/settlement.ts \
-	src/server/mp/settlement.test.ts \
-	src/server/mp/lock.test.ts \
-	src/server/mp/snapshot-api.test.ts \
-	src/server/mp/settle-api.test.ts \
-	src/server/mp/release-escrow.test.ts \
 	src/pages/api/mp/lock.ts \
-	src/pages/api/mp/snapshot.ts \
-	src/pages/api/mp/settle.ts \
-	src/pages/api/mp/release-escrow.ts
+	src/server/mp/lock.test.ts \
+	src/lib/mp-poker/roomExists.ts \
+	src/lib/mp-poker/roomExists.test.ts
 ```
 
-- [ ] **Step 2: Remove schema fields and obsolete migration files**
+- [ ] **Step 8: Test and build**
 
-Delete `heldChips` from `user` and delete the entire `mpMembership` table declaration.
+```bash
+bun test src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
+bun run build
+```
+
+Verify:
+
+```bash
+! git grep -E \
+	'createDb|mpMembership|reconcileMultiplayerMembership|hasActiveRankedSession|mp_membership' \
+	-- src/pages/api/mp/rooms src/server/mp src/lib/mp-poker
+```
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add src/pages/api/mp/rooms src/server/mp/rooms-api.test.ts \
+	src/server/mp/ws-route-logic.test.ts
+git add -u src/server/mp src/pages/api/mp src/lib/mp-poker
+git commit -m 'refactor(mp): remove persistent room membership'
+```
+
+---
+
+### Task 5: Delete multiplayer settlement and progression sinks
+
+**Files:**
+
+- Delete: `src/server/mp/settlement.ts`
+- Delete: `src/server/mp/settlement.test.ts`
+- Delete: `src/pages/api/mp/snapshot.ts`
+- Delete: `src/pages/api/mp/settle.ts`
+- Delete: `src/pages/api/mp/release-escrow.ts`
+- Delete obsolete API/recovery tests:
+  - `src/server/mp/snapshot-api.test.ts`
+  - `src/server/mp/settle-api.test.ts`
+  - `src/server/mp/release-escrow.test.ts`
+  - any remaining escrow/settlement-only file from the preflight grep
+- Modify: `src/lib/missions/types.ts`
+- Modify: `src/lib/missions/registry.ts`
+- Modify: `src/lib/missions/progress.ts`
+- Modify mission tests, including:
+  - `src/lib/missions/progress.test.ts`
+  - `src/lib/missions/progress-mock.test.ts`
+  - `src/lib/missions/progress-integration.test.ts`
+- Modify: `src/server/cleanup.ts`
+- Modify: `src/server/cleanup.test.ts`
+
+**Interfaces:**
+
+- No `poker_mp` event enters wallet receipts or mission progress.
+- `chip_sync_receipt` cleanup retains only the roulette-specific extended tombstone policy.
+
+- [ ] **Step 1: Delete callback and settlement files**
+
+```bash
+git rm \
+	src/server/mp/settlement.ts \
+	src/server/mp/settlement.test.ts \
+	src/pages/api/mp/snapshot.ts \
+	src/pages/api/mp/settle.ts \
+	src/pages/api/mp/release-escrow.ts \
+	src/server/mp/snapshot-api.test.ts \
+	src/server/mp/settle-api.test.ts \
+	src/server/mp/release-escrow.test.ts
+```
+
+Delete any additional settlement-only test identified by `/tmp/hpa-542-coupling.txt`.
+
+- [ ] **Step 2: Remove multiplayer mission semantics**
+
+Delete `mpHandsCompleted`, dedicated registry entries, and `poker_mp` special cases from `computeIncrement`.
+
+Delete tests that count multiplayer hands/wins/game-mode participation. Keep ordinary single-player mission behavior.
+
+- [ ] **Step 3: Remove cleanup exception**
+
+Change the 30-day receipt cleanup from:
+
+```sql
+gameType NOT IN ('poker_mp', 'roulette')
+```
+
+to the existing non-multiplayer rule that only protects roulette through its separate 90-day pass.
+
+Remove multiplayer comments/fixtures.
+
+- [ ] **Step 4: Run focused tests**
+
+```bash
+bun test src/lib/missions src/server/cleanup.test.ts
+bun run build
+```
+
+Verify:
+
+```bash
+! git grep -E 'poker_mp|mpHandsCompleted|SETTLEMENT_FAILED' -- src e2e
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -u src/server/mp src/pages/api/mp
+git add src/lib/missions src/server/cleanup.ts src/server/cleanup.test.ts
+git commit -m 'refactor(mp): delete settlement and progression sinks'
+```
+
+---
+
+### Task 6: Remove `heldChips` and `mp_membership` from schema, runtime SQL, fixtures, and migration history
+
+**Files:**
+
+- Modify: `src/db/schema.ts`
+- Modify: `src/pages/api/chips/update.ts`
+- Modify: `src/lib/chips-update-api.test.ts`
+- Modify: `src/lib/roulette/spin-batch-sql.ts`
+- Modify: `src/pages/api/roulette/spin.ts`
+- Modify:
+  - `src/lib/roulette/spin-api.test.ts`
+  - `src/lib/roulette/spin-cascade.integration.test.ts`
+- Modify known mission fixtures:
+  - `src/lib/missions/seed.test.ts`
+  - `src/lib/missions/claim.test.ts`
+  - `src/lib/missions/reroll.test.ts`
+  - `src/lib/missions/board-integration.test.ts`
+  - `src/lib/missions/progress-integration.test.ts`
+- Modify:
+  - `src/server/daily-challenge/repository.integration.test.ts`
+  - `src/server/ranked/test-d1.ts`
+  - `src/server/ranked/repository.integration.test.ts`
+  - `scripts/apply-migrations.test.ts`
+- Delete:
+  - `drizzle/0008_last_living_lightning.sql`
+  - `drizzle/0008_mp_membership.sql`
+- Modify every additional runtime/test path from the preflight grep.
+
+**Interfaces:**
+
+- `user` contains `chipBalance` but no `heldChips`.
+- No `mp_membership` table exists in a freshly recreated database.
+- Wallet/roulette operations no longer check an inactive multiplayer escrow column.
+
+- [ ] **Step 1: Remove schema definitions**
+
+Delete:
+
+```ts
+heldChips: integer('heldChips').notNull().default(0)
+```
+
+and the full `mpMembership` table definition.
+
+- [ ] **Step 2: Remove runtime SQL/projections**
+
+In chip update, roulette, and any remaining repository:
+
+- remove `heldChips` from `SELECT`, `INSERT`, `UPDATE`, and result types;
+- remove `heldChips = 0` guards;
+- preserve existing chip-balance optimistic locking and receipt behavior unrelated to multiplayer.
+
+- [ ] **Step 3: Update every fixture from fresh grep output**
+
+Run again:
+
+```bash
+git grep -nE 'heldChips|mp_membership|mpMembership' -- src e2e scripts drizzle
+```
+
+For each result:
+
+- remove the column from test schemas;
+- remove the value from positional `INSERT` column/value lists;
+- remove membership setup/assertions;
+- keep unrelated assertions unchanged.
+
+The known list above is not exhaustive if the fresh grep reports more files.
+
+- [ ] **Step 4: Delete obsolete migration files**
 
 ```bash
 git rm drizzle/0008_last_living_lightning.sql drizzle/0008_mp_membership.sql
 ```
 
-Do not generate a migration that preserves or copies these values.
+Do not add a forward copy/drop migration. This branch recreates every database.
 
-- [ ] **Step 3: Update chip-update tests before implementation**
-
-Change fixtures and selected account rows to use only `chipBalance`. Add an assertion that chip updates do not reference an escrow column by making the test schema omit `heldChips`.
-
-Run:
+- [ ] **Step 5: Reset local binding state exactly**
 
 ```bash
-bun test src/lib/chips-update-api.test.ts
-```
-
-Expected initially: FAIL because production still selects `user.heldChips`.
-
-- [ ] **Step 4: Remove escrow guards from `chips/update.ts`**
-
-Select only `chipBalance`. Delete normalization of `heldChips`, multiplayer-lock rejection, and related error responses. Preserve current authentication, limits, optimistic balance check, receipts, statistics, achievements, and mission behavior for supported single-player game types.
-
-- [ ] **Step 5: Remove escrow guards from roulette**
-
-Delete `heldChips = 0` conditions and bindings from roulette spin SQL. Update shared batch SQL, tests, and Miniflare schemas to omit the column while preserving atomic roulette settlement.
-
-- [ ] **Step 6: Recreate local D1 from the remaining migrations**
-
-Because a reset is approved, remove local D1 state rather than applying a compatibility migration. Use the repository's Wrangler state location, then run:
-
-```bash
+rm -rf .wrangler/state
 bun run db:migrate:local
-wrangler d1 execute arcturus --local --command="PRAGMA table_info('user')"
-wrangler d1 execute arcturus --local --command="SELECT name FROM sqlite_master WHERE type='table' AND name='mp_membership'"
 ```
 
-Expected: the user table has no `heldChips` column and the membership query returns zero rows.
-
-- [ ] **Step 7: Run wallet and roulette tests**
+Verify fresh schema:
 
 ```bash
-bun test \
-	src/lib/chips-update-api.test.ts \
-	src/lib/roulette/spin-api.test.ts \
-	src/lib/roulette/spin-cascade.integration.test.ts
-! git grep -E 'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET' -- src drizzle
+bunx wrangler d1 execute arcturus --local --command \
+	"SELECT name FROM sqlite_schema WHERE type='table' AND name='mp_membership';"
 ```
 
-At this point the grep may still find configuration/documentation references scheduled for Task 7; it must find no runtime or schema reference. Record any remaining paths and remove them in Task 7.
+Expected: zero rows.
+
+```bash
+bunx wrangler d1 execute arcturus --local --command \
+	"SELECT name FROM pragma_table_info('user') WHERE name='heldChips';"
+```
+
+Expected: zero rows.
+
+- [ ] **Step 6: Run broad tests immediately after schema deletion**
+
+```bash
+bun run test
+bun run lint
+bun run build
+```
+
+Resolve every failure before continuing. This early full-suite gate is required because fixture blast radius is the highest-risk part of the change.
+
+- [ ] **Step 7: Verify zero active matches**
+
+```bash
+! git grep -E 'heldChips|mp_membership|mpMembership' -- \
+	src e2e scripts drizzle wrangler.toml
+```
+
+Historical planning documents may still mention the removed names; runtime/config/test paths may not.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add -A src drizzle
-git commit -m 'refactor(mp): delete persistent room economy'
+git add -A src e2e scripts drizzle
+git commit -m 'refactor(wallet): remove multiplayer escrow schema'
 ```
 
 ---
 
-### Task 7: Remove multiplayer progression, cleanup exceptions, and obsolete product surface
+### Task 7: Rename the Durable Object class, file, and binding last
 
 **Files:**
 
-- Modify: `src/lib/missions/types.ts`
-- Modify: `src/lib/missions/registry.ts`
-- Modify: `src/lib/missions/progress.ts`
-- Modify: `src/lib/missions/progress.test.ts`
-- Modify: `src/lib/missions/progress-mock.test.ts`
-- Modify: `src/server/cleanup.ts`
-- Modify: `src/server/cleanup.test.ts`
+- Rename: `src/server/mp/arcturus.ts` → `src/server/mp/multiplayer-poker-room.ts`
+- Rename: `src/server/mp/arcturus.test.ts` → `src/server/mp/multiplayer-poker-room.test.ts`
+- Modify: `src/worker.ts`
 - Modify: `src/env.d.ts`
 - Modify: `wrangler.toml`
-- Modify: `README.md`
-- Modify: `CLAUDE.md`
-- Modify: `src/pages/profile.astro`
-- Delete: `docs/leaderboard-future-improvements.md`
-- Review and update any current docs that claim multiplayer settlement, membership, tournaments, or friend rewards
+- Modify binding references in:
+  - `src/pages/api/mp/rooms/index.ts`
+  - `src/pages/api/mp/rooms/[code].ts`
+  - `src/pages/api/mp/rooms/[code]/ws.ts`
+  - `src/server/mp/rooms-api.test.ts`
+  - `src/server/mp/ws-route-logic.test.ts`
 
 **Interfaces:**
 
-- Consumes: local-only multiplayer and schema deletion from prior tasks.
-- Produces: no progression or cleanup sink for multiplayer; documentation reflects actual product scope.
+```ts
+export class MultiplayerPokerRoom implements DurableObject;
+```
 
-- [ ] **Step 1: Remove the multiplayer mission metric and definitions**
+```ts
+interface Env {
+	MULTIPLAYER_POKER_ROOMS: DurableObjectNamespace;
+}
+```
 
-Delete `mpHandsCompleted` from the mission metric union, remove its registry entries, and remove `poker_mp` special cases from `computeIncrement`.
-
-Delete tests asserting multiplayer completion, multiplayer wins, or multiplayer game-mode progression. Keep ordinary single-player mission tests unchanged.
-
-- [ ] **Step 2: Run mission tests**
+- [ ] **Step 1: Rename files and symbols atomically**
 
 ```bash
-bun test src/lib/missions/progress.test.ts src/lib/missions/progress-mock.test.ts
+git mv src/server/mp/arcturus.ts src/server/mp/multiplayer-poker-room.ts
+git mv src/server/mp/arcturus.test.ts src/server/mp/multiplayer-poker-room.test.ts
 ```
 
-Expected: PASS with no `poker_mp` or `mpHandsCompleted` reference.
+Rename class/import/export references from `Arcturus` to `MultiplayerPokerRoom`.
 
-- [ ] **Step 3: Remove the receipt-retention exception**
+- [ ] **Step 2: Rename binding everywhere**
 
-Change the 30-day `chip_sync_receipt` cleanup so it no longer excludes `poker_mp`; retain the separate roulette tombstone policy. Remove multiplayer-specific comments and cleanup-test fixtures.
+Use `MULTIPLAYER_POKER_ROOMS` in environment types, routes, and route tests. Remove `arcturus` from `Env`.
 
-Run:
+- [ ] **Step 3: Add the breaking Durable Object migration**
+
+Keep v1 and append:
+
+```toml
+[[migrations]]
+tag = "v2"
+deleted_classes = ["Arcturus"]
+new_sqlite_classes = ["MultiplayerPokerRoom"]
+```
+
+Binding:
+
+```toml
+[[durable_objects.bindings]]
+name = "MULTIPLAYER_POKER_ROOMS"
+class_name = "MultiplayerPokerRoom"
+```
+
+Do **not** use `new_classes`. The new namespace is SQLite-backed even though code uses `storage.get/put`.
+
+- [ ] **Step 4: Export the new class**
+
+In `src/worker.ts`:
+
+```ts
+import { MultiplayerPokerRoom } from './server/mp/multiplayer-poker-room';
+
+return { default: { fetch, scheduled }, MultiplayerPokerRoom };
+```
+
+- [ ] **Step 5: Run focused tests and build**
 
 ```bash
-bun test src/server/cleanup.test.ts
+bun test src/server/mp/multiplayer-poker-room.test.ts \
+	src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
+bun run build
 ```
 
-Expected: PASS.
+Verify old active names are absent:
 
-- [ ] **Step 4: Remove secret and old binding documentation**
-
-Delete `MP_AUTH_SECRET`, `arcturus` binding instructions, and internal callback descriptions from `src/env.d.ts`, `wrangler.toml` comments, `README.md`, and `CLAUDE.md`.
-
-Document:
-
-```text
-src/modules/multiplayer-poker/
-MultiplayerPokerRoom
-MULTIPLAYER_POKER_ROOMS
-room-local chips; no D1 settlement
+```bash
+! git grep -E 'class Arcturus|env\.arcturus|runtime\.env\.arcturus|server/mp/arcturus' -- \
+	src wrangler.toml
 ```
 
-- [ ] **Step 5: Replace speculative profile copy**
+- [ ] **Step 6: Commit**
 
-Replace tournament and friend-reward tips with current features. Use copy equivalent to:
+```bash
+git add -A src/server/mp src/pages/api/mp/rooms src/worker.ts src/env.d.ts wrangler.toml
+git commit -m 'refactor(mp): rename multiplayer room durable object'
+```
+
+---
+
+### Task 8: Update product/docs, rewrite E2E, document destructive reset, and verify the full branch
+
+**Files:**
+
+- Modify: `src/pages/profile.astro`
+- Delete: `docs/leaderboard-future-improvements.md`
+- Modify: `README.md`
+- Modify: `CLAUDE.md`
+- Modify: `AGENTS.md`
+- Rewrite: `e2e/multiplayer-poker.spec.ts`
+- Modify only if binding command requires it: `playwright.config.mp.ts`
+- Modify PR description after fresh verification.
+
+**Interfaces:**
+
+- Produces one current product description and one representative multiplayer E2E.
+- Documents exact local and remote reset operations.
+
+- [ ] **Step 1: Replace obsolete product copy**
+
+Replace tournament/friend-reward tips with current copy equivalent to:
 
 ```text
 Try a different single-player table to explore another strategy.
 Create a private poker room and share its code for a casual match.
 ```
 
-Do not add a social roadmap section.
-
-- [ ] **Step 6: Delete the obsolete future-improvements document**
+Delete:
 
 ```bash
 git rm docs/leaderboard-future-improvements.md
 ```
 
-Do not replace it with another speculative PRD.
+- [ ] **Step 2: Update repository guidance**
 
-- [ ] **Step 7: Run global absence checks**
+Document:
 
-```bash
-! git grep -E 'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET|poker_mp|mpHandsCompleted|MULTIPLAYER_CONFLICT|MULTIPLAYER_ESCROW_ORPHANED' -- . 
-! git grep -E 'tournaments page|Invite friends for exclusive' -- src/pages/profile.astro
+```text
+src/lib/mp-poker/*               pure/browser multiplayer code
+src/server/mp/multiplayer-poker-room.ts
+MultiplayerPokerRoom
+MULTIPLAYER_POKER_ROOMS
+room-local chips; no D1 settlement
 ```
 
-The first command may match historical design documents under `docs/superpowers`; restrict a second verification to runtime/config paths if historical docs are intentionally retained:
+Remove `MP_AUTH_SECRET`, `Arcturus`, persistent membership, snapshot, and settlement instructions.
 
-```bash
-! git grep -E 'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET|poker_mp|mpHandsCompleted' -- src drizzle wrangler.toml README.md CLAUDE.md
+- [ ] **Step 3: Rewrite E2E without membership/settlement waits**
+
+Delete:
+
+```text
+waitForSettlement
+membership-release navigation delay
+30-second disconnect test
+serial lock workarounds
 ```
 
-- [ ] **Step 8: Run formatting, lint, and build**
+The one test must:
+
+1. create two authenticated contexts;
+2. create a two-seat 5/10 room;
+3. seat A at 0 and B at 1;
+4. assert both start at 1,000 local chips;
+5. start a hand;
+6. read `data-current-seat`;
+7. fold from the corresponding browser;
+8. assert both receive `Hand ended`;
+9. assert pot becomes zero immediately;
+10. assert winner stack rises and loser stack falls.
+
+- [ ] **Step 4: Run local reset and full verification**
 
 ```bash
-bun run format
-bun run lint
-bun run build
-```
-
-Expected: all commands exit 0.
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add -A src README.md CLAUDE.md wrangler.toml docs
-git commit -m 'chore(mp): remove obsolete multiplayer surface'
-```
-
----
-
-### Task 8: Replace multiplayer E2E coverage and run full verification
-
-**Files:**
-
-- Rewrite: `e2e/multiplayer-poker.spec.ts`
-- Modify only when required by the new binding: `playwright.config.mp.ts`
-- Modify only if the existing command changes: `package.json`
-
-**Interfaces:**
-
-- Consumes: final public room flow from Tasks 1–7.
-- Produces: one representative two-user happy-path test and release evidence.
-
-- [ ] **Step 1: Delete settlement and membership E2E helpers**
-
-Remove `waitForSettlement`, lock-release navigation delays, membership comments, the 30-second disconnect test, and serial reuse workarounds that existed only for D1 locks.
-
-- [ ] **Step 2: Add local-stack test IDs only where necessary**
-
-Reuse current seat, pot, connection, action, and log test IDs. Add `data-testid="seat-stack-{index}"` only if parsing the current seat text would make assertions brittle. Do not redesign the page.
-
-- [ ] **Step 3: Write the single happy-path E2E**
-
-The test must:
-
-1. Open two authenticated browser contexts.
-2. Have A create a two-seat 5/10 room.
-3. Have A and B connect and take seats.
-4. Assert both start with 1,000 local chips.
-5. Start the hand from a connected seated player.
-6. Read `currentSeat` from rendered state or choose the visible legal actor.
-7. Fold the current actor.
-8. Assert both clients receive `Hand ended`.
-9. Assert pot becomes zero without waiting for an external settlement.
-10. Assert winner stack is above its post-blind value and loser stack is below 1,000.
-11. Assert no account-balance UI change is required.
-
-- [ ] **Step 4: Run the E2E against the Durable Object server**
-
-```bash
+rm -rf .wrangler/state
 bun run db:migrate:local
-bun run test:e2e:mp
-```
-
-Expected: one multiplayer test passes without a real-time 30-second wait.
-
-- [ ] **Step 5: Run every focused suite**
-
-```bash
-bun test src/modules/multiplayer-poker
-bun test src/server/mp/rooms-api.test.ts src/server/mp/ws-route-logic.test.ts
-bun test src/server/ranked
-bun test src/lib/ranked
-bun test src/lib/missions
-bun test src/server/cleanup.test.ts
-bun test src/lib/chips-update-api.test.ts src/lib/roulette
-```
-
-Expected: all commands exit 0.
-
-- [ ] **Step 6: Run repository-wide verification**
-
-```bash
 bun run test
 bun run lint
 bun run format:check
 bun run build
-bun run db:migrate:local
 bun run test:e2e:mp
 ```
 
-Record the exact pass/fail output in the PR description. Do not claim completion from focused tests alone.
+Record exact outputs. Do not claim success from partial suites.
 
-- [ ] **Step 7: Inspect the final diff for accidental architecture residue**
+- [ ] **Step 5: Run final residue checks**
 
 ```bash
-git diff --stat main...HEAD
 git diff --check main...HEAD
-! git grep -E 'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET|pendingLockReleases|pendingEscrowReleases|SETTLEMENT_FAILED|MULTIPLAYER_CONFLICT|MULTIPLAYER_ESCROW_ORPHANED' -- src drizzle wrangler.toml
+
+! git grep -E \
+	'heldChips|mp_membership|mpMembership|MP_AUTH_SECRET|pendingLockReleases|pendingEscrowReleases|SETTLEMENT_FAILED|MULTIPLAYER_CONFLICT|MULTIPLAYER_ESCROW_ORPHANED' \
+	-- src e2e scripts drizzle wrangler.toml README.md CLAUDE.md AGENTS.md
+
+! git grep -E 'tournaments page|Invite friends for exclusive' -- src/pages/profile.astro
 ```
 
 Confirm:
 
-- no old `src/lib/mp-poker` or `src/server/mp/arcturus.ts` file remains;
-- no new generic realtime abstraction was introduced;
-- route and page URLs stayed unchanged;
-- the only multiplayer persistence is Durable Object room state;
-- the test suite is materially smaller in recovery and settlement coverage.
+- no `src/modules` directory was introduced;
+- `src/lib/mp-poker` remains the pure module;
+- only the Durable Object stores multiplayer room state;
+- routes have no D1 imports;
+- every protocol message and field has a consumer;
+- no old binding/class alias exists.
 
-- [ ] **Step 8: Commit the E2E and final verification adjustments**
+- [ ] **Step 6: Document the remote reset in the PR**
+
+Include this destructive release procedure:
 
 ```bash
-git add -A e2e playwright.config.mp.ts package.json
-git commit -m 'test(mp): cover isolated private-room happy path'
+bunx wrangler d1 delete arcturus --skip-confirmation
+bunx wrangler d1 create arcturus
+# Copy returned database ID into wrangler.toml
+bun run db:migrate:remote
+bun run deploy
 ```
 
-- [ ] **Step 9: Prepare the implementation PR description**
+State explicitly that all hobby-stage account/game data and old rooms are discarded.
 
-Include:
+Do not run the remote reset while implementing/reviewing the PR; it is a merge/deploy operation.
+
+- [ ] **Step 7: Commit docs and E2E**
+
+```bash
+git add -A src/pages/profile.astro docs README.md CLAUDE.md AGENTS.md \
+	e2e playwright.config.mp.ts
+git commit -m 'docs(mp): finalize isolated room rollout'
+```
+
+- [ ] **Step 8: Update the implementation PR description**
+
+Use:
 
 ```markdown
 ## Summary
 - Replace multiplayer wallet escrow with 100-BB room-local stacks.
-- Move private-room poker into `src/modules/multiplayer-poker`.
-- Delete membership, settlement callbacks, Ranked exclusion, and recovery machinery.
-- Replace the old Durable Object namespace; old room state is intentionally invalidated.
-- Reset D1 rather than migrate held chips or memberships.
+- Keep pure multiplayer code in `src/lib/mp-poker` and Worker runtime in `src/server/mp`.
+- Delete membership, settlement callbacks, Ranked exclusion, progression, and recovery machinery.
+- Replace the old Durable Object namespace with SQLite-backed `MultiplayerPokerRoom`.
+- Recreate D1 rather than migrate held chips or memberships.
 
 ## Verification
 - `bun run test`
 - `bun run lint`
 - `bun run format:check`
 - `bun run build`
-- `bun run db:migrate:local`
 - `bun run test:e2e:mp`
 
 ## Breaking reset
-This hobby-stage change discards existing account/game data and all old multiplayer rooms. No compatibility or data migration is provided.
+This hobby-stage release deletes and recreates the D1 database and invalidates all existing multiplayer rooms. No compatibility or data migration is provided.
 ```
 
 ---
 
 ## Plan self-review checklist
 
-Before execution begins, verify:
+Before execution begins, confirm:
 
-- Every HPA-542 acceptance criterion maps to at least one task.
-- The room engine has no wallet snapshots or settlement phases.
-- Protocol messages have a current producer and consumer.
-- The object has only turn, reconnect, and empty-room deadlines.
-- Ranked construction no longer receives multiplayer dependencies.
-- D1 reset is explicit and no migration copies old values.
-- Missions, statistics, achievements, and cleanup have no multiplayer sink.
-- The E2E covers the retained normal journey only.
-- No task introduces a generic framework or compatibility layer.
+- [ ] Every task ends with tests/build green.
+- [ ] No task moves a file before its consumers are updated in the same commit.
+- [ ] The binding/class rename happens only in Task 7.
+- [ ] Fold-out/showdown winner discovery uses hand state, not live seats.
+- [ ] Payout occurs before disconnect seat clear.
+- [ ] All-in disconnected seats survive until hand completion.
+- [ ] `currentSeat` has a real page/E2E consumer.
+- [ ] `new_sqlite_classes` remains in the final migration.
+- [ ] The preflight grep output is fully classified.
+- [ ] Schema deletion is followed immediately by the full test suite.
+- [ ] Exact local and remote reset commands are documented.
+- [ ] No `src/modules`, barrel package, compatibility layer, or generic framework is introduced.

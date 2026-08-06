@@ -1,9 +1,8 @@
 import {
 	ClientMessage,
-	type Seat,
-	type Phase,
+	toHandEndedMessage,
+	toRoomStateMessage,
 	type ServerMessage,
-	type EmoteId,
 } from '../../lib/mp-poker/protocol';
 import {
 	createRoom,
@@ -217,7 +216,6 @@ const KNOWN_ERROR_CODES: Set<KnownErrorCode> = new Set<KnownErrorCode>([
 	'BAD_MESSAGE',
 	'NOT_YOUR_TURN',
 	'INSUFFICIENT_CHIPS',
-	'ALREADY_IN_ROOM',
 	'NOT_A_MEMBER',
 	'ROOM_CODE_TAKEN',
 	'INVALID_SEAT',
@@ -411,7 +409,7 @@ export class Arcturus implements DurableObject {
 		}
 
 		await this.scheduleNextAlarm();
-		this.broadcastRoomState();
+		this.sendRoomState();
 		if (this.room.phase === 'in-hand' && this.room.hand?.holeCards[userId]) {
 			const cards = this.room.hand.holeCards[userId];
 			if (cards.length === 2) {
@@ -453,14 +451,14 @@ export class Arcturus implements DurableObject {
 					});
 					this.emptyDeadline = null;
 					await this.persist();
-					this.broadcastRoomState();
+					this.sendRoomState();
 					break;
 				}
 				case 'leave_seat':
 					this.room = leaveSeat(this.room, identity.userId);
 					this.updateEmptyDeadline(Date.now());
 					await this.persist();
-					this.broadcastRoomState();
+					this.sendRoomState();
 					await this.scheduleNextAlarm();
 					break;
 				case 'start_hand': {
@@ -500,11 +498,6 @@ export class Arcturus implements DurableObject {
 					await this.applyTransition(applyAction(this.room, identity.userId, parsed), now);
 					break;
 				}
-				case 'emote':
-					this.broadcastEmote(identity.userId, parsed.emoteId);
-					break;
-				case 'pong':
-					break;
 			}
 		} catch (err) {
 			if (err instanceof EngineError) {
@@ -533,7 +526,7 @@ export class Arcturus implements DurableObject {
 		this.updateEmptyDeadline(now);
 		await this.persist();
 		await this.scheduleNextAlarm();
-		this.broadcastRoomState();
+		this.sendRoomState();
 	}
 
 	async webSocketError(ws: WebSocket): Promise<void> {
@@ -649,7 +642,7 @@ export class Arcturus implements DurableObject {
 		}
 		this.updateEmptyDeadline(now);
 		await this.persist();
-		this.broadcastRoomState();
+		this.sendRoomState();
 		await this.scheduleNextAlarm();
 	}
 
@@ -718,8 +711,11 @@ export class Arcturus implements DurableObject {
 		for (const ws of this.sockets.keys()) this.send(ws, msg);
 	}
 
-	private broadcastRoomState(): void {
-		this.broadcast(this.makeRoomStateMessage());
+	private sendRoomState(): void {
+		if (!this.room) return;
+		for (const [socket, identity] of this.sockets) {
+			this.send(socket, toRoomStateMessage(this.room, identity.userId));
+		}
 	}
 
 	private broadcastHandStarted(): void {
@@ -735,71 +731,11 @@ export class Arcturus implements DurableObject {
 				});
 			}
 		}
-		this.broadcastRoomState();
-	}
-
-	private broadcastEmote(fromUserId: string, emoteId: EmoteId): void {
-		if (!this.room) return;
-		const seat = this.room.seats.find((candidate) => candidate.userId === fromUserId);
-		if (seat) this.broadcast({ type: 'emote_received', fromSeat: seat.seatIndex, emoteId });
+		this.sendRoomState();
 	}
 
 	private emitHandEnded(result: NonNullable<RoomTransition['handResult']>): void {
-		this.broadcast({
-			type: 'hand_ended',
-			winners: result.winners.map(({ seatIndex, amount }) => ({ seatIndex, amount })),
-			pots: [],
-			showdownCards: result.showdownCards.map(({ seatIndex, cards }) => ({ seatIndex, cards })),
-		});
-	}
-
-	private makeRoomStateMessage(): ServerMessage {
-		if (!this.room) {
-			return {
-				type: 'room_state',
-				phase: 'waiting' as Phase,
-				seats: [],
-				pot: 0,
-				board: [],
-				currentSeat: null,
-				betToCall: 0,
-				timeRemainingMs: 0,
-			};
-		}
-		const room = this.room;
-		const pot = room.hand
-			? Object.values(room.hand.committed).reduce((sum, value) => sum + value, 0)
-			: 0;
-		const seats: Seat[] = room.seats.map((seat) => ({
-			seatIndex: seat.seatIndex,
-			userId: seat.userId,
-			displayName: seat.displayName,
-			chips: seat.chips,
-			committed: seat.userId && room.hand ? (room.hand.committed[seat.userId] ?? 0) : 0,
-			folded: !!(seat.userId && room.hand?.folded.has(seat.userId)),
-			allIn: !!(seat.userId && room.hand?.allIn.has(seat.userId)),
-			connected: seat.connected,
-			disconnectedAt: seat.disconnectedAt,
-		}));
-		const timeRemainingMs =
-			room.phase === 'in-hand' && room.hand && this.turnDeadline !== null
-				? Math.max(0, this.turnDeadline - Date.now())
-				: 0;
-		const currentUserId = room.hand ? userAtSeat(room, room.hand.currentSeat) : null;
-		const betToCall =
-			room.hand && currentUserId
-				? Math.max(0, room.hand.currentBet - (room.hand.committed[currentUserId] ?? 0))
-				: 0;
-		return {
-			type: 'room_state',
-			phase: room.phase as Phase,
-			seats,
-			pot,
-			board: room.hand?.board ?? [],
-			currentSeat: room.hand?.currentSeat ?? null,
-			betToCall,
-			timeRemainingMs,
-		};
+		this.broadcast(toHandEndedMessage(result));
 	}
 
 	private async persist(): Promise<void> {

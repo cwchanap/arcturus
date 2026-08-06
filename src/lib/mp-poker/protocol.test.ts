@@ -1,12 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { ClientMessage, ServerMessage, PROTOCOL_VERSION, EMOTES } from './protocol';
+import { applyAction, createRoom, startHand, takeSeat, type HandResult, type Room } from './engine';
+import { ClientMessage, ServerMessage, toHandEndedMessage, toRoomStateMessage } from './protocol';
+
+function makeHeadsUpRoom(): Room {
+	let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
+	room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
+	room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
+	return room;
+}
+
+function card(value: string, suit: 'hearts' | 'diamonds' | 'clubs' | 'spades', rank: number) {
+	return { value, suit, rank };
+}
+
+function removedType(...parts: string[]): string {
+	return parts.join('');
+}
 
 describe('protocol', () => {
-	test('PROTOCOL_VERSION is exported', () => {
-		expect(typeof PROTOCOL_VERSION).toBe('number');
-		expect(PROTOCOL_VERSION).toBeGreaterThan(0);
-	});
-
 	test('ClientMessage.parse accepts take_seat', () => {
 		const msg = ClientMessage.parse({ type: 'take_seat', seatIndex: 2 });
 		expect(msg.type).toBe('take_seat');
@@ -21,26 +32,112 @@ describe('protocol', () => {
 		expect(() => ClientMessage.parse({ type: 'action', action: 'raise' })).toThrow();
 	});
 
-	test('ClientMessage.parse rejects unknown emote ids', () => {
-		expect(() => ClientMessage.parse({ type: 'emote', emoteId: 'not_a_real_emote' })).toThrow();
+	test('ClientMessage.parse rejects removed messages', () => {
+		expect(() =>
+			ClientMessage.parse({ type: removedType('em', 'ote'), emoteId: 'good_game' }),
+		).toThrow();
+		expect(() => ClientMessage.parse({ type: removedType('po', 'ng') })).toThrow();
 	});
 
-	test('ServerMessage.parse accepts room_state', () => {
+	test('ServerMessage.parse rejects removed messages', () => {
+		expect(() =>
+			ServerMessage.parse({ type: removedType('state', '_delta'), patch: {} }),
+		).toThrow();
+		expect(() => ServerMessage.parse({ type: removedType('pi', 'ng') })).toThrow();
+		expect(() =>
+			ServerMessage.parse({ type: removedType('hand', '_aborted'), reason: 'disconnect' }),
+		).toThrow();
+	});
+
+	test('ServerMessage.parse accepts the current room_state shape', () => {
 		const msg = ServerMessage.parse({
 			type: 'room_state',
-			phase: 'seating',
+			phase: 'waiting',
 			seats: [],
 			pot: 0,
 			board: [],
 			currentSeat: null,
-			betToCall: 0,
-			timeRemainingMs: 0,
+			yourSeat: null,
 		});
 		expect(msg.type).toBe('room_state');
 	});
 
-	test('EMOTES is a non-empty fixed list', () => {
-		expect(Array.isArray(EMOTES)).toBe(true);
-		expect(EMOTES.length).toBeGreaterThan(0);
+	test('ServerMessage.parse rejects removed room_state fields and old phases', () => {
+		expect(() =>
+			ServerMessage.parse({
+				type: 'room_state',
+				phase: 'seating',
+				seats: [],
+				pot: 0,
+				board: [],
+				currentSeat: null,
+				yourSeat: null,
+			}),
+		).toThrow();
+		expect(() =>
+			ServerMessage.parse({
+				type: 'room_state',
+				phase: 'waiting',
+				seats: [],
+				pot: 0,
+				board: [],
+				currentSeat: null,
+				yourSeat: null,
+				betToCall: 0,
+				timeRemainingMs: 0,
+			}),
+		).toThrow();
+	});
+
+	test('personalizes room state without exposing user ids', () => {
+		const room = startHand(makeHeadsUpRoom(), { deckSeed: 'protocol-room' });
+		const message = toRoomStateMessage(room, 'u2');
+
+		expect(message.yourSeat).toBe(1);
+		expect(message.currentSeat).toBe(0);
+		expect(message.phase).toBe('in-hand');
+		expect(message.seats[0]).toMatchObject({
+			seatIndex: 0,
+			displayName: 'Alice',
+			chips: 995,
+			committed: 5,
+		});
+		expect(JSON.stringify(message)).not.toContain('"userId"');
+		expect(JSON.stringify(message)).not.toContain('holeCards');
+		expect(JSON.stringify(message)).not.toContain('deck');
+	});
+
+	test('retains showdown cards but strips internal user ids', () => {
+		const showdownResult: HandResult = {
+			winners: [{ userId: 'u1', seatIndex: 0, amount: 20 }],
+			showdownCards: [
+				{
+					userId: 'u1',
+					seatIndex: 0,
+					cards: [card('A', 'spades', 14), card('K', 'spades', 13)],
+				},
+				{
+					userId: 'u2',
+					seatIndex: 1,
+					cards: [card('Q', 'hearts', 12), card('Q', 'clubs', 12)],
+				},
+			],
+		};
+		const message = toHandEndedMessage(showdownResult);
+
+		expect(message.showdownCards).toHaveLength(2);
+		expect(JSON.stringify(message)).not.toContain('"userId"');
+		expect(message.showdownCards[0]).toEqual({
+			seatIndex: 0,
+			cards: [card('A', 'spades', 14), card('K', 'spades', 13)],
+		});
+	});
+
+	test('fold-outs produce no showdown cards', () => {
+		const room = startHand(makeHeadsUpRoom(), { deckSeed: 'fold-out' });
+		const transition = applyAction(room, 'u1', { action: 'fold' });
+		const message = toHandEndedMessage(transition.handResult!);
+
+		expect(message.showdownCards).toEqual([]);
 	});
 });

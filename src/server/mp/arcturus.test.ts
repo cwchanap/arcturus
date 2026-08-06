@@ -80,6 +80,38 @@ describe('Arcturus room-local runtime', () => {
 		expect(persisted).not.toHaveProperty('currentHandId');
 	});
 
+	test('sends personalized room state without internal identity fields', () => {
+		const { object } = makeObject();
+		setPrivateField(object, 'room', makeRoom());
+
+		const messages = new Map<string, string>();
+		const socketA = {
+			send: (message: string) => messages.set('u1', message),
+		} as unknown as WebSocket;
+		const socketB = {
+			send: (message: string) => messages.set('u2', message),
+		} as unknown as WebSocket;
+		setPrivateField(
+			object,
+			'sockets',
+			new Map([
+				[socketA, { userId: 'u1', displayName: 'Alice' }],
+				[socketB, { userId: 'u2', displayName: 'Bob' }],
+			]),
+		);
+
+		privateField<() => void>(object, 'sendRoomState').call(object);
+
+		const stateA = JSON.parse(messages.get('u1')!);
+		const stateB = JSON.parse(messages.get('u2')!);
+		expect(stateA.yourSeat).toBe(0);
+		expect(stateB.yourSeat).toBe(1);
+		expect(stateA.currentSeat).toBe(stateB.currentSeat);
+		expect(messages.get('u1')).not.toContain('"userId"');
+		expect(messages.get('u1')).not.toContain('holeCards');
+		expect(messages.get('u1')).not.toContain('deck');
+	});
+
 	test('reloads a persisted room', async () => {
 		const storage = new MemoryStorage();
 		const first = makeObject(storage).object;

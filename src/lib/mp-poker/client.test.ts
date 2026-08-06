@@ -13,7 +13,7 @@ describe('MultiplayerPokerClient', () => {
 
 	test('send is a no-op when not connected', () => {
 		const client = new MultiplayerPokerClient('ws://localhost');
-		expect(() => client.send({ type: 'pong' })).not.toThrow();
+		expect(() => client.send({ type: 'start_hand' })).not.toThrow();
 	});
 
 	test('on returns an unsubscribe function', () => {

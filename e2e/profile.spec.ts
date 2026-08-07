@@ -37,8 +37,8 @@ test.describe('Profile Page', () => {
 	test('displays casino tips section', async ({ page }) => {
 		// Check Casino Tips are visible
 		await expect(page.locator('text=Claim your daily chip bonus')).toBeVisible();
-		await expect(page.locator('text=Visit the tournaments page')).toBeVisible();
-		await expect(page.locator('text=Invite friends for exclusive')).toBeVisible();
+		await expect(page.locator('text=Try a different single-player table')).toBeVisible();
+		await expect(page.locator('text=Create a private poker room')).toBeVisible();
 	});
 
 	test('displays performance summary between casino tips and AI rival settings', async ({

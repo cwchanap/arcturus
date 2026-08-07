@@ -162,7 +162,6 @@ bun run build
 ```sh
 wrangler secret put BETTER_AUTH_SECRET
 wrangler secret put GOOGLE_CLIENT_SECRET
-wrangler secret put MP_AUTH_SECRET
 wrangler secret put WORKER_ORIGIN
 ```
 

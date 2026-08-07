@@ -8,7 +8,6 @@ interface Env {
 	APP_ENV?: 'development' | 'test' | 'ci' | 'production';
 	ENABLE_E2E_AUTH_BOOTSTRAP?: string;
 	E2E_AUTH_BOOTSTRAP_SECRET?: string;
-	MP_AUTH_SECRET?: string;
 	arcturus: DurableObjectNamespace;
 	WORKER_ORIGIN?: string;
 }

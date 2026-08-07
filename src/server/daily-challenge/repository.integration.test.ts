@@ -152,13 +152,11 @@ async function seedChallenge(record = buildChallengeRecord()): Promise<NewDailyC
 	return record;
 }
 
-async function readUserBalance(
-	userId: string,
-): Promise<{ chipBalance: number; heldChips: number }> {
+async function readUserBalance(userId: string): Promise<{ chipBalance: number }> {
 	const row = await db
-		.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
+		.prepare('SELECT chipBalance FROM user WHERE id = ?')
 		.bind(userId)
-		.first<{ chipBalance: number; heldChips: number }>();
+		.first<{ chipBalance: number }>();
 	if (!row) throw new Error(`missing test user ${userId}`);
 	return row;
 }
@@ -343,7 +341,7 @@ describe('daily challenge start transition', () => {
 
 		expect(result).toEqual({ kind: 'created' });
 		expect(await countAttempts()).toBe(1);
-		expect(await readUserBalance(USER_ID)).toEqual({ chipBalance: 10000, heldChips: 0 });
+		expect(await readUserBalance(USER_ID)).toEqual({ chipBalance: 10000 });
 		expect(await readRateCount('ranked_start')).toBe(1);
 	});
 
@@ -667,7 +665,7 @@ describe('daily challenge command transition', () => {
 		);
 
 		expect(result).toEqual({ kind: 'applied', result: null });
-		expect(await readUserBalance(USER_ID)).toEqual({ chipBalance: 10000, heldChips: 0 });
+		expect(await readUserBalance(USER_ID)).toEqual({ chipBalance: 10000 });
 
 		const reread = await repository.findAttemptByChallengeAndUser(challenge.id, USER_ID);
 		expect(reread?.status).toBe('active');

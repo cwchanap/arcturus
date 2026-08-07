@@ -43,9 +43,9 @@ async function applyMigrations(d1: D1Database): Promise<void> {
 async function insertUser(d1: D1Database, id: string): Promise<void> {
 	await d1
 		.prepare(
-			'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance, heldChips) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance) VALUES (?, ?, ?, ?, ?, ?, ?)',
 		)
-		.bind(id, `Test ${id}`, `${id}@test.local`, 0, 1000, 1000, 1000, 0)
+		.bind(id, `Test ${id}`, `${id}@test.local`, 0, 1000, 1000, 1000)
 		.run();
 }
 

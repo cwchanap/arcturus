@@ -127,11 +127,11 @@ describe('parseMigrationSql', () => {
 
 	test('extracts columns from ALTER TABLE ADD without COLUMN keyword (Drizzle-generated)', () => {
 		const sql = `
-			ALTER TABLE \`user\` ADD \`heldChips\` integer DEFAULT 0 NOT NULL;
+			ALTER TABLE \`user\` ADD \`legacyField\` integer DEFAULT 0 NOT NULL;
 			ALTER TABLE "game_stats" ADD "score" integer DEFAULT 0;
 		`;
 		const result = parseMigrationSql(sql);
-		expect(result.columns).toContainEqual({ table: 'user', column: 'heldChips' });
+		expect(result.columns).toContainEqual({ table: 'user', column: 'legacyField' });
 		expect(result.columns).toContainEqual({ table: 'game_stats', column: 'score' });
 		expect(result.columns.length).toBe(2);
 	});

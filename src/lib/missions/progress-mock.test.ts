@@ -104,7 +104,7 @@ describe('applyMissionProgress (mocked D1)', () => {
 
 		// A craps event with outcome=loss, winsIncrement=0 doesn't match any
 		// daily mission (blackjack requires gameType=blackjack, win-3 requires
-		// a win, slots requires slots, mp requires poker_mp). The weekly
+		// a win, slots requires slots). The weekly
 		// gamesTried mission also returns amount=0 because 'craps' is already
 		// in the metadata.
 		await applyMissionProgress(

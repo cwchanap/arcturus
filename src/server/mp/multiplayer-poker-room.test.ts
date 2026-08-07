@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { applyAction, createRoom, takeSeat, startHand, type Room } from '../../lib/mp-poker/engine';
 import { EMPTY_ROOM_TIMEOUT_MS, RECONNECT_TIMEOUT_MS } from '../../lib/mp-poker/timers';
-import { Arcturus } from './arcturus';
+import { MultiplayerPokerRoom } from './multiplayer-poker-room';
 
 class MemoryStorage {
 	private readonly values = new Map<string, unknown>();
@@ -39,15 +39,18 @@ function makeState(storage: MemoryStorage): DurableObjectState {
 	} as unknown as DurableObjectState;
 }
 
-function makeObject(storage = new MemoryStorage()): { object: Arcturus; storage: MemoryStorage } {
-	return { object: new Arcturus(makeState(storage), {} as Env), storage };
+function makeObject(storage = new MemoryStorage()): {
+	object: MultiplayerPokerRoom;
+	storage: MemoryStorage;
+} {
+	return { object: new MultiplayerPokerRoom(makeState(storage), {} as Env), storage };
 }
 
-function privateField<T>(object: Arcturus, key: string): T {
+function privateField<T>(object: MultiplayerPokerRoom, key: string): T {
 	return (object as unknown as Record<string, unknown>)[key] as T;
 }
 
-function setPrivateField(object: Arcturus, key: string, value: unknown): void {
+function setPrivateField(object: MultiplayerPokerRoom, key: string, value: unknown): void {
 	(object as unknown as Record<string, unknown>)[key] = value;
 }
 
@@ -58,7 +61,7 @@ function makeRoom(): Room {
 	return startHand(room, { deckSeed: 'arcturus-test' });
 }
 
-describe('Arcturus room-local runtime', () => {
+describe('MultiplayerPokerRoom room-local runtime', () => {
 	test('initializes without a host secret or wallet state', async () => {
 		const { object, storage } = makeObject();
 		const response = await object.fetch(

@@ -8,7 +8,7 @@ interface Env {
 	APP_ENV?: 'development' | 'test' | 'ci' | 'production';
 	ENABLE_E2E_AUTH_BOOTSTRAP?: string;
 	E2E_AUTH_BOOTSTRAP_SECRET?: string;
-	arcturus: DurableObjectNamespace;
+	MULTIPLAYER_POKER_ROOMS: DurableObjectNamespace;
 	WORKER_ORIGIN?: string;
 }
 

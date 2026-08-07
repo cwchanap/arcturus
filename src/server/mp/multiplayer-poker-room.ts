@@ -239,6 +239,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 	constructor(state: DurableObjectState, _env: Env) {
 		this.state = state;
 		this.loaded = this.state.blockConcurrencyWhile(async () => {
+			this.rebuildSocketsFromHibernation();
 			const persisted = await this.state.storage.get<unknown>('persisted');
 			if (persisted === undefined) return;
 			if (!isPersistedState(persisted)) {
@@ -268,7 +269,6 @@ export class MultiplayerPokerRoom implements DurableObject {
 				await this.state.storage.deleteAll();
 			}
 		});
-		this.rebuildSocketsFromHibernation();
 	}
 
 	private rebuildSocketsFromHibernation(): void {
@@ -729,6 +729,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 	private async deleteRoom(): Promise<void> {
 		const openSockets = [...this.sockets.keys()];
 		await this.state.storage.deleteAll();
+		await this.state.storage.deleteAlarm();
 		this.room = null;
 		this.roomCode = null;
 		this.turnDeadline = null;

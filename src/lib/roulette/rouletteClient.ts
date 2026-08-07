@@ -418,7 +418,7 @@ export function initRouletteClient(): void {
 							return;
 						}
 						// Retry got a definitive rejection
-						// after a retriable first error). Handle with bets
+						// after a retriable first error. Handle with bets
 						// preserved/discarded per the rejection's balance.
 						const retryBody = (await retryResponse.json().catch(() => ({}))) as {
 							error?: string;
@@ -706,7 +706,7 @@ export function initRouletteClient(): void {
 							return;
 						}
 						// Retry got a definitive rejection after
-						// a retriable first error). Abort with bets preserved.
+						// a retriable first error. Abort with bets preserved.
 						if (!retryResponse.ok) {
 							const retryBody = (await retryResponse.json().catch(() => ({}))) as {
 								error?: string;

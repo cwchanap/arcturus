@@ -324,7 +324,7 @@ function noTransition(room: Room): RoomTransition {
 	return { room, handResult: null };
 }
 
-function userAtSeat(hand: HandState, seatIndex: number): string | null {
+function userAtHandSeat(hand: HandState, seatIndex: number): string | null {
 	for (const [userId, index] of Object.entries(hand.seatIndexMap)) {
 		if (index === seatIndex) return userId;
 	}
@@ -474,7 +474,7 @@ function nextActiveSeat(room: Room, hand: HandState): number {
 	let index = hand.currentSeat;
 	for (let step = 0; step < n; step++) {
 		index = (index + 1) % n;
-		const userId = userAtSeat(hand, index);
+		const userId = userAtHandSeat(hand, index);
 		if (userId && !hand.folded.has(userId) && !hand.allIn.has(userId)) return index;
 	}
 	return hand.currentSeat;
@@ -625,7 +625,7 @@ function finishHand(room: Room, reason: 'fold-out' | 'showdown'): RoomTransition
 	const numSeats = room.seats.length;
 	for (const pot of pots) {
 		const eligibleUserIds = pot.eligibleSeatIndices
-			.map((seatIndex) => userAtSeat(hand, seatIndex))
+			.map((seatIndex) => userAtHandSeat(hand, seatIndex))
 			.filter((userId): userId is string => userId !== null);
 		const eligiblePlayers = eligibleUserIds.map((userId) => makeShowdownPlayer(userId, hand));
 		const potWinners = determineShowdownWinners(eligiblePlayers, hand.board);

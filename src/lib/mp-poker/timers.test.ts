@@ -44,7 +44,7 @@ describe('multiplayer poker timers', () => {
 		expect(getNextAlarmAt(room, now + 10_000, now + 2_000, now)).toBe(now + 2_000);
 	});
 
-	test('expired reconnect deadline is ignored while its all-in player is protected by the hand', () => {
+	test('expired reconnect deadline is ignored while a disconnected player is protected by dealt hole cards', () => {
 		let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
 		room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
 		room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
@@ -55,9 +55,25 @@ describe('multiplayer poker timers', () => {
 			seats: room.seats.map((seat) =>
 				seat.userId === protectedUserId ? { ...seat, connected: false, disconnectedAt: 1 } : seat,
 			),
-			hand: { ...room.hand!, allIn: new Set([protectedUserId]) },
 		};
 		const now = 1_000_000;
 		expect(getNextAlarmAt(room, now + 10_000, null, now)).toBe(now + 10_000);
+	});
+
+	test('an expired folded player is not protected and surfaces their reconnect deadline', () => {
+		let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
+		room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
+		room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
+		room = startHand(room, { deckSeed: 'timer-folded', starterUserId: 'u1' });
+		const foldedUserId = room.seats[room.hand!.currentSeat].userId!;
+		room = {
+			...room,
+			seats: room.seats.map((seat) =>
+				seat.userId === foldedUserId ? { ...seat, connected: false, disconnectedAt: 1 } : seat,
+			),
+			hand: { ...room.hand!, folded: new Set([foldedUserId]) },
+		};
+		const now = 1_000_000;
+		expect(getNextAlarmAt(room, null, null, now)).toBe(1 + RECONNECT_TIMEOUT_MS);
 	});
 });

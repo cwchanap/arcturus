@@ -59,7 +59,7 @@ export async function runRankedExpiration(
 	// from being returned by every subsequent page query and permanently
 	// blocking later sessions (head-of-line blocking). The cursor is scoped
 	// to a single invocation; the next cron tick starts fresh so transient
-	// transient balance races get retried.
+	// balance races get retried.
 	let cursor: { expiresAt: number; id: string } | null = null;
 
 	for (;;) {

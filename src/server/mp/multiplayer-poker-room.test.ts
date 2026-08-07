@@ -29,6 +29,10 @@ class MemoryStorage {
 		this.alarmAt = at;
 	}
 
+	async deleteAlarm(): Promise<void> {
+		this.alarmAt = null;
+	}
+
 	seed(key: string, value: unknown): void {
 		this.values.set(key, value);
 	}
@@ -314,13 +318,36 @@ describe('MultiplayerPokerRoom room-local runtime', () => {
 					: seat,
 			),
 		};
+		const expectedPayout = Object.values(room.hand!.committed).reduce(
+			(sum, value) => sum + value,
+			0,
+		);
+		const allInSeatIndex = room.hand!.seatIndexMap[allInUserId];
+		const messages: string[] = [];
+		const observerSocket = {
+			send: (message: string) => messages.push(message),
+		} as unknown as WebSocket;
 		setPrivateField(object, 'room', room);
 		setPrivateField(object, 'turnDeadline', now - 1);
+		setPrivateField(
+			object,
+			'sockets',
+			new Map([[observerSocket, { userId: otherUserId, displayName: 'Observer' }]]),
+		);
 		await object.alarm();
+		const handEnded = messages
+			.map((message) => JSON.parse(message))
+			.find((message) => message.type === 'hand_ended');
+		expect(handEnded?.winners).toContainEqual({
+			seatIndex: allInSeatIndex,
+			amount: expectedPayout,
+		});
 		const after = privateField<Room>(object, 'room');
 		expect(after.phase).toBe('waiting');
 		expect(after.hand).toBeNull();
 		expect(after.seats.find((seat) => seat.userId === allInUserId)).toBeUndefined();
+		// Drop the observer socket so the room can register as empty for cleanup.
+		setPrivateField(object, 'sockets', new Map());
 		setPrivateField(object, 'room', {
 			...after,
 			seats: after.seats.map((seat) =>

@@ -164,6 +164,7 @@ if (!code || !isValidRoomCode(code)) {
 			div.dataset.allIn = String(s.allIn);
 			div.dataset.connected = String(s.connected);
 			div.dataset.dealerSeat = String(s.seatIndex === dealerSeat);
+			div.dataset.chips = String(s.chips);
 			const labels = [
 				s.seatIndex === msg.yourSeat ? 'You' : null,
 				s.seatIndex === msg.currentSeat ? 'Acting' : null,
@@ -212,7 +213,6 @@ if (!code || !isValidRoomCode(code)) {
 			entry.textContent = `Hand ended: ${w}${showdown ? ` — Showdown: ${showdown}` : ''}`;
 			logEl.prepend(entry);
 			dealerSeat = null;
-			if (latestRoomState) renderSeats(latestRoomState);
 			// Clear stale hole cards once the hand is over
 			holeEl.textContent = '';
 		} else if (msg.type === 'error') {

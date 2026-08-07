@@ -13,6 +13,8 @@ function card(value: string, suit: 'hearts' | 'diamonds' | 'clubs' | 'spades', r
 	return { value, suit, rank };
 }
 
+// Joins split literals so removed message names never appear as whole tokens
+// in the repository (e.g. greppable removal audits).
 function removedType(...parts: string[]): string {
 	return parts.join('');
 }

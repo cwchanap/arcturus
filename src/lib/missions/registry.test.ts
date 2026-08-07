@@ -9,8 +9,8 @@ import {
 } from './registry';
 
 describe('mission registry', () => {
-	test('default daily missions has 4 entries', () => {
-		expect(DEFAULT_DAILY_MISSIONS).toHaveLength(4);
+	test('default daily missions has 3 entries', () => {
+		expect(DEFAULT_DAILY_MISSIONS).toHaveLength(3);
 	});
 
 	test('reroll pool has at least 2 entries', () => {

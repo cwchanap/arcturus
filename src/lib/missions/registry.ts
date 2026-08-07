@@ -31,16 +31,6 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		rewardChips: 500,
 		icon: '\u{1F3B0}', // slot machine emoji — matches GAME_TYPE_ICONS.slots
 	},
-	{
-		id: 'daily-mp-1',
-		title: 'Social Player',
-		description: 'Finish 1 multiplayer poker hand',
-		period: 'daily',
-		metric: { kind: 'mpHandsCompleted' },
-		target: 1,
-		rewardChips: 1000,
-		icon: '\u{2660}', // spade suit emoji — matches GAME_TYPE_ICONS.poker
-	},
 ];
 
 export const REROLL_POOL_DAILY: MissionDefinition[] = [

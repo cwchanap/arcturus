@@ -2,7 +2,6 @@ export type MissionMetric =
 	| { kind: 'handsPlayed'; gameType?: string }
 	| { kind: 'roundsWon'; gameType?: string }
 	| { kind: 'spinsCompleted' }
-	| { kind: 'mpHandsCompleted' }
 	| { kind: 'gamesTried' };
 
 export interface MissionDefinition {

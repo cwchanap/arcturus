@@ -80,16 +80,6 @@ describe('computeIncrement', () => {
 		});
 	});
 
-	test('mpHandsCompleted matches poker_mp', () => {
-		const def = makeDef('d1', { kind: 'mpHandsCompleted' });
-		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker_mp' }, null)).toEqual({
-			amount: 1,
-		});
-		expect(computeIncrement(def, { ...baseEvent, gameType: 'blackjack' }, null)).toEqual({
-			amount: 0,
-		});
-	});
-
 	test('netChipsEarned dropped for MVP — no test needed', () => {
 		// netChipsEarned was removed from MissionMetric. No mission uses it.
 	});

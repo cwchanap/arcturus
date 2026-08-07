@@ -114,25 +114,17 @@ export async function runRetentionCleanup(dbBinding: D1Database): Promise<void> 
 		console.warn('[CLEANUP] Failed to delete expired roulette_round rows:', error);
 	}
 	try {
-		// Exclude poker_mp receipts: multiplayer settlement retries
-		// /api/mp/settle indefinitely (every 30s while the room is frozen)
-		// using chip_sync_receipt as its idempotency record. Deleting a
-		// settled hand's receipt while the DO can still retry would let a
-		// late retry re-apply the delta (heldChips is already 0), double-
-		// settling the hand. Roulette receipts are also excluded from this
-		// 30-day pass: the spin endpoint uses them as idempotency
-		// tombstones when roulette_round rows have been reaped (see
-		// spin.ts). Without the receipt, a replay of an old committed
-		// syncId after cleanup would be treated as a fresh spin and
-		// double-settle. Roulette receipts are reaped on their own longer
-		// schedule below (ROULETTE_RECEIPT_RETENTION_DAYS) so the
-		// tombstone still outlives the round rows without growing
-		// forever. Single-player poker (MAX_RETRIES=3) has a bounded
-		// retry lifecycle, so its receipts remain safe to reap at
-		// RETENTION_DAYS.
+		// Roulette receipts are excluded from this 30-day pass: the spin endpoint
+		// uses them as idempotency tombstones when roulette_round rows have been
+		// reaped (see spin.ts). Without the receipt, a replay of an old committed
+		// syncId after cleanup would be treated as a fresh spin and double-settle.
+		// Roulette receipts are reaped on their own longer schedule below
+		// (ROULETTE_RECEIPT_RETENTION_DAYS) so the tombstone still outlives the
+		// round rows without growing forever. All other receipts have bounded
+		// retry lifecycles and remain safe to reap at RETENTION_DAYS.
 		await dbBinding
-			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN (?, ?)')
-			.bind(retentionCutoff, 'poker_mp', 'roulette')
+			.prepare('DELETE FROM chip_sync_receipt WHERE createdAt < ? AND gameType NOT IN (?)')
+			.bind(retentionCutoff, 'roulette')
 			.run();
 	} catch (error) {
 		console.warn('[CLEANUP] Failed to delete expired chip_sync_receipt rows:', error);

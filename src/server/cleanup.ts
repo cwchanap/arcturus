@@ -44,11 +44,7 @@ export interface ScheduledJobEnv {
 }
 
 export interface ScheduledJobDeps {
-	rankedExpiration(
-		db: D1Database,
-		namespace: DurableObjectNamespace | undefined,
-		nowSeconds: number,
-	): Promise<void>;
+	rankedExpiration(db: D1Database, nowSeconds: number): Promise<void>;
 	rankedRateCleanup(db: D1Database, nowSeconds: number): Promise<void>;
 	retentionCleanup(db: D1Database): Promise<void>;
 	dailyChallengeExpiration(db: D1Database, nowSeconds: number): Promise<void>;
@@ -75,7 +71,7 @@ export async function runScheduledJobs(
 	}
 
 	try {
-		await deps.rankedExpiration(db, env.arcturus, deps.nowSeconds());
+		await deps.rankedExpiration(db, deps.nowSeconds());
 	} catch (error) {
 		deps.warn('[SCHEDULED] Ranked expiration failed', error);
 	}

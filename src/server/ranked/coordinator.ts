@@ -17,7 +17,6 @@ import {
 } from '../../lib/ranked/protocol';
 import { createSeedCommitment } from '../../lib/ranked/random';
 import { getRankedAdapter } from '../../lib/ranked/registry';
-import { reconcileMultiplayerMembership, type MembershipResolution } from '../mp/membership';
 import { createRankedLogEntry, type RankedLogEntry } from './logging';
 import type {
 	ActionTransitionInput,
@@ -47,9 +46,6 @@ export interface RankedCoordinator {
 export interface RankedCoordinatorDeps {
 	repository: RankedRepository;
 	getAdapter: typeof getRankedAdapter;
-	reconcileMembership: typeof reconcileMultiplayerMembership;
-	membershipDb: D1Database;
-	membershipNamespace?: DurableObjectNamespace;
 	now: () => Date;
 	randomBytes: (length: number) => Uint8Array;
 	log?: (entry: RankedLogEntry) => void;
@@ -202,34 +198,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		}
 	};
 
-	const classifyMembership = (resolution: MembershipResolution, userId: string): void => {
-		if (resolution.kind === 'orphaned') {
-			log('ranked_mp_escrow_orphaned', { userId });
-			throw new RankedServiceError('MULTIPLAYER_ESCROW_ORPHANED');
-		}
-		if (resolution.kind !== 'clear') {
-			throw new RankedServiceError('MULTIPLAYER_CONFLICT');
-		}
-	};
-
-	const resolveMembership = (userId: string, nowMs: number): Promise<MembershipResolution> =>
-		deps.reconcileMembership({
-			db: deps.membershipDb,
-			namespace: deps.membershipNamespace,
-			userId,
-			nowMs,
-		});
-
-	const reconcileMembership = async (userId: string, nowMs: number): Promise<void> => {
-		classifyMembership(await resolveMembership(userId, nowMs), userId);
-	};
-
-	const reconcileCurrentActionMembership = async (userId: string, nowMs: number): Promise<void> => {
-		const resolution = await resolveMembership(userId, nowMs);
-		if (resolution.kind === 'clear') return;
-		classifyMembership(resolution, userId);
-	};
-
 	const replay = async (session: RankedSessionRecord) => {
 		const adapter = deps.getAdapter(session.gameType, session.rulesetVersion);
 		const seed = decodeCanonicalBase64Url(session.seed);
@@ -308,7 +276,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			if (session.status !== 'active') return render(session);
 			if (nowSeconds < session.expiresAt) return render(session);
 
-			await reconcileMembership(userId, deps.now().getTime());
 			const account = await deps.repository.readAccount(userId);
 			if (!account) return internalError('Ranked account disappeared during expiration');
 			const replayed = await replay(session);
@@ -347,7 +314,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			const current = await deps.repository.findOwnedSession(userId, sessionId);
 			if (!current) throw new RankedServiceError('SESSION_NOT_FOUND');
 			if (current.status !== 'active') return render(current);
-			await reconcileMembership(userId, deps.now().getTime());
 		}
 		throw new RankedServiceError('ACCOUNT_BALANCE_CHANGED');
 	};
@@ -393,18 +359,8 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		}
 
 		await consumeRate(userId, 'ranked_start', nowSeconds);
-		await reconcileMembership(userId, now.getTime());
-		let accountAtStart = await deps.repository.readAccount(userId);
+		const accountAtStart = await deps.repository.readAccount(userId);
 		if (!accountAtStart) return internalError('Ranked account does not exist');
-		if (accountAtStart.heldChips > 0) {
-			await reconcileMembership(userId, now.getTime());
-			accountAtStart = await deps.repository.readAccount(userId);
-			if (!accountAtStart) return internalError('Ranked account does not exist');
-			if (accountAtStart.heldChips > 0) {
-				log('ranked_mp_escrow_orphaned', { userId });
-				throw new RankedServiceError('MULTIPLAYER_ESCROW_ORPHANED');
-			}
-		}
 		if (accountAtStart.chipBalance < body.wager) {
 			throw new RankedServiceError('INSUFFICIENT_BALANCE');
 		}
@@ -447,10 +403,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		let account = accountAtStart;
 
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
-			if (account.heldChips > 0) {
-				await reconcileMembership(userId, now.getTime());
-				throw new RankedServiceError('MULTIPLAYER_ESCROW_ORPHANED');
-			}
 			if (account.chipBalance < body.wager) {
 				throw new RankedServiceError('INSUFFICIENT_BALANCE');
 			}
@@ -515,14 +467,9 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			if (transition.kind === 'not-created') {
 				return internalError('Ranked start conflict could not be classified');
 			}
-			await reconcileMembership(userId, now.getTime());
 			account =
 				(await deps.repository.readAccount(userId)) ??
 				internalError('Ranked account disappeared during start retry');
-			if (account.heldChips > 0) {
-				log('ranked_mp_escrow_orphaned', { userId });
-				throw new RankedServiceError('MULTIPLAYER_ESCROW_ORPHANED');
-			}
 			if (account.chipBalance < body.wager) {
 				throw new RankedServiceError('INSUFFICIENT_BALANCE');
 			}
@@ -593,7 +540,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 		}
 
 		await consumeRate(userId, 'ranked_action', nowSeconds);
-		await reconcileCurrentActionMembership(userId, deps.now().getTime());
 		for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
 			// Re-capture nowSeconds per retry so the expiration check and
 			// transition timestamps reflect the current wall clock rather than
@@ -712,7 +658,6 @@ export function createRankedCoordinator(deps: RankedCoordinatorDeps): RankedCoor
 			}
 			if (current.status !== 'active') return render(current);
 			session = current;
-			await reconcileMembership(userId, deps.now().getTime());
 			const freshAccount = await deps.repository.readAccount(userId);
 			if (!freshAccount) return internalError('Ranked account disappeared during action retry');
 			if (freshAccount.chipBalance < legal.additionalWager) {

@@ -2,7 +2,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import type { Miniflare } from 'miniflare';
 import { BLACKJACK_RANKED_V1_CONFIG } from '../../lib/ranked/blackjack/adapter';
 import { canonicalizeRanked, hashCanonical, sha256Hex } from '../../lib/ranked/canonical';
-import { acquireMultiplayerMembership } from '../mp/membership';
 import { RANKED_RATE_LIMITS, buildRateLimitStatement, getRetryAfterSeconds } from './rate-limit';
 import {
 	RANKED_START_ACCOUNT_SNAPSHOT_SQL,
@@ -43,7 +42,6 @@ beforeEach(async () => {
 		db.prepare('DELETE FROM ranked_result'),
 		db.prepare('DELETE FROM ranked_session'),
 		db.prepare('DELETE FROM ranked_rate_limit'),
-		db.prepare('DELETE FROM mp_membership'),
 		db.prepare('DELETE FROM user'),
 	]);
 	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
@@ -98,11 +96,11 @@ function startInput(
 	};
 }
 
-async function readBalance(): Promise<{ chipBalance: number; heldChips: number }> {
+async function readBalance(): Promise<{ chipBalance: number }> {
 	const row = await db
-		.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
+		.prepare('SELECT chipBalance FROM user WHERE id = ?')
 		.bind(USER_ID)
-		.first<{ chipBalance: number; heldChips: number }>();
+		.first<{ chipBalance: number }>();
 	if (!row) throw new Error('missing test user');
 	return row;
 }
@@ -586,7 +584,7 @@ describe('ranked start account snapshot', () => {
 		};
 		const [, matched] = await db.batch([
 			buildRateLimitStatement(db, firstRate),
-			db.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL).bind(USER_ID, 1000, 100, USER_ID, USER_ID),
+			db.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL).bind(USER_ID, 1000, 100, USER_ID),
 		]);
 		expect(matched.meta.changes).toBe(1);
 
@@ -596,10 +594,10 @@ describe('ranked start account snapshot', () => {
 				...firstRate,
 				nowSeconds: NOW_SECONDS + 60,
 			}),
-			db.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL).bind(USER_ID, 1000, 100, USER_ID, USER_ID),
+			db.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL).bind(USER_ID, 1000, 100, USER_ID),
 		]);
 		expect(stale.meta.changes).toBe(0);
-		expect(await readBalance()).toEqual({ chipBalance: 999, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 999 });
 	});
 });
 
@@ -608,7 +606,7 @@ describe('ranked start transaction', () => {
 		const result = await createRankedRepository(db).runStartTransition(startInput());
 
 		expect(result).toEqual({ kind: 'created' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await countSessions()).toBe(1);
 		expect(await readRateCount('ranked_start')).toBe(1);
 	});
@@ -621,7 +619,7 @@ describe('ranked start transaction', () => {
 		);
 
 		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 50, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 50 });
 		expect(await countSessions()).toBe(0);
 		expect(await readRateCount('ranked_start')).toBe(1);
 	});
@@ -632,7 +630,7 @@ describe('ranked start transaction', () => {
 		const result = await createRankedRepository(db).runStartTransition(startInput());
 
 		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 60 });
-		expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1000 });
 		expect(await countSessions()).toBe(0);
 		expect(await readRateCount('ranked_start')).toBe(6);
 	});
@@ -650,7 +648,7 @@ describe('ranked start transaction', () => {
 
 		expect(result).toEqual({ kind: 'created' });
 		expect(await readRateCount('ranked_start')).toBe(1);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 	});
 
 	test('a start continuation without a consumed rate unit gates every mutation', async () => {
@@ -664,22 +662,7 @@ describe('ranked start transaction', () => {
 		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 60 });
 		expect(await readRateCount('ranked_start')).toBe(0);
 		expect(await countSessions()).toBe(0);
-		expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
-	});
-
-	test('heldChips introduced after preflight blocks the session and wager', async () => {
-		const repository = createRankedRepository(db);
-		const preflight = await repository.readAccount(USER_ID);
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(250, USER_ID).run();
-
-		const result = await repository.runStartTransition(
-			startInput(newSession(), preflight?.chipBalance ?? -1),
-		);
-
-		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 250 });
-		expect(await countSessions()).toBe(0);
-		expect(await readRateCount('ranked_start')).toBe(1);
+		expect(await readBalance()).toEqual({ chipBalance: 1000 });
 	});
 
 	test('a stale casual balance snapshot cannot insert a session or deduct a wager', async () => {
@@ -692,7 +675,7 @@ describe('ranked start transaction', () => {
 		);
 
 		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 975, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 975 });
 		expect(await countSessions()).toBe(0);
 		expect(await readRateCount('ranked_start')).toBe(1);
 	});
@@ -707,7 +690,7 @@ describe('ranked start transaction', () => {
 		]);
 
 		expect([first.kind, second.kind].sort()).toEqual(['created', 'not-created']);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await countSessions()).toBe(1);
 		expect(await readRateCount('ranked_start')).toBe(2);
 	});
@@ -728,7 +711,7 @@ describe('ranked start transaction', () => {
 		const result = await repository.runStartTransition(startInput(mismatched, 900));
 
 		expect(result).toEqual({ kind: 'not-created' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await countSessions()).toBe(1);
 		expect(await readRateCount('ranked_start')).toBe(2);
 	});
@@ -745,7 +728,7 @@ describe('ranked start transaction', () => {
 		const result = await repository.runStartTransition(startInput(second, 900));
 
 		expect(result).toEqual({ kind: 'not-created' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await countSessions()).toBe(1);
 		expect(await readRateCount('ranked_start')).toBe(2);
 	});
@@ -767,43 +750,9 @@ describe('ranked start transaction', () => {
 		]);
 
 		expect(results.map((result) => result.kind).sort()).toEqual(['created', 'not-created']);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await countSessions()).toBe(1);
 		expect(await readRateCount('ranked_start')).toBe(2);
-	});
-
-	test('inverse ranked and multiplayer acquisitions leave exactly one owner', async () => {
-		const repository = createRankedRepository(db);
-
-		const [rankedResult, membershipResult] = await Promise.all([
-			repository.runStartTransition(startInput()),
-			acquireMultiplayerMembership({
-				db,
-				userId: USER_ID,
-				roomCode: 'MP-RACE01',
-				joinedAtMs: NOW_SECONDS * 1000,
-			}),
-		]);
-
-		const ranked = await db
-			.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?')
-			.bind(USER_ID)
-			.first<{ id: string }>();
-		const membership = await db
-			.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?')
-			.bind(USER_ID)
-			.first<{ roomCode: string }>();
-		expect(Number(ranked !== null) + Number(membership !== null)).toBe(1);
-		if (ranked) {
-			expect(rankedResult).toEqual({ kind: 'created' });
-			expect(membershipResult).toEqual({ kind: 'blocked' });
-			expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
-		} else {
-			expect(rankedResult).toEqual({ kind: 'balance-changed' });
-			expect(membershipResult).toEqual({ kind: 'acquired', roomCode: 'MP-RACE01' });
-			expect(await readBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
-		}
-		expect(await readRateCount('ranked_start')).toBe(1);
 	});
 });
 
@@ -819,7 +768,7 @@ describe('ranked action transaction', () => {
 		]);
 
 		expect([left.kind, right.kind].filter((kind) => kind === 'applied')).toHaveLength(1);
-		expect(await readBalance()).toEqual({ chipBalance: 800, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 800 });
 		expect(await readSessionState()).toEqual({
 			status: 'active',
 			activeUserId: USER_ID,
@@ -838,7 +787,7 @@ describe('ranked action transaction', () => {
 		const result = await repository.runActionTransition(actionInput());
 
 		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 59 });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect((await readSessionState()).nextSequence).toBe(0);
 		const rateRow = await db
 			.prepare(
@@ -863,7 +812,7 @@ describe('ranked action transaction', () => {
 
 		expect(result).toEqual({ kind: 'applied', result: null });
 		expect(await readRateCount('ranked_action')).toBe(1);
-		expect(await readBalance()).toEqual({ chipBalance: 800, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 800 });
 		expect((await readSessionState()).nextSequence).toBe(1);
 	});
 
@@ -878,20 +827,7 @@ describe('ranked action transaction', () => {
 
 		expect(result).toEqual({ kind: 'rate-limited', retryAfter: 59 });
 		expect(await readRateCount('ranked_action')).toBe(0);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
-		expect((await readSessionState()).nextSequence).toBe(0);
-	});
-
-	test('escrow introduced after action preflight blocks wallet and sequence changes', async () => {
-		const repository = createRankedRepository(db);
-		expect(await repository.runStartTransition(startInput())).toEqual({ kind: 'created' });
-		await repository.readAccount(USER_ID);
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(250, USER_ID).run();
-
-		const result = await repository.runActionTransition(actionInput());
-
-		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 250 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect((await readSessionState()).nextSequence).toBe(0);
 	});
 
@@ -903,7 +839,7 @@ describe('ranked action transaction', () => {
 		const result = await repository.runActionTransition(actionInput());
 
 		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 50, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 50 });
 		expect((await readSessionState()).nextSequence).toBe(0);
 	});
 
@@ -919,7 +855,7 @@ describe('ranked action transaction', () => {
 		]);
 
 		expect([left.kind, right.kind].sort()).toEqual(['applied', 'not-applied']);
-		expect(await readBalance()).toEqual({ chipBalance: 800, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 800 });
 		const session = await readSessionState();
 		expect(session.nextSequence).toBe(1);
 		expect([
@@ -937,7 +873,7 @@ describe('ranked action transaction', () => {
 		);
 
 		expect(result).toEqual({ kind: 'not-applied' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await readSessionState()).toMatchObject({
 			nextSequence: 0,
 			committedWager: 100,
@@ -973,7 +909,7 @@ describe('ranked action transaction', () => {
 		});
 
 		expect(result).toEqual({ kind: 'not-applied' });
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await readSessionState()).toMatchObject({
 			nextSequence: 1,
 			actionLogJson: canonicalizeRanked([{ sequence: 0, action: 'hit' }]),
@@ -1006,7 +942,7 @@ describe('ranked terminal account snapshot', () => {
 				.bind(USER_ID, 900, SESSION_A, USER_ID, USER_ID, 0),
 		]);
 		expect(stale.meta.changes).toBe(0);
-		expect(await readBalance()).toEqual({ chipBalance: 925, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 925 });
 	});
 });
 
@@ -1029,7 +965,7 @@ describe('ranked terminal transaction', () => {
 		);
 
 		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 950, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 950 });
 		expect(await readSessionState()).toMatchObject({ status: 'active', nextSequence: 0 });
 		expect(await rowCount('ranked_result')).toBe(0);
 		expect(await rowCount('ranked_game_stats')).toBe(0);
@@ -1058,7 +994,7 @@ describe('ranked terminal transaction', () => {
 		);
 
 		expect(transition.kind).toBe('applied');
-		expect(await readBalance()).toEqual({ chipBalance: 1250, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1250 });
 		const stored = await repository.findResult(SESSION_A);
 		expect(stored?.balanceAfter).toBe(1250);
 		expect(stored?.receiptHash).toBe(
@@ -1100,7 +1036,7 @@ describe('ranked terminal transaction', () => {
 
 		expect(first.kind).toBe('applied');
 		expect(second).toEqual(first);
-		expect(await readBalance()).toEqual({ chipBalance: 1200, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1200 });
 		expect(await rowCount('ranked_result')).toBe(1);
 		expect(await rowCount('ranked_reward_grant')).toBe(1);
 		expect(await rowCount('user_achievement')).toBe(1);
@@ -1136,7 +1072,7 @@ describe('ranked terminal transaction', () => {
 
 		expect(first.kind).toBe('applied');
 		expect(second).toEqual(first);
-		expect(await readBalance()).toEqual({ chipBalance: 1300, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1300 });
 		expect(await readRankedStats()).toMatchObject({
 			sessionsPlayed: 1,
 			netProfit: 200,
@@ -1197,7 +1133,7 @@ describe('ranked terminal transaction', () => {
 		expect(result.kind === 'applied' ? result.result.receiptHash : null).toBe(
 			nonRewardTerminal.receiptHash,
 		);
-		expect(await readBalance()).toEqual({ chipBalance: 1300, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1300 });
 		expect(await rowCount('ranked_result')).toBe(2);
 		expect(await rowCount('ranked_reward_grant')).toBe(1);
 		expect(await readRankedStats()).toEqual({
@@ -1226,7 +1162,7 @@ describe('ranked terminal transaction', () => {
 		);
 
 		expect(await readRankedStats()).toMatchObject({ netProfit: 100, biggestWin: 100 });
-		expect(await readBalance()).toEqual({ chipBalance: 1200, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1200 });
 	});
 
 	test('mixed split profit uses the positive overall session delta for biggest win', async () => {
@@ -1318,7 +1254,7 @@ describe('ranked terminal transaction', () => {
 		).rejects.toThrow('forced ranked result failure');
 		await db.prepare('DROP TRIGGER fail_ranked_result').run();
 
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await readSessionState()).toMatchObject({ status: 'active', nextSequence: 0 });
 		expect(await rowCount('ranked_result')).toBe(0);
 		expect(await rowCount('ranked_game_stats')).toBe(0);
@@ -1346,7 +1282,7 @@ describe('ranked terminal transaction', () => {
 				}),
 			),
 		).rejects.toBeInstanceOf(RankedRepositoryInvariantError);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await readSessionState()).toMatchObject({
 			status: 'active',
 			nextSequence: 0,
@@ -1392,7 +1328,7 @@ describe('opening natural and expiration transactions', () => {
 		expect(result.kind === 'created' ? result.result?.receiptHash : null).toBe(
 			terminal.receiptHash,
 		);
-		expect(await readBalance()).toEqual({ chipBalance: 1250, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1250 });
 		expect(await readSessionState()).toMatchObject({
 			status: 'settled',
 			activeUserId: null,
@@ -1438,7 +1374,7 @@ describe('opening natural and expiration transactions', () => {
 		});
 
 		expect(result).toEqual({ kind: 'balance-changed' });
-		expect(await readBalance()).toEqual({ chipBalance: 1050, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 1050 });
 		expect(await countSessions()).toBe(0);
 		expect(await rowCount('ranked_result')).toBe(0);
 		expect(await rowCount('ranked_game_stats')).toBe(0);
@@ -1455,7 +1391,7 @@ describe('opening natural and expiration transactions', () => {
 
 		expect(first.kind).toBe('applied');
 		expect(second).toEqual(first);
-		expect(await readBalance()).toEqual({ chipBalance: 900, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		expect(await readSessionState()).toMatchObject({
 			status: 'expired',
 			activeUserId: null,
@@ -1491,7 +1427,7 @@ describe('opening natural and expiration transactions', () => {
 		);
 		expect(fresh.kind).toBe('applied');
 		expect(fresh.kind === 'applied' ? fresh.result.balanceAfter : null).toBe(875);
-		expect(await readBalance()).toEqual({ chipBalance: 875, heldChips: 0 });
+		expect(await readBalance()).toEqual({ chipBalance: 875 });
 	});
 
 	test('a zero-wager action racing expiration never stores a stale action receipt', async () => {
@@ -1638,7 +1574,6 @@ describe('typed ranked repository reads', () => {
 		expect(owner).toBe(USER_ID);
 		expect(await repository.readAccount(USER_ID)).toEqual({
 			chipBalance: 900,
-			heldChips: 0,
 		});
 	});
 

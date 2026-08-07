@@ -39,7 +39,7 @@ export async function insertRankedTestUser(
 	const id = overrides.id ?? crypto.randomUUID();
 	await db
 		.prepare(
-			'INSERT INTO user (id, name, email, emailVerified, chipBalance, heldChips, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			'INSERT INTO user (id, name, email, emailVerified, chipBalance, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)',
 		)
 		.bind(
 			id,
@@ -47,7 +47,6 @@ export async function insertRankedTestUser(
 			overrides.email ?? `${id}@test.local`,
 			0,
 			overrides.chipBalance ?? 10000,
-			0,
 			now,
 			now,
 		)

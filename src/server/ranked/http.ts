@@ -8,7 +8,6 @@ import {
 	type RankedStartRequest,
 } from '../../lib/ranked/protocol';
 import { getRankedAdapter } from '../../lib/ranked/registry';
-import { reconcileMultiplayerMembership } from '../mp/membership';
 import {
 	createRankedCoordinator,
 	type RankedCoordinator,
@@ -18,7 +17,6 @@ import { createRankedRepository } from './repository';
 
 export interface RankedHttpCoordinatorBindings {
 	db: D1Database;
-	namespace?: DurableObjectNamespace;
 }
 
 export interface RankedHttpHandlerDeps {
@@ -80,10 +78,7 @@ function requireSessionId(raw: string | undefined): string {
 function coordinatorFor(deps: RankedHttpHandlerDeps, locals: App.Locals): RankedCoordinator {
 	const db = locals.runtime?.env?.DB;
 	if (!db) throw new RankedServiceError('INTERNAL_ERROR');
-	return deps.createCoordinator({
-		db,
-		namespace: locals.runtime.env.arcturus,
-	});
+	return deps.createCoordinator({ db });
 }
 
 export function rankedJsonError(error: unknown): Response {
@@ -159,13 +154,10 @@ export function createRankedHttpHandlers(deps: RankedHttpHandlerDeps): RankedHtt
 }
 
 export const rankedHttpHandlers = createRankedHttpHandlers({
-	createCoordinator({ db, namespace }) {
+	createCoordinator({ db }) {
 		return createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: reconcileMultiplayerMembership,
-			membershipDb: db,
-			membershipNamespace: namespace,
 			now: () => new Date(),
 			randomBytes(length) {
 				return crypto.getRandomValues(new Uint8Array(length));

@@ -18,7 +18,6 @@ import {
 } from './server/daily-challenge/expiration';
 import { createDailyChallengeRepository } from './server/daily-challenge/repository';
 import { Arcturus as ArcturusDO } from './server/mp/arcturus';
-import { reconcileMultiplayerMembership } from './server/mp/membership';
 import { createRankedCoordinator } from './server/ranked/coordinator';
 import { runRankedExpiration, runRankedRateLimitCleanup } from './server/ranked/expiration';
 import { createRankedRepository } from './server/ranked/repository';
@@ -30,13 +29,10 @@ interface AstroManifest {
 type WorkerEnv = ScheduledJobEnv;
 
 const scheduledJobDeps: ScheduledJobDeps = {
-	async rankedExpiration(db, namespace, nowSeconds) {
+	async rankedExpiration(db, nowSeconds) {
 		const coordinator = createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: reconcileMultiplayerMembership,
-			membershipDb: db,
-			membershipNamespace: namespace,
 			now: () => new Date(),
 			randomBytes(length) {
 				return crypto.getRandomValues(new Uint8Array(length));

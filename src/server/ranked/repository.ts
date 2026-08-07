@@ -210,7 +210,7 @@ export interface RankedRepository {
 	findSessionOwner(sessionId: string): Promise<string | null>;
 	findOwnedSession(userId: string, sessionId: string): Promise<RankedSessionRecord | null>;
 	findResult(sessionId: string): Promise<RankedResultRecord | null>;
-	readAccount(userId: string): Promise<{ chipBalance: number; heldChips: number } | null>;
+	readAccount(userId: string): Promise<{ chipBalance: number } | null>;
 	consumeStandaloneRateLimit(
 		userId: string,
 		operation: RankedRateOperation,
@@ -259,9 +259,7 @@ SET chipBalance = chipBalance
 WHERE id = ?
 	AND chipBalance = ?
 	AND chipBalance >= ?
-	AND heldChips = 0
 	AND changes() = 1
-	AND NOT EXISTS (SELECT 1 FROM mp_membership WHERE userId = ?)
 	AND NOT EXISTS (SELECT 1 FROM ranked_session WHERE activeUserId = ?)`;
 
 // Page size for listExpiredSessions. Exported so the expiration flow can
@@ -290,21 +288,19 @@ export const RANKED_START_SESSION_INSERT_SQL = `INSERT INTO ranked_session (
 	actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
 	status, expiresAt, createdAt, updatedAt
 )
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'active', ?, ?, ?
+	SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'active', ?, ?, ?
 WHERE changes() = 1
 	AND EXISTS (
 		SELECT 1 FROM user
-		WHERE id = ? AND chipBalance = ? AND chipBalance >= ? AND heldChips = 0
+		WHERE id = ? AND chipBalance = ? AND chipBalance >= ?
 	)
-	AND NOT EXISTS (SELECT 1 FROM mp_membership WHERE userId = ?)
 	AND NOT EXISTS (SELECT 1 FROM ranked_session WHERE activeUserId = ?)
 ON CONFLICT DO NOTHING`;
 
 export const RANKED_START_WAGER_DEDUCTION_SQL = `UPDATE user
 SET chipBalance = chipBalance - ?, updatedAt = ?
-WHERE id = ?
+	WHERE id = ?
 	AND chipBalance = ?
-	AND heldChips = 0
 	AND changes() = 1
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
@@ -313,9 +309,8 @@ WHERE id = ?
 
 export const RANKED_ACTION_WAGER_DEDUCTION_SQL = `UPDATE user
 SET chipBalance = chipBalance - ?, updatedAt = ?
-WHERE id = ?
+	WHERE id = ?
 	AND chipBalance >= ?
-	AND heldChips = 0
 	AND changes() = 1
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
@@ -338,7 +333,6 @@ export const RANKED_TERMINAL_ACCOUNT_SNAPSHOT_SQL = `UPDATE user
 SET chipBalance = chipBalance
 WHERE id = ?
 	AND chipBalance = ?
-	AND heldChips = 0
 	AND changes() = 1
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
@@ -350,7 +344,6 @@ export const RANKED_EXPIRATION_ACCOUNT_SNAPSHOT_SQL = `UPDATE user
 SET chipBalance = chipBalance
 WHERE id = ?
 	AND chipBalance = ?
-	AND heldChips = 0
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
 		WHERE id = ? AND userId = ? AND activeUserId = ?
@@ -368,7 +361,6 @@ const RANKED_TERMINAL_WALLET_UPDATE_SQL = `UPDATE user
 SET chipBalance = chipBalance - ? + ? + ?, updatedAt = ?
 WHERE id = ?
 	AND chipBalance = ?
-	AND heldChips = 0
 	AND changes() = 1
 	AND EXISTS (
 		SELECT 1 FROM ranked_session
@@ -562,7 +554,7 @@ interface TransitionBatch {
 }
 
 interface CurrentTransitionState {
-	account: { chipBalance: number; heldChips: number } | null;
+	account: { chipBalance: number } | null;
 	session: RankedSessionRecord | null;
 	result: RankedResultRecord | null;
 }
@@ -831,9 +823,9 @@ async function readCurrentTransitionState(
 ): Promise<CurrentTransitionState> {
 	const [account, sessionRow, resultRow] = await Promise.all([
 		db
-			.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ? LIMIT 1')
+			.prepare('SELECT chipBalance FROM user WHERE id = ? LIMIT 1')
 			.bind(userId)
-			.first<{ chipBalance: number; heldChips: number }>(),
+			.first<{ chipBalance: number }>(),
 		db
 			.prepare('SELECT * FROM ranked_session WHERE id = ? AND userId = ? LIMIT 1')
 			.bind(sessionId, userId)
@@ -909,7 +901,7 @@ function buildStartStatements(db: D1Database, input: StartTransitionInput): D1Pr
 			: buildRateLimitStatement(db, input.rateLimit),
 		db
 			.prepare(RANKED_START_ACCOUNT_SNAPSHOT_SQL)
-			.bind(userId, expectedBalance, session.initialWager, userId, userId),
+			.bind(userId, expectedBalance, session.initialWager, userId),
 		db
 			.prepare(RANKED_START_SESSION_INSERT_SQL)
 			.bind(
@@ -934,7 +926,6 @@ function buildStartStatements(db: D1Database, input: StartTransitionInput): D1Pr
 				userId,
 				expectedBalance,
 				session.initialWager,
-				userId,
 				userId,
 			),
 		db
@@ -1302,7 +1293,6 @@ async function classifyActionMiss(
 		current.session?.status === 'active' &&
 		current.session.nextSequence === input.expectedSequence &&
 		(current.account === null ||
-			current.account.heldChips !== 0 ||
 			(terminal
 				? current.account.chipBalance !== terminal.input.expectedWalletBalance
 				: current.account.chipBalance < input.additionalWager))
@@ -1462,7 +1452,6 @@ async function executeExpirationTransition(
 		if (
 			current.session?.status === 'active' &&
 			(current.account === null ||
-				current.account.heldChips !== 0 ||
 				current.account.chipBalance !== terminal.input.expectedWalletBalance)
 		) {
 			return { kind: 'balance-changed' };
@@ -1521,9 +1510,9 @@ export function createRankedRepository(db: D1Database): RankedRepository {
 		},
 		async readAccount(userId) {
 			return db
-				.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ? LIMIT 1')
+				.prepare('SELECT chipBalance FROM user WHERE id = ? LIMIT 1')
 				.bind(userId)
-				.first<{ chipBalance: number; heldChips: number }>();
+				.first<{ chipBalance: number }>();
 		},
 		consumeStandaloneRateLimit(userId, operation, nowSeconds) {
 			return consumeStandaloneRateLimit(db, userId, operation, nowSeconds);

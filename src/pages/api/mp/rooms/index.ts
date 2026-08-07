@@ -1,154 +1,76 @@
 import type { APIRoute } from 'astro';
-import { and, eq } from 'drizzle-orm';
 import { generateRoomCode } from '../../../../lib/mp-poker/roomCode';
-import { createDb } from '../../../../lib/db';
-import { mpMembership } from '../../../../db/schema';
-import {
-	acquireMultiplayerMembership,
-	hasActiveRankedSession,
-	reconcileMultiplayerMembership,
-} from '../../../../server/mp/membership';
+
+interface CreateRoomBody {
+	maxSeats: number;
+	smallBlind: number;
+	bigBlind: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function isValidRoomConfig(value: unknown): value is CreateRoomBody {
+	if (!isRecord(value)) return false;
+
+	const { maxSeats, smallBlind, bigBlind } = value;
+	if (maxSeats !== 2 && maxSeats !== 4 && maxSeats !== 6) return false;
+	if (typeof smallBlind !== 'number' || !Number.isSafeInteger(smallBlind) || smallBlind <= 0) {
+		return false;
+	}
+	if (typeof bigBlind !== 'number' || !Number.isSafeInteger(bigBlind) || bigBlind <= 0) {
+		return false;
+	}
+	if (smallBlind > Math.floor(Number.MAX_SAFE_INTEGER / 2)) return false;
+	if (bigBlind < smallBlind * 2) return false;
+	if (!Number.isSafeInteger(bigBlind * 100)) return false;
+
+	return true;
+}
 
 export const POST: APIRoute = async ({ locals, request }) => {
 	const user = locals.user;
-	if (!user) return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), { status: 401 });
+	if (!user) return Response.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 
-	const db = createDb(locals.runtime.env.DB);
-	const env = locals.runtime.env;
-
-	if (await hasActiveRankedSession(env.DB, user.id)) {
-		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
-	}
-	const membership = await reconcileMultiplayerMembership({
-		db: env.DB,
-		namespace: env.arcturus,
-		userId: user.id,
-	});
-	if (membership.kind !== 'clear') {
-		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
-	}
-
-	// Atomically acquire a membership lock before creating the DO.
-	// Using INSERT … ON CONFLICT DO NOTHING prevents the TOCTOU race where
-	// concurrent POST /mp/rooms requests all pass a SELECT check and each
-	// creates an orphaned DO. The userId primary key ensures at most one row.
-	const code = generateRoomCode();
-	const acquisition = await acquireMultiplayerMembership({
-		db: env.DB,
-		userId: user.id,
-		roomCode: code,
-	});
-	if (acquisition.kind !== 'acquired') {
-		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
-	}
-	// Re-read to confirm we own the lock (vs a conflicting row for another room)
-	const lockRow = await db
-		.select()
-		.from(mpMembership)
-		.where(eq(mpMembership.userId, user.id))
-		.get();
-	if (!lockRow || lockRow.roomCode !== code) {
-		return new Response(JSON.stringify({ error: 'ALREADY_IN_ROOM' }), { status: 409 });
-	}
-
-	let body: { maxSeats: number; smallBlind: number; bigBlind: number };
+	let rawBody: unknown;
 	try {
-		body = (await request.json()) as { maxSeats: number; smallBlind: number; bigBlind: number };
+		rawBody = await request.json();
 	} catch {
-		// Clean up membership lock on validation failure
-		await db
-			.delete(mpMembership)
-			.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-			.run();
-		return new Response(JSON.stringify({ error: 'INVALID_JSON' }), { status: 400 });
-	}
-	if (
-		!body ||
-		typeof body !== 'object' ||
-		typeof body.maxSeats !== 'number' ||
-		typeof body.smallBlind !== 'number' ||
-		typeof body.bigBlind !== 'number' ||
-		!Number.isInteger(body.maxSeats) ||
-		!Number.isInteger(body.smallBlind) ||
-		!Number.isInteger(body.bigBlind) ||
-		body.maxSeats < 2 ||
-		body.maxSeats > 6 ||
-		body.smallBlind < 1 ||
-		body.bigBlind < body.smallBlind * 2
-	) {
-		// Clean up membership lock on validation failure
-		await db
-			.delete(mpMembership)
-			.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-			.run();
-		return new Response(JSON.stringify({ error: 'INVALID_CONFIG' }), { status: 400 });
-	}
-	if (!env.arcturus) {
-		// Clean up membership lock — DO unavailable
-		await db
-			.delete(mpMembership)
-			.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-			.run();
-		return new Response(JSON.stringify({ error: 'DO_UNAVAILABLE' }), { status: 503 });
+		return Response.json({ error: 'INVALID_JSON' }, { status: 400 });
 	}
 
-	// We already have a room code from the membership lock above.
-	// Try the DO init with that code; if it collides, retry with new codes
-	// (updating the membership row to match).
+	if (!isValidRoomConfig(rawBody)) {
+		return Response.json({ error: 'INVALID_CONFIG' }, { status: 400 });
+	}
+
+	const namespace = locals.runtime.env.arcturus;
+	if (!namespace) return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 503 });
+
 	for (let attempt = 0; attempt < 5; attempt++) {
-		const attemptCode = attempt === 0 ? code : generateRoomCode();
-		const id = env.arcturus.idFromName(attemptCode);
-		const stub = env.arcturus.get(id);
-		let res: Response;
+		const roomCode = generateRoomCode();
+		const id = namespace.idFromName(roomCode);
+		const stub = namespace.get(id);
+		let response: Response;
 		try {
-			res = await stub.fetch('http://do/init', {
+			response = await stub.fetch('http://do/init', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({
-					maxSeats: body.maxSeats,
-					smallBlind: body.smallBlind,
-					bigBlind: body.bigBlind,
-					hostUserId: user.id,
-					roomCode: attemptCode,
-				}),
+				body: JSON.stringify({ ...rawBody, roomCode }),
 			});
 		} catch {
-			// Clean up membership lock — DO fetch threw
-			await db
-				.delete(mpMembership)
-				.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-				.run();
-			return new Response(JSON.stringify({ error: 'DO_UNAVAILABLE' }), { status: 502 });
+			return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 502 });
 		}
-		if (res.ok) {
-			// Update membership row to the final code if it changed
-			if (attemptCode !== code) {
-				await db
-					.update(mpMembership)
-					.set({ roomCode: attemptCode })
-					.where(eq(mpMembership.userId, user.id))
-					.run();
-			}
-			return new Response(JSON.stringify({ code: attemptCode }), { status: 201 });
-		}
-		if (res.status !== 409) {
-			const err = await res.text();
-			// Clean up membership lock — DO rejected init
-			await db
-				.delete(mpMembership)
-				.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-				.run();
-			return new Response(err, {
-				status: 502,
-				headers: { 'Content-Type': 'application/json' },
-			});
-		}
-		// 409 = code collision, retry with new code
+
+		if (response.ok) return Response.json({ code: roomCode }, { status: 201 });
+		if (response.status === 409) continue;
+
+		const errorBody = await response.text();
+		return new Response(errorBody, {
+			status: 502,
+			headers: { 'Content-Type': 'application/json' },
+		});
 	}
-	// Exhausted retries — clean up membership lock
-	await db
-		.delete(mpMembership)
-		.where(and(eq(mpMembership.userId, user.id), eq(mpMembership.roomCode, code)))
-		.run();
-	return new Response(JSON.stringify({ error: 'CODE_GENERATION_FAILED' }), { status: 500 });
+
+	return Response.json({ error: 'CODE_GENERATION_FAILED' }, { status: 500 });
 };

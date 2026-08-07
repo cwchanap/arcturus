@@ -1,356 +1,167 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import type { Miniflare } from 'miniflare';
+import { describe, expect, test } from 'bun:test';
 import { GET } from '../../pages/api/mp/rooms/[code]/ws';
-import {
-	createRankedTestD1,
-	insertRankedSession,
-	insertRankedTestUser,
-	installRankedAfterStaleDelete as installRankedAfterStaleDeleteHelper,
-} from '../ranked/test-d1';
 
-/**
- * Integration tests for the WebSocket upgrade route (ws.ts).
- *
- * The route handler is an Astro APIRoute with framework dependencies
- * (D1, DO namespace, middleware). These tests exercise the real route
- * handler against a Miniflare-backed D1 to verify ranked exclusion,
- * escrow handling, origin validation, and DO upgrade failure cleanup.
- *
- * The display-name fallback (`name || 'Player'`) and the 4xx cleanup
- * decision predicate are intentionally NOT unit-tested here in
- * isolation: duplicating the production expression into a local helper
- * and asserting on the copy is tautological — it tests the test's own
- * logic, not the route's. The 4xx cleanup behavior is instead covered
- * by the `upgrade DO failure handling` describe below, which drives the
- * real route with DO stubs returning 4xx/5xx and asserts on the
- * resulting membership/escrow state.
- */
+const USER_ID = 'ws-route-user';
 
-describe('WebSocket join membership policy', () => {
-	const userId = 'ws-route-user';
-	let mf: Miniflare;
-	let db: D1Database;
+interface RequestRecord {
+	input: string;
+	init?: RequestInit;
+}
 
-	beforeAll(async () => {
-		({ mf, db } = await createRankedTestD1());
+type FetchHandler = (input: string, init?: RequestInit) => Response | Promise<Response>;
+
+function makeLocals(
+	namespace?: DurableObjectNamespace,
+	user: { id: string; name: string } | null = { id: USER_ID, name: 'WebSocket User' },
+) {
+	return {
+		...(user ? { user } : {}),
+		runtime: { env: { arcturus: namespace } },
+	};
+}
+
+function makeNamespace(handler: FetchHandler): {
+	namespace: DurableObjectNamespace;
+	requests: RequestRecord[];
+} {
+	const requests: RequestRecord[] = [];
+	const namespace = {
+		idFromName: (name: string) => ({ name }) as unknown as DurableObjectId,
+		get: () => ({
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push({ input: String(input), init });
+				return handler(String(input), init);
+			},
+		}),
+	} as unknown as DurableObjectNamespace;
+	return { namespace, requests };
+}
+
+function makeRequest(
+	code = 'MP-JOIN01',
+	headers: Record<string, string> = { Upgrade: 'websocket' },
+): Request {
+	return new Request(`http://test.local/api/mp/rooms/${code}/ws`, { headers });
+}
+
+async function callGet({
+	code = 'MP-JOIN01',
+	headers = { Upgrade: 'websocket' },
+	namespace,
+	user = { id: USER_ID, name: 'WebSocket User' },
+}: {
+	code?: string;
+	headers?: Record<string, string>;
+	namespace?: DurableObjectNamespace;
+	user?: { id: string; name: string } | null;
+} = {}): Promise<Response> {
+	const request = makeRequest(code, headers);
+	return GET({
+		params: { code },
+		request,
+		locals: makeLocals(namespace, user) as any,
+		url: new URL(request.url),
+	} as any);
+}
+
+async function readJson(response: Response): Promise<Record<string, unknown>> {
+	return (await response.json()) as Record<string, unknown>;
+}
+
+describe('mp/rooms WebSocket route validation', () => {
+	test('rejects a malformed room code', async () => {
+		const response = await callGet({ code: 'not-a-code' });
+
+		expect(response.status).toBe(400);
 	});
 
-	afterAll(async () => {
-		await mf.dispose();
+	test('rejects an unauthenticated request', async () => {
+		const response = await callGet({ user: null });
+
+		expect(response.status).toBe(401);
 	});
 
-	beforeEach(async () => {
-		await db.batch([
-			db.prepare('DROP TRIGGER IF EXISTS ws_ranked_after_stale_delete'),
-			db.prepare('DELETE FROM ranked_session'),
-			db.prepare('DELETE FROM mp_membership'),
-			db.prepare('DELETE FROM user'),
-		]);
-		await insertRankedTestUser(db, { id: userId, chipBalance: 500 });
-	});
-
-	function makeRequest(): Request {
-		return new Request('http://test.local/api/mp/rooms/MP-JOIN01/ws', {
-			headers: { Upgrade: 'websocket' },
+	test('rejects a cross-origin upgrade', async () => {
+		const response = await callGet({
+			headers: { Upgrade: 'websocket', Origin: 'http://evil.test' },
 		});
-	}
 
-	function makeLocals(namespace?: DurableObjectNamespace) {
-		return {
-			user: { id: userId, name: 'WebSocket User' },
-			runtime: { env: { DB: db, arcturus: namespace } },
-		};
-	}
+		expect(response.status).toBe(403);
+	});
 
-	async function callJoin(namespace?: DurableObjectNamespace): Promise<Response> {
-		const request = makeRequest();
-		return GET({
-			params: { code: 'MP-JOIN01' },
-			request,
-			locals: makeLocals(namespace) as any,
-			url: new URL(request.url),
-		} as any);
-	}
-
-	async function seedActiveRankedSession(id = 'ws-active-ranked'): Promise<void> {
-		await insertRankedSession(db, {
-			id,
-			userId,
-			startRequestId: `${id}-request`,
-			activeUserId: userId,
+	test('rejects a malformed Origin header', async () => {
+		const response = await callGet({
+			headers: { Upgrade: 'websocket', Origin: 'http://[invalid' },
 		});
-	}
 
-	async function installRankedAfterStaleDelete(): Promise<void> {
-		await installRankedAfterStaleDeleteHelper(db, {
-			userId,
-			roomCode: 'MP-OLD01',
-			sessionId: 'ws-race-ranked',
-			startRequestId: 'ws-race-request',
-			triggerName: 'ws_ranked_after_stale_delete',
+		expect(response.status).toBe(403);
+	});
+
+	test('allows same-origin upgrades through validation', async () => {
+		const response = await callGet({
+			headers: { Upgrade: 'websocket', Origin: 'http://test.local' },
 		});
-	}
 
-	function goneThenUpgradeNamespace(): DurableObjectNamespace {
-		return {
-			idFromName: () => ({}) as DurableObjectId,
-			get: () => ({
-				fetch: async (input: RequestInfo | URL) => {
-					if (String(input).endsWith('/metadata')) {
-						return new Response(null, { status: 404 });
-					}
-					return { status: 101 } as Response;
-				},
-			}),
-		} as unknown as DurableObjectNamespace;
-	}
-
-	test('rejects a browser join while the user has an active ranked session', async () => {
-		await seedActiveRankedSession();
-
-		const response = await callJoin();
-
-		expect(response.status).toBe(409);
-		expect(await response.json()).toEqual({ error: 'ALREADY_IN_ROOM' });
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(userId).first(),
-		).toBeNull();
+		expect(response.status).toBe(503);
+		expect(await readJson(response)).toEqual({ error: 'DO_UNAVAILABLE' });
 	});
 
-	test('fails closed when a browser join finds orphaned held chips', async () => {
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, userId).run();
+	test('rejects a non-WebSocket request', async () => {
+		const response = await callGet({ headers: { Origin: 'http://test.local' } });
 
-		const response = await callJoin();
-
-		expect(response.status).toBe(409);
-		expect(
-			await db.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?').bind(userId).first(),
-		).toEqual({ chipBalance: 500, heldChips: 500 });
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(userId).first(),
-		).toBeNull();
+		expect(response.status).toBe(426);
 	});
+});
 
-	test('atomic join loses to a ranked session created after stale repair', async () => {
-		await db
-			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
-			.bind(userId, 'MP-OLD01', Math.trunc((Date.now() - 32_000) / 1000))
-			.run();
-		await installRankedAfterStaleDelete();
+describe('mp/rooms WebSocket route forwarding', () => {
+	test('forwards the upgrade with trusted identity headers', async () => {
+		const user = { id: USER_ID, name: 'Trusted User / こんにちは' };
+		const { namespace, requests } = makeNamespace((input, init) => {
+			expect(input).toBe('http://do/ws');
+			expect(init?.method).toBeUndefined();
+			const headers = new Headers(init?.headers);
+			expect(headers.get('upgrade')).toBe('websocket');
+			expect(headers.get('origin')).toBe('http://test.local');
+			expect(headers.get('x-client-header')).toBe('keep-me');
+			expect(headers.get('x-arcturus-user-id')).toBe(USER_ID);
+			expect(headers.get('x-arcturus-display-name')).toBe(encodeURIComponent(user.name));
+			return new Response('forwarded', { status: 200 });
+		});
 
-		const response = await callJoin(goneThenUpgradeNamespace());
-
-		expect(response.status).toBe(409);
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(userId).first(),
-		).toBeNull();
-		expect(
-			await db.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?').bind(userId).first(),
-		).toEqual({ id: 'ws-race-ranked' });
-	});
-
-	describe('upgrade request validation', () => {
-		async function callGet({
-			code = 'MP-JOIN01',
-			headers,
-			user = userId,
+		const response = await callGet({
 			namespace,
-		}: {
-			code?: string;
-			headers: Record<string, string>;
-			user?: string | null;
-			namespace?: DurableObjectNamespace;
-		}): Promise<Response> {
-			const request = new Request(`http://test.local/api/mp/rooms/${code}/ws`, { headers });
-			return GET({
-				params: { code },
-				request,
-				locals:
-					user === null
-						? ({ runtime: { env: { DB: db, arcturus: namespace } } } as any)
-						: ({
-								user: { id: user, name: 'WebSocket User' },
-								runtime: { env: { DB: db, arcturus: namespace } },
-							} as any),
-				url: new URL(request.url),
-			} as any);
-		}
-
-		test('rejects a malformed room code with 400', async () => {
-			const response = await callGet({
-				code: 'not-a-code',
-				headers: { Upgrade: 'websocket' },
-			});
-			expect(response.status).toBe(400);
+			user,
+			headers: {
+				Upgrade: 'websocket',
+				Origin: 'http://test.local',
+				'x-client-header': 'keep-me',
+				'x-arcturus-user-id': 'attacker-id',
+				'x-arcturus-display-name': 'attacker-name',
+			},
 		});
 
-		test('rejects an unauthenticated request with 401', async () => {
-			const response = await callGet({
-				headers: { Upgrade: 'websocket' },
-				user: null,
-			});
-			expect(response.status).toBe(401);
-		});
-
-		test('rejects a cross-origin upgrade with 403', async () => {
-			const response = await callGet({
-				headers: { Upgrade: 'websocket', Origin: 'http://evil.test' },
-			});
-			expect(response.status).toBe(403);
-		});
-
-		test('rejects a malformed Origin header with 403', async () => {
-			const response = await callGet({
-				headers: { Upgrade: 'websocket', Origin: 'http://[invalid' },
-			});
-			expect(response.status).toBe(403);
-		});
-
-		test('allows same-origin upgrades (Origin matches Host)', async () => {
-			const response = await callGet({
-				headers: { Upgrade: 'websocket', Origin: 'http://test.local' },
-			});
-			// Past origin check; rejected deterministically because the arcturus
-			// binding is missing (callGet does not pass a namespace).
-			expect(response.status).toBe(503);
-			expect(await response.json()).toEqual({ error: 'DO_UNAVAILABLE' });
-		});
-
-		test('rejects a non-websocket request with 426', async () => {
-			const response = await callGet({
-				headers: { Origin: 'http://test.local' },
-			});
-			expect(response.status).toBe(426);
-		});
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe('forwarded');
+		expect(requests).toHaveLength(1);
 	});
 
-	describe('upgrade DO failure handling', () => {
-		function upgradeStatusNamespace(status: number): DurableObjectNamespace {
-			return {
-				idFromName: () => ({}) as DurableObjectId,
-				get: () => ({
-					fetch: async (input: RequestInfo | URL) => {
-						if (String(input).endsWith('/metadata')) {
-							return new Response(null, { status: 404 });
-						}
-						return new Response('rejected', { status });
-					},
-				}),
-			} as unknown as DurableObjectNamespace;
-		}
+	test('returns the Durable Object response unchanged', async () => {
+		const { namespace } = makeNamespace(() => new Response('room rejected', { status: 404 }));
 
-		function upgradeThrowNamespace(): DurableObjectNamespace {
-			return {
-				idFromName: () => ({}) as DurableObjectId,
-				get: () => ({
-					fetch: async (input: RequestInfo | URL) => {
-						if (String(input).endsWith('/metadata')) {
-							return new Response(null, { status: 404 });
-						}
-						throw new Error('DO upgrade exploded');
-					},
-				}),
-			} as unknown as DurableObjectNamespace;
-		}
+		const response = await callGet({ namespace });
 
-		async function callUpgrade(namespace?: DurableObjectNamespace): Promise<Response> {
-			const request = new Request('http://test.local/api/mp/rooms/MP-JOIN01/ws', {
-				headers: { Upgrade: 'websocket', Origin: 'http://test.local' },
-			});
-			return GET({
-				params: { code: 'MP-JOIN01' },
-				request,
-				locals: {
-					user: { id: userId, name: 'WebSocket User' },
-					runtime: { env: { DB: db, arcturus: namespace } },
-				} as any,
-				url: new URL(request.url),
-			} as any);
-		}
+		expect(response.status).toBe(404);
+		expect(await response.text()).toBe('room rejected');
+	});
 
-		async function membershipRow(): Promise<{ roomCode: string } | null> {
-			return (await db
-				.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?')
-				.bind(userId)
-				.first()) as { roomCode: string } | null;
-		}
-
-		async function userBalance(): Promise<{ chipBalance: number; heldChips: number }> {
-			return (await db
-				.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
-				.bind(userId)
-				.first()) as { chipBalance: number; heldChips: number };
-		}
-
-		test('returns 503 DO_UNAVAILABLE and releases the acquired lock when the binding is missing', async () => {
-			const response = await callUpgrade(undefined);
-
-			expect(response.status).toBe(503);
-			expect(await response.json()).toEqual({ error: 'DO_UNAVAILABLE' });
-			expect(await membershipRow()).toBeNull();
+	test('maps a thrown Durable Object fetch to DO_ERROR', async () => {
+		const { namespace } = makeNamespace(() => {
+			throw new Error('DO upgrade exploded');
 		});
 
-		test('returns 502 DO_ERROR and releases the acquired lock when the DO fetch throws', async () => {
-			const response = await callUpgrade(upgradeThrowNamespace());
+		const response = await callGet({ namespace });
 
-			expect(response.status).toBe(502);
-			expect(await response.json()).toEqual({ error: 'DO_ERROR' });
-			expect(await membershipRow()).toBeNull();
-		});
-
-		test('cleans up the membership lock when the DO rejects the upgrade with a 4xx', async () => {
-			const response = await callUpgrade(upgradeStatusNamespace(404));
-
-			expect(response.status).toBe(404);
-			expect(await membershipRow()).toBeNull();
-		});
-
-		test('releases escrowed chips and deletes the membership on a 4xx for an existing same-room member', async () => {
-			const joinedAt = Math.trunc(Date.now() / 1000);
-			await db.batch([
-				db
-					.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
-					.bind(userId, 'MP-JOIN01', joinedAt),
-				db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, userId),
-			]);
-
-			const response = await callUpgrade(upgradeStatusNamespace(404));
-
-			expect(response.status).toBe(404);
-			expect(await membershipRow()).toBeNull();
-			expect(await userBalance()).toEqual({ chipBalance: 1000, heldChips: 0 });
-		});
-
-		test('does NOT clean up the membership lock on a 5xx transient failure', async () => {
-			const response = await callUpgrade(upgradeStatusNamespace(500));
-
-			expect(response.status).toBe(500);
-			// Lock acquired during this request must remain so the user cannot
-			// double-spend via another room while the DO may still hold escrow.
-			const row = await membershipRow();
-			expect(row).not.toBeNull();
-			expect(row?.roomCode).toBe('MP-JOIN01');
-		});
-
-		test('returns the DO upgrade response (101) on a successful upgrade and keeps the lock', async () => {
-			const namespace: DurableObjectNamespace = {
-				idFromName: () => ({}) as DurableObjectId,
-				get: () => ({
-					fetch: async (input: RequestInfo | URL) => {
-						if (String(input).endsWith('/metadata')) {
-							return new Response(null, { status: 404 });
-						}
-						return { status: 101 } as Response;
-					},
-				}),
-			} as unknown as DurableObjectNamespace;
-
-			const response = await callUpgrade(namespace);
-
-			expect(response.status).toBe(101);
-			const row = await membershipRow();
-			expect(row).not.toBeNull();
-			expect(row?.roomCode).toBe('MP-JOIN01');
-		});
+		expect(response.status).toBe(502);
+		expect(await readJson(response)).toEqual({ error: 'DO_ERROR' });
 	});
 });

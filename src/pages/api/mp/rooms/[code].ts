@@ -3,23 +3,14 @@ import { isValidRoomCode } from '../../../../lib/mp-poker/roomCode';
 
 export const GET: APIRoute = async ({ params, locals }) => {
 	const user = locals.user;
-	if (!user)
-		return new Response(JSON.stringify({ error: 'UNAUTHORIZED' }), {
-			status: 401,
-			headers: { 'Content-Type': 'application/json' },
-		});
+	if (!user) return Response.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 	const code = params.code;
 	if (!code || !isValidRoomCode(code)) {
-		return new Response(JSON.stringify({ error: 'INVALID_CODE' }), {
-			status: 400,
-			headers: { 'Content-Type': 'application/json' },
-		});
+		return Response.json({ error: 'INVALID_CODE' }, { status: 400 });
 	}
-	const env = locals.runtime.env;
-	if (!env.arcturus) {
-		return new Response(JSON.stringify({ error: 'DO_UNAVAILABLE' }), { status: 503 });
-	}
-	const id = env.arcturus.idFromName(code);
-	const stub = env.arcturus.get(id);
+	const namespace = locals.runtime.env.arcturus;
+	if (!namespace) return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 503 });
+	const id = namespace.idFromName(code);
+	const stub = namespace.get(id);
 	return stub.fetch('http://do/metadata');
 };

@@ -64,9 +64,7 @@ export interface InsertRankedSessionInput {
 }
 
 // Shared 20-column INSERT column list and default values for ranked_session
-// rows inserted by test helpers. Both the bound-parameter insertRankedSession
-// and the escaped-interpolation trigger SQL in installRankedAfterStaleDelete
-// build from this definition so the two paths cannot diverge.
+// rows inserted by test helpers.
 const RANKED_SESSION_INSERT_COLUMNS = `id, userId, startRequestId, startPayloadHash, activeUserId,
 	gameType, rulesetVersion, configJson, configHash, seed, seedCommitment,
 	actionLogJson, actionLogHash, nextSequence, initialWager, committedWager,
@@ -136,36 +134,4 @@ export async function insertRankedSession(
 			now,
 		)
 		.run();
-}
-
-export interface InstallRankedAfterStaleDeleteInput {
-	userId: string;
-	roomCode: string;
-	sessionId: string;
-	startRequestId: string;
-	triggerName?: string;
-}
-
-export async function installRankedAfterStaleDelete(
-	db: D1Database,
-	input: InstallRankedAfterStaleDeleteInput,
-): Promise<void> {
-	const now = Math.trunc(Date.now() / 1000);
-	const triggerName = input.triggerName ?? 'ranked_after_stale_delete';
-	// SQLite triggers cannot use bound parameters (?), so values are
-	// interpolated directly. This is test-only code with controlled inputs.
-	const esc = (value: string) => value.replace(/'/g, "''");
-	const d = RANKED_SESSION_INSERT_DEFAULTS;
-	const sql = `CREATE TRIGGER ${triggerName}
-		AFTER DELETE ON mp_membership
-		WHEN OLD.userId = '${esc(input.userId)}' AND OLD.roomCode = '${esc(input.roomCode)}'
-		BEGIN
-			INSERT INTO ranked_session (${RANKED_SESSION_INSERT_COLUMNS}) VALUES (
-				'${esc(input.sessionId)}', '${esc(input.userId)}', '${esc(input.startRequestId)}', '${d.startPayloadHash}', '${esc(input.userId)}',
-				'${d.gameType}', '${d.rulesetVersion}', '${d.configJson}', '${d.configHash}',
-				'${d.seed}', '${d.seedCommitment}',
-				'${d.actionLogJson}', '${d.actionLogHash}', ${d.nextSequence}, ${d.initialWager}, ${d.committedWager}, 'active', ${now + 900}, ${now}, ${now}
-			);
-		END`;
-	await db.prepare(sql).run();
 }

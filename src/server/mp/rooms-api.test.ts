@@ -1,125 +1,42 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import type { Miniflare } from 'miniflare';
+import { describe, expect, test } from 'bun:test';
+import { GET as metadataGET } from '../../pages/api/mp/rooms/[code]';
 import { POST } from '../../pages/api/mp/rooms/index';
-import {
-	createRankedTestD1,
-	insertRankedSession,
-	insertRankedTestUser,
-	installRankedAfterStaleDelete as installRankedAfterStaleDeleteHelper,
-} from '../ranked/test-d1';
 
 const USER_ID = 'rooms-api-user';
-let mf: Miniflare;
-let db: D1Database;
+const DEFAULT_BODY = { maxSeats: 2, smallBlind: 10, bigBlind: 20 };
 
-beforeAll(async () => {
-	({ mf, db } = await createRankedTestD1());
-});
-
-afterAll(async () => {
-	await mf.dispose();
-});
-
-beforeEach(async () => {
-	await db.batch([
-		db.prepare('DROP TRIGGER IF EXISTS rooms_ranked_after_stale_delete'),
-		db.prepare('DELETE FROM ranked_session'),
-		db.prepare('DELETE FROM mp_membership'),
-		db.prepare('DELETE FROM user'),
-	]);
-	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 500 });
-});
-
-function makeRequest(): Request {
-	return new Request('http://test.local/api/mp/rooms', {
-		method: 'POST',
-		headers: { 'content-type': 'application/json' },
-		body: JSON.stringify({ maxSeats: 2, smallBlind: 10, bigBlind: 20 }),
-	});
+interface RequestRecord {
+	input: string;
+	init?: RequestInit;
 }
+
+type FetchHandler = (input: string, init?: RequestInit) => Response | Promise<Response>;
 
 function makeLocals(namespace?: DurableObjectNamespace) {
 	return {
-		user: { id: USER_ID },
-		runtime: { env: { DB: db, arcturus: namespace } },
+		user: { id: USER_ID, name: 'Room Creator' },
+		runtime: { env: { arcturus: namespace } },
 	};
 }
 
-async function seedActiveRankedSession(): Promise<void> {
-	await insertRankedSession(db, {
-		id: 'rooms-ranked-session',
-		userId: USER_ID,
-		startRequestId: 'rooms-ranked-request',
-		activeUserId: USER_ID,
-	});
-}
-
-async function installRankedAfterStaleDelete(): Promise<void> {
-	await installRankedAfterStaleDeleteHelper(db, {
-		userId: USER_ID,
-		roomCode: 'MP-OLD01',
-		sessionId: 'rooms-race-ranked',
-		startRequestId: 'rooms-race-request',
-		triggerName: 'rooms_ranked_after_stale_delete',
-	});
-}
-
-function goneThenInitNamespace(): DurableObjectNamespace {
-	return {
-		idFromName: () => ({}) as DurableObjectId,
+function makeNamespace(handler: FetchHandler): {
+	namespace: DurableObjectNamespace;
+	requests: RequestRecord[];
+} {
+	const requests: RequestRecord[] = [];
+	const namespace = {
+		idFromName: (name: string) => ({ name }) as unknown as DurableObjectId,
 		get: () => ({
-			fetch: async (input: RequestInfo | URL) => {
-				if (String(input).endsWith('/metadata')) {
-					return new Response(null, { status: 404 });
-				}
-				return new Response(null, { status: 200 });
+			fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+				requests.push({ input: String(input), init });
+				return handler(String(input), init);
 			},
 		}),
 	} as unknown as DurableObjectNamespace;
+	return { namespace, requests };
 }
 
-function makeInitNamespace(
-	handleInit: (input: RequestInfo | URL) => Promise<Response> | Response,
-): DurableObjectNamespace {
-	return {
-		idFromName: () => ({}) as DurableObjectId,
-		get: () => ({
-			fetch: async (input: RequestInfo | URL) => {
-				if (String(input).endsWith('/metadata')) {
-					return new Response(null, { status: 404 });
-				}
-				return handleInit(input);
-			},
-		}),
-	} as unknown as DurableObjectNamespace;
-}
-
-function initSuccessNamespace(): DurableObjectNamespace {
-	return makeInitNamespace(() => new Response(null, { status: 200 }));
-}
-
-function initStatusNamespace(status: number, body: string = ''): DurableObjectNamespace {
-	return makeInitNamespace(() => new Response(body, { status }));
-}
-
-function initThrowNamespace(): DurableObjectNamespace {
-	return makeInitNamespace(() => {
-		throw new Error('DO fetch exploded');
-	});
-}
-
-function initCollisionThenSuccessNamespace(failures: number): DurableObjectNamespace {
-	let initCalls = 0;
-	return makeInitNamespace(() => {
-		initCalls += 1;
-		if (initCalls <= failures) {
-			return new Response(null, { status: 409 });
-		}
-		return new Response(null, { status: 200 });
-	});
-}
-
-function makeRequestWithBody(body: unknown): Request {
+function makeRequest(body: unknown = DEFAULT_BODY): Request {
 	return new Request('http://test.local/api/mp/rooms', {
 		method: 'POST',
 		headers: { 'content-type': 'application/json' },
@@ -127,191 +44,202 @@ function makeRequestWithBody(body: unknown): Request {
 	});
 }
 
-async function membershipRoomCode(): Promise<{ roomCode: string } | null> {
-	return (await db
-		.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?')
-		.bind(USER_ID)
-		.first()) as { roomCode: string } | null;
+function makeMalformedRequest(): Request {
+	return new Request('http://test.local/api/mp/rooms', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json' },
+		body: '{not-json',
+	});
 }
 
-describe('mp/rooms create membership policy', () => {
-	test('rejects room creation while the user has an active ranked session', async () => {
-		await seedActiveRankedSession();
+async function callCreate(
+	namespace: DurableObjectNamespace | undefined,
+	request: Request = makeRequest(),
+): Promise<Response> {
+	return POST({ request, locals: makeLocals(namespace) as any } as any);
+}
 
+async function readJson(response: Response): Promise<Record<string, unknown>> {
+	return (await response.json()) as Record<string, unknown>;
+}
+
+describe('mp/rooms create route', () => {
+	test('rejects an unauthenticated request', async () => {
 		const response = await POST({
 			request: makeRequest(),
-			locals: makeLocals() as any,
+			locals: { runtime: { env: { arcturus: undefined } } } as any,
 		} as any);
 
-		expect(response.status).toBe(409);
-		expect(await response.json()).toEqual({ error: 'ALREADY_IN_ROOM' });
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
-		).toBeNull();
+		expect(response.status).toBe(401);
+		expect(await readJson(response)).toEqual({ error: 'UNAUTHORIZED' });
 	});
 
-	test('does not create a room when held chips have no membership', async () => {
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, USER_ID).run();
+	test('rejects malformed JSON', async () => {
+		const { namespace, requests } = makeNamespace(() => new Response(null, { status: 200 }));
 
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals() as any,
-		} as any);
+		const response = await callCreate(namespace, makeMalformedRequest());
 
-		expect(response.status).toBe(409);
-		expect(await response.json()).toEqual({ error: 'ALREADY_IN_ROOM' });
-		expect(
-			await db
-				.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
-				.bind(USER_ID)
-				.first(),
-		).toEqual({ chipBalance: 500, heldChips: 500 });
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
-		).toBeNull();
+		expect(response.status).toBe(400);
+		expect(await readJson(response)).toEqual({ error: 'INVALID_JSON' });
+		expect(requests).toHaveLength(0);
 	});
 
-	test('atomic room creation loses to a ranked session created after stale repair', async () => {
-		await db
-			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
-			.bind(USER_ID, 'MP-OLD01', Math.trunc((Date.now() - 32_000) / 1000))
-			.run();
-		await installRankedAfterStaleDelete();
+	test('rejects invalid seat and blind configurations before contacting the Durable Object', async () => {
+		const { namespace, requests } = makeNamespace(() => new Response(null, { status: 200 }));
+		const invalidBodies = [
+			{ ...DEFAULT_BODY, maxSeats: 3 },
+			{ ...DEFAULT_BODY, smallBlind: 0 },
+			{ ...DEFAULT_BODY, smallBlind: 1.5 },
+			{ ...DEFAULT_BODY, bigBlind: 0 },
+			{ ...DEFAULT_BODY, bigBlind: 19 },
+			{
+				...DEFAULT_BODY,
+				bigBlind: Math.floor(Number.MAX_SAFE_INTEGER / 100) + 1,
+			},
+		];
 
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(goneThenInitNamespace()) as any,
-		} as any);
+		for (const body of invalidBodies) {
+			const response = await callCreate(namespace, makeRequest(body));
+			expect(response.status).toBe(400);
+			expect(await readJson(response)).toEqual({ error: 'INVALID_CONFIG' });
+		}
 
-		expect(response.status).toBe(409);
-		expect(
-			await db.prepare('SELECT roomCode FROM mp_membership WHERE userId = ?').bind(USER_ID).first(),
-		).toBeNull();
-		expect(
-			await db
-				.prepare('SELECT id FROM ranked_session WHERE activeUserId = ?')
-				.bind(USER_ID)
-				.first(),
-		).toEqual({ id: 'rooms-race-ranked' });
+		expect(requests).toHaveLength(0);
+	});
+
+	test('returns DO_UNAVAILABLE when the Durable Object binding is missing', async () => {
+		const response = await callCreate(undefined);
+
+		expect(response.status).toBe(503);
+		expect(await readJson(response)).toEqual({ error: 'DO_UNAVAILABLE' });
+	});
+
+	test('initializes a room with a generated code and returns it', async () => {
+		const { namespace, requests } = makeNamespace(() => new Response(null, { status: 200 }));
+
+		const response = await callCreate(namespace);
+
+		expect(response.status).toBe(201);
+		const body = (await readJson(response)) as { code: string };
+		expect(body.code).toMatch(/^MP-[A-Z0-9]{6}$/);
+		expect(requests).toHaveLength(1);
+		expect(requests[0].input).toBe('http://do/init');
+		expect(requests[0].init?.method).toBe('POST');
+		expect(new Headers(requests[0].init?.headers).get('content-type')).toBe('application/json');
+		expect(JSON.parse(String(requests[0].init?.body))).toEqual({
+			...DEFAULT_BODY,
+			roomCode: body.code,
+		});
+	});
+
+	test('retries a room-code collision and succeeds on the next code', async () => {
+		let initCalls = 0;
+		const { namespace, requests } = makeNamespace(() => {
+			initCalls += 1;
+			return new Response(null, { status: initCalls === 1 ? 409 : 200 });
+		});
+
+		const response = await callCreate(namespace);
+
+		expect(response.status).toBe(201);
+		expect(initCalls).toBe(2);
+		expect(requests).toHaveLength(2);
+		const body = (await readJson(response)) as { code: string };
+		expect(JSON.parse(String(requests[1].init?.body)).roomCode).toBe(body.code);
+	});
+
+	test('stops after five room-code collisions', async () => {
+		let initCalls = 0;
+		const { namespace, requests } = makeNamespace(() => {
+			initCalls += 1;
+			return new Response(null, { status: 409 });
+		});
+
+		const response = await callCreate(namespace);
+
+		expect(response.status).toBe(500);
+		expect(await readJson(response)).toEqual({ error: 'CODE_GENERATION_FAILED' });
+		expect(initCalls).toBe(5);
+		expect(requests).toHaveLength(5);
+	});
+
+	test('does not retry a non-409 Durable Object response', async () => {
+		let initCalls = 0;
+		const { namespace, requests } = makeNamespace(() => {
+			initCalls += 1;
+			return new Response('{"error":"DO_INTERNAL"}', {
+				status: 500,
+				headers: { 'content-type': 'application/json' },
+			});
+		});
+
+		const response = await callCreate(namespace);
+
+		expect(response.status).toBe(502);
+		expect(await readJson(response)).toEqual({ error: 'DO_INTERNAL' });
+		expect(initCalls).toBe(1);
+		expect(requests).toHaveLength(1);
+	});
+
+	test('returns DO_UNAVAILABLE when initialization fetch throws', async () => {
+		const { namespace } = makeNamespace(() => {
+			throw new Error('DO fetch exploded');
+		});
+
+		const response = await callCreate(namespace);
+
+		expect(response.status).toBe(502);
+		expect(await readJson(response)).toEqual({ error: 'DO_UNAVAILABLE' });
 	});
 });
 
-describe('mp/rooms create success and validation paths', () => {
-	test('creates a room and records the membership lock on success', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(initSuccessNamespace()) as any,
+describe('mp/rooms metadata route', () => {
+	test('rejects an unauthenticated metadata request', async () => {
+		const response = await metadataGET({
+			params: { code: 'MP-ABC123' },
+			locals: { runtime: { env: { arcturus: undefined } } } as any,
 		} as any);
 
-		expect(response.status).toBe(201);
-		const body = (await response.json()) as { code: string };
-		expect(body.code).toMatch(/^MP-[A-Z0-9]{6}$/);
-		expect(await membershipRoomCode()).toEqual({ roomCode: body.code });
+		expect(response.status).toBe(401);
+		expect(await readJson(response)).toEqual({ error: 'UNAUTHORIZED' });
 	});
 
-	test('rejects malformed JSON with INVALID_JSON and releases the lock', async () => {
-		const request = new Request('http://test.local/api/mp/rooms', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: '{not-json',
-		});
-
-		const response = await POST({
-			request,
-			locals: makeLocals(initSuccessNamespace()) as any,
+	test('rejects an invalid metadata room code', async () => {
+		const response = await metadataGET({
+			params: { code: 'not-a-room' },
+			locals: makeLocals() as any,
 		} as any);
 
 		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'INVALID_JSON' });
-		expect(await membershipRoomCode()).toBeNull();
+		expect(await readJson(response)).toEqual({ error: 'INVALID_CODE' });
 	});
 
-	test('rejects out-of-range maxSeats with INVALID_CONFIG and releases the lock', async () => {
-		const response = await POST({
-			request: makeRequestWithBody({ maxSeats: 7, smallBlind: 10, bigBlind: 20 }),
-			locals: makeLocals(initSuccessNamespace()) as any,
-		} as any);
-
-		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'INVALID_CONFIG' });
-		expect(await membershipRoomCode()).toBeNull();
-	});
-
-	test('rejects bigBlind below 2x smallBlind with INVALID_CONFIG and releases the lock', async () => {
-		const response = await POST({
-			request: makeRequestWithBody({ maxSeats: 2, smallBlind: 10, bigBlind: 15 }),
-			locals: makeLocals(initSuccessNamespace()) as any,
-		} as any);
-
-		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'INVALID_CONFIG' });
-		expect(await membershipRoomCode()).toBeNull();
-	});
-
-	test('rejects non-integer wagers with INVALID_CONFIG and releases the lock', async () => {
-		const response = await POST({
-			request: makeRequestWithBody({ maxSeats: 2, smallBlind: 1.5, bigBlind: 4 }),
-			locals: makeLocals(initSuccessNamespace()) as any,
-		} as any);
-
-		expect(response.status).toBe(400);
-		expect(await response.json()).toEqual({ error: 'INVALID_CONFIG' });
-		expect(await membershipRoomCode()).toBeNull();
-	});
-
-	test('returns DO_UNAVAILABLE (503) when the arcturus binding is missing and releases the lock', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(undefined) as any,
+	test('returns DO_UNAVAILABLE when the metadata binding is missing', async () => {
+		const response = await metadataGET({
+			params: { code: 'MP-ABC123' },
+			locals: makeLocals() as any,
 		} as any);
 
 		expect(response.status).toBe(503);
-		expect(await response.json()).toEqual({ error: 'DO_UNAVAILABLE' });
-		expect(await membershipRoomCode()).toBeNull();
+		expect(await readJson(response)).toEqual({ error: 'DO_UNAVAILABLE' });
 	});
 
-	test('returns 502 DO_UNAVAILABLE when the DO fetch throws and releases the lock', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(initThrowNamespace()) as any,
+	test('forwards a valid metadata request to the room Durable Object', async () => {
+		const { namespace, requests } = makeNamespace((input) => {
+			expect(input).toBe('http://do/metadata');
+			return new Response('{"roomCode":"MP-ABC123","occupancy":1}', {
+				status: 200,
+				headers: { 'content-type': 'application/json' },
+			});
+		});
+
+		const response = await metadataGET({
+			params: { code: 'MP-ABC123' },
+			locals: makeLocals(namespace) as any,
 		} as any);
 
-		expect(response.status).toBe(502);
-		expect(await response.json()).toEqual({ error: 'DO_UNAVAILABLE' });
-		expect(await membershipRoomCode()).toBeNull();
-	});
-
-	test('returns 502 with the DO error body when the DO rejects init with a non-409 status', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(initStatusNamespace(500, '{"error":"DO_INTERNAL"}')) as any,
-		} as any);
-
-		expect(response.status).toBe(502);
-		expect(await response.json()).toEqual({ error: 'DO_INTERNAL' });
-		expect(await membershipRoomCode()).toBeNull();
-	});
-
-	test('retries with a new code on 409 collision and updates the membership row', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(initCollisionThenSuccessNamespace(1)) as any,
-		} as any);
-
-		expect(response.status).toBe(201);
-		const body = (await response.json()) as { code: string };
-		expect(body.code).toMatch(/^MP-[A-Z0-9]{6}$/);
-		expect(await membershipRoomCode()).toEqual({ roomCode: body.code });
-	});
-
-	test('returns 500 CODE_GENERATION_FAILED when all retry attempts collide', async () => {
-		const response = await POST({
-			request: makeRequest(),
-			locals: makeLocals(initStatusNamespace(409)) as any,
-		} as any);
-
-		expect(response.status).toBe(500);
-		expect(await response.json()).toEqual({ error: 'CODE_GENERATION_FAILED' });
-		expect(await membershipRoomCode()).toBeNull();
+		expect(response.status).toBe(200);
+		expect(await readJson(response)).toEqual({ roomCode: 'MP-ABC123', occupancy: 1 });
+		expect(requests).toHaveLength(1);
 	});
 });

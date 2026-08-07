@@ -99,7 +99,6 @@ function context({
 			runtime: {
 				env: {
 					DB: { binding: 'db' },
-					arcturus: { binding: 'namespace' },
 				},
 			},
 		},
@@ -229,9 +228,9 @@ describe('ranked HTTP authentication and strict parsing', () => {
 			},
 		]);
 		expect(seenBindings).toEqual([
-			{ db: { binding: 'db' }, namespace: { binding: 'namespace' } },
-			{ db: { binding: 'db' }, namespace: { binding: 'namespace' } },
-			{ db: { binding: 'db' }, namespace: { binding: 'namespace' } },
+			{ db: { binding: 'db' } },
+			{ db: { binding: 'db' } },
+			{ db: { binding: 'db' } },
 		]);
 	});
 });
@@ -370,7 +369,7 @@ describe('rankedHttpHandlers default factory', () => {
 		const response = await rankedHttpHandlers.start({
 			locals: {
 				user: { id: USER_ID },
-				runtime: { env: { arcturus: undefined, DB: undefined } },
+				runtime: { env: { DB: undefined } },
 			},
 			request: new Request('https://arcturus.test/api/ranked', {
 				method: 'POST',

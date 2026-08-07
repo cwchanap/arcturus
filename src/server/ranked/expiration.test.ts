@@ -175,25 +175,6 @@ describe('runRankedExpiration', () => {
 		expect(logs.map(({ event }) => event)).toEqual(['ranked_session_expired']);
 	});
 
-	test('does not log ranked_invariant_violation for expected MULTIPLAYER_CONFLICT errors', async () => {
-		const { binding } = createExpirationDb(['conflict-session']);
-		const logs: RankedLogEntry[] = [];
-		const warnings: string[] = [];
-
-		await runRankedExpiration(binding, {
-			expire: async () => {
-				throw new RankedServiceError('MULTIPLAYER_CONFLICT');
-			},
-			nowSeconds: () => 1_750_000_000,
-			log: (entry) => logs.push(entry),
-			warn: (message) => warnings.push(message),
-		});
-
-		expect(logs).toEqual([]);
-		expect(warnings).toHaveLength(1);
-		expect(warnings[0]).toContain('MULTIPLAYER_CONFLICT');
-	});
-
 	test('does not log ranked_invariant_violation for ACCOUNT_BALANCE_CHANGED (benign casual-play race)', async () => {
 		const { binding } = createExpirationDb(['balance-race-session']);
 		const logs: RankedLogEntry[] = [];

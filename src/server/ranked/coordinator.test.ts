@@ -9,7 +9,6 @@ import {
 	type RankedBlackjackActionLogV1,
 	type RankedStartRequest,
 } from '../../lib/ranked/protocol';
-import { reconcileMultiplayerMembership, type MembershipResolution } from '../mp/membership';
 import {
 	createRankedCoordinator,
 	SNAPSHOT_ATTEMPTS,
@@ -173,7 +172,7 @@ function createRepository(
 		},
 		async readAccount(userId) {
 			calls.readAccount.push(userId);
-			return overrides.readAccount?.(userId) ?? { chipBalance: 900, heldChips: 0 };
+			return overrides.readAccount?.(userId) ?? { chipBalance: 900 };
 		},
 		async consumeStandaloneRateLimit(userId, operation, nowSeconds) {
 			calls.consumeStandaloneRateLimit.push([userId, operation, nowSeconds]);
@@ -211,23 +210,16 @@ function createRepository(
 function coordinator(
 	repository: RankedRepository,
 	{
-		membership = { kind: 'clear' },
 		randomSeed = ACTIVE_SEED,
-		reconcileMembership,
 		log,
 	}: {
-		membership?: MembershipResolution;
 		randomSeed?: Uint8Array;
-		reconcileMembership?: RankedCoordinatorDeps['reconcileMembership'];
 		log?: RankedCoordinatorDeps['log'];
 	} = {},
 ) {
 	const deps: RankedCoordinatorDeps = {
 		repository,
 		getAdapter: getRankedAdapter,
-		reconcileMembership: reconcileMembership ?? (async () => membership),
-		membershipDb: {} as D1Database,
-		membershipNamespace: {} as DurableObjectNamespace,
 		now: () => new Date(NOW),
 		randomBytes(length) {
 			if (length === 16) return Uint8Array.from({ length }, () => 7);
@@ -257,6 +249,35 @@ async function expectRankedError(
 }
 
 describe('ranked coordinator start lifecycle', () => {
+	test('constructs and starts without multiplayer membership dependencies', async () => {
+		let storedSession: RankedSessionRecord | null = null;
+		const repository = createRepository({
+			findByStartRequest: async () => storedSession,
+			findOwnedSession: async () => storedSession,
+			runStartTransition: async (input) => {
+				storedSession = {
+					...input.session,
+					userId: USER_ID,
+					activeUserId: USER_ID,
+					nextSequence: 0,
+					status: 'active',
+					settledAt: null,
+					config: issueBlackjackConfig(100),
+					actionLog: [],
+				};
+				return { kind: 'created' };
+			},
+		});
+
+		const response = await coordinator(repository).start({
+			userId: USER_ID,
+			body: START_REQUEST,
+		});
+
+		expect(response.status).toBe('active');
+		expect(repository.calls.runStartTransition).toHaveLength(1);
+	});
+
 	test('a matching start request uses the replay bucket and returns the same authoritative session', async () => {
 		const existing = session();
 		const repository = createRepository({
@@ -307,82 +328,6 @@ describe('ranked coordinator start lifecycle', () => {
 		}
 	});
 
-	test('an orphaned multiplayer escrow fails closed before any start transition', async () => {
-		const repository = createRepository();
-
-		await expectRankedError(
-			coordinator(repository, { membership: { kind: 'orphaned' } }).start({
-				userId: USER_ID,
-				body: START_REQUEST,
-			}),
-			'MULTIPLAYER_ESCROW_ORPHANED',
-		);
-
-		expect(repository.calls.runStartTransition).toHaveLength(0);
-		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
-			[USER_ID, 'ranked_start', NOW_SECONDS],
-		]);
-	});
-
-	test('a membership inserted after preflight is reclassified as MULTIPLAYER_CONFLICT', async () => {
-		let reconciliation = 0;
-		const repository = createRepository({
-			runStartTransition: async () => ({ kind: 'balance-changed' }),
-		});
-
-		await expectRankedError(
-			coordinator(repository, {
-				reconcileMembership: async () =>
-					reconciliation++ === 0 ? { kind: 'clear' } : { kind: 'conflict', roomCode: 'ROOM01' },
-			}).start({
-				userId: USER_ID,
-				body: START_REQUEST,
-			}),
-			'MULTIPLAYER_CONFLICT',
-		);
-
-		expect(repository.calls.runStartTransition).toHaveLength(1);
-		expect(reconciliation).toBe(2);
-		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
-			[USER_ID, 'ranked_start', NOW_SECONDS],
-		]);
-	});
-
-	test('a recoverable escrow race is re-read after the shared reconciler clears it', async () => {
-		let storedSession: RankedSessionRecord | null = null;
-		let accountRead = 0;
-		const repository = createRepository({
-			findByStartRequest: async () => storedSession,
-			findOwnedSession: async () => storedSession,
-			readAccount: async () => ({
-				chipBalance: 1000,
-				heldChips: accountRead++ === 0 ? 100 : 0,
-			}),
-			runStartTransition: async (input) => {
-				storedSession = {
-					...input.session,
-					userId: USER_ID,
-					activeUserId: USER_ID,
-					nextSequence: 0,
-					status: 'active',
-					settledAt: null,
-					config: issueBlackjackConfig(100),
-					actionLog: [],
-				};
-				return { kind: 'created' };
-			},
-		});
-
-		const response = await coordinator(repository).start({
-			userId: USER_ID,
-			body: START_REQUEST,
-		});
-
-		expect(response.status).toBe('active');
-		expect(repository.calls.runStartTransition).toHaveLength(1);
-		expect(repository.calls.runStartTransition[0].expectedBalance).toBe(1000);
-	});
-
 	test('an opening natural is settled in the start transaction and returns the stored receipt', async () => {
 		let storedSession: RankedSessionRecord | null = null;
 		let storedResult: RankedResultRecord | null = null;
@@ -428,7 +373,6 @@ describe('ranked coordinator start lifecycle', () => {
 			findOwnedSession: async () => storedSession,
 			readAccount: async () => ({
 				chipBalance: accountRead++ === 0 ? 1000 : 1050,
-				heldChips: 0,
 			}),
 			runStartTransition: async (input) => {
 				if (repository.calls.runStartTransition.length === 1) {
@@ -473,9 +417,7 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			findOwnedSession: async () => current,
 		});
 
-		const response = await coordinator(repository, {
-			membership: { kind: 'conflict', roomCode: 'ROOM01' },
-		}).act({
+		const response = await coordinator(repository).act({
 			userId: USER_ID,
 			sessionId: SESSION_ID,
 			body: { sequence: 0, action: 'hit' },
@@ -582,7 +524,7 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		const originalDeadline = current.expiresAt;
 		const repository = createRepository({
 			findOwnedSession: async () => current,
-			readAccount: async () => ({ chipBalance: 900, heldChips: 0 }),
+			readAccount: async () => ({ chipBalance: 900 }),
 			runExpirationTransition: async (input) => {
 				storedResult = resultFromTerminal(current, input.terminal);
 				current = {
@@ -627,7 +569,6 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			findOwnedSession: async () => current,
 			readAccount: async () => ({
 				chipBalance: accountRead++ === 0 ? 900 : 875,
-				heldChips: 0,
 			}),
 			runTerminalTransition: async (input) => {
 				if (repository.calls.runTerminalTransition.length === 1) {
@@ -684,7 +625,6 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			findOwnedSession: async () => session(),
 			readAccount: async () => ({
 				chipBalance: 900 + accountRead++,
-				heldChips: 0,
 			}),
 			runTerminalTransition: async () => ({ kind: 'balance-changed' }),
 		});
@@ -734,7 +674,6 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			findOwnedSession: async () => active,
 			readAccount: async () => ({
 				chipBalance: accountRead++ === 0 ? 100 : 99,
-				heldChips: 0,
 			}),
 			runTerminalTransition: async () => ({ kind: 'balance-changed' }),
 		});
@@ -803,7 +742,7 @@ describe('ranked coordinator action and resume lifecycle', () => {
 	test('a non-terminal balance race with no session advance surfaces ACCOUNT_BALANCE_CHANGED', async () => {
 		const repository = createRepository({
 			findOwnedSession: async () => session(),
-			readAccount: async () => ({ chipBalance: 900, heldChips: 0 }),
+			readAccount: async () => ({ chipBalance: 900 }),
 			runActionTransition: async () => ({ kind: 'balance-changed' }),
 		});
 
@@ -903,7 +842,7 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		let storedResult: RankedResultRecord | null = null;
 		const repository = createRepository({
 			findOwnedSession: async () => current,
-			readAccount: async () => ({ chipBalance: 900, heldChips: 0 }),
+			readAccount: async () => ({ chipBalance: 900 }),
 			runExpirationTransition: async (input) => {
 				storedResult = resultFromTerminal(current, input.terminal);
 				current = {
@@ -956,46 +895,6 @@ describe('ranked coordinator action and resume lifecycle', () => {
 		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_replay');
 	});
 
-	test('a membership conflict during an active action fails closed', async () => {
-		const repository = createRepository({
-			findOwnedSession: async () => session(),
-		});
-
-		await expectRankedError(
-			coordinator(repository, {
-				membership: { kind: 'conflict', roomCode: 'ROOM01' },
-			}).act({
-				userId: USER_ID,
-				sessionId: SESSION_ID,
-				body: { sequence: 0, action: 'hit' },
-			}),
-			'MULTIPLAYER_CONFLICT',
-		);
-
-		expect(repository.calls.runActionTransition).toHaveLength(0);
-		expect(repository.calls.runTerminalTransition).toHaveLength(0);
-	});
-
-	test('an orphaned escrow during an active action fails closed', async () => {
-		const repository = createRepository({
-			findOwnedSession: async () => session(),
-		});
-
-		await expectRankedError(
-			coordinator(repository, {
-				membership: { kind: 'orphaned' },
-			}).act({
-				userId: USER_ID,
-				sessionId: SESSION_ID,
-				body: { sequence: 0, action: 'hit' },
-			}),
-			'MULTIPLAYER_ESCROW_ORPHANED',
-		);
-
-		expect(repository.calls.runActionTransition).toHaveLength(0);
-		expect(repository.calls.runTerminalTransition).toHaveLength(0);
-	});
-
 	test('a preflight rate denial on an action rejects before any transition', async () => {
 		const repository = createRepository({
 			findOwnedSession: async () => session(),
@@ -1027,8 +926,6 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 		const ranked = createRankedCoordinator({
 			repository,
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				if (length === 16) return Uint8Array.from({ length }, () => 7);
@@ -1058,7 +955,6 @@ test('real D1 start, settlement, and replay preserve one stored receipt and wall
 		expect(replayed.receipt).toEqual(settled.receipt);
 		expect(await repository.readAccount(USER_ID)).toEqual({
 			chipBalance: 777,
-			heldChips: 0,
 		});
 		expect(
 			await db
@@ -1078,8 +974,6 @@ test('real D1 resume and matching start replay refresh an active casual cross-ta
 		const ranked = createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
@@ -1111,8 +1005,6 @@ test('real D1 underfunded starts consume durable capacity until RATE_LIMITED', a
 		const ranked = createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes: (length) => new Uint8Array(length),
 		});
@@ -1155,8 +1047,6 @@ test('real D1 random valid resume IDs return the same public 404 until durable e
 		const ranked = createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes: (length) => new Uint8Array(length),
 		});
@@ -1209,8 +1099,6 @@ test('real D1 non-owned action IDs return the same public 404 until durable exha
 		const ranked = createRankedCoordinator({
 			repository,
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
@@ -1269,8 +1157,6 @@ test('real D1 concurrent different terminal actions return one winner and one id
 		const ranked = createRankedCoordinator({
 			repository: createRankedRepository(db),
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : terminalSeed.slice();
@@ -1329,8 +1215,6 @@ test('a terminal snapshot retry at the 29/30 boundary consumes exactly one actio
 		const ranked = createRankedCoordinator({
 			repository,
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
@@ -1372,8 +1256,6 @@ test('a pre-consume denial leaves a valid real D1 action and wallet unchanged', 
 		const ranked = createRankedCoordinator({
 			repository: durableRepository,
 			getAdapter: getRankedAdapter,
-			reconcileMembership: async () => ({ kind: 'clear' }),
-			membershipDb: db,
 			now: () => new Date(NOW),
 			randomBytes(length) {
 				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
@@ -1399,7 +1281,6 @@ test('a pre-consume denial leaves a valid real D1 action and wallet unchanged', 
 
 		expect(await durableRepository.readAccount(USER_ID)).toEqual({
 			chipBalance: 900,
-			heldChips: 0,
 		});
 		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
 			status: 'active',
@@ -1415,202 +1296,6 @@ test('a pre-consume denial leaves a valid real D1 action and wallet unchanged', 
 				.bind(USER_ID)
 				.first<{ count: number }>(),
 		).toEqual({ count: RANKED_RATE_LIMITS.ranked_action.limit });
-	} finally {
-		await mf.dispose();
-	}
-});
-
-test('post-start recent membership with no held chips blocks a current terminal action', async () => {
-	const { mf, db } = await createRankedTestD1();
-	try {
-		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
-		const durableRepository = createRankedRepository(db);
-		const ranked = createRankedCoordinator({
-			repository: durableRepository,
-			getAdapter: getRankedAdapter,
-			reconcileMembership: reconcileMultiplayerMembership,
-			membershipDb: db,
-			now: () => new Date(NOW),
-			randomBytes(length) {
-				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
-			},
-		});
-		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
-		await db
-			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
-			.bind(USER_ID, 'ROOM01', NOW_SECONDS)
-			.run();
-
-		await expectRankedError(
-			ranked.act({
-				userId: USER_ID,
-				sessionId: started.sessionId,
-				body: { sequence: 0, action: 'stand' },
-			}),
-			'MULTIPLAYER_CONFLICT',
-		);
-		expect(
-			await db
-				.prepare(
-					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
-				)
-				.bind(USER_ID)
-				.first<{ count: number }>(),
-		).toEqual({ count: 1 });
-		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
-			status: 'active',
-			nextSequence: 0,
-			committedWager: 100,
-		});
-		expect(await durableRepository.findResult(started.sessionId)).toBeNull();
-		expect(await durableRepository.readAccount(USER_ID)).toEqual({
-			chipBalance: 900,
-			heldChips: 0,
-		});
-	} finally {
-		await mf.dispose();
-	}
-});
-
-for (const fixture of [
-	{ label: 'double-down', seedOffset: 5, action: 'double-down' as const },
-	{ label: 'split', seedOffset: 30, action: 'split' as const },
-]) {
-	test(`post-start orphan escrow wins over insufficient balance for ${fixture.label}`, async () => {
-		const { mf, db } = await createRankedTestD1();
-		try {
-			await insertRankedTestUser(db, { id: USER_ID, chipBalance: 150 });
-			const durableRepository = createRankedRepository(db);
-			const seed = Uint8Array.from(
-				{ length: 32 },
-				(_, index) => (index + fixture.seedOffset) & 0xff,
-			);
-			const ranked = createRankedCoordinator({
-				repository: durableRepository,
-				getAdapter: getRankedAdapter,
-				reconcileMembership: reconcileMultiplayerMembership,
-				membershipDb: db,
-				now: () => new Date(NOW),
-				randomBytes(length) {
-					return length === 16 ? Uint8Array.from({ length }, () => 7) : seed.slice();
-				},
-			});
-			const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
-			await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(25, USER_ID).run();
-
-			await expectRankedError(
-				ranked.act({
-					userId: USER_ID,
-					sessionId: started.sessionId,
-					body: { sequence: 0, action: fixture.action },
-				}),
-				'MULTIPLAYER_ESCROW_ORPHANED',
-			);
-			expect(
-				await db
-					.prepare(
-						"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
-					)
-					.bind(USER_ID)
-					.first<{ count: number }>(),
-			).toEqual({ count: 1 });
-			expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
-				status: 'active',
-				nextSequence: 0,
-				committedWager: 100,
-			});
-			expect(await durableRepository.findResult(started.sessionId)).toBeNull();
-			expect(await durableRepository.readAccount(USER_ID)).toEqual({
-				chipBalance: 50,
-				heldChips: 25,
-			});
-		} finally {
-			await mf.dispose();
-		}
-	});
-}
-
-test('scheduled expiration preserves an active session when recent membership has no held chips', async () => {
-	const { mf, db } = await createRankedTestD1();
-	try {
-		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
-		const durableRepository = createRankedRepository(db);
-		let now = new Date(NOW);
-		const ranked = createRankedCoordinator({
-			repository: durableRepository,
-			getAdapter: getRankedAdapter,
-			reconcileMembership: reconcileMultiplayerMembership,
-			membershipDb: db,
-			now: () => new Date(now),
-			randomBytes(length) {
-				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
-			},
-		});
-		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
-		now = new Date((NOW_SECONDS + 901) * 1000);
-		await db
-			.prepare('INSERT INTO mp_membership (userId, roomCode, joinedAt) VALUES (?, ?, ?)')
-			.bind(USER_ID, 'ROOM01', NOW_SECONDS + 901)
-			.run();
-
-		await expectRankedError(ranked.expire(started.sessionId), 'MULTIPLAYER_CONFLICT');
-		expect(await durableRepository.findOwnedSession(USER_ID, started.sessionId)).toMatchObject({
-			status: 'active',
-			nextSequence: 0,
-			committedWager: 100,
-		});
-		expect(await durableRepository.findResult(started.sessionId)).toBeNull();
-		expect(await durableRepository.readAccount(USER_ID)).toEqual({
-			chipBalance: 900,
-			heldChips: 0,
-		});
-	} finally {
-		await mf.dispose();
-	}
-});
-
-test('post-start orphaned escrow is classified for action and scheduled expiration', async () => {
-	const { mf, db } = await createRankedTestD1();
-	try {
-		await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
-		const durableRepository = createRankedRepository(db);
-		let now = new Date(NOW);
-		const ranked = createRankedCoordinator({
-			repository: durableRepository,
-			getAdapter: getRankedAdapter,
-			reconcileMembership: reconcileMultiplayerMembership,
-			membershipDb: db,
-			now: () => new Date(now),
-			randomBytes(length) {
-				return length === 16 ? Uint8Array.from({ length }, () => 7) : ACTIVE_SEED.slice();
-			},
-		});
-		const started = await ranked.start({ userId: USER_ID, body: START_REQUEST });
-		await db.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(100, USER_ID).run();
-
-		await expectRankedError(
-			ranked.act({
-				userId: USER_ID,
-				sessionId: started.sessionId,
-				body: { sequence: 0, action: 'stand' },
-			}),
-			'MULTIPLAYER_ESCROW_ORPHANED',
-		);
-		expect(
-			await db
-				.prepare(
-					"SELECT count FROM ranked_rate_limit WHERE userId = ? AND operation = 'ranked_action'",
-				)
-				.bind(USER_ID)
-				.first<{ count: number }>(),
-		).toEqual({ count: 1 });
-
-		now = new Date((NOW_SECONDS + 901) * 1000);
-		await expectRankedError(ranked.expire(started.sessionId), 'MULTIPLAYER_ESCROW_ORPHANED');
-		await db.prepare('UPDATE user SET heldChips = 0 WHERE id = ?').bind(USER_ID).run();
-		const expired = await ranked.expire(started.sessionId);
-		expect(expired.status).toBe('expired');
-		expect(expired.receipt?.statsEffects.totalForfeits).toBe(1);
 	} finally {
 		await mf.dispose();
 	}

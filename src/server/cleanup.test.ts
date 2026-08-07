@@ -379,7 +379,7 @@ describe('runScheduledJobs', () => {
 		const events: string[] = [];
 		const warnings: string[] = [];
 		const deps: ScheduledJobDeps = {
-			async rankedExpiration(_db, _namespace) {
+			async rankedExpiration(_db, _nowSeconds) {
 				events.push('ranked-expiration');
 			},
 			async rankedRateCleanup(_db, _nowSeconds) {

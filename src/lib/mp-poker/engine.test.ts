@@ -476,27 +476,20 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 		expect(pots[0]).toEqual({ amount: 150, eligibleSeatIndices: [1, 2] });
 	});
 
-	test('side pots use the hand identity map when a live seat is cleared', () => {
+	test('side pots project eligible seats through the hand seatIndexMap', () => {
 		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), { deckSeed: 'pots-cleared' });
 		const hand: HandState = {
 			...room.hand!,
 			committed: { u1: 50, u2: 100, u3: 100 },
 			folded: new Set(['u1']),
 		};
-		const clearedRoom: Room = {
-			...room,
-			seats: room.seats.map((seat) =>
-				seat.userId === 'u1' ? { ...seat, userId: null, displayName: null } : seat,
-			),
-		};
 		expect(buildSidePots(hand)).toEqual([
 			{ amount: 150, eligibleSeatIndices: [1, 2] },
 			{ amount: 100, eligibleSeatIndices: [1, 2] },
 		]);
-		expect(clearedRoom.seats[0].userId).toBeNull();
 	});
 
-	test('side pots preserve committed amounts when multiple folded seats are cleared', () => {
+	test('side pots split pots correctly when folded players bracket the eligible seats', () => {
 		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3', 'u4']), {
 			deckSeed: 'pots-multiple-cleared',
 		});
@@ -505,24 +498,14 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 			committed: { u1: 50, u2: 100, u3: 100, u4: 50 },
 			folded: new Set(['u1', 'u4']),
 		};
-		const clearedRoom: Room = {
-			...room,
-			seats: room.seats.map((seat) =>
-				seat.userId === 'u1' || seat.userId === 'u4'
-					? { ...seat, userId: null, displayName: null }
-					: seat,
-			),
-		};
 
 		expect(buildSidePots(hand)).toEqual([
 			{ amount: 200, eligibleSeatIndices: [1, 2] },
 			{ amount: 100, eligibleSeatIndices: [1, 2] },
 		]);
-		expect(clearedRoom.seats[0].userId).toBeNull();
-		expect(clearedRoom.seats[3].userId).toBeNull();
 	});
 
-	test('side pots preserve an all-in player seat index when its live seat is cleared', () => {
+	test('side pots keep an all-in contributor eligible for the main pot via seatIndexMap', () => {
 		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), {
 			deckSeed: 'pots-cleared-all-in',
 		});
@@ -531,18 +514,11 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 			committed: { u1: 10, u2: 100, u3: 100 },
 			allIn: new Set(['u1']),
 		};
-		const clearedRoom: Room = {
-			...room,
-			seats: room.seats.map((seat) =>
-				seat.userId === 'u1' ? { ...seat, userId: null, displayName: null } : seat,
-			),
-		};
 
 		expect(buildSidePots(hand)).toEqual([
 			{ amount: 30, eligibleSeatIndices: [0, 1, 2] },
 			{ amount: 180, eligibleSeatIndices: [1, 2] },
 		]);
-		expect(clearedRoom.seats[0].userId).toBeNull();
 	});
 
 	test('odd chips go to the closest seat left of the dealer', () => {

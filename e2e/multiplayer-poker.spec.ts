@@ -10,9 +10,8 @@ function seat(page: Page, seatIndex: number) {
 }
 
 async function readStack(page: Page, seatIndex: number): Promise<number | null> {
-	const text = await seat(page, seatIndex).innerText();
-	const match = text.match(/—\s*([\d,]+)\s+chips/);
-	return match ? Number(match[1].replace(/,/g, '')) : null;
+	const raw = await seat(page, seatIndex).getAttribute('data-chips');
+	return raw === null ? null : Number(raw);
 }
 
 describe_('Multiplayer Poker', () => {

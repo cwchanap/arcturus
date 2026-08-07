@@ -69,7 +69,7 @@ Existing rooms, memberships, held chips, multiplayer receipts, and old WebSocket
 | Rebuy | Leave and retake a seat |
 | Wallet | Never read or written |
 | Progression | No multiplayer statistics, missions, achievements, or leaderboards |
-| Room phases | `waiting | in-hand` |
+| Room phases | `waiting \| in-hand` |
 | Hand starter | Any connected eligible seated player |
 | Start eligibility | At least two connected seated players with `chips >= bigBlind` |
 | Short stack | Remains seated but sits out until leaving and retaking the seat |
@@ -79,7 +79,7 @@ Existing rooms, memberships, held chips, multiplayer receipts, and old WebSocket
 | Disconnect expiry | Fold first when required, settle locally if that ends the hand, then clear the seat |
 | Disconnected all-in player | Retain the seat until immediate showdown/hand completion, then clear |
 | Transition finalization | Every hand-completing path uses one DO helper: emit result, sweep expired seats, persist, broadcast, reschedule |
-| Viewer identity | Each socket receives `yourSeat: number | null` |
+| Viewer identity | Each socket receives `yourSeat: number \| null` |
 | Showdown | `hand_ended` reveals eligible hole cards only for contested showdowns |
 | Empty cleanup | Delete room storage after five minutes with no seat and no socket |
 | Corrupt state | Delete room storage and require recreation |

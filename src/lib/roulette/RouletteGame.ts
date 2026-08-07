@@ -319,8 +319,8 @@ export class RouletteGame {
 		this.clearPendingSyncId();
 	}
 
-	// Return to betting after a spin that never committed (rate limit, MP
-	// escrow, validation errors). Keeps active bets and the client balance
+	// Return to betting after a spin that never committed (rate limit or
+	// validation errors). Keeps active bets and the client balance
 	// as-is so the player can re-spin the same layout. Clears pendingSyncId
 	// so a reload does not re-submit a request the server rejected.
 	abortSpin(): void {

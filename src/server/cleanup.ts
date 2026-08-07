@@ -40,7 +40,6 @@ const ROULETTE_RECEIPT_RETENTION_MS = ROULETTE_RECEIPT_RETENTION_DAYS * 24 * 60 
 export interface ScheduledJobEnv {
 	[key: string]: unknown;
 	DB?: D1Database;
-	arcturus?: DurableObjectNamespace;
 }
 
 export interface ScheduledJobDeps {

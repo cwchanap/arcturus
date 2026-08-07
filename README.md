@@ -140,6 +140,13 @@ Visit `http://localhost:2000`
 
 A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
 
+## Multiplayer Poker
+
+- Pure multiplayer logic and browser code live under `src/lib/mp-poker/*`.
+- Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`.
+- `MultiplayerPokerRoom` is the Durable Object class bound as `MULTIPLAYER_POKER_ROOMS`.
+- Multiplayer stacks are room-local chips; there is no D1 settlement for multiplayer poker.
+
 ## Database Schema
 
 The project includes tables for:

@@ -202,7 +202,7 @@ export function initRouletteClient(): void {
 		}, SPIN_ANIMATION_MS);
 	}
 
-	// Handle a definitive non-committed rejection (rate limit, MP escrow,
+	// Handle a definitive non-committed rejection (rate limit,
 	// validation, expired replay) during recovery. Mirrors the main spin
 	// path's isNonCommittedSpinRejection branch: adopt server balance if
 	// provided (bets are invalid for it), otherwise rebase + abortSpin to
@@ -383,7 +383,7 @@ export function initRouletteClient(): void {
 				// no longer the actionable error).
 			}
 			// Server definitively rejected the recovery re-submit without
-			// committing (MP escrow, validation). Preserve the bet layout so
+			// committing. Preserve the bet layout so
 			// the player can re-spin the same layout, matching the main spin
 			// error path's isNonCommittedSpinRejection branch. Skipped when
 			// the 429 retry was attempted — the original 429 is stale.
@@ -417,7 +417,7 @@ export function initRouletteClient(): void {
 							applyRecoverySettlement(retryData, syncId, bets, totalBet);
 							return;
 						}
-						// Retry got a definitive rejection (e.g. MP escrow
+						// Retry got a definitive rejection
 						// after a retriable first error). Handle with bets
 						// preserved/discarded per the rejection's balance.
 						const retryBody = (await retryResponse.json().catch(() => ({}))) as {
@@ -629,7 +629,7 @@ export function initRouletteClient(): void {
 		} catch (err) {
 			console.error('[ROULETTE] Spin failed:', err);
 			// Server definitively rejected the spin without committing (rate
-			// limit, MP escrow, validation). Do not retry and do not discard
+			// limit or validation). Do not retry and do not discard
 			// bets — restore betting so the player can re-spin the same layout.
 			if (isNonCommittedSpinRejection(err) && game.getState().phase === 'spinning') {
 				if (err.message === 'INSUFFICIENT_BALANCE') {
@@ -658,7 +658,7 @@ export function initRouletteClient(): void {
 					}
 				} else {
 					// All other non-committed rejections (RATE_LIMITED,
-					// MP_ESCROW_ACTIVE, validation, etc.) share one balance-
+					// validation, etc.) share one balance-
 					// correction flow — see applyRejectionBalanceCorrection.
 					await applyRejectionBalanceCorrection(err);
 				}
@@ -705,7 +705,7 @@ export function initRouletteClient(): void {
 							applyRecoverySettlement(data, syncId, bets, totalBet);
 							return;
 						}
-						// Retry got a definitive rejection (e.g. MP escrow after
+						// Retry got a definitive rejection after
 						// a retriable first error). Abort with bets preserved.
 						if (!retryResponse.ok) {
 							const retryBody = (await retryResponse.json().catch(() => ({}))) as {

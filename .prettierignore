@@ -33,6 +33,9 @@ Thumbs.db
 # Local agent/planning workspaces
 .superpowers/
 
+# Historical implementation plans and specs are preserved verbatim.
+docs/superpowers/
+
 # Other
 coverage/
 .cache/

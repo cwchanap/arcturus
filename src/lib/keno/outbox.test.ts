@@ -425,95 +425,6 @@ describe('KenoSyncOutbox persistence (resume on load)', () => {
 		expect(drained).toBe(0);
 		expect(calls).toHaveLength(0);
 	});
-
-	test('drainPersisted returns partial count when drain pauses (MP_ESCROW)', async () => {
-		let persisted: PendingReceipt[] = [receipt('s1', 1000, 100), receipt('s2', 1100, -50)];
-		const { fetchImpl } = makeFetch([
-			{ status: 200, body: { balance: 1100 } },
-			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } },
-		]);
-		const ob = new KenoSyncOutbox({
-			fetchImpl,
-			endpoint: '/api/chips/update',
-			persist: (r) => (persisted = r),
-			load: () => persisted,
-			setServerSyncedBalance: () => {},
-			setGameBalance: () => {},
-			onHardError: () => {},
-			onToast: () => {},
-			maxEscrowRetries: 0, // pause immediately, no retry loop
-			sleep: () => Promise.resolve(),
-		});
-		const drained = await ob.drainPersisted();
-		expect(drained).toBe(1); // only the first receipt consumed
-		expect(persisted).toHaveLength(1); // second still queued
-	});
-});
-
-describe('KenoSyncOutbox MP_ESCROW bounded retry (item 2)', () => {
-	test('retries MP_ESCROW up to maxEscrowRetries then pauses (leave at head)', async () => {
-		const calls: FetchCall[] = [];
-		let callIdx = 0;
-		const results: FetchResult[] = [
-			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } },
-			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } },
-			{ status: 200, body: { balance: 1100 } },
-		];
-		const fetchImpl = async (url: string, init: { body: string }) => {
-			calls.push({ url, body: JSON.parse(init.body) });
-			const r = results[Math.min(callIdx, results.length - 1)];
-			callIdx++;
-			return {
-				ok: r.status === 200,
-				status: r.status,
-				headers: { get: () => null },
-				json: async () => r.body,
-			};
-		};
-		const sleeps: number[] = [];
-		const ob = new KenoSyncOutbox({
-			fetchImpl,
-			endpoint: '/api/chips/update',
-			persist: () => {},
-			load: () => [],
-			setServerSyncedBalance: () => {},
-			setGameBalance: () => {},
-			onHardError: () => {},
-			onToast: () => {},
-			maxEscrowRetries: 2,
-			escrowRetryMs: 2000,
-			sleep: (ms) => {
-				sleeps.push(ms);
-				return Promise.resolve();
-			},
-		});
-		await ob.enqueueAndDrain(receipt('s1', 1000, 100));
-		// 2 escrow retries (each a sleep) then 3rd attempt succeeds
-		expect(calls).toHaveLength(3);
-		expect(sleeps).toEqual([2000, 2000]);
-	});
-
-	test('exhausting escrow retries leaves receipt at head and toasts', async () => {
-		const { fetchImpl, calls } = makeFetch([{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } }]);
-		let toasted = '';
-		const ob = new KenoSyncOutbox({
-			fetchImpl,
-			endpoint: '/api/chips/update',
-			persist: () => {},
-			load: () => [],
-			setServerSyncedBalance: () => {},
-			setGameBalance: () => {},
-			onHardError: () => {},
-			onToast: (m) => (toasted = m),
-			maxEscrowRetries: 1,
-			escrowRetryMs: 100,
-			sleep: () => Promise.resolve(),
-		});
-		await ob.enqueueAndDrain(receipt('s1', 1000, 100));
-		// 1 retry attempt + 1 exhaustion attempt = 2 calls, then pause
-		expect(calls).toHaveLength(2);
-		expect(toasted).toContain('multiplayer hand in progress');
-	});
 });
 
 describe('KenoSyncOutbox BALANCE_MISMATCH missing currentBalance (item 5)', () => {
@@ -543,7 +454,7 @@ describe('KenoSyncOutbox BALANCE_MISMATCH missing currentBalance (item 5)', () =
 describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', () => {
 	test('both resumed and live receipts reconcile display via setGameBalance', async () => {
 		// Scenario: page reloads with one persisted receipt.
-		// drainPersisted() pauses immediately (MP_ESCROW).
+		// drainPersisted() pauses immediately for the expired session.
 		// A live draw then enqueues a new receipt; the combined drain syncs
 		// both. With the authoritative-balance model, every 200 reconciles
 		// the display to serverBalance + sum(remaining queue deltas):
@@ -553,7 +464,7 @@ describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', (
 		const setGameBalanceCalls: number[] = [];
 		let callIdx = 0;
 		const results: FetchResult[] = [
-			{ status: 409, body: { error: 'MP_ESCROW_ACTIVE' } }, // drainPersisted pauses
+			{ status: 401, body: { error: 'UNAUTHORIZED' } }, // drainPersisted pauses
 			{ status: 200, body: { balance: 1100 } }, // resumed receipt syncs via live drain
 			{ status: 200, body: { balance: 1090 } }, // live receipt syncs
 		];
@@ -577,11 +488,10 @@ describe('KenoSyncOutbox resume reconcile via live drain (display drift fix)', (
 			setGameBalance: (b) => setGameBalanceCalls.push(b),
 			onHardError: () => {},
 			onToast: () => {},
-			maxEscrowRetries: 0, // pause immediately on escrow
 			sleep: () => Promise.resolve(),
 		});
 
-		// drainPersisted pauses on MP_ESCROW — resumed receipt still queued
+		// drainPersisted pauses on the expired session — resumed receipt still queued
 		const drained = await ob.drainPersisted();
 		expect(drained).toBe(0);
 		expect(setGameBalanceCalls).toEqual([]); // nothing synced yet

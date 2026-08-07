@@ -247,7 +247,7 @@ export function initKenoClient(): void {
 	// deltas on top double-counts them. The drain's per-200 reconcile handles
 	// the display after each receipt is classified (committed or newly applied).
 	// Gameplay is gated until the drain completes AND the outbox is empty.
-	// If the drain stalls (network exhaustion, MP escrow, 401/403), receipts
+	// If the drain stalls (network exhaustion or 401/403), receipts
 	// remain queued — keep gameplay disabled and show a persistent sync-paused
 	// state with a retry action. Re-enabling while a pending loss is
 	// uncommitted would let the user spend chips already debited by the

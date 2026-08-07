@@ -491,18 +491,6 @@ describe('initRouletteClient — auth mode spin rejections (non-committed)', () 
 		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
 	});
 
-	it('adopts currentBalance and discards bets on MP_ESCROW_ACTIVE', async () => {
-		const s = setup({ guestMode: false });
-		s.fetchMock.impl = () =>
-			makeFetchResponse(409, { error: 'MP_ESCROW_ACTIVE', currentBalance: 700 });
-		s.betCells.red.dispatchEvent(new MockEvent('click'));
-		s.spinBtn.dispatchEvent(new MockEvent('click'));
-		await flush();
-		expect(s.balanceEl.textContent).toContain('700');
-		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
-		expect(s.gameMessage.textContent).toContain('multiplayer poker');
-	});
-
 	it('preserves bets on SYNC_ID_REUSE_MISMATCH (no currentBalance)', async () => {
 		const s = setup({ guestMode: false });
 		s.fetchMock.impl = () => makeFetchResponse(409, { error: 'SYNC_ID_REUSE_MISMATCH' });
@@ -644,21 +632,6 @@ describe('initRouletteClient — auth mode spin retry', () => {
 		await flush();
 		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
 		expect(s.gameMessage.textContent).toContain('wait');
-	});
-
-	it('retry gets non-committed rejection with currentBalance → discards bets', async () => {
-		const s = setup({ guestMode: false });
-		let callCount = 0;
-		s.fetchMock.impl = () => {
-			callCount++;
-			if (callCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
-			return makeFetchResponse(409, { error: 'MP_ESCROW_ACTIVE', currentBalance: 600 });
-		};
-		s.betCells.red.dispatchEvent(new MockEvent('click'));
-		s.spinBtn.dispatchEvent(new MockEvent('click'));
-		await flush();
-		expect(s.balanceEl.textContent).toContain('600');
-		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 
 	it('retry gets non-committed rejection without currentBalance, server balance < totalBet → discards bets', async () => {
@@ -1065,26 +1038,6 @@ describe('initRouletteClient — pending spin recovery', () => {
 		expect(s.spinBtn.hidden).toBe(false);
 		expect(betEntries(s.activeBetsEl).length).toBeGreaterThan(0);
 		expect(s.gameMessage.textContent).toContain('wait');
-	});
-
-	it('recovery retry gets non-committed rejection with currentBalance → discards bets', async () => {
-		let spinCallCount = 0;
-		const s = setup({
-			guestMode: false,
-			session: makeSpinningSnapshot('recovery-sync-id'),
-			fetchImpl: (url) => {
-				if (url === '/api/roulette/spin') {
-					spinCallCount++;
-					if (spinCallCount === 1) return makeFetchResponse(500, { error: 'INTERNAL_ERROR' });
-					return makeFetchResponse(409, { error: 'MP_ESCROW_ACTIVE', currentBalance: 600 });
-				}
-				return makeFetchResponse(200, { balance: 600 });
-			},
-		});
-		await flush();
-		expect(spinCallCount).toBe(2);
-		expect(s.balanceEl.textContent).toContain('600');
-		expect(betEntries(s.activeBetsEl)).toHaveLength(0);
 	});
 });
 

@@ -3,12 +3,14 @@ name: Build & Lint
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
 
 jobs:
   lint:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Lint Check
     runs-on: ubuntu-latest
 

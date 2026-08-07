@@ -18,7 +18,7 @@ describe('multiplayer poker timers', () => {
 		let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
 		room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
 		room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
-		room = startHand(room, { deckSeed: 'timer-turn' });
+		room = startHand(room, { deckSeed: 'timer-turn', starterUserId: 'u1' });
 		const now = 1_000_000;
 		expect(getNextAlarmAt(room, now + 5_000, now + 20_000, now)).toBe(now + 5_000);
 	});
@@ -28,7 +28,7 @@ describe('multiplayer poker timers', () => {
 		let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
 		room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
 		room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
-		room = startHand(room, { deckSeed: 'timer-reconnect' });
+		room = startHand(room, { deckSeed: 'timer-reconnect', starterUserId: 'u1' });
 		room = {
 			...room,
 			seats: room.seats.map((seat) =>
@@ -48,7 +48,7 @@ describe('multiplayer poker timers', () => {
 		let room = createRoom({ maxSeats: 2, smallBlind: 5, bigBlind: 10 });
 		room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
 		room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
-		room = startHand(room, { deckSeed: 'timer-protected' });
+		room = startHand(room, { deckSeed: 'timer-protected', starterUserId: 'u1' });
 		const protectedUserId = room.seats[room.hand!.currentSeat].userId!;
 		room = {
 			...room,

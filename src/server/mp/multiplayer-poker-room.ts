@@ -215,12 +215,8 @@ type KnownErrorCode = Extract<ServerMessage, { type: 'error' }>['code'];
 const KNOWN_ERROR_CODES: Set<KnownErrorCode> = new Set<KnownErrorCode>([
 	'BAD_MESSAGE',
 	'NOT_YOUR_TURN',
-	'INSUFFICIENT_CHIPS',
-	'NOT_A_MEMBER',
-	'ROOM_CODE_TAKEN',
 	'INVALID_SEAT',
 	'INVALID_ACTION',
-	'INVALID_CONFIG',
 	'NOT_ENOUGH_PLAYERS',
 ]);
 
@@ -254,9 +250,9 @@ export class MultiplayerPokerRoom implements DurableObject {
 				this.roomCode = persisted.roomCode;
 				this.turnDeadline = persisted.turnDeadline;
 				this.emptyDeadline = persisted.emptyDeadline;
-				if (!this.room.seats.some((seat) => seat.userId !== null) && this.emptyDeadline === null) {
-					this.emptyDeadline = Date.now() + EMPTY_ROOM_TIMEOUT_MS;
-				}
+				const previousEmptyDeadline = this.emptyDeadline;
+				this.updateEmptyDeadline(Date.now());
+				if (this.emptyDeadline !== previousEmptyDeadline) await this.persist();
 				const nextAlarm = getNextAlarmAt(
 					this.room,
 					this.turnDeadline,
@@ -406,9 +402,10 @@ export class MultiplayerPokerRoom implements DurableObject {
 			) {
 				this.turnDeadline = now + TURN_TIMEOUT_MS;
 			}
-			await this.persist();
 		}
 
+		this.updateEmptyDeadline(now);
+		await this.persist();
 		await this.scheduleNextAlarm();
 		this.sendRoomState();
 		if (this.room.phase === 'in-hand' && this.room.hand?.holeCards[userId]) {
@@ -428,7 +425,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 		await this.loaded;
 		const identity = this.sockets.get(ws);
 		if (!identity || !this.room) {
-			this.send(ws, { type: 'error', code: 'NOT_A_MEMBER', message: 'unknown socket' });
+			this.send(ws, { type: 'error', code: 'INVALID_ACTION', message: 'unknown socket' });
 			ws.close(1008, 'unknown socket');
 			return;
 		}
@@ -450,7 +447,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 						displayName: identity.displayName,
 						seatIndex: parsed.seatIndex,
 					});
-					this.emptyDeadline = null;
+					this.updateEmptyDeadline(Date.now());
 					await this.persist();
 					this.sendRoomState();
 					break;
@@ -463,9 +460,25 @@ export class MultiplayerPokerRoom implements DurableObject {
 					await this.scheduleNextAlarm();
 					break;
 				case 'start_hand': {
-					this.room = startHand(this.room, { deckSeed: crypto.randomUUID() });
+					const starterSeat = this.room.seats.find((seat) => seat.userId === identity.userId);
+					if (
+						!starterSeat ||
+						!starterSeat.connected ||
+						starterSeat.chips < this.room.config.bigBlind
+					) {
+						this.send(ws, {
+							type: 'error',
+							code: 'INVALID_ACTION',
+							message: 'only a connected seated player with enough chips may start a hand',
+						});
+						return;
+					}
+					this.room = startHand(this.room, {
+						deckSeed: crypto.randomUUID(),
+						starterUserId: identity.userId,
+					});
 					this.turnDeadline = Date.now() + TURN_TIMEOUT_MS;
-					this.emptyDeadline = null;
+					this.updateEmptyDeadline(Date.now());
 					await this.persist();
 					this.broadcastHandStarted();
 					await this.scheduleNextAlarm();
@@ -510,28 +523,61 @@ export class MultiplayerPokerRoom implements DurableObject {
 		}
 	}
 
-	async webSocketClose(ws: WebSocket): Promise<void> {
-		await this.loaded;
+	private async cleanupSocket(ws: WebSocket): Promise<void> {
 		const identity = this.sockets.get(ws);
 		this.sockets.delete(ws);
-		if (!identity || !this.room) return;
-		if (Array.from(this.sockets.values()).some((candidate) => candidate.userId === identity.userId))
-			return;
-		const now = Date.now();
-		this.room = {
-			...this.room,
-			seats: this.room.seats.map((seat) =>
-				seat.userId === identity.userId ? { ...seat, connected: false, disconnectedAt: now } : seat,
-			),
-		};
-		this.updateEmptyDeadline(now);
+		if (this.room && identity) {
+			const duplicateUserSocket = Array.from(this.sockets.values()).some(
+				(candidate) => candidate.userId === identity.userId,
+			);
+			if (!duplicateUserSocket) {
+				const now = Date.now();
+				this.room = {
+					...this.room,
+					seats: this.room.seats.map((seat) =>
+						seat.userId === identity.userId
+							? { ...seat, connected: false, disconnectedAt: now }
+							: seat,
+					),
+				};
+			}
+		}
+		if (!this.room) return;
+		this.updateEmptyDeadline(Date.now());
 		await this.persist();
 		await this.scheduleNextAlarm();
-		this.sendRoomState();
+		if (identity) this.sendRoomState();
+	}
+
+	async webSocketClose(
+		ws: WebSocket,
+		code: number,
+		reason: string,
+		_wasClean: boolean,
+	): Promise<void> {
+		await this.loaded;
+		try {
+			await this.cleanupSocket(ws);
+		} finally {
+			try {
+				ws.close(code, reason);
+			} catch {
+				/* socket already closed */
+			}
+		}
 	}
 
 	async webSocketError(ws: WebSocket): Promise<void> {
-		await this.webSocketClose(ws);
+		await this.loaded;
+		try {
+			await this.cleanupSocket(ws);
+		} finally {
+			try {
+				ws.close(1011, 'WebSocket error');
+			} catch {
+				/* socket already closed */
+			}
+		}
 	}
 
 	async alarm(): Promise<void> {
@@ -543,6 +589,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 			this.emptyDeadline !== null &&
 			now >= this.emptyDeadline &&
 			!this.room.seats.some((seat) => seat.userId !== null) &&
+			this.sockets.size === 0 &&
 			this.room.hand === null
 		) {
 			await this.deleteRoom();
@@ -608,6 +655,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 			this.emptyDeadline !== null &&
 			now >= this.emptyDeadline &&
 			!this.room.seats.some((seat) => seat.userId !== null) &&
+			this.sockets.size === 0 &&
 			this.room.hand === null
 		) {
 			await this.deleteRoom();
@@ -628,8 +676,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 		} else if (
 			!previousRoom?.hand ||
 			previousRoom.hand.currentSeat !== this.room.hand.currentSeat ||
-			this.turnDeadline === null ||
-			this.turnDeadline <= now
+			this.turnDeadline === null
 		) {
 			const currentSeat = this.room.seats[this.room.hand.currentSeat];
 			const userId = currentSeat?.userId;
@@ -670,7 +717,9 @@ export class MultiplayerPokerRoom implements DurableObject {
 
 	private updateEmptyDeadline(now: number): void {
 		if (!this.room) return;
-		if (this.room.seats.some((seat) => seat.userId !== null)) {
+		const isEmpty =
+			!this.room.seats.some((seat) => seat.userId !== null) && this.sockets.size === 0;
+		if (!isEmpty) {
 			this.emptyDeadline = null;
 		} else if (this.emptyDeadline === null) {
 			this.emptyDeadline = now + EMPTY_ROOM_TIMEOUT_MS;

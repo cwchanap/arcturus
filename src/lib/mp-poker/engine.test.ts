@@ -8,7 +8,7 @@ import {
 	EngineError,
 	forceFold,
 	leaveSeat,
-	startHand,
+	startHand as engineStartHand,
 	takeSeat,
 	type ActionInput,
 	type HandState,
@@ -55,6 +55,20 @@ function currentUser(room: Room): string {
 
 function act(room: Room, userId: string, action: ActionInput) {
 	return applyAction(room, userId, action);
+}
+
+function startHand(room: Room, args: { deckSeed: string; starterUserId?: string }): Room {
+	const starterUserId =
+		args.starterUserId ??
+		room.seats.find(
+			(seat) => seat.userId !== null && seat.connected && seat.chips >= room.config.bigBlind,
+		)?.userId;
+	if (!starterUserId) throw new Error('test room has no eligible starter');
+	return engineStartHand(room, { deckSeed: args.deckSeed, starterUserId });
+}
+
+function startArgs(deckSeed: string, starterUserId: string): Parameters<typeof engineStartHand>[1] {
+	return { deckSeed, starterUserId };
 }
 
 function checkDown(room: Room) {
@@ -180,6 +194,27 @@ describe('engine — seating and room configuration', () => {
 		expect(() => startHand(shortStack, { deckSeed: 'short' })).toThrow(EngineError);
 	});
 
+	test('startHand rejects an unseated starter even when two eligible players exist', () => {
+		const room = createSeatedRoom(2);
+		expect(() => engineStartHand(room, startArgs('unseated-starter', 'u3'))).toThrow(
+			'connected seated player',
+		);
+	});
+
+	test('startHand rejects a disconnected starter', () => {
+		const room = setSeat(createSeatedRoom(2), 'u1', { connected: false });
+		expect(() => engineStartHand(room, startArgs('disconnected-starter', 'u1'))).toThrow(
+			'connected seated player',
+		);
+	});
+
+	test('startHand rejects a short-stacked starter', () => {
+		const room = createSeatedRoom(2, ['u1', 'u2'], { u1: BIG_BLIND - 1 });
+		expect(() => engineStartHand(room, startArgs('short-stacked-starter', 'u1'))).toThrow(
+			'connected seated player',
+		);
+	});
+
 	test('startHand excludes disconnected and underfunded seated players', () => {
 		let room = createSeatedRoom(4, ['u1', 'u2', 'u3', 'u4']);
 		room = setSeat(room, 'u2', { connected: false });
@@ -274,6 +309,14 @@ describe('engine — betting and completion', () => {
 		);
 	});
 
+	test('a later-street bet below the minimum raise is rejected', () => {
+		let room = setupHand();
+		room = act(room, 'u1', { action: 'raise', amount: 100 }).room;
+		room = act(room, 'u2', { action: 'call' }).room;
+
+		expect(() => act(room, 'u2', { action: 'bet', amount: 105 })).toThrow('raise below min-raise');
+	});
+
 	test('raises on a new street measure the increment, not the total commitment', () => {
 		let room = setupHand();
 		room = act(room, 'u1', { action: 'raise', amount: 100 }).room;
@@ -305,6 +348,45 @@ describe('engine — betting and completion', () => {
 		expect(room.hand?.lastRaiseAmount).toBe(90);
 		room = act(room, 'u1', { action: 'call' }).room;
 		expect(() => act(room, 'u2', { action: 'raise', amount: 240 })).toThrow('action not reopened');
+	});
+
+	test('an already-acted player can call after a short all-in raise', () => {
+		let room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3'], { u3: 150 }), {
+			deckSeed: 'short-call-restored',
+		});
+		room = act(room, 'u1', { action: 'call' }).room;
+		room = act(room, 'u2', { action: 'raise', amount: 100 }).room;
+		room = act(room, 'u3', { action: 'all_in' }).room;
+		room = act(room, 'u1', { action: 'call' }).room;
+		room = act(room, 'u2', { action: 'call' }).room;
+
+		expect(room.hand?.committed.u2).toBe(150);
+	});
+
+	test('an already-acted player can fold after a short all-in raise', () => {
+		let room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3'], { u3: 150 }), {
+			deckSeed: 'short-fold-restored',
+		});
+		room = act(room, 'u1', { action: 'call' }).room;
+		room = act(room, 'u2', { action: 'raise', amount: 100 }).room;
+		room = act(room, 'u3', { action: 'all_in' }).room;
+		room = act(room, 'u1', { action: 'call' }).room;
+		const transition = act(room, 'u2', { action: 'fold' });
+
+		expect(transition.handResult).not.toBeNull();
+		expect(transition.handResult?.winners.map(({ userId }) => userId)).not.toContain('u2');
+	});
+
+	test('an already-acted player cannot go all-in as a raise after a short all-in', () => {
+		let room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3'], { u3: 150 }), {
+			deckSeed: 'short-all-in-restored',
+		});
+		room = act(room, 'u1', { action: 'call' }).room;
+		room = act(room, 'u2', { action: 'raise', amount: 100 }).room;
+		room = act(room, 'u3', { action: 'all_in' }).room;
+		room = act(room, 'u1', { action: 'call' }).room;
+
+		expect(() => act(room, 'u2', { action: 'all_in' })).toThrow('action not reopened');
 	});
 
 	test('a full raise reopens action for players who already acted', () => {
@@ -368,6 +450,21 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 		]);
 	});
 
+	test('an all-in player is eligible for the main pot but not the side pot', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), { deckSeed: 'pots-all-in' });
+		const hand: HandState = {
+			...room.hand!,
+			committed: { u1: 10, u2: 100, u3: 100 },
+			allIn: new Set(['u1']),
+		};
+		const pots = buildSidePots(hand);
+
+		expect(pots).toEqual([
+			{ amount: 30, eligibleSeatIndices: [0, 1, 2] },
+			{ amount: 180, eligibleSeatIndices: [1, 2] },
+		]);
+	});
+
 	test('folded contributors add dead money but cannot win a pot', () => {
 		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), { deckSeed: 'pots-folded' });
 		const hand: HandState = {
@@ -399,6 +496,55 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 		expect(clearedRoom.seats[0].userId).toBeNull();
 	});
 
+	test('side pots preserve committed amounts when multiple folded seats are cleared', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3', 'u4']), {
+			deckSeed: 'pots-multiple-cleared',
+		});
+		const hand: HandState = {
+			...room.hand!,
+			committed: { u1: 50, u2: 100, u3: 100, u4: 50 },
+			folded: new Set(['u1', 'u4']),
+		};
+		const clearedRoom: Room = {
+			...room,
+			seats: room.seats.map((seat) =>
+				seat.userId === 'u1' || seat.userId === 'u4'
+					? { ...seat, userId: null, displayName: null }
+					: seat,
+			),
+		};
+
+		expect(buildSidePots(hand)).toEqual([
+			{ amount: 200, eligibleSeatIndices: [1, 2] },
+			{ amount: 100, eligibleSeatIndices: [1, 2] },
+		]);
+		expect(clearedRoom.seats[0].userId).toBeNull();
+		expect(clearedRoom.seats[3].userId).toBeNull();
+	});
+
+	test('side pots preserve an all-in player seat index when its live seat is cleared', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), {
+			deckSeed: 'pots-cleared-all-in',
+		});
+		const hand: HandState = {
+			...room.hand!,
+			committed: { u1: 10, u2: 100, u3: 100 },
+			allIn: new Set(['u1']),
+		};
+		const clearedRoom: Room = {
+			...room,
+			seats: room.seats.map((seat) =>
+				seat.userId === 'u1' ? { ...seat, userId: null, displayName: null } : seat,
+			),
+		};
+
+		expect(buildSidePots(hand)).toEqual([
+			{ amount: 30, eligibleSeatIndices: [0, 1, 2] },
+			{ amount: 180, eligibleSeatIndices: [1, 2] },
+		]);
+		expect(clearedRoom.seats[0].userId).toBeNull();
+	});
+
 	test('odd chips go to the closest seat left of the dealer', () => {
 		const transition = act(makeTiedRiverRoom(0), 'u2', { action: 'check' });
 		expect(transition.handResult?.winners.sort((a, b) => a.seatIndex - b.seatIndex)).toEqual([
@@ -421,6 +567,24 @@ describe('engine — dealer rotation, side pots, and odd chips', () => {
 		const other = transition.handResult?.winners.find(({ userId }) => userId === 'u2');
 		expect(dealer?.amount).toBe(6);
 		expect(other?.amount).toBe(7);
+	});
+
+	test('fold-out winners total the committed chips without losing chips', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), {
+			deckSeed: 'fold-total',
+		});
+		const totalCommitted = Object.values(room.hand!.committed).reduce(
+			(sum, amount) => sum + amount,
+			0,
+		);
+		const currentUserId = currentUser(room);
+		const otherUserIds = ['u1', 'u2', 'u3'].filter((userId) => userId !== currentUserId);
+		const first = forceFold(room, otherUserIds[0]);
+		const second = forceFold(first.room, otherUserIds[1]);
+
+		expect(second.handResult?.winners.reduce((sum, winner) => sum + winner.amount, 0)).toBe(
+			totalCommitted,
+		);
 	});
 });
 
@@ -459,6 +623,39 @@ describe('engine — forceFold and identity-safe completion', () => {
 		room = act(room, 'u2', { action: 'all_in' }).room;
 		const transition = forceFold(room, 'u2');
 		expect(transition.room.hand?.folded.has('u2')).toBe(true);
+	});
+
+	test('forceFold of the current actor preserves the current seat until the caller advances it', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), {
+			deckSeed: 'force-current',
+		});
+		const currentSeat = room.hand!.currentSeat;
+		const currentUserId = currentUser(room);
+		const transition = forceFold(room, currentUserId);
+
+		expect(transition.room.phase).toBe('in-hand');
+		expect(transition.room.hand?.folded.has(currentUserId)).toBe(true);
+		expect(transition.room.hand?.currentSeat).toBe(currentSeat);
+	});
+
+	test('forceFold of two non-current players leaves the current player as the winner', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3']), {
+			deckSeed: 'force-two-non-current',
+		});
+		const currentUserId = currentUser(room);
+		const otherUserIds = ['u1', 'u2', 'u3'].filter((userId) => userId !== currentUserId);
+		const first = forceFold(room, otherUserIds[0]);
+		const second = forceFold(first.room, otherUserIds[1]);
+
+		expect(second.room.phase).toBe('waiting');
+		expect(second.room.hand).toBeNull();
+		expect(second.handResult?.winners).toEqual([
+			{
+				userId: currentUserId,
+				seatIndex: room.hand!.seatIndexMap[currentUserId],
+				amount: 15,
+			},
+		]);
 	});
 
 	test('winner discovery survives a cleared live seat', () => {
@@ -522,6 +719,24 @@ describe('engine — all-in runout and phase transitions', () => {
 		expect(transition.room.phase).toBe('waiting');
 		expect(transition.room.hand).toBeNull();
 		expect(transition.handResult?.showdownCards).toHaveLength(3);
+	});
+
+	test('one eligible player on a later street runs out every community card', () => {
+		const room = startHand(createSeatedRoom(4, ['u1', 'u2', 'u3'], { u2: 100, u3: 1_000 }), {
+			deckSeed: 'later-street-all-in',
+		});
+		let transition = act(room, 'u1', { action: 'call' });
+		transition = act(transition.room, 'u2', { action: 'call' });
+		transition = act(transition.room, 'u3', { action: 'check' });
+		expect(transition.room.hand?.bettingRound).toBe('flop');
+
+		transition = act(transition.room, 'u2', { action: 'all_in' });
+		transition = act(transition.room, 'u3', { action: 'call' });
+		transition = act(transition.room, 'u1', { action: 'fold' });
+
+		expect(transition.room.phase).toBe('waiting');
+		expect(transition.room.hand).toBeNull();
+		expect(transition.handResult?.showdownCards).toHaveLength(2);
 	});
 
 	test('a folded seat cannot change the waiting phase after completion', () => {

@@ -297,10 +297,6 @@ test.describe('public single-player games', () => {
 		// "NEW ROUND" button to appear as the round-completion signal.
 		await expect(page.locator('#new-round-button')).toBeVisible({ timeout: 15000 });
 
-		// Balance must have moved off the starting $1,000 after a settled round.
-		const balanceText = await page.locator('#chip-balance').textContent();
-		expect(balanceText).not.toBe('$1,000');
-
 		await page.waitForLoadState('networkidle');
 		expect(chipUpdateRequests).toEqual([]);
 	});

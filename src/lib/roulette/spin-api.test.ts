@@ -27,11 +27,9 @@ const mockCheckAndGrantAchievements: typeof checkAndGrantAchievements = async ()
 
 function createMockDb({
 	chipBalance = 1000,
-	heldChips = 0,
 	selectThrows = false,
 }: {
 	chipBalance?: number;
-	heldChips?: number;
 	selectThrows?: boolean;
 } = {}): Database {
 	return {
@@ -42,7 +40,7 @@ function createMockDb({
 			return {
 				from: () => ({
 					where: () => ({
-						limit: () => Promise.resolve([{ chipBalance, heldChips }]),
+						limit: () => Promise.resolve([{ chipBalance }]),
 					}),
 				}),
 			};
@@ -80,21 +78,18 @@ interface MockReceipt {
 
 function createMockDbBinding({
 	chipBalance = 1000,
-	heldChips = 0,
 	updateChanges = 1,
 	existingRound = null as MockRound | null,
 	existingReceipt = null as MockReceipt | null,
 	batchError = null as Error | null,
 }: {
 	chipBalance?: number;
-	heldChips?: number;
 	updateChanges?: number;
 	existingRound?: MockRound | null;
 	existingReceipt?: MockReceipt | null;
 	batchError?: Error | null;
 } = {}) {
 	let currentChipBalance = chipBalance;
-	const currentHeldChips = heldChips;
 	const rounds = new Map<string, MockRound>();
 	const receipts = new Map<string, MockReceipt>();
 	if (existingRound) {
@@ -104,7 +99,7 @@ function createMockDbBinding({
 		receipts.set(`${existingReceipt.userId}:${existingReceipt.syncId}`, existingReceipt);
 	}
 
-	const db = createMockDb({ chipBalance: currentChipBalance, heldChips });
+	const db = createMockDb({ chipBalance: currentChipBalance });
 
 	const binding = {
 		prepare(sql: string) {
@@ -175,11 +170,7 @@ function createMockDbBinding({
 						string,
 						number,
 					];
-					if (
-						updateChanges > 0 &&
-						currentChipBalance === matchedBalanceValue &&
-						currentHeldChips === 0
-					) {
+					if (updateChanges > 0 && currentChipBalance === matchedBalanceValue) {
 						currentChipBalance = nextBalance;
 						previousChanges = 1;
 						results.push({ meta: { changes: 1 } });
@@ -269,7 +260,6 @@ function createMockDbBinding({
 		binding: binding as unknown as D1Database,
 		db,
 		getCurrentChipBalance: () => currentChipBalance,
-		getCurrentHeldChips: () => currentHeldChips,
 		rounds,
 		receipts,
 	};
@@ -308,7 +298,6 @@ function createHandler(
 		lastUpdateByUser?: Map<string, number>;
 		winningNumber?: number;
 		chipBalance?: number;
-		heldChips?: number;
 		updateChanges?: number;
 		existingRound?: MockRound | null;
 		existingReceipt?: MockReceipt | null;
@@ -320,7 +309,6 @@ function createHandler(
 	const {
 		winningNumber = 17,
 		chipBalance = 1000,
-		heldChips = 0,
 		updateChanges = 1,
 		existingRound = null,
 		existingReceipt = null,
@@ -328,7 +316,6 @@ function createHandler(
 	} = options;
 	const mock = createMockDbBinding({
 		chipBalance,
-		heldChips,
 		updateChanges,
 		existingRound,
 		existingReceipt,
@@ -351,8 +338,9 @@ describe('roulette spin API', () => {
 		expect(isSpinCascadeGatedSql(SPIN_INSERT_ROUND_SQL)).toBe(true);
 		expect(isSpinCascadeGatedSql(SPIN_INSERT_RECEIPT_SQL)).toBe(true);
 		expect(isSpinCascadeGatedSql(SPIN_UPSERT_STATS_SQL)).toBe(true);
-		expect(SPIN_UPDATE_USER_SQL).toContain('chipBalance = ?');
-		expect(SPIN_UPDATE_USER_SQL).toContain('heldChips = 0');
+		expect(SPIN_UPDATE_USER_SQL).toBe(
+			'UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?',
+		);
 	});
 
 	test('rejects unauthenticated requests', async () => {
@@ -618,24 +606,6 @@ describe('roulette spin API', () => {
 		const body = await readJson(response);
 		expect(response.status).toBe(500);
 		expect(body.error).toBe('DATABASE_UNAVAILABLE');
-	});
-
-	test('rejects when MP escrow is active (heldChips > 0)', async () => {
-		const { handler, mock } = createHandler({ heldChips: 500, chipBalance: 800 });
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-escrow' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(409);
-		expect(body.error).toBe('MP_ESCROW_ACTIVE');
-		// Authoritative spendable balance is returned so the client can
-		// adopt it instead of preserving a stale local balance/bet layout.
-		expect(body.currentBalance).toBe(800);
 	});
 
 	test('rejects when total bet exceeds balance', async () => {

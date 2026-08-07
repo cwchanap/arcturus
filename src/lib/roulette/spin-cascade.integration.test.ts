@@ -5,8 +5,8 @@
  *
  * The spin endpoint (src/pages/api/roulette/spin.ts) uses a D1 batch of 4
  * statements:
- *   1. UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ? AND heldChips = 0
- *      (optimistic lock — only matches if balance hasn't changed AND no MP escrow)
+ *   1. UPDATE user SET chipBalance = ? WHERE id = ? AND chipBalance = ?
+ *      (optimistic lock — only matches if balance hasn't changed)
  *   2. INSERT INTO roulette_round ... SELECT ... WHERE changes() = 1
  *   3. INSERT INTO chip_sync_receipt ... SELECT ... WHERE changes() = 1
  *   4. INSERT INTO game_stats ... SELECT ... WHERE changes() = 1
@@ -67,9 +67,9 @@ async function insertUser(
 ): Promise<void> {
 	await d1
 		.prepare(
-			'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance, heldChips) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+			'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance) VALUES (?, ?, ?, ?, ?, ?, ?)',
 		)
-		.bind(id, `Test ${id}`, `${id}@test.local`, 0, 1000, 1000, chipBalance, 0)
+		.bind(id, `Test ${id}`, `${id}@test.local`, 0, 1000, 1000, chipBalance)
 		.run();
 }
 
@@ -418,60 +418,6 @@ describe('Roulette spin optimistic-lock cascade (Miniflare D1 integration)', () 
 			.first<{ overallRank: number }>();
 		expect(receipt).not.toBeNull();
 		expect(receipt!.overallRank).toBe(3);
-	});
-
-	test('heldChips > 0 blocks the UPDATE atomically (TOCTOU defense)', async () => {
-		// Insert a user with heldChips > 0 (simulating an MP escrow that
-		// was activated between the pre-batch SELECT and the batch UPDATE).
-		// The `AND heldChips = 0` clause in SPIN_UPDATE_USER_SQL must cause
-		// the UPDATE to match 0 rows, skipping all cascade inserts.
-		const userId = 'user-escrow-toctou';
-		await insertUser(db!, userId, 1000);
-		// Set heldChips after insert to simulate a concurrent escrow
-		await db!.prepare('UPDATE user SET heldChips = ? WHERE id = ?').bind(500, userId).run();
-
-		const results = await buildSpinBatch(db!, {
-			userId,
-			syncId: 'escrow-toctou-1',
-			winningNumber: 17,
-			betsJson: JSON.stringify([{ type: 'straight', amount: 10, target: 17 }]),
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-			nowSeconds: 6000,
-			winsIncrement: 1,
-			lossesIncrement: 0,
-			biggestWinCandidate: 350,
-		});
-
-		// UPDATE matched 0 rows because heldChips != 0
-		expect(results[0].meta.changes).toBe(0);
-		// All cascade inserts skipped
-		expect(results[1].meta.changes).toBe(0);
-		expect(results[2].meta.changes).toBe(0);
-		expect(results[3].meta.changes).toBe(0);
-
-		// Balance unchanged
-		const userRow = await db!
-			.prepare('SELECT chipBalance, heldChips FROM user WHERE id = ?')
-			.bind(userId)
-			.first<{ chipBalance: number; heldChips: number }>();
-		expect(userRow?.chipBalance).toBe(1000);
-		expect(userRow?.heldChips).toBe(500);
-
-		// No round or receipt inserted
-		const roundRow = await db!
-			.prepare('SELECT 1 FROM roulette_round WHERE userId = ? AND syncId = ?')
-			.bind(userId, 'escrow-toctou-1')
-			.first();
-		expect(roundRow).toBeNull();
-		const receiptRow = await db!
-			.prepare('SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ?')
-			.bind(userId, 'escrow-toctou-1')
-			.first();
-		expect(receiptRow).toBeNull();
 	});
 
 	test('duplicate (userId, syncId) insert fails with PRIMARY KEY violation', async () => {

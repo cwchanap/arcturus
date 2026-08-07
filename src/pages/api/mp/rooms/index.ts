@@ -44,7 +44,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
 		return Response.json({ error: 'INVALID_CONFIG' }, { status: 400 });
 	}
 
-	const namespace = locals.runtime.env.arcturus;
+	const namespace = locals.runtime.env.MULTIPLAYER_POKER_ROOMS;
 	if (!namespace) return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 503 });
 
 	for (let attempt = 0; attempt < 5; attempt++) {

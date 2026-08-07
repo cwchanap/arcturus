@@ -229,8 +229,9 @@ function asKnownErrorCode(code: string): KnownErrorCode {
 }
 
 // PascalCase class name per TypeScript convention. wrangler.toml `class_name`
-// matches this string exactly; the binding `name` stays lowercase ("arcturus").
-export class Arcturus implements DurableObject {
+// matches this string exactly; the binding `name` is
+// "MULTIPLAYER_POKER_ROOMS".
+export class MultiplayerPokerRoom implements DurableObject {
 	private state: DurableObjectState;
 	private room: Room | null = null;
 	private roomCode: string | null = null;

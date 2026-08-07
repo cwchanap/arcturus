@@ -8,7 +8,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
 	if (!code || !isValidRoomCode(code)) {
 		return Response.json({ error: 'INVALID_CODE' }, { status: 400 });
 	}
-	const namespace = locals.runtime.env.arcturus;
+	const namespace = locals.runtime.env.MULTIPLAYER_POKER_ROOMS;
 	if (!namespace) return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 503 });
 	const id = namespace.idFromName(code);
 	const stub = namespace.get(id);

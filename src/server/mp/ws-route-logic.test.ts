@@ -16,7 +16,7 @@ function makeLocals(
 ) {
 	return {
 		...(user ? { user } : {}),
-		runtime: { env: { arcturus: namespace } },
+		runtime: { env: { MULTIPLAYER_POKER_ROOMS: namespace } },
 	};
 }
 

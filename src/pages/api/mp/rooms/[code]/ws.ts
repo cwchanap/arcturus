@@ -26,7 +26,7 @@ export const GET: APIRoute = async ({ params, request, locals, url }) => {
 		return new Response('Expected websocket', { status: 426 });
 	}
 
-	const namespace = locals.runtime.env.arcturus;
+	const namespace = locals.runtime.env.MULTIPLAYER_POKER_ROOMS;
 	if (!namespace) return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 503 });
 
 	const id = namespace.idFromName(code);

@@ -17,7 +17,7 @@ import {
 	runDailyChallengeRetention,
 } from './server/daily-challenge/expiration';
 import { createDailyChallengeRepository } from './server/daily-challenge/repository';
-import { Arcturus as ArcturusDO } from './server/mp/arcturus';
+import { MultiplayerPokerRoom } from './server/mp/multiplayer-poker-room';
 import { createRankedCoordinator } from './server/ranked/coordinator';
 import { runRankedExpiration, runRankedRateLimitCleanup } from './server/ranked/expiration';
 import { createRankedRepository } from './server/ranked/repository';
@@ -117,5 +117,5 @@ export function createExports(manifest: AstroManifest) {
 	): Promise<void> => {
 		await runScheduledJobs(env, scheduledJobDeps);
 	};
-	return { default: { fetch, scheduled }, Arcturus: ArcturusDO };
+	return { default: { fetch, scheduled }, MultiplayerPokerRoom };
 }

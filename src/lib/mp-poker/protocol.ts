@@ -20,7 +20,6 @@ const PublicSeatSchema = z
 		folded: z.boolean(),
 		allIn: z.boolean(),
 		connected: z.boolean(),
-		disconnectedAt: z.number().nullable(),
 	})
 	.strict();
 
@@ -125,12 +124,8 @@ const ErrorMsg = z
 		code: z.enum([
 			'BAD_MESSAGE',
 			'NOT_YOUR_TURN',
-			'INSUFFICIENT_CHIPS',
-			'NOT_A_MEMBER',
-			'ROOM_CODE_TAKEN',
 			'INVALID_SEAT',
 			'INVALID_ACTION',
-			'INVALID_CONFIG',
 			'NOT_ENOUGH_PLAYERS',
 		]),
 		message: z.string(),
@@ -158,7 +153,6 @@ export function toRoomStateMessage(room: Room, viewerUserId: string): RoomStateM
 			folded: !!(seat.userId && hand?.folded.has(seat.userId)),
 			allIn: !!(seat.userId && hand?.allIn.has(seat.userId)),
 			connected: seat.connected,
-			disconnectedAt: seat.disconnectedAt,
 		})),
 		pot: hand ? Object.values(hand.committed).reduce((sum, value) => sum + value, 0) : 0,
 		board: hand?.board ?? [],

@@ -90,7 +90,10 @@ describe('protocol', () => {
 	});
 
 	test('personalizes room state without exposing user ids', () => {
-		const room = startHand(makeHeadsUpRoom(), { deckSeed: 'protocol-room' });
+		const room = startHand(makeHeadsUpRoom(), {
+			deckSeed: 'protocol-room',
+			starterUserId: 'u1',
+		});
 		const message = toRoomStateMessage(room, 'u2');
 
 		expect(message.yourSeat).toBe(1);
@@ -105,6 +108,45 @@ describe('protocol', () => {
 		expect(JSON.stringify(message)).not.toContain('"userId"');
 		expect(JSON.stringify(message)).not.toContain('holeCards');
 		expect(JSON.stringify(message)).not.toContain('deck');
+	});
+
+	test('projects only the approved public room and seat keys', () => {
+		const room = startHand(makeHeadsUpRoom(), {
+			deckSeed: 'exact-projection',
+			starterUserId: 'u1',
+		});
+		const message = toRoomStateMessage(room, 'u1');
+
+		expect(Object.keys(message).sort()).toEqual(
+			['board', 'currentSeat', 'phase', 'pot', 'seats', 'type', 'yourSeat'].sort(),
+		);
+		expect(Object.keys(message.seats[0]).sort()).toEqual(
+			['allIn', 'chips', 'committed', 'connected', 'displayName', 'folded', 'seatIndex'].sort(),
+		);
+		expect(() =>
+			ServerMessage.parse({
+				...message,
+				seats: message.seats.map((seat) => ({ ...seat, disconnectedAt: null })),
+			}),
+		).toThrow();
+
+		const started = ServerMessage.parse({
+			type: 'hand_started',
+			dealerSeat: 0,
+			holeCards: [card('A', 'spades', 14), card('K', 'spades', 13)],
+		});
+		expect(Object.keys(started).sort()).toEqual(['dealerSeat', 'holeCards', 'type'].sort());
+	});
+
+	test('rejects removed multiplayer error codes', () => {
+		for (const code of [
+			'NOT_A_MEMBER',
+			'ROOM_CODE_TAKEN',
+			'INSUFFICIENT_CHIPS',
+			'INVALID_CONFIG',
+		]) {
+			expect(() => ServerMessage.parse({ type: 'error', code, message: 'removed' })).toThrow();
+		}
 	});
 
 	test('retains showdown cards but strips internal user ids', () => {
@@ -134,7 +176,7 @@ describe('protocol', () => {
 	});
 
 	test('fold-outs produce no showdown cards', () => {
-		const room = startHand(makeHeadsUpRoom(), { deckSeed: 'fold-out' });
+		const room = startHand(makeHeadsUpRoom(), { deckSeed: 'fold-out', starterUserId: 'u1' });
 		const transition = applyAction(room, 'u1', { action: 'fold' });
 		const message = toHandEndedMessage(transition.handResult!);
 

@@ -221,9 +221,16 @@ function cloneSeatWithChips(seat: SeatState, chips: number): SeatState {
 	return { ...seat, chips };
 }
 
-export function startHand(room: Room, args: { deckSeed: string }): Room {
+export function startHand(room: Room, args: { deckSeed: string; starterUserId: string }): Room {
 	if (room.phase === 'in-hand') {
 		throw new EngineError('INVALID_PHASE', 'cannot start hand while room is in-hand');
+	}
+	const starter = room.seats.find((seat) => seat.userId === args.starterUserId);
+	if (!starter || !starter.connected || starter.chips < room.config.bigBlind) {
+		throw new EngineError(
+			'INVALID_ACTION',
+			'only a connected seated player with enough chips may start a hand',
+		);
 	}
 	const eligible = room.seats.filter(
 		(seat) => seat.userId !== null && seat.connected && seat.chips >= room.config.bigBlind,

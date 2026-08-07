@@ -117,6 +117,7 @@ if (!code || !isValidRoomCode(code)) {
 <script>
 	import { MultiplayerPokerClient } from '../../../lib/mp-poker/client';
 	import { getSuitGlyph, isRedSuit } from '../../../lib/card-format';
+	import type { RoomStateMessage } from '../../../lib/mp-poker/protocol';
 
 	const root = document.querySelector('[data-room-code]') as HTMLElement;
 	const code = root.dataset.roomCode!;
@@ -130,6 +131,8 @@ if (!code || !isValidRoomCode(code)) {
 	const holeEl = document.querySelector('[data-testid="hole-cards"]') as HTMLElement;
 	const logEl = document.querySelector('[data-testid="log"]') as HTMLElement;
 	const raiseAmt = document.querySelector('[data-testid="raise-amount"]') as HTMLInputElement;
+	let latestRoomState: RoomStateMessage | null = null;
+	let dealerSeat: number | null = null;
 
 	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
 		const glyph = getSuitGlyph(c.suit);
@@ -147,8 +150,39 @@ if (!code || !isValidRoomCode(code)) {
 		for (const child of children) parent.appendChild(child);
 	}
 
+	function renderSeats(msg: RoomStateMessage): void {
+		seatsEl.textContent = '';
+		for (const s of msg.seats) {
+			const div = document.createElement('div');
+			div.className =
+				'bg-[var(--deco-obsidian-2)] p-3 rounded text-[var(--deco-ivory)] border border-[var(--deco-line)]';
+			div.setAttribute('data-testid', `seat-${s.seatIndex}`);
+			div.dataset.seatIndex = String(s.seatIndex);
+			div.dataset.yourSeat = String(s.seatIndex === msg.yourSeat);
+			div.dataset.activeSeat = String(s.seatIndex === msg.currentSeat);
+			div.dataset.folded = String(s.folded);
+			div.dataset.allIn = String(s.allIn);
+			div.dataset.connected = String(s.connected);
+			div.dataset.dealerSeat = String(s.seatIndex === dealerSeat);
+			const labels = [
+				s.seatIndex === msg.yourSeat ? 'You' : null,
+				s.seatIndex === msg.currentSeat ? 'Acting' : null,
+				s.seatIndex === dealerSeat ? 'Dealer' : null,
+				s.folded ? 'Folded' : null,
+				s.allIn ? 'All-in' : null,
+				s.displayName !== null && !s.connected ? 'Disconnected' : null,
+			].filter((label): label is string => label !== null);
+			const labelText = labels.length > 0 ? ` — ${labels.join(' · ')}` : '';
+			div.textContent =
+				`Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ` +
+				`${s.chips.toLocaleString()} chips — ${s.committed.toLocaleString()} committed${labelText}`;
+			seatsEl.appendChild(div);
+		}
+	}
+
 	client.on((msg) => {
 		if (msg.type === 'room_state') {
+			latestRoomState = msg;
 			root.dataset.currentSeat = msg.currentSeat === null ? '' : String(msg.currentSeat);
 			root.dataset.yourSeat = msg.yourSeat === null ? '' : String(msg.yourSeat);
 			clearAndAppend(boardEl, msg.board.map(createCardEl));
@@ -156,27 +190,12 @@ if (!code || !isValidRoomCode(code)) {
 			// Clear stale hole cards when room is not in an active hand
 			if (msg.phase !== 'in-hand') {
 				holeEl.textContent = '';
+				dealerSeat = null;
 			}
-			seatsEl.textContent = '';
-			for (const s of msg.seats) {
-				const div = document.createElement('div');
-				div.className =
-					'bg-[var(--deco-obsidian-2)] p-3 rounded text-[var(--deco-ivory)] border border-[var(--deco-line)]';
-				div.setAttribute('data-testid', `seat-${s.seatIndex}`);
-				div.dataset.seatIndex = String(s.seatIndex);
-				div.dataset.yourSeat = String(s.seatIndex === msg.yourSeat);
-				div.dataset.activeSeat = String(s.seatIndex === msg.currentSeat);
-				const labels = [
-					s.seatIndex === msg.yourSeat ? 'You' : null,
-					s.seatIndex === msg.currentSeat ? 'Acting' : null,
-				].filter((label): label is string => label !== null);
-				const labelText = labels.length > 0 ? ` — ${labels.join(' · ')}` : '';
-				div.textContent =
-					`Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ` +
-					`${s.chips.toLocaleString()} chips — ${s.committed.toLocaleString()} committed${labelText}`;
-				seatsEl.appendChild(div);
-			}
+			renderSeats(msg);
 		} else if (msg.type === 'hand_started') {
+			dealerSeat = msg.dealerSeat;
+			if (latestRoomState) renderSeats(latestRoomState);
 			clearAndAppend(holeEl, msg.holeCards.map(createCardEl));
 		} else if (msg.type === 'hand_ended') {
 			const w = msg.winners.map((win) => `seat ${win.seatIndex} +${win.amount}`).join(', ');
@@ -192,6 +211,8 @@ if (!code || !isValidRoomCode(code)) {
 			entry.setAttribute('data-testid', 'log-entry');
 			entry.textContent = `Hand ended: ${w}${showdown ? ` — Showdown: ${showdown}` : ''}`;
 			logEl.prepend(entry);
+			dealerSeat = null;
+			if (latestRoomState) renderSeats(latestRoomState);
 			// Clear stale hole cards once the hand is over
 			holeEl.textContent = '';
 		} else if (msg.type === 'error') {

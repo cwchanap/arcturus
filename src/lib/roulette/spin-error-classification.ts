@@ -49,8 +49,8 @@ export function parseRetryAfterMs(headerValue: string | null): number | undefine
 // A spin attempt is retriable when the server may have committed the
 // round but we didn't receive the result. Only 409 CONCURRENT_MODIFICATION
 // is retriable among 409s — retrying with the same syncId returns the
-// stored result via idempotency. Other 409s (MP_ESCROW_ACTIVE,
-// SYNC_ID_REUSE_MISMATCH) can never succeed on retry. 5xx means the
+// stored result via idempotency. Other 409s (SYNC_ID_REUSE_MISMATCH) can
+// never succeed on retry. 5xx means the
 // server errored mid-processing — retrying is safe for the same reason.
 // TypeError means the network failed before a response arrived.
 // AbortError means the fetch timed out (fetchWithTimeout) — the server
@@ -72,13 +72,13 @@ export function isRetriableSpinError(err: unknown): boolean {
 // an unknown 409 message is treated as ambiguous (may have committed)
 // so the caller falls through to retry / balance recovery instead of
 // discarding bets.
-const NON_COMMITTED_409_CODES = new Set(['MP_ESCROW_ACTIVE', 'SYNC_ID_REUSE_MISMATCH']);
+const NON_COMMITTED_409_CODES = new Set(['SYNC_ID_REUSE_MISMATCH']);
 
 export function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError {
 	if (!(err instanceof SpinHttpError)) return false;
 	if (err.status === 429) return true;
 	if (err.status === 400 || err.status === 401 || err.status === 403) return true;
-	// Non-retriable 409s: escrow lock, syncId reuse with different bets.
+	// Non-retriable 409s: syncId reuse with different bets.
 	// Unknown 409 codes are NOT classified — they may have committed.
 	if (err.status === 409 && NON_COMMITTED_409_CODES.has(err.message)) return true;
 	return false;
@@ -86,8 +86,6 @@ export function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError 
 
 export function messageForSpinRejection(err: SpinHttpError): string {
 	switch (err.message) {
-		case 'MP_ESCROW_ACTIVE':
-			return 'Chips locked in multiplayer poker — finish or leave the table first.';
 		case 'RATE_LIMITED':
 			return 'Please wait a moment before spinning again.';
 		case 'INSUFFICIENT_BALANCE':

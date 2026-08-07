@@ -372,7 +372,6 @@ describe('runScheduledJobs', () => {
 		overrides: Partial<ScheduledJobDeps> = {},
 		env: Parameters<typeof runScheduledJobs>[0] = {
 			DB: {} as D1Database,
-			arcturus: {} as DurableObjectNamespace,
 		},
 	) {
 		const events: string[] = [];

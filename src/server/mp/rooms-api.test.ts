@@ -132,6 +132,27 @@ describe('mp/rooms create route', () => {
 		});
 	});
 
+	test('forwards only the validated room configuration to the Durable Object', async () => {
+		const { namespace, requests } = makeNamespace(() => new Response(null, { status: 200 }));
+
+		const response = await callCreate(
+			namespace,
+			makeRequest({
+				...DEFAULT_BODY,
+				roomCode: 'MP-ATTACK',
+				internalSecret: 'do-not-forward',
+				ownerId: 'attacker-controlled',
+			}),
+		);
+
+		expect(response.status).toBe(201);
+		const body = (await readJson(response)) as { code: string };
+		expect(JSON.parse(String(requests[0].init?.body))).toEqual({
+			...DEFAULT_BODY,
+			roomCode: body.code,
+		});
+	});
+
 	test('retries a room-code collision and succeeds on the next code', async () => {
 		let initCalls = 0;
 		const { namespace, requests } = makeNamespace(() => {

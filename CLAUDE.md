@@ -24,7 +24,7 @@ const secret = Astro.locals.runtime.env.BETTER_AUTH_SECRET;
 - **Astro SSR** (`output: 'server'`) with Cloudflare adapter
 - **Better Auth** - Session-based authentication
 - **Drizzle ORM** + **Cloudflare D1** - Edge SQLite database
-- **Cloudflare Durable Objects** - One `Arcturus` DO instance per multiplayer poker room (binding: `arcturus`, lowercase). Hibernatable WebSockets for real-time game state.
+- **Cloudflare Durable Objects** - One `MultiplayerPokerRoom` instance per private multiplayer poker room (binding: `MULTIPLAYER_POKER_ROOMS`). Hibernatable WebSockets for real-time game state.
 - **Tailwind CSS v4** - Via Vite plugin (NOT PostCSS)
 - **Bun** - Package manager and test runner
 - **Playwright** - E2E testing
@@ -211,9 +211,8 @@ src/
 ├── db/
 │   └── schema.ts          # Drizzle schema (single source of truth)
 ├── server/
-│   └── mp/                 # DO + server-only mp glue (Miniflare-tested, not pure Bun)
-│       ├── arcturus.ts     # Arcturus DO class — authoritative poker session
-│       └── settlement.ts   # Pure: build settle payload from hand result
+│   └── mp/                 # Durable Object runtime for multiplayer poker
+│       └── multiplayer-poker-room.ts # MultiplayerPokerRoom room coordinator
 └── middleware.ts          # Auth + session injection (runs on ALL requests)
 
 e2e/                       # Playwright E2E tests
@@ -261,6 +260,8 @@ drizzle/                   # Generated SQL migrations
 6. **LLM Integration**: User-configured AI settings (OpenAI/Gemini) for game assistants via `src/lib/llm-settings.ts`. Each game has its own LLM strategy module for context-aware hints.
 
 7. **Chip Balance Sync**: Games sync chip balance with server via `POST /api/chips/update` endpoint after each game round.
+
+8. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer poker uses room-local chips and has no D1 settlement.
 
 ## Database Schema
 

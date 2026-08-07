@@ -298,7 +298,7 @@ describe('RouletteGame — spin & settle (guest mode)', () => {
 	});
 
 	describe('abortSpin', () => {
-		it('returns to betting with bets preserved for re-spin (429 / escrow path)', () => {
+		it('returns to betting with bets preserved for re-spin after a rate limit', () => {
 			const game = newGame(1000);
 			game.placeBet('red', 500);
 			expect(game.getBalance()).toBe(500);

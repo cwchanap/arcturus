@@ -43,15 +43,11 @@ export type OutboxDeps = {
 	onAuthRequired?: () => void;
 	maxRebases?: number; // default 3
 	maxNetworkRetries?: number; // default 3
-	maxEscrowRetries?: number; // default 3 — bounded retries while MP escrow holds
-	escrowRetryMs?: number; // default 2000 — backoff between escrow retries
 	sleep?: (ms: number) => Promise<void>;
 };
 
 const DEFAULT_REBASES = 3;
 const DEFAULT_NETWORK_RETRIES = 3;
-const DEFAULT_ESCROW_RETRIES = 3;
-const DEFAULT_ESCROW_RETRY_MS = 2000;
 
 export class KenoSyncOutbox {
 	private queue: PendingReceipt[];
@@ -64,8 +60,6 @@ export class KenoSyncOutbox {
 	private readonly deps: OutboxDeps;
 	private readonly maxRebases: number;
 	private readonly maxNetworkRetries: number;
-	private readonly maxEscrowRetries: number;
-	private readonly escrowRetryMs: number;
 	private readonly sleep: (ms: number) => Promise<void>;
 
 	constructor(deps: OutboxDeps) {
@@ -73,8 +67,6 @@ export class KenoSyncOutbox {
 		this.queue = deps.load().map((r) => ({ ...r }));
 		this.maxRebases = deps.maxRebases ?? DEFAULT_REBASES;
 		this.maxNetworkRetries = deps.maxNetworkRetries ?? DEFAULT_NETWORK_RETRIES;
-		this.maxEscrowRetries = deps.maxEscrowRetries ?? DEFAULT_ESCROW_RETRIES;
-		this.escrowRetryMs = deps.escrowRetryMs ?? DEFAULT_ESCROW_RETRY_MS;
 		this.sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 	}
 
@@ -139,7 +131,7 @@ export class KenoSyncOutbox {
 		try {
 			while (this.queue.length > 0) {
 				const ok = await this.sendHead();
-				if (!ok) break; // paused (e.g. MP_ESCROW) or sleeping handled inside sendHead
+				if (!ok) break; // paused or sleeping handled inside sendHead
 				drained++;
 			}
 		} finally {
@@ -152,7 +144,6 @@ export class KenoSyncOutbox {
 	private async sendHead(): Promise<boolean> {
 		let rebases = 0;
 		let networkRetries = 0;
-		let escrowRetries = 0;
 		while (true) {
 			// Re-read head each iteration: BALANCE_MISMATCH mutates queue[0] in place
 			// (previousBalance := server currentBalance) and the next post() must use
@@ -218,19 +209,6 @@ export class KenoSyncOutbox {
 				// Reconcile display to the rebased server balance + pending deltas
 				// (including this receipt's delta, which is still unsettled).
 				this.reconcile(serverBalance);
-				continue;
-			}
-			if (res.status === 409 && code === 'MP_ESCROW_ACTIVE') {
-				// Multiplayer escrow is transient (hand in progress). Retry with a bounded
-				// backoff so a receipt doesn't stall indefinitely waiting for the next draw
-				// or page reload. After exhausting retries, leave at head (return false) —
-				// the next enqueueAndDrain / drainPersisted resumes from here.
-				escrowRetries++;
-				if (escrowRetries > this.maxEscrowRetries) {
-					this.deps.onToast('Chip sync paused: multiplayer hand in progress.');
-					return false;
-				}
-				await this.sleep(this.escrowRetryMs);
 				continue;
 			}
 			if (res.status === 409 && code === 'SYNC_ID_REUSE_MISMATCH') {

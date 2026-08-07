@@ -105,7 +105,6 @@ describe('isRetriableSpinError', () => {
 		[400, 'DELTA_EXCEEDS_LIMIT', '400 delta backstop'],
 		[401, 'UNAUTHORIZED', '401 unauthenticated'],
 		[403, 'FORBIDDEN', '403 forbidden'],
-		[409, 'MP_ESCROW_ACTIVE', '409 MP escrow (non-retriable 409)'],
 		[409, 'SYNC_ID_REUSE_MISMATCH', '409 syncId reuse mismatch (non-retriable 409)'],
 		[429, 'RATE_LIMITED', '429 rate limited'],
 	];
@@ -143,7 +142,6 @@ describe('isNonCommittedSpinRejection', () => {
 		[401, 'UNAUTHORIZED', '401 unauthenticated'],
 		[403, 'FORBIDDEN', '403 forbidden'],
 		[429, 'RATE_LIMITED', '429 rate limited'],
-		[409, 'MP_ESCROW_ACTIVE', '409 MP escrow'],
 		[409, 'SYNC_ID_REUSE_MISMATCH', '409 syncId reuse mismatch'],
 	];
 
@@ -175,11 +173,6 @@ describe('isNonCommittedSpinRejection', () => {
 });
 
 describe('messageForSpinRejection', () => {
-	it('returns specific message for MP_ESCROW_ACTIVE', () => {
-		const msg = messageForSpinRejection(new SpinHttpError(409, 'MP_ESCROW_ACTIVE'));
-		expect(msg).toContain('multiplayer poker');
-	});
-
 	it('returns specific message for RATE_LIMITED', () => {
 		const msg = messageForSpinRejection(new SpinHttpError(429, 'RATE_LIMITED'));
 		expect(msg).toContain('wait');
@@ -217,7 +210,6 @@ describe('error classification mutual exclusivity', () => {
 		[401, 'UNAUTHORIZED'],
 		[403, 'FORBIDDEN'],
 		[409, 'CONCURRENT_MODIFICATION'],
-		[409, 'MP_ESCROW_ACTIVE'],
 		[409, 'SYNC_ID_REUSE_MISMATCH'],
 		[409, 'UNKNOWN_NEW_409_CODE'],
 		[429, 'RATE_LIMITED'],

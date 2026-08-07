@@ -51,12 +51,18 @@ export const POST: APIRoute = async ({ locals, request }) => {
 		const roomCode = generateRoomCode();
 		const id = namespace.idFromName(roomCode);
 		const stub = namespace.get(id);
+		const roomConfig = {
+			maxSeats: rawBody.maxSeats,
+			smallBlind: rawBody.smallBlind,
+			bigBlind: rawBody.bigBlind,
+			roomCode,
+		};
 		let response: Response;
 		try {
 			response = await stub.fetch('http://do/init', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ ...rawBody, roomCode }),
+				body: JSON.stringify(roomConfig),
 			});
 		} catch {
 			return Response.json({ error: 'DO_UNAVAILABLE' }, { status: 502 });

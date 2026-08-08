@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { applyAction, createRoom, takeSeat, startHand, type Room } from '../../lib/mp-poker/engine';
+import {
+	applyAction,
+	createRoom,
+	takeSeat,
+	startHand,
+	type Room,
+	type RoomTransition,
+} from '../../lib/mp-poker/engine';
 import {
 	EMPTY_ROOM_TIMEOUT_MS,
 	RECONNECT_TIMEOUT_MS,
@@ -504,6 +511,119 @@ describe('MultiplayerPokerRoom room-local runtime', () => {
 			expect(after.hand?.folded.has('u1')).toBe(true);
 			expect(after.hand?.currentSeat).toBe(2);
 			expect(privateField<number | null>(object, 'turnDeadline')).toBe(3_000_000 + TURN_TIMEOUT_MS);
+		});
+	});
+
+	test('resets the turn deadline when the betting round changes even if the actor seat stays the same (heads-up BB closes preflop and opens flop)', async () => {
+		await withNow(4_000_000, async () => {
+			const { object } = makeObject();
+			setPrivateField(object, 'roomCode', 'MP-HU-FLOP');
+			// makeRoom: dealer=0 (u1=SB), BB=1 (u2), currentSeat=0 (u1 acts first preflop heads-up)
+			let room = makeRoom();
+			// u1 (SB) calls — action moves to u2 (BB) to close preflop
+			room = applyAction(room, 'u1', { action: 'call' }).room;
+			expect(room.hand!.currentSeat).toBe(1);
+			expect(room.hand!.bettingRound).toBe('preflop');
+			setPrivateField(object, 'room', room);
+			// Simulate BB having used most of their preflop turn time (5s left).
+			setPrivateField(object, 'turnDeadline', 4_000_000 + 5_000);
+			// u2 (BB) checks — closes preflop, advanceRound picks first eligible seat
+			// after dealer (seat 0) = seat 1 (u2). Same currentSeat, new bettingRound.
+			const transition = applyAction(room, 'u2', { action: 'check' });
+			expect(transition.room.hand!.bettingRound).toBe('flop');
+			expect(transition.room.hand!.currentSeat).toBe(1);
+			const applyTransition = privateField<
+				(transition: RoomTransition, now: number) => Promise<void>
+			>(object, 'applyTransition');
+			await applyTransition.call(object, transition, 4_000_000);
+			const after = privateField<Room>(object, 'room');
+			expect(after.hand?.bettingRound).toBe('flop');
+			expect(after.hand?.currentSeat).toBe(1);
+			expect(privateField<number | null>(object, 'turnDeadline')).toBe(4_000_000 + TURN_TIMEOUT_MS);
+		});
+	});
+
+	test('force-folds a disconnected current actor when the turn deadline expires instead of clearing the deadline', async () => {
+		await withNow(5_000_000, async () => {
+			const { object } = makeObject();
+			setPrivateField(object, 'roomCode', 'MP-TURN-FOLD-MULTI');
+			let room = createRoom({ maxSeats: 4, smallBlind: 5, bigBlind: 10 });
+			room = takeSeat(room, { userId: 'u1', displayName: 'Alice', seatIndex: 0 });
+			room = takeSeat(room, { userId: 'u2', displayName: 'Bob', seatIndex: 1 });
+			room = takeSeat(room, { userId: 'u3', displayName: 'Carol', seatIndex: 2 });
+			room = takeSeat(room, { userId: 'u4', displayName: 'Dave', seatIndex: 3 });
+			room = startHand(room, { deckSeed: 'arcturus-test', starterUserId: 'u1' });
+			// 4 players: dealer=0, SB=1, BB=2, currentSeat=3 (u4, first after BB)
+			expect(room.hand!.currentSeat).toBe(3);
+			// u4 disconnects 5s ago — reconnect grace (30s) has NOT expired yet
+			setPrivateField(object, 'room', {
+				...room,
+				seats: room.seats.map((seat) =>
+					seat.userId === 'u4'
+						? { ...seat, connected: false, disconnectedAt: 5_000_000 - 5_000 }
+						: seat,
+				),
+			});
+			setPrivateField(object, 'turnDeadline', 5_000_000); // expired now
+			await object.alarm();
+			const after = privateField<Room>(object, 'room');
+			expect(after.hand?.folded.has('u4')).toBe(true);
+			expect(after.hand?.currentSeat).toBe(0); // next actor is u1 (SB)
+			expect(privateField<number | null>(object, 'turnDeadline')).toBe(5_000_000 + TURN_TIMEOUT_MS);
+		});
+	});
+
+	test('does not grant a fresh turn deadline on reconnect when the turn deadline has already expired', async () => {
+		await withNow(6_000_000, async () => {
+			const { object } = makeObject();
+			setPrivateField(object, 'roomCode', 'MP-RECONNECT-EXPIRED');
+			const room = makeRoom(); // currentSeat=0 (u1)
+			// u1 is the current actor, disconnected 5s ago (reconnect grace active),
+			// but the turn deadline already expired 1s ago.
+			setPrivateField(object, 'room', {
+				...room,
+				seats: room.seats.map((seat) =>
+					seat.userId === 'u1'
+						? { ...seat, connected: false, disconnectedAt: 6_000_000 - 5_000 }
+						: seat,
+				),
+			});
+			setPrivateField(object, 'turnDeadline', 6_000_000 - 1_000);
+			const server = {
+				serializeAttachment: () => undefined,
+				send: () => undefined,
+			} as unknown as WebSocket;
+			const globalObject = globalThis as unknown as {
+				WebSocketPair?: new () => unknown;
+			};
+			const originalWebSocketPair = globalObject.WebSocketPair;
+			try {
+				globalObject.WebSocketPair = class {
+					client = {};
+					server = server;
+				};
+				const handleUpgrade = privateField<(request: Request) => Promise<Response>>(
+					object,
+					'handleUpgrade',
+				);
+				const response = await handleUpgrade.call(
+					object,
+					new Request('http://do/ws', {
+						headers: {
+							Upgrade: 'websocket',
+							'x-arcturus-user-id': 'u1',
+							'x-arcturus-display-name': encodeURIComponent('Alice'),
+						},
+					}),
+				);
+				expect(response.status).toBe(101);
+				expect(privateField<Room>(object, 'room').seats[0].connected).toBe(true);
+				// The expired deadline must NOT be renewed — the alarm will force-fold u1.
+				expect(privateField<number | null>(object, 'turnDeadline')).toBe(6_000_000 - 1_000);
+			} finally {
+				if (originalWebSocketPair) globalObject.WebSocketPair = originalWebSocketPair;
+				else delete globalObject.WebSocketPair;
+			}
 		});
 	});
 });

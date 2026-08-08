@@ -397,9 +397,13 @@ export class MultiplayerPokerRoom implements DurableObject {
 			if (
 				this.room.phase === 'in-hand' &&
 				this.room.hand &&
-				(this.turnDeadline === null || this.turnDeadline <= now) &&
+				this.turnDeadline === null &&
 				userAtSeat(this.room, this.room.hand.currentSeat) === userId
 			) {
+				// Grant a fresh turn only when the timer was never started for this
+				// actor (e.g. the turn arrived while they were disconnected). An
+				// already-expired deadline must not be renewed — the alarm will
+				// force-fold the actor instead.
 				this.turnDeadline = now + TURN_TIMEOUT_MS;
 			}
 		}
@@ -628,16 +632,14 @@ export class MultiplayerPokerRoom implements DurableObject {
 			const currentSeat = this.room.hand.currentSeat;
 			const seat = this.room.seats[currentSeat];
 			const userId = seat?.userId;
-			if (
-				userId &&
-				seat.connected &&
-				!this.room.hand.folded.has(userId) &&
-				!this.room.hand.allIn.has(userId)
-			) {
+			if (userId && !this.room.hand.folded.has(userId) && !this.room.hand.allIn.has(userId)) {
+				// An expired turn deadline force-folds the current actor regardless of
+				// connection state. Reconnect grace protects a disconnected seat only
+				// while its turn timer has not already expired.
 				await this.applyTransition(applyAction(this.room, userId, { action: 'fold' }), now);
 			} else {
-				// A disconnected current actor is protected by reconnect grace. Do not
-				// leave an expired turn deadline to create an immediate alarm loop.
+				// Current seat is folded, all-in, or empty — clear the stale deadline to
+				// avoid an immediate alarm loop.
 				this.turnDeadline = null;
 				await this.persist();
 			}
@@ -676,6 +678,7 @@ export class MultiplayerPokerRoom implements DurableObject {
 		} else if (
 			!previousRoom?.hand ||
 			previousRoom.hand.currentSeat !== this.room.hand.currentSeat ||
+			previousRoom.hand.bettingRound !== this.room.hand.bettingRound ||
 			this.turnDeadline === null
 		) {
 			const currentSeat = this.room.seats[this.room.hand.currentSeat];

@@ -2,92 +2,104 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace every casual single-player account chip-sync implementation with one small, idempotent wallet settlement use case and delete the retry/outbox/batching machinery that no longer serves the hobby-project architecture.
+**Goal:** Replace every casual single-player account chip-sync implementation with one small idempotent wallet settlement use case, one tiny shared in-memory failure gate, and deletion of old retry/outbox/batching/recovery machinery.
 
-**Architecture:** `src/lib/wallet` owns the settlement contract, D1 repository, server use case, and one timed browser request helper. The active receipt table stays in `src/db/schema.ts` with the rest of the D1 schema. Client-authoritative games submit one settlement per completed event through `/api/wallet/settle`; Roulette keeps server-side RNG/bet validation and calls the same settlement use case directly. Browser recovery is intentionally limited to one in-memory failed command and a visible manual retry/reset path.
+**Architecture:** `src/lib/wallet` owns settlement types/IDs, D1 repository, server use case, one timed browser submit function, and one in-memory pending/retry gate. Active D1 tables remain in `src/db/schema.ts`. Client-authoritative games use `/api/wallet/settle`; Roulette remains server-authoritative and calls `settleWalletRound` from `/api/roulette/spin`. During migration, mission prepared statements temporarily support both the old chip receipt and the new wallet receipt so every intermediate commit remains correct; the old branch is deleted with `/api/chips/update`.
 
 **Tech Stack:** Astro 5 SSR, Cloudflare Workers, Cloudflare D1, Drizzle ORM, TypeScript, Bun, Vitest/Miniflare where already used, Playwright, Wrangler 4.
 
-## Global Constraints
+## Global constraints
 
-- Keep one deployable Astro + Cloudflare Worker application.
-- Follow the existing repository layout: domain code under `src/lib/<domain>`, active D1 tables in `src/db/schema.ts`.
-- Do not introduce `src/modules`, a second schema home, a generic repository framework, event bus, ledger, or workflow engine.
-- Use exactly one casual account-settlement application function: `settleWalletRound`.
-- Use exactly one browser settlement endpoint for client-authoritative games: `POST /api/wallet/settle`.
-- Roulette remains server-authoritative and calls `settleWalletRound` directly from `/api/roulette/spin`.
-- A settlement command contains `settlementId`, `game`, `delta`, and `stats { rounds, wins, losses, biggestWin }` only.
-- Do not send or retain `previousBalance`, `statsDelta`, retry metadata, canonical payload hashes, rate-limit metadata, or compatibility fields.
-- `(userId, settlementId)` is idempotent; a duplicate returns the stored resulting balance and never reapplies balance, stats, or mission progress.
-- Balance, receipt, game statistics, and direct mission progress commit atomically in one D1 batch.
-- Achievement checks run only after a fresh settlement; duplicate settlement responses do not recreate historical achievement toasts.
-- The wallet browser client uses the existing `fetchJsonWithTimeout` helper with a fixed timeout and performs no automatic retry.
-- Browser code must not contain persisted settlement outboxes, background retry loops, balance-rebase loops, batching/coalescing coordinators, cross-tab ownership, unload beacons, or sync-election logic.
-- A game may retain one failed command in memory for explicit manual retry while the page remains open.
-- Do not start another authenticated play that depends on the unsettled balance until the current settlement succeeds or the game is reset/reloaded.
-- Craps account settlement happens only when a roll resolves wagers; bet placement/clearing is local game state.
-- Guest bankroll behavior remains local and does not use the wallet module.
-- Roulette pending-spin reload recovery is removed with `roulette_round`; do not preserve it through another persistence mechanism.
-- No backward compatibility, dual endpoint, payload adapter, receipt backfill, old localStorage migration, or feature flag.
-- Do not refactor unrelated game rules. Existing payout/legality tests remain authoritative.
+- Keep domain code under `src/lib/<domain>` and active tables in `src/db/schema.ts`.
+- Do not introduce `src/modules`, a second schema home, generic repository/event/workflow abstractions, or a configurable settlement framework.
+- Final account settlement function is exactly `settleWalletRound`.
+- Final client-authoritative endpoint is exactly `POST /api/wallet/settle`.
+- Roulette stays server-authoritative.
+- Settlement command fields are exactly `settlementId`, `game`, `delta`, and `stats { rounds, wins, losses, biggestWin }`.
+- Settlement ID matches `/^[A-Za-z0-9_-]{1,128}$/` and is generated once per event; manual retry reuses the same command/ID.
+- Keep one global `MAX_ABSOLUTE_SETTLEMENT_DELTA = 1_000_000`; delete the per-game cap table/rate limiter.
+- The global cap is a sanity bound, not anti-cheat. Do not add additional leaderboard hardening in this ticket.
+- `(userId, settlementId)` is idempotent; server-only `attemptId` gates stats/missions for the fresh winning request.
+- Balance, receipt, stats, and direct mission progress commit atomically.
+- Achievement checks run only after a fresh settlement; duplicate response does not recreate old toasts.
+- Browser submit uses existing `fetchJsonWithTimeout` with one fixed timeout and no automatic retry.
+- Browser failure policy is shared by `createSettlementGate`; games must not copy pending/retry state machines.
+- No persisted settlement queue, background retry/backoff, balance rebase loop, cross-tab election, Web Locks, unload beacon, or old storage migration.
+- Guest bankroll remains local and does not use wallet settlement.
+- Craps settles only resolved wagers; bet placement/clearing is local.
+- Roulette `pendingSyncId` reload resurrection is deleted with `roulette_round`.
+- No backward-compatible old endpoint/schema/payload support remains in the final tree.
+- Preserve pure game-rule behavior; do not rewrite payout/legality expectations to accommodate the refactor.
 
 ---
 
-## Preflight: authoritative deletion and test inventory
+## Preflight: authoritative inventory and behavior baseline
 
-Before editing runtime code, capture every old settlement surface. This list is intentionally broader than the first draft because E2E/bootstrap and helper files still teach the old contract.
+### Step 1: generate the real file inventory
 
-- [ ] **Step 1: Capture the settlement grep**
+- [ ] Run from current `main` before editing:
 
 ```bash
-git grep -nE \
-  '/api/chips/update|chip_sync_receipt|roulette_round|ChipSyncCoordinator|KenoSyncOutbox|balance-sync-stats|balance-sync-state|balanceSync|syncLimits|previousBalance|statsDelta|pendingStats|pendingRollSyncs|syncPending|BALANCE_MISMATCH|RATE_LIMITED|sendBeacon|pendingSyncId|pendingSyncCreatedAt' \
-  -- src e2e scripts drizzle CLAUDE.md README.md \
-  | tee /tmp/hpa-545-sync-before.txt
+git grep -lE \
+  '/api/chips/update|chip_sync_receipt|roulette_round|ChipSyncCoordinator|KenoSyncOutbox|balance-sync-stats|balance-sync-state|balanceSync|syncLimits|previousBalance|statsDelta|pendingStats|pendingRollSyncs|syncPending|BALANCE_MISMATCH|RATE_LIMITED|sendBeacon|pendingSyncId|pendingSyncCreatedAt|PENDING_SPIN_MAX_AGE_MS' \
+  -- src e2e scripts drizzle wrangler.toml CLAUDE.md README.md \
+  | sort -u > /tmp/hpa-545-files.txt
 ```
 
-- [ ] **Step 2: Classify every match**
-
-Use exactly:
+- [ ] Create `/tmp/hpa-545-classified.tsv` with one line per path:
 
 ```text
-DELETE
-MIGRATE_TO_WALLET
-KEEP_NON_SETTLEMENT
-HISTORICAL_DOC_ONLY
+<path><TAB>DELETE
+<path><TAB>MIGRATE_TO_WALLET
+<path><TAB>KEEP_NON_SETTLEMENT
+<path><TAB>HISTORICAL_ONLY
 ```
 
-No runtime, test, current guidance, migration, or E2E/bootstrap match may remain unclassified.
+- [ ] Verify no path was missed or invented:
 
-- [ ] **Step 3: Explicitly verify the known deletion set exists**
+```bash
+cut -f1 /tmp/hpa-545-classified.tsv | sort -u > /tmp/hpa-545-classified-files.txt
+diff -u /tmp/hpa-545-files.txt /tmp/hpa-545-classified-files.txt
+```
+
+Expected: no diff. Do not begin Task 1 until the sets are identical.
+
+### Step 2: explicitly check known high-risk omissions
+
+- [ ] Verify each currently present path has a classification:
 
 ```bash
 for path in \
-  src/pages/api/chips/update.ts \
-  src/lib/chip-sync-batch-sql.ts \
-  src/lib/chips-update-api.test.ts \
-  src/lib/chips-update.test.ts \
-  src/lib/blackjack/balance-sync-stats.ts \
-  src/lib/blackjack/balance-sync-stats.test.ts \
-  src/lib/blackjack/balanceSyncStats.test.ts \
+  src/pages/games/baccarat.astro \
+  src/lib/baccarat/baccaratClient.ts \
+  src/lib/baccarat/index.ts \
   src/lib/baccarat/balance-sync-state.ts \
   src/lib/baccarat/balance-sync-state.test.ts \
-  src/lib/slots/chip-sync-coordinator.ts \
-  src/lib/slots/chip-sync-coordinator.test.ts \
-  src/lib/slots/balance-sync-state.ts \
-  src/lib/slots/balance-sync-state.test.ts \
+  src/lib/keno/index.ts \
   src/lib/keno/outbox.ts \
-  src/lib/keno/outbox.test.ts \
-  src/lib/craps/balanceSync.ts \
-  src/lib/craps/balanceSync.test.ts \
-  src/lib/craps/syncLimits.ts \
-  src/lib/roulette/spin-batch-sql.ts \
-  src/lib/roulette/spin-cascade.integration.test.ts; do
-  test -e "$path" || { echo "missing expected path: $path"; exit 1; }
+  src/lib/roulette/spin-error-classification.ts \
+  src/lib/roulette/spin-error-classification.test.ts \
+  src/lib/roulette/constants.ts \
+  src/lib/blackjack/constants.ts \
+  scripts/setup-local-db.ts \
+  e2e/global-setup.ts \
+  e2e/isolated-page.ts \
+  e2e/public-single-player-games.spec.ts \
+  e2e/slots.spec.ts \
+  e2e/roulette.spec.ts \
+  e2e/craps.spec.ts \
+  e2e/ranked-blackjack.spec.ts \
+  e2e/authed-user-preservation.spec.ts \
+  e2e/blackjack-split.spec.ts; do
+  test ! -e "$path" || grep -Fq "$path" /tmp/hpa-545-classified.tsv || {
+    echo "unclassified high-risk path: $path"; exit 1;
+  }
 done
 ```
 
-- [ ] **Step 4: Pin the current rule and integration baselines**
+### Step 3: pin current behavior
+
+- [ ] Run:
 
 ```bash
 bun test \
@@ -106,7 +118,7 @@ bun test \
   src/lib/roulette/rouletteClient.test.ts
 ```
 
-Record any pre-existing failures. Do not change game-rule expected values merely to make the settlement refactor pass.
+Record only pre-existing failures. Existing game-rule expected values are authoritative.
 
 ---
 
@@ -114,64 +126,26 @@ Record any pre-existing failures. Do not change game-rule expected values merely
 
 | Action | Path | Responsibility |
 |---|---|---|
-| Create | `src/lib/wallet/types.ts` | Small settlement command/result contract |
-| Create | `src/lib/wallet/repository.ts` | Concrete D1 receipt/balance/stats/mission batch |
-| Create | `src/lib/wallet/repository.test.ts` | D1 idempotency/atomicity/concurrency coverage |
-| Create | `src/lib/wallet/settle.ts` | Validation, duplicate lookup, bounded in-request retry, fresh achievement resolution |
-| Create | `src/lib/wallet/settle.test.ts` | Application-service contract coverage |
-| Create | `src/lib/wallet/client.ts` | Single `fetchJsonWithTimeout` POST helper; no retry policy |
-| Create | `src/lib/wallet/client.test.ts` | Request/result/timeout/error contract coverage |
-| Create | `src/lib/wallet/index.ts` | Browser-safe public exports |
-| Create | `src/pages/api/wallet/settle.ts` | Thin authenticated HTTP adapter |
-| Create | `src/pages/api/wallet/settle.test.ts` | Auth/JSON/status mapping coverage |
-| Modify | `src/db/schema.ts` | Add `walletSettlement`; later remove old receipt/roulette tables |
-| Modify | `src/lib/missions/progress.ts` | Gate atomic mission writes on `{ settlementId, attemptId }` |
-| Modify | `src/lib/missions/progress.test.ts` | Wallet receipt gate and ungated-call coverage |
-| Create | `drizzle/0016_wallet_settlement.sql` | Breaking receipt transition; no backfill |
-| Delete | `src/pages/api/chips/update.ts` | Obsolete generic chip-sync endpoint |
-| Delete | `src/lib/chip-sync-batch-sql.ts` | Obsolete old receipt/stats cascade helper |
-| Delete | `src/lib/chips-update-api.test.ts` | Replaced by wallet route/repository tests |
-| Delete | `src/lib/chips-update.test.ts` | Old endpoint helper tests |
-| Modify | `src/lib/blackjack/blackjackClient.ts` | One settlement per completed round |
-| Delete | `src/lib/blackjack/balance-sync-stats.ts` | Pending-stat aggregation |
-| Delete | `src/lib/blackjack/balance-sync-stats.test.ts` | Old pending-stat tests |
-| Delete | `src/lib/blackjack/balanceSyncStats.test.ts` | Duplicate legacy pending-stat tests |
-| Modify | `src/lib/blackjack/blackjackClient.test.ts` | One-command/manual-retry/block-next-round coverage |
-| Modify | `src/lib/baccarat/baccaratClient.ts` | One settlement per completed hand |
-| Create | `src/lib/baccarat/baccaratClient.test.ts` | One-command/manual-retry/block-next-hand coverage |
-| Delete | `src/lib/baccarat/balance-sync-state.ts` | Baccarat retry/pending state |
-| Delete | `src/lib/baccarat/balance-sync-state.test.ts` | Obsolete helper tests |
-| Modify | `src/lib/poker/PokerGame.ts` | Replace direct old endpoint transport with wallet client |
-| Modify | `src/lib/poker/PokerGame.test.ts` | Completed-hand settlement tests |
-| Modify | `src/lib/slots/slotsClient.ts` | One settlement per spin |
-| Delete | `src/lib/slots/chip-sync-coordinator.ts` | Batching/retry coordinator |
-| Delete | `src/lib/slots/chip-sync-coordinator.test.ts` | Coordinator-specific tests |
-| Delete | `src/lib/slots/balance-sync-state.ts` | Obsolete balance-reconciliation state |
-| Delete | `src/lib/slots/balance-sync-state.test.ts` | Obsolete state tests |
-| Modify | existing Slots client tests | One-command/manual-retry/block-next-spin coverage |
-| Modify | `src/lib/keno/kenoClient.ts` | One settlement per draw |
-| Delete | `src/lib/keno/outbox.ts` | Persisted/cross-tab outbox |
-| Delete | `src/lib/keno/outbox.test.ts` | Outbox-specific tests |
-| Trim/delete | `src/lib/keno/review-regressions.test.ts` | Keep only non-outbox gameplay regressions |
-| Create | `src/lib/craps/settlement.ts` | Pure resolved-roll command and available-balance helpers |
-| Create | `src/lib/craps/settlement.test.ts` | Pure Craps settlement mapping/reconciliation tests |
-| Modify | `src/pages/games/craps.astro` | Thin caller: settle resolved rolls only |
-| Delete | `src/lib/craps/balanceSync.ts` | Roll batching/rebase helper |
-| Delete | `src/lib/craps/balanceSync.test.ts` | Batch-specific tests |
-| Delete | `src/lib/craps/syncLimits.ts` | Caps used only by old sync machinery |
-| Modify | `src/pages/api/roulette/spin.ts` | Preserve RNG/bet validation; delegate account mutation |
-| Modify | `src/lib/roulette/types.ts` | Remove pending settlement recovery fields |
-| Modify | `src/lib/roulette/RouletteGame.ts` | Remove pending-sync persisted-state contract |
-| Modify | `src/lib/roulette/rouletteClient.ts` | Remove persisted spin resubmission/replay flow |
-| Modify | `src/lib/roulette/rouletteClient.test.ts` | Assert reset/no historical replay on duplicate/lost response |
-| Modify/delete | `src/lib/roulette/rouletteClient.integration.test.ts` | Keep only behavior not tied to `roulette_round` recovery |
-| Delete | `src/lib/roulette/spin-batch-sql.ts` | Obsolete duplicate settlement SQL |
-| Delete | `src/lib/roulette/spin-cascade.integration.test.ts` | Old cascade test |
-| Modify | `src/lib/roulette/spin-api.test.ts` | Wallet delegation/idempotency coverage |
-| Modify | `src/server/cleanup.ts` and tests | Retain only wallet receipt cleanup needed by active schema |
-| Modify | `e2e/global-setup.ts`, `e2e/isolated-page.ts` | Replace old endpoint fixture/bootstrap calls |
-| Modify | `e2e/ranked-blackjack.spec.ts`, `e2e/authed-user-preservation.spec.ts`, `e2e/blackjack-split.spec.ts` | Replace old endpoint assumptions |
-| Modify | current guidance such as `CLAUDE.md` | Point active architecture to wallet API/module |
+| Create | `src/lib/wallet/types.ts` | Settlement command/result |
+| Create | `src/lib/wallet/settlement-id.ts` | ID regex + generation |
+| Create | `src/lib/wallet/repository.ts` | Concrete D1 batch + rows-affected normalization |
+| Create | `src/lib/wallet/settle.ts` | Validation/idempotency/bounded conflict retry/achievements |
+| Create | `src/lib/wallet/client.ts` | One timed POST, no retry |
+| Create | `src/lib/wallet/settlement-gate.ts` | One in-memory pending/block/manual-retry state machine |
+| Create | wallet tests beside each module | Shared contract/state tests |
+| Create | `src/pages/api/wallet/settle.ts` + test | Thin authenticated adapter |
+| Modify | `src/db/schema.ts` | Add wallet receipt, later remove old receipt/Roulette table |
+| Modify | `src/lib/missions/progress.ts` + test | Temporary fixed dual receipt gate, then wallet-only |
+| Create | `src/lib/baccarat/settlement.ts` + test | Pure live-page Baccarat command builder |
+| Delete | `src/lib/baccarat/baccaratClient.ts` | Dead runtime client |
+| Modify | `src/lib/baccarat/index.ts` | Remove dead client export |
+| Modify | `src/pages/games/baccarat.astro` | Live Baccarat settlement migration |
+| Create | `src/lib/craps/settlement.ts` + test | Resolved-roll command + available-balance math |
+| Modify | all other current game callers | Use wallet command + shared gate |
+| Modify | Roulette route/client/types/tests | Server wallet delegation + delete replay recovery |
+| Create | destructive wallet migration | No backfill |
+| Delete | old endpoint/cascade/outbox/coordinator/rebase helpers/tests | Remove old architecture |
+| Modify | generated E2E/bootstrap/setup/current-guidance inventory | Remove old contract assumptions |
 
 Design reference: `docs/superpowers/specs/2026-08-09-wallet-settlement-design.md`.
 
@@ -181,35 +155,41 @@ Design reference: `docs/superpowers/specs/2026-08-09-wallet-settlement-design.md
 
 | Risk | Required control |
 |---|---|
-| Two same-ID requests race and a loser sees the winner's receipt | Server-only `attemptId` gates stats/missions; concurrency test proves one application |
-| New stats SQL silently changes biggest-win behavior | Port existing positive-candidate CASE semantics; regression proves push cannot erase prior win |
-| Mission event loses required information | Derive all six `MissionGameEvent` fields, including `delta`; keep `roundsWon` win-count regression |
-| Browser request hangs and permanently blocks next play | Reuse `fetchJsonWithTimeout` with fixed 15s timeout; no automatic retry |
-| Craps page remains a second settlement implementation | Keep only pure Craps mapping/reconcile helpers in `src/lib/craps/settlement.ts`; page calls wallet client |
-| Roulette table is deleted but browser still restores `pendingSyncId` | Remove types, restore/resubmit code, and recovery-only tests in the same task |
-| E2E/bootstrap continues calling `/api/chips/update` | Expanded preflight/post-delete grep includes `e2e/global-setup.ts`, `e2e/isolated-page.ts`, ranked/authed/split specs |
-| Destructive cleanup hides game-rule regression | Preserve pure game rules; run affected unit/E2E flows before and after deletion |
-| Refactor simply relocates old complexity | Final complexity grep forbids old retry/outbox/rebase concepts in active casual wallet/game code |
+| Same-ID loser sees winner receipt and applies effects | `attemptId` gate + concurrency test |
+| Zero-delta duplicate matches unchanged balance | `NOT EXISTS(wallet_settlement)` in guarded update |
+| Task 1 disables all existing mission progress | temporary fixed `ReceiptGate` union; old branch stays until old endpoint deletion |
+| Plan edits dead Baccarat code | migrate `baccarat.astro`; delete dead `BaccaratClient` + barrel export |
+| Six games reimplement retry/block policy | one `createSettlementGate` tested once |
+| Retry mints a different ID | one `newSettlementId(game)` helper; gate retains exact command |
+| Browser request hangs | `fetchJsonWithTimeout`, fixed 15 seconds, no auto retry |
+| New global client settlement can write enormous values | fixed ±1,000,000 sanity bound; no per-game table |
+| Biggest win resets on push | preserve positive-only CASE semantics |
+| Roulette unexpectedly changes mission pacing | explicitly intentional + route/integration test |
+| Roulette table removed but pending-spin resurrection remains | remove types/client/error branches/tests atomically |
+| Keno outbox deleted but barrel still exports it | modify `src/lib/keno/index.ts` in same task |
+| Old endpoint references survive in fixtures/setup | exact generated file classification + final set comparison |
+| Ranked cross-tab test loses its semantic casual mutation | replace with `/api/wallet/settle`, not DB bootstrap |
+| Complexity gate becomes too noisy and skipped | scan wallet + changed files only |
 
 ---
 
-### Task 1: Build the atomic wallet receipt and repository
+# Task 1: Add wallet identity, receipt repository, and migration-safe mission gate
 
 **Files:**
 
 - Create: `src/lib/wallet/types.ts`
+- Create: `src/lib/wallet/settlement-id.ts`
 - Create: `src/lib/wallet/repository.ts`
 - Create: `src/lib/wallet/repository.test.ts`
+- Create: `src/lib/wallet/settlement-id.test.ts`
 - Modify: `src/db/schema.ts`
 - Modify: `src/lib/missions/progress.ts`
 - Modify: `src/lib/missions/progress.test.ts`
+- Modify: `src/pages/api/chips/update.ts` only to keep its old mission gate working during migration
 
-**Interfaces:**
+**Produces:**
 
 ```ts
-// src/lib/wallet/types.ts
-import type { GameType } from '../game-stats/types';
-
 export interface RoundStats {
   rounds: number;
   wins: number;
@@ -229,42 +209,31 @@ export interface SettleRoundResult {
   duplicate: boolean;
   newAchievements?: Array<{ id: string; name: string; icon: string }>;
 }
+
+export const SETTLEMENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+export function newSettlementId(game: GameType): string;
+
+export type ReceiptGate =
+  | { kind: 'chip-sync'; syncId: string }
+  | { kind: 'wallet'; settlementId: string; attemptId: string };
 ```
+
+### Step 1: write ID tests
+
+- [ ] Add tests:
 
 ```ts
-// src/lib/wallet/repository.ts
-export interface WalletSettlementReceipt {
-  balance: number;
-  attemptId: string;
-}
-
-export async function findWalletSettlement(
-  d1: D1Database,
-  userId: string,
-  settlementId: string,
-): Promise<WalletSettlementReceipt | null>;
-
-export async function readWalletBalance(
-  d1: D1Database,
-  userId: string,
-): Promise<number | null>;
-
-export async function applyWalletSettlementBatch(
-  d1: D1Database,
-  args: {
-    userId: string;
-    attemptId: string;
-    expectedBalance: number;
-    nextBalance: number;
-    command: SettleRoundCommand;
-    nowSeconds: number;
-  },
-): Promise<boolean>;
+expect(SETTLEMENT_ID_RE.test('blackjack-123_ABC')).toBe(true);
+expect(SETTLEMENT_ID_RE.test('bad id')).toBe(false);
+expect(SETTLEMENT_ID_RE.test('x'.repeat(129))).toBe(false);
+expect(newSettlementId('blackjack')).toMatch(/^blackjack-[A-Za-z0-9_-]+$/);
 ```
 
-- [ ] **Step 1: Add the contract and `walletSettlement` table**
+Generate with `crypto.randomUUID()`; no alternate ID policy or game-specific generator.
 
-Add the table directly to `src/db/schema.ts` beside the current settlement receipt:
+### Step 2: add the minimal receipt table
+
+- [ ] Add directly to `src/db/schema.ts`:
 
 ```ts
 export const walletSettlement = sqliteTable(
@@ -285,37 +254,61 @@ export const walletSettlement = sqliteTable(
 );
 ```
 
-Do not create `src/lib/wallet/schema.ts`. Do not remove `chipSyncReceipt` yet; Task 7 removes old schema only after every runtime caller is migrated.
+Do not remove `chipSyncReceipt` or `rouletteRound` yet.
 
-- [ ] **Step 2: Write failing repository tests**
+### Step 3: keep both mission receipt gates valid temporarily
 
-Start with:
+- [ ] Replace the old string-only gate input with the fixed union above.
+
+Implement a code-owned gate builder equivalent to:
 
 ```ts
-const command: SettleRoundCommand = {
-  settlementId: 'round-1',
-  game: 'blackjack',
-  delta: 100,
-  stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 100 },
-};
-
-expect(await readWalletBalance(d1, 'u1')).toBe(1_000);
-expect(await findWalletSettlement(d1, 'u1', 'round-1')).toBeNull();
+function buildReceiptGateSql(gate: ReceiptGate): {
+  sql: string;
+  values: Array<string>;
+} {
+  if (gate.kind === 'chip-sync') {
+    return {
+      sql: 'EXISTS (SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ?)',
+      values: [gate.syncId],
+    };
+  }
+  return {
+    sql: 'EXISTS (SELECT 1 FROM wallet_settlement WHERE userId = ? AND settlementId = ? AND attemptId = ?)',
+    values: [gate.settlementId, gate.attemptId],
+  };
+}
 ```
 
-Add fresh win, loss, push, stale expected-balance, and duplicate cases.
+The existing SQL builder already binds `userId`; append the gate-specific values in the correct order. Do not accept arbitrary table/column strings.
 
-- [ ] **Step 3: Run the test and verify failure**
+- [ ] Update the old `/api/chips/update` gate-map construction to pass:
 
-```bash
-bun test src/lib/wallet/repository.test.ts
+```ts
+{ kind: 'chip-sync', syncId }
 ```
 
-Expected: FAIL because the repository does not exist yet.
+- [ ] Add tests proving **both** gate kinds update missions when their matching receipt exists and no-op when it does not.
 
-- [ ] **Step 4: Implement the guarded balance update and receipt**
+This temporary branch is deleted in Task 8.
 
-The first two batch statements use:
+### Step 4: add repository tests first
+
+- [ ] Cover fresh win/loss/push, stale expected balance, and duplicate lookup.
+
+- [ ] Add rows-affected normalization regression:
+
+```ts
+expect(getRowsAffected({ meta: { changes: 1 }, rowsAffected: 0 })).toBe(1);
+expect(getRowsAffected({ rowsAffected: 1 })).toBe(1);
+expect(getRowsAffected(null)).toBe(0);
+```
+
+`getRowsAffected` lives in `repository.ts`; do not lose this current Miniflare/production compatibility when `chips/update.ts` is deleted.
+
+### Step 5: implement guarded update + receipt
+
+- [ ] First statement:
 
 ```sql
 UPDATE user
@@ -328,7 +321,7 @@ WHERE id = ?
   );
 ```
 
-then:
+- [ ] Receipt insert:
 
 ```sql
 INSERT INTO wallet_settlement (userId, settlementId, attemptId, balance, createdAt)
@@ -336,29 +329,13 @@ SELECT ?, ?, ?, ?, ?
 WHERE changes() = 1;
 ```
 
-Return `true` only when the guarded `user` update changed one row.
+`NOT EXISTS` must remain even for a zero delta.
 
-- [ ] **Step 5: Port the current stats accumulation semantics under the attempt gate**
+### Step 6: port stats semantics under the attempt gate
 
-Gate the upsert on:
+- [ ] Gate on exact `(userId, settlementId, attemptId)`.
 
-```sql
-EXISTS (
-  SELECT 1 FROM wallet_settlement
-  WHERE userId = ? AND settlementId = ? AND attemptId = ?
-)
-```
-
-Use the current accumulation behavior:
-
-```text
-totalWins   += stats.wins
-totalLosses += stats.losses
-handsPlayed += stats.rounds
-netProfit   += command.delta
-```
-
-For `biggestWin`, port the intent of `CHIP_SYNC_STATS_UPSERT_SQL`:
+- [ ] Accumulate wins/losses/hands/net profit. Preserve:
 
 ```sql
 biggestWin = CASE
@@ -368,33 +345,11 @@ biggestWin = CASE
 END
 ```
 
-Add a regression: after a stored biggest win of 250, a push with `biggestWin: 0` leaves 250.
+- [ ] Regression: existing 250 biggest win + push command with candidate 0 remains 250.
 
-- [ ] **Step 6: Mechanically change the mission gate**
+### Step 7: build exact mission event
 
-In `src/lib/missions/progress.ts`, replace the receipt gate shape with:
-
-```ts
-export interface WalletSettlementGate {
-  settlementId: string;
-  attemptId: string;
-}
-```
-
-Change the gated `EXISTS` fragment to:
-
-```sql
-WHERE EXISTS (
-  SELECT 1 FROM wallet_settlement
-  WHERE userId = ? AND settlementId = ? AND attemptId = ?
-)
-```
-
-Keep ungated `applyMissionProgressBatch` behavior unchanged.
-
-- [ ] **Step 7: Build the exact mission event in the repository**
-
-Use all fields required by the existing type:
+- [ ] Use:
 
 ```ts
 const missionEvent: MissionGameEvent = {
@@ -407,41 +362,36 @@ const missionEvent: MissionGameEvent = {
 };
 ```
 
-Call `prepareMissionProgressStatements` before `d1.batch`, then append its attempt-gated statements after the receipt insert/stats upsert.
+Pass `{ kind: 'wallet', settlementId, attemptId }` to the prepared statements.
 
-Add a mission regression where `delta < 0` but `winsIncrement > 0`; an applicable `roundsWon` mission still increments by the win count. This protects mixed-outcome Craps rolls.
+- [ ] Regression: negative net delta with `winsIncrement > 0` still increments a matching `roundsWon` mission by the win count.
 
-- [ ] **Step 8: Add concurrent duplicate coverage**
+### Step 8: run focused tests
 
-Run two attempts with the same `(userId, settlementId)` and distinct server-generated attempt IDs. Assert:
-
-```text
-one receipt row
-one balance mutation
-one stats increment
-one mission increment
-```
-
-- [ ] **Step 9: Run focused tests**
+- [ ] Run:
 
 ```bash
-bun test src/lib/wallet/repository.test.ts src/lib/missions/progress.test.ts
+bun test \
+  src/lib/wallet/repository.test.ts \
+  src/lib/wallet/settlement-id.test.ts \
+  src/lib/missions/progress.test.ts \
+  src/lib/chips-update-api.test.ts
+bun run build
 ```
 
-Expected: PASS.
+Expected: PASS, including legacy mission progress through `/api/chips/update`.
 
-- [ ] **Step 10: Commit**
+### Step 9: commit
+
+- [ ] Commit only Task 1 files:
 
 ```bash
-git add src/lib/wallet/types.ts src/lib/wallet/repository.ts \
-  src/lib/wallet/repository.test.ts src/db/schema.ts \
-  src/lib/missions/progress.ts src/lib/missions/progress.test.ts
-git commit -m "feat(wallet): add atomic settlement repository"
+git commit -m "feat(wallet): add settlement repository and identity"
 ```
 
 ---
 
-### Task 2: Add the small settlement use case, route, and timed browser client
+# Task 2: Add use case, timed client, and shared in-memory settlement gate
 
 **Files:**
 
@@ -449,72 +399,58 @@ git commit -m "feat(wallet): add atomic settlement repository"
 - Create: `src/lib/wallet/settle.test.ts`
 - Create: `src/lib/wallet/client.ts`
 - Create: `src/lib/wallet/client.test.ts`
+- Create: `src/lib/wallet/settlement-gate.ts`
+- Create: `src/lib/wallet/settlement-gate.test.ts`
 - Create: `src/lib/wallet/index.ts`
 - Create: `src/pages/api/wallet/settle.ts`
 - Create: `src/pages/api/wallet/settle.test.ts`
 
-**Interfaces:**
+**Produces:**
 
 ```ts
+export const MAX_ABSOLUTE_SETTLEMENT_DELTA = 1_000_000;
+export const WALLET_SETTLEMENT_TIMEOUT_MS = 15_000;
+
 export async function settleWalletRound(
   d1: D1Database,
   userId: string,
   command: SettleRoundCommand,
 ): Promise<SettleRoundResult>;
-```
-
-```ts
-export const WALLET_SETTLEMENT_TIMEOUT_MS = 15_000;
-
-export class WalletSettlementError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'WalletSettlementError';
-  }
-}
 
 export async function submitWalletSettlement(
   command: SettleRoundCommand,
 ): Promise<SettleRoundResult>;
+
+export interface SettlementGate {
+  readonly pending: SettleRoundCommand | null;
+  readonly isBlocked: boolean;
+  settle(command: SettleRoundCommand): Promise<SettleRoundResult>;
+  retry(): Promise<SettleRoundResult | null>;
+  reset(): void;
+}
+
+export function createSettlementGate(args?: {
+  submit?: typeof submitWalletSettlement;
+}): SettlementGate;
 ```
 
-- [ ] **Step 1: Write validation tests**
+### Step 1: validation tests
 
-Cover:
-
-```text
-settlementId empty or >128 -> reject
-unknown game -> reject
-unsafe integer -> reject
-rounds < 1 -> reject
-wins/losses negative -> reject
-wins + losses > rounds -> reject
-biggestWin < 0 -> reject
-resulting balance < 0 -> reject
-```
-
-Do not reintroduce per-game win/loss caps.
-
-- [ ] **Step 2: Write duplicate and optimistic-conflict tests**
-
-Assert:
+- [ ] Cover invalid ID chars/length, unknown game, unsafe ints, `rounds < 1`, negative win/loss/biggestWin, `wins + losses > rounds`, insufficient balance, and global delta bound:
 
 ```ts
-const first = await settleWalletRound(d1, 'u1', command);
-const duplicate = await settleWalletRound(d1, 'u1', command);
-expect(first).toMatchObject({ balance: 1100, duplicate: false });
-expect(duplicate).toEqual({ balance: 1100, duplicate: true });
+expect(() => validate({ ...command, delta: 1_000_001 })).toThrow();
+expect(() => validate({ ...command, delta: -1_000_001 })).toThrow();
+expect(() => validate({ ...command, delta: 1_000_000 })).not.toThrow();
 ```
 
-Also simulate one unrelated balance write between read and batch: the use case rereads once and succeeds on its second in-request attempt. A second unrelated conflict returns one ordinary conflict error; there is no loop.
+Do not restore per-game caps or rate limits.
 
-- [ ] **Step 3: Implement validation and bounded settlement**
+### Step 2: implement bounded server settlement
 
-Pseudo-flow must remain exactly:
+- [ ] Keep exactly two optimistic attempts:
 
 ```ts
-validate(command);
-
 for (let attempt = 0; attempt < 2; attempt++) {
   const receipt = await findWalletSettlement(d1, userId, command.settlementId);
   if (receipt) return { balance: receipt.balance, duplicate: true };
@@ -523,82 +459,56 @@ for (let attempt = 0; attempt < 2; attempt++) {
   if (balance === null) throw new WalletSettlementDomainError('USER_NOT_FOUND');
 
   const nextBalance = balance + command.delta;
-  if (!Number.isSafeInteger(nextBalance) || nextBalance < 0) {
-    throw new WalletSettlementDomainError('INSUFFICIENT_BALANCE');
-  }
+  validateNextBalance(nextBalance);
 
   const attemptId = crypto.randomUUID();
-  if (await applyWalletSettlementBatch(d1, {
+  const applied = await applyWalletSettlementBatch(d1, {
     userId,
     attemptId,
     expectedBalance: balance,
     nextBalance,
     command,
     nowSeconds: Math.trunc(Date.now() / 1000),
-  })) {
-    // fresh path; achievements below
-    break;
+  });
+
+  if (applied) {
+    return await buildFreshResult(d1, userId, command, nextBalance);
   }
 
   const racedReceipt = await findWalletSettlement(d1, userId, command.settlementId);
   if (racedReceipt) return { balance: racedReceipt.balance, duplicate: true };
 }
+
+throw new WalletSettlementDomainError('SETTLEMENT_CONFLICT');
 ```
 
-After two failed unrelated optimistic attempts, throw `SETTLEMENT_CONFLICT`.
+### Step 3: fresh achievements only
 
-- [ ] **Step 4: Reuse existing achievement service only on the fresh path**
-
-After the atomic batch succeeds:
+- [ ] On the fresh path:
 
 ```ts
-const db = createDb(d1);
-const earned = await checkAndGrantAchievements(db, userId, nextBalance, {
+const earned = await checkAndGrantAchievements(createDb(d1), userId, nextBalance, {
   recentWinAmount: command.stats.biggestWin > 0 ? command.stats.biggestWin : undefined,
   gameType: command.game,
 });
 ```
 
-Map the returned definitions to `{ id, name, icon }`. Do not persist this response on the receipt. A duplicate returns only `{ balance, duplicate: true }`.
+Do not pass/store `overallRank`; existing achievement logic calculates rank when absent.
 
-- [ ] **Step 5: Implement the route as a thin adapter**
+### Step 4: thin route
 
-`src/pages/api/wallet/settle.ts` does only:
+- [ ] Route does only auth, DB presence, JSON parse, use-case call, and status mapping. No game branch/rate limit/retry SQL.
 
-```text
-require locals.user
-require locals.runtime.env.DB
-parse request JSON
-call settleWalletRound(DB, locals.user.id, body)
-map domain validation -> 400
-map insufficient balance -> 409
-map bounded conflict -> 409
-map unexpected error -> 500
-```
+### Step 5: timed browser client
 
-Do not put game-specific validation, retries, rate limits, stats SQL, or achievement logic in the route.
+- [ ] Test exactly one `fetchJsonWithTimeout` call and no retries on timeout/non-2xx.
 
-- [ ] **Step 6: Write the browser-client tests first**
-
-Mock `fetchJsonWithTimeout` and assert:
-
-```text
-POST /api/wallet/settle
-Content-Type application/json
-body is exactly the SettleRoundCommand
-one helper call only
-success payload returned unchanged
-timeout/AbortError -> WalletSettlementError
-non-2xx -> WalletSettlementError
-no retry after timeout or HTTP error
-```
-
-- [ ] **Step 7: Implement `submitWalletSettlement` using the existing timeout helper**
-
-Use:
+- [ ] Implement:
 
 ```ts
-const { response, data } = await fetchJsonWithTimeout<SettleRoundResult | { message?: string }>(
+const { response, data } = await fetchJsonWithTimeout<
+  SettleRoundResult | { message?: string }
+>(
   '/api/wallet/settle',
   {
     method: 'POST',
@@ -609,31 +519,85 @@ const { response, data } = await fetchJsonWithTimeout<SettleRoundResult | { mess
 );
 ```
 
-If `response.ok` is false, throw one `WalletSettlementError`. Do not catch and retry.
+### Step 6: shared settlement-gate tests
 
-- [ ] **Step 8: Keep `index.ts` browser-safe**
+- [ ] Test once:
 
-Export `types` and browser `client` only. Do not export server repository/settle modules from the browser barrel.
+```text
+settle: pending becomes command before submit
+settle success: pending clears, isBlocked false
+settle failure: exact command remains, isBlocked true
+retry: submits exact same object/ID and clears only on success
+reset: clears pending without submitting
+second settle while pending/in-flight: rejected
+no timer, persistence, queue, callbacks, or automatic retry
+```
 
-- [ ] **Step 9: Run focused tests and build**
+### Step 7: implement the gate
+
+- [ ] Minimal shape:
+
+```ts
+export function createSettlementGate({
+  submit = submitWalletSettlement,
+}: {
+  submit?: typeof submitWalletSettlement;
+} = {}): SettlementGate {
+  let pending: SettleRoundCommand | null = null;
+  let inFlight = false;
+
+  const run = async (command: SettleRoundCommand) => {
+    if (inFlight) throw new WalletSettlementError('Settlement already in progress');
+    inFlight = true;
+    pending = command;
+    try {
+      const result = await submit(command);
+      pending = null;
+      return result;
+    } finally {
+      inFlight = false;
+    }
+  };
+
+  return {
+    get pending() { return pending; },
+    get isBlocked() { return pending !== null || inFlight; },
+    settle(command) {
+      if (pending !== null) throw new WalletSettlementError('Settlement pending');
+      return run(command);
+    },
+    retry() {
+      return pending ? run(pending) : Promise.resolve(null);
+    },
+    reset() { pending = null; },
+  };
+}
+```
+
+### Step 8: browser-safe exports
+
+- [ ] `index.ts` exports types, ID helper, client, and settlement gate only. Server repository/use-case are imported directly by server code.
+
+### Step 9: verify
+
+- [ ] Run:
 
 ```bash
 bun test src/lib/wallet src/pages/api/wallet/settle.test.ts
 bun run build
 ```
 
-Expected: PASS.
+### Step 10: commit
 
-- [ ] **Step 10: Commit**
+- [ ] Commit:
 
 ```bash
-git add src/lib/wallet src/pages/api/wallet/settle.ts src/pages/api/wallet/settle.test.ts
-git commit -m "feat(wallet): add settlement use case and client"
+git commit -m "feat(wallet): add settlement use case and client gate"
 ```
 
 ---
 
-### Task 3: Migrate Blackjack, Baccarat, and single-player Poker
+# Task 3: Migrate Blackjack and single-player Poker
 
 **Files:**
 
@@ -642,22 +606,17 @@ git commit -m "feat(wallet): add settlement use case and client"
 - Delete: `src/lib/blackjack/balance-sync-stats.ts`
 - Delete: `src/lib/blackjack/balance-sync-stats.test.ts`
 - Delete: `src/lib/blackjack/balanceSyncStats.test.ts`
-- Modify: `src/lib/baccarat/baccaratClient.ts`
-- Create: `src/lib/baccarat/baccaratClient.test.ts`
-- Delete: `src/lib/baccarat/balance-sync-state.ts`
-- Delete: `src/lib/baccarat/balance-sync-state.test.ts`
+- Modify: `src/lib/blackjack/constants.ts` if it documents old `GAME_LIMITS`
 - Modify: `src/lib/poker/PokerGame.ts`
 - Modify: `src/lib/poker/PokerGame.test.ts`
 
-**Consumes:** `submitWalletSettlement`, `SettleRoundCommand` from Task 2.
+### Step 1: Blackjack command test
 
-- [ ] **Step 1: Add failing Blackjack settlement tests**
-
-For one completed normal hand, assert one command equivalent to:
+- [ ] For a completed round assert one command:
 
 ```ts
 {
-  settlementId: expect.any(String),
+  settlementId: expect.stringMatching(/^blackjack-/),
   game: 'blackjack',
   delta: expectedRoundDelta,
   stats: {
@@ -669,118 +628,165 @@ For one completed normal hand, assert one command equivalent to:
 }
 ```
 
-Add: failed settlement keeps the same command ID for manual retry and disables starting the next authenticated round until success/reset.
+Per-game test does **not** retest retry internals; assert the page/client consults `gate.isBlocked` before a new authenticated round and wires Retry to `gate.retry()`.
 
-- [ ] **Step 2: Replace Blackjack's pending-stat/retry machinery**
+### Step 2: replace Blackjack sync machinery
 
-Delete imports/state for pending stats, follow-up timers, rate-limit handling, current/previous balance rebasing, and old error classification. On round completion:
+- [ ] Build ID with `newSettlementId('blackjack')`, create command once, and call `gate.settle(command)`.
+- [ ] On success adopt `result.balance`.
+- [ ] On failure show retry/reset UI; no custom pending stats/timers/backoff/rebase.
+- [ ] Delete all Blackjack sync-only helper files/tests.
 
-```text
-compute one final command
-call submitWalletSettlement once
-on success adopt result.balance and clear pending command
-on failure store that exact command in memory and show retry/reset state
-```
+### Step 3: Poker command tests
 
-Do not aggregate a later round into the failed command.
+- [ ] Cover human fold-out and showdown final human delta. Build ID with `newSettlementId('poker')` and one-round stats.
+- [ ] Ensure auto-deal does not begin while shared gate is blocked.
 
-- [ ] **Step 3: Delete Blackjack sync-only helpers/tests and run focused tests**
+### Step 4: replace Poker direct old-endpoint transport
 
-```bash
-rm src/lib/blackjack/balance-sync-stats.ts \
-  src/lib/blackjack/balance-sync-stats.test.ts \
-  src/lib/blackjack/balanceSyncStats.test.ts
-bun test src/lib/blackjack
-```
+- [ ] Keep game rules and AI behavior unchanged; only replace settlement transport/state.
 
-Expected: PASS.
+### Step 5: verify
 
-- [ ] **Step 4: Create failing Baccarat client tests**
-
-There is no existing `baccaratClient.test.ts`; create it. Assert one completed hand sends:
-
-```ts
-{
-  settlementId: expect.any(String),
-  game: 'baccarat',
-  delta: expectedDelta,
-  stats: {
-    rounds: 1,
-    wins: expectedDelta > 0 ? 1 : 0,
-    losses: expectedDelta < 0 ? 1 : 0,
-    biggestWin: Math.max(expectedDelta, 0),
-  },
-}
-```
-
-Also assert manual retry reuses the same command and next authenticated hand is blocked while pending.
-
-- [ ] **Step 5: Replace Baccarat pending/retry state and delete its helper**
-
-Remove `balance-sync-state.ts`, exponential follow-up behavior, balance mismatch recovery, and old endpoint transport. Keep game rules/UI behavior outside settlement unchanged.
+- [ ] Run:
 
 ```bash
-rm src/lib/baccarat/balance-sync-state.ts src/lib/baccarat/balance-sync-state.test.ts
-bun test src/lib/baccarat
-```
-
-Expected: PASS.
-
-- [ ] **Step 6: Add Poker settlement assertions before editing `PokerGame`**
-
-Cover both:
-
-```text
-human folds -> one loss command when the hand's human delta is negative
-showdown -> one command based on final human chips - humanChipsBefore
-```
-
-The command uses `rounds: 1`, outcome counts from the sign of the final human delta, and positive human delta as `biggestWin`.
-
-- [ ] **Step 7: Replace Poker's direct old-endpoint fetch**
-
-Keep `PokerGame`'s existing game flow. Replace only settlement transport/state with `submitWalletSettlement`. On failure keep one pending command and do not auto-deal another authenticated hand until success/reset.
-
-- [ ] **Step 8: Run focused tests and build**
-
-```bash
-bun test src/lib/blackjack src/lib/baccarat src/lib/poker/PokerGame.test.ts
+bun test src/lib/blackjack src/lib/poker/PokerGame.test.ts
 bun run build
 ```
 
-Expected: PASS.
+### Step 6: commit
 
-- [ ] **Step 9: Commit**
+- [ ] Commit:
 
 ```bash
-git add src/lib/blackjack src/lib/baccarat src/lib/poker/PokerGame.ts src/lib/poker/PokerGame.test.ts
-git commit -m "refactor(games): use wallet settlement for card games"
+git commit -m "refactor(games): migrate blackjack and poker settlement"
 ```
 
 ---
 
-### Task 4: Migrate Slots and Keno and delete durable/browser sync policies
+# Task 4: Migrate the live Baccarat page and delete dead Baccarat client code
+
+**Files:**
+
+- Create: `src/lib/baccarat/settlement.ts`
+- Create: `src/lib/baccarat/settlement.test.ts`
+- Modify: `src/pages/games/baccarat.astro`
+- Delete: `src/lib/baccarat/balance-sync-state.ts`
+- Delete: `src/lib/baccarat/balance-sync-state.test.ts`
+- Delete: `src/lib/baccarat/baccaratClient.ts`
+- Modify: `src/lib/baccarat/index.ts`
+- Modify: Baccarat E2E spec(s) returned by preflight inventory as needed
+
+**Produces:**
+
+```ts
+export function buildBaccaratSettlementCommand(
+  settlementId: string,
+  roundNetDelta: number,
+): SettleRoundCommand;
+```
+
+### Step 1: pure builder tests
+
+- [ ] Test:
+
+```ts
+expect(buildBaccaratSettlementCommand('baccarat-win', 120)).toEqual({
+  settlementId: 'baccarat-win',
+  game: 'baccarat',
+  delta: 120,
+  stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 120 },
+});
+
+expect(buildBaccaratSettlementCommand('baccarat-loss', -50).stats).toEqual({
+  rounds: 1,
+  wins: 0,
+  losses: 1,
+  biggestWin: 0,
+});
+```
+
+### Step 2: modify the actual live page
+
+- [ ] Delete imports/state for `balance-sync-state`, `pendingStats`, `syncPending`, retry timer, sync guard, follow-up attempts, `lastSyncedBalance`, and inline `/api/chips/update` flow.
+
+- [ ] Create one page-local shared gate:
+
+```ts
+const settlementGate = createSettlementGate();
+```
+
+- [ ] At completed round:
+
+```ts
+const command = buildBaccaratSettlementCommand(
+  newSettlementId('baccarat'),
+  roundNetDelta,
+);
+const result = await settlementGate.settle(command);
+game.setBalance(result.balance);
+```
+
+Wire Retry to `settlementGate.retry()` and block the next authenticated deal while `settlementGate.isBlocked`.
+
+### Step 3: delete dead client code
+
+- [ ] Delete `src/lib/baccarat/baccaratClient.ts`.
+- [ ] Remove these barrel exports:
+
+```ts
+export { BaccaratClient } from './baccaratClient';
+export type { BaccaratClientConfig } from './baccaratClient';
+```
+
+Do not replace them with a new class.
+
+### Step 4: verify
+
+- [ ] Run:
+
+```bash
+bun test src/lib/baccarat
+bun run build
+```
+
+- [ ] Run the existing Baccarat Playwright flow returned by:
+
+```bash
+git grep -lE 'baccarat|/games/baccarat' e2e/*.spec.ts
+```
+
+### Step 5: commit
+
+- [ ] Commit:
+
+```bash
+git commit -m "refactor(baccarat): migrate live settlement path"
+```
+
+---
+
+# Task 5: Migrate Slots and Keno
 
 **Files:**
 
 - Modify: `src/lib/slots/slotsClient.ts`
-- Modify: existing Slots client tests
-- Delete: `src/lib/slots/chip-sync-coordinator.ts`
-- Delete: `src/lib/slots/chip-sync-coordinator.test.ts`
-- Delete: `src/lib/slots/balance-sync-state.ts`
-- Delete: `src/lib/slots/balance-sync-state.test.ts`
+- Delete: `src/lib/slots/chip-sync-coordinator.ts` + test
+- Delete: `src/lib/slots/balance-sync-state.ts` + test
+- Modify: existing Slots client/E2E tests
 - Modify: `src/lib/keno/kenoClient.ts`
-- Delete: `src/lib/keno/outbox.ts`
-- Delete: `src/lib/keno/outbox.test.ts`
-- Modify/delete: `src/lib/keno/review-regressions.test.ts`
+- Modify: `src/lib/keno/index.ts`
+- Delete: `src/lib/keno/outbox.ts` + test
+- Trim/delete: `src/lib/keno/review-regressions.test.ts`
 
-- [ ] **Step 1: Add failing Slots client assertions**
+### Step 1: Slots one-command mapping
 
-One finished spin sends exactly:
+- [ ] One spin uses `newSettlementId('slots')` and sends:
 
 ```ts
 {
-  settlementId: spin.syncId,
+  settlementId,
   game: 'slots',
   delta: spin.netDelta,
   stats: {
@@ -792,75 +798,46 @@ One finished spin sends exactly:
 }
 ```
 
-Assert there is no batching across spins, no pagehide flush, and a failed command blocks the next authenticated spin until retry/reset.
+- [ ] Replace coordinator with shared gate. Remove batching/pagehide flush/custom retry/rebase.
 
-- [ ] **Step 2: Replace Slots coordinator usage and delete sync-only files**
+### Step 2: Keno one-command mapping
 
-Remove `ChipSyncCoordinator`, timer/backoff dependencies, coalescing state, unload beacon, and balance-rebase state.
+- [ ] One draw uses one generated wallet ID; no outbox/tab/heartbeat/orphan/drain state.
+- [ ] Replace sync-paused recovery UI whose only purpose is durable settlement with shared manual retry/reset state.
+- [ ] Remove Keno outbox export from `src/lib/keno/index.ts` in the same commit that deletes the file.
 
-```bash
-rm src/lib/slots/chip-sync-coordinator.ts \
-  src/lib/slots/chip-sync-coordinator.test.ts \
-  src/lib/slots/balance-sync-state.ts \
-  src/lib/slots/balance-sync-state.test.ts
-bun test src/lib/slots
-```
+### Step 3: verify
 
-Expected: PASS.
-
-- [ ] **Step 3: Add failing Keno client assertions**
-
-One completed draw sends one command using the draw's stable sync ID. Assert:
-
-```text
-no localStorage outbox key
-no tab-id/heartbeat key
-no orphan scan/drain
-failed command retained only in memory
-next authenticated draw blocked until retry/reset
-```
-
-- [ ] **Step 4: Replace Keno outbox usage and delete outbox files**
-
-Delete `KenoSyncOutbox`, `getTabId`, heartbeat/orphan recovery, persisted drain state, sync-paused recovery UI whose only purpose was durable settlement recovery, and old endpoint error classification.
-
-```bash
-rm src/lib/keno/outbox.ts src/lib/keno/outbox.test.ts
-```
-
-Trim `review-regressions.test.ts` to gameplay regressions that still exist; delete tests whose subject is the removed outbox/rebase contract.
-
-- [ ] **Step 5: Run focused tests and build**
+- [ ] Run:
 
 ```bash
 bun test src/lib/slots src/lib/keno
+bunx playwright test e2e/slots.spec.ts e2e/keno.spec.ts
 bun run build
 ```
 
-Expected: PASS.
+### Step 4: commit
 
-- [ ] **Step 6: Commit**
+- [ ] Commit:
 
 ```bash
-git add src/lib/slots src/lib/keno
 git commit -m "refactor(games): simplify slots and keno settlement"
 ```
 
 ---
 
-### Task 5: Make Craps resolved-roll settlement explicit and testable
+# Task 6: Make Craps resolved-roll settlement explicit and testable
 
 **Files:**
 
 - Create: `src/lib/craps/settlement.ts`
 - Create: `src/lib/craps/settlement.test.ts`
 - Modify: `src/pages/games/craps.astro`
-- Delete: `src/lib/craps/balanceSync.ts`
-- Delete: `src/lib/craps/balanceSync.test.ts`
+- Delete: `src/lib/craps/balanceSync.ts` + test
 - Delete: `src/lib/craps/syncLimits.ts`
-- Modify: `e2e/craps.spec.ts` as needed for the new failure UX
+- Modify: `e2e/craps.spec.ts`
 
-**Interfaces:**
+**Produces:**
 
 ```ts
 export function buildCrapsSettlementCommand(
@@ -874,97 +851,65 @@ export function getAvailableCrapsBalance(
 ): number;
 ```
 
-- [ ] **Step 1: Write failing pure mapping tests**
+### Step 1: command tests
 
-Construct a `RollResult` with no `win | lose | push` evaluation and assert:
-
-```ts
-expect(buildCrapsSettlementCommand('roll-1', result)).toBeNull();
-```
-
-Construct a mixed roll with two wins, one loss, and one continuing wager. Assert:
+- [ ] No resolved `win|lose|push` evaluation -> `null`.
+- [ ] Mixed resolved roll:
 
 ```ts
-expect(buildCrapsSettlementCommand('roll-2', result)).toEqual({
-  settlementId: 'roll-2',
+expect(buildCrapsSettlementCommand('craps-1', result)).toEqual({
+  settlementId: 'craps-1',
   game: 'craps',
   delta: result.netDelta,
   stats: {
-    rounds: 3,
-    wins: 2,
-    losses: 1,
-    biggestWin: grossWinningPayout,
+    rounds: resolvedCount,
+    wins: winCount,
+    losses: lossCount,
+    biggestWin: grossPositiveWinningPayout,
   },
 });
 ```
 
-`grossWinningPayout` is the sum of positive payout amounts for winning evaluations, preserving the current mixed-outcome-roll biggest-win intent.
+### Step 2: balance tests
 
-- [ ] **Step 2: Write failing available-balance tests**
+- [ ] Test:
 
 ```ts
-expect(getAvailableCrapsBalance(1_000, 250)).toBe(750);
-expect(getAvailableCrapsBalance(1_000, 0)).toBe(1_000);
+expect(getAvailableCrapsBalance(1000, 250)).toBe(750);
+expect(getAvailableCrapsBalance(1000, 0)).toBe(1000);
 expect(() => getAvailableCrapsBalance(100, 150)).toThrow();
 ```
 
-Use safe non-negative integers only.
+### Step 3: remove unresolved account writes
 
-- [ ] **Step 3: Implement only these pure helpers**
+- [ ] Delete wallet sync from place-bet/add-odds/clear-refund and other unresolved local mutations.
 
-Do not create a Craps settlement service/client abstraction. The helpers map Craps domain data to the shared wallet command and reconcile wallet balance with still-active local bets.
+### Step 4: settle only resolved rolls
 
-- [ ] **Step 4: Remove bet-placement/refund account sync from the page**
-
-Delete `syncBalance()` calls from:
-
-```text
-place bet
-add odds
-clear/refund bets
-other unresolved local bet mutations
-```
-
-Those operations change only the local `CrapsGame` available balance/active-bet state.
-
-- [ ] **Step 5: Settle only after a roll resolves wagers**
-
-After `game.roll()`:
+- [ ] After `game.roll()`:
 
 ```ts
-const command = buildCrapsSettlementCommand(makeSettlementId(), result);
+const command = buildCrapsSettlementCommand(
+  newSettlementId('craps'),
+  result,
+);
 if (command && shouldSyncAccountChips({ isGuestMode })) {
-  const settled = await submitWalletSettlement(command);
-  const available = getAvailableCrapsBalance(settled.balance, game.getTotalAtRisk());
-  game.setBalance(available);
+  const settled = await settlementGate.settle(command);
+  game.setBalance(
+    getAvailableCrapsBalance(settled.balance, game.getTotalAtRisk()),
+  );
 }
 ```
 
-On failure retain `command` in memory, block another authenticated roll, and show retry/reset. Guest mode keeps existing local bankroll behavior.
+Shared gate blocks the next authenticated roll until success/reset.
 
-- [ ] **Step 6: Remove old session state that exists only for settlement recovery**
+### Step 5: delete old sync-only state/files
 
-Delete:
+- [ ] Delete pending roll arrays, sync/retry/rebase state, dropped-roll persistence, `balanceSync.ts`, and `syncLimits.ts`.
 
-```text
-pendingRollSyncs
-isSyncInProgress
-syncPending
-pendingRetryScheduled
-retryDelayMs
-dropped-roll-sync persistence
-server previous-balance/rebase bookkeeping
-```
+### Step 6: verify
 
-An unfinished authenticated table may reset on reload. Do not recreate pending settlement persistence.
-
-- [ ] **Step 7: Delete obsolete Craps sync files**
-
-```bash
-rm src/lib/craps/balanceSync.ts src/lib/craps/balanceSync.test.ts src/lib/craps/syncLimits.ts
-```
-
-- [ ] **Step 8: Run focused tests and E2E**
+- [ ] Run:
 
 ```bash
 bun test src/lib/craps
@@ -972,38 +917,39 @@ bunx playwright test e2e/craps.spec.ts
 bun run build
 ```
 
-Expected: PASS.
+### Step 7: commit
 
-- [ ] **Step 9: Commit**
+- [ ] Commit:
 
 ```bash
-git add src/lib/craps src/pages/games/craps.astro e2e/craps.spec.ts
 git commit -m "refactor(craps): settle resolved rolls only"
 ```
 
 ---
 
-### Task 6: Delegate Roulette wallet writes and delete historical spin recovery
+# Task 7: Delegate Roulette wallet writes and delete historical spin recovery
 
 **Files:**
 
 - Modify: `src/pages/api/roulette/spin.ts`
 - Modify: `src/lib/roulette/spin-api.test.ts`
 - Modify: `src/lib/roulette/types.ts`
-- Modify: `src/lib/roulette/RouletteGame.ts`
-- Modify: `src/lib/roulette/RouletteGame.test.ts`
-- Modify: `src/lib/roulette/rouletteClient.ts`
-- Modify: `src/lib/roulette/rouletteClient.test.ts`
-- Modify/delete: `src/lib/roulette/rouletteClient.integration.test.ts`
+- Modify: `src/lib/roulette/RouletteGame.ts` + tests
+- Modify: `src/lib/roulette/rouletteClient.ts` + tests/integration tests
+- Modify/delete: `src/lib/roulette/spin-error-classification.ts` + test
+- Modify: `src/lib/roulette/constants.ts`
 - Delete: `src/lib/roulette/spin-batch-sql.ts`
 - Delete: `src/lib/roulette/spin-cascade.integration.test.ts`
+- Modify: `e2e/roulette.spec.ts`
 
-- [ ] **Step 1: Pin server-authoritative behavior in route tests**
+### Step 1: preserve server-authoritative route behavior
 
-Keep assertions that the route validates bets and generates/evaluates the winning number on the server. Add a mocked wallet dependency and assert a valid spin delegates:
+- [ ] Route tests keep bet validation and server-generated winning number/evaluation.
+
+- [ ] Fresh spin delegates:
 
 ```ts
-await settleWalletRound(d1, userId, {
+const walletResult = await settleWalletRound(d1, userId, {
   settlementId: syncId,
   game: 'roulette',
   delta: netDelta,
@@ -1016,11 +962,16 @@ await settleWalletRound(d1, userId, {
 });
 ```
 
-Do not move RNG or bet evaluation into the browser.
+### Step 2: explicitly test the intended mission normalization
 
-- [ ] **Step 2: Define the new duplicate response contract**
+- [ ] Fresh Roulette spin advances applicable generic mission progress once.
+- [ ] Duplicate same ID returns the wallet balance and **does not** advance mission progress again.
 
-A duplicate wallet settlement means the monetary effect already happened, but `roulette_round` no longer exists to reconstruct a number. Return a response shape that includes:
+This is an intentional behavior change from current Roulette.
+
+### Step 3: define duplicate response
+
+- [ ] Duplicate monetary settlement has no stored historical number:
 
 ```ts
 {
@@ -1029,57 +980,35 @@ A duplicate wallet settlement means the monetary effect already happened, but `r
 }
 ```
 
-and omits a fabricated `winningNumber`/`results` historical payload. A fresh response retains the normal winning-number/result fields.
+Do not fabricate `winningNumber` or `results`.
 
-- [ ] **Step 3: Replace the route cascade with `settleWalletRound`**
+### Step 4: replace server cascade
 
-Delete direct `user` balance mutation, old receipt SQL, separate stats SQL, rate-limit map, achievement-payload replay, and `roulette_round` writes. Keep only Roulette request validation, RNG, bet evaluation, result construction, and wallet delegation.
+- [ ] Remove direct user balance mutation, separate receipt/stats SQL, rate-limit map, `roulette_round`, achievement replay cache, tombstone replay logic, and old per-route delta caps now covered by the shared global sanity bound.
 
-- [ ] **Step 4: Write failing browser recovery-deletion tests**
+### Step 5: delete browser resurrection
 
-Assert restored/persisted Roulette state no longer contains:
+- [ ] Remove:
 
 ```text
 pendingSyncId
 pendingSyncCreatedAt
-```
-
-Assert reload does not automatically resubmit a previously `spinning` snapshot.
-
-Assert a duplicate response:
-
-```text
-adopts newBalance
-clears unresolved active/spinning settlement state
-returns to betting
-shows no invented historical number
-```
-
-- [ ] **Step 5: Remove the persisted pending-spin recovery implementation**
-
-From `types.ts`, `RouletteGame.ts`, and `rouletteClient.ts`, delete:
-
-```text
-pendingSyncId / pendingSyncCreatedAt
-PENDING_SPIN_MAX_AGE_MS recovery use
+PENDING_SPIN_MAX_AGE_MS recovery semantics
 restoreSession spinRecovery result
 recoverPendingSpin
 applyRecoverySettlement
-recovery-specific retry/rejection branches
-historical replay achievement handling
+recovery-specific retry/rejection paths
 ```
 
-Keep ordinary current-page spin timeout/error handling only where it is still needed for the live `/api/roulette/spin` request. Do not replace reload recovery with another storage key.
+A duplicate/lost-response recovery adopts balance, clears unresolved state, returns to betting, and shows no historical number.
 
-- [ ] **Step 6: Delete old Roulette cascade helpers/tests**
+### Step 6: trim obsolete error classification
 
-```bash
-rm src/lib/roulette/spin-batch-sql.ts src/lib/roulette/spin-cascade.integration.test.ts
-```
+- [ ] Inspect `spin-error-classification.ts`. Delete RATE_LIMITED/replay-expiry branches and tests whose producer disappeared. Keep only live current-page error mapping that still has a concrete producer/consumer; delete the whole helper if nothing focused remains.
 
-Trim/delete `rouletteClient.integration.test.ts` cases that exist solely for `roulette_round`/pendingSync resurrection.
+### Step 7: verify
 
-- [ ] **Step 7: Run focused tests and E2E**
+- [ ] Run:
 
 ```bash
 bun test src/lib/roulette
@@ -1087,39 +1016,23 @@ bunx playwright test e2e/roulette.spec.ts
 bun run build
 ```
 
-Expected: PASS.
+### Step 8: commit
 
-- [ ] **Step 8: Commit**
+- [ ] Commit:
 
 ```bash
-git add src/pages/api/roulette/spin.ts src/lib/roulette e2e/roulette.spec.ts
 git commit -m "refactor(roulette): share wallet settlement"
 ```
 
 ---
 
-### Task 7: Remove the old endpoint/schema and update fixtures, cleanup, and current guidance
+# Task 8: Remove old endpoint/schema, collapse mission gate, and migrate every inventory path
 
-**Files:**
+**Files:** all `DELETE` / `MIGRATE_TO_WALLET` paths from `/tmp/hpa-545-classified.tsv`, including the explicit setup/E2E/current-guidance files below.
 
-- Create: `drizzle/0016_wallet_settlement.sql`
-- Modify: `src/db/schema.ts`
-- Delete: `src/pages/api/chips/update.ts`
-- Delete: `src/lib/chip-sync-batch-sql.ts`
-- Delete: `src/lib/chips-update-api.test.ts`
-- Delete: `src/lib/chips-update.test.ts`
-- Modify: `src/server/cleanup.ts` and tests
-- Modify: `e2e/global-setup.ts`
-- Modify: `e2e/isolated-page.ts`
-- Modify: `e2e/ranked-blackjack.spec.ts`
-- Modify: `e2e/authed-user-preservation.spec.ts`
-- Modify: `e2e/blackjack-split.spec.ts`
-- Modify: other fresh grep matches in current tests/fixtures/guidance
-- Modify: `CLAUDE.md` if it still documents the old endpoint as active
+### Step 1: create destructive migration
 
-- [ ] **Step 1: Write the destructive migration**
-
-`drizzle/0016_wallet_settlement.sql` must create the minimal new table and remove disposable old receipt/replay data. Use the project's actual current table names from `src/db/schema.ts`/migrations. The resulting active schema is equivalent to:
+- [ ] Create `drizzle/0016_wallet_settlement.sql` equivalent to:
 
 ```sql
 CREATE TABLE wallet_settlement (
@@ -1132,73 +1045,99 @@ CREATE TABLE wallet_settlement (
   FOREIGN KEY (userId) REFERENCES user(id) ON DELETE CASCADE
 );
 CREATE INDEX wallet_settlement_created_idx ON wallet_settlement(createdAt);
-
 DROP TABLE IF EXISTS chip_sync_receipt;
 DROP TABLE IF EXISTS roulette_round;
 ```
 
-No `INSERT ... SELECT` backfill is allowed.
+No backfill.
 
-- [ ] **Step 2: Remove old tables from `src/db/schema.ts`**
+### Step 2: remove active old schema/cascade
 
-Delete the active `chipSyncReceipt` and `rouletteRound` definitions/exports after Task 6 no longer imports them. Keep `walletSettlement` in this one schema file.
+- [ ] Delete `chipSyncReceipt` / `rouletteRound` from `src/db/schema.ts`.
+- [ ] Delete `/api/chips/update`, `chip-sync-batch-sql.ts`, and their old tests.
+- [ ] Remove old receipt/Roulette cleanup; keep only any simple bounded `wallet_settlement.createdAt` cleanup that current policy needs.
 
-- [ ] **Step 3: Replace cleanup behavior**
+### Step 3: collapse the temporary mission gate
 
-Remove cleanup branches that exist only for `chip_sync_receipt`/`roulette_round`. If wallet receipts retain the existing bounded retention policy, target only `wallet_settlement.createdAt`; do not preserve old per-table recovery semantics.
+- [ ] Delete `ReceiptGate`'s `chip-sync` branch and old SQL.
 
-- [ ] **Step 4: Update E2E/bootstrap callers of the old endpoint**
+Final gate is:
 
-For each old POST used to seed or mutate a test account, choose the smallest valid replacement:
-
-```text
-wallet settlement API when the test intentionally exercises casual account settlement
-DB/bootstrap helper when the test merely needs fixture balance and is not testing settlement
+```ts
+export interface WalletSettlementGate {
+  settlementId: string;
+  attemptId: string;
+}
 ```
 
-Do not make ranked tests depend on a fake casual game event solely to seed a balance when their existing fixture bootstrap can update test data directly.
+- [ ] Delete tests for the temporary old gate and retain wallet attempt-gate coverage.
 
-Explicitly inspect:
+### Step 4: migrate setup and build-breaking references
+
+- [ ] Explicitly inspect/update as classified:
 
 ```text
-e2e/global-setup.ts
-e2e/isolated-page.ts
-e2e/ranked-blackjack.spec.ts
-e2e/authed-user-preservation.spec.ts
-e2e/blackjack-split.spec.ts
+src/lib/keno/index.ts
+src/lib/roulette/constants.ts
+src/lib/blackjack/constants.ts
+scripts/setup-local-db.ts
+wrangler.toml
+src/server/cleanup.ts
+src/server/cleanup.test.ts
+CLAUDE.md
 ```
 
-- [ ] **Step 5: Delete old endpoint/test/helper files**
+Do not leave current comments/constants/setup checks pinned to deleted tables/endpoints.
+
+### Step 5: preserve E2E intent, not just compilation
+
+- [ ] `e2e/ranked-blackjack.spec.ts`: the casual mutation around the live ranked session must become `/api/wallet/settle`, because the test is proving a **real casual wallet write** changes the account. Do not replace it with direct DB fixture mutation.
+
+Use a valid command, for example:
+
+```ts
+await casualPage.request.post('/api/wallet/settle', {
+  data: {
+    settlementId: newTestSettlementId,
+    game: 'blackjack',
+    delta: -Math.min(firstResume.balance, MAX_ABSOLUTE_SETTLEMENT_DELTA),
+    stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0 },
+  },
+});
+```
+
+If the test specifically needs balance zero and the current balance can exceed the global bound, perform multiple legitimate distinct wallet settlements in the test rather than bypassing the wallet semantics it is asserting.
+
+- [ ] `e2e/global-setup.ts`: current old request has no sync ID. For pure fixture balance seeding, prefer existing direct test bootstrap/DB setup if available. If using wallet API, generate a valid unique `settlementId` and provide the full stats object; do not merely rename the URL.
+
+- [ ] Migrate route intercepts/calls in every classified E2E file, including public single-player, Slots, Roulette, Craps, Blackjack split, isolated page, and authed preservation.
+
+### Step 6: enforce exact inventory completion
+
+- [ ] Regenerate the grep path list using the same preflight command to `/tmp/hpa-545-files-after.txt`.
+
+- [ ] For every final remaining path, classify only `KEEP_NON_SETTLEMENT` or `HISTORICAL_ONLY`. There must be no active `/api/chips/update`, old receipt, old pending/rebase/outbox, or deleted helper import.
+
+- [ ] Verify all originally classified `DELETE`/`MIGRATE_TO_WALLET` paths were actually handled:
 
 ```bash
-rm src/pages/api/chips/update.ts \
-  src/lib/chip-sync-batch-sql.ts \
-  src/lib/chips-update-api.test.ts \
-  src/lib/chips-update.test.ts
+while IFS=$'\t' read -r path action; do
+  case "$action" in
+    DELETE)
+      test ! -e "$path" || { echo "still exists: $path"; exit 1; }
+      ;;
+    MIGRATE_TO_WALLET)
+      test -e "$path" || { echo "missing migrated file: $path"; exit 1; }
+      ;;
+  esac
+done < /tmp/hpa-545-classified.tsv
 ```
 
-- [ ] **Step 6: Run the authoritative post-delete grep**
+For files intentionally deleted after being initially marked MIGRATE, update the classification before this final check and keep the sets exact.
 
-```bash
-git grep -nE \
-  '/api/chips/update|chip_sync_receipt|roulette_round|ChipSyncCoordinator|KenoSyncOutbox|balance-sync-stats|balance-sync-state|balanceSync|syncLimits|previousBalance|statsDelta|pendingStats|pendingRollSyncs|BALANCE_MISMATCH|RATE_LIMITED|sendBeacon|pendingSyncId|pendingSyncCreatedAt' \
-  -- src e2e scripts drizzle CLAUDE.md README.md \
-  | tee /tmp/hpa-545-sync-after.txt
-```
+### Step 7: recreate/migrate local hobby DB
 
-Expected runtime/current-test/current-guidance matches:
-
-```text
-wallet implementation references to its own settlementId/attemptId only
-historical migration text only where required by the destructive DROP
-unrelated use of generic words such as previousBalance only if classified KEEP_NON_SETTLEMENT
-```
-
-Every remaining line must have a written classification. There must be no active caller of `/api/chips/update`, no `pendingSyncId` Roulette recovery, and no old sync-only helper import.
-
-- [ ] **Step 7: Recreate the local hobby DB and migrate**
-
-Use the repository's existing DB setup scripts rather than adding a migration framework:
+- [ ] Follow current repository setup behavior:
 
 ```bash
 rm -rf .wrangler/state
@@ -1206,9 +1145,11 @@ bun run setup:db
 bun run db:migrate:local
 ```
 
-If `setup:db` already applies migrations, follow its current behavior and do not duplicate work merely to satisfy this command list.
+If `setup:db` already applies migrations, do not add a second migration framework or redundant bootstrap.
 
-- [ ] **Step 8: Run the full unit/integration suite and build**
+### Step 8: full non-E2E gate
+
+- [ ] Run:
 
 ```bash
 bun run test
@@ -1217,11 +1158,9 @@ bun run format:check
 bun run build
 ```
 
-Expected: PASS.
+### Step 9: commit
 
-- [ ] **Step 9: Commit**
-
-Stage only the reviewed HPA-545 deletion/migration/guidance surface and commit:
+- [ ] Commit:
 
 ```bash
 git commit -m "refactor(wallet): remove legacy chip sync"
@@ -1229,14 +1168,13 @@ git commit -m "refactor(wallet): remove legacy chip sync"
 
 ---
 
-### Task 8: End-to-end verification and complexity acceptance gate
+# Task 9: E2E verification and complexity acceptance gate
 
-**Files:**
+**Files:** E2E-only corrections if verification reveals an intentional behavior assertion that must be updated. No new runtime architecture is allowed here.
 
-- Modify only affected E2E specs where assertions need to reflect the intentional manual-retry/reset behavior.
-- No new runtime architecture is allowed in this task.
+### Step 1: focused game journeys
 
-- [ ] **Step 1: Run focused authenticated game journeys**
+- [ ] Run:
 
 ```bash
 bunx playwright test \
@@ -1248,15 +1186,17 @@ bunx playwright test \
   e2e/blackjack-split.spec.ts
 ```
 
-Run the existing Baccarat/Poker authenticated specs returned by:
+- [ ] Run Baccarat and single-player Poker specs returned by:
 
 ```bash
 git grep -lE 'baccarat|/games/poker' e2e/*.spec.ts
 ```
 
-Exclude multiplayer-only Poker specs from the wallet acceptance set.
+Exclude multiplayer-only Poker from wallet acceptance.
 
-- [ ] **Step 2: Run the fixture-sensitive flows**
+### Step 2: fixture-sensitive journeys
+
+- [ ] Run:
 
 ```bash
 bunx playwright test \
@@ -1264,9 +1204,9 @@ bunx playwright test \
   e2e/authed-user-preservation.spec.ts
 ```
 
-These do not become wallet features; this verifies their setup no longer relies on the deleted endpoint.
+### Step 3: full repository gate
 
-- [ ] **Step 3: Run the entire repository verification gate**
+- [ ] Run:
 
 ```bash
 bun run test
@@ -1276,86 +1216,96 @@ bun run build
 bun run test:e2e
 ```
 
-Expected: PASS, subject only to already-documented environment-specific skips.
+Expected: PASS subject only to already-documented environment-specific skips.
 
-- [ ] **Step 4: Verify the architecture actually got smaller**
+### Step 4: focused complexity audit
 
-Run:
+- [ ] Record size:
 
 ```bash
 git diff --stat main...HEAD
-git diff --numstat main...HEAD | awk '{ add += $1; del += $2 } END { print "added=" add, "deleted=" del, "net=" add-del }'
+git diff --numstat main...HEAD \
+  | awk '{ add += $1; del += $2 } END { print "added=" add, "deleted=" del, "net=" add-del }'
 ```
 
-Then audit active code:
+- [ ] Scan wallet + changed source files only:
 
 ```bash
+git diff --name-only main...HEAD -- '*.ts' '*.astro' '*.js' \
+  | while read -r file; do
+      [ -f "$file" ] || continue
+      grep -nE \
+        'backoff|outbox|heartbeat|orphan|sendBeacon|BALANCE_MISMATCH|RATE_LIMITED|previousBalance|pendingSyncId|pendingRollSyncs|syncPending' \
+        "$file" || true
+    done
+
 git grep -nE \
-  'retry|backoff|outbox|heartbeat|orphan|sendBeacon|BALANCE_MISMATCH|RATE_LIMITED|previousBalance|pendingSyncId|pendingRollSyncs|syncPending' \
-  -- src/lib/wallet src/lib/blackjack src/lib/baccarat src/lib/slots src/lib/keno src/lib/craps src/lib/roulette src/lib/poker src/pages/api/wallet src/pages/api/roulette src/pages/games/craps.astro
+  'backoff|outbox|heartbeat|orphan|sendBeacon|BALANCE_MISMATCH|RATE_LIMITED|previousBalance|pendingSyncId|pendingRollSyncs|syncPending' \
+  -- src/lib/wallet
 ```
 
-Review every hit. Allowed examples are user-facing wording such as **Retry settlement** or unrelated game behavior. Disallowed hits include:
+Review each hit in this **changed settlement surface**, not unrelated AI/LLM code. Allowed examples are historical deletion comments or user-facing Retry copy. Disallowed: generic retry strategy, persisted queues, rebase loops, cross-tab ownership, unload settlement flushes, pending Roulette resurrection, or per-game compatibility flags.
 
-```text
-a generic retry strategy in wallet
-persistent settlement queues
-balance rebase loops
-cross-tab settlement ownership
-unload settlement flushing
-Roulette pending-spin persistence
-per-game transport compatibility flags
-```
+### Step 5: current architecture grep
 
-If the refactor adds a configurable abstraction that reproduces old policies, HPA-545 is not complete even if tests pass.
-
-- [ ] **Step 5: Verify current architecture docs**
+- [ ] Run:
 
 ```bash
-git grep -n '/api/chips/update' -- CLAUDE.md README.md src e2e
+git grep -n '/api/chips/update' -- src e2e scripts CLAUDE.md README.md
+git grep -nE 'chip_sync_receipt|roulette_round' -- src e2e scripts CLAUDE.md README.md
 ```
 
-Expected: no active/current usage.
+Expected: no active/current usage. Dated historical migrations/specs may remain historical.
 
-Historical dated specs/plans may keep old references because they describe prior architecture.
+### Step 6: destructive deployment note
 
-- [ ] **Step 6: Record destructive deployment notes in the implementation PR**
-
-State explicitly:
+- [ ] Implementation PR states:
 
 ```text
 old chip_sync_receipt and roulette_round data are discarded
 old browser settlement state is not migrated
-local/hobby-remote D1 must be recreated or migrated destructively before deploy
+local/hobby-remote D1 must use the destructive/fresh schema before deploy
 there is no old-client compatibility window
+global ±1,000,000 delta bound is a sanity bound, not anti-cheat
+Roulette now participates in generic mission progress
 ```
 
-- [ ] **Step 7: Final commit if E2E-only corrections were needed**
+### Step 7: final E2E-only commit when needed
+
+- [ ] If verification changed files:
 
 ```bash
 git commit -m "test(wallet): verify settlement migration"
 ```
 
-Skip this commit when verification required no file changes.
+Skip when no corrections are required.
 
 ---
 
 ## Definition of complete implementation
 
-The implementation branch is ready only when all of these are true:
+The implementation is complete only when:
 
-- `src/lib/wallet` is the only casual authenticated account-settlement implementation.
-- `src/db/schema.ts` is still the single active schema home and contains the minimal `walletSettlement` table.
-- `/api/chips/update`, `chip_sync_receipt`, and `roulette_round` are gone from active runtime/schema.
-- `src/lib/blackjack/balance-sync-stats.ts`, Baccarat/Slots balance-sync helpers, Slots coordinator, Keno outbox, Craps balanceSync/syncLimits, and Roulette second cascade are deleted.
-- `MissionGameEvent` mapping includes `delta` and uses the existing mission semantics.
-- Existing positive-only biggest-win behavior is preserved under the new stats gate.
-- The wallet browser client uses `fetchJsonWithTimeout` and has no retry policy.
-- Baccarat has a real client settlement test rather than a reference to a nonexistent test file.
-- Craps settlement mapping/reconciliation is testable outside the Astro page; bet placement/clearing is local only.
-- Roulette no longer persists/resubmits `pendingSyncId` after reload and does not invent a historical wheel result on a duplicate.
-- E2E/bootstrap/current guidance no longer posts `/api/chips/update`.
-- No casual game contains a persisted settlement outbox, batching coordinator, background retry loop, balance-rebase loop, unload settlement flush, or receipt replay protocol.
-- Balance, receipt, statistics, and direct mission progress are atomic and idempotent.
-- Focused tests, full tests, lint, formatting, build, and representative/full Playwright gates pass.
-- Net code/test complexity decreases and no repository-wide structural migration is introduced.
+- `src/lib/wallet` is the only casual authenticated settlement implementation.
+- Shared wallet code consists only of current-consumer concepts: types, ID helper, concrete repository/use case, timed client, and one in-memory settlement gate.
+- `walletSettlement` stays in `src/db/schema.ts`.
+- `/api/chips/update`, `chip_sync_receipt`, and `roulette_round` are absent from active runtime/schema.
+- Temporary `chip-sync` mission gate support is removed.
+- `attemptId` gates fresh stats/missions and `NOT EXISTS` protects zero-delta duplicates.
+- `getRowsAffected` behavior survives in the wallet repository.
+- IDs use the existing safe regex and manual retry never mints a new ID.
+- One global ±1,000,000 sanity bound replaces `GAME_LIMITS`; there is no claim of cheat-proof casual leaderboards.
+- Blackjack, Poker, live Baccarat, Slots, Keno, and Craps use `createSettlementGate` rather than custom pending/retry state machines.
+- Dead `BaccaratClient` and barrel export are deleted.
+- Baccarat/Craps domain-to-command math is pure/testable outside Astro pages.
+- Keno barrel no longer exports the deleted outbox.
+- Roulette remains server-authoritative, joins generic mission progress intentionally, and cannot advance missions twice on duplicate.
+- Roulette pending-spin resurrection/error branches disappear with `roulette_round`.
+- Positive-only biggest-win semantics remain.
+- Receipt does not regain payload hashes, achievement replay data, or `overallRank`.
+- Every path from the authoritative preflight classification is handled.
+- Ranked cross-tab E2E still exercises a real casual wallet mutation.
+- Global setup payload is deliberately rewritten, not URL-swapped.
+- Focused tests, full tests, lint, format, build, affected E2E, and full Playwright gates pass.
+- Final changed settlement code contains no old outbox/backoff/rebase/unload/cross-tab policy.
+- Net code/test complexity decreases and no compatibility framework or repository-wide structural migration is introduced.

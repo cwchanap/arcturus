@@ -1,6 +1,6 @@
 # Small Wallet Settlement Module Design
 
-**Status:** Revised after repository review; ready for implementation  
+**Status:** Revised after second repository review; ready for implementation  
 **Date:** 2026-08-09  
 **Issue:** HPA-545  
 **Parent roadmap:** HPA-167  
@@ -10,139 +10,138 @@
 
 ## 1. Why this is the next task
 
-HPA-542 is complete, so private-room poker no longer shares the persistent account wallet. HPA-545 is now the highest-priority unblocked architecture task in the roadmap and blocks Video Poker plus several later game/module tickets.
+HPA-542 is complete, so private-room poker no longer shares the persistent account wallet. HPA-545 is the next unblocked architecture step and blocks Video Poker plus later cleanup/game work.
 
-The repository currently implements the same play-money write concern several different ways:
+The current casual settlement concern is fragmented across the repository:
 
-- Blackjack has pending-stat aggregation, retries, follow-up retries, optimistic rebasing, and sync IDs.
-- Baccarat has a separate pending-stat/retry state helper.
-- Slots has a batching `ChipSyncCoordinator`, balance-sync state, backoff, and unload flushing.
-- Keno has a durable outbox, cross-tab heartbeats, orphan recovery, persisted draining, and replay reconciliation.
-- Craps batches resolved rolls and also syncs bet placement/refunds, with retry and persisted dropped-sync state.
-- Poker performs settlement transport from inside `PokerGame`.
-- Roulette owns a second server-authoritative settlement cascade plus persisted spin-recovery state.
-- `/api/chips/update` contains game-specific limits, receipt replay comparison, rate limiting, optimistic balance matching, statistics, missions, and achievement-response caching.
+- Blackjack has pending-stat aggregation, follow-up retries, optimistic rebasing, sync IDs, and rate-limit handling.
+- **Live Baccarat settlement is inline in `src/pages/games/baccarat.astro`** with pending stats/retries. `src/lib/baccarat/baccaratClient.ts` is dead runtime code: it is exported by the barrel but is not the page implementation.
+- Slots has `ChipSyncCoordinator`, balance-sync state, batching/coalescing, backoff, and unload flushing.
+- Keno has a durable outbox, tab ownership/heartbeats, orphan recovery, persisted draining, and replay reconciliation.
+- Craps keeps settlement orchestration in a large Astro page, batches resolved rolls, syncs unresolved bet placement/refunds, and has retry/rebase state.
+- Single-player Poker performs settlement transport from inside `PokerGame`.
+- Roulette owns a second server-authoritative settlement cascade plus `roulette_round` and persisted pending-spin resurrection.
+- `/api/chips/update` owns game-specific caps, receipt replay comparison, rate limiting, balance matching, statistics, missions, and achievement-response caching.
 
-Those mechanisms were reasonable when the project was optimizing for recovery and compatibility. They are now contrary to the single-player-first hobby-project direction. HPA-545 deletes them instead of hiding them behind a configurable abstraction.
+The goal is deletion, not configuration of those behaviors behind a larger abstraction.
 
 ---
 
 ## 2. Goals
 
-- One wallet library owns authenticated casual-game balance settlement.
-- Every wallet mutation for a completed casual game event uses one server application function: `settleWalletRound`.
-- Client-authoritative games use one thin browser function and `POST /api/wallet/settle`.
-- Roulette remains server-authoritative for spin generation, but calls `settleWalletRound` directly after calculating the result.
-- One settlement updates balance, receipt, game statistics, and directly related mission progress atomically.
-- `(userId, settlementId)` is idempotent, including ordinary concurrent duplicate requests.
-- A duplicate returns the stored resulting balance; it does not reproduce historical achievement/toast payloads.
-- Game clients may keep one in-memory failed command for a visible manual retry, but may not persist queues or coordinate background retries.
-- The migration is intentionally breaking. Existing receipt rows, pending browser settlement state, and old endpoint compatibility are discarded.
-- The resulting code and test surface is materially smaller than the current implementation.
+- One wallet library owns authenticated casual-game account settlement.
+- Every completed casual account event uses one server application function: `settleWalletRound`.
+- Client-authoritative games use one thin browser transport: `POST /api/wallet/settle`.
+- Roulette remains server-authoritative for bets/RNG/result calculation and calls `settleWalletRound` on the server.
+- One fresh settlement updates balance, receipt, game statistics, and direct mission progress atomically.
+- `(userId, settlementId)` is idempotent under ordinary sequential and concurrent duplicates.
+- A server-only `attemptId` proves which request won a same-ID race so a losing request cannot reuse the winner's receipt to apply stats/missions again.
+- Browser settlement failure behavior is shared once: at most one in-memory pending command, explicit retry/reset, no background policy.
+- Settlement IDs are created consistently once per event and reused unchanged for manual retry.
+- The migration remains intentionally breaking: old receipt rows, browser settlement state, and old endpoint compatibility are discarded.
+- Net code/test complexity decreases materially.
 
-## 3. Non-goals
+## 3. Non-goals and accepted exposure
 
 - Server-authoritative outcomes for currently client-authoritative games.
-- Anti-cheat, abuse detection, audit logging, per-isolate rate limiting, payload signing, or tamper evidence.
-- Crash-durable browser queues, IndexedDB, Web Locks, cross-tab ownership, background drains, exponential retry policy, or unload beacons.
+- Financial-grade recovery.
+- Durable browser queues, IndexedDB, Web Locks, cross-tab ownership, background drains, exponential retry workers, or unload beacons.
+- Payload signing, canonical hashes, audit logging, or anti-cheat.
 - Replaying historical achievement toasts after a duplicate request.
 - Recovering a historical Roulette wheel result after a committed response is lost.
-- Financial-grade recovery from every Worker/browser interruption.
-- Multiplayer settlement.
-- A generic ledger, event bus, repository framework, workflow engine, or configurable per-game settlement strategy.
-- Preserving `/api/chips/update`, `chip_sync_receipt`, `roulette_round`, old local-storage settlement keys, or their payload formats.
-- Moving the repository to a new `src/modules` package layout as part of this task.
+- Preserving `/api/chips/update`, `chip_sync_receipt`, `roulette_round`, or old settlement-localStorage formats.
+- Moving the repository to `src/modules` or splitting the active schema into per-module files.
+- A generic ledger/event bus/repository framework/workflow engine.
+
+### Public leaderboard exposure
+
+Casual game outcomes remain client-authored, so **this design does not make the public chip/stat leaderboards cheat-proof**. Removing the old per-game caps and rate limiter would otherwise allow one corrupted or forged request to write an arbitrarily large integer. Keep one deliberately non-configurable sanity bound:
+
+```ts
+export const MAX_ABSOLUTE_SETTLEMENT_DELTA = 1_000_000;
+```
+
+Validation rejects `Math.abs(delta) > MAX_ABSOLUTE_SETTLEMENT_DELTA`.
+
+This is not anti-cheat: a determined authenticated caller can still submit many forged settlements. It is a cheap invariant that prevents one request from exploding shared leaderboard/achievement state while remaining above every current per-request game ceiling (the old largest explicit ceiling is 500,000; Craps is 200,000). Do not rebuild the per-game `GAME_LIMITS` table or rate limiter.
 
 ---
 
 ## 4. Approaches considered
 
-### A. Recommended: one server settlement core plus thin adapters
+### A. Recommended: one settlement core plus small reusable browser primitives
 
-Create one concrete wallet use case under the repository's existing domain-library convention. Normal client-authoritative games call it through `/api/wallet/settle`; Roulette calls the same use case from its existing server spin route.
+Keep one server use case plus three small browser-facing primitives:
 
-**Why:** This shares the actual domain concern—account balance settlement—without forcing Roulette's RNG/bet validation through a client transport or introducing a new top-level project layout.
+1. one timed HTTP submit function;
+2. one `newSettlementId(game)` helper;
+3. one tiny in-memory `createSettlementGate()` for pending/block/retry/reset state.
 
-### B. One configurable browser sync client for every existing behavior
+Games still build their own domain command because wins/losses/round counts are game semantics, but they do not each reimplement the same pending-settlement state machine.
 
-Preserve batching, outboxes, rebasing, rate-limit retries, unload flushing, and per-game callbacks behind options.
+**Why:** six current client-authoritative consumers need exactly the same failure policy, and Video Poker will be the next consumer. Sharing ~30–40 lines now is smaller than six copies and does not introduce persistence, callbacks, timers, policy configuration, or a framework.
 
-**Rejected:** This recreates the current complexity inside a larger abstraction and was the reason HPA-545 was previously canceled.
+### B. One configurable sync framework
 
-### C. Introduce `src/modules/wallet` and split schema ownership by module
+Preserve batching/outboxes/rebases/retry policies behind options.
 
-Move the wallet implementation into a new top-level module tree and give it a separate schema file.
+**Rejected:** recreates the current complexity under a new name.
 
-**Rejected for HPA-545:** The current repository keeps domain code under `src/lib/<domain>` and the active D1 schema in `src/db/schema.ts`. HPA-542 deliberately preserved that layout. A repository-wide package reorganization is unrelated to settlement simplification and would add structural novelty without improving this feature.
+### C. New `src/modules/wallet` + module-owned schema
 
-### D. Force Roulette onto the browser settlement endpoint
+**Rejected:** structural novelty unrelated to HPA-545. Current domain code lives under `src/lib`, and active tables live in `src/db/schema.ts`.
 
-Move Roulette RNG/payout calculation client-side so every game literally performs the same request.
+### D. Client-authoritative Roulette
 
-**Rejected:** This changes unrelated gameplay trust semantics only to make transport uniform. The wallet boundary should not dictate where game outcomes are calculated.
+**Rejected:** transport uniformity does not justify changing Roulette trust semantics.
+
+### E. Per-game retry gates
+
+Let every game own `pendingCommand`, `isBlocked`, `retry`, and `reset` state independently.
+
+**Rejected:** this is one stable wallet-client policy with six immediate consumers. Duplicating it guarantees drift and makes the next game touch another custom state machine.
 
 ---
 
 ## 5. Repository boundary and reuse
 
-Use the existing repository shape:
+Final shape:
 
 ```text
 src/lib/wallet/
-  types.ts          # SettleRoundCommand / result contract
-  repository.ts     # concrete D1 balance/receipt/stats/mission batch
-  settle.ts         # validation, idempotency, bounded in-request conflict retry
-  client.ts         # one browser request helper; no retry policy
-  index.ts          # browser-safe exports only
+  types.ts             # SettleRoundCommand / SettleRoundResult / RoundStats
+  settlement-id.ts     # regex validation + newSettlementId(game)
+  repository.ts        # D1 balance/receipt/stats/mission batch + rows-affected normalization
+  settle.ts            # validation, idempotency, <=2 optimistic attempts, achievements
+  client.ts            # one fetchJsonWithTimeout POST; no retry policy
+  settlement-gate.ts   # one in-memory pending/block/manual-retry helper
+  index.ts             # browser-safe exports only
+  *.test.ts
 
-src/db/schema.ts                    # walletSettlement table with the other active D1 tables
-src/pages/api/wallet/settle.ts      # auth + JSON parse + settleWalletRound
-src/pages/api/roulette/spin.ts      # roulette validation/RNG + settleWalletRound
+src/db/schema.ts                     # walletSettlement remains in the single active schema
+src/pages/api/wallet/settle.ts       # auth + JSON parse + settleWalletRound
+src/pages/api/roulette/spin.ts       # Roulette validation/RNG + settleWalletRound
+
+src/lib/baccarat/settlement.ts       # pure roundNetDelta -> command
+src/lib/craps/settlement.ts           # pure RollResult -> command + available balance math
 ```
 
-Reuse existing focused primitives rather than reimplementing them:
+Reuse:
 
-- `GameType` and `isValidGameType` from `src/lib/game-stats`.
-- `MissionGameEvent` and the existing mission prepared-statement path.
-- `checkAndGrantAchievements` for post-settlement achievement checks.
-- `fetchJsonWithTimeout` from `src/lib/fetch-with-timeout.ts` for the single browser request.
-- The current `game_stats` upsert semantics from `src/lib/chip-sync-batch-sql.ts`, rewritten under the new receipt gate rather than copied as a second parallel cascade.
+- `GameType` / `isValidGameType` from game stats.
+- `MissionGameEvent` and mission prepared-statement machinery.
+- `checkAndGrantAchievements` and `createDb`.
+- `fetchJsonWithTimeout` from `src/lib/fetch-with-timeout.ts`.
+- the positive-only biggest-win accumulation semantics from `chip-sync-batch-sql.ts`.
+- D1 rows-affected normalization currently embedded in `/api/chips/update` (`meta.changes` vs `rowsAffected`).
 
-Dependency direction:
-
-```text
-casual game browser code
-        |
-        +--> src/lib/wallet/client.ts
-                  |
-                  v
-        POST /api/wallet/settle
-                  |
-                  v
-        src/lib/wallet/settle.ts
-                  |
-                  v
-        src/lib/wallet/repository.ts
-                  |
-                  +--> D1 user / game_stats / wallet_settlement
-                  +--> mission progress prepared statements
-
-roulette browser
-        |
-        v
-/api/roulette/spin
-        |
-        +--> roulette rules + server RNG
-        +--> src/lib/wallet/settle.ts
-```
-
-`wallet` must not import a game engine, page, renderer, or game-specific retry policy. Games may import the browser client/types; server-only code may additionally import `settleWalletRound`.
+Do not restore `overallRank` on the new receipt. Achievement evaluation already falls back to `getUserRank` when no rank option is supplied.
 
 ---
 
-## 6. Public settlement contract
+## 6. Public contract, IDs, and client gate
 
-Use one command per completed account-impacting game event:
+### Settlement command
 
 ```ts
 export interface RoundStats {
@@ -162,33 +161,70 @@ export interface SettleRoundCommand {
 export interface SettleRoundResult {
   balance: number;
   duplicate: boolean;
-  newAchievements?: Array<{
-    id: string;
-    name: string;
-    icon: string;
-  }>;
+  newAchievements?: Array<{ id: string; name: string; icon: string }>;
 }
 ```
 
-Validation stays domain-sized:
+Validation:
 
-- `settlementId` is 1–128 characters.
-- `game` must be an existing `GameType`.
-- all numeric values are safe integers;
+- settlement ID matches the **existing** sync-ID character contract exactly: `/^[A-Za-z0-9_-]{1,128}$/`;
+- `game` is a current `GameType`;
+- all numbers are safe integers;
 - `rounds >= 1`;
-- `wins >= 0`, `losses >= 0`, and `wins + losses <= rounds`;
+- `wins >= 0`, `losses >= 0`, `wins + losses <= rounds`;
 - `biggestWin >= 0`;
-- applying `delta` must not make the account balance negative.
+- `Math.abs(delta) <= 1_000_000`;
+- resulting wallet balance cannot be negative.
 
-There are no per-game win caps, `previousBalance`, `statsDelta`, payload hashes, canonical replay comparison, rate-limit fields, retry counts, or compatibility fields.
+There is no `previousBalance`, `statsDelta`, game cap table, replay payload, retry count, or compatibility field.
 
-`rounds` means the existing statistics unit for the game. For Blackjack split hands it is the number of completed hands. For Craps it is the number of wagers resolved by that roll. For Slots, Keno, Baccarat, Poker, and Roulette it is normally one completed play.
+### Settlement IDs
+
+```ts
+export const SETTLEMENT_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+export function newSettlementId(game: GameType): string {
+  return `${game}-${crypto.randomUUID()}`;
+}
+```
+
+A command is created once for one completed event. Manual retry resends that exact object/ID. Do not mint a new ID on retry.
+
+Roulette may use the same generated ID as the `/api/roulette/spin` request ID. Existing game-engine-local IDs do not need to become wallet identity unless they already naturally identify the completed event.
+
+### Shared in-memory settlement gate
+
+```ts
+export interface SettlementGate {
+  readonly pending: SettleRoundCommand | null;
+  readonly isBlocked: boolean;
+  settle(command: SettleRoundCommand): Promise<SettleRoundResult>;
+  retry(): Promise<SettleRoundResult | null>;
+  reset(): void;
+}
+
+export function createSettlementGate(args?: {
+  submit?: typeof submitWalletSettlement;
+}): SettlementGate;
+```
+
+Behavior:
+
+- `settle(command)` stores the command before submitting;
+- success clears it and returns the result;
+- failure keeps it and rethrows;
+- while a command is pending/in flight, `isBlocked === true`;
+- `retry()` resubmits the same pending command only when explicitly called;
+- `reset()` only clears the gate; the game is responsible for resetting/reloading its own local state from an authoritative starting balance;
+- no timers, persistence, automatic retry, callbacks, game-type branches, queue, or multiple pending commands.
+
+This is the only shared browser settlement policy.
 
 ---
 
-## 7. Receipt schema and idempotency
+## 7. Receipt, atomicity, and transitional mission gating
 
-Replace `chip_sync_receipt` with a purpose-specific table in `src/db/schema.ts`:
+### Final receipt
 
 ```text
 wallet_settlement
@@ -202,48 +238,64 @@ PRIMARY KEY (userId, settlementId)
 INDEX (createdAt)
 ```
 
-The receipt stores only what duplicate handling requires. It intentionally does not store the request payload, statistics payload, rank, warnings, or achievement response.
+`attemptId` is not browser-visible. It distinguishes the fresh winning request from a concurrent loser that can see the same `(userId, settlementId)` receipt after the batch commits.
 
-`attemptId` is server-generated and never exposed to the browser. It exists only so every side-effect statement in one D1 batch can prove that it belongs to the fresh settlement that won the idempotency race. A losing concurrent request cannot reuse a peer's receipt to apply statistics or missions again.
+### Guarded batch
 
-### Settlement algorithm
+A fresh attempt:
 
-`settleWalletRound` performs:
+1. reads duplicate receipt;
+2. reads current balance;
+3. validates `nextBalance`;
+4. creates `attemptId`;
+5. runs one D1 batch:
+   - guarded `UPDATE user ... AND chipBalance = ? AND NOT EXISTS(wallet_settlement...)`;
+   - receipt insert only when the update changed one row;
+   - stats upsert gated on `(userId, settlementId, attemptId)`;
+   - mission statements gated on the same identity;
+6. normalizes D1 affected-row metadata via the repository-local `getRowsAffected` helper;
+7. on zero updated rows, rechecks duplicate; otherwise retries one unrelated balance conflict once;
+8. after a second unrelated conflict, returns a normal settlement conflict.
 
-1. Read `(userId, settlementId)`. If present, return `{ balance, duplicate: true }` immediately.
-2. Read the current balance and calculate `nextBalance = balance + delta`.
-3. Reject if `nextBalance < 0` or the command is invalid.
-4. Generate one `attemptId` for this server invocation.
-5. Submit one D1 batch:
-   1. guarded balance update: update only when the current balance still equals the value read and no receipt exists;
-   2. insert `wallet_settlement` only if that guarded update changed one row;
-   3. upsert `game_stats`, gated by this exact `(userId, settlementId, attemptId)` receipt;
-   4. update mission progress, gated by the same receipt identity.
-6. If the guarded update changed one row, return the new balance and mark the settlement fresh.
-7. If it changed zero rows, re-read the receipt. If another duplicate request won, return its balance as a duplicate.
-8. Otherwise refresh the account balance and retry the optimistic step once. If another unrelated wallet write wins again, return one ordinary conflict and let the UI offer manual retry.
+`NOT EXISTS` is required even for `delta === 0`; without it, the same zero-delta command can match the unchanged balance and apply effects again.
 
-This keeps cross-game concurrency handling on the server and removes every browser balance-rebase loop. Two bounded in-request attempts are sufficient for normal hobby-project use; there is no background retry worker.
+### Keep intermediate commits correct
+
+The existing `prepareMissionProgressStatements` is still called by `/api/chips/update` until the final deletion task. Therefore Task 1 must **not** switch its only gate from `chip_sync_receipt` to `wallet_settlement` globally.
+
+Temporarily use an explicit internal union:
+
+```ts
+export type ReceiptGate =
+  | { kind: 'chip-sync'; syncId: string }
+  | { kind: 'wallet'; settlementId: string; attemptId: string };
+```
+
+The SQL builder selects one of two fixed, code-owned `EXISTS` clauses. It must not interpolate an arbitrary table/column name from input.
+
+- Existing `/api/chips/update` passes `{ kind: 'chip-sync', syncId }` and continues to update missions normally while callers are being migrated.
+- New wallet repository passes `{ kind: 'wallet', settlementId, attemptId }`.
+- The old `chip-sync` branch is deleted atomically with `/api/chips/update` in the final cleanup task, leaving only the wallet gate.
+
+This is migration scaffolding, not a supported compatibility API.
 
 ---
 
-## 8. Statistics, missions, and achievements
+## 8. Statistics, missions, achievements
 
 ### Statistics
 
-Port the existing `game_stats` accumulation behavior under the new receipt gate:
+Fresh settlement:
 
 - `totalWins += stats.wins`;
 - `totalLosses += stats.losses`;
 - `handsPlayed += stats.rounds`;
 - `netProfit += delta`;
-- `biggestWin` changes only when the new candidate is positive and larger than the stored value.
+- `biggestWin` changes only when the incoming candidate is positive and greater than the stored value.
 
-A push or zero candidate must never reset a previous biggest win. This preserves the intent of the current `CHIP_SYNC_STATS_UPSERT_SQL` CASE expression while removing its old receipt coupling.
+A push/zero candidate cannot erase a previous biggest win.
 
-### Missions
-
-Keep mission progress atomic with settlement. Replace the current `chip_sync_receipt` gate with a `wallet_settlement` gate containing both `settlementId` and `attemptId`. The existing `MissionGameEvent` is derived exactly as:
+### Mission event
 
 ```ts
 const missionEvent: MissionGameEvent = {
@@ -256,53 +308,57 @@ const missionEvent: MissionGameEvent = {
 };
 ```
 
-The existing mission semantics remain authoritative. In particular, `roundsWon` still uses `winsIncrement` (falling back to outcome only where applicable), so Craps mixed-outcome rolls must report accurate resolved-wager win counts instead of reducing the event to the sign of `delta`.
+`roundsWon` continues to use `winsIncrement`; this matters for mixed Craps rolls where net delta can be negative while one or more wagers won.
 
-This is a mechanical change to the current mission prepared-statement gate, not a second mission abstraction.
+### Intentional Roulette behavior change
+
+Roulette currently writes balance/stats/achievements but does not feed the mission prepared-statement path. After HPA-545, a **fresh Roulette settlement participates in the same generic mission pipeline as other casual games**. This is intentional normalization:
+
+- generic hands/rounds missions can count the spin when their metric applies;
+- `gamesTried` can include Roulette;
+- `roundsWon` uses the Roulette command's win count;
+- duplicate Roulette settlement does not advance missions again because it never wins a fresh `attemptId` gate.
+
+Add explicit Roulette route/integration coverage for this behavior.
 
 ### Achievements
 
-For a fresh settlement only, run the existing achievement check after the wallet batch and return newly earned achievements for immediate UI use. Achievement grant logic is already idempotent, but duplicate wallet requests do not rerun it solely to reconstruct old toast payloads.
+After a fresh atomic wallet batch, run `checkAndGrantAchievements`. Do not store achievement payload on the receipt. Duplicate settlements return stored balance only and do not reconstruct old toast payloads.
 
-If the Worker disappears after the atomic wallet batch and before achievement response resolution, a historical toast may be lost. That is accepted by HPA-545; the wallet balance, statistics, and direct mission progress remain correct.
-
----
-
-## 9. Browser client failure behavior
-
-`src/lib/wallet/client.ts` performs one timed request and no retry policy:
-
-```ts
-export const WALLET_SETTLEMENT_TIMEOUT_MS = 15_000;
-
-export async function submitWalletSettlement(
-  command: SettleRoundCommand,
-): Promise<SettleRoundResult>;
-```
-
-Use the existing `fetchJsonWithTimeout` helper so both connection and response-body stalls become an ordinary terminal client error. The wallet client does not sleep, retry, persist, queue, elect a tab, rebase a balance, or use `sendBeacon`.
-
-A game may keep the failed `SettleRoundCommand` in memory while the current page is open so a visible **Retry settlement** action can resend the exact same ID. Until the player retries or resets/reloads the game, the game must not start another authenticated play that depends on the unsettled balance.
-
-This is one pending command, not an outbox.
+Do not restore `overallRank` to `wallet_settlement`; the existing achievement service can compute current rank when no explicit rank is passed.
 
 ---
 
-## 10. Game migration rules
+## 9. Game migration rules
 
 | Game | New behavior | Delete/simplify |
 |---|---|---|
-| Blackjack | One settlement per completed round; split stats are sent in that command. | `balance-sync-stats.ts`, both legacy pending-stat test files, follow-up syncs, rate-limit/backoff handling, balance rebasing |
-| Baccarat | One settlement after each completed hand. | `balance-sync-state.ts` and test, pending stats, retry classification, balance reconciliation code |
-| Poker | One settlement when the human hand is complete, including fold-out. | direct `/api/chips/update` transport and receipt/retry code inside `PokerGame` |
-| Slots | One settlement per spin. | `ChipSyncCoordinator`, `balance-sync-state.ts` + test, batching/coalescing, unload beacon |
-| Keno | One settlement per draw. | persisted outbox, tab IDs, heartbeats, orphan recovery, drain/replay UI state and outbox-only tests |
-| Craps | Settle only when a roll resolves wagers; send that roll's net economic delta and resolved-wager stats. | `balanceSync.ts`, `syncLimits.ts`, server sync on bet placement/refund, roll batching, persistent dropped-sync state, exponential retry/backoff, balance-rebase loop |
-| Roulette | Keep server-side RNG/bet validation, then call `settleWalletRound` for the calculated net delta. | separate chip receipt cascade, `roulette_round`, persisted pending-spin recovery, rate limiter, achievement-payload replay |
+| Blackjack | Build one command at round completion; shared gate owns pending/retry/block state. | pending-stat helpers, follow-up retry/backoff/rebase state |
+| Baccarat | **Modify the live Astro page**, using a pure command builder + shared gate. | inline pending/retry state, `balance-sync-state`, dead `baccaratClient.ts` and barrel export |
+| Poker | Build one command when the human hand completes; shared gate blocks auto-deal while pending. | direct old endpoint/retry state |
+| Slots | One command per spin via shared gate. | coordinator, batching, balance-sync state, unload flush |
+| Keno | One command per draw via shared gate. | outbox, heartbeats, tab ownership, orphan/drain state; remove barrel export |
+| Craps | Command only when a roll resolves wagers; shared gate blocks next roll while pending. | bet-placement sync, batching, dropped-sync persistence, rebase/backoff, `syncLimits` |
+| Roulette | Server result -> `settleWalletRound`; duplicate returns balance only. | second cascade, rate limit, `roulette_round`, pending-spin resurrection, obsolete error-classification branches |
+
+### Baccarat boundary
+
+Do not create or test a new `BaccaratClient`. The page does not instantiate it.
+
+Create only:
+
+```ts
+export function buildBaccaratSettlementCommand(
+  settlementId: string,
+  roundNetDelta: number,
+): SettleRoundCommand;
+```
+
+It returns one Baccarat round with sign-derived wins/losses and `biggestWin = max(roundNetDelta, 0)`.
+
+`baccarat.astro` imports this helper plus `createSettlementGate`/`newSettlementId`. It deletes inline pending stats, follow-up timers, balance rebase, and `/api/chips/update`. `baccaratClient.ts` and its barrel exports are deleted as dead code.
 
 ### Craps boundary
-
-Keep the page thin by extracting only the two Craps-specific settlement calculations needed by the UI into `src/lib/craps/settlement.ts`:
 
 ```ts
 export function buildCrapsSettlementCommand(
@@ -316,151 +372,191 @@ export function getAvailableCrapsBalance(
 ): number;
 ```
 
-`buildCrapsSettlementCommand` returns `null` when no wager resolves. Otherwise:
+No resolved wager -> no command. Otherwise command fields derive only from that roll's resolved evaluations and `result.netDelta`.
 
-- `delta = result.netDelta`;
-- `rounds = number of `win | lose | push` evaluations`;
-- `wins = number of winning evaluations`;
-- `losses = number of losing evaluations`;
-- `biggestWin = gross payout across winning evaluations when positive, otherwise 0`, preserving the current mixed-outcome-roll intent.
-
-Authenticated Craps stops treating bet placement as an account write. Placing a bet moves chips from the game's available amount into its active at-risk bets; clearing/refunding before resolution is also local. After a successful wallet settlement, the available in-game balance is:
+Bet placement/clearing remains local. After settlement:
 
 ```text
-wallet settlement balance - current active at-risk bets
+available in-game balance = wallet balance - active at-risk bets
 ```
-
-This keeps still-active wagers reserved locally without syncing their placement to the account.
-
-Old authenticated in-progress settlement/session recovery is discarded. A reload may reset an unfinished table from the server balance. Guest bankroll persistence remains because it is local gameplay state rather than account settlement recovery.
 
 ### Roulette boundary
 
-Roulette keeps its current server-authoritative result calculation. HPA-545 does not justify making Roulette client-authoritative.
+Delete `pendingSyncId` / `pendingSyncCreatedAt`, reload resubmission, and `roulette_round` together. A duplicate response adopts authoritative balance, clears unresolved spin state, and returns to betting without inventing a winning number.
 
-Remove `roulette_round` together with the browser recovery contract that depends on it:
-
-- delete `pendingSyncId` / `pendingSyncCreatedAt` from persisted game state;
-- stop restoring and resubmitting a `spinning` snapshot after reload;
-- delete recovery helpers/tests whose only purpose is reconstructing a committed historical wheel result;
-- a duplicate wallet result adopts the returned authoritative balance, clears the unresolved spin state, and returns the UI to betting without inventing a winning number.
-
-A response lost after a committed spin can therefore lose the historical wheel display. That is an accepted simplification, not a reason to preserve `roulette_round`.
+Keep ordinary current-page request timeout/error UX where it remains useful, but delete `spin-error-classification` branches/tests whose producer disappears with old rate-limit/recovery semantics.
 
 ---
 
-## 11. Breaking database and browser reset
+## 10. Breaking DB/browser transition
 
-Create `wallet_settlement` in the active schema and remove the old casual settlement tables. Do not write a data backfill.
+Create `wallet_settlement`; later drop `chip_sync_receipt` and `roulette_round`. No backfill.
 
-The hobby database is recreated when this implementation ships. Old `chip_sync_receipt` and `roulette_round` contents are disposable. Historical migrations do not need a general migration/squash framework; the implementation only needs one destructive migration/fresh-schema path plus explicit local/remote recreation instructions.
+Old browser settlement state is not migrated. Keno outboxes, Craps dropped-sync state, Roulette pending spin recovery, and old coordinator state disappear.
 
-Remove obsolete settlement local-storage keys without reading or converting them. Keno outboxes, Craps dropped-sync payloads, Roulette pending-spin settlement recovery, and other old sync state simply disappear.
-
-Historical design documents may continue describing the implementation that existed at their date. Current developer guidance, tests, fixtures, and E2E bootstrap code must stop presenting `/api/chips/update` as the active architecture.
+The implementation may use temporary internal migration scaffolding such as the dual fixed receipt gate, but the final merged runtime exposes no old endpoint/schema/client compatibility surface.
 
 ---
 
-## 12. Deletion inventory
+## 11. Deletion inventory policy
 
-The implementation preflight and post-delete audit must explicitly classify/remove these known settlement-only surfaces in addition to any fresh grep matches:
+A handwritten subset is not authoritative. The implementation starts by generating the complete file list from current `main`:
+
+```bash
+git grep -lE \
+  '/api/chips/update|chip_sync_receipt|roulette_round|ChipSyncCoordinator|KenoSyncOutbox|balance-sync-stats|balance-sync-state|balanceSync|syncLimits|previousBalance|statsDelta|pendingStats|pendingRollSyncs|syncPending|BALANCE_MISMATCH|RATE_LIMITED|sendBeacon|pendingSyncId|pendingSyncCreatedAt|PENDING_SPIN_MAX_AGE_MS' \
+  -- src e2e scripts drizzle wrangler.toml CLAUDE.md README.md \
+  | sort -u > /tmp/hpa-545-files.txt
+```
+
+Every generated path must be classified as `DELETE`, `MIGRATE_TO_WALLET`, `KEEP_NON_SETTLEMENT`, or `HISTORICAL_ONLY`, and the classified path set must exactly equal the grep path set before implementation continues.
+
+Known high-risk paths that must appear in that classification when present include:
 
 ```text
-src/pages/api/chips/update.ts
-src/lib/chip-sync-batch-sql.ts
-src/lib/chips-update-api.test.ts
-src/lib/chips-update.test.ts
+src/pages/games/baccarat.astro
+src/lib/baccarat/baccaratClient.ts
+src/lib/baccarat/index.ts
+src/lib/baccarat/balance-sync-state.ts
+src/lib/baccarat/balance-sync-state.test.ts
 
+src/lib/keno/index.ts
+src/lib/keno/outbox.ts
+src/lib/keno/outbox.test.ts
+
+src/lib/roulette/spin-error-classification.ts
+src/lib/roulette/spin-error-classification.test.ts
+src/lib/roulette/constants.ts
+src/lib/roulette/types.ts
+src/lib/roulette/RouletteGame.ts
+src/lib/roulette/rouletteClient.ts
+src/lib/roulette/rouletteClient.test.ts
+src/lib/roulette/rouletteClient.integration.test.ts
+src/pages/api/roulette/spin.ts
+
+src/lib/blackjack/constants.ts
 src/lib/blackjack/balance-sync-stats.ts
 src/lib/blackjack/balance-sync-stats.test.ts
 src/lib/blackjack/balanceSyncStats.test.ts
-
-src/lib/baccarat/balance-sync-state.ts
-src/lib/baccarat/balance-sync-state.test.ts
 
 src/lib/slots/chip-sync-coordinator.ts
 src/lib/slots/chip-sync-coordinator.test.ts
 src/lib/slots/balance-sync-state.ts
 src/lib/slots/balance-sync-state.test.ts
 
-src/lib/keno/outbox.ts
-src/lib/keno/outbox.test.ts
-
 src/lib/craps/balanceSync.ts
 src/lib/craps/balanceSync.test.ts
 src/lib/craps/syncLimits.ts
+src/pages/games/craps.astro
 
-src/lib/roulette/spin-batch-sql.ts
-src/lib/roulette/spin-cascade.integration.test.ts
-```
+src/pages/api/chips/update.ts
+src/lib/chip-sync-batch-sql.ts
+src/lib/chips-update-api.test.ts
+src/lib/chips-update.test.ts
+src/lib/missions/progress.ts
+src/db/schema.ts
+src/server/cleanup.ts
+src/server/cleanup.test.ts
+scripts/setup-local-db.ts
+wrangler.toml
+CLAUDE.md
 
-Also migrate/remove old endpoint and recovery assumptions in at least:
-
-```text
 e2e/global-setup.ts
 e2e/isolated-page.ts
+e2e/public-single-player-games.spec.ts
+e2e/slots.spec.ts
+e2e/roulette.spec.ts
+e2e/craps.spec.ts
 e2e/ranked-blackjack.spec.ts
 e2e/authed-user-preservation.spec.ts
 e2e/blackjack-split.spec.ts
-src/lib/roulette/types.ts
-src/lib/roulette/RouletteGame.ts
-src/lib/roulette/rouletteClient.ts
-src/lib/roulette/rouletteClient.test.ts
-src/lib/roulette/rouletteClient.integration.test.ts
-src/server/cleanup.ts
-CLAUDE.md
 ```
 
-A fresh `git grep` remains authoritative; this list prevents known files from being missed simply because a regex changes.
+Historical dated specs/migrations may remain historical where required, but active setup/runtime/current guidance cannot teach the deleted contract.
 
 ---
 
-## 13. Testing strategy
+## 12. Testing strategy
 
-### Wallet contract
+### Wallet core
 
-Focused tests must cover:
+Cover:
 
-- valid positive, negative, and zero-delta settlements;
-- negative resulting balance rejection;
-- statistics validation;
-- a push/zero biggest-win candidate does not erase an existing biggest win;
-- sequential duplicate returns stored balance without applying effects twice;
-- concurrent duplicate requests apply balance, stats, and mission progress once;
-- one unrelated concurrent balance change is handled by the bounded server retry;
-- duplicate response does not require historical achievement payload;
-- the browser helper times out a stalled request and performs no automatic retry.
+- ID regex and uniqueness format;
+- absolute delta bound at ±1,000,000;
+- safe-integer/stat validation;
+- positive/negative/zero delta;
+- negative resulting balance;
+- sequential and concurrent duplicate idempotency;
+- zero-delta duplicate safety via `NOT EXISTS`;
+- one unrelated balance conflict retry, then bounded failure;
+- `meta.changes` vs `rowsAffected` normalization;
+- biggest-win non-regression;
+- both temporary mission receipt gate kinds during migration;
+- final wallet-only gate after old endpoint deletion;
+- achievement result only on fresh settlement;
+- settlement gate pending/success/failure/retry/reset behavior;
+- timed browser submit with no automatic retry.
 
-### Game migrations
+### Per-game tests
 
-Keep pure game-rule tests unchanged except where setup previously depended on sync implementation details. Replace retry/outbox/coordinator tests with small client-integration tests that assert exactly one command for one completed event.
+Per-game settlement tests focus on **command mapping and integration only**. Do not retest the shared pending/retry state machine six times.
 
-Create `src/lib/baccarat/baccaratClient.test.ts`; there is no existing Baccarat client test to modify.
+- Blackjack: exact split-hand command.
+- Baccarat: pure builder + live page integration; no test for dead `BaccaratClient`.
+- Poker: final human delta command and auto-deal blocked via shared gate state.
+- Slots: one command per spin; no batching/pagehide flush.
+- Keno: one command per draw and no outbox/heartbeat state; barrel no longer exports outbox.
+- Craps: resolved-roll mapping + available balance math + no wallet call on placement/clear.
+- Roulette: server RNG/bet validation retained, fresh wallet settlement advances missions once, duplicate does not reroll/reapply missions, no reload resurrection.
 
-Craps gets focused pure tests for command construction and wallet-to-available-balance reconciliation, plus a page/client integration assertion that bet placement/clearing does not call the wallet.
+### E2E semantics
 
-Roulette tests must prove server-generated outcomes still settle through the wallet core, `pendingSyncId` recovery is removed, and a duplicate does not spin or apply delta twice.
+Not every old endpoint call is fixture setup. Preserve test intent:
 
-### End-to-end
+- `e2e/ranked-blackjack.spec.ts` contains a casual account mutation specifically to prove another casual wallet write changes the account while a ranked session exists. Replace that request with `/api/wallet/settle`; do **not** turn it into a direct DB bootstrap.
+- `e2e/global-setup.ts` currently posts without `syncId`; its replacement must supply a valid settlement ID or use the existing direct test bootstrap only if the test is strictly fixture setup.
+- route intercepts in public single-player, Slots, Craps, Roulette, Blackjack split, and other grep results must be migrated deliberately, not merely URL-renamed.
 
-Reuse representative existing Playwright journeys rather than create an E2E matrix for settlement internals. Update fixtures/bootstrap code that currently posts `/api/chips/update`, then run authenticated flows for the affected public single-player suite plus Slots, Keno, Craps, Roulette, Blackjack, Baccarat, and Poker.
+---
+
+## 13. Complexity acceptance gate
+
+Do not grep entire game directories for generic words and manually review hundreds of unrelated AI/LLM hits.
+
+Check the wallet library plus files actually changed by HPA-545:
+
+```bash
+git diff --name-only main...HEAD -- '*.ts' '*.astro' '*.js' \
+  | while read -r file; do
+      [ -f "$file" ] || continue
+      grep -nE 'backoff|outbox|heartbeat|orphan|sendBeacon|BALANCE_MISMATCH|RATE_LIMITED|previousBalance|pendingSyncId|pendingRollSyncs|syncPending' "$file" || true
+    done
+
+git grep -nE \
+  'backoff|outbox|heartbeat|orphan|sendBeacon|BALANCE_MISMATCH|RATE_LIMITED|previousBalance|pendingSyncId|pendingRollSyncs|syncPending' \
+  -- src/lib/wallet
+```
+
+Every hit in the changed settlement surface must be intentional (for example a migration-deletion comment or user-facing Retry label). The final wallet must not contain configurable old policies.
 
 ---
 
 ## 14. Definition of done
 
-- `src/lib/wallet` is the only casual authenticated account-settlement implementation.
-- `walletSettlement` lives with the active schema in `src/db/schema.ts`; no new schema-home convention is introduced.
-- `/api/chips/update` is deleted.
-- `chip_sync_receipt` and `roulette_round` are deleted from the active schema.
-- All casual game account writes call `settleWalletRound`, directly or through `/api/wallet/settle`.
-- The wallet browser client reuses the shared timeout helper and contains no retry policy.
-- No casual game contains a persisted settlement outbox, batching coordinator, background retry loop, balance-rebase loop, unload settlement flush, or receipt replay protocol.
-- Balance, receipt, statistics, and direct mission progress are atomic and idempotent.
-- Mission events include the existing required `delta` field.
-- Duplicate receipt handling returns balance without preserving historical achievement response payloads.
-- Roulette remains server-authoritative and its obsolete pending-spin replay path is removed with `roulette_round`.
-- Craps settles only resolved wagers and uses focused pure helpers for command/reconciliation math.
-- All known old endpoint usages in E2E/bootstrap/current guidance are migrated or deleted.
-- Focused wallet tests, affected game tests, lint, formatting, build, and representative Playwright flows pass.
-- Net implementation/test complexity decreases; no compatibility layer, settlement feature flags, or repository-wide structural migration is introduced.
+- `src/lib/wallet` is the only casual authenticated settlement implementation.
+- The wallet includes only the small ID helper, timed client, in-memory settlement gate, server use case, and concrete repository needed by current consumers.
+- `walletSettlement` remains in `src/db/schema.ts`.
+- `/api/chips/update`, `chip_sync_receipt`, and `roulette_round` are gone from active runtime/schema.
+- The temporary `chip-sync` mission gate branch is removed before merge.
+- `BaccaratClient` dead code and barrel export are removed; live Baccarat page uses the new boundary.
+- All casual games use one stable settlement ID per event and shared in-memory failure gate.
+- `MissionGameEvent.delta` is preserved.
+- Roulette intentionally joins generic mission progress and duplicates cannot advance it twice.
+- A zero/push biggest-win candidate cannot erase an earlier biggest win.
+- A global ±1,000,000 sanity bound replaces the per-game cap table; no claim is made that casual leaderboards are cheat-proof.
+- Keno barrel, Roulette error classification/constants/setup, E2E/bootstrap, and every other generated grep path are explicitly migrated/deleted/classified.
+- Ranked cross-tab E2E semantics remain intact by using the new wallet API for the intentional casual mutation.
+- Overall rank is not restored to the receipt; achievements compute rank when needed.
+- Focused tests, full tests, lint, formatting, build, and affected/full Playwright gates pass.
+- Net code/test complexity decreases and no compatibility framework or new repository-wide structural convention is introduced.

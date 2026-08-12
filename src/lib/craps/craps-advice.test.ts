@@ -202,4 +202,49 @@ describe('getCrapsAdvice', () => {
 			},
 		});
 	});
+
+	test('filters mixed suggested bets to known Craps bet types', async () => {
+		globalThis.fetch = async () =>
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"advice":"Keep the line working.","suggestedBets":["passLine","not-a-bet","place6",42,null]}',
+							},
+						},
+					],
+				}),
+			);
+
+		const result = await getCrapsAdvice(baseContext, settings);
+
+		expect(result).toMatchObject({
+			ok: true,
+			value: { suggestedBets: ['passLine', 'place6'] },
+		});
+	});
+
+	test('falls back to pass line when no suggested bets are valid', async () => {
+		globalThis.fetch = async () =>
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content: '{"advice":"Keep it simple.","suggestedBets":["not-a-bet",{},null]}',
+							},
+						},
+					],
+				}),
+			);
+
+		const result = await getCrapsAdvice(baseContext, settings);
+
+		expect(result).toMatchObject({
+			ok: true,
+			value: { suggestedBets: ['passLine'] },
+		});
+	});
 });

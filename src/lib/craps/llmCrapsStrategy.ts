@@ -4,6 +4,7 @@
  */
 
 import { generateAiJson, type AiResult, type AiSettings } from '../ai';
+import { BET_LABELS } from './constants';
 import type { CrapsAdvice, CrapsAdviceContext, BetType, CrapsBet, DiceRoll } from './types';
 
 /**
@@ -101,12 +102,15 @@ Reply in JSON:
 function parsePayload(payload: Record<string, unknown>): CrapsAdvice {
 	const raw = JSON.stringify(payload);
 	const confidence = payload.confidence;
+	const suggestedBets = Array.isArray(payload.suggestedBets)
+		? payload.suggestedBets.filter(
+				(value): value is BetType => typeof value === 'string' && Object.hasOwn(BET_LABELS, value),
+			)
+		: [];
 
 	return {
 		advice: typeof payload.advice === 'string' ? payload.advice : raw,
-		suggestedBets: Array.isArray(payload.suggestedBets)
-			? (payload.suggestedBets as BetType[])
-			: ['passLine'],
+		suggestedBets: suggestedBets.length > 0 ? suggestedBets : ['passLine'],
 		confidence:
 			confidence === 'low' || confidence === 'medium' || confidence === 'high'
 				? confidence

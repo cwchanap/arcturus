@@ -2,7 +2,7 @@
 
 ## Status
 
-Planning specification for HPA-185. This PR remains documentation-only; feature implementation belongs in a follow-up PR.
+Implemented on 2026-08-12. This specification records the shipped HPA-185 browser-local BYOK AI and Blackjack explanation behavior.
 
 ## Why this is next
 

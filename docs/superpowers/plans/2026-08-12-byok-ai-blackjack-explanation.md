@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status:** Implemented on 2026-08-12. The rollout and verification order below is part of the HPA-185 handoff.
+
 **Goal:** Collapse five duplicated provider clients into one browser-local BYOK boundary, make Blackjack advice always local-first and deterministic, and delete D1 credential/server paths after every live caller has migrated.
 
 **Architecture:** Add `src/lib/ai` beside the existing `src/lib/wallet` boundary. Move provider/model validation there, reuse `fetchJsonWithTimeout` plus the existing `extractBalancedJsonObjects()` parser, and store one provider/model/key record in browser `localStorage`. Games keep prompts, domain validation, caches, and fallbacks. Blackjack removes its redundant `useLLM` toggle; Poker keeps `useLLMAI` because its LLM opponents can make automatic paid calls during play.
@@ -1639,3 +1641,36 @@ If the tree is clean, do not create an empty commit. If a preceding verification
 ```bash
 git commit -m "fix: complete HPA-185 AI migration"
 ```
+
+## HPA-185 production rollout and migration recovery
+
+Tasks 2–6 are one deployable browser-local migration. For production, deploy and
+verify the new Worker before applying the destructive D1 migration:
+
+1. Deploy the new Worker with `bun run deploy`.
+2. Verify the deployed Worker is serving the new browser-local Profile and game
+   code (including a Profile save and an explicit Blackjack Ask AI smoke check).
+3. Only after that verification succeeds, run `bun run db:migrate:remote`.
+
+Do not run the migration first. The old Worker still reads `llm_settings`, so
+dropping that table before the new Worker is active can break requests served by
+the old code.
+
+If the migration SQL succeeds but recording the migration fails, the migration
+runner prints:
+
+```text
+⚠️  WARNING: Migration was applied but tracking record failed!
+📋 MANUAL RECOVERY REQUIRED:
+   Run this command to manually mark the migration as applied:
+```
+
+Copy and run the exact command printed immediately below that warning. Its form
+is:
+
+```bash
+wrangler d1 execute arcturus --remote --command="INSERT INTO _migrations (name, appliedAt) VALUES ('<migration>', <appliedAt>)"
+```
+
+Use the migration filename and timestamp printed by the runner; do not rerun the
+SQL after it has succeeded.

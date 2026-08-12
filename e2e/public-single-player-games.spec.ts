@@ -25,7 +25,7 @@ type PublicGame = {
 	metadataTarget: 'balance' | 'root';
 	accountOnlyButtonSelector?: string;
 	aiStatusSelector?: string;
-	shouldAvoidProfileLlmSettingsRequest: boolean;
+	shouldAvoidProviderRequests: boolean;
 	guestAiEnabled: boolean;
 };
 
@@ -41,7 +41,7 @@ test.describe('public single-player games', () => {
 			metadataTarget: 'balance',
 			accountOnlyButtonSelector: '#btn-ai-move',
 			aiStatusSelector: '#ai-rival-status',
-			shouldAvoidProfileLlmSettingsRequest: true,
+			shouldAvoidProviderRequests: true,
 			guestAiEnabled: false,
 		},
 		{
@@ -52,7 +52,7 @@ test.describe('public single-player games', () => {
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#btn-ai-rival',
 			aiStatusSelector: '#ai-rival-status',
-			shouldAvoidProfileLlmSettingsRequest: true,
+			shouldAvoidProviderRequests: true,
 			guestAiEnabled: true,
 		},
 		{
@@ -61,7 +61,7 @@ test.describe('public single-player games', () => {
 			balanceSelector: '#chip-balance',
 			heading: 'Baccarat',
 			metadataTarget: 'root',
-			shouldAvoidProfileLlmSettingsRequest: false,
+			shouldAvoidProviderRequests: false,
 			guestAiEnabled: false,
 		},
 		{
@@ -71,19 +71,15 @@ test.describe('public single-player games', () => {
 			heading: 'Craps',
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#llm-advice-btn',
-			shouldAvoidProfileLlmSettingsRequest: false,
+			shouldAvoidProviderRequests: false,
 			guestAiEnabled: false,
 		},
 	];
 
 	for (const game of publicGames) {
 		test(`${game.path} renders in guest mode without sign-in`, async ({ page }) => {
-			const profileLlmSettingsRequests: string[] = [];
 			const providerRequests: string[] = [];
 			page.on('request', (request) => {
-				if (request.url().includes('/api/profile/llm-settings')) {
-					profileLlmSettingsRequests.push(request.url());
-				}
 				if (
 					request.url().includes('api.openai.com') ||
 					request.url().includes('generativelanguage.googleapis.com')
@@ -120,7 +116,7 @@ test.describe('public single-player games', () => {
 				}
 			}
 
-			if (game.shouldAvoidProfileLlmSettingsRequest) {
+			if (game.shouldAvoidProviderRequests) {
 				await page.waitForLoadState('networkidle');
 				if (game.accountOnlyButtonSelector && game.guestAiEnabled) {
 					await expect(page.locator(game.accountOnlyButtonSelector)).toBeEnabled();
@@ -130,7 +126,6 @@ test.describe('public single-player games', () => {
 				if (!game.guestAiEnabled && game.aiStatusSelector) {
 					await expect(page.locator(game.aiStatusSelector)).toContainText('Sign in');
 				}
-				expect(profileLlmSettingsRequests).toEqual([]);
 				expect(providerRequests).toEqual([]);
 			}
 		});
@@ -143,13 +138,6 @@ test.describe('public single-player games', () => {
 	});
 
 	test('public poker ignores persisted guest LLM opponent settings', async ({ page }) => {
-		const profileLlmSettingsRequests: string[] = [];
-		page.on('request', (request) => {
-			if (request.url().includes('/api/profile/llm-settings')) {
-				profileLlmSettingsRequests.push(request.url());
-			}
-		});
-
 		await page.addInitScript(() => {
 			localStorage.setItem('poker_game_settings', JSON.stringify({ useLLMAI: true }));
 		});
@@ -164,18 +152,13 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#setting-use-llm-ai')).not.toBeChecked();
 		await expect(page.locator('#setting-use-llm-ai')).toBeDisabled();
 		await expect(page.locator('#llm-overlay')).toBeHidden();
-		expect(profileLlmSettingsRequests).toEqual([]);
 	});
 
 	test('public blackjack guests receive local advice without provider requests', async ({
 		page,
 	}) => {
-		const profileLlmSettingsRequests: string[] = [];
 		const providerRequests: string[] = [];
 		page.on('request', (request) => {
-			if (request.url().includes('/api/profile/llm-settings')) {
-				profileLlmSettingsRequests.push(request.url());
-			}
 			if (
 				request.url().includes('api.openai.com') ||
 				request.url().includes('generativelanguage.googleapis.com')
@@ -196,7 +179,6 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
 		await page.waitForLoadState('networkidle');
 
-		expect(profileLlmSettingsRequests).toEqual([]);
 		expect(providerRequests).toEqual([]);
 	});
 

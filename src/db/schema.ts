@@ -158,18 +158,6 @@ export const missionOverride = sqliteTable(
 	}),
 );
 
-export const llmSettings = sqliteTable('llm_settings', {
-	userId: text('userId')
-		.primaryKey()
-		.references(() => user.id),
-	provider: text('provider').notNull().default('openai'),
-	model: text('model').notNull().default('gpt-4o'),
-	openaiApiKey: text('openaiApiKey'),
-	geminiApiKey: text('geminiApiKey'),
-	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
-	updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
-});
-
 /**
  * Game statistics per user per game type.
  * Tracks performance metrics for game-specific leaderboards.

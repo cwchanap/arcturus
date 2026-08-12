@@ -58,8 +58,7 @@ export { BlackjackUIRenderer } from './BlackjackUIRenderer';
 // LLM Strategy
 export {
 	getBlackjackAdvice,
-	getRoundCommentary,
-	type LLMSettings,
+	getBlackjackStrategyAdvice,
 	type BlackjackAdviceContext,
 	type BlackjackAdvice,
 } from './llmBlackjackStrategy';

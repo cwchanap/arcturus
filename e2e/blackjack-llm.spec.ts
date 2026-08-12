@@ -1,18 +1,10 @@
 import { test, expect } from '@playwright/test';
-import type { Browser, Page, Route } from '@playwright/test';
-import { createIsolatedPage } from './isolated-page';
+import type { Page } from '@playwright/test';
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 async function gotoBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
-
-	// Ensure LLM-powered rival is enabled in game settings for these tests
-	const toggleSettings = page.locator('#btn-toggle-settings');
-	await toggleSettings.click();
-	const useLlmCheckbox = page.locator('#setting-use-llm');
-	await useLlmCheckbox.check();
-	await page.locator('#btn-save-settings').click();
 }
 
 async function dealHand(page: Page, bet: number = 50) {
@@ -23,9 +15,7 @@ async function dealHand(page: Page, bet: number = 50) {
 
 		const newRoundButton = page.getByRole('button', { name: 'New Round' });
 		const finished = await newRoundButton.isVisible().catch(() => false);
-		if (!finished) {
-			return;
-		}
+		if (!finished) return;
 
 		await page.reload({ waitUntil: 'networkidle' });
 	}
@@ -33,163 +23,79 @@ async function dealHand(page: Page, bet: number = 50) {
 	throw new Error('Unable to reach player turn for testing');
 }
 
-async function mockLlmSettings(page: Page, settings: Record<string, unknown> | null) {
-	await page.route('**/api/profile/llm-settings', async (route) => {
-		await route.fulfill({
-			status: 200,
-			contentType: 'application/json',
-			body: JSON.stringify({ settings }),
+test.describe('Blackjack AI Rival - local-first advice', () => {
+	test('no provider configuration still gives local advice', async ({ page }) => {
+		await page.addInitScript(() => localStorage.removeItem('arcturus-ai-settings'));
+		const providerRequests: string[] = [];
+		page.on('request', (request) => {
+			if (
+				request.url().includes('api.openai.com') ||
+				request.url().includes('generativelanguage.googleapis.com')
+			) {
+				providerRequests.push(request.url());
+			}
 		});
-	});
-}
 
-async function mockOpenAi(
-	page: Page,
-	handler: (route: Route, body: unknown) => Promise<void> | void,
-) {
-	await page.unroute(OPENAI_ENDPOINT).catch(() => {});
-	await page.route(OPENAI_ENDPOINT, async (route) => {
-		const body = route.request().postDataJSON();
-		await handler(route, body);
-	});
-}
-
-// NOTE: createIsolatedPage is called without a `navigate` step here, because
-// each test sets up `page.route` mocks BEFORE navigating to blackjack.
-const createIsolatedBlackjackPage = (browser: Browser, baseURL?: string) =>
-	createIsolatedPage(browser, baseURL, {
-		emailPrefix: 'bj-llm-sync',
-		namePrefix: 'BJ LLM Sync',
+		await gotoBlackjack(page);
+		await dealHand(page, 50);
+		const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
+		await expect(aiButton).toBeEnabled();
+		await aiButton.click();
+		await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
+		await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
+		expect(providerRequests).toEqual([]);
 	});
 
-test.describe('Blackjack AI Rival - LLM integration', () => {
-	test('player with API key receives AI advice', async ({ browser, baseURL }) => {
-		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-		try {
-			await mockLlmSettings(page, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				openaiApiKey: 'test-key',
+	test('configured provider only explains an explicit local move', async ({ page }) => {
+		await page.addInitScript(() =>
+			localStorage.setItem(
+				'arcturus-ai-settings',
+				JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-fake' }),
+			),
+		);
+		let calls = 0;
+		await page.route('https://api.openai.com/**', async (route) => {
+			calls += 1;
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({
+					choices: [{ message: { content: '{"reasoning":"Local strategy explained."}' } }],
+				}),
 			});
+		});
 
-			await mockOpenAi(page, async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({
-						choices: [
-							{
-								message: {
-									content: '{"action":"hit","reasoning":"Hit to escape the dealer pressure."}',
-								},
-							},
-						],
-					}),
-				});
-			});
+		await gotoBlackjack(page);
+		await dealHand(page, 50);
+		expect(calls).toBe(0);
+		await page.getByRole('button', { name: 'Ask AI Rival' }).click();
+		await expect.poll(() => calls).toBe(1);
+		await expect(page.locator('#ai-advice-reasoning')).toContainText('Local strategy explained.');
 
-			await gotoBlackjack(page);
-			await dealHand(page, 50);
-
-			const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
-			await expect(aiButton).toBeEnabled();
-			await aiButton.click();
-
-			const adviceBox = page.locator('#ai-advice-box');
-			await expect(adviceBox).toBeVisible();
-			await expect(page.locator('#ai-advice-action')).toHaveText(/Recommended: HIT/);
-			await expect(page.locator('#ai-advice-reasoning')).toContainText('dealer pressure');
-		} finally {
-			await context.close();
-		}
+		await page.getByRole('button', { name: 'Stand' }).click();
+		await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({ timeout: 15000 });
+		expect(calls).toBe(1);
 	});
 
-	test('player without API key sees configuration overlay', async ({ browser, baseURL }) => {
-		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-		try {
-			await mockLlmSettings(page, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				openaiApiKey: '',
+	test('provider failure keeps the deterministic recommendation visible', async ({ page }) => {
+		await page.addInitScript(() =>
+			localStorage.setItem(
+				'arcturus-ai-settings',
+				JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-fake' }),
+			),
+		);
+		await page.route('https://api.openai.com/**', async (route) => {
+			await route.fulfill({
+				status: 500,
+				contentType: 'application/json',
+				body: JSON.stringify({ error: { message: 'down' } }),
 			});
+		});
 
-			await gotoBlackjack(page);
-			await dealHand(page, 50);
-
-			await page.getByRole('button', { name: 'Ask AI Rival' }).click();
-			await expect(page.locator('#llm-config-overlay')).toBeVisible();
-		} finally {
-			await context.close();
-		}
-	});
-
-	test('LLM API failure shows friendly error message', async ({ browser, baseURL }) => {
-		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-		try {
-			await mockLlmSettings(page, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				openaiApiKey: 'test-key',
-			});
-
-			await mockOpenAi(page, async (route) => {
-				await route.fulfill({
-					status: 500,
-					contentType: 'application/json',
-					body: JSON.stringify({ error: { message: 'down' } }),
-				});
-			});
-
-			await gotoBlackjack(page);
-			await dealHand(page, 50);
-
-			await page.getByRole('button', { name: 'Ask AI Rival' }).click();
-			await expect(page.locator('#ai-advice-box')).toBeVisible();
-			await expect(page.locator('#ai-advice-action')).toHaveText('Unable to get advice');
-			await expect(page.locator('#ai-advice-reasoning')).toContainText('LLM unavailable');
-		} finally {
-			await context.close();
-		}
-	});
-
-	test('AI commentary appears after round when configured', async ({ browser, baseURL }) => {
-		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-		try {
-			await mockLlmSettings(page, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				openaiApiKey: 'test-key',
-			});
-
-			await mockOpenAi(page, async (route, body) => {
-				const content =
-					(body as { messages?: { content: string }[] })?.messages?.[1]?.content ?? '';
-				const responseText = content.includes('Result:')
-					? 'Dealer cracked under the pressure.'
-					: '{"action":"stand","reasoning":"Lock in the win."}';
-
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({
-						choices: [{ message: { content: responseText } }],
-					}),
-				});
-			});
-
-			await gotoBlackjack(page);
-			await dealHand(page, 50);
-
-			await page.getByRole('button', { name: 'Stand' }).click();
-			await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({
-				timeout: 15000,
-			});
-
-			const commentaryBox = page.locator('#ai-commentary-box');
-			await expect(commentaryBox).toBeVisible();
-			await expect(page.locator('#ai-commentary-text')).toContainText('Dealer cracked');
-		} finally {
-			await context.close();
-		}
+		await gotoBlackjack(page);
+		await dealHand(page, 50);
+		await page.getByRole('button', { name: 'Ask AI Rival' }).click();
+		await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
+		await expect(page.locator('#ai-advice-reasoning')).toContainText('basic strategy');
 	});
 });

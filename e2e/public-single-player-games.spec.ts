@@ -1,9 +1,21 @@
 import { expect, test } from '@playwright/test';
 
+type PublicGame = {
+	path: string;
+	rootSelector: string;
+	balanceSelector: string;
+	heading: string;
+	metadataTarget: 'balance' | 'root';
+	accountOnlyButtonSelector?: string;
+	aiStatusSelector?: string;
+	shouldAvoidProfileLlmSettingsRequest: boolean;
+	guestAiEnabled: boolean;
+};
+
 test.describe('public single-player games', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	const publicGames = [
+	const publicGames: PublicGame[] = [
 		{
 			path: '/games/poker',
 			rootSelector: '#poker-root',
@@ -13,6 +25,7 @@ test.describe('public single-player games', () => {
 			accountOnlyButtonSelector: '#btn-ai-move',
 			aiStatusSelector: '#ai-rival-status',
 			shouldAvoidProfileLlmSettingsRequest: true,
+			guestAiEnabled: false,
 		},
 		{
 			path: '/games/blackjack',
@@ -22,8 +35,8 @@ test.describe('public single-player games', () => {
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#btn-ai-rival',
 			aiStatusSelector: '#ai-rival-status',
-			accountOnlySettingsSelector: '#setting-use-llm',
 			shouldAvoidProfileLlmSettingsRequest: true,
+			guestAiEnabled: true,
 		},
 		{
 			path: '/games/baccarat',
@@ -32,6 +45,7 @@ test.describe('public single-player games', () => {
 			heading: 'Baccarat',
 			metadataTarget: 'root',
 			shouldAvoidProfileLlmSettingsRequest: false,
+			guestAiEnabled: false,
 		},
 		{
 			path: '/games/craps',
@@ -41,15 +55,23 @@ test.describe('public single-player games', () => {
 			metadataTarget: 'root',
 			accountOnlyButtonSelector: '#llm-advice-btn',
 			shouldAvoidProfileLlmSettingsRequest: false,
+			guestAiEnabled: false,
 		},
-	] as const;
+	];
 
 	for (const game of publicGames) {
 		test(`${game.path} renders in guest mode without sign-in`, async ({ page }) => {
 			const profileLlmSettingsRequests: string[] = [];
+			const providerRequests: string[] = [];
 			page.on('request', (request) => {
 				if (request.url().includes('/api/profile/llm-settings')) {
 					profileLlmSettingsRequests.push(request.url());
+				}
+				if (
+					request.url().includes('api.openai.com') ||
+					request.url().includes('generativelanguage.googleapis.com')
+				) {
+					providerRequests.push(request.url());
 				}
 			});
 
@@ -74,21 +96,25 @@ test.describe('public single-player games', () => {
 			}
 
 			if (game.accountOnlyButtonSelector) {
-				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
-			}
-
-			if (game.accountOnlySettingsSelector) {
-				await expect(page.locator(game.accountOnlySettingsSelector)).toBeDisabled();
+				if (game.guestAiEnabled) {
+					await expect(page.locator(game.accountOnlyButtonSelector)).toBeEnabled();
+				} else {
+					await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
+				}
 			}
 
 			if (game.shouldAvoidProfileLlmSettingsRequest) {
 				await page.waitForLoadState('networkidle');
-				await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
-				if (game.accountOnlySettingsSelector) {
-					await expect(page.locator(game.accountOnlySettingsSelector)).toBeDisabled();
+				if (game.accountOnlyButtonSelector && game.guestAiEnabled) {
+					await expect(page.locator(game.accountOnlyButtonSelector)).toBeEnabled();
+				} else if (game.accountOnlyButtonSelector) {
+					await expect(page.locator(game.accountOnlyButtonSelector)).toBeDisabled();
 				}
-				await expect(page.locator(game.aiStatusSelector)).toContainText('Sign in');
+				if (!game.guestAiEnabled && game.aiStatusSelector) {
+					await expect(page.locator(game.aiStatusSelector)).toContainText('Sign in');
+				}
 				expect(profileLlmSettingsRequests).toEqual([]);
+				expect(providerRequests).toEqual([]);
 			}
 		});
 	}
@@ -124,31 +150,39 @@ test.describe('public single-player games', () => {
 		expect(profileLlmSettingsRequests).toEqual([]);
 	});
 
-	test('public blackjack ignores persisted guest LLM advisor settings', async ({ page }) => {
+	test('public blackjack guests receive local advice without provider requests', async ({
+		page,
+	}) => {
 		const profileLlmSettingsRequests: string[] = [];
+		const providerRequests: string[] = [];
 		page.on('request', (request) => {
 			if (request.url().includes('/api/profile/llm-settings')) {
 				profileLlmSettingsRequests.push(request.url());
 			}
-		});
-
-		await page.addInitScript(() => {
-			localStorage.setItem(
-				'arcturus:blackjack:settings:anonymous',
-				JSON.stringify({ useLLM: true }),
-			);
+			if (
+				request.url().includes('api.openai.com') ||
+				request.url().includes('generativelanguage.googleapis.com')
+			) {
+				providerRequests.push(request.url());
+			}
 		});
 
 		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
-		await page.waitForLoadState('networkidle');
 
 		await expect(page).toHaveURL(/\/games\/blackjack$/);
 		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.locator('#btn-ai-rival')).toBeDisabled();
-		await expect(page.locator('#ai-rival-status')).toContainText('Sign in');
-		await expect(page.locator('#setting-use-llm')).not.toBeChecked();
-		await expect(page.locator('#setting-use-llm')).toBeDisabled();
+		await expect(page.locator('#btn-ai-rival')).toBeEnabled();
+
+		await page.locator('#bet-amount').fill('50');
+		await page.getByRole('button', { name: 'Deal' }).click();
+		await expect(page.locator('#game-controls')).toBeVisible();
+		await page.getByRole('button', { name: 'Ask AI Rival' }).click();
+		await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
+		await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
+		await page.waitForLoadState('networkidle');
+
 		expect(profileLlmSettingsRequests).toEqual([]);
+		expect(providerRequests).toEqual([]);
 	});
 
 	test('multiplayer poker room remains protected', async ({ page }) => {

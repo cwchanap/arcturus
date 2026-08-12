@@ -6,13 +6,25 @@ import type { BlackjackSettings } from './types';
 import { DEFAULT_SETTINGS, ABSOLUTE_MAX_BET } from './constants';
 
 const SETTINGS_KEY_PREFIX = 'arcturus:blackjack:settings:';
+const SETTING_KEYS: Array<keyof BlackjackSettings> = [
+	'startingChips',
+	'minBet',
+	'maxBet',
+	'dealerSpeed',
+];
 
 /**
  * Validates settings values are within acceptable ranges
  * Returns a sanitized settings object with defaults for invalid values
  */
 function validateSettings(settings: Partial<BlackjackSettings>): Partial<BlackjackSettings> {
-	const validated: Partial<BlackjackSettings> = { ...settings };
+	const validated: Partial<BlackjackSettings> = {};
+	for (const key of SETTING_KEYS) {
+		const value = settings[key];
+		if (value !== undefined) {
+			(validated as Record<string, unknown>)[key] = value;
+		}
+	}
 
 	// Validate numeric ranges
 	if (validated.minBet !== undefined) {
@@ -70,11 +82,6 @@ function validateSettings(settings: Partial<BlackjackSettings>): Partial<Blackja
 		validated.dealerSpeed = DEFAULT_SETTINGS.dealerSpeed;
 	}
 
-	// Validate boolean
-	if (validated.useLLM !== undefined && typeof validated.useLLM !== 'boolean') {
-		validated.useLLM = DEFAULT_SETTINGS.useLLM;
-	}
-
 	return validated;
 }
 
@@ -98,8 +105,7 @@ export class GameSettingsManager {
 				const parsed = JSON.parse(stored) as Partial<BlackjackSettings>;
 				const validSettings: Partial<BlackjackSettings> = {};
 
-				for (const key in parsed) {
-					const k = key as keyof BlackjackSettings;
+				for (const k of SETTING_KEYS) {
 					const value = parsed[k];
 					if (value != null) {
 						(validSettings as Record<string, unknown>)[k] = value;

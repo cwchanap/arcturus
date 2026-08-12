@@ -131,15 +131,6 @@ const clientUserId = gameSession.clientUserId;
 					</div>
 				</div>
 			</div>
-
-			<!-- AI Commentary Box (shown after round) -->
-			<div
-				id="ai-commentary-box"
-				class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--deco-obsidian-2)] backdrop-blur-sm rounded-2xl p-6 border border-[var(--deco-emerald-line)] max-w-sm text-center z-20 shadow-2xl"
-			>
-				<div class="text-4xl mb-3">🎰</div>
-				<div id="ai-commentary-text" class="text-lg text-[var(--deco-ivory)]"></div>
-			</div>
 		</div>
 
 		<!-- Game Controls Section -->
@@ -255,16 +246,11 @@ const clientUserId = gameSession.clientUserId;
 						<div>
 							<div class="text-sm text-[var(--deco-muted)] mb-1">AI Strategy Advisor</div>
 							<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-								{
-									gameSession.isGuest
-										? 'Sign in to use profile-backed AI advice.'
-										: 'Configure API keys in profile to enable'
-								}
+								Local strategy advice is available in every mode.
 							</div>
 						</div>
 						<button
 							id="btn-ai-rival"
-							disabled={gameSession.isGuest}
 							class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-jade)] to-[var(--deco-emerald)] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
 							title="Get AI strategy advice"
 						>
@@ -403,31 +389,6 @@ const clientUserId = gameSession.clientUserId;
 								<option value="fast">Fast (0.5s)</option>
 							</select>
 						</div>
-						<div class="flex items-center gap-3 pt-2">
-							<input
-								type="checkbox"
-								id="setting-use-llm"
-								disabled={gameSession.isGuest}
-								class="w-5 h-5 bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded text-[var(--deco-brass)] focus:ring-[var(--deco-brass)] focus:ring-offset-[var(--deco-obsidian)]"
-							/>
-							<label for="setting-use-llm" class="text-sm text-[var(--deco-ivory-dim)]">
-								Enable AI Rival Strategy Advisor
-							</label>
-						</div>
-						<p class="text-xs text-[var(--deco-muted)]">
-							{
-								gameSession.isGuest ? (
-									'Sign in to use profile-backed AI advice.'
-								) : (
-									<>
-										Requires API key configured in{' '}
-										<a href="/profile" class="text-[var(--deco-brass)] hover:underline">
-											profile settings
-										</a>
-									</>
-								)
-							}
-						</p>
 					</div>
 				</div>
 
@@ -444,39 +405,6 @@ const clientUserId = gameSession.clientUserId;
 						class="flex-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] font-bold py-3 px-6 rounded-lg transition-colors border border-[var(--deco-line)]"
 					>
 						Reset to Defaults
-					</button>
-				</div>
-			</div>
-		</div>
-
-		<!-- LLM Configuration Overlay -->
-		<div
-			id="llm-config-overlay"
-			class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center"
-		>
-			<div
-				class="bg-[var(--deco-obsidian-2)] rounded-2xl p-8 max-w-md mx-4 border border-[var(--deco-line)] shadow-2xl"
-			>
-				<div class="text-center mb-6">
-					<div class="text-5xl mb-4">🤖</div>
-					<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">AI Rival Not Configured</h2>
-					<p class="text-[var(--deco-muted)]">
-						To get AI-powered strategy advice, you need to configure your API key in your profile
-						settings.
-					</p>
-				</div>
-				<div class="space-y-3">
-					<a
-						href="/profile"
-						class="block w-full bg-linear-to-r from-[var(--deco-jade)] to-[var(--deco-emerald)] text-white font-bold py-3 px-6 rounded-lg text-center transition-all"
-					>
-						Configure API Key
-					</a>
-					<button
-						id="btn-close-overlay"
-						class="w-full bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] font-bold py-3 px-6 rounded-lg transition-colors border border-[var(--deco-line)]"
-					>
-						Play Without AI
 					</button>
 				</div>
 			</div>

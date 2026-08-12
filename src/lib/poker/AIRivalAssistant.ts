@@ -6,16 +6,9 @@
 import type { Card, Player } from './types';
 import { getCallAmount, getHighestBet } from './index';
 import { getSuitSymbol } from '../card-format';
-import { fetchWithTimeout } from '../fetch-with-timeout';
+import { generateAiJson, loadAiSettings, type AiSettings } from '../ai';
 import { isGuestModeValue } from '../public-game-session';
 
-export type AiProvider = 'openai' | 'gemini';
-export type AiSettings = {
-	provider: AiProvider;
-	model: string;
-	openaiApiKey: string | null;
-	geminiApiKey: string | null;
-};
 export type AiMoveType = 'fold' | 'check' | 'call' | 'raise';
 export type AiMove = {
 	move: AiMoveType;
@@ -27,7 +20,12 @@ export class AIRivalAssistant {
 	private aiSettings: AiSettings | null = null;
 
 	constructor() {
-		this.loadAiSettings();
+		if (this.isGuestMode()) {
+			this.setButtonState({ disabled: true });
+			this.updateStatus('Sign in to use profile-backed AI rivals.', 'neutral');
+			return;
+		}
+		this.hydrateFromLocalSettings();
 	}
 
 	// Small helper to avoid DOM access crashes in non-browser environments
@@ -123,57 +121,13 @@ export class AIRivalAssistant {
 	// === Settings Management ===
 
 	private getAiKey(settings: AiSettings | null): string | null {
-		if (!settings) return null;
-		if (settings.provider === 'openai') {
-			return settings.openaiApiKey ?? null;
-		}
-		if (settings.provider === 'gemini') {
-			return settings.geminiApiKey ?? null;
-		}
-		return null;
+		return settings?.apiKey?.trim() || null;
 	}
 
-	private async loadAiSettings() {
-		if (this.isGuestMode()) {
-			this.aiSettings = null;
-			this.setButtonState({ disabled: true });
-			this.updateStatus('Sign in to use profile-backed AI rivals.', 'neutral');
-			return;
-		}
-
-		this.updateStatus('Loading rival settings…', 'neutral');
-		try {
-			const response = await fetch('/api/profile/llm-settings');
-			if (!response.ok) {
-				throw new Error(`Unexpected status ${response.status}`);
-			}
-			const data = (await response.json()) as { settings?: AiSettings | null };
-			const settings = data?.settings;
-			if (
-				settings &&
-				(settings.provider === 'openai' || settings.provider === 'gemini') &&
-				typeof settings.model === 'string'
-			) {
-				this.aiSettings = {
-					provider: settings.provider,
-					model: settings.model,
-					openaiApiKey: typeof settings.openaiApiKey === 'string' ? settings.openaiApiKey : null,
-					geminiApiKey: typeof settings.geminiApiKey === 'string' ? settings.geminiApiKey : null,
-				};
-				const hasKey = Boolean(this.getAiKey(this.aiSettings));
-				this.setButtonState({ disabled: !hasKey });
-				this.updateStatus();
-			} else {
-				this.aiSettings = null;
-				this.setButtonState({ disabled: true });
-				this.updateStatus('No AI rival settings stored yet.', 'error');
-			}
-		} catch (error) {
-			console.error('Failed to load AI rival settings:', error);
-			this.aiSettings = null;
-			this.setButtonState({ disabled: true });
-			this.updateStatus('Unable to load rival settings.', 'error');
-		}
+	private hydrateFromLocalSettings(): void {
+		this.aiSettings = loadAiSettings();
+		this.setButtonState({ disabled: !this.aiSettings });
+		this.updateStatus();
 	}
 
 	// === Prompt Building ===
@@ -212,113 +166,6 @@ Current bet to match: $${callAmount}
 Respond with a JSON object describing your recommended move.
 Use the shape {"move":"fold|check|call|raise","amount":number?}. Amount is required only for raises.
 Keep the JSON as the only output.`;
-	}
-
-	// === API Calls ===
-
-	private async callOpenAi(prompt: string, model: string, apiKey: string) {
-		let response: Response;
-		try {
-			response = await fetchWithTimeout(
-				'https://api.openai.com/v1/chat/completions',
-				{
-					method: 'POST',
-					headers: {
-						'content-type': 'application/json',
-						authorization: `Bearer ${apiKey}`,
-					},
-					body: JSON.stringify({
-						model,
-						messages: [
-							{
-								role: 'system',
-								content:
-									'You are an elite poker rival helping determine the next move. Answer in JSON only.',
-							},
-							{ role: 'user', content: prompt },
-						],
-						temperature: 0.6,
-					}),
-				},
-				5000, // 5 second timeout
-			);
-		} catch (error) {
-			if (error instanceof Error && error.name === 'AbortError') {
-				throw new Error('Request timed out');
-			}
-			throw error;
-		}
-
-		const data = (await response.json()) as {
-			error?: { message?: string };
-			choices?: Array<{ message?: { content?: string } }>;
-		};
-		if (!response.ok) {
-			const message =
-				typeof data?.error?.message === 'string'
-					? data.error.message
-					: `OpenAI request failed with status ${response.status}`;
-			throw new Error(message);
-		}
-
-		return data?.choices?.[0]?.message?.content ?? JSON.stringify({ move: 'check', amount: null });
-	}
-
-	private async callGemini(prompt: string, model: string, apiKey: string) {
-		let response: Response;
-		try {
-			response = await fetchWithTimeout(
-				`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-				{
-					method: 'POST',
-					headers: {
-						'content-type': 'application/json',
-					},
-					body: JSON.stringify({
-						generationConfig: {
-							temperature: 0.6,
-						},
-						contents: [
-							{
-								role: 'user',
-								parts: [
-									{
-										text: `You are an elite poker rival helping determine the next move. Answer in JSON only.\n${prompt}`,
-									},
-								],
-							},
-						],
-					}),
-				},
-				5000, // 5 second timeout
-			);
-		} catch (error) {
-			if (error instanceof Error && error.name === 'AbortError') {
-				throw new Error('Request timed out');
-			}
-			throw error;
-		}
-
-		const data = (await response.json()) as {
-			error?: { message?: string } | string;
-			candidates?: Array<{
-				content?: { parts?: Array<{ text?: string }> };
-			}>;
-		};
-		if (!response.ok) {
-			const message =
-				typeof data?.error === 'string'
-					? data.error
-					: (data?.error?.message ?? `Gemini request failed with status ${response.status}`);
-			throw new Error(message ?? 'Unknown Gemini error');
-		}
-
-		const text = data?.candidates?.[0]?.content?.parts
-			?.map((part: { text?: string }) => part.text ?? '')
-			.join('')
-			.trim();
-
-		return text || JSON.stringify({ move: 'check', amount: null });
 	}
 
 	// === Response Parsing ===
@@ -470,15 +317,16 @@ Keep the JSON as the only output.`;
 
 		try {
 			const prompt = this.buildPrompt(gamePhase, humanPlayer, communityCards, pot, players);
-			let rawResponse = '';
+			const result = await generateAiJson(settings, {
+				system:
+					'You are an elite poker rival helping determine the next move. Answer in JSON only.',
+				prompt,
+				temperature: 0.6,
+				maxOutputTokens: 200,
+			});
+			if (!result.ok) throw new Error(result.message);
 
-			if (settings.provider === 'openai') {
-				rawResponse = await this.callOpenAi(prompt, settings.model, apiKey);
-			} else {
-				rawResponse = await this.callGemini(prompt, settings.model, apiKey);
-			}
-
-			const move = this.parseAiMove(rawResponse);
+			const move = this.parseAiMove(JSON.stringify(result.value));
 			this.applyAiMove(move, updateGameStatusCallback);
 
 			const stillHasKey = Boolean(this.getAiKey(this.aiSettings));

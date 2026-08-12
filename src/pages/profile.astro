@@ -37,8 +37,8 @@ const clampedPercentage = () =>
 if (dbBinding) {
 	const db = createDb(dbBinding);
 
-	// The three profile reads are independent — run them concurrently to keep
-	// profile TTFB to a single D1 round trip window instead of three sequential
+	// The two profile reads are independent — run them concurrently to keep
+	// profile TTFB to a single D1 round trip window instead of two sequential
 	// ones. Each loader captures its own error state so a failure in one does
 	// not mask or abort the others.
 	const [statsState, achievementsResult] = await Promise.all([
@@ -222,9 +222,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 							id="ai-model"
 							name="model"
 							class="deco-input mt-2 w-full px-3 py-2 text-sm"
-							data-model-options={JSON.stringify(aiModelOptions)}
 							data-model-labels={JSON.stringify(modelLabels)}
-							data-initial-model={initialAiModel}
 						>
 							{
 								aiModelOptions[initialAiProvider].map((model: string) => (

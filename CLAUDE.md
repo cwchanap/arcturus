@@ -155,7 +155,7 @@ src/
 │   ├── api/
 │   │   ├── auth/[...all].ts    # Better Auth API
 │   │   ├── missions/           # Mission completion endpoints
-│   │   ├── profile/            # User settings (LLM config)
+│   │   ├── profile/            # Profile and statistics endpoints
 │   │   └── wallet/settle.ts    # Wallet settlement endpoint
 │   ├── signin.astro
 │   └── profile.astro
@@ -166,7 +166,7 @@ src/
 │   ├── db.ts              # Database factory
 │   ├── fetch-with-timeout.ts # Shared fetch + abort-timeout helper (cross-game)
 │   ├── missions.ts        # Mission system logic
-│   ├── llm-settings.ts    # User LLM configuration
+│   ├── ai/                # Browser-local BYOK settings and provider transport
 │   ├── poker/             # Poker game logic (modular)
 │   │   ├── types.ts       # TypeScript interfaces
 │   │   ├── constants.ts   # Game constants
@@ -257,7 +257,7 @@ drizzle/                   # Generated SQL migrations
 
 5. **Mission System**: Daily login rewards, chip balance updates via `src/lib/missions.ts`
 
-6. **LLM Integration**: User-configured AI settings (OpenAI/Gemini) for game assistants via `src/lib/llm-settings.ts`. Each game has its own LLM strategy module for context-aware hints.
+6. **AI Integration**: User-configured OpenAI/Gemini settings are stored in browser `localStorage` through `src/lib/ai`; the shared client owns provider transport and each game keeps its own prompts, validation, and fallbacks.
 
 7. **Wallet Settlement**: Wallet-coupled games settle each completed round through `POST /api/wallet/settle`. Room-local multiplayer games (e.g. `/games/poker-mp`) use room-local chips and never call the wallet endpoint.
 
@@ -272,7 +272,6 @@ Tables defined in `src/db/schema.ts`:
 - **account** - OAuth provider accounts
 - **verification** - Email verification tokens
 - **mission** - Mission completion tracking
-- **llm_settings** - User LLM configuration (API keys, model selection)
 
 ## Testing
 
@@ -335,6 +334,19 @@ Before deploying to Cloudflare:
 4. Set Google OAuth client secret: `wrangler secret put GOOGLE_CLIENT_SECRET` (`GOOGLE_CLIENT_ID` is a public Worker var already declared in `wrangler.toml`)
 5. Apply migrations: `bun run db:migrate:remote`
 6. Deploy: `bun run deploy`
+
+**HPA-185 rollout exception:** Deploy and verify the new Worker with `bun run deploy`
+before running `bun run db:migrate:remote`. The old Worker still reads
+`llm_settings`; migrate-first can break requests handled by old code after the
+table is dropped. If the migration SQL succeeds but recording fails, the
+migration runner prints `MANUAL RECOVERY REQUIRED` and the exact command to run:
+
+```bash
+wrangler d1 execute arcturus --remote --command="INSERT INTO _migrations (name, appliedAt) VALUES ('<migration>', <appliedAt>)"
+```
+
+Copy that command from the runner output with its printed migration filename and
+timestamp; do not rerun SQL that already succeeded.
 
 ## Common Issues
 

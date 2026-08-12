@@ -1,4 +1,21 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+async function dealBlackjackHand(page: Page, bet: number = 50) {
+	for (let attempt = 0; attempt < 5; attempt++) {
+		await page.fill('#bet-amount', String(bet));
+		await page.getByRole('button', { name: 'Deal' }).click();
+		await page.locator('#game-controls').waitFor({ state: 'visible' });
+
+		const newRoundButton = page.getByRole('button', { name: 'New Round' });
+		const finished = await newRoundButton.isVisible().catch(() => false);
+		if (!finished) return;
+
+		await page.reload({ waitUntil: 'networkidle' });
+	}
+
+	throw new Error('Unable to reach player turn for testing');
+}
 
 type PublicGame = {
 	path: string;
@@ -173,9 +190,7 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
 		await expect(page.locator('#btn-ai-rival')).toBeEnabled();
 
-		await page.locator('#bet-amount').fill('50');
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await expect(page.locator('#game-controls')).toBeVisible();
+		await dealBlackjackHand(page, 50);
 		await page.getByRole('button', { name: 'Ask AI Rival' }).click();
 		await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
 		await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();

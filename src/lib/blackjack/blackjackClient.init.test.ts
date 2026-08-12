@@ -453,17 +453,23 @@ describe('Blackjack client initialization and settlement flow', () => {
 			JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'stale-guest-key' }),
 		);
 		const { calls } = installFetch();
-		initBlackjackClient();
-		await flush(5);
+		const originalRandom = Math.random;
+		Math.random = () => 0.999999;
+		try {
+			initBlackjackClient();
+			await flush(5);
 
-		clickDeal();
-		await flush(2);
-		(document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
-		await flush(2);
+			clickDeal();
+			await flush(2);
+			(document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
+			await flush(2);
 
-		expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
-		expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
-		root.remove();
+			expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
+			expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
+		} finally {
+			Math.random = originalRandom;
+			root.remove();
+		}
 	});
 
 	test('round completion does not perform automatic provider traffic', async () => {

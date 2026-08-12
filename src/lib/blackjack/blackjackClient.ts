@@ -16,25 +16,58 @@ import {
 	shouldSyncAccountChips,
 } from '../public-game-session';
 import {
-	clearPendingStats,
-	createPendingStats,
-	ensureRoundStatsIncluded,
-	markSyncPendingOnRateLimit,
-	reconcilePendingBiggestWin,
-} from './balance-sync-stats';
+	createSettlementGate,
+	ensureSettlementRecoveryControls,
+	newSettlementId,
+	type SettlementGate,
+	type SettleRoundCommand,
+	type SettleRoundResult,
+} from '../wallet';
 
-// Crypto-strong syncId (matches keno/slots clients). Falls back to Math.random
-// only when crypto.randomUUID is unavailable. The server's chip_sync_receipt
-// PK (userId+syncId) guarantees exact-once dedup; a collision is benign.
-// Routing blackjack through the receipt-gated path durably couples mission
-// progress to the chip event instead of a separate best-effort write whose
-// errors are swallowed after stats commit.
-function makeSyncId(): string {
-	const rand =
-		typeof crypto !== 'undefined' && crypto.randomUUID
-			? crypto.randomUUID()
-			: Math.random().toString(36).slice(2, 10);
-	return `bj-${Date.now()}-${rand}`;
+/** Build the one wallet command produced by a completed Blackjack round. */
+export function buildBlackjackSettlementCommand(
+	outcomes: readonly RoundOutcome[],
+	delta: number,
+	playerHands: readonly { bet: number }[],
+): SettleRoundCommand {
+	const wins = outcomes.filter(
+		(outcome) => outcome.result === 'win' || outcome.result === 'blackjack',
+	).length;
+	const losses = outcomes.filter((outcome) => outcome.result === 'loss').length;
+	const biggestWin = outcomes.reduce((largest, outcome) => {
+		const bet = playerHands[outcome.handIndex]?.bet ?? 0;
+		return Math.max(largest, outcome.payout - bet);
+	}, 0);
+
+	return {
+		settlementId: newSettlementId('blackjack'),
+		game: 'blackjack',
+		delta,
+		stats: {
+			rounds: outcomes.length,
+			wins,
+			losses,
+			biggestWin: Math.max(0, biggestWin),
+		},
+	};
+}
+
+/** Keep guest play local while blocking authenticated rounds behind the gate. */
+export function canStartBlackjackRound({
+	isGuestMode,
+	gate,
+}: {
+	isGuestMode: boolean;
+	gate: Pick<SettlementGate, 'isBlocked'>;
+}): boolean {
+	return isGuestMode || !gate.isBlocked;
+}
+
+/** Delegate recovery to the shared settlement gate. */
+export function retryBlackjackSettlement(
+	gate: Pick<SettlementGate, 'retry'>,
+): Promise<SettleRoundResult | null> {
+	return gate.retry();
 }
 
 /**
@@ -152,35 +185,13 @@ export function initBlackjackClient(): void {
 		}
 	};
 
-	// Track the server-synced balance separately from game state.
-	// This is the balance the server knows about, updated only after successful API calls.
-	// Used for optimistic locking to avoid BALANCE_MISMATCH errors.
+	// Track the server-confirmed balance separately from game state. This is the
+	// balance known by the wallet, updated only after successful settlements.
 	let serverSyncedBalance = isGuestMode ? restoredGuestBalance : initialBalance;
-
-	// Track pending stats from rounds where sync is delayed (e.g., rate-limited)
-	// This prevents stats drift when multiple rounds are played before sync succeeds
-	let pendingStats = createPendingStats();
-	let syncPending = false;
-
-	// Track pending retry timer to cancel stale retries before starting new sync
-	let pendingRetryTimer: ReturnType<typeof setTimeout> | null = null;
-
-	// Concurrency guard: prevents overlapping performChipUpdate executions
-	let isSyncInProgress = false;
-
-	// Track follow-up sync attempts to prevent infinite retry loops
-	let followUpSyncAttempts = 0;
-	const MAX_FOLLOW_UP_ATTEMPTS = 3;
-
-	// Stable syncId for the current sync attempt. Generated when a new sync
-	// starts (retryCount === 0) and reused across rate-limit retries so the
-	// server deduplicates the retried request via chip_sync_receipt PK. A
-	// follow-up sync (new pendingStats after a successful sync) gets a fresh
-	// syncId because the delta+stats payload differs.
-	let currentSyncId = '';
 
 	// Initialize game with configured bet limits
 	const game = new BlackjackGame(serverSyncedBalance, settings.minBet, settings.maxBet);
+	const settlementGate = createSettlementGate();
 
 	// LLM settings state
 	let llmSettings: LLMSettings | null = null;
@@ -210,6 +221,72 @@ export function initBlackjackClient(): void {
 	const aiCommentaryText = document.getElementById('ai-commentary-text') as HTMLElement;
 	const llmConfigOverlay = document.getElementById('llm-config-overlay') as HTMLElement;
 	const btnCloseOverlay = document.getElementById('btn-close-overlay') as HTMLButtonElement;
+
+	// Recovery controls stay hidden during normal play and are revealed only when
+	// a settlement fails. Keeping them out of the static page markup preserves
+	// the existing game DOM until the user actually needs Retry/Reset.
+	const settlementRecovery = ensureSettlementRecoveryControls({
+		containerClass: 'hidden mt-3 flex flex-wrap justify-center gap-2',
+		retryClass: 'deco-btn deco-btn-outline',
+		retryLabel: 'Retry settlement',
+		resetClass: 'deco-btn deco-btn-outline',
+		resetLabel: 'Reset round',
+		attachTo: statusEl.parentElement,
+	});
+
+	const showSettlementRecovery = (message: string) => {
+		statusEl.textContent = message;
+		settlementRecovery.container?.classList.remove('hidden');
+	};
+	const hideSettlementRecovery = () => {
+		settlementRecovery.container?.classList.add('hidden');
+	};
+
+	const adoptSettlementResult = (result: SettleRoundResult) => {
+		serverSyncedBalance = result.balance;
+		game.setBalance(result.balance);
+		hideSettlementRecovery();
+		if (result.newAchievements && result.newAchievements.length > 0) {
+			window.dispatchEvent(
+				new CustomEvent('achievement-earned', {
+					detail: { achievements: result.newAchievements },
+				}),
+			);
+		}
+		renderGame();
+	};
+
+	const settleAuthenticatedRound = async (command: SettleRoundCommand): Promise<void> => {
+		try {
+			const result = await settlementGate.settle(command);
+			adoptSettlementResult(result);
+		} catch (error) {
+			console.error('[WALLET_SETTLEMENT] Blackjack settlement failed:', error);
+			showSettlementRecovery('Settlement failed. Retry or reset before starting another round.');
+		}
+	};
+
+	settlementRecovery.retry?.addEventListener('click', async () => {
+		if (!settlementGate.pending) return;
+		statusEl.textContent = 'Retrying settlement...';
+		try {
+			const result = await retryBlackjackSettlement(settlementGate);
+			if (result) adoptSettlementResult(result);
+		} catch (error) {
+			console.error('[WALLET_SETTLEMENT] Blackjack settlement retry failed:', error);
+			showSettlementRecovery(
+				'Settlement failed again. Retry or reset before starting another round.',
+			);
+		}
+	});
+
+	settlementRecovery.reset?.addEventListener('click', () => {
+		settlementGate.reset();
+		game.setBalance(serverSyncedBalance);
+		hideSettlementRecovery();
+		renderGame();
+		statusEl.textContent = 'Settlement reset. Place your bet to start.';
+	});
 
 	// Settings panel elements (optional - may not exist on page)
 	const btnToggleSettings = document.getElementById(
@@ -611,6 +688,13 @@ export function initBlackjackClient(): void {
 
 	// New round button
 	btnNewRound.addEventListener('click', () => {
+		if (!canStartBlackjackRound({ isGuestMode, gate: settlementGate })) {
+			showSettlementRecovery(
+				'Settlement is still pending. Retry or reset before starting another round.',
+			);
+			return;
+		}
+
 		game.startNewRound();
 		renderGame();
 		bettingControls.classList.remove('hidden');
@@ -905,6 +989,18 @@ export function initBlackjackClient(): void {
 		// Balance sync and optional commentary can continue asynchronously.
 		btnNewRound.classList.remove('hidden');
 
+		let settlementPromise: Promise<void> | null = null;
+		if (shouldSyncAccountChips({ isGuestMode })) {
+			const command = buildBlackjackSettlementCommand(
+				outcomes,
+				game.getBalance() - serverSyncedBalance,
+				state.playerHands,
+			);
+			// Start the gate before optional commentary awaits, so New Round sees
+			// the blocked state for the entire settlement attempt.
+			settlementPromise = settleAuthenticatedRound(command);
+		}
+
 		// Get AI commentary if configured
 		if (llmConfigured && llmSettings) {
 			try {
@@ -941,334 +1037,7 @@ export function initBlackjackClient(): void {
 			return;
 		}
 
-		// Update balance in database
-		// Flag to track whether current round stats have been included in pendingStats
-		let statsIncluded = false;
-
-		try {
-			// NOTE: During async balance sync, we try to avoid overwriting the round-result message.
-			// This is a heuristic based on matching the current status text; if the status is empty or
-			// contains unexpected copy, this can fail and allow intermediate sync messages to appear.
-			// Consider tracking an explicit "round just completed" flag in state instead of regex.
-			const statusBeforeSync = statusEl.textContent || '';
-			const preserveRoundResultStatus = /win|wins|Dealer wins|Push|BLACKJACK|Bust/i.test(
-				statusBeforeSync,
-			);
-			const setStatusIfNotRoundResult = (message: string) => {
-				if (!preserveRoundResultStatus) {
-					statusEl.textContent = message;
-				}
-			};
-
-			// Determine outcome for stats tracking
-			// For split hands, count actual wins/losses per hand instead of using overall result
-			const winsIncrement = outcomes.filter(
-				(o) => o.result === 'win' || o.result === 'blackjack',
-			).length;
-			const lossesIncrement = outcomes.filter((o) => o.result === 'loss').length;
-			// Pushes are tracked via handsIncrement, not sent to API separately
-			const _pushesIncrement = outcomes.filter((o) => o.result === 'push').length;
-
-			// Determine primary outcome for backward compatibility
-			// Use overall result for non-split rounds, or derive from net result for split rounds
-			const overallResult = getOverallResult(outcomes);
-			const outcomeForStats =
-				overallResult === 'blackjack' ? 'win' : (overallResult as 'win' | 'loss' | 'push');
-
-			// Calculate biggest win for split-hand rounds
-			// For split hands, we need to track maximum win per individual hand,
-			// not total delta, to avoid conflating "split hands" with "aggregated multi-round sync"
-			// The API uses handCount > 1 as a proxy for "aggregated sync", so we explicitly provide
-			// biggestWinCandidate to override this for split-hand rounds
-			let biggestWinCandidate: number | undefined;
-			if (outcomes.length > 1) {
-				// Split hand: calculate maximum win per hand
-				// We need the original bets from state before settleRound mutated them
-				// First filter outcomes by valid state.playerHands[o.handIndex] before computing Math.max
-				const validProfits = outcomes
-					.filter((o) => state.playerHands[o.handIndex])
-					.map((o) => {
-						const originalHand = state.playerHands[o.handIndex];
-						// Profit = payout - original bet
-						return o.payout - originalHand.bet;
-					});
-				const maxWin = validProfits.length > 0 ? Math.max(...validProfits) : 0;
-				biggestWinCandidate = maxWin > 0 ? maxWin : undefined;
-			}
-
-			// Helper to perform the chip update request
-			const performChipUpdate = async (retryCount = 0): Promise<void> => {
-				// Merge round stats into pendingStats BEFORE the concurrency guard
-				// This ensures stats are preserved even if we return early due to sync in progress
-				const roundBiggestWin = biggestWinCandidate ?? 0;
-				const roundStats = {
-					winsIncrement,
-					lossesIncrement,
-					handsIncrement: outcomes.length,
-					biggestWin: roundBiggestWin,
-				};
-				({ pendingStats, statsIncluded } = ensureRoundStatsIncluded(
-					pendingStats,
-					roundStats,
-					statsIncluded,
-				));
-
-				// Concurrency guard: skip if another performChipUpdate is already in-flight
-				// Stats are already merged above, so they won't be lost
-				if (isSyncInProgress) {
-					return;
-				}
-				isSyncInProgress = true;
-
-				// Generate a fresh syncId for a new sync attempt (retryCount === 0).
-				// Rate-limit retries (retryCount > 0) reuse currentSyncId so the
-				// server's chip_sync_receipt deduplicates the retried request — the
-				// delta+stats payload is identical. A follow-up sync (new pendingStats
-				// after a successful sync) calls performChipUpdate() with retryCount=0
-				// and gets a fresh syncId because the payload differs.
-				if (retryCount === 0) {
-					currentSyncId = makeSyncId();
-				}
-
-				try {
-					await doPerformChipUpdate(retryCount);
-				} finally {
-					// Only clear isSyncInProgress if no retry is pending
-					// When retry is scheduled, the retry's finally block handles cleanup
-					if (!pendingRetryTimer) {
-						isSyncInProgress = false;
-						// If syncPending is true after clearing isSyncInProgress, trigger follow-up sync
-						// This handles the case where new rounds completed during the sync and queued their stats
-						if (syncPending) {
-							// Check if we've exceeded max follow-up attempts
-							if (followUpSyncAttempts >= MAX_FOLLOW_UP_ATTEMPTS) {
-								console.error('[BALANCE_SYNC] Max follow-up attempts reached, abandoning sync');
-								// Clear pending state to prevent infinite loop
-								syncPending = false;
-								statsIncluded = false;
-								pendingStats = clearPendingStats();
-								followUpSyncAttempts = 0;
-							} else {
-								// Increment attempt counter and use exponential backoff
-								followUpSyncAttempts++;
-								const backoffDelay = Math.min(1000 * Math.pow(2, followUpSyncAttempts - 1), 8000);
-								// Ensure statsIncluded stays true for follow-up so the original round stats
-								// are not re-merged into pendingStats
-								statsIncluded = true;
-								// Release the sync lock BEFORE scheduling the follow-up retry so it can acquire it
-								isSyncInProgress = false;
-								pendingRetryTimer = setTimeout(() => {
-									void performChipUpdate().catch((error) => {
-										console.error('[BALANCE_SYNC] Follow-up sync error:', error);
-									});
-								}, backoffDelay);
-							}
-						} else {
-							// Reset follow-up attempts when sync completes successfully
-							followUpSyncAttempts = 0;
-						}
-					}
-				}
-			};
-
-			const doPerformChipUpdate = async (retryCount = 0): Promise<void> => {
-				// Clear any pending retry timer from previous sync attempt to prevent stale deltas
-				if (pendingRetryTimer) {
-					clearTimeout(pendingRetryTimer);
-					pendingRetryTimer = null;
-				}
-
-				// Recompute delta using current game balance (not stale cached delta)
-				// This prevents double-applying deltas when a later round syncs before an earlier retry
-				const currentGameBalance = game.getBalance();
-				const deltaForRequest = currentGameBalance - serverSyncedBalance;
-
-				// Stats were already merged in performChipUpdate before the concurrency guard
-				// No need to call ensureRoundStatsIncluded again here
-				const finalWinsIncrement = pendingStats.winsIncrement;
-				const finalLossesIncrement = pendingStats.lossesIncrement;
-				const finalHandCount = pendingStats.handsIncrement;
-				// Use the max of all pending rounds' biggest wins for the aggregated sync
-				const sentBiggestWin = pendingStats.biggestWin > 0 ? pendingStats.biggestWin : undefined;
-
-				// Snapshot the stats we're about to send to avoid losing concurrent updates
-				const snapshotPending = { ...pendingStats };
-
-				const response = await fetch('/api/chips/update', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
-						previousBalance: serverSyncedBalance,
-						delta: deltaForRequest,
-						gameType: 'blackjack',
-						// syncId routes this request through the receipt-gated atomic
-						// batch so mission progress commits with (or no-ops with) the
-						// chip+stats write instead of being a deferred best-effort call
-						// whose errors are swallowed after stats commit.
-						syncId: currentSyncId,
-						maxBet: settings.maxBet,
-						outcome: outcomeForStats,
-						handCount: finalHandCount,
-						// Send accumulated stats including pending ones
-						winsIncrement: finalWinsIncrement,
-						lossesIncrement: finalLossesIncrement,
-						// Send aggregated max biggest win across all pending rounds
-						biggestWinCandidate: sentBiggestWin,
-					}),
-				});
-
-				if (response.ok) {
-					// Subtract only the snapshot values we just synced (preserve concurrent updates)
-					// Clamp to zero to prevent negative values from concurrent round race conditions
-					pendingStats.winsIncrement = Math.max(
-						0,
-						pendingStats.winsIncrement - snapshotPending.winsIncrement,
-					);
-					pendingStats.lossesIncrement = Math.max(
-						0,
-						pendingStats.lossesIncrement - snapshotPending.lossesIncrement,
-					);
-					pendingStats.handsIncrement = Math.max(
-						0,
-						pendingStats.handsIncrement - snapshotPending.handsIncrement,
-					);
-					pendingStats.biggestWin = reconcilePendingBiggestWin(
-						pendingStats.biggestWin,
-						snapshotPending.biggestWin,
-					);
-					// If any pending stats remain, keep syncPending true for follow-up
-					// Include biggestWin in the check to ensure it's sent in follow-up sync
-					syncPending =
-						pendingStats.winsIncrement > 0 ||
-						pendingStats.lossesIncrement > 0 ||
-						pendingStats.handsIncrement > 0 ||
-						pendingStats.biggestWin > 0;
-					if (!syncPending) {
-						statsIncluded = false;
-						// Reset follow-up attempts on successful sync completion
-						followUpSyncAttempts = 0;
-					}
-					pendingRetryTimer = null;
-
-					// Update our server-synced balance tracker after successful sync
-					// Use the same balance reference that was used for the delta calculation
-					serverSyncedBalance = currentGameBalance;
-					if (retryCount > 0) {
-						setStatusIfNotRoundResult('Balance synced successfully.');
-					}
-
-					// Check for newly earned achievements and warnings
-					const data = (await response.json().catch((err: unknown) => {
-						console.warn('[BALANCE_SYNC] Failed to parse success response JSON:', err);
-						return {};
-					})) as {
-						newAchievements?: Array<{ id: string; name: string; icon: string }>;
-						warnings?: string[];
-					};
-					if (
-						data.newAchievements &&
-						Array.isArray(data.newAchievements) &&
-						data.newAchievements.length > 0
-					) {
-						// Dispatch custom event for UI to handle
-						window.dispatchEvent(
-							new CustomEvent('achievement-earned', {
-								detail: { achievements: data.newAchievements },
-							}),
-						);
-					}
-					// Log warnings from server for debugging (stats tracking failures, etc.)
-					if (data.warnings && Array.isArray(data.warnings) && data.warnings.length > 0) {
-						console.warn('[BALANCE_SYNC] Server warnings:', data.warnings);
-					}
-					return;
-				}
-
-				const errorData = (await response.json().catch(() => ({}))) as {
-					error?: string;
-					message?: string;
-					currentBalance?: number;
-				};
-
-				// Special handling for RATE_LIMITED: retry after delay instead of reverting
-				if (errorData.error === 'RATE_LIMITED' && retryCount < 3) {
-					const retryAfter = parseInt(response.headers.get('Retry-After') || '2', 10) * 1000;
-					console.warn(
-						`Chip update rate limited, retrying in ${retryAfter}ms (attempt ${retryCount + 1})`,
-					);
-					setStatusIfNotRoundResult('Syncing balance...');
-
-					// Set syncPending to true only when first encountering rate limit
-					// Stats are already added to pendingStats at the start of performChipUpdate
-					syncPending = markSyncPendingOnRateLimit(syncPending);
-
-					// Keep the current balance and retry after the rate limit window
-					// Release the sync lock BEFORE scheduling the retry so the retry can acquire it
-					isSyncInProgress = false;
-					pendingRetryTimer = setTimeout(() => {
-						performChipUpdate(retryCount + 1).catch((err) => {
-							console.error('Retry failed:', err);
-						});
-					}, retryAfter + 100); // Add 100ms buffer
-					return;
-				}
-
-				// For other errors, handle by reverting to server state
-				if (errorData.currentBalance !== undefined) {
-					// Server provided its current balance - use it as authoritative truth
-					const serverBalance = errorData.currentBalance as number;
-					serverSyncedBalance = serverBalance;
-					game.setBalance(serverBalance);
-					renderGame();
-					setStatusIfNotRoundResult(`Balance synced to ${serverBalance} chips.`);
-					// Clear pending stats since we're reverting to server state
-					pendingStats = clearPendingStats();
-					syncPending = false;
-					statsIncluded = false;
-					pendingRetryTimer = null;
-				} else if (errorData.error !== 'RATE_LIMITED') {
-					// Only revert for non-rate-limit errors when no server balance provided
-					game.setBalance(serverSyncedBalance);
-					renderGame();
-					// Clear pending stats for non-rate-limit errors
-					pendingStats = clearPendingStats();
-					syncPending = false;
-					statsIncluded = false;
-					pendingRetryTimer = null;
-				}
-
-				// Show appropriate error message to user
-				if (errorData.error === 'BALANCE_MISMATCH') {
-					console.warn('Balance mismatch detected, synced to server balance');
-					setStatusIfNotRoundResult('Balance corrected (server sync).');
-				} else if (errorData.error === 'RATE_LIMITED') {
-					// Max retries exceeded
-					console.error('Chip update rate limited, max retries exceeded');
-					setStatusIfNotRoundResult('Sync delayed. Balance will update on next round.');
-				} else if (errorData.error === 'DELTA_EXCEEDS_LIMIT') {
-					console.error('Delta exceeded server limit:', errorData.message);
-					setStatusIfNotRoundResult('Payout exceeded limit. Please try a smaller bet.');
-				} else {
-					console.error('Chip update failed:', errorData.error, errorData.message);
-					setStatusIfNotRoundResult('Balance sync failed. Will retry next round.');
-				}
-			};
-
-			await performChipUpdate();
-		} catch (error) {
-			// Network error or other failure - revert to last synced balance
-			console.error('Failed to update balance:', error);
-			game.setBalance(serverSyncedBalance);
-			renderGame();
-			statusEl.textContent = 'Network error. Balance reverted.';
-			// Clear pending stats on network errors
-			pendingStats = clearPendingStats();
-			syncPending = false;
-			statsIncluded = false;
-			pendingRetryTimer = null;
-		}
-
-		renderGame();
+		await settlementPromise;
 	}
 
 	// Initial render

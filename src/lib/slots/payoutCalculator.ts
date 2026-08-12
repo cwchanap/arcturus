@@ -3,8 +3,8 @@ import type { LineWin, ReelGrid, SpinEvaluation, SymbolId } from './types';
 
 // Payout multipliers in PAYTABLE are tuned for ~95% RTP, verified by the
 // simulation test in payoutCalculator.test.ts. There is no runtime RTP guard
-// here; the authoritative per-request win/loss cap lives in chips/update.ts
-// (GAME_LIMITS.slots).
+// here; the authoritative per-request sanity bound lives in the wallet
+// settlement use case.
 
 export function evaluateLine(
 	line: SymbolId[],

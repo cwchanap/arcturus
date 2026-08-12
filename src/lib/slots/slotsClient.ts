@@ -8,8 +8,51 @@ import { MAX_BET, MIN_BET } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { SlotsGame } from './SlotsGame';
 import { SlotsUIRenderer } from './SlotsUIRenderer';
-import { ChipSyncCoordinator } from './chip-sync-coordinator';
 import type { SpinResult } from './types';
+import {
+	createSettlementGate,
+	ensureSettlementRecoveryControls,
+	newSettlementId,
+	type SettlementGate,
+	type SettleRoundCommand,
+	type SettleRoundResult,
+} from '../wallet';
+
+/** Build the one wallet command produced by a completed Slots spin. */
+export function buildSlotsSettlementCommand(
+	settlementId: string,
+	spin: Pick<SpinResult, 'netDelta'>,
+): SettleRoundCommand {
+	return {
+		settlementId,
+		game: 'slots',
+		delta: spin.netDelta,
+		stats: {
+			rounds: 1,
+			wins: spin.netDelta > 0 ? 1 : 0,
+			losses: spin.netDelta < 0 ? 1 : 0,
+			biggestWin: Math.max(spin.netDelta, 0),
+		},
+	};
+}
+
+/** Keep guest play local while blocking authenticated spins behind the gate. */
+export function canStartSlotsSpin({
+	isGuestMode,
+	gate,
+}: {
+	isGuestMode: boolean;
+	gate: Pick<SettlementGate, 'isBlocked'>;
+}): boolean {
+	return isGuestMode || !gate.isBlocked;
+}
+
+/** Delegate recovery to the shared settlement gate. */
+export function retrySlotsSettlement(
+	gate: Pick<SettlementGate, 'retry'>,
+): Promise<SettleRoundResult | null> {
+	return gate.retry();
+}
 
 export function initSlotsClient(): void {
 	if (typeof window === 'undefined') return;
@@ -25,49 +68,90 @@ export function initSlotsClient(): void {
 
 	const fallback = Number(root.dataset.initialBalance) || 0;
 	const initialBalance = isGuest ? loadGuestBankroll('slots', clientUserId, fallback) : fallback;
+	const settlementGate = createSettlementGate();
+	let serverSyncedBalance = initialBalance;
+	let spinInFlight = false;
 
 	const game = new SlotsGame(initialBalance, settingsMgr.getSettings(), {
 		onBalanceUpdate: (balance) => {
 			renderer.renderBalance(balance);
 			if (!syncToServer) persistGuestBankroll('slots', clientUserId, balance);
-			updateSpinEnabled();
+			if (typeof updateSpinEnabled === 'function') updateSpinEnabled();
 		},
 		onRoundComplete: (result) => handleRoundCompleteSafe(result),
 		onError: (err) => {
 			renderer.showStatus(err.message);
-			renderer.setSpinEnabled(true);
+			updateSpinEnabled();
 		},
 	});
 
-	let spinInFlight = false;
+	// Recovery controls stay hidden during normal play and appear only when a
+	// wallet settlement needs user action. The shared gate owns the pending
+	// command and retry behavior; the client only renders its state.
+	const settlementRecovery = ensureSettlementRecoveryControls({
+		containerClass: 'hidden mt-3 flex flex-wrap justify-center gap-2',
+		retryClass: 'btn-gold px-4 py-2 rounded-lg font-bold',
+		retryLabel: 'Retry settlement',
+		resetClass: 'px-4 py-2 rounded-lg border border-[var(--deco-line)]',
+		resetLabel: 'Reset round',
+		attachTo: document.getElementById('game-status')?.parentElement ?? null,
+	});
 
-	const syncCoordinator = syncToServer
-		? new ChipSyncCoordinator(
-				{
-					fetchImpl: (url, init) => fetch(url, init as RequestInit),
-					setTimeoutImpl: (fn, ms) => window.setTimeout(fn, ms),
-					getGameBalance: () => game.getBalance(),
-					setGameBalance: (balance) => game.setBalance(balance),
-					onAchievement: (title) => renderer.showAchievement(title),
-					onRateLimitGiveUp: () =>
-						renderer.showStatus('Chip sync paused (rate limited). Balance will update shortly.'),
-					onNetworkErrorGiveUp: () =>
-						renderer.showStatus(
-							'Chip sync paused (network error). Balance reverted to last synced value.',
-						),
-					generateSyncRequestId: () =>
-						typeof crypto !== 'undefined' && 'randomUUID' in crypto
-							? crypto.randomUUID()
-							: `slots-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-					endpoint: '/api/chips/update',
-					sendBeaconImpl:
-						typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function'
-							? (url, body) => navigator.sendBeacon(url, body)
-							: undefined,
-				},
-				initialBalance,
-			)
-		: null;
+	const showSettlementRecovery = (message: string) => {
+		renderer.showStatus(message);
+		settlementRecovery.container?.classList.remove('hidden');
+	};
+	const hideSettlementRecovery = () => {
+		settlementRecovery.container?.classList.add('hidden');
+	};
+
+	const adoptSettlementResult = (result: SettleRoundResult) => {
+		serverSyncedBalance = result.balance;
+		game.setBalance(result.balance);
+		hideSettlementRecovery();
+		if (result.newAchievements && result.newAchievements.length > 0) {
+			window.dispatchEvent(
+				new CustomEvent('achievement-earned', {
+					detail: { achievements: result.newAchievements },
+				}),
+			);
+		}
+	};
+
+	const settleAuthenticatedSpin = async (spin: SpinResult): Promise<void> => {
+		try {
+			const result = await settlementGate.settle(buildSlotsSettlementCommand(spin.syncId, spin));
+			adoptSettlementResult(result);
+		} catch (error) {
+			console.error('[WALLET_SETTLEMENT] Slots settlement failed:', error);
+			showSettlementRecovery('Settlement failed. Retry or reset before starting another spin.');
+		}
+	};
+
+	settlementRecovery.retry?.addEventListener('click', async () => {
+		if (!settlementGate.pending) return;
+		if (settlementRecovery.retry) settlementRecovery.retry.disabled = true;
+		renderer.showStatus('Retrying settlement...');
+		try {
+			const result = await retrySlotsSettlement(settlementGate);
+			if (result) adoptSettlementResult(result);
+		} catch (error) {
+			console.error('[WALLET_SETTLEMENT] Slots settlement retry failed:', error);
+			showSettlementRecovery(
+				'Settlement failed again. Retry or reset before starting another spin.',
+			);
+		} finally {
+			if (settlementRecovery.retry) settlementRecovery.retry.disabled = false;
+		}
+	});
+
+	settlementRecovery.reset?.addEventListener('click', () => {
+		settlementGate.reset();
+		game.setBalance(serverSyncedBalance);
+		hideSettlementRecovery();
+		renderer.showStatus('Settlement reset. Place your bet to start.');
+		updateSpinEnabled();
+	});
 
 	renderer.renderBalance(game.getBalance());
 	renderer.renderBet(game.getBet());
@@ -97,7 +181,11 @@ export function initSlotsClient(): void {
 	spinBtn?.addEventListener('click', () => doSpin());
 
 	function updateSpinEnabled(): void {
-		renderer.setSpinEnabled(game.canSpin());
+		renderer.setSpinEnabled(
+			!spinInFlight &&
+				game.canSpin() &&
+				canStartSlotsSpin({ isGuestMode: isGuest, gate: settlementGate }),
+		);
 	}
 
 	function doSpin(): void {
@@ -105,15 +193,18 @@ export function initSlotsClient(): void {
 			renderer.showStatus('Spinning…');
 			return;
 		}
+		if (!canStartSlotsSpin({ isGuestMode: isGuest, gate: settlementGate })) {
+			showSettlementRecovery(
+				'Settlement is still pending. Retry or reset before starting another spin.',
+			);
+			return;
+		}
 		if (!game.canSpin()) {
 			renderer.showStatus('Insufficient chips');
 			return;
 		}
 		spinInFlight = true;
-		const syncId =
-			typeof crypto !== 'undefined' && 'randomUUID' in crypto
-				? crypto.randomUUID()
-				: `slots-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+		const settlementId = newSettlementId('slots');
 		renderer.setSpinEnabled(false);
 		renderer.clearHighlight();
 		renderer.showStatus('Spinning…');
@@ -122,16 +213,16 @@ export function initSlotsClient(): void {
 		const quickSpin = settingsMgr.getSettings().quickSpin;
 		const reveal = () => {
 			try {
-				const result = game.spin(syncId);
+				const result = game.spin(settlementId);
 				renderer.renderGrid(result.grid);
 				if (result.lineWins.length > 0) renderer.highlightWins(result.lineWins);
 				renderer.renderResult(result);
 				renderer.showStatus(null);
 				renderer.renderRecent(game.getHistory());
-				updateSpinEnabled();
 			} finally {
 				renderer.setSpinning(false);
 				spinInFlight = false;
+				updateSpinEnabled();
 			}
 		};
 
@@ -143,8 +234,8 @@ export function initSlotsClient(): void {
 	}
 
 	async function handleRoundComplete(result: SpinResult): Promise<void> {
-		if (!syncCoordinator) return;
-		await syncCoordinator.handleRoundComplete(result);
+		if (!syncToServer) return;
+		await settleAuthenticatedSpin(result);
 	}
 
 	// onRoundComplete is typed as void (fire-and-forget), so rejections from
@@ -152,7 +243,7 @@ export function initSlotsClient(): void {
 	// to prevent silent chip-economy failures from crashing the page.
 	function handleRoundCompleteSafe(result: SpinResult): void {
 		handleRoundComplete(result).catch((e) => {
-			console.error('[slots] chip sync failed:', e);
+			console.error('[slots] wallet settlement failed:', e);
 		});
 	}
 
@@ -220,12 +311,4 @@ export function initSlotsClient(): void {
 			doSpin();
 		}
 	});
-
-	// Rage-quit beacon: flush pending win/loss/hand stats when the user closes
-	// the tab or navigates away mid-session. Skipped for guests (no server sync).
-	if (syncToServer && syncCoordinator) {
-		window.addEventListener('pagehide', () => {
-			syncCoordinator.flushPendingStatsOnUnload();
-		});
-	}
 }

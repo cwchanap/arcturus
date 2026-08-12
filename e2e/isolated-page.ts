@@ -16,11 +16,11 @@ export type IsolatedPageOptions = {
 /**
  * Creates a freshly-bootstrapped per-test user with its own browser context.
  *
- * Stateful chip-sync tests mutate per-user server state (chip balance + the 2s
- * `/api/chips/update` rate limit). Sharing the single authenticated E2E user
- * across `fullyParallel` workers would race. Each call gets an isolated user
- * so it owns its rate-limit budget and balance. Read-only UI tests keep using
- * the shared fixture page.
+ * Stateful wallet tests mutate per-user server state (chip balance and
+ * settlement receipts). Sharing the single authenticated E2E user across
+ * `fullyParallel` workers would race. Each call gets an isolated user so it
+ * owns its settlement history and balance. Read-only UI tests keep using the
+ * shared fixture page.
  */
 export async function createIsolatedPage(
 	browser: Browser,

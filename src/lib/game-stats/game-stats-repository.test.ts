@@ -7,6 +7,7 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import type { Database } from '../db';
 import type { GameType, RankingMetric } from './types';
+import { MIN_HANDS_FOR_WIN_RATE } from './constants';
 
 type GameStatsRepositoryModule = typeof import('./game-stats-repository');
 
@@ -22,6 +23,7 @@ let getBulkUserWinsRanks!: (db: Database, userId: string) => Promise<Map<GameTyp
 beforeAll(async () => {
 	// Ensure this file always tests the real repository implementation, even when
 	// other test files use mock.module('./game-stats-repository') concurrently.
+	// The cache-busting query param bypasses any leaked mock.module() override.
 	mock.restore();
 	const repository = await import(`./game-stats-repository.ts?repository-test=${Date.now()}`);
 	getUserGameRank = repository.getUserGameRank;
@@ -44,6 +46,7 @@ function createMockDb({
 	countResolver,
 	capturedInsert,
 	capturedOrder,
+	capturedWhere,
 	allRows = [],
 	allError,
 }: {
@@ -53,6 +56,7 @@ function createMockDb({
 	countResolver?: (condition: unknown) => number;
 	capturedInsert?: { values?: any };
 	capturedOrder?: { orderBy?: unknown };
+	capturedWhere?: { where?: unknown };
 	allRows?: unknown[];
 	allError?: Error;
 }): Database {
@@ -88,16 +92,22 @@ function createMockDb({
 								if (capturedOrder) {
 									capturedOrder.orderBy = orderByClause;
 								}
+								if (capturedWhere) {
+									capturedWhere.where = whereClause;
+								}
 								return Promise.resolve(allStats);
 							},
 						}),
 					};
 					(chain as typeof chain & { innerJoin?: unknown }).innerJoin = () => ({
-						where: () => ({
+						where: (whereClause?: unknown) => ({
 							orderBy: (orderByClause?: unknown) => ({
 								limit: () => {
 									if (capturedOrder) {
 										capturedOrder.orderBy = orderByClause;
+									}
+									if (capturedWhere) {
+										capturedWhere.where = whereClause;
 									}
 									return Promise.resolve(allStats);
 								},
@@ -447,6 +457,31 @@ function extractSqlText(value: unknown): string {
 	return String(value ?? '');
 }
 
+/**
+ * Recursively extracts readable text from Drizzle ORM SQL/order objects.
+ * Handles queryChunks, column `name` properties, and StringChunk `value` arrays.
+ */
+function drizzleSqlText(value: unknown): string {
+	if (value == null) return '';
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number') return String(value);
+	if (typeof value !== 'object') return '';
+	const obj = value as Record<string, unknown>;
+	if (Array.isArray(obj.queryChunks)) {
+		return obj.queryChunks.map((c: unknown) => drizzleSqlText(c)).join('');
+	}
+	if (typeof obj.name === 'string' && obj.name.length > 0) {
+		return obj.name;
+	}
+	if (Array.isArray(obj.value)) {
+		return obj.value.map((v: unknown) => drizzleSqlText(v)).join('');
+	}
+	if (obj.value !== undefined && obj.value !== null) {
+		return drizzleSqlText(obj.value);
+	}
+	return '';
+}
+
 describe('getTotalPlayersForGame', () => {
 	test('returns total players for win-rate queries', async () => {
 		const mockDb = createMockDb({
@@ -576,6 +611,73 @@ describe('getTopPlayersForGame', () => {
 
 		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'biggest_win', 5);
 		expect(capturedOrder.orderBy).toBeDefined();
+		expect(drizzleSqlText(capturedOrder.orderBy)).toContain('biggestWin');
+	});
+
+	test('orders by wins metric', async () => {
+		const capturedOrder: { orderBy?: unknown } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedOrder,
+		});
+
+		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'wins', 5);
+		expect(capturedOrder.orderBy).toBeDefined();
+		expect(drizzleSqlText(capturedOrder.orderBy)).toContain('totalWins');
+	});
+
+	test('orders by net_profit metric', async () => {
+		const capturedOrder: { orderBy?: unknown } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedOrder,
+		});
+
+		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'net_profit', 5);
+		expect(capturedOrder.orderBy).toBeDefined();
+		expect(drizzleSqlText(capturedOrder.orderBy)).toContain('netProfit');
+	});
+
+	test('orders by win_rate metric and applies the min-decided-hands filter', async () => {
+		const capturedOrder: { orderBy?: unknown } = {};
+		const capturedWhere: { where?: unknown } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedOrder,
+			capturedWhere,
+		});
+
+		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'win_rate', 5);
+		expect(capturedOrder.orderBy).toBeDefined();
+		const orderText = drizzleSqlText(capturedOrder.orderBy);
+		expect(orderText).toContain('totalWins');
+		expect(orderText).toContain('totalLosses');
+		// The where clause must apply the minimum decided-hands filter for win_rate
+		const whereText = drizzleSqlText(capturedWhere.where);
+		expect(whereText).toContain('totalWins');
+		expect(whereText).toContain('totalLosses');
+		expect(whereText).toContain(String(MIN_HANDS_FOR_WIN_RATE));
+	});
+
+	test('non-win-rate metrics do not apply the min-decided-hands filter', async () => {
+		const capturedWhere: { where?: unknown } = {};
+		const mockDb = createMockDb({
+			userStats: null,
+			allStats: [],
+			defaultCount: 0,
+			capturedWhere,
+		});
+
+		await getTopPlayersForGame(mockDb, 'poker' as GameType, 'wins', 5);
+		const whereText = drizzleSqlText(capturedWhere.where);
+		// Only the gameType filter should be present, not the decided-hands threshold
+		expect(whereText).not.toContain(String(MIN_HANDS_FOR_WIN_RATE));
 	});
 });
 

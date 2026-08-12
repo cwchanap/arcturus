@@ -26,8 +26,8 @@ export class KenoUIRenderer {
 	private readonly paytableModal: El;
 	private readonly paytableCloseBtn: HTMLButtonElement;
 	private readonly paytableModalBody: El;
-	private readonly syncPausedBanner: El;
-	private readonly retrySyncBtn: HTMLButtonElement;
+	private readonly settlementPausedBanner: El;
+	private readonly retrySettlementBtn: HTMLButtonElement;
 	private revealTimeouts: number[] = [];
 	private settingsFocusBefore: HTMLElement | null = null;
 	private boundSettingsKeydown: ((e: KeyboardEvent) => void) | null = null;
@@ -56,8 +56,8 @@ export class KenoUIRenderer {
 		this.paytableModal = req<El>(root, 'paytable-modal');
 		this.paytableCloseBtn = req<HTMLButtonElement>(root, 'btn-paytable-close');
 		this.paytableModalBody = req<El>(root, 'paytable-modal-body');
-		this.syncPausedBanner = req<El>(root, 'sync-paused-banner');
-		this.retrySyncBtn = req<HTMLButtonElement>(root, 'btn-retry-sync');
+		this.settlementPausedBanner = req<El>(root, 'settlement-paused-banner');
+		this.retrySettlementBtn = req<HTMLButtonElement>(root, 'btn-retry-settlement');
 		this.buildGrid();
 	}
 
@@ -261,14 +261,14 @@ export class KenoUIRenderer {
 	setStatus(text: string): void {
 		this.statusEl.textContent = text;
 	}
-	showSyncPaused(): void {
-		this.syncPausedBanner.classList.remove('hidden');
+	showSettlementPaused(): void {
+		this.settlementPausedBanner.classList.remove('hidden');
 	}
-	hideSyncPaused(): void {
-		this.syncPausedBanner.classList.add('hidden');
+	hideSettlementPaused(): void {
+		this.settlementPausedBanner.classList.add('hidden');
 	}
-	getRetrySyncButton(): HTMLButtonElement {
-		return this.retrySyncBtn;
+	getRetrySettlementButton(): HTMLButtonElement {
+		return this.retrySettlementBtn;
 	}
 	renderLastResult(r: DrawResult): void {
 		const verb = r.outcome === 'win' ? 'won' : r.outcome === 'push' ? 'pushed' : 'lost';

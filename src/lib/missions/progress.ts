@@ -3,6 +3,9 @@ import type { MissionDefinition, MissionGameEvent } from './types';
 import { DEFAULT_DAILY_MISSIONS, DEFAULT_WEEKLY_MISSIONS } from './registry';
 import { getDailyPeriodKey, getWeeklyPeriodKey } from './periods';
 import { applyOverrides, getOverrides, getProgressRows } from './board';
+import type { WalletSettlementGate } from '../wallet/types';
+
+export type { WalletSettlementGate } from '../wallet/types';
 
 export interface ExistingProgress {
 	progress: number;
@@ -81,13 +84,11 @@ export async function applyMissionProgress(
  * SQL-side `MIN(progress + excluded.progress, target)` increment is
  * concurrent-safe within the batch.
  *
- * Durability: this function runs the mission writes in its OWN `d1.batch`,
- * separate from any chip-sync receipt. That means a transient failure here
- * is NOT retried on syncId replay (the receipt already exists, so the chip
- * path returns early without re-running progress). Callers that need
- * mission progress atomically tied to a chip_sync_receipt MUST instead use
- * {@link prepareMissionProgressStatements} with a `gateMap` and merge the
- * returned statements into the same `d1.batch` as the receipt INSERT.
+ * Durability: this function runs the mission writes in its OWN `d1.batch`.
+ * Callers that need mission progress atomically tied to a wallet settlement
+ * MUST instead use {@link prepareMissionProgressStatements} with a `gateMap`
+ * and merge the returned statements into the same `d1.batch` as the receipt
+ * INSERT.
  */
 export async function applyMissionProgressBatch(
 	d1: D1Database,
@@ -138,23 +139,22 @@ async function readMissionProgressContext(
  * Build the mission_progress upsert statements for a set of entries, ready
  * to submit via `d1.batch`.
  *
- * When `gateMap` is provided, every statement is gated on
- * `EXISTS (SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ?)`
- * so it is a no-op unless the receipt for that user+syncId has already been
- * inserted earlier in the same D1 batch transaction. This durably couples
- * mission progress to the idempotent chip event: if the chip-sync receipt
- * INSERT is skipped (optimistic-lock miss) the mission writes skip too, and
- * if the whole batch commits the mission writes commit with it — no
- * separate deferred write that can be silently dropped and never retried.
+ * When `gateMap` is provided, every statement is gated on the matching
+ * `wallet_settlement` receipt. It is a no-op unless that receipt has already
+ * been inserted earlier in the same D1 batch transaction. This durably
+ * couples mission progress to the idempotent event: if the receipt INSERT is
+ * skipped (optimistic-lock miss) the mission writes skip too, and if the whole
+ * batch commits the mission writes commit with it — no separate deferred write
+ * that can be silently dropped and never retried.
  *
  * Callers that merge these statements into their own batch MUST place them
- * AFTER the `chip_sync_receipt` INSERT for the corresponding user, so the
- * EXISTS subquery sees the receipt row within the same transaction.
+ * AFTER the corresponding receipt INSERT for the user, so the EXISTS subquery
+ * sees the receipt row within the same transaction.
  */
 export async function prepareMissionProgressStatements(
 	d1: D1Database,
 	entries: { userId: string; event: MissionGameEvent }[],
-	gateMap?: Map<string, string>,
+	gateMap?: Map<string, WalletSettlementGate>,
 ): Promise<D1PreparedStatement[]> {
 	const valid = entries.filter((e) => e.event.outcome);
 	if (valid.length === 0) return [];
@@ -169,12 +169,11 @@ export async function prepareMissionProgressStatements(
 	for (let i = 0; i < valid.length; i++) {
 		const { event } = valid[i]!;
 		const { userId, allActive, progressMap } = readResults[i]!;
-		// When a gateMap is provided, look up the syncId for this user. If
+		// When a gateMap is provided, look up the receipt gate for this user. If
 		// the user is missing from the map, skip gating (treat as ungated)
 		// rather than crashing — the caller is responsible for populating
 		// the map for every entry that needs durable coupling.
-		const gateSyncId = gateMap?.get(userId);
-		const gate = gateSyncId !== undefined ? { syncId: gateSyncId } : undefined;
+		const gate = gateMap?.get(userId);
 		for (const def of allActive) {
 			const periodKey = def.period === 'daily' ? dailyKey : weeklyKey;
 			const existing = progressMap.get(`${def.id}:${periodKey}`) ?? null;
@@ -235,26 +234,29 @@ export async function prepareMissionProgressStatements(
 }
 
 /**
- * Optional receipt-existence gate for mission progress statements. When
+ * Build the wallet settlement receipt gate SQL and values.
+ *
+ * Optional wallet-receipt existence gate for mission progress statements. When
  * provided, the INSERT is converted from `VALUES (...)` to
- * `SELECT ... WHERE EXISTS (SELECT 1 FROM chip_sync_receipt ...)` so the
+ * `SELECT ... WHERE EXISTS (...)` using the fixed receipt gate, so the
  * statement is a no-op unless the receipt row has been inserted earlier in
  * the same D1 batch transaction. This durably couples mission progress to
- * the idempotent chip event and closes the "deferred mission write fails,
- * retry returns cached receipt success, progress permanently lost" gap.
+ * the idempotent event and closes the "deferred mission write fails, retry
+ * returns cached receipt success, progress permanently lost" gap.
+ *
+ * The user ID placeholder is intentionally not returned here: all mission
+ * INSERT builders already bind the user ID as part of their row source and
+ * append the gate values afterward.
  */
-interface ReceiptGate {
-	syncId: string;
+export function buildReceiptGateSql(gate: WalletSettlementGate): {
+	sql: string;
+	values: string[];
+} {
+	return {
+		sql: ' WHERE EXISTS (SELECT 1 FROM wallet_settlement WHERE userId = ? AND settlementId = ? AND attemptId = ?)',
+		values: [gate.settlementId, gate.attemptId],
+	};
 }
-
-/**
- * SQL fragment appended to gated INSERTs. Uses `EXISTS` against
- * `chip_sync_receipt` rather than `changes()` so the gate is robust to
- * statement ordering within the batch — it does not depend on the
- * immediately preceding statement having modified a row.
- */
-const RECEIPT_GATE_SQL =
-	' WHERE EXISTS (SELECT 1 FROM chip_sync_receipt WHERE userId = ? AND syncId = ?)';
 
 /**
  * Build the mission_progress UPSERT for the atomic increment path.
@@ -275,19 +277,20 @@ export function buildProgressUpsertSQL(
 	amount: number,
 	metadataJson: string | null,
 	nowSeconds: number,
-	gate?: ReceiptGate,
+	gate?: WalletSettlementGate,
 ): D1PreparedStatement {
 	const target = def.target;
 	const clampedAmount = Math.min(amount, target);
 	const completedClause = clampedAmount >= target ? `${nowSeconds}` : 'NULL';
+	const gateSql = gate ? buildReceiptGateSql(gate) : null;
 	// When gated, convert `VALUES (...)` to `SELECT ... WHERE EXISTS(...)` so
-	// the INSERT is a no-op unless the chip_sync_receipt row for this user+
-	// syncId has been inserted earlier in the same D1 batch transaction.
+	// the INSERT is a no-op unless the matching receipt has been inserted
+	// earlier in the same D1 batch transaction.
 	const rowSource = gate
-		? `SELECT ?, ?, ?, ?, ?, ${completedClause}, NULL${RECEIPT_GATE_SQL}`
+		? `SELECT ?, ?, ?, ?, ?, ${completedClause}, NULL${gateSql!.sql}`
 		: `VALUES (?, ?, ?, ?, ?, ${completedClause}, NULL)`;
 	const binds = gate
-		? [userId, def.id, periodKey, clampedAmount, metadataJson, userId, gate.syncId]
+		? [userId, def.id, periodKey, clampedAmount, metadataJson, userId, ...gateSql!.values]
 		: [userId, def.id, periodKey, clampedAmount, metadataJson];
 	return d1
 		.prepare(
@@ -307,7 +310,7 @@ export function buildProgressUpsertSQL(
 
 /**
  * Build the `INSERT OR IGNORE` dedup row for the `gamesTried` metric. When
- * gated, the INSERT is a no-op unless the chip_sync_receipt row exists (same
+ * gated, the INSERT is a no-op unless the selected receipt row exists (same
  * transaction). Must precede the corresponding {@link buildGamesTriedUpsertSQL}
  * progress statement in the same batch so the COUNT(*) sees the new row.
  */
@@ -318,11 +321,12 @@ export function buildGamesTriedDedupStmt(
 	periodKey: string,
 	gameType: string,
 	nowSeconds: number,
-	gate?: ReceiptGate,
+	gate?: WalletSettlementGate,
 ): D1PreparedStatement {
-	const rowSource = gate ? `SELECT ?, ?, ?, ?, ?${RECEIPT_GATE_SQL}` : `VALUES (?, ?, ?, ?, ?)`;
+	const gateSql = gate ? buildReceiptGateSql(gate) : null;
+	const rowSource = gate ? `SELECT ?, ?, ?, ?, ?${gateSql!.sql}` : `VALUES (?, ?, ?, ?, ?)`;
 	const binds = gate
-		? [userId, missionDefId, periodKey, gameType, nowSeconds, userId, gate.syncId]
+		? [userId, missionDefId, periodKey, gameType, nowSeconds, userId, ...gateSql!.values]
 		: [userId, missionDefId, periodKey, gameType, nowSeconds];
 	return d1
 		.prepare(
@@ -346,14 +350,15 @@ export function buildGamesTriedUpsertSQL(
 	periodKey: string,
 	metadataJson: string | null,
 	nowSeconds: number,
-	gate?: ReceiptGate,
+	gate?: WalletSettlementGate,
 ): D1PreparedStatement {
 	const target = def.target;
 	// When gated, append the EXISTS clause to the SELECT row source. The
 	// gamesTried upsert already uses SELECT (for the COUNT subqueries), so
 	// the gate is appended after the row columns, before ON CONFLICT.
-	const gateClause = gate ? RECEIPT_GATE_SQL : '';
-	const gateBinds = gate ? [userId, gate.syncId] : [];
+	const gateSql = gate ? buildReceiptGateSql(gate) : null;
+	const gateClause = gateSql?.sql ?? '';
+	const gateBinds = gate ? [userId, ...gateSql!.values] : [];
 	return d1
 		.prepare(
 			`INSERT INTO mission_progress (userId, missionDefId, periodKey, progress, metadataJson, completedAt, claimedAt)

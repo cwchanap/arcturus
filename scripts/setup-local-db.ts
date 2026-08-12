@@ -2,7 +2,7 @@
  * Setup Local Cloudflare D1 Database for Development
  * This script initializes a local D1 database and applies ALL migrations
  * in order (not just the initial schema), so tables added in later
- * migrations (e.g. roulette_round) are created on a fresh setup.
+ * migrations (including wallet_settlement) are created on a fresh setup.
  */
 
 import { execSync } from 'child_process';

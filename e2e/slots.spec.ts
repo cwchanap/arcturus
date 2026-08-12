@@ -68,61 +68,47 @@ test.describe('Slots game', () => {
 		await expect(page.locator('.symbol-cell').first()).toBeVisible();
 	});
 
-	test('rapid double-spin sends distinct client syncIds (no client-side reuse)', async ({
+	test('wallet settlement gate blocks a second spin while the first settles', async ({
 		browser,
 		baseURL,
 	}) => {
 		const { context, page } = await createIsolatedSlotsPage(browser, baseURL);
 		try {
-			const syncRequests: string[] = [];
-			page.on('request', (req) => {
-				if (req.url().endsWith('/api/chips/update') && req.method() === 'POST') {
-					const body = req.postDataJSON();
-					if (body?.gameType === 'slots') syncRequests.push(body.syncId);
-				}
-			});
-
-			// Stall the first chip sync so the coordinator stays in-flight when
-			// spin 2 fires. This deterministically exercises the coalescing path
-			// (handleRoundComplete → isBusy → syncPending) rather than relying on
-			// timing between the button re-enable and the sync fetch.
-			//
-			// NOTE: page.on('request') fires BEFORE the route handler (Playwright
-			// emits the 'request' event when the page issues the request, then route
-			// handlers intercept). So we can't gate the stall on syncRequests.length
-			// — it would already be 1 inside the route handler. Instead, use a flag
-			// set inside the route handler itself.
-			let firstRequestIntercepted = false;
-			let resolveFirstSync: () => void = () => {};
-			await page.route('**/api/chips/update', async (route) => {
-				if (!firstRequestIntercepted) {
-					firstRequestIntercepted = true;
+			const settlementRequests: Record<string, unknown>[] = [];
+			let releaseFirstSettlement: () => void = () => {};
+			let firstSettlementIntercepted = false;
+			await page.route('**/api/wallet/settle', async (route) => {
+				const body = route.request().postDataJSON() as Record<string, unknown>;
+				settlementRequests.push(body);
+				if (!firstSettlementIntercepted) {
+					firstSettlementIntercepted = true;
 					await new Promise<void>((resolve) => {
-						resolveFirstSync = resolve;
+						releaseFirstSettlement = resolve;
 					});
 				}
-				await route.continue();
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ balance: 1000, duplicate: false }),
+				});
 			});
 
-			// Spin 1 — wait for reveal (button re-enables after the spin animation).
 			await page.locator('#btn-spin').click();
-			await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
-			// Spin 2 immediately after the first settles. Sync 1 is still in-flight
-			// (stalled by the route handler), so the coordinator must coalesce.
-			await page.locator('#btn-spin').click();
-			await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 5000 });
+			await expect.poll(async () => settlementRequests.length, { timeout: 8000 }).toBe(1);
+			const first = settlementRequests[0];
+			expect(first).toMatchObject({ game: 'slots' });
+			expect(first.settlementId).toMatch(/^slots-/);
+			expect(first.stats).toMatchObject({ rounds: 1 });
 
-			// Release the stalled sync so both rounds can settle.
-			resolveFirstSync();
+			// The first request is still pending, so a second click cannot start
+			// another authenticated spin or wallet command.
+			await expect(page.locator('#btn-spin')).toBeDisabled();
+			await page.locator('#btn-spin').click({ force: true });
+			await expect.poll(async () => settlementRequests.length).toBe(1);
 
-			// Coalescing should produce 2 syncs: sync 1 (stalled) then sync 2
-			// (flushed from syncPending after sync 1 completes). Every syncId
-			// must be unique.
-			await expect
-				.poll(async () => syncRequests.length, { timeout: 8000 })
-				.toBeGreaterThanOrEqual(2);
-			const unique = new Set(syncRequests);
-			expect(unique.size).toBe(syncRequests.length);
+			releaseFirstSettlement();
+			await expect.poll(async () => settlementRequests.length, { timeout: 8000 }).toBe(1);
+			await expect(page.locator('#btn-spin')).toBeEnabled({ timeout: 8000 });
 		} finally {
 			await context.close();
 		}
@@ -139,7 +125,7 @@ test.describe('Slots game', () => {
 			);
 
 			// Start a spin, then reload before the reveal fires. The client-side
-			// optimistic deduction never reaches the server (no chip sync for an
+			// optimistic deduction never reaches the server (no wallet settlement for an
 			// incomplete spin), so the server balance must be unchanged on reload.
 			await page.locator('#btn-spin').click();
 			await page.reload();

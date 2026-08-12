@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { KenoSyncOutbox } from './outbox';
-import type { PendingReceipt } from './outbox';
 import { KenoUIRenderer } from './KenoUIRenderer';
 
 class FakeClassList {
@@ -19,51 +17,7 @@ class FakeClassList {
 	}
 }
 
-function receipt(): PendingReceipt {
-	return {
-		syncId: 'rate-limit-regression',
-		previousBalance: 1000,
-		delta: -5,
-		gameType: 'keno',
-		outcome: 'loss',
-		handCount: 1,
-		biggestWinCandidate: undefined,
-	};
-}
-
 describe('CodeRabbit regression coverage', () => {
-	test('bounds HTTP 429 retries and falls back for an invalid Retry-After header', async () => {
-		let fetchCalls = 0;
-		const delays: number[] = [];
-		const outbox = new KenoSyncOutbox({
-			fetchImpl: async () => {
-				fetchCalls++;
-				return {
-					ok: false,
-					status: 429,
-					headers: { get: () => 'invalid' },
-					json: async () => ({ error: 'RATE_LIMITED' }),
-				};
-			},
-			endpoint: '/api/chips/update',
-			persist: () => {},
-			load: () => [],
-			setServerSyncedBalance: () => {},
-			setGameBalance: () => {},
-			onHardError: () => {},
-			onToast: () => {},
-			maxNetworkRetries: 1,
-			sleep: async (ms) => {
-				delays.push(ms);
-				if (delays.length > 1) throw new Error('429 retry was not bounded');
-			},
-		});
-
-		await expect(outbox.enqueueAndDrain(receipt())).resolves.toBeUndefined();
-		expect(fetchCalls).toBe(2);
-		expect(delays).toEqual([1000]);
-	});
-
 	test('cancels pending reveal callbacks before clearing drawn highlights', () => {
 		const cell = { classList: new FakeClassList() };
 		const renderer = Object.create(KenoUIRenderer.prototype) as KenoUIRenderer;

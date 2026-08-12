@@ -12,3 +12,15 @@ coverage:
         threshold: 0%
         informational: false
         if_not_found: failure
+
+comment:
+  layout: 'reach,diff,flags,files,footer'
+  show_carryforward_flags: false
+
+ignore:
+  - 'src/lib/e2e-auth-bootstrap.ts'
+  - 'src/lib/e2e-auth-bootstrap.test.ts'
+  - 'src/lib/bootstrap-secret-header.test.ts'
+  - 'e2e/bootstrap-auth.ts'
+  - 'test/setup.ts'
+  - 'src/lib/missions/mock-d1.ts'

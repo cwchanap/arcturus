@@ -157,12 +157,12 @@ test.describe('public single-player games', () => {
 		await expect(page).toHaveURL(/\/signin$/);
 	});
 
-	test('guest blackjack can complete a round without calling chip sync', async ({ page }) => {
-		const chipUpdateRequests: string[] = [];
+	test('guest blackjack can complete a round without wallet settlement', async ({ page }) => {
+		const settlementRequests: string[] = [];
 		const rankedRequests: string[] = [];
 		page.on('request', (request) => {
-			if (request.url().includes('/api/chips/update')) {
-				chipUpdateRequests.push(request.url());
+			if (request.url().includes('/api/wallet/settle')) {
+				settlementRequests.push(request.url());
 			}
 			if (request.url().includes('/api/ranked/')) {
 				rankedRequests.push(request.url());
@@ -199,20 +199,22 @@ test.describe('public single-player games', () => {
 		// Assert a valid currency string rather than an exact balance — the
 		// exact dollar value is incidental to the deterministic shuffle and
 		// would break on any shuffle refactor. The meaningful invariants are
-		// the BLACKJACK outcome above and the no-chip-sync assertion below.
+		// the BLACKJACK outcome above and the no-wallet-settlement assertion below.
 		await expect(page.locator('#player-balance')).toHaveText(/\$\d[\d,]*/);
-		// Deterministically wait for network to settle before asserting no chip
-		// sync requests fire, instead of a fixed sleep.
+		// Deterministically wait for network to settle before asserting no wallet
+		// settlement requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
-		expect(chipUpdateRequests).toEqual([]);
+		expect(settlementRequests).toEqual([]);
 		expect(rankedRequests).toEqual([]);
 	});
 
-	test('guest craps restores persisted local bankroll without chip sync', async ({ page }) => {
-		const chipUpdateRequests: string[] = [];
+	test('guest craps restores persisted local bankroll without wallet settlement', async ({
+		page,
+	}) => {
+		const settlementRequests: string[] = [];
 		page.on('request', (request) => {
-			if (request.url().includes('/api/chips/update')) {
-				chipUpdateRequests.push(request.url());
+			if (request.url().includes('/api/wallet/settle')) {
+				settlementRequests.push(request.url());
 			}
 		});
 
@@ -251,16 +253,16 @@ test.describe('public single-player games', () => {
 		// Deterministically wait for network to settle before asserting no chip
 		// sync requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
-		expect(chipUpdateRequests).toEqual([]);
+		expect(settlementRequests).toEqual([]);
 	});
 
 	test('guest craps restores bankroll from shared helper when no session exists', async ({
 		page,
 	}) => {
-		const chipUpdateRequests: string[] = [];
+		const settlementRequests: string[] = [];
 		page.on('request', (request) => {
-			if (request.url().includes('/api/chips/update')) {
-				chipUpdateRequests.push(request.url());
+			if (request.url().includes('/api/wallet/settle')) {
+				settlementRequests.push(request.url());
 			}
 		});
 
@@ -274,14 +276,14 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
 		await expect(page.locator('#chip-balance')).toHaveText('$850');
 		await page.waitForLoadState('networkidle');
-		expect(chipUpdateRequests).toEqual([]);
+		expect(settlementRequests).toEqual([]);
 	});
 
-	test('guest baccarat can complete a round without calling chip sync', async ({ page }) => {
-		const chipUpdateRequests: string[] = [];
+	test('guest baccarat can complete a round without wallet settlement', async ({ page }) => {
+		const settlementRequests: string[] = [];
 		page.on('request', (request) => {
-			if (request.url().includes('/api/chips/update')) {
-				chipUpdateRequests.push(request.url());
+			if (request.url().includes('/api/wallet/settle')) {
+				settlementRequests.push(request.url());
 			}
 		});
 
@@ -298,6 +300,6 @@ test.describe('public single-player games', () => {
 		await expect(page.locator('#new-round-button')).toBeVisible({ timeout: 15000 });
 
 		await page.waitForLoadState('networkidle');
-		expect(chipUpdateRequests).toEqual([]);
+		expect(settlementRequests).toEqual([]);
 	});
 });

@@ -85,10 +85,10 @@ export async function recordGameRound(
 		biggestWinCandidate: computedBiggestWinCandidate,
 	});
 
-	// Receipt-backed chip syncs update stats and missions together in their
-	// raw D1 batch and do not call recordGameRound. This hook preserves
-	// mission progress for the legacy compatibility path that still records
-	// game rounds through Drizzle without a client-provided syncId.
+	// Wallet settlements update stats and missions together in their raw D1
+	// batch and do not call recordGameRound. This hook preserves mission
+	// progress for the compatibility path that records game rounds through
+	// Drizzle without a client-provided settlement ID.
 	const d1 = (db as Database & { $client?: D1Database }).$client;
 	if (d1) {
 		try {

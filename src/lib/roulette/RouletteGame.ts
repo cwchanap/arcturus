@@ -187,20 +187,6 @@ export class RouletteGame {
 		return this.state.selectedChipAmount;
 	}
 
-	getPendingSyncId(): string | undefined {
-		return this.state.pendingSyncId;
-	}
-
-	setPendingSyncId(syncId: string): void {
-		this.state.pendingSyncId = syncId;
-		this.state.pendingSyncCreatedAt = Date.now();
-	}
-
-	private clearPendingSyncId(): void {
-		this.state.pendingSyncId = undefined;
-		this.state.pendingSyncCreatedAt = undefined;
-	}
-
 	private getExistingPositionAmount(type: BetType, target?: number): number {
 		const key = positionKey(type, target);
 		return this.state.activeBets
@@ -305,7 +291,6 @@ export class RouletteGame {
 		}
 		this.state.activeBets = [];
 		this.state.phase = 'betting';
-		this.clearPendingSyncId();
 	}
 
 	// Clear active bets WITHOUT refunding them into the balance.
@@ -316,17 +301,13 @@ export class RouletteGame {
 	discardActiveBets(): void {
 		this.state.activeBets = [];
 		this.state.phase = 'betting';
-		this.clearPendingSyncId();
 	}
 
-	// Return to betting after a spin that never committed (rate limit or
-	// validation errors). Keeps active bets and the client balance
-	// as-is so the player can re-spin the same layout. Clears pendingSyncId
-	// so a reload does not re-submit a request the server rejected.
+	// Return to betting after a spin that never committed. Keeps active bets
+	// and the client balance as-is so the player can re-spin the same layout.
 	abortSpin(): void {
 		if (this.state.phase !== 'spinning') return;
 		this.state.phase = 'betting';
-		this.clearPendingSyncId();
 	}
 
 	beginSpin(): RouletteBet[] {
@@ -342,13 +323,12 @@ export class RouletteGame {
 	}
 
 	applySettlement(spinResult: SpinResult): void {
-		if (spinResult.newBalance === undefined) {
-			throw new Error('applySettlement requires server-provided newBalance');
+		if (typeof spinResult.newBalance !== 'number' || !Number.isFinite(spinResult.newBalance)) {
+			throw new Error('applySettlement requires a finite server-provided newBalance');
 		}
 		this.state.chipBalance = spinResult.newBalance;
 		this.state.phase = 'settled';
 		this.state.activeBets = [];
-		this.clearPendingSyncId();
 		this.state.lastSpin = spinResult;
 		this.state.roundHistory.unshift(spinResult);
 		if (this.state.roundHistory.length > MAX_ROUND_HISTORY) {
@@ -377,7 +357,6 @@ export class RouletteGame {
 		this.state.chipBalance += totalPayout;
 		this.state.phase = 'settled';
 		this.state.activeBets = [];
-		this.clearPendingSyncId();
 
 		const spinResult: SpinResult = {
 			winningNumber,
@@ -447,20 +426,6 @@ export class RouletteGame {
 						.map((r) => sanitizeSpinResult(r))
 						.filter((r): r is SpinResult => r !== null)
 				: [],
-			// Only restore pendingSyncId during the spinning phase — other
-			// phases have already cleared it via applySettlement/newRound/
-			// discardActiveBets, and a stale value in the snapshot should
-			// not survive into a non-spinning state.
-			pendingSyncId:
-				s.phase === 'spinning' && typeof s.pendingSyncId === 'string' && s.pendingSyncId.length > 0
-					? s.pendingSyncId
-					: undefined,
-			pendingSyncCreatedAt:
-				s.phase === 'spinning' &&
-				typeof s.pendingSyncCreatedAt === 'number' &&
-				Number.isFinite(s.pendingSyncCreatedAt)
-					? s.pendingSyncCreatedAt
-					: undefined,
 		};
 		return true;
 	}

@@ -163,7 +163,7 @@ test.describe('Mission Board', () => {
 		expect(winAchieved, `expected a win within ${MAX_ATTEMPTS} attempts`).toBe(true);
 
 		// Navigate to the missions board and verify progress with retrying
-		// assertions (also gives the async chip-sync/mission write time to land).
+		// assertions (also gives the async wallet/mission write time to land).
 		await page.goto('/missions', { waitUntil: 'domcontentloaded' });
 
 		// daily-blackjack-5 tracks handsPlayed — one resolved hand → 1/5

@@ -320,12 +320,9 @@ describe('ranked coordinator start lifecycle', () => {
 			consumeStandaloneRateLimit: async () => ({ kind: 'rate-limited', retryAfter: 17 }),
 		});
 
-		try {
-			await coordinator(repository).start({ userId: USER_ID, body: START_REQUEST });
-			throw new Error('Expected replay limit');
-		} catch (error) {
-			expect(error).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 17 });
-		}
+		await expect(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+		).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfter: 17 });
 	});
 
 	test('an opening natural is settled in the start transaction and returns the stored receipt', async () => {
@@ -651,18 +648,15 @@ describe('ranked coordinator action and resume lifecycle', () => {
 			runTerminalTransition: async () => ({ kind: 'rate-limited', retryAfter: 19 }),
 		});
 
-		try {
-			await coordinator(repository, {
+		await expect(
+			coordinator(repository, {
 				log: ({ event }) => events.push(event),
 			}).act({
 				userId: USER_ID,
 				sessionId: SESSION_ID,
 				body: { sequence: 0, action: 'stand' },
-			});
-			throw new Error('Expected action rate limit');
-		} catch (error) {
-			expect(error).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 19 });
-		}
+			}),
+		).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfter: 19 });
 		expect(events).toContain('ranked_rate_limited');
 	});
 
@@ -1268,16 +1262,13 @@ test('a pre-consume denial leaves a valid real D1 action and wallet unchanged', 
 			).toEqual({ kind: 'allowed' });
 		}
 
-		try {
-			await ranked.act({
+		await expect(
+			ranked.act({
 				userId: USER_ID,
 				sessionId: started.sessionId,
 				body: { sequence: 0, action: 'stand' },
-			});
-			throw new Error('Expected action rate limit');
-		} catch (error) {
-			expect(error).toMatchObject({ code: 'RATE_LIMITED', retryAfter: 60 });
-		}
+			}),
+		).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfter: 60 });
 
 		expect(await durableRepository.readAccount(USER_ID)).toEqual({
 			chipBalance: 900,
@@ -1354,3 +1345,529 @@ function terminalFixture(
 		settledAt: NOW_SECONDS,
 	};
 }
+
+function coordinatorWith(
+	repository: RankedRepository,
+	overrides: Partial<
+		Pick<RankedCoordinatorDeps, 'now' | 'randomBytes' | 'getAdapter' | 'log'>
+	> = {},
+): ReturnType<typeof createRankedCoordinator> {
+	const deps: RankedCoordinatorDeps = {
+		repository,
+		getAdapter: overrides.getAdapter ?? getRankedAdapter,
+		now: overrides.now ?? (() => new Date(NOW)),
+		randomBytes:
+			overrides.randomBytes ??
+			((length: number) => {
+				if (length === 16) return Uint8Array.from({ length }, () => 7);
+				if (length === 32) return ACTIVE_SEED.slice();
+				throw new Error(`unexpected random length ${length}`);
+			}),
+		log: overrides.log,
+	};
+	return createRankedCoordinator(deps);
+}
+
+function throwingAdapter(error: Error): typeof blackjackRankedV1Adapter {
+	return {
+		gameType: 'blackjack',
+		rulesetVersion: 'blackjack-ranked-v1',
+		async issue() {
+			throw error;
+		},
+		async replay() {
+			throw new Error('unused');
+		},
+		project() {
+			throw new Error('unused');
+		},
+		projectTerminal() {
+			throw new Error('unused');
+		},
+		terminalOutcome() {
+			return null;
+		},
+	} as unknown as typeof blackjackRankedV1Adapter;
+}
+
+function accountSequence(balances: number[]): () => Promise<{ chipBalance: number }> {
+	let index = 0;
+	return async () => ({ chipBalance: balances[index++] ?? balances[balances.length - 1] });
+}
+
+describe('ranked coordinator branch coverage', () => {
+	test('asNowSeconds rejects a negative clock before any repository work', async () => {
+		const repository = createRepository();
+		await expect(
+			coordinatorWith(repository, { now: () => new Date(-2000) }).start({
+				userId: USER_ID,
+				body: START_REQUEST,
+			}),
+		).rejects.toThrow('Invalid ranked coordinator clock');
+		expect(repository.calls.consumeStandaloneRateLimit).toHaveLength(0);
+	});
+
+	test('requireRandomBytes surfaces INTERNAL_ERROR for an invalid byte count', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+		});
+
+		await expectRankedError(
+			coordinatorWith(repository, {
+				randomBytes: () => Uint8Array.from({ length: 5 }, () => 1),
+			}).start({ userId: USER_ID, body: START_REQUEST }),
+			'INTERNAL_ERROR',
+		);
+	});
+
+	test('render rejects a terminal session with no stored result', async () => {
+		const settled = session({
+			status: 'settled',
+			actions: [{ sequence: 0, action: 'stand' }],
+		});
+		const repository = createRepository({
+			findOwnedSession: async () => settled,
+			findResult: async () => null,
+		});
+
+		await expectRankedError(
+			coordinator(repository).resume({ userId: USER_ID, sessionId: SESSION_ID }),
+			'INTERNAL_ERROR',
+		);
+	});
+
+	test('render rejects an invalid response balance', async () => {
+		const active = session();
+		const repository = createRepository({
+			findOwnedSession: async () => active,
+			readAccount: async () => ({ chipBalance: -5 }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).resume({ userId: USER_ID, sessionId: SESSION_ID }),
+			'INTERNAL_ERROR',
+		);
+	});
+
+	test('expire hides a missing owner as SESSION_NOT_FOUND', async () => {
+		const repository = createRepository();
+
+		await expectRankedError(coordinator(repository).expire(SESSION_ID), 'SESSION_NOT_FOUND');
+	});
+
+	test('expire renders an active non-expired session owned by the resolved owner', async () => {
+		const active = session();
+		const repository = createRepository({
+			findSessionOwner: async () => USER_ID,
+			findOwnedSession: async () => active,
+		});
+
+		const response = await coordinator(repository).expire(SESSION_ID);
+
+		expect(response.status).toBe('active');
+		expect(repository.calls.findSessionOwner).toEqual([SESSION_ID]);
+	});
+
+	test('expireOwned surfaces SESSION_NOT_FOUND when the session vanishes after a non-applied transition', async () => {
+		let callCount = 0;
+		const active = session({ expiresAt: NOW_SECONDS });
+		const repository = createRepository({
+			findSessionOwner: async () => USER_ID,
+			findOwnedSession: async () => {
+				callCount += 1;
+				return callCount <= 1 ? active : null;
+			},
+			readAccount: async () => ({ chipBalance: 900 }),
+			runExpirationTransition: async () => ({ kind: 'not-applied' }),
+		});
+
+		await expectRankedError(coordinator(repository).expire(SESSION_ID), 'SESSION_NOT_FOUND');
+	});
+
+	test('expireOwned renders a settled snapshot after a non-applied transition', async () => {
+		let callCount = 0;
+		const active = session({ expiresAt: NOW_SECONDS });
+		const settled = session({
+			status: 'settled',
+			actions: [{ sequence: 0, action: 'stand' }],
+		});
+		const replay = await blackjackRankedV1Adapter.replay(
+			ACTIVE_SEED,
+			settled.config,
+			settled.actionLog,
+		);
+		const terminal = terminalFixture(settled, replay.outcome!, 900, 0);
+		const storedResult = resultFromTerminal(settled, terminal);
+		const repository = createRepository({
+			findSessionOwner: async () => USER_ID,
+			findOwnedSession: async () => {
+				callCount += 1;
+				return callCount <= 1 ? active : settled;
+			},
+			readAccount: async () => ({ chipBalance: 900 }),
+			runExpirationTransition: async () => ({ kind: 'not-applied' }),
+			findResult: async () => storedResult,
+		});
+
+		const response = await coordinator(repository).expire(SESSION_ID);
+
+		expect(response.status).toBe('settled');
+		expect(response.receipt?.receiptHash).toBe(storedResult.receiptHash);
+	});
+
+	test('a matching replayed start that has since expired is lazily expired', async () => {
+		let current = session({ expiresAt: NOW_SECONDS });
+		let storedResult: RankedResultRecord | null = null;
+		const repository = createRepository({
+			findByStartRequest: async () => current,
+			findOwnedSession: async () => current,
+			readAccount: async () => ({ chipBalance: 900 }),
+			runExpirationTransition: async (input) => {
+				storedResult = resultFromTerminal(current, input.terminal);
+				current = {
+					...current,
+					activeUserId: null,
+					status: 'expired',
+					settledAt: input.nowSeconds,
+				};
+				return { kind: 'applied', result: storedResult };
+			},
+			findResult: async () => storedResult,
+		});
+
+		const response = await coordinator(repository).start({
+			userId: USER_ID,
+			body: START_REQUEST,
+		});
+
+		expect(response.status).toBe('expired');
+		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_replay');
+	});
+
+	test('an expired active session is lazily expired before a fresh start', async () => {
+		let current = session({ expiresAt: NOW_SECONDS });
+		let storedResult: RankedResultRecord | null = null;
+		let activeCallCount = 0;
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => {
+				activeCallCount += 1;
+				return activeCallCount === 1 ? current : null;
+			},
+			findOwnedSession: async () => current,
+			readAccount: accountSequence([900, 900, 5]),
+			runExpirationTransition: async (input) => {
+				storedResult = resultFromTerminal(current, input.terminal);
+				current = {
+					...current,
+					activeUserId: null,
+					status: 'expired',
+					settledAt: input.nowSeconds,
+				};
+				return { kind: 'applied', result: storedResult };
+			},
+			findResult: async () => storedResult,
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'INSUFFICIENT_BALANCE',
+		);
+
+		expect(repository.calls.runExpirationTransition).toHaveLength(1);
+		expect(repository.calls.findActiveSession).toHaveLength(2);
+	});
+
+	test('a fresh active session blocks a new start with ACTIVE_SESSION_EXISTS', async () => {
+		const active = session();
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => active,
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'ACTIVE_SESSION_EXISTS',
+		);
+
+		expect(repository.calls.consumeStandaloneRateLimit).toEqual([
+			[USER_ID, 'ranked_start', NOW_SECONDS],
+		]);
+	});
+
+	test('an out-of-range wager is mapped to INVALID_WAGER from a RangeError', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({
+				userId: USER_ID,
+				body: { ...START_REQUEST, requestId: 'request-wager-5', wager: 5 },
+			}),
+			'INVALID_WAGER',
+		);
+	});
+
+	test('a RankedServiceError thrown by issue is rethrown unchanged', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+		});
+
+		await expectRankedError(
+			coordinatorWith(repository, {
+				getAdapter: () => throwingAdapter(new RankedServiceError('INVALID_REQUEST')),
+			}).start({ userId: USER_ID, body: START_REQUEST }),
+			'INVALID_REQUEST',
+		);
+	});
+
+	test('a non-RankedServiceError thrown by issue is rethrown verbatim', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+		});
+		const boom = new Error('adapter blew up');
+
+		await expect(
+			coordinatorWith(repository, {
+				getAdapter: () => throwingAdapter(boom),
+			}).start({ userId: USER_ID, body: START_REQUEST }),
+		).rejects.toBe(boom);
+	});
+
+	test('a start transition rate denial inside the retry loop throws RATE_LIMITED', async () => {
+		const events: string[] = [];
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+			runStartTransition: async () => ({ kind: 'rate-limited', retryAfter: 23 }),
+		});
+
+		await expect(
+			coordinator(repository, { log: ({ event }) => events.push(event) }).start({
+				userId: USER_ID,
+				body: START_REQUEST,
+			}),
+		).rejects.toMatchObject({ code: 'RATE_LIMITED', retryAfter: 23 });
+		expect(events).toContain('ranked_rate_limited');
+	});
+
+	test('a concurrent winner with a mismatched start hash rejects identifier reuse', async () => {
+		let startCallCount = 0;
+		const winner = session({ startPayloadHash: hashCanonical({ wager: 200 }) });
+		const repository = createRepository({
+			findByStartRequest: async () => {
+				startCallCount += 1;
+				return startCallCount === 1 ? null : winner;
+			},
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'IDENTIFIER_REUSE_MISMATCH',
+		);
+	});
+
+	test('a concurrent winner with a matching start hash renders the stored session', async () => {
+		let startCallCount = 0;
+		const winner = session();
+		const repository = createRepository({
+			findByStartRequest: async () => {
+				startCallCount += 1;
+				return startCallCount === 1 ? null : winner;
+			},
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 900 }),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		const response = await coordinator(repository).start({
+			userId: USER_ID,
+			body: START_REQUEST,
+		});
+
+		expect(response.sessionId).toBe(SESSION_ID);
+		expect(response.status).toBe('active');
+	});
+
+	test('a blocking active session inside the retry loop throws ACTIVE_SESSION_EXISTS', async () => {
+		let activeCallCount = 0;
+		const blocking = session();
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => {
+				activeCallCount += 1;
+				return activeCallCount === 2 ? blocking : null;
+			},
+			readAccount: async () => ({ chipBalance: 1000 }),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'ACTIVE_SESSION_EXISTS',
+		);
+	});
+
+	test('an unclassifiable not-created start conflict surfaces INTERNAL_ERROR', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+			runStartTransition: async () => ({ kind: 'not-created' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'INTERNAL_ERROR',
+		);
+	});
+
+	test('a balance-changed start retry that drops below the wager throws INSUFFICIENT_BALANCE', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: accountSequence([1000, 5]),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'INSUFFICIENT_BALANCE',
+		);
+		expect(repository.calls.runStartTransition).toHaveLength(1);
+	});
+
+	test('a blocking expired session inside the retry loop is expired then rechecked for funds', async () => {
+		let current = session({ expiresAt: NOW_SECONDS });
+		let storedResult: RankedResultRecord | null = null;
+		let activeCallCount = 0;
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => {
+				activeCallCount += 1;
+				return activeCallCount === 2 ? current : null;
+			},
+			findOwnedSession: async () => current,
+			readAccount: accountSequence([1000, 900, 900, 5]),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+			runExpirationTransition: async (input) => {
+				storedResult = resultFromTerminal(current, input.terminal);
+				current = {
+					...current,
+					activeUserId: null,
+					status: 'expired',
+					settledAt: input.nowSeconds,
+				};
+				return { kind: 'applied', result: storedResult };
+			},
+			findResult: async () => storedResult,
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'INSUFFICIENT_BALANCE',
+		);
+
+		expect(repository.calls.runExpirationTransition).toHaveLength(1);
+		expect(repository.calls.runStartTransition).toHaveLength(1);
+	});
+
+	test('a matching old action against an expired active session is lazily expired', async () => {
+		let current = session({
+			actions: [{ sequence: 0, action: 'hit' }],
+			expiresAt: NOW_SECONDS,
+		});
+		let storedResult: RankedResultRecord | null = null;
+		const repository = createRepository({
+			findOwnedSession: async () => current,
+			readAccount: async () => ({ chipBalance: 900 }),
+			runExpirationTransition: async (input) => {
+				storedResult = resultFromTerminal(current, input.terminal);
+				current = {
+					...current,
+					activeUserId: null,
+					status: 'expired',
+					settledAt: input.nowSeconds,
+				};
+				return { kind: 'applied', result: storedResult };
+			},
+			findResult: async () => storedResult,
+		});
+
+		const response = await coordinator(repository).act({
+			userId: USER_ID,
+			sessionId: SESSION_ID,
+			body: { sequence: 0, action: 'hit' },
+		});
+
+		expect(response.status).toBe('expired');
+		expect(repository.calls.consumeStandaloneRateLimit[0]?.[1]).toBe('ranked_replay');
+		expect(repository.calls.runExpirationTransition).toHaveLength(1);
+	});
+
+	test('an action whose fresh account cannot fund the additional wager throws INSUFFICIENT_BALANCE', async () => {
+		const doubleSeed = Uint8Array.from({ length: 32 }, (_, index) => index + 5);
+		const active = session({ seed: doubleSeed });
+		const repository = createRepository({
+			findOwnedSession: async () => active,
+			readAccount: async () => ({ chipBalance: 50 }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).act({
+				userId: USER_ID,
+				sessionId: SESSION_ID,
+				body: { sequence: 0, action: 'double-down' },
+			}),
+			'INSUFFICIENT_BALANCE',
+		);
+
+		expect(repository.calls.runTerminalTransition).toHaveLength(0);
+		expect(repository.calls.runActionTransition).toHaveLength(0);
+	});
+
+	test('expireOwned exhausts retries and surfaces ACCOUNT_BALANCE_CHANGED', async () => {
+		const active = session({ expiresAt: NOW_SECONDS });
+		const repository = createRepository({
+			findOwnedSession: async () => active,
+			readAccount: async () => ({ chipBalance: 900 }),
+			runExpirationTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).resume({ userId: USER_ID, sessionId: SESSION_ID }),
+			'ACCOUNT_BALANCE_CHANGED',
+		);
+
+		expect(repository.calls.runExpirationTransition).toHaveLength(SNAPSHOT_ATTEMPTS);
+	});
+
+	test('a start retry loop that never resolves exhausts retries and surfaces ACCOUNT_BALANCE_CHANGED', async () => {
+		const repository = createRepository({
+			findByStartRequest: async () => null,
+			findActiveSession: async () => null,
+			readAccount: async () => ({ chipBalance: 1000 }),
+			runStartTransition: async () => ({ kind: 'balance-changed' }),
+		});
+
+		await expectRankedError(
+			coordinator(repository).start({ userId: USER_ID, body: START_REQUEST }),
+			'ACCOUNT_BALANCE_CHANGED',
+		);
+
+		expect(repository.calls.runStartTransition).toHaveLength(SNAPSHOT_ATTEMPTS);
+	});
+});

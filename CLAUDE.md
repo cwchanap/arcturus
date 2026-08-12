@@ -156,7 +156,7 @@ src/
 │   │   ├── auth/[...all].ts    # Better Auth API
 │   │   ├── missions/           # Mission completion endpoints
 │   │   ├── profile/            # User settings (LLM config)
-│   │   └── chips/update.ts     # Chip balance updates
+│   │   └── wallet/settle.ts    # Wallet settlement endpoint
 │   ├── signin.astro
 │   └── profile.astro
 ├── lib/
@@ -259,7 +259,7 @@ drizzle/                   # Generated SQL migrations
 
 6. **LLM Integration**: User-configured AI settings (OpenAI/Gemini) for game assistants via `src/lib/llm-settings.ts`. Each game has its own LLM strategy module for context-aware hints.
 
-7. **Chip Balance Sync**: Wallet-coupled games sync chip balance with server via `POST /api/chips/update` endpoint after each game round. Room-local multiplayer games (e.g. `/games/poker-mp`) use room-local chips and never call `/api/chips/update`.
+7. **Wallet Settlement**: Wallet-coupled games settle each completed round through `POST /api/wallet/settle`. Room-local multiplayer games (e.g. `/games/poker-mp`) use room-local chips and never call the wallet endpoint.
 
 8. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer poker uses room-local chips and has no D1 settlement.
 
@@ -410,7 +410,7 @@ Create a modular game structure following the established pattern:
 3. Write unit tests for all game logic modules
 4. Add E2E test: `e2e/yourgame.spec.ts`
 5. Update game lobby: add game card to `src/pages/games/index.astro`
-6. Integrate chip balance sync via `POST /api/chips/update`
+6. Integrate account rounds through `POST /api/wallet/settle`
 
 **4. Available Components**:
 

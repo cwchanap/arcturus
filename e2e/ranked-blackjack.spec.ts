@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { z } from 'zod';
 import type { RankedBlackjackResponseV1 } from '../src/lib/ranked/blackjack/client';
+import { MAX_ABSOLUTE_SETTLEMENT_DELTA } from '../src/lib/wallet/settle';
 import {
 	createRankedPublicStateV1Schema,
 	rankedAchievementEffectsV1Schema,
@@ -491,16 +492,28 @@ test.describe('ranked Blackjack', () => {
 			const casualPage = await active.context.newPage();
 			await casualPage.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 			await expect(casualPage.getByText('Casual', { exact: true })).toBeVisible();
-			const casualUpdate = await casualPage.request.post('/api/chips/update', {
-				data: {
-					syncId: `ranked-cross-tab-${sessionId}`,
-					gameType: 'blackjack',
-					previousBalance: firstResume.balance,
-					delta: -firstResume.balance,
-				},
-			});
-			expect(casualUpdate.ok()).toBe(true);
-			expect((await casualUpdate.json()) as { balance: number }).toMatchObject({ balance: 0 });
+			let settledBalance = firstResume.balance;
+			let settlementIndex = 0;
+			do {
+				const delta = -Math.min(settledBalance, MAX_ABSOLUTE_SETTLEMENT_DELTA);
+				const casualSettlement = await casualPage.request.post('/api/wallet/settle', {
+					data: {
+						settlementId: `ranked-cross-tab-${sessionId}-${settlementIndex}`,
+						game: 'blackjack',
+						delta,
+						stats: {
+							rounds: 1,
+							wins: 0,
+							losses: delta < 0 ? 1 : 0,
+							biggestWin: 0,
+						},
+					},
+				});
+				expect(casualSettlement.ok()).toBe(true);
+				settledBalance = ((await casualSettlement.json()) as { balance: number }).balance;
+				settlementIndex += 1;
+			} while (settledBalance > 0);
+			expect(settledBalance).toBe(0);
 
 			const refreshedResumePromise = active.page.waitForResponse(
 				(response) =>

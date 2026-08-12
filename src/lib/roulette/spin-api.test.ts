@@ -1,1678 +1,621 @@
-import { describe, expect, test } from 'bun:test';
-import type { Database } from '../db';
-import type { AchievementDefinition } from '../achievements/types';
-import { checkAndGrantAchievements } from '../achievements/achievements';
-import { createPostHandler } from '../../pages/api/roulette/spin';
-import { evaluateBets } from './betEvaluator';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { Miniflare } from 'miniflare';
+import type { APIRoute } from 'astro';
 import {
-	isSpinCascadeGatedSql,
-	SPIN_INSERT_RECEIPT_SQL,
-	SPIN_INSERT_ROUND_SQL,
-	SPIN_UPDATE_USER_SQL,
-	SPIN_UPSERT_STATS_SQL,
-} from './spin-batch-sql';
+	createPostHandler,
+	isValidBet,
+	normalizeBet,
+	generateWinningNumber,
+} from '../../pages/api/roulette/spin';
+import { evaluateBets } from './betEvaluator';
 import type { RouletteBet } from './types';
+import type { SettleRoundCommand, SettleRoundResult } from '../wallet/types';
+import { WalletSettlementDomainError } from '../wallet/settle';
 
-const mockAchievement: AchievementDefinition = {
-	id: 'rising_star',
-	name: 'Rising Star',
-	description: 'Test achievement',
-	category: 'milestone',
-	icon: '🌟',
-};
-
-const mockCheckAndGrantAchievements: typeof checkAndGrantAchievements = async () => [
-	mockAchievement,
-];
-
-function createMockDb({
-	chipBalance = 1000,
-	selectThrows = false,
-}: {
-	chipBalance?: number;
-	selectThrows?: boolean;
-} = {}): Database {
-	return {
-		select: () => {
-			if (selectThrows) {
-				throw new Error('select failed');
-			}
-			return {
-				from: () => ({
-					where: () => ({
-						limit: () => Promise.resolve([{ chipBalance }]),
-					}),
-				}),
-			};
-		},
-	} as unknown as Database;
-}
-
-interface MockRound {
-	userId: string;
-	syncId: string;
-	winningNumber: number;
-	betsJson: string;
-	totalBet: number;
-	totalPayout: number;
-	netDelta: number;
-	previousBalance: number;
-	newBalance: number;
-}
-
-interface MockReceipt {
-	userId: string;
-	syncId: string;
-	achievementPayload: string | null;
-	// Settlement-time leaderboard rank captured by SPIN_INSERT_RECEIPT_SQL.
-	// Defaults to 1 (single-user leaderboard). Set to a specific value to
-	// verify the spin handler passes the stored rank to achievement
-	// resolution instead of re-fetching the current rank.
-	overallRank?: number | null;
-	// Defaults to 'roulette'. Set to another game type to simulate a
-	// cross-game (userId, syncId) PK collision — the spin endpoint must
-	// return SYNC_ID_REUSE_MISMATCH instead of looping on a retriable
-	// CONCURRENT_MODIFICATION that can never commit.
-	gameType?: string;
-}
-
-function createMockDbBinding({
-	chipBalance = 1000,
-	updateChanges = 1,
-	existingRound = null as MockRound | null,
-	existingReceipt = null as MockReceipt | null,
-	batchError = null as Error | null,
-}: {
-	chipBalance?: number;
-	updateChanges?: number;
-	existingRound?: MockRound | null;
-	existingReceipt?: MockReceipt | null;
-	batchError?: Error | null;
-} = {}) {
-	let currentChipBalance = chipBalance;
-	const rounds = new Map<string, MockRound>();
-	const receipts = new Map<string, MockReceipt>();
-	if (existingRound) {
-		rounds.set(`${existingRound.userId}:${existingRound.syncId}`, existingRound);
-	}
-	if (existingReceipt) {
-		receipts.set(`${existingReceipt.userId}:${existingReceipt.syncId}`, existingReceipt);
-	}
-
-	const db = createMockDb({ chipBalance: currentChipBalance });
-
-	const binding = {
-		prepare(sql: string) {
-			return {
-				sql,
-				bind(...args: unknown[]) {
-					return {
-						sql,
-						args,
-						first: async <T>(): Promise<T | null> => {
-							if (
-								sql.startsWith(
-									'SELECT winningNumber, newBalance, previousBalance, netDelta, betsJson, totalBet FROM roulette_round',
-								)
-							) {
-								const [userId, syncId] = args as [string, string];
-								return (rounds.get(`${userId}:${syncId}`) ?? null) as T | null;
-							}
-							if (sql.startsWith('SELECT gameType FROM chip_sync_receipt')) {
-								const [userId, syncId] = args as [string, string];
-								const receipt = receipts.get(`${userId}:${syncId}`);
-								if (!receipt) return null as T | null;
-								return { gameType: receipt.gameType ?? 'roulette' } as T;
-							}
-							if (sql.startsWith('SELECT achievementPayload, overallRank FROM chip_sync_receipt')) {
-								const [userId, syncId] = args as [string, string];
-								return (receipts.get(`${userId}:${syncId}`) ?? null) as T | null;
-							}
-							if (sql.startsWith('SELECT overallRank FROM chip_sync_receipt')) {
-								const [userId, syncId] = args as [string, string];
-								const receipt = receipts.get(`${userId}:${syncId}`);
-								if (!receipt) return null as T | null;
-								return { overallRank: receipt.overallRank ?? null } as T;
-							}
-							throw new Error(`Unexpected first() query: ${sql}`);
-						},
-						run: async () => {
-							if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload = ?')) {
-								const [payload, userId, syncId] = args as [string, string, string];
-								const existing = receipts.get(`${userId}:${syncId}`);
-								if (existing) {
-									receipts.set(`${userId}:${syncId}`, {
-										...existing,
-										achievementPayload: payload,
-									});
-									return { meta: { changes: 1 } };
-								}
-								return { meta: { changes: 0 } };
-							}
-							throw new Error(`Unexpected run() query: ${sql}`);
-						},
-					};
-				},
-			};
-		},
-		async batch(statements: Array<{ sql: string; args: unknown[] }>) {
-			if (batchError) throw batchError;
-			let previousChanges = 0;
-			const results: Array<{ meta: { changes: number } }> = [];
-
-			for (const statement of statements) {
-				// Match production SQL constants (exact) so the mock fails closed
-				// if cascade gates are removed or statements drift.
-				if (statement.sql === SPIN_UPDATE_USER_SQL) {
-					const [nextBalance, _updatedAt, _userId, matchedBalanceValue] = statement.args as [
-						number,
-						number,
-						string,
-						number,
-					];
-					if (updateChanges > 0 && currentChipBalance === matchedBalanceValue) {
-						currentChipBalance = nextBalance;
-						previousChanges = 1;
-						results.push({ meta: { changes: 1 } });
-					} else {
-						previousChanges = 0;
-						results.push({ meta: { changes: 0 } });
-					}
-					continue;
-				}
-				// Cascade inserts only apply when the production SQL still
-				// gates on `WHERE changes() = 1`. Without the gate, a concurrent
-				// balance change would still insert phantom rows — the mock
-				// must not simulate cascade success for ungated SQL.
-				if (statement.sql === SPIN_INSERT_ROUND_SQL) {
-					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
-						const [
-							syncId,
-							userId,
-							winningNumber,
-							betsJson,
-							totalBet,
-							totalPayout,
-							netDelta,
-							previousBalance,
-							newBalance,
-						] = statement.args as [
-							string,
-							string,
-							number,
-							string,
-							number,
-							number,
-							number,
-							number,
-							number,
-						];
-						rounds.set(`${userId}:${syncId}`, {
-							userId,
-							syncId,
-							winningNumber,
-							betsJson,
-							totalBet,
-							totalPayout,
-							netDelta,
-							previousBalance,
-							newBalance,
-						});
-						results.push({ meta: { changes: 1 } });
-					} else {
-						results.push({ meta: { changes: 0 } });
-					}
-					continue;
-				}
-				if (statement.sql === SPIN_INSERT_RECEIPT_SQL) {
-					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
-						const [userId, syncId] = statement.args as [string, string];
-						receipts.set(`${userId}:${syncId}`, {
-							userId,
-							syncId,
-							achievementPayload: null,
-							// Mirrors the production SQL subquery: a single-user
-							// leaderboard yields rank 1. Tests that need a
-							// different rank set it via existingReceipt.
-							overallRank: 1,
-						});
-						results.push({ meta: { changes: 1 } });
-					} else {
-						results.push({ meta: { changes: 0 } });
-					}
-					continue;
-				}
-				if (statement.sql === SPIN_UPSERT_STATS_SQL) {
-					if (previousChanges === 1 && isSpinCascadeGatedSql(statement.sql)) {
-						results.push({ meta: { changes: 1 } });
-					} else {
-						results.push({ meta: { changes: 0 } });
-					}
-					continue;
-				}
-				throw new Error(`Unexpected batch SQL: ${statement.sql}`);
-			}
-			return results;
-		},
-	};
-
-	return {
-		binding: binding as unknown as D1Database,
-		db,
-		getCurrentChipBalance: () => currentChipBalance,
-		rounds,
-		receipts,
-	};
-}
-
-function createLocals({
-	user,
-	withDb = true,
-	dbBinding,
-}: {
-	user?: { id: string } | null;
-	withDb?: boolean;
-	dbBinding?: unknown;
-}) {
-	return {
-		user: user ?? null,
-		runtime: withDb ? { env: { DB: dbBinding ?? { binding: true } } } : { env: {} },
-	};
-}
-
-async function readJson(response: Response) {
-	return JSON.parse(await response.text());
-}
-
-function makeBet(type: string, amount: number, target?: number): RouletteBet {
+function makeBet(type: RouletteBet['type'], amount: number, target?: number): RouletteBet {
 	return {
 		id: `bet-${type}-${target ?? 'none'}-${amount}`,
-		type: type as RouletteBet['type'],
+		type,
 		amount,
-		...(target !== undefined ? { target } : {}),
+		...(target === undefined ? {} : { target }),
 	};
 }
 
-function createHandler(
-	options: {
-		lastUpdateByUser?: Map<string, number>;
-		winningNumber?: number;
-		chipBalance?: number;
-		updateChanges?: number;
-		existingRound?: MockRound | null;
-		existingReceipt?: MockReceipt | null;
-		checkAndGrantAchievements?: typeof checkAndGrantAchievements;
-		evaluateBets?: typeof evaluateBets;
-		batchError?: Error | null;
-	} = {},
-) {
-	const {
-		winningNumber = 17,
-		chipBalance = 1000,
-		updateChanges = 1,
-		existingRound = null,
-		existingReceipt = null,
-		batchError = null,
-	} = options;
-	const mock = createMockDbBinding({
-		chipBalance,
-		updateChanges,
-		existingRound,
-		existingReceipt,
-		batchError,
-	});
-	const handler = createPostHandler({
-		createDb: () => mock.db,
-		checkAndGrantAchievements: options.checkAndGrantAchievements ?? mockCheckAndGrantAchievements,
-		evaluateBets: options.evaluateBets ?? evaluateBets,
-		generateWinningNumber: () => winningNumber,
-		lastUpdateByUser: options.lastUpdateByUser ?? new Map(),
-	});
-	return { handler, mock };
+function context({
+	user = { id: 'user-1' },
+	db = {} as D1Database,
+	body = { syncId: 'spin-1', bets: [makeBet('red', 10)] },
+}: {
+	user?: { id: string } | null;
+	db?: D1Database;
+	body?: unknown;
+} = {}): Parameters<APIRoute>[0] {
+	return {
+		locals: {
+			user,
+			runtime: { env: { DB: db } },
+		},
+		request: new Request('https://arcturus.example/api/roulette/spin', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body),
+		}),
+	} as unknown as Parameters<APIRoute>[0];
 }
 
-describe('roulette spin API', () => {
-	test('cascade SQL constants gate inserts on changes() = 1', () => {
-		// Guard: if the production gates are dropped, mocks that only match
-		// statement prefixes would still simulate cascade success.
-		expect(isSpinCascadeGatedSql(SPIN_INSERT_ROUND_SQL)).toBe(true);
-		expect(isSpinCascadeGatedSql(SPIN_INSERT_RECEIPT_SQL)).toBe(true);
-		expect(isSpinCascadeGatedSql(SPIN_UPSERT_STATS_SQL)).toBe(true);
-		expect(SPIN_UPDATE_USER_SQL).toBe(
-			'UPDATE user SET chipBalance = ?, updatedAt = ? WHERE id = ? AND chipBalance = ?',
-		);
-	});
+async function json(response: Response): Promise<Record<string, unknown>> {
+	return (await response.json()) as Record<string, unknown>;
+}
 
+function createHandler({
+	settle,
+	evaluate = evaluateBets,
+	winningNumber = 17,
+}: {
+	settle?: (
+		d1: D1Database,
+		userId: string,
+		command: SettleRoundCommand,
+		requiredFunds?: number,
+	) => Promise<SettleRoundResult>;
+	evaluate?: typeof evaluateBets;
+	winningNumber?: number;
+} = {}) {
+	const calls: Array<{
+		d1: D1Database;
+		userId: string;
+		command: SettleRoundCommand;
+		requiredFunds?: number;
+	}> = [];
+	const settlement =
+		settle ??
+		(async (_d1: D1Database, _userId: string, command: SettleRoundCommand) => {
+			return { balance: 1_000 + command.delta, duplicate: false };
+		});
+	const handler = createPostHandler({
+		settleWalletRound: async (d1, userId, command, requiredFunds) => {
+			calls.push({ d1, userId, command, requiredFunds });
+			return settlement(d1, userId, command, requiredFunds);
+		},
+		evaluateBets: evaluate,
+		generateWinningNumber: () => winningNumber,
+	});
+	return { handler, calls };
+}
+
+describe('POST /api/roulette/spin', () => {
 	test('rejects unauthenticated requests', async () => {
 		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({ request, locals: createLocals({ user: null }) } as any);
-		const body = await readJson(response);
+		const response = await handler(context({ user: null }));
 		expect(response.status).toBe(401);
-		expect(body.error).toBe('UNAUTHORIZED');
+		expect(await json(response)).toEqual({ error: 'UNAUTHORIZED' });
 	});
 
-	test('rejects invalid JSON body', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: '{notjson',
-			headers: { 'Content-Type': 'application/json' },
+	test('rejects malformed JSON before evaluating or settling', async () => {
+		let evaluated = false;
+		const { handler } = createHandler({
+			evaluate: () => {
+				evaluated = true;
+				return [];
+			},
 		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-json' } }),
-		} as any);
-		const body = await readJson(response);
+		const request = new Request('https://arcturus.example/api/roulette/spin', {
+			method: 'POST',
+			body: '{not-json',
+		});
+		const response = await handler({ ...context(), request });
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_JSON');
+		expect(await json(response)).toEqual({ error: 'INVALID_JSON' });
+		expect(evaluated).toBe(false);
+	});
+
+	test('keeps server bet validation', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(
+			context({ body: { syncId: 'spin-1', bets: [{ id: 'bad', type: 'unknown', amount: 10 }] } }),
+		);
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'INVALID_BETS' });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('keeps server-generated winning number and evaluation while delegating one wallet command', async () => {
+		const d1 = {} as D1Database;
+		const bets = [makeBet('straight', 10, 17)];
+		const { handler, calls } = createHandler({ winningNumber: 17 });
+		const response = await handler(context({ db: d1, body: { syncId: 'spin-1', bets } }));
+		const body = await json(response);
+
+		expect(response.status).toBe(200);
+		expect(body.winningNumber).toBe(17);
+		expect(body.results).toEqual(evaluateBets(bets, 17));
+		expect(body.netDelta).toBe(350);
+		expect(body.newBalance).toBe(1_350);
+		expect(body.previousBalance).toBe(1_000);
+		expect(body.syncId).toBe('spin-1');
+		expect(calls).toEqual([
+			{
+				d1,
+				userId: 'user-1',
+				command: {
+					settlementId: 'spin-1',
+					game: 'roulette',
+					delta: 350,
+					stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 350 },
+				},
+				requiredFunds: 10,
+			},
+		]);
+	});
+
+	test('passes totalBet as requiredFunds so the wallet can reject underfunded bets', async () => {
+		const d1 = {} as D1Database;
+		const bets = [makeBet('red', 25), makeBet('straight', 100, 17)];
+		const { handler, calls } = createHandler({ winningNumber: 17 });
+		await handler(context({ db: d1, body: { syncId: 'spin-funds', bets } }));
+		expect(calls[0]?.requiredFunds).toBe(125);
+	});
+
+	test('passes loss and push normalization to generic wallet stats', async () => {
+		const bets = [makeBet('red', 10)];
+		const { handler, calls } = createHandler({ winningNumber: 0 });
+		await handler(context({ body: { syncId: 'loss-sync', bets } }));
+		expect(calls[0]?.command.stats).toEqual({
+			rounds: 1,
+			wins: 0,
+			losses: 1,
+			biggestWin: 0,
+		});
+
+		const pushHandler = createHandler({
+			evaluate: (placedBets) => placedBets.map((bet) => ({ bet, won: true, payout: bet.amount })),
+		});
+		await pushHandler.handler(context({ body: { syncId: 'push-sync', bets } }));
+		expect(pushHandler.calls[0]?.command).toMatchObject({
+			delta: 0,
+			stats: { rounds: 1, wins: 0, losses: 0, biggestWin: 0 },
+		});
+	});
+
+	test('returns only authoritative balance for a duplicate settlement', async () => {
+		const { handler, calls } = createHandler({
+			settle: async () => ({ balance: 925, duplicate: true }),
+		});
+		const response = await handler(
+			context({ body: { syncId: 'duplicate-sync', bets: [makeBet('straight', 10, 17)] } }),
+		);
+
+		expect(response.status).toBe(200);
+		expect(await json(response)).toEqual({ duplicate: true, newBalance: 925 });
+		expect(calls).toHaveLength(1);
+	});
+
+	test('allows roulette deltas below the shared global bound without route-specific caps', async () => {
+		const evaluate: typeof evaluateBets = (bets) =>
+			bets.map((bet) => ({ bet, won: true, payout: 99_999 }));
+		const { handler, calls } = createHandler({ evaluate });
+		const response = await handler(
+			context({ body: { syncId: 'large-win', bets: [makeBet('straight', 10, 17)] } }),
+		);
+
+		expect(response.status).toBe(200);
+		expect(calls[0]?.command.delta).toBe(99_989);
+	});
+
+	test('maps wallet domain failures to stable spin responses', async () => {
+		const cases: Array<[string, number]> = [
+			['INVALID_COMMAND', 400],
+			['INSUFFICIENT_BALANCE', 400],
+			['USER_NOT_FOUND', 500],
+			['SETTLEMENT_CONFLICT', 409],
+		];
+		for (const [code, status] of cases) {
+			const { handler } = createHandler({
+				settle: async () => {
+					throw new WalletSettlementDomainError(code as never);
+				},
+			});
+			const response = await handler(context());
+			expect(response.status).toBe(status);
+			expect(await json(response)).toEqual({ error: code });
+		}
+	});
+
+	test('includes newAchievements when wallet returns them', async () => {
+		const { handler } = createHandler({
+			settle: async () => ({
+				balance: 1_350,
+				duplicate: false,
+				newAchievements: [{ id: 'rising_star', name: 'Rising Star', icon: 'star' }],
+			}),
+		});
+		const response = await handler(
+			context({ body: { syncId: 'achv-sync', bets: [makeBet('straight', 10, 17)] } }),
+		);
+		const body = await json(response);
+		expect(response.status).toBe(200);
+		expect(body.newAchievements).toEqual([
+			{ id: 'rising_star', name: 'Rising Star', icon: 'star' },
+		]);
+	});
+
+	test('wraps unexpected (non-domain) errors in a 500 INTERNAL_ERROR response', async () => {
+		const { handler } = createHandler({
+			settle: async () => {
+				throw new Error('unexpected database crash');
+			},
+		});
+		const response = await handler(
+			context({ body: { syncId: 'crash-sync', bets: [makeBet('red', 10)] } }),
+		);
+		expect(response.status).toBe(500);
+		expect(await json(response)).toEqual({ error: 'INTERNAL_ERROR' });
+	});
+});
+
+describe('isValidBet', () => {
+	test('rejects non-object values', () => {
+		expect(isValidBet(null)).toBe(false);
+		expect(isValidBet('string')).toBe(false);
+		expect(isValidBet(42)).toBe(false);
+		expect(isValidBet(undefined)).toBe(false);
+	});
+
+	test('rejects bets with invalid id', () => {
+		expect(isValidBet({ id: '', type: 'red', amount: 10 })).toBe(false);
+		expect(isValidBet({ id: 'bad space', type: 'red', amount: 10 })).toBe(false);
+		expect(isValidBet({ id: 123, type: 'red', amount: 10 })).toBe(false);
+	});
+
+	test('rejects bets with invalid type', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'unknown', amount: 10 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 123, amount: 10 })).toBe(false);
+	});
+
+	test('rejects bets with non-integer or below-min amount', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: 0 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: 0.5 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: -5 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: '10' })).toBe(false);
+	});
+
+	test('rejects outside bets that include a target', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: 10, target: 5 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'even', amount: 10, target: 0 })).toBe(false);
+	});
+
+	test('rejects straight bets with out-of-range target', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: -1 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: 37 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: 0.5 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: '5' })).toBe(false);
+	});
+
+	test('rejects dozen/column bets with invalid target', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'dozen', amount: 10, target: 3 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'dozen', amount: 10, target: -1 })).toBe(false);
+		expect(isValidBet({ id: 'bet-1', type: 'column', amount: 10, target: '0' })).toBe(false);
+	});
+
+	test('accepts valid outside bets without target', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'red', amount: 10 })).toBe(true);
+		expect(isValidBet({ id: 'bet-1', type: 'low', amount: 5 })).toBe(true);
+	});
+
+	test('accepts valid straight bets with target 0-36', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: 0 })).toBe(true);
+		expect(isValidBet({ id: 'bet-1', type: 'straight', amount: 10, target: 36 })).toBe(true);
+	});
+
+	test('accepts valid dozen/column bets with target 0-2', () => {
+		expect(isValidBet({ id: 'bet-1', type: 'dozen', amount: 10, target: 0 })).toBe(true);
+		expect(isValidBet({ id: 'bet-1', type: 'dozen', amount: 10, target: 2 })).toBe(true);
+		expect(isValidBet({ id: 'bet-1', type: 'column', amount: 10, target: 1 })).toBe(true);
+	});
+});
+
+describe('normalizeBet', () => {
+	test('returns null for invalid bets', () => {
+		expect(normalizeBet(null)).toBeNull();
+		expect(normalizeBet({ id: 'bad', type: 'unknown', amount: 10 })).toBeNull();
+		expect(normalizeBet({ id: 'bet-1', type: 'red', amount: 0 })).toBeNull();
+	});
+
+	test('normalizes valid outside bet without target', () => {
+		const result = normalizeBet({ id: 'bet-1', type: 'red', amount: 10 });
+		expect(result).toEqual({ id: 'bet-1', type: 'red', amount: 10 });
+		expect(result?.target).toBeUndefined();
+	});
+
+	test('normalizes valid straight bet with target', () => {
+		const result = normalizeBet({ id: 'bet-1', type: 'straight', amount: 10, target: 17 });
+		expect(result).toEqual({ id: 'bet-1', type: 'straight', amount: 10, target: 17 });
+	});
+
+	test('strips extra fields from valid bets', () => {
+		const result = normalizeBet({
+			id: 'bet-1',
+			type: 'red',
+			amount: 10,
+			extra: 'should be removed',
+			target: undefined,
+		});
+		expect(result).toEqual({ id: 'bet-1', type: 'red', amount: 10 });
+		expect(result).not.toHaveProperty('extra');
+	});
+});
+
+describe('generateWinningNumber', () => {
+	test('returns a number between 0 and 36 inclusive', () => {
+		for (let i = 0; i < 100; i++) {
+			const num = generateWinningNumber();
+			expect(num).toBeGreaterThanOrEqual(0);
+			expect(num).toBeLessThanOrEqual(36);
+			expect(Number.isInteger(num)).toBe(true);
+		}
+	});
+
+	test('returns different numbers across multiple calls (probabilistic)', () => {
+		const numbers = new Set<number>();
+		for (let i = 0; i < 50; i++) {
+			numbers.add(generateWinningNumber());
+		}
+		// With 37 possible values and 50 calls, we expect significant variety
+		expect(numbers.size).toBeGreaterThan(5);
+	});
+});
+
+describe('POST /api/roulette/spin - validation error paths', () => {
+	test('rejects non-object request body (array)', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(context({ body: [1, 2, 3] }));
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'INVALID_REQUEST_BODY' });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('rejects non-object request body (string)', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(context({ body: 'not-an-object' }));
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'INVALID_REQUEST_BODY' });
+		expect(calls).toHaveLength(0);
 	});
 
 	test('rejects invalid syncId', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: '', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-sync' } }),
-		} as any);
-		const body = await readJson(response);
+		const { handler, calls } = createHandler();
+		const response = await handler(
+			context({ body: { syncId: 'bad space!', bets: [makeBet('red', 10)] } }),
+		);
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_SYNC_ID');
+		expect(await json(response)).toEqual({ error: 'INVALID_SYNC_ID' });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('rejects missing syncId', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(context({ body: { bets: [makeBet('red', 10)] } }));
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'INVALID_SYNC_ID' });
+		expect(calls).toHaveLength(0);
 	});
 
 	test('rejects empty bets array', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-empty' } }),
-		} as any);
-		const body = await readJson(response);
+		const { handler, calls } = createHandler();
+		const response = await handler(context({ body: { syncId: 'spin-1', bets: [] } }));
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
+		expect(await json(response)).toEqual({ error: 'INVALID_BETS' });
+		expect(calls).toHaveLength(0);
 	});
 
-	test('rejects invalid bet type', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({
-				syncId: 'test-sync',
-				bets: [{ id: 'bet-1', type: 'invalid', amount: 10 }],
-			}),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-badtype' } }),
-		} as any);
-		const body = await readJson(response);
+	test('rejects non-array bets', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(context({ body: { syncId: 'spin-1', bets: 'not-an-array' } }));
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
+		expect(await json(response)).toEqual({ error: 'INVALID_BETS' });
+		expect(calls).toHaveLength(0);
 	});
 
-	test('rejects bet below MIN_BET', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({
-				syncId: 'test-sync',
-				bets: [{ id: 'bet-1', type: 'red', amount: 0 }],
-			}),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-minbet' } }),
-		} as any);
-		const body = await readJson(response);
+	test('rejects too many bets', async () => {
+		const { handler, calls } = createHandler();
+		const tooManyBets = Array.from({ length: 65 }, (_, i) => makeBet('red', 1, undefined));
+		const response = await handler(context({ body: { syncId: 'spin-1', bets: tooManyBets } }));
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
+		expect(await json(response)).toEqual({ error: 'TOO_MANY_BETS' });
+		expect(calls).toHaveLength(0);
 	});
 
-	test('rejects bet ID exceeding length/character limit', async () => {
-		const { handler } = createHandler();
-		const oversizedId = 'a'.repeat(129);
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({
-				syncId: 'test-sync',
-				bets: [{ id: oversizedId, type: 'red', amount: 10 }],
-			}),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-betid-toolong' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
-	});
-
-	test('rejects bet ID with disallowed characters', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({
-				syncId: 'test-sync',
-				bets: [{ id: 'bet with spaces!', type: 'red', amount: 10 }],
-			}),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-betid-badchars' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
-	});
-
-	test('rejects when total bet exceeds MAX_TOTAL_BET', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({
-				syncId: 'test-sync',
-				bets: [makeBet('red', 5001)],
-			}),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-maxtotal' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_TOTAL_BET');
-	});
-
-	test('rejects when per-position total exceeds MAX_BET_PER_POSITION', async () => {
-		const { handler } = createHandler();
-		const bets = [makeBet('red', 300), makeBet('red', 300)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-maxpos' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('POSITION_LIMIT_EXCEEDED');
-	});
-
-	test('rejects when bet count exceeds MAX_BETS', async () => {
-		const { handler } = createHandler();
-		const bets = Array.from({ length: 65 }, (_, i) => makeBet('red', 1, undefined));
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-toomany' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('TOO_MANY_BETS');
-	});
-
-	test('rejects outside bet with a target (red + target)', async () => {
-		const { handler } = createHandler();
-		const bets = [{ id: 'bet-1', type: 'red', amount: 10, target: 5 }];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-outside-target' } }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_BETS');
-	});
-
-	test('rejects when net delta exceeds ROULETTE_MAX_WIN backstop', async () => {
-		// Simulate a logic bug / tampering where evaluateBets returns an
-		// impossibly large payout. The DELTA_EXCEEDS_LIMIT backstop must
-		// reject the spin before it reaches the batch.
-		const mockEvaluateBets: typeof evaluateBets = (_bets, _winningNumber) => {
-			const bet = _bets[0];
-			return [{ bet, won: true, payout: 999_999 }];
-		};
-		const { handler, mock } = createHandler({
-			chipBalance: 1_000_000,
-			evaluateBets: mockEvaluateBets,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-delta-win' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
-	});
-
-	test('returns 500 on corrupted betsJson during replay', async () => {
-		const existingRound: MockRound = {
-			userId: 'user-corrupt',
-			syncId: 'corrupt-sync',
-			winningNumber: 17,
-			betsJson: '{not valid json',
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-		};
-		const { handler, mock } = createHandler({ existingRound });
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'corrupt-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-corrupt' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toBe('CORRUPTED_ROUND_DATA');
-	});
-
-	test('rejects when database binding is missing', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-nodb' }, withDb: false }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toBe('DATABASE_UNAVAILABLE');
-	});
-
-	test('rejects when total bet exceeds balance', async () => {
-		const { handler, mock } = createHandler({ chipBalance: 5 });
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-poor' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('INSUFFICIENT_BALANCE');
-		expect(body.currentBalance).toBe(5);
-	});
-
-	test('rejects when rate limited', async () => {
-		const rateMap = new Map<string, number>();
-		rateMap.set('user-rate', Date.now());
-		const { handler, mock } = createHandler({ lastUpdateByUser: rateMap });
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-rate' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(429);
-		expect(body.error).toBe('RATE_LIMITED');
-	});
-
-	test('returns 409 on concurrent modification (batch update changes = 0)', async () => {
-		const { handler, mock } = createHandler({ updateChanges: 0 });
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-concurrent' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(409);
-		expect(body.error).toBe('CONCURRENT_MODIFICATION');
-	});
-
-	test('returns 409 when batch throws a PRIMARY KEY constraint violation', async () => {
-		const { handler, mock } = createHandler({
-			batchError: new Error('UNIQUE constraint failed: roulette_round.primaryKey'),
-		});
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-pk' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(409);
-		expect(body.error).toBe('CONCURRENT_MODIFICATION');
-	});
-
-	test('returns 500 when batch throws an unexpected (non-constraint) error', async () => {
-		const { handler, mock } = createHandler({
-			batchError: new Error('D1 service unavailable'),
-		});
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [makeBet('red', 10)] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-batchfail' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toBe('BATCH_FAILED');
-	});
-
-	test('repairs fractional stored balance instead of failing with CONCURRENT_MODIFICATION', async () => {
-		// A fractional chipBalance (e.g. 1000.5) must use the raw value as the
-		// optimistic-lock match value. Binding the truncated 1000 would never
-		// match the stored 1000.5, causing every spin to return 409.
-		const { handler, mock } = createHandler({
-			chipBalance: 1000.5,
-			winningNumber: 0,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-fractional' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.previousBalance).toBe(1000);
-		expect(body.newBalance).toBe(950);
-		expect(mock.getCurrentChipBalance()).toBe(950);
-	});
-
-	test('processes a successful spin with a loss', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 0 });
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-loss' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.winningNumber).toBe(0);
-		expect(body.newBalance).toBe(950);
-		expect(body.previousBalance).toBe(1000);
-		expect(body.netDelta).toBe(-50);
-		expect(body.syncId).toBe('test-sync');
-		expect(mock.getCurrentChipBalance()).toBe(950);
-	});
-
-	test('strips unvalidated bet properties before persisting betsJson', async () => {
-		// A valid bet carrying an arbitrary large property must not have that
-		// property persisted into roulette_round.betsJson. isValidBet is a
-		// type guard that keeps the original object, so the handler must
-		// normalize accepted bets to known fields ({id,type,amount,target?}).
-		const { handler, mock } = createHandler({ winningNumber: 0 });
-		const bloatedBet = {
-			id: 'bet-red-none-50',
-			type: 'red',
-			amount: 50,
-			// Arbitrary caller-supplied properties that would bloat D1 rows
-			// and replay parsing if persisted alongside the known fields.
-			junk: 'x'.repeat(5000),
-			nested: { deep: { payload: 'y'.repeat(5000) } },
-		};
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets: [bloatedBet] }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-bloat' }, dbBinding: mock.binding }),
-		} as any);
-		expect(response.status).toBe(200);
-		const stored = mock.rounds.get('user-bloat:test-sync');
-		expect(stored).toBeDefined();
-		const persisted = JSON.parse(stored!.betsJson) as RouletteBet[];
-		expect(persisted).toHaveLength(1);
-		expect(persisted[0]).toEqual({ id: 'bet-red-none-50', type: 'red', amount: 50 });
-		// The persisted betsJson must be far smaller than the bloated input.
-		expect(stored!.betsJson.length).toBeLessThan(200);
-	});
-
-	test('processes a successful spin with a win', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 17 });
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-win' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.winningNumber).toBe(17);
-		expect(body.netDelta).toBe(350);
-		expect(body.newBalance).toBe(1350);
-		expect(mock.getCurrentChipBalance()).toBe(1350);
-	});
-
-	test('idempotent replay returns same result', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 17 });
-		const bets = [makeBet('straight', 10, 17)];
-		const request1 = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-sync', bets }),
-		});
-		const locals = createLocals({ user: { id: 'user-replay' }, dbBinding: mock.binding });
-		const response1 = await handler({ request: request1, locals } as any);
-		const body1 = await readJson(response1);
-		expect(response1.status).toBe(200);
-
-		const request2 = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-sync', bets }),
-		});
-		const response2 = await handler({ request: request2, locals } as any);
-		const body2 = await readJson(response2);
-		expect(response2.status).toBe(200);
-		expect(body2.winningNumber).toBe(body1.winningNumber);
-		expect(body2.newBalance).toBe(body1.newBalance);
-		expect(body2.netDelta).toBe(body1.netDelta);
-		expect(body2.syncId).toBe('replay-sync');
-	});
-
-	test('replay returns authoritative currentBalance separate from historical newBalance', async () => {
-		// The replay branch must not return the stored newBalance as the live
-		// balance. Another tab/game may have changed the account since the
-		// original settlement, so the replay (which does not mutate the user
-		// row) must fetch the current chipBalance separately and return it as
-		// currentBalance for the client to adopt as the live balance.
-		const existingRound: MockRound = {
-			userId: 'user-replay-stale',
-			syncId: 'replay-stale-sync',
-			winningNumber: 17,
-			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-		};
-		// Current chipBalance (1500) differs from the round's settled
-		// newBalance (1350) — simulating a subsequent win in another tab/game.
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			chipBalance: 1500,
-			existingRound,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-stale-sync', bets }),
-		});
-		const locals = createLocals({
-			user: { id: 'user-replay-stale' },
-			dbBinding: mock.binding,
-		});
-		const response = await handler({ request, locals } as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		// Historical settled balance is preserved for the spin result record.
-		expect(body.newBalance).toBe(1350);
-		// Authoritative current balance is returned separately.
-		expect(body.currentBalance).toBe(1500);
-	});
-
-	test('replay with mismatched bets returns 409', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 17 });
-		const originalBets = [makeBet('straight', 10, 17)];
-		const request1 = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'mismatch-sync', bets: originalBets }),
-		});
-		const locals = createLocals({ user: { id: 'user-mismatch' }, dbBinding: mock.binding });
-		await handler({ request: request1, locals } as any);
-
-		const differentBets = [makeBet('red', 10)];
-		const request2 = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'mismatch-sync', bets: differentBets }),
-		});
-		const response2 = await handler({ request: request2, locals } as any);
-		const body2 = await readJson(response2);
-		expect(response2.status).toBe(409);
-		expect(body2.error).toBe('SYNC_ID_REUSE_MISMATCH');
-	});
-
-	test('persists achievement payload to receipt on fresh spin', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 17 });
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'achv-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-achv' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeDefined();
-		expect(body.newAchievements).toHaveLength(1);
-		expect(body.newAchievements[0].id).toBe('rising_star');
-
-		const receipt = mock.receipts.get('user-achv:achv-sync');
-		expect(receipt).toBeDefined();
-		expect(receipt!.achievementPayload).not.toBeNull();
-		const payload = JSON.parse(receipt!.achievementPayload!);
-		expect(payload.newAchievements).toHaveLength(1);
-		expect(payload.newAchievements[0].id).toBe('rising_star');
-	});
-
-	test('passes settlement-time overallRank to checkAndGrantAchievements on fresh spin', async () => {
-		// The receipt's overallRank is captured by SPIN_INSERT_RECEIPT_SQL's leaderboard
-		// subquery at settlement time. A concurrent balance update between the batch and
-		// the achievement check must not re-fetch a different rank — the result is cached
-		// in achievementPayload, so the wrong rank would be sticky. Verify the handler
-		// reads the stored rank and passes it through.
-		let capturedOptions: { overallRank?: number | null } | undefined;
-		const capturingCheck: typeof checkAndGrantAchievements = async (_db, _uid, _bal, options) => {
-			capturedOptions = options;
-			return [mockAchievement];
-		};
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			checkAndGrantAchievements: capturingCheck,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'rank-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-rank' }, dbBinding: mock.binding }),
-		} as any);
-		expect(response.status).toBe(200);
-		expect(capturedOptions?.overallRank).toBe(1);
-		const receipt = mock.receipts.get('user-rank:rank-sync');
-		expect(receipt).toBeDefined();
-		expect(receipt!.overallRank).toBe(1);
-	});
-
-	test('passes stored overallRank to checkAndGrantAchievements on null-payload replay', async () => {
-		// Replay path: the receipt exists with a null achievementPayload and a
-		// settlement-time overallRank. The handler must pass the stored rank to
-		// checkAndGrantAchievementsImpl instead of letting it re-fetch the current
-		// rank (which could differ from the settlement-time rank).
-		let capturedOptions: { overallRank?: number | null } | undefined;
-		const capturingCheck: typeof checkAndGrantAchievements = async (_db, _uid, _bal, options) => {
-			capturedOptions = options;
-			return [mockAchievement];
-		};
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-rank',
-			syncId: 'replay-rank-sync',
-			achievementPayload: null,
-			overallRank: 7,
-		};
-		const existingRound: MockRound = {
-			userId: 'user-replay-rank',
-			syncId: 'replay-rank-sync',
-			winningNumber: 0,
-			betsJson: JSON.stringify([makeBet('red', 50)]),
-			totalBet: 50,
-			totalPayout: 0,
-			netDelta: -50,
-			previousBalance: 1000,
-			newBalance: 950,
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-			checkAndGrantAchievements: capturingCheck,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-rank-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-replay-rank' }, dbBinding: mock.binding }),
-		} as any);
-		expect(response.status).toBe(200);
-		expect(capturedOptions?.overallRank).toBe(7);
-	});
-
-	test('replays achievements from persisted receipt payload', async () => {
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-achv',
-			syncId: 'replay-achv-sync',
-			achievementPayload: JSON.stringify({
-				newAchievements: [{ id: 'rising_star', name: 'Rising Star', icon: '🌟' }],
-				warnings: [],
-			}),
-		};
-		const existingRound: MockRound = {
-			userId: 'user-replay-achv',
-			syncId: 'replay-achv-sync',
-			winningNumber: 17,
-			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-achv-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-achv' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeDefined();
-		expect(body.newAchievements).toHaveLength(1);
-		expect(body.newAchievements[0].id).toBe('rising_star');
-	});
-
-	test('replay with null achievement payload re-grants achievements and persists result', async () => {
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-null',
-			syncId: 'replay-null-sync',
-			achievementPayload: null,
-		};
-		const existingRound: MockRound = {
-			userId: 'user-replay-null',
-			syncId: 'replay-null-sync',
-			winningNumber: 0,
-			betsJson: JSON.stringify([makeBet('red', 50)]),
-			totalBet: 50,
-			totalPayout: 0,
-			netDelta: -50,
-			previousBalance: 1000,
-			newBalance: 950,
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-null-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-null' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		// Achievement payload was null → re-ran checkAndGrantAchievements
-		// (idempotent) and returned the re-granted achievements.
-		expect(body.newAchievements).toBeDefined();
-		expect(body.newAchievements).toHaveLength(1);
-		expect(body.newAchievements[0].id).toBe('rising_star');
-		// Persisted to the receipt
-		const receipt = mock.receipts.get('user-replay-null:replay-null-sync');
-		expect(receipt).toBeDefined();
-		expect(receipt!.achievementPayload).not.toBeNull();
-		const payload = JSON.parse(receipt!.achievementPayload!);
-		expect(payload.newAchievements).toHaveLength(1);
-		expect(payload.newAchievements[0].id).toBe('rising_star');
-	});
-
-	test('replay with null achievement payload and no achievements earned returns undefined and persists empty payload', async () => {
-		const noAchievements: typeof checkAndGrantAchievements = async () => [];
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-null-empty',
-			syncId: 'replay-null-empty-sync',
-			achievementPayload: null,
-		};
-		const existingRound: MockRound = {
-			userId: 'user-replay-null-empty',
-			syncId: 'replay-null-empty-sync',
-			winningNumber: 0,
-			betsJson: JSON.stringify([makeBet('red', 50)]),
-			totalBet: 50,
-			totalPayout: 0,
-			netDelta: -50,
-			previousBalance: 1000,
-			newBalance: 950,
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-			checkAndGrantAchievements: noAchievements,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-null-empty-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-null-empty' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeUndefined();
-		// Empty payload is persisted so subsequent replays skip the check.
-		const receipt = mock.receipts.get('user-replay-null-empty:replay-null-empty-sync');
-		expect(receipt).toBeDefined();
-		expect(receipt!.achievementPayload).not.toBeNull();
-		const payload = JSON.parse(receipt!.achievementPayload!);
-		expect(payload.newAchievements).toEqual([]);
-	});
-
-	test('replay with cached empty achievement payload skips checkAndGrantAchievements', async () => {
-		// A receipt already carries an explicit empty payload from a prior
-		// spin/replay. The replay must NOT re-invoke checkAndGrantAchievements
-		// (which would bypass the rate limit and repeat achievement DB work).
-		let calls = 0;
-		const spyCheckAndGrant: typeof checkAndGrantAchievements = async () => {
-			calls++;
-			return [{ id: 'should_not_run', name: 'Should Not Run', icon: 'x' }] as any;
-		};
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-empty-cache',
-			syncId: 'replay-empty-cache-sync',
-			achievementPayload: JSON.stringify({ newAchievements: [], warnings: [] }),
-		};
-		const existingRound: MockRound = {
-			userId: 'user-replay-empty-cache',
-			syncId: 'replay-empty-cache-sync',
-			winningNumber: 0,
-			betsJson: JSON.stringify([makeBet('red', 50)]),
-			totalBet: 50,
-			totalPayout: 0,
-			netDelta: -50,
-			previousBalance: 1000,
-			newBalance: 950,
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-			checkAndGrantAchievements: spyCheckAndGrant,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-empty-cache-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-empty-cache' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeUndefined();
-		expect(calls).toBe(0);
-		// Payload unchanged — no re-persist needed.
-		const receipt = mock.receipts.get('user-replay-empty-cache:replay-empty-cache-sync');
-		expect(receipt!.achievementPayload).toBe(JSON.stringify({ newAchievements: [], warnings: [] }));
-	});
-
-	test('persists empty achievement payload when no achievements earned', async () => {
-		const noAchievements: typeof checkAndGrantAchievements = async () => [];
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			checkAndGrantAchievements: noAchievements,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'no-achv-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-no-achv' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeUndefined();
-		const receipt = mock.receipts.get('user-no-achv:no-achv-sync');
-		expect(receipt).toBeDefined();
-		// An explicit empty payload is persisted so replays of this syncId
-		// (which bypass the rate limit) read the cached result instead of
-		// re-running checkAndGrantAchievements on every replay.
-		expect(receipt!.achievementPayload).not.toBeNull();
-		const payload = JSON.parse(receipt!.achievementPayload!);
-		expect(payload.newAchievements).toEqual([]);
-	});
-
-	test('rejects replay with SYNC_ID_REPLAY_EXPIRED when round is reaped but receipt survives', async () => {
-		// Simulates the post-cleanup scenario: roulette_round was deleted
-		// by retention cleanup, but chip_sync_receipt survives as the
-		// idempotency tombstone (see src/server/cleanup.ts). Replaying the
-		// same syncId must NOT create a fresh random settlement — the
-		// server rejects with 409 SYNC_ID_REPLAY_EXPIRED.
-		const existingReceipt: MockReceipt = {
-			userId: 'user-tombstone',
-			syncId: 'tombstone-sync',
-			achievementPayload: null,
-		};
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			existingReceipt,
-		});
-		// No existingRound — simulates the round being reaped by cleanup.
-		expect(mock.rounds.has('user-tombstone:tombstone-sync')).toBe(false);
-		expect(mock.receipts.has('user-tombstone:tombstone-sync')).toBe(true);
-
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'tombstone-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-tombstone' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(409);
-		expect(body.error).toBe('SYNC_ID_REPLAY_EXPIRED');
-		// No fresh settlement was created — round still absent.
-		expect(mock.rounds.has('user-tombstone:tombstone-sync')).toBe(false);
-		// Balance unchanged — no batch was executed.
-		expect(mock.getCurrentChipBalance()).toBe(1000);
-	});
-
-	test('rejects cross-game receipt collision with SYNC_ID_REUSE_MISMATCH, not retriable CONCURRENT_MODIFICATION', async () => {
-		// The chip_sync_receipt PK is (userId, syncId) without gameType.
-		// If another game (e.g. poker) already used this syncId, the
-		// roulette spin batch can never commit — every attempt raises a
-		// PRIMARY KEY violation. Returning CONCURRENT_MODIFICATION would
-		// make the client retry an idempotent conflict that can never
-		// resolve (no roulette round or roulette tombstone will ever
-		// exist). The endpoint must detect the cross-game receipt and
-		// return a definitive non-retriable mismatch instead.
-		const existingReceipt: MockReceipt = {
-			userId: 'user-cross-game',
-			syncId: 'cross-game-sync',
-			achievementPayload: null,
-			gameType: 'poker',
-		};
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			existingReceipt,
-		});
-		// No roulette round exists for this syncId.
-		expect(mock.rounds.has('user-cross-game:cross-game-sync')).toBe(false);
-
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'cross-game-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-cross-game' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(409);
-		expect(body.error).toBe('SYNC_ID_REUSE_MISMATCH');
-		// No fresh settlement was created.
-		expect(mock.rounds.has('user-cross-game:cross-game-sync')).toBe(false);
-		// Balance unchanged — no batch was executed.
-		expect(mock.getCurrentChipBalance()).toBe(1000);
-	});
-
-	test('rate limit map evicts stale entries when exceeding MAX_RATE_LIMIT_MAP_SIZE', async () => {
-		const rateMap = new Map<string, number>();
-		const now = Date.now();
-		// 5000 stale entries (older than the 2s rate-limit window)
-		for (let i = 0; i < 5000; i++) {
-			rateMap.set(`stale-${i}`, now - 5000);
-		}
-		// 5000 fresh entries (within the rate-limit window)
-		for (let i = 0; i < 5000; i++) {
-			rateMap.set(`fresh-${i}`, now);
-		}
-		expect(rateMap.size).toBe(10000);
-		const { handler, mock } = createHandler({
-			lastUpdateByUser: rateMap,
-			winningNumber: 0,
-		});
-		const bets = [makeBet('red', 10)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'evict-sync', bets }),
-		});
-		await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-evict' }, dbBinding: mock.binding }),
-		} as any);
-		// After the spin: set adds 1 (10001), triggering eviction.
-		// Stale entries are removed; fresh entries + the new user remain.
-		expect(rateMap.size).toBe(5001);
-		expect(rateMap.has('stale-0')).toBe(false);
-		expect(rateMap.has('fresh-0')).toBe(true);
-		expect(rateMap.has('user-evict')).toBe(true);
-	});
-
-	test('rate limit map enforces hard cap when all entries are fresh', async () => {
-		const rateMap = new Map<string, number>();
-		const now = Date.now();
-		// 10000 fresh entries — all within the 2s rate-limit window (timestamps
-		// span 0..999ms) so stale eviction removes none. The hard-cap eviction
-		// must then remove the oldest entries to stay at the cap.
-		for (let i = 0; i < 10000; i++) {
-			rateMap.set(`user-${i}`, now - (i % 1000));
-		}
-		expect(rateMap.size).toBe(10000);
-		const { handler, mock } = createHandler({
-			lastUpdateByUser: rateMap,
-			winningNumber: 0,
-		});
-		const bets = [makeBet('red', 10)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'hardcap-sync', bets }),
-		});
-		await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-hardcap' }, dbBinding: mock.binding }),
-		} as any);
-		// After set: 10001 entries. Stale eviction removes none (all fresh).
-		// Hard-cap eviction removes 1 oldest entry to get back to 10000.
-		expect(rateMap.size).toBe(10000);
-		// The new user must survive.
-		expect(rateMap.has('user-hardcap')).toBe(true);
-		// Exactly one of the original entries was evicted.
-		const originalSurvivors = Array.from({ length: 10000 }, (_, i) => `user-${i}`).filter((u) =>
-			rateMap.has(u),
+	test('rejects total bet below minimum', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler(
+			context({ body: { syncId: 'spin-1', bets: [makeBet('red', 0)] } }),
 		);
-		expect(originalSurvivors.length).toBe(9999);
-	});
-
-	test('rejects array body with INVALID_REQUEST_BODY', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify([{ syncId: 'test-sync', bets: [makeBet('red', 10)] }]),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-array' } }),
-		} as any);
-		const body = await readJson(response);
+		// amount 0 is invalid → INVALID_BETS is returned before total check
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_REQUEST_BODY');
+		expect(await json(response)).toEqual({ error: 'INVALID_BETS' });
+		expect(calls).toHaveLength(0);
 	});
 
-	test('rejects primitive body (string) with INVALID_REQUEST_BODY', async () => {
-		const { handler } = createHandler();
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify('just a string'),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-string' } }),
-		} as any);
-		const body = await readJson(response);
+	test('rejects total bet exceeding maximum', async () => {
+		const { handler, calls } = createHandler();
+		// MAX_TOTAL_BET = 5000, use 6 bets of 1000 each = 6000
+		const bets = Array.from({ length: 6 }, (_, i) => makeBet('straight', 1000, i));
+		const response = await handler(context({ body: { syncId: 'spin-1', bets } }));
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('INVALID_REQUEST_BODY');
+		expect(await json(response)).toEqual({ error: 'INVALID_TOTAL_BET' });
+		expect(calls).toHaveLength(0);
 	});
 
-	test('returns 500 when user not found in database', async () => {
-		// Create a mock DB that returns an empty user array
-		const mockDb = {
-			select: () => ({
-				from: () => ({
-					where: () => ({
-						limit: () => Promise.resolve([]),
-					}),
-				}),
+	test('rejects position limit exceeded', async () => {
+		const { handler, calls } = createHandler();
+		// MAX_BET_PER_POSITION = 500; place 2 bets on same position = 600
+		const bets = [makeBet('red', 300), makeBet('red', 300)];
+		const response = await handler(context({ body: { syncId: 'spin-1', bets } }));
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'POSITION_LIMIT_EXCEEDED' });
+		expect(calls).toHaveLength(0);
+	});
+
+	test('rejects when database binding is unavailable', async () => {
+		const { handler, calls } = createHandler();
+		const response = await handler({
+			locals: {
+				user: { id: 'user-1' },
+				runtime: { env: {} },
+			},
+			request: new Request('https://arcturus.example/api/roulette/spin', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ syncId: 'spin-1', bets: [makeBet('red', 10)] }),
 			}),
-		} as unknown as Database;
-		const handler = createPostHandler({
-			createDb: () => mockDb,
-			checkAndGrantAchievements: mockCheckAndGrantAchievements,
-			evaluateBets,
-			generateWinningNumber: () => 17,
-			lastUpdateByUser: new Map(),
-		});
-		const bets = [makeBet('red', 10)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		// Use a dummy binding — the existence check returns null from first()
-		const dummyBinding = {
-			prepare() {
-				return {
-					bind() {
-						return {
-							first: async () => null,
-						};
-					},
-				};
-			},
-			async batch() {
-				return [];
-			},
-		} as unknown as D1Database;
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-missing' }, dbBinding: dummyBinding }),
-		} as any);
-		const body = await readJson(response);
+		} as unknown as Parameters<APIRoute>[0]);
 		expect(response.status).toBe(500);
-		expect(body.error).toBe('USER_NOT_FOUND');
+		expect(await json(response)).toEqual({ error: 'DATABASE_UNAVAILABLE' });
+		expect(calls).toHaveLength(0);
+	});
+});
+
+const MIGRATIONS_DIR = join(process.cwd(), 'drizzle');
+const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
+	.filter((file) => file.endsWith('.sql'))
+	.sort();
+
+async function applyMigrations(d1: D1Database): Promise<void> {
+	for (const file of MIGRATION_FILES) {
+		const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+		const statements = sql
+			.split('--> statement-breakpoint')
+			.map((statement) => statement.trim())
+			.filter(Boolean);
+		await d1.batch(statements.map((statement) => d1.prepare(statement)));
+	}
+}
+
+async function insertIntegrationUser(d1: D1Database, userId: string): Promise<void> {
+	await d1
+		.prepare(
+			'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance) VALUES (?, ?, ?, ?, ?, ?, ?)',
+		)
+		.bind(userId, userId, `${userId}@example.test`, 0, 1000, 1000, 1000)
+		.run();
+}
+
+describe('POST /api/roulette/spin (Miniflare D1 integration)', () => {
+	let mf: Miniflare | null = null;
+	let d1: D1Database | null = null;
+
+	beforeAll(async () => {
+		mf = new Miniflare({
+			modules: [
+				{
+					type: 'ESModule',
+					path: 'file:///entry.js',
+					contents: 'export default { fetch() { return new Response("ok"); } }',
+				},
+			],
+			d1Databases: { DB: 'roulette-spin-wallet-test' },
+			d1Persist: false,
+		});
+		await mf.ready;
+		d1 = (await mf.getD1Database('DB')) as unknown as D1Database;
+		await applyMigrations(d1);
 	});
 
-	test('rejects when net delta exceeds ROULETTE_MAX_LOSS backstop', async () => {
-		// Simulate an impossibly large loss that exceeds ROULETTE_MAX_LOSS.
-		const mockEvaluateBets: typeof evaluateBets = (_bets, _winningNumber) => {
-			const bet = _bets[0];
-			// payout of -999_999 → netDelta = -999_999 - 10 = -1_000_009
-			return [{ bet, won: false, payout: -999_999 }];
-		};
-		const { handler, mock } = createHandler({
-			chipBalance: 1_000_000,
-			evaluateBets: mockEvaluateBets,
+	afterAll(async () => {
+		if (mf) await mf.dispose();
+	});
+
+	test('fresh and duplicate spins update wallet and generic mission exactly once', async () => {
+		const userId = 'roulette-mission-fresh';
+		await insertIntegrationUser(d1!, userId);
+		const handler = createPostHandler({ generateWinningNumber: () => 17 });
+		const body = { syncId: 'roulette-mission-round', bets: [makeBet('straight', 10, 17)] };
+
+		const firstResponse = await handler(context({ db: d1!, user: { id: userId }, body }));
+		expect(firstResponse.status).toBe(200);
+		expect(await json(firstResponse)).toMatchObject({
+			winningNumber: 17,
+			newBalance: 1350,
+			netDelta: 350,
+			syncId: 'roulette-mission-round',
 		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
+
+		const firstMission = await d1!
+			.prepare('SELECT progress FROM mission_progress WHERE userId = ? AND missionDefId = ?')
+			.bind(userId, 'daily-win-3')
+			.first<{ progress: number }>();
+		expect(firstMission?.progress).toBe(1);
+
+		const duplicateResponse = await handler(context({ db: d1!, user: { id: userId }, body }));
+		expect(duplicateResponse.status).toBe(200);
+		expect(await json(duplicateResponse)).toEqual({ duplicate: true, newBalance: 1350 });
+
+		const duplicateMission = await d1!
+			.prepare('SELECT progress FROM mission_progress WHERE userId = ? AND missionDefId = ?')
+			.bind(userId, 'daily-win-3')
+			.first<{ progress: number }>();
+		const receipt = await d1!
+			.prepare(
+				'SELECT COUNT(*) AS count FROM wallet_settlement WHERE userId = ? AND settlementId = ?',
+			)
+			.bind(userId, 'roulette-mission-round')
+			.first<{ count: number }>();
+		const stats = await d1!
+			.prepare(
+				'SELECT totalWins, totalLosses, handsPlayed, biggestWin, netProfit FROM game_stats WHERE userId = ? AND gameType = ?',
+			)
+			.bind(userId, 'roulette')
+			.first<{
+				totalWins: number;
+				totalLosses: number;
+				handsPlayed: number;
+				biggestWin: number;
+				netProfit: number;
+			}>();
+
+		expect(duplicateMission?.progress).toBe(1);
+		expect(receipt?.count).toBe(1);
+		expect(stats).toEqual({
+			totalWins: 1,
+			totalLosses: 0,
+			handsPlayed: 1,
+			biggestWin: 350,
+			netProfit: 350,
 		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-delta-loss' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
+	});
+
+	test('rejects an underfunded winning bet via requiredFunds before settling', async () => {
+		const userId = 'roulette-underfunded-win';
+		await d1!
+			.prepare(
+				'INSERT INTO user (id, name, email, emailVerified, createdAt, updatedAt, chipBalance) VALUES (?, ?, ?, ?, ?, ?, ?)',
+			)
+			.bind(userId, userId, `${userId}@example.test`, 0, 1000, 1000, 5)
+			.run();
+
+		const handler = createPostHandler({ generateWinningNumber: () => 17 });
+		// $10 straight on 17 — a winning result would produce netDelta +340,
+		// but the wallet only has $5 so requiredFunds ($10) must reject it.
+		const body = { syncId: 'roulette-underfunded-win', bets: [makeBet('straight', 10, 17)] };
+		const response = await handler(context({ db: d1!, user: { id: userId }, body }));
+
 		expect(response.status).toBe(400);
-		expect(body.error).toBe('DELTA_EXCEEDS_LIMIT');
-	});
+		expect(await json(response)).toEqual({ error: 'INSUFFICIENT_BALANCE' });
 
-	test('ignores corrupted achievement payload during replay', async () => {
-		const existingRound: MockRound = {
-			userId: 'user-corrupt-payload',
-			syncId: 'corrupt-payload-sync',
-			winningNumber: 17,
-			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-		};
-		const existingReceipt: MockReceipt = {
-			userId: 'user-corrupt-payload',
-			syncId: 'corrupt-payload-sync',
-			achievementPayload: '{not valid json',
-		};
-		const { handler, mock } = createHandler({ existingRound, existingReceipt });
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'corrupt-payload-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-corrupt-payload' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		// Corrupted payload is ignored — no achievements returned
-		expect(body.newAchievements).toBeUndefined();
-	});
+		const balance = await d1!
+			.prepare('SELECT chipBalance FROM user WHERE id = ?')
+			.bind(userId)
+			.first<{ chipBalance: number }>();
+		expect(balance?.chipBalance).toBe(5);
 
-	test('logs error when replay achievement resolution fails (null payload)', async () => {
-		const existingRound: MockRound = {
-			userId: 'user-replay-throw',
-			syncId: 'replay-throw-sync',
-			winningNumber: 0,
-			betsJson: JSON.stringify([makeBet('red', 50)]),
-			totalBet: 50,
-			totalPayout: 0,
-			netDelta: -50,
-			previousBalance: 1000,
-			newBalance: 950,
-		};
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-throw',
-			syncId: 'replay-throw-sync',
-			achievementPayload: null,
-		};
-		const throwingCheckAndGrant: typeof checkAndGrantAchievements = async () => {
-			throw new Error('Achievement service unavailable');
-		};
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-			checkAndGrantAchievements: throwingCheckAndGrant,
-		});
-		const bets = [makeBet('red', 50)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-throw-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-throw' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		// Error is logged but response still succeeds
-		expect(body.newAchievements).toBeUndefined();
-	});
-
-	test('logs error when failing to persist replayed achievement payload', async () => {
-		const existingRound: MockRound = {
-			userId: 'user-replay-persist-fail',
-			syncId: 'replay-persist-fail-sync',
-			winningNumber: 17,
-			betsJson: JSON.stringify([makeBet('straight', 10, 17)]),
-			totalBet: 10,
-			totalPayout: 360,
-			netDelta: 350,
-			previousBalance: 1000,
-			newBalance: 1350,
-		};
-		const existingReceipt: MockReceipt = {
-			userId: 'user-replay-persist-fail',
-			syncId: 'replay-persist-fail-sync',
-			achievementPayload: null,
-		};
-		// The mock binding's run() for UPDATE achievementPayload will
-		// throw to simulate a persist error
-		const { handler, mock } = createHandler({
-			existingRound,
-			existingReceipt,
-		});
-		// Override the binding's run to throw for the UPDATE query
-		const originalPrepare = mock.binding.prepare;
-		mock.binding = {
-			...mock.binding,
-			prepare(sql: string) {
-				const result = originalPrepare.call(this, sql);
-				if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload')) {
-					return {
-						...result,
-						bind(...args: unknown[]) {
-							return {
-								...result.bind(...args),
-								run: async () => {
-									throw new Error('D1 write failed');
-								},
-							};
-						},
-					};
-				}
-				return result;
-			},
-		} as unknown as D1Database;
-
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'replay-persist-fail-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({
-				user: { id: 'user-replay-persist-fail' },
-				dbBinding: mock.binding,
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		// Achievements are still returned even though persist failed
-		expect(body.newAchievements).toBeDefined();
-	});
-
-	test('logs error when checkAndGrantAchievements throws on fresh spin', async () => {
-		const throwingCheckAndGrant: typeof checkAndGrantAchievements = async () => {
-			throw new Error('Achievement service unavailable');
-		};
-		const { handler, mock } = createHandler({
-			winningNumber: 17,
-			checkAndGrantAchievements: throwingCheckAndGrant,
-		});
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-stats-error' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		// Spin still succeeds — achievement error is logged but not fatal
-		expect(response.status).toBe(200);
-		expect(body.newAchievements).toBeUndefined();
-	});
-
-	test('logs error when failing to persist achievement payload on fresh spin', async () => {
-		const { handler, mock } = createHandler({ winningNumber: 17 });
-		// Override the binding's run to throw for the UPDATE achievementPayload query
-		const originalPrepare = mock.binding.prepare;
-		mock.binding = {
-			...mock.binding,
-			prepare(sql: string) {
-				const result = originalPrepare.call(this, sql);
-				if (sql.startsWith('UPDATE chip_sync_receipt SET achievementPayload')) {
-					return {
-						...result,
-						bind(...args: unknown[]) {
-							return {
-								...result.bind(...args),
-								run: async () => {
-									throw new Error('D1 write failed');
-								},
-							};
-						},
-					};
-				}
-				return result;
-			},
-		} as unknown as D1Database;
-
-		const bets = [makeBet('straight', 10, 17)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-payload-error' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		// Spin still succeeds — persist error is logged but not fatal
-		expect(response.status).toBe(200);
-		// Achievements are still returned in the response
-		expect(body.newAchievements).toBeDefined();
-	});
-
-	test('returns INTERNAL_ERROR for unexpected exceptions in top-level catch', async () => {
-		// Force an unexpected error by making generateWinningNumber throw.
-		// This happens after the user row check, inside the try block of
-		// handleSpinRequest, which is wrapped by the top-level catch in
-		// createPostHandler.
-		const mock = createMockDbBinding({ chipBalance: 1000 });
-		const handler = createPostHandler({
-			createDb: () => mock.db,
-			checkAndGrantAchievements: mockCheckAndGrantAchievements,
-			evaluateBets,
-			generateWinningNumber: () => {
-				throw new Error('Random number generator failed');
-			},
-			lastUpdateByUser: new Map(),
-		});
-		const bets = [makeBet('red', 10)];
-		const request = new Request('http://test.local', {
-			method: 'POST',
-			body: JSON.stringify({ syncId: 'test-sync', bets }),
-		});
-		const response = await handler({
-			request,
-			locals: createLocals({ user: { id: 'user-internal-error' }, dbBinding: mock.binding }),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toBe('INTERNAL_ERROR');
+		const receipt = await d1!
+			.prepare(
+				'SELECT COUNT(*) AS count FROM wallet_settlement WHERE userId = ? AND settlementId = ?',
+			)
+			.bind(userId, 'roulette-underfunded-win')
+			.first<{ count: number }>();
+		expect(receipt?.count).toBe(0);
 	});
 });

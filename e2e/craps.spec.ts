@@ -33,33 +33,27 @@ async function ensureMinimumBalance(page: Page, minimumBalance: number): Promise
 
 		const delta = minimumBalance - balance;
 		const result = await page.evaluate(
-			async ({ delta, previousBalance }) => {
-				const response = await fetch('/api/chips/update', {
+			async ({ delta }) => {
+				const response = await fetch('/api/wallet/settle', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
+						settlementId: `e2e-craps-topup-${crypto.randomUUID()}`,
+						game: 'craps',
 						delta,
-						gameType: 'craps',
-						previousBalance,
+						stats: { rounds: 1, wins: 1, losses: 0, biggestWin: delta },
 					}),
 				});
 
 				return {
 					ok: response.ok,
 					status: response.status,
-					retryAfter: response.headers.get('Retry-After'),
 				};
 			},
-			{ delta, previousBalance: balance },
+			{ delta },
 		);
 
 		if (result.ok || result.status === 409) continue;
-		if (result.status === 429) {
-			const retryAfter = Number(result.retryAfter ?? '2');
-			const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
-			await page.waitForTimeout(sleepMs);
-			continue;
-		}
 
 		throw new Error(`Failed to top up craps balance for test (status ${result.status})`);
 	}
@@ -192,6 +186,147 @@ test.describe('Craps — Game Flow', () => {
 		const badges = page.getByTestId('roll-history').locator('.roll-badge');
 		await expect(badges).toHaveCount(1);
 	});
+
+	test('blocks the next authenticated roll until the exact settlement is retried', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedCrapsPage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 100);
+			const walletBalance = parseBalance(await page.locator('#chip-balance').innerText());
+			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
+				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';
+				return `craps-session:${userId}`;
+			});
+			const settlementCommands: Array<Record<string, unknown>> = [];
+			let snapshotBeforeFailedRoll: string | null = null;
+			await page.route('**/api/wallet/settle', async (route) => {
+				const command = route.request().postDataJSON() as Record<string, unknown>;
+				settlementCommands.push(command);
+				if (settlementCommands.length === 1) {
+					await route.fulfill({
+						status: 503,
+						contentType: 'application/json',
+						body: JSON.stringify({ error: 'offline' }),
+					});
+					return;
+				}
+				const delta = typeof command.delta === 'number' ? command.delta : 0;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						balance: walletBalance + delta,
+						duplicate: false,
+					}),
+				});
+			});
+
+			await page.getByTestId('chip-5').click();
+			await page.click('[data-bet-type="passLine"]');
+			for (let attempt = 0; attempt < 20; attempt += 1) {
+				if (await page.getByTestId('settlement-recovery').isVisible()) break;
+				const rollButton = page.getByTestId('roll-button');
+				if (await rollButton.isDisabled()) {
+					await page.click('[data-bet-type="passLine"]');
+				}
+				snapshotBeforeFailedRoll = await page.evaluate(
+					(sessionKey) => window.localStorage.getItem(sessionKey),
+					persistedSessionKey,
+				);
+				await rollButton.click();
+				await page.waitForTimeout(700);
+			}
+
+			await expect(page.getByTestId('settlement-recovery')).toBeVisible();
+			await expect(page.getByTestId('roll-button')).toBeDisabled();
+			expect(settlementCommands).toHaveLength(1);
+			// A failed settlement keeps the exact command only in the in-memory gate;
+			// the resolved roll must not overwrite the last durable game snapshot.
+			expect(
+				await page.evaluate(
+					(sessionKey) => window.localStorage.getItem(sessionKey),
+					persistedSessionKey,
+				),
+			).toBe(snapshotBeforeFailedRoll);
+
+			await page.getByTestId('retry-settlement').click();
+			await expect(page.getByTestId('settlement-recovery')).toBeHidden();
+			expect(settlementCommands).toHaveLength(2);
+			expect(settlementCommands[1]).toEqual(settlementCommands[0]);
+			// Retry success adopts the authoritative wallet result before clearing the
+			// resolved, now-empty session snapshot.
+			await expect
+				.poll(
+					async () =>
+						page.evaluate(
+							(sessionKey) => window.localStorage.getItem(sessionKey),
+							persistedSessionKey,
+						),
+					{ timeout: 5000 },
+				)
+				.toBeNull();
+		} finally {
+			await context.close();
+		}
+	});
+
+	test('persists the settled session after an initial wallet success', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedCrapsPage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 100);
+			const walletBalance = parseBalance(await page.locator('#chip-balance').innerText());
+			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
+				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';
+				return `craps-session:${userId}`;
+			});
+			const settlementCommands: Array<Record<string, unknown>> = [];
+			await page.route('**/api/wallet/settle', async (route) => {
+				const command = route.request().postDataJSON() as Record<string, unknown>;
+				settlementCommands.push(command);
+				const delta = typeof command.delta === 'number' ? command.delta : 0;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						balance: walletBalance + delta,
+						duplicate: false,
+					}),
+				});
+			});
+
+			await page.getByTestId('chip-5').click();
+			await page.click('[data-bet-type="passLine"]');
+			for (let attempt = 0; attempt < 20; attempt += 1) {
+				if (settlementCommands.length > 0) break;
+				const rollButton = page.getByTestId('roll-button');
+				if (await rollButton.isDisabled()) {
+					await page.click('[data-bet-type="passLine"]');
+				}
+				await rollButton.click();
+				await page.waitForTimeout(700);
+			}
+
+			expect(settlementCommands).toHaveLength(1);
+			await expect(page.getByTestId('settlement-recovery')).toBeHidden();
+			await expect
+				.poll(
+					async () =>
+						page.evaluate(
+							(sessionKey) => window.localStorage.getItem(sessionKey),
+							persistedSessionKey,
+						),
+					{ timeout: 5000 },
+				)
+				.toBeNull();
+		} finally {
+			await context.close();
+		}
+	});
 });
 
 test.describe('Craps — Active Bets Panel', () => {
@@ -223,11 +358,20 @@ test.describe('Craps — Active Bets Panel', () => {
 	});
 });
 
-test.describe('Craps — Clear Bets Sync', () => {
-	test('clearing bets syncs refunded chips to server', async ({ browser, baseURL }) => {
+test.describe('Craps — Local Bet Clearing', () => {
+	test('clearing bets refunds locally without wallet settlement', async ({ browser, baseURL }) => {
 		const { context, page } = await createIsolatedCrapsPage(browser, baseURL);
 		try {
 			await ensureMinimumBalance(page, 200);
+			let walletSettlementRequests = 0;
+			page.on('request', (request) => {
+				if (
+					request.method() === 'POST' &&
+					new URL(request.url()).pathname === '/api/wallet/settle'
+				) {
+					walletSettlementRequests += 1;
+				}
+			});
 
 			// Place some removable bets
 			await page.getByTestId('chip-25').click();
@@ -237,25 +381,14 @@ test.describe('Craps — Clear Bets Sync', () => {
 
 			const balanceBeforeClear = parseBalance(await page.locator('#chip-balance').innerText());
 
-			// Clear bets
-			const refundSyncPromise = page.waitForResponse((response) => {
-				if (
-					new URL(response.url()).pathname !== '/api/chips/update' ||
-					response.request().method() !== 'POST' ||
-					!response.ok()
-				) {
-					return false;
-				}
-				const payload = response.request().postDataJSON() as { delta?: unknown } | null;
-				return typeof payload?.delta === 'number' && payload.delta > 0;
-			});
+			// Clear bets — the refund is a local mutation and must not settle a round.
 			await page.getByTestId('clear-bets-button').click();
 
 			// Balance should be refunded locally
 			const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
 			expect(balanceAfterClear).toBe(balanceBeforeClear + 75); // passLine $25 + field $50
-			const refundSync = await refundSyncPromise;
-			expect(((await refundSync.json()) as { balance: number }).balance).toBe(balanceAfterClear);
+			await page.waitForTimeout(250);
+			expect(walletSettlementRequests).toBe(0);
 
 			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
 				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';
@@ -277,7 +410,7 @@ test.describe('Craps — Clear Bets Sync', () => {
 				persistedSessionKey,
 			);
 
-			// Reload to verify the refunded balance persisted on the server.
+			// Reload to verify the local session was cleared and the wallet remains unchanged.
 			await page.reload({ waitUntil: 'networkidle' });
 			const balanceAfterReload = parseBalance(await page.locator('#chip-balance').innerText());
 			expect(balanceAfterReload).toBe(balanceAfterClear);

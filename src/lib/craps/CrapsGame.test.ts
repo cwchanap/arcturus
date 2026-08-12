@@ -708,3 +708,125 @@ describe('CrapsGame — state immutability', () => {
 		expect(fresh.settings.minBet).toBe(5);
 	});
 });
+
+describe('CrapsGame — reset and restoreState edge cases', () => {
+	test('reset clears state and preserves settings with the given balance', () => {
+		const g = makeGame(1000);
+		g.placeBet('passLine', 50);
+		setRoll(3, 3);
+		g.roll();
+		expect(g.getState().phase).toBe('point');
+
+		g.reset(750);
+		const state = g.getState();
+		expect(state.phase).toBe('come-out');
+		expect(state.point).toBeNull();
+		expect(state.activeBets).toEqual([]);
+		expect(state.rollHistory).toEqual([]);
+		expect(state.lastRoll).toBeNull();
+		expect(state.rollCount).toBe(0);
+		expect(state.chipBalance).toBe(750);
+		expect(state.settings.minBet).toBe(5);
+	});
+
+	test('restoreState returns false for non-object snapshot', () => {
+		const g = makeGame();
+		expect(g.restoreState(null as unknown as never)).toBe(false);
+		expect(g.restoreState('not-an-object' as unknown as never)).toBe(false);
+	});
+
+	test('restoreState returns false for invalid phase', () => {
+		const g = makeGame();
+		expect(
+			g.restoreState({
+				phase: 'invalid',
+				point: null,
+				chipBalance: 1000,
+				activeBets: [],
+			}),
+		).toBe(false);
+	});
+
+	test('restoreState returns false when point is set during come-out', () => {
+		const g = makeGame();
+		expect(
+			g.restoreState({
+				phase: 'come-out',
+				point: 6,
+				chipBalance: 1000,
+				activeBets: [],
+			}),
+		).toBe(false);
+	});
+
+	test('restoreState returns false when point phase has no point', () => {
+		const g = makeGame();
+		expect(
+			g.restoreState({
+				phase: 'point',
+				point: null,
+				chipBalance: 1000,
+				activeBets: [],
+			}),
+		).toBe(false);
+	});
+
+	test('restoreState returns false for invalid point number', () => {
+		const g = makeGame();
+		expect(
+			g.restoreState({
+				phase: 'point',
+				point: 7 as unknown as never,
+				chipBalance: 1000,
+				activeBets: [],
+			}),
+		).toBe(false);
+	});
+
+	test('restoreState returns false for negative chip balance', () => {
+		const g = makeGame();
+		expect(
+			g.restoreState({
+				phase: 'come-out',
+				point: null,
+				chipBalance: -50,
+				activeBets: [],
+			}),
+		).toBe(false);
+	});
+
+	test('restoreState sanitizes invalid roll history and active bets', () => {
+		const g = makeGame();
+		const ok = g.restoreState({
+			phase: 'point',
+			point: 6,
+			chipBalance: 1000,
+			activeBets: [
+				{ type: 'passLine', amount: 50 } as unknown as never, // missing id → dropped
+				{ id: 'bet-bad', type: 'invalidType', amount: 50 } as unknown as never, // invalid type → dropped
+			],
+			rollHistory: [
+				{ die1: 7, die2: 3, total: 10 } as unknown as never, // die1 out of range → dropped
+				{ die1: 'x', die2: 3, total: 6 } as unknown as never, // non-numeric die → dropped
+			],
+			lastRoll: { die1: 0, die2: 3, total: 3 } as unknown as never, // die1 < 1 → null
+			rollCount: 3,
+		});
+		expect(ok).toBe(true);
+		const state = g.getState();
+		expect(state.phase).toBe('point');
+		expect(state.point).toBe(6);
+		expect(state.chipBalance).toBe(1000);
+		expect(state.rollCount).toBe(3);
+		expect(state.activeBets).toEqual([]);
+		expect(state.rollHistory).toEqual([]);
+		expect(state.lastRoll).toBeNull();
+	});
+
+	test('hasInsufficientChips reflects balance vs minBet', () => {
+		const g = makeGame(1000);
+		expect(g.hasInsufficientChips()).toBe(false);
+		g.setBalance(3);
+		expect(g.hasInsufficientChips()).toBe(true);
+	});
+});

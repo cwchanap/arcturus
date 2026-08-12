@@ -1,100 +1,34 @@
-/**
- * Pure error-classification helpers for the roulette spin client.
- *
- * Extracted from rouletteClient.ts so these chip-safety-critical functions
- * can be unit-tested with a status×code matrix without DOM dependencies.
- *
- * These functions decide whether a failed spin should be:
- *   - Retried (server may have committed — same syncId returns stored result)
- *   - Discarded with bets restored (server definitively rejected — no commit)
- *   - Treated as ambiguous (balance recovery / refresh needed)
- */
-
-// Preserves the HTTP status (+ error code) from a non-ok spin response so
-// retry logic can decide retriability by status/code rather than fragile
-// message-prefix matching. `currentBalance` carries the server-provided
-// authoritative balance from INSUFFICIENT_BALANCE responses so the client
-// can adopt it instead of keeping a stale local balance. `retryAfterMs`
-// carries the parsed `Retry-After` header (in ms) from 429 responses so the
-// recovery path can wait out the rate-limit window before retrying — a 429
-// on recovery may mean the original spin committed and set the rate-limit
-// timestamp, so retrying past the window lets the server's idempotency
-// replay return the committed result instead of abandoning it.
+/** Preserve the HTTP status and server error code for current-page handling. */
 export class SpinHttpError extends Error {
 	readonly status: number;
-	readonly currentBalance?: number;
-	readonly retryAfterMs?: number;
-	constructor(status: number, error: string, currentBalance?: number, retryAfterMs?: number) {
+
+	constructor(status: number, error: string) {
 		super(error);
 		this.name = 'SpinHttpError';
 		this.status = status;
-		this.currentBalance = currentBalance;
-		this.retryAfterMs = retryAfterMs;
 	}
 }
 
-// Parse the `Retry-After` response header (seconds form only — the roulette
-// spin endpoint sends `String(waitTime)` in seconds) into milliseconds.
-// Returns undefined for missing/unparseable headers. Capped at 5s so a
-// malicious or misconfigured server can't stall the recovery flow.
-const RETRY_AFTER_CAP_MS = 5000;
-export function parseRetryAfterMs(headerValue: string | null): number | undefined {
-	if (!headerValue) return undefined;
-	const seconds = Number(headerValue);
-	if (!Number.isFinite(seconds) || seconds < 0) return undefined;
-	const ms = Math.ceil(seconds * 1000);
-	return Math.min(ms, RETRY_AFTER_CAP_MS);
-}
+const NON_COMMITTED_CODES = new Set(['SETTLEMENT_CONFLICT']);
 
-// A spin attempt is retriable when the server may have committed the
-// round but we didn't receive the result. Only 409 CONCURRENT_MODIFICATION
-// is retriable among 409s — retrying with the same syncId returns the
-// stored result via idempotency. Other 409s (SYNC_ID_REUSE_MISMATCH) can
-// never succeed on retry. 5xx means the
-// server errored mid-processing — retrying is safe for the same reason.
-// TypeError means the network failed before a response arrived.
-// AbortError means the fetch timed out (fetchWithTimeout) — the server
-// may have processed the spin even though we never got the response.
-export function isRetriableSpinError(err: unknown): boolean {
-	if (err instanceof TypeError) return true;
-	if (err instanceof DOMException && err.name === 'AbortError') return true;
-	if (err instanceof SpinHttpError) {
-		if (err.status >= 500) return true;
-		if (err.status === 409) return err.message === 'CONCURRENT_MODIFICATION';
-		return false;
-	}
-	return false;
-}
-
-// Definitive client rejections: the server did not commit the spin.
-// Restore betting with bets intact instead of discarding or retrying.
-// Only known pre-commit 409 error codes are classified as rejections;
-// an unknown 409 message is treated as ambiguous (may have committed)
-// so the caller falls through to retry / balance recovery instead of
-// discarding bets.
-const NON_COMMITTED_409_CODES = new Set(['SYNC_ID_REUSE_MISMATCH']);
-
+/**
+ * Classify only responses the live route can currently produce before a
+ * wallet write. Unknown failures stay ambiguous and use balance recovery.
+ */
 export function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError {
 	if (!(err instanceof SpinHttpError)) return false;
-	if (err.status === 429) return true;
-	if (err.status === 400 || err.status === 401 || err.status === 403) return true;
-	// Non-retriable 409s: syncId reuse with different bets.
-	// Unknown 409 codes are NOT classified — they may have committed.
-	if (err.status === 409 && NON_COMMITTED_409_CODES.has(err.message)) return true;
-	return false;
+	if (err.status === 400 || err.status === 401) return true;
+	return err.status === 409 && NON_COMMITTED_CODES.has(err.message);
 }
 
 export function messageForSpinRejection(err: SpinHttpError): string {
+	if (err.status === 401) return 'Session expired — please sign in again.';
 	switch (err.message) {
-		case 'RATE_LIMITED':
-			return 'Please wait a moment before spinning again.';
 		case 'INSUFFICIENT_BALANCE':
 			return 'Insufficient chips for this spin.';
-		case 'SYNC_ID_REUSE_MISMATCH':
-			return 'Spin conflict — adjust bets and try again.';
+		case 'SETTLEMENT_CONFLICT':
+			return 'Spin settlement conflicted — please try again.';
 		default:
-			return err.message.startsWith('HTTP ')
-				? 'Spin rejected — please try again.'
-				: `Spin rejected: ${err.message}`;
+			return 'Spin request rejected — please try again.';
 	}
 }

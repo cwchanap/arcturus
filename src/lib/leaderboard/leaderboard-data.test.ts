@@ -28,8 +28,16 @@ const mockGetBulkUserAchievements = Object.assign(async () => new Map<string, st
 
 let getLeaderboardData: typeof import('./leaderboard').getLeaderboardData;
 
-beforeAll(() => {
+beforeAll(async () => {
+	const actualLeaderboardRepository = await import(
+		`./leaderboard-repository.ts?mock=${Date.now()}`
+	);
+	const actualAchievementRepository = await import(
+		`../achievements/achievement-repository.ts?mock=${Date.now()}`
+	);
+
 	mock.module('./leaderboard-repository', () => ({
+		...actualLeaderboardRepository,
 		getTopPlayers: async (...args: unknown[]) => {
 			mockGetTopPlayers.calls.push(args);
 			return mockGetTopPlayers.impl();
@@ -45,6 +53,7 @@ beforeAll(() => {
 	}));
 
 	mock.module('../achievements/achievement-repository', () => ({
+		...actualAchievementRepository,
 		getBulkUserAchievements: async (...args: unknown[]) => {
 			mockGetBulkUserAchievements.calls.push(args);
 			return mockGetBulkUserAchievements.impl();
@@ -70,7 +79,17 @@ beforeEach(() => {
 	mockGetBulkUserAchievements.impl = async () => new Map([['user-1', ['🏆']]]);
 });
 
-afterAll(() => {
+afterAll(async () => {
+	// Bun's mock.restore() does not reset module overrides from mock.module().
+	// Rebind both modules so these test doubles cannot leak into other test files.
+	const actualLeaderboardRepository = await import(
+		`./leaderboard-repository.ts?restore=${Date.now()}`
+	);
+	const actualAchievementRepository = await import(
+		`../achievements/achievement-repository.ts?restore=${Date.now()}`
+	);
+	mock.module('./leaderboard-repository', () => actualLeaderboardRepository);
+	mock.module('../achievements/achievement-repository', () => actualAchievementRepository);
 	mock.restore();
 });
 

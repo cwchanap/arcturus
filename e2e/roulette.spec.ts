@@ -45,33 +45,27 @@ async function ensureMinimumBalance(page: Page, minimumBalance: number): Promise
 
 		const delta = minimumBalance - balance;
 		const result = await page.evaluate(
-			async ({ delta, previousBalance }) => {
-				const response = await fetch('/api/chips/update', {
+			async ({ delta }) => {
+				const response = await fetch('/api/wallet/settle', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
+						settlementId: `e2e-roulette-topup-${crypto.randomUUID()}`,
+						game: 'roulette',
 						delta,
-						gameType: 'blackjack',
-						previousBalance,
+						stats: { rounds: 1, wins: 1, losses: 0, biggestWin: delta },
 					}),
 				});
 
 				return {
 					ok: response.ok,
 					status: response.status,
-					retryAfter: response.headers.get('Retry-After'),
 				};
 			},
-			{ delta, previousBalance: balance },
+			{ delta },
 		);
 
 		if (result.ok || result.status === 409) continue;
-		if (result.status === 429) {
-			const retryAfter = Number(result.retryAfter ?? '2');
-			const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
-			await page.waitForTimeout(sleepMs);
-			continue;
-		}
 
 		throw new Error(`Failed to top up roulette balance for test (status ${result.status})`);
 	}
@@ -296,6 +290,54 @@ test.describe('Roulette — Game Flow', () => {
 		await expect(page.locator('#wheel-result')).toContainText('2');
 		await expect(page.locator('#net-delta')).toContainText('-');
 		await expect(page.getByTestId('bet-results')).toContainText('Red');
+	});
+
+	test('duplicate settlement adopts balance without resurrecting a winning number', async ({
+		page,
+	}) => {
+		await gotoRouletteFresh(page);
+		await ensureMinimumBalance(page, 25);
+		await page.route('**/api/roulette/spin', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ duplicate: true, newBalance: 975 }),
+			});
+		});
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await page.getByTestId('spin-button').click();
+
+		await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
+		await expect(page.locator('#chip-balance')).toContainText('975');
+		await expect(page.locator('#wheel-result')).not.toContainText(/\b[0-9]{1,2}\b/);
+		await expect(page.getByTestId('new-round-button')).toBeHidden();
+	});
+
+	test('lost response adopts authoritative balance and returns to betting without a result', async ({
+		page,
+	}) => {
+		await gotoRouletteFresh(page);
+		await ensureMinimumBalance(page, 25);
+		await page.route('**/api/roulette/spin', async (route) => {
+			await route.abort('failed');
+		});
+		await page.route('**/api/chips/balance', async (route) => {
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ balance: 900 }),
+			});
+		});
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await page.getByTestId('spin-button').click();
+
+		await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
+		await expect(page.locator('#chip-balance')).toContainText('900');
+		await expect(page.locator('#wheel-result')).not.toContainText(/\b[0-9]{1,2}\b/);
 	});
 
 	test('real spin keeps displayed balance in sync with server newBalance', async ({

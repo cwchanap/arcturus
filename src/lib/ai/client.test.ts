@@ -1,0 +1,88 @@
+import { afterEach, expect, mock, test } from 'bun:test';
+import { generateAiJson, generateAiText } from './client';
+
+const originalFetch = globalThis.fetch;
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+});
+
+test('OpenAI mapping extracts text', async () => {
+	globalThis.fetch = mock(async (_url, init) => {
+		const body = JSON.parse(String(init?.body)) as {
+			model: string;
+			messages: Array<{ content: string }>;
+		};
+		expect(body.model).toBe('gpt-4o');
+		expect(body.messages.at(-1)?.content).toBe('Explain this move');
+		return new Response(JSON.stringify({ choices: [{ message: { content: 'Stand here.' } }] }));
+	}) as unknown as typeof fetch;
+
+	expect(
+		await generateAiText(
+			{ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
+			{ prompt: 'Explain this move' },
+		),
+	).toEqual({ ok: true, value: 'Stand here.' });
+});
+
+test('generateAiJson tries balanced candidates instead of a greedy brace regex', async () => {
+	globalThis.fetch = mock(
+		async () =>
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'first {not valid} then {"reasoning":"Brace } inside string is safe"} trailing {"ignored":true}',
+							},
+						},
+					],
+				}),
+			),
+	) as unknown as typeof fetch;
+
+	expect(
+		await generateAiJson(
+			{ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
+			{ prompt: 'Explain' },
+		),
+	).toEqual({ ok: true, value: { reasoning: 'Brace } inside string is safe' } });
+});
+
+test('parseable HTTP error preserves status', async () => {
+	globalThis.fetch = mock(
+		async () => new Response(JSON.stringify({ error: { message: 'bad key' } }), { status: 401 }),
+	) as unknown as typeof fetch;
+
+	expect(
+		await generateAiText(
+			{ provider: 'openai', model: 'gpt-4o', apiKey: 'bad-key' },
+			{ prompt: 'x' },
+		),
+	).toEqual({
+		ok: false,
+		code: 'provider-error',
+		message: 'Provider request failed (401)',
+		status: 401,
+	});
+});
+
+test('timeout override is passed through the shared request path', async () => {
+	globalThis.fetch = mock(
+		async (_url, init) =>
+			await new Promise<Response>((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () =>
+					reject(new DOMException('Aborted', 'AbortError')),
+				);
+			}),
+	) as unknown as typeof fetch;
+
+	const started = Date.now();
+	const result = await generateAiText(
+		{ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
+		{ prompt: 'x', timeoutMs: 1 },
+	);
+	expect(Date.now() - started).toBeLessThan(500);
+	expect(result).toEqual({ ok: false, code: 'timeout', message: 'AI request timed out' });
+});

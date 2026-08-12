@@ -25,7 +25,6 @@ function getSettingsControls(page: Page) {
 		minBet: page.locator('#setting-min-bet'),
 		maxBet: page.locator('#setting-max-bet'),
 		dealerSpeed: page.locator('#setting-dealer-speed'),
-		useLlm: page.locator('#setting-use-llm'),
 		saveButton: page.locator('#btn-save-settings'),
 		resetButton: page.locator('#btn-reset-settings'),
 	};
@@ -38,7 +37,7 @@ async function dealHand(page: Page, bet: number = 50) {
 }
 
 // Phase 6: Blackjack Game Settings (US4)
-// Covers persistence, reset behaviour, bet limits, and LLM toggle wiring.
+// Covers persistence, reset behaviour, and bet limits.
 test.describe('Blackjack Game Settings', () => {
 	test('persists settings across reloads', async ({ page }) => {
 		await gotoBlackjack(page);
@@ -50,7 +49,6 @@ test.describe('Blackjack Game Settings', () => {
 		await controls.minBet.fill('20');
 		await controls.maxBet.fill('200');
 		await controls.dealerSpeed.selectOption('fast');
-		await controls.useLlm.check();
 
 		await controls.saveButton.click();
 
@@ -61,7 +59,6 @@ test.describe('Blackjack Game Settings', () => {
 		await expect(controls.minBet).toHaveValue('20');
 		await expect(controls.maxBet).toHaveValue('200');
 		await expect(controls.dealerSpeed).toHaveValue('fast');
-		await expect(controls.useLlm).toBeChecked();
 	});
 
 	test('reset settings restores Blackjack defaults', async ({ page }) => {
@@ -74,7 +71,6 @@ test.describe('Blackjack Game Settings', () => {
 		await controls.minBet.fill('25');
 		await controls.maxBet.fill('250');
 		await controls.dealerSpeed.selectOption('fast');
-		await controls.useLlm.check();
 		await controls.saveButton.click();
 
 		await controls.resetButton.click();
@@ -83,7 +79,6 @@ test.describe('Blackjack Game Settings', () => {
 		await expect(controls.minBet).toHaveValue('10');
 		await expect(controls.maxBet).toHaveValue('1000');
 		await expect(controls.dealerSpeed).toHaveValue('normal');
-		await expect(controls.useLlm).not.toBeChecked();
 	});
 
 	test('bet limits from settings are enforced', async ({ browser, baseURL }) => {
@@ -111,7 +106,7 @@ test.describe('Blackjack Game Settings', () => {
 		}
 	});
 
-	test('LLM toggle can disable AI Rival without overlay', async ({ browser, baseURL }) => {
+	test('AI Rival provides local advice without a settings toggle', async ({ browser, baseURL }) => {
 		const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
 		try {
 			await dealHand(page, 50);
@@ -120,11 +115,8 @@ test.describe('Blackjack Game Settings', () => {
 			await expect(aiButton).toBeEnabled();
 			await aiButton.click();
 
-			// With default settings.useLLM = false, AI Rival should be gated by settings
-			await expect(page.locator('#game-status')).toContainText(
-				'AI Rival is disabled in game settings.',
-			);
-			await expect(page.locator('#llm-config-overlay')).toBeHidden();
+			await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
+			await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
 		} finally {
 			await context.close();
 		}

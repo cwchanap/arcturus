@@ -41,7 +41,6 @@ export const DEFAULT_SETTINGS: BlackjackSettings = {
 	minBet: DEFAULT_MIN_BET,
 	maxBet: DEFAULT_MAX_BET,
 	dealerSpeed: 'normal',
-	useLLM: false,
 };
 
 // Card values for quick lookup

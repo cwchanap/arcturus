@@ -1,14 +1,10 @@
 import { BlackjackGame } from './BlackjackGame';
 import { GameSettingsManager } from './GameSettingsManager';
-import {
-	getBlackjackAdvice,
-	getRoundCommentary,
-	type LLMSettings,
-	type BlackjackAdviceContext,
-} from './llmBlackjackStrategy';
+import { getBlackjackAdvice, type BlackjackAdviceContext } from './llmBlackjackStrategy';
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
+import { loadAiSettings, type AiSettings } from '../ai';
 import {
 	isGuestModeValue,
 	loadGuestBankroll,
@@ -124,32 +120,8 @@ function formatOutcomeMessage(outcomes: RoundOutcome[]): string {
 }
 
 /**
- * Get overall result for AI commentary based on all hand outcomes.
- * Returns the dominant result for split hands.
- */
-function getOverallResult(outcomes: RoundOutcome[]): RoundResult {
-	if (outcomes.length === 1) {
-		return outcomes[0].result;
-	}
-
-	// For split hands, determine overall result based on wins vs losses
-	const wins = outcomes.filter((o) => o.result === 'win' || o.result === 'blackjack').length;
-	const losses = outcomes.filter((o) => o.result === 'loss').length;
-
-	if (wins > losses) {
-		// Check if any was blackjack
-		const hasBlackjack = outcomes.some((o) => o.result === 'blackjack');
-		return hasBlackjack ? 'blackjack' : 'win';
-	} else if (losses > wins) {
-		return 'loss';
-	} else {
-		return 'push';
-	}
-}
-
-/**
  * Initialize Blackjack client-side UI and game logic.
- * This function wires up DOM elements, events, and LLM integration.
+ * This function wires up DOM elements and game logic.
  */
 export function initBlackjackClient(): void {
 	// Initialize settings manager (per-user)
@@ -159,7 +131,6 @@ export function initBlackjackClient(): void {
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
-	let llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 	// Get initial balance from DOM; fall back to settings.startingChips if missing
 	const balanceEl = document.getElementById('player-balance');
@@ -193,11 +164,6 @@ export function initBlackjackClient(): void {
 	const game = new BlackjackGame(serverSyncedBalance, settings.minBet, settings.maxBet);
 	const settlementGate = createSettlementGate();
 
-	// LLM settings state
-	let llmSettings: LLMSettings | null = null;
-	let llmConfigured = false;
-	let llmSettingsLoading: Promise<void> | null = null;
-
 	// DOM elements (static Astro markup guarantees these exist when script runs)
 	const bettingControls = document.getElementById('betting-controls') as HTMLElement;
 	const gameControls = document.getElementById('game-controls') as HTMLElement;
@@ -217,10 +183,6 @@ export function initBlackjackClient(): void {
 	const aiAdviceBox = document.getElementById('ai-advice-box') as HTMLElement;
 	const aiAdviceAction = document.getElementById('ai-advice-action') as HTMLElement;
 	const aiAdviceReasoning = document.getElementById('ai-advice-reasoning') as HTMLElement;
-	const aiCommentaryBox = document.getElementById('ai-commentary-box') as HTMLElement;
-	const aiCommentaryText = document.getElementById('ai-commentary-text') as HTMLElement;
-	const llmConfigOverlay = document.getElementById('llm-config-overlay') as HTMLElement;
-	const btnCloseOverlay = document.getElementById('btn-close-overlay') as HTMLButtonElement;
 
 	// Recovery controls stay hidden during normal play and are revealed only when
 	// a settlement fails. Keeping them out of the static page markup preserves
@@ -301,115 +263,10 @@ export function initBlackjackClient(): void {
 	const dealerSpeedSelect = document.getElementById(
 		'setting-dealer-speed',
 	) as HTMLSelectElement | null;
-	const useLlmCheckbox = document.getElementById('setting-use-llm') as HTMLInputElement | null;
 	const btnSaveSettings = document.getElementById('btn-save-settings') as HTMLButtonElement | null;
 	const btnResetSettings = document.getElementById(
 		'btn-reset-settings',
 	) as HTMLButtonElement | null;
-
-	// AI Rival status element
-	const aiRivalStatus = document.getElementById('ai-rival-status') as HTMLElement | null;
-
-	// Load LLM settings on page load
-	async function loadLlmSettings() {
-		if (isGuestMode) {
-			llmSettings = null;
-			llmConfigured = false;
-			llmConfigOverlay.classList.add('hidden');
-			llmConfigOverlay.classList.remove('flex');
-			updateAiRivalButtonState();
-			return;
-		}
-
-		try {
-			const response = await fetch('/api/profile/llm-settings');
-			if (!response.ok) {
-				llmSettings = null;
-				llmConfigured = false;
-				llmConfigOverlay.classList.add('hidden');
-				llmConfigOverlay.classList.remove('flex');
-				updateAiRivalButtonState();
-				return;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const data = (await response.json()) as any;
-			const settings = data?.settings;
-
-			if (
-				settings &&
-				(settings.provider === 'openai' || settings.provider === 'gemini') &&
-				typeof settings.model === 'string'
-			) {
-				const apiKey =
-					settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-
-				if (apiKey && typeof apiKey === 'string' && apiKey.length > 0) {
-					llmSettings = {
-						provider: settings.provider,
-						model: settings.model,
-						apiKey: apiKey,
-					};
-					llmConfigured = true;
-				} else {
-					llmSettings = null;
-					llmConfigured = false;
-				}
-			} else {
-				llmSettings = null;
-				llmConfigured = false;
-			}
-		} catch (_error) {
-			llmSettings = null;
-			llmConfigured = false;
-		}
-
-		if (llmConfigured) {
-			llmConfigOverlay.classList.remove('flex');
-			llmConfigOverlay.classList.add('hidden');
-		}
-		updateAiRivalButtonState();
-	}
-
-	// Update AI Rival button state based on configuration
-	// Note: Button stays clickable even when unconfigured so users can click
-	// to see the overlay explaining how to configure API keys
-	function updateAiRivalButtonState() {
-		if (isGuestMode) {
-			btnAiRival.disabled = true;
-			btnAiRival.classList.add('opacity-50');
-			if (aiRivalStatus) {
-				aiRivalStatus.textContent = 'Sign in to use profile-backed AI advice.';
-				aiRivalStatus.classList.remove('text-[var(--deco-jade)]', 'text-[var(--deco-muted)]');
-				aiRivalStatus.classList.add('text-[var(--deco-ivory-dim)]');
-			}
-			return;
-		}
-
-		if (llmConfigured) {
-			btnAiRival.classList.remove('opacity-50');
-			if (aiRivalStatus) {
-				aiRivalStatus.textContent = 'AI advisor ready';
-				aiRivalStatus.classList.remove('text-[var(--deco-muted)]');
-				aiRivalStatus.classList.add('text-[var(--deco-jade)]');
-			}
-		} else {
-			btnAiRival.classList.add('opacity-50');
-			if (aiRivalStatus) {
-				aiRivalStatus.textContent = 'Configure API keys in profile to enable';
-				aiRivalStatus.classList.remove('text-[var(--deco-jade)]');
-				aiRivalStatus.classList.add('text-[var(--deco-muted)]');
-			}
-		}
-	}
-
-	// Initialize LLM settings
-	const initialLlmSettingsLoad = loadLlmSettings();
-	llmSettingsLoading = initialLlmSettingsLoad;
-	void initialLlmSettingsLoad.finally(() => {
-		if (llmSettingsLoading === initialLlmSettingsLoad) {
-			llmSettingsLoading = null;
-		}
-	});
 
 	// Settings helpers
 	function applyBetConstraints() {
@@ -423,20 +280,11 @@ export function initBlackjackClient(): void {
 	}
 
 	function renderSettingsForm() {
-		if (
-			!startingChipsInput ||
-			!minBetInput ||
-			!maxBetInput ||
-			!dealerSpeedSelect ||
-			!useLlmCheckbox
-		)
-			return;
+		if (!startingChipsInput || !minBetInput || !maxBetInput || !dealerSpeedSelect) return;
 		startingChipsInput.value = settings.startingChips.toString();
 		minBetInput.value = settings.minBet.toString();
 		maxBetInput.value = settings.maxBet.toString();
 		dealerSpeedSelect.value = settings.dealerSpeed;
-		useLlmCheckbox.checked = isGuestMode ? false : settings.useLLM;
-		useLlmCheckbox.disabled = isGuestMode;
 	}
 
 	// Settings panel toggle (only if elements exist)
@@ -447,14 +295,7 @@ export function initBlackjackClient(): void {
 	}
 
 	// Save settings (only if elements exist)
-	if (
-		btnSaveSettings &&
-		startingChipsInput &&
-		minBetInput &&
-		maxBetInput &&
-		dealerSpeedSelect &&
-		useLlmCheckbox
-	) {
+	if (btnSaveSettings && startingChipsInput && minBetInput && maxBetInput && dealerSpeedSelect) {
 		btnSaveSettings.addEventListener('click', () => {
 			const newStartingChips = parseInt(
 				startingChipsInput.value || `${settings.startingChips}`,
@@ -466,7 +307,6 @@ export function initBlackjackClient(): void {
 				| 'slow'
 				| 'normal'
 				| 'fast';
-			const newUseLlm = isGuestMode ? false : useLlmCheckbox.checked;
 
 			if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
 				statusEl.textContent = 'Starting chips must be a positive number.';
@@ -489,13 +329,11 @@ export function initBlackjackClient(): void {
 				minBet: newMinBet,
 				maxBet: newMaxBet,
 				dealerSpeed: newDealerSpeed,
-				useLLM: newUseLlm,
 			});
 
 			const previousStartingChips = settings.startingChips;
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
-			llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 			// Update game instance bet limits so new rounds honor configured limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);
@@ -515,11 +353,6 @@ export function initBlackjackClient(): void {
 
 			applyBetConstraints();
 			renderSettingsForm();
-
-			if (!newUseLlm) {
-				llmConfigOverlay.classList.add('hidden');
-				llmConfigOverlay.classList.remove('flex');
-			}
 			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
 		});
 	}
@@ -530,7 +363,6 @@ export function initBlackjackClient(): void {
 			settingsManager.resetToDefaults();
 			settings = settingsManager.getSettings();
 			dealerDelay = settingsManager.getDealerDelay();
-			llmUserEnabled = isGuestMode ? false : settings.useLLM;
 
 			// Update game instance bet limits so new rounds honor reset limits immediately
 			game.updateBetLimits(settings.minBet, settings.maxBet);
@@ -701,7 +533,6 @@ export function initBlackjackClient(): void {
 		gameControls.classList.add('hidden');
 		btnNewRound.classList.add('hidden');
 		aiAdviceBox.classList.add('hidden');
-		aiCommentaryBox.classList.add('hidden');
 
 		// Reset card placeholders
 		const singleHandContainer = document.getElementById('player-cards-single');
@@ -720,46 +551,8 @@ export function initBlackjackClient(): void {
 	btnAiRival.addEventListener('click', async () => {
 		const state = game.getState();
 
-		// Check if LLM feature is enabled in settings
-		if (!llmUserEnabled) {
-			statusEl.textContent = 'AI Rival is disabled in game settings.';
-			llmConfigOverlay.classList.add('hidden');
-			llmConfigOverlay.classList.remove('flex');
-			return;
-		}
-
 		// Check if we're in player turn
 		if (state.phase !== 'player-turn') {
-			return;
-		}
-
-		// Check if LLM is configured
-		// Note: Settings are loaded async on page load. If the user clicks before that finishes,
-		// we should retry loading here instead of immediately showing the overlay.
-		if (!llmConfigured) {
-			// Guard against repeated clicks racing the first load: reuse the in-flight
-			// llmSettingsLoading promise so only one loadLlmSettings() runs at a time.
-			const inFlight = llmSettingsLoading ?? loadLlmSettings();
-			if (!llmSettingsLoading) {
-				llmSettingsLoading = inFlight;
-			}
-			try {
-				await inFlight;
-			} catch (error) {
-				console.error('Error loading LLM settings:', error);
-				llmSettings = null;
-				llmConfigured = false;
-				updateAiRivalButtonState();
-			} finally {
-				if (llmSettingsLoading === inFlight) {
-					llmSettingsLoading = null;
-				}
-			}
-		}
-
-		if (!llmConfigured) {
-			llmConfigOverlay.classList.remove('hidden');
-			llmConfigOverlay.classList.add('flex');
 			return;
 		}
 
@@ -780,24 +573,15 @@ export function initBlackjackClient(): void {
 				currentBet: activeHand.bet,
 			};
 
-			const advice = await getBlackjackAdvice(context, llmSettings);
-
-			const adviceIndicatesError =
-				advice.reasoning.includes('LLM unavailable') ||
-				advice.reasoning.includes('response could not be parsed');
+			const providerSettings: AiSettings | null = isGuestMode ? null : loadAiSettings();
+			const advice = await getBlackjackAdvice(context, providerSettings);
 
 			aiAdviceBox.classList.remove('hidden');
-			if (adviceIndicatesError) {
-				aiAdviceAction.textContent = 'Unable to get advice';
-				aiAdviceReasoning.textContent = advice.reasoning;
-				highlightRecommendedAction(null);
-			} else {
-				aiAdviceAction.textContent = advice.recommendedAction
-					? `Recommended: ${advice.recommendedAction.toUpperCase()}`
-					: 'No specific recommendation';
-				aiAdviceReasoning.textContent = advice.reasoning;
-				highlightRecommendedAction(advice.recommendedAction);
-			}
+			aiAdviceAction.textContent = advice.recommendedAction
+				? `Recommended: ${advice.recommendedAction.toUpperCase()}`
+				: 'No legal recommendation';
+			aiAdviceReasoning.textContent = advice.reasoning;
+			highlightRecommendedAction(advice.recommendedAction);
 		} catch (_error) {
 			aiAdviceBox.classList.remove('hidden');
 			aiAdviceAction.textContent = 'Unable to get advice';
@@ -806,12 +590,6 @@ export function initBlackjackClient(): void {
 			btnAiRival.disabled = false;
 			btnAiRivalText.textContent = 'Ask AI Rival';
 		}
-	});
-
-	// Close overlay button
-	btnCloseOverlay.addEventListener('click', () => {
-		llmConfigOverlay.classList.add('hidden');
-		llmConfigOverlay.classList.remove('flex');
 	});
 
 	// Highlight recommended action button
@@ -972,8 +750,7 @@ export function initBlackjackClient(): void {
 
 	// Handle round completion
 	async function handleRoundComplete() {
-		// IMPORTANT: Capture state BEFORE settleRound() because settleRound() mutates/clears hands.
-		// We need the pre-settlement playerHands for AI commentary.
+		// Capture state before settleRound() clears the hands for settlement stats.
 		const state = game.getState();
 		const outcomes = game.settleRound();
 
@@ -986,7 +763,7 @@ export function initBlackjackClient(): void {
 		highlightRecommendedAction(null);
 
 		// Show new round button immediately so UI/tests can detect completion.
-		// Balance sync and optional commentary can continue asynchronously.
+		// Balance sync can continue asynchronously.
 		btnNewRound.classList.remove('hidden');
 
 		let settlementPromise: Promise<void> | null = null;
@@ -999,34 +776,6 @@ export function initBlackjackClient(): void {
 			// Start the gate before optional commentary awaits, so New Round sees
 			// the blocked state for the entire settlement attempt.
 			settlementPromise = settleAuthenticatedRound(command);
-		}
-
-		// Get AI commentary if configured
-		if (llmConfigured && llmSettings) {
-			try {
-				// For split hands, use the overall result for commentary
-				const overallResult = getOverallResult(outcomes);
-				// Pass all player hands so commentary can describe split scenarios accurately
-				const playerHands = state.playerHands;
-				const dealerHand = state.dealerHand;
-				const commentary = await getRoundCommentary(
-					playerHands,
-					dealerHand,
-					overallResult,
-					llmSettings,
-				);
-
-				// Show commentary briefly
-				aiCommentaryText.textContent = commentary;
-				aiCommentaryBox.classList.remove('hidden');
-
-				// Auto-hide after 4 seconds
-				setTimeout(() => {
-					aiCommentaryBox.classList.add('hidden');
-				}, 4000);
-			} catch (_error) {
-				// Silently fail - commentary is optional
-			}
 		}
 
 		if (!shouldSyncAccountChips({ isGuestMode })) {

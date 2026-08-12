@@ -44,7 +44,6 @@ export interface BlackjackSettings {
 	minBet: number;
 	maxBet: number;
 	dealerSpeed: DealerSpeed;
-	useLLM: boolean;
 }
 
 export interface HandValue {

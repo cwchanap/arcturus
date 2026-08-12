@@ -62,7 +62,6 @@ describe('Blackjack GameSettingsManager', () => {
 				...DEFAULT_SETTINGS,
 				startingChips: 2000,
 				dealerSpeed: 'fast',
-				useLLM: true,
 			};
 
 			mockLocalStorage.store[STORAGE_KEY] = JSON.stringify(custom);
@@ -71,7 +70,19 @@ describe('Blackjack GameSettingsManager', () => {
 			const settings = manager.getSettings();
 			expect(settings.startingChips).toBe(2000);
 			expect(settings.dealerSpeed).toBe('fast');
-			expect(settings.useLLM).toBe(true);
+		});
+
+		test('ignores removed provider-toggle data from localStorage', () => {
+			const removedToggle = 'use' + 'LLM';
+			mockLocalStorage.store[STORAGE_KEY] = JSON.stringify({
+				...DEFAULT_SETTINGS,
+				[removedToggle]: true,
+			});
+
+			manager = new GameSettingsManager(USER_ID);
+
+			expect(manager.getSettings()).toEqual(DEFAULT_SETTINGS);
+			expect(manager.getSettings()).not.toHaveProperty(removedToggle);
 		});
 
 		test('merges partial settings with defaults', () => {
@@ -159,7 +170,6 @@ describe('Blackjack GameSettingsManager', () => {
 				minBet: 20,
 				maxBet: 500,
 				dealerSpeed: 'fast',
-				useLLM: true,
 			});
 
 			const settings = manager.getSettings();
@@ -167,7 +177,13 @@ describe('Blackjack GameSettingsManager', () => {
 			expect(settings.minBet).toBe(20);
 			expect(settings.maxBet).toBe(500);
 			expect(settings.dealerSpeed).toBe('fast');
-			expect(settings.useLLM).toBe(true);
+		});
+
+		test('ignores removed provider-toggle data in updates', () => {
+			manager.updateSettings({ ['use' + 'LLM']: true } as Partial<BlackjackSettings>);
+
+			expect(manager.getSettings()).toEqual(DEFAULT_SETTINGS);
+			expect(manager.getSettings()).not.toHaveProperty('use' + 'LLM');
 		});
 
 		test('handles localStorage.setItem throwing error but keeps in-memory state', () => {
@@ -349,27 +365,13 @@ describe('Blackjack GameSettingsManager', () => {
 			expect(manager.getSettings().dealerSpeed).toBe('fast');
 		});
 
-		test('rejects non-boolean useLLM and uses default', () => {
-			manager.updateSettings({ useLLM: 'true' as unknown as boolean });
-			const settings = manager.getSettings();
-			expect(settings.useLLM).toBe(DEFAULT_SETTINGS.useLLM);
-		});
-
-		test('accepts boolean useLLM values', () => {
-			manager.updateSettings({ useLLM: true });
-			expect(manager.getSettings().useLLM).toBe(true);
-
-			manager.updateSettings({ useLLM: false });
-			expect(manager.getSettings().useLLM).toBe(false);
-		});
-
 		test('validates settings loaded from localStorage', () => {
 			const invalidSettings = {
 				minBet: -10,
 				maxBet: 0,
 				startingChips: -500,
 				dealerSpeed: 'ultra-fast',
-				useLLM: 'yes',
+				['use' + 'LLM']: 'yes',
 			};
 
 			mockLocalStorage.store[STORAGE_KEY] = JSON.stringify(invalidSettings);
@@ -380,7 +382,7 @@ describe('Blackjack GameSettingsManager', () => {
 			expect(settings.maxBet).toBe(DEFAULT_SETTINGS.maxBet);
 			expect(settings.startingChips).toBe(DEFAULT_SETTINGS.startingChips);
 			expect(settings.dealerSpeed).toBe(DEFAULT_SETTINGS.dealerSpeed);
-			expect(settings.useLLM).toBe(DEFAULT_SETTINGS.useLLM);
+			expect(settings).not.toHaveProperty('use' + 'LLM');
 		});
 
 		test('rejects non-number minBet and uses default', () => {

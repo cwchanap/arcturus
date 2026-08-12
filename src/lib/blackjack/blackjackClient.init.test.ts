@@ -186,7 +186,6 @@ function makeResponse(status: number, body: unknown): MockResponse {
 }
 
 interface FetchConfig {
-	llmSettings?: unknown;
 	settlement?: MockResponse | ((call: number) => MockResponse);
 }
 
@@ -198,9 +197,6 @@ function installFetch(config: FetchConfig = {}): { calls: Array<{ url: string }>
 	) => {
 		const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
 		calls.push({ url: urlStr });
-		if (urlStr === '/api/profile/llm-settings') {
-			return makeResponse(200, config.llmSettings ?? { settings: null });
-		}
 		if (urlStr === '/api/wallet/settle') {
 			const settlement = config.settlement;
 			if (typeof settlement === 'function') {
@@ -265,15 +261,6 @@ function buildBlackjackDOM(options: {
 	currentBet.id = 'current-bet';
 	currentBet.textContent = 'Current Bet: $0';
 	root.appendChild(currentBet);
-
-	// AI commentary
-	const aiCommentaryBox = document.createElement('div');
-	aiCommentaryBox.id = 'ai-commentary-box';
-	aiCommentaryBox.className = 'hidden';
-	const aiCommentaryText = document.createElement('div');
-	aiCommentaryText.id = 'ai-commentary-text';
-	aiCommentaryBox.appendChild(aiCommentaryText);
-	root.appendChild(aiCommentaryBox);
 
 	// Betting controls
 	const bettingControls = document.createElement('div');
@@ -354,16 +341,6 @@ function buildBlackjackDOM(options: {
 	aiAdviceBox.appendChild(aiAdviceReasoning);
 	root.appendChild(aiAdviceBox);
 
-	// LLM config overlay
-	const llmConfigOverlay = document.createElement('div');
-	llmConfigOverlay.id = 'llm-config-overlay';
-	llmConfigOverlay.className = 'hidden';
-	root.appendChild(llmConfigOverlay);
-
-	const btnCloseOverlay = document.createElement('button');
-	btnCloseOverlay.id = 'btn-close-overlay';
-	root.appendChild(btnCloseOverlay);
-
 	// Settings panel
 	const btnToggleSettings = document.createElement('button');
 	btnToggleSettings.id = 'btn-toggle-settings';
@@ -396,12 +373,6 @@ function buildBlackjackDOM(options: {
 	dealerSpeedSelect.id = 'setting-dealer-speed';
 	dealerSpeedSelect.value = 'normal';
 	settingsPanel.appendChild(dealerSpeedSelect);
-
-	const useLlmCheckbox = document.createElement('input');
-	useLlmCheckbox.id = 'setting-use-llm';
-	useLlmCheckbox.type = 'checkbox';
-	useLlmCheckbox.checked = false;
-	settingsPanel.appendChild(useLlmCheckbox);
 
 	const btnSaveSettings = document.createElement('button');
 	btnSaveSettings.id = 'btn-save-settings';
@@ -472,6 +443,41 @@ describe('Blackjack client initialization and settlement flow', () => {
 		const stored = localStorage.getItem('blackjack-bankroll:guest-1');
 		expect(stored).not.toBeNull();
 
+		root.remove();
+	});
+
+	test('guest mode shows local advice without sending local keys to a provider', async () => {
+		const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-ai', initialBalance: 1000 });
+		localStorage.setItem(
+			'arcturus-ai-settings',
+			JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'stale-guest-key' }),
+		);
+		const { calls } = installFetch();
+		initBlackjackClient();
+		await flush(5);
+
+		clickDeal();
+		await flush(2);
+		(document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
+		await flush(2);
+
+		expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
+		expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
+		root.remove();
+	});
+
+	test('round completion does not perform automatic provider traffic', async () => {
+		const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-ai', initialBalance: 1000 });
+		const { calls } = installFetch();
+		initBlackjackClient();
+		await flush(5);
+
+		clickDeal();
+		await flush(2);
+		clickStand();
+		await flush(15);
+
+		expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
 		root.remove();
 	});
 

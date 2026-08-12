@@ -2,7 +2,7 @@
 import CasinoLayout from '../layouts/casino.astro';
 import { createDb } from '../lib/db';
 import DecoIcon from '../components/DecoIcon.astro';
-import { getLlmSettings, AI_MODELS, AI_PROVIDERS } from '../lib/llm-settings';
+import { AI_MODELS, AI_PROVIDERS } from '../lib/ai';
 import { getAchievementsWithStatus } from '../lib/achievements/achievements';
 import type { AchievementWithStatus } from '../lib/achievements/types';
 import PlayerStatisticsSummary from '../components/profile/PlayerStatisticsSummary.astro';
@@ -27,15 +27,6 @@ const runtime = Astro.locals.runtime;
 
 const dbBinding = runtime?.env?.DB ?? null;
 
-let aiSettings = {
-	provider: 'openai',
-	model: 'gpt-4o',
-	openaiApiKey: null as string | null,
-	geminiApiKey: null as string | null,
-	updatedAt: new Date(0),
-};
-let aiSettingsFetchError = false;
-
 // Achievements data
 let achievements: AchievementWithStatus[] = [];
 let achievementProgress = { total: 0, unlocked: 0, percentage: 0 };
@@ -50,16 +41,8 @@ if (dbBinding) {
 	// profile TTFB to a single D1 round trip window instead of three sequential
 	// ones. Each loader captures its own error state so a failure in one does
 	// not mask or abort the others.
-	const [statsState, llmResult, achievementsResult] = await Promise.all([
+	const [statsState, achievementsResult] = await Promise.all([
 		loadProfileStatisticsState(db, user.id),
-		(async () => {
-			try {
-				return { ok: true as const, value: await getLlmSettings(db, user.id) };
-			} catch (error) {
-				console.error('Error loading AI settings:', error);
-				return { ok: false as const };
-			}
-		})(),
 		(async () => {
 			try {
 				return { ok: true as const, value: await getAchievementsWithStatus(db, user.id) };
@@ -71,19 +54,6 @@ if (dbBinding) {
 	]);
 
 	playerStatisticsState = statsState;
-
-	if (llmResult.ok) {
-		const result = llmResult.value;
-		aiSettings = {
-			provider: result.provider,
-			model: result.model,
-			openaiApiKey: result.openaiApiKey ?? null,
-			geminiApiKey: result.geminiApiKey ?? null,
-			updatedAt: result.updatedAt,
-		};
-	} else {
-		aiSettingsFetchError = true;
-	}
 
 	if (achievementsResult.ok) {
 		achievements = achievementsResult.value;
@@ -111,14 +81,8 @@ const modelLabels: Record<string, string> = {
 	'gemini-2.5-flash': 'Gemini 2.5 Flash',
 	'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
 };
-const aiSettingsPayload = JSON.stringify({
-	provider: aiSettings.provider,
-	model: aiSettings.model,
-	// Never send actual API keys to the client (security)
-	hasOpenaiKey: Boolean(aiSettings.openaiApiKey),
-	hasGeminiKey: Boolean(aiSettings.geminiApiKey),
-	updatedAt: aiSettings.updatedAt.toISOString(),
-});
+const initialAiProvider = 'openai' as const;
+const initialAiModel = AI_MODELS[initialAiProvider][0];
 ---
 
 <CasinoLayout title="Player Profile - Arcturus Casino">
@@ -223,38 +187,19 @@ const aiSettingsPayload = JSON.stringify({
 					<div>
 						<h2 class="deco-section-title text-lg">AI Rival Settings</h2>
 						<p class="deco-text-dim text-sm">
-							Choose your model provider and store API keys to enable the Gemini or OpenAI poker
-							rival.
+							Choose your model provider and store an API key in this browser to enable the Gemini
+							or OpenAI poker rival.
 						</p>
 					</div>
 					<p
 						id="ai-settings-feedback"
 						class="deco-muted-text text-right text-xs font-semibold uppercase tracking-widest"
 					>
-						Updated {
-							aiSettings.updatedAt.getTime() ? aiSettings.updatedAt.toLocaleDateString() : '—'
-						}
+						Stored in this browser
 					</p>
 				</div>
 
-				{
-					aiSettingsFetchError && (
-						<div
-							class="mt-4 rounded-sm border px-4 py-3 text-sm"
-							style="border-color: rgba(154,45,51,0.4); background: rgba(110,31,35,0.15); color: var(--deco-rose)"
-						>
-							Failed to load AI settings. Submitting this form may overwrite your saved
-							configuration.
-						</div>
-					)
-				}
-
-				<form
-					id="ai-settings-form"
-					class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2"
-					data-initial-provider={aiSettings.provider}
-					data-initial-settings={aiSettingsPayload}
-				>
+				<form id="ai-settings-form" class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div class="col-span-full sm:col-span-1">
 						<label for="ai-provider" class="deco-label block font-medium"> Model Provider </label>
 						<select
@@ -264,7 +209,7 @@ const aiSettingsPayload = JSON.stringify({
 						>
 							{
 								aiProviderOptions.map((provider) => (
-									<option value={provider} selected={aiSettings.provider === provider}>
+									<option value={provider} selected={initialAiProvider === provider}>
 										{providerLabels[provider]}
 									</option>
 								))
@@ -279,23 +224,21 @@ const aiSettingsPayload = JSON.stringify({
 							class="deco-input mt-2 w-full px-3 py-2 text-sm"
 							data-model-options={JSON.stringify(aiModelOptions)}
 							data-model-labels={JSON.stringify(modelLabels)}
-							data-initial-model={aiSettings.model}
+							data-initial-model={initialAiModel}
 						>
 							{
-								aiModelOptions[aiSettings.provider as keyof typeof aiModelOptions].map(
-									(model: string) => (
-										<option value={model} selected={aiSettings.model === model}>
-											{modelLabels[model] ?? model}
-										</option>
-									),
-								)
+								aiModelOptions[initialAiProvider].map((model: string) => (
+									<option value={model} selected={initialAiModel === model}>
+										{modelLabels[model] ?? model}
+									</option>
+								))
 							}
 						</select>
 					</div>
 
 					<div class="col-span-full space-y-2">
 						<label id="api-key-label" for="api-key" class="deco-label block font-medium">
-							{aiSettings.provider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
+							{initialAiProvider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
 						</label>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 							<div class="relative flex-1">
@@ -303,7 +246,7 @@ const aiSettingsPayload = JSON.stringify({
 									id="api-key"
 									name="apiKey"
 									type="password"
-									placeholder={aiSettings.provider === 'openai' ? 'sk-...' : 'AIza...'}
+									placeholder={initialAiProvider === 'openai' ? 'sk-...' : 'AIza...'}
 									class="deco-input w-full px-3 py-2 pr-20 text-sm"
 									autocomplete="off"
 								/>
@@ -396,12 +339,7 @@ const aiSettingsPayload = JSON.stringify({
 									id="api-key-status"
 									class="deco-muted-text text-xs font-semibold uppercase tracking-widest"
 								>
-									{
-										(aiSettings.provider === 'openai' && aiSettings.openaiApiKey) ||
-										(aiSettings.provider === 'gemini' && aiSettings.geminiApiKey)
-											? 'Saved'
-											: 'Not saved'
-									}
+									Not saved
 								</span>
 								<button
 									type="button"
@@ -415,9 +353,9 @@ const aiSettingsPayload = JSON.stringify({
 						</div>
 						<p id="api-key-help" class="deco-muted-text text-xs">
 							{
-								aiSettings.provider === 'openai'
-									? 'Required for the GPT-4o rival. Keys are stored per account and never shown back in full.'
-									: 'Used for Gemini Flash rivals. Leave blank to keep the previously stored key.'
+								initialAiProvider === 'openai'
+									? 'Required for the GPT-4o rival. The key is stored in this browser only. Switching provider replaces the active record.'
+									: 'Used for Gemini Flash rivals. The key is stored in this browser only. Switching provider replaces the active record.'
 							}
 						</p>
 					</div>
@@ -581,9 +519,15 @@ const aiSettingsPayload = JSON.stringify({
 
 <script>
 	import { authClient } from '../lib/auth-client';
-	import { ProfileUiState, type AiState } from '../lib/profile-ui-state';
-	import { fetchApiKey } from '../lib/profile-api';
-	import { populateModels, showToast, handleAiSettingsSubmit } from '../lib/profile-form-handlers';
+	import { AI_MODELS, AI_PROVIDERS, loadAiSettings, type AiSettings } from '../lib/ai';
+	import {
+		clearAiSettingsFromForm,
+		populateModels,
+		readCurrentAiSettings,
+		saveAiSettingsFromForm,
+		setFeedback,
+		showToast,
+	} from '../lib/profile-form-handlers';
 
 	// Sign out handler
 	const signoutBtn = document.getElementById('signout-btn');
@@ -596,28 +540,15 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	});
 
-	// Initialize AI state from form data
-	let aiState: AiState = {
+	const stored = loadAiSettings();
+	let aiState: AiSettings = stored ?? {
 		provider: 'openai',
-		model: 'gpt-4o',
-		hasOpenaiKey: false,
-		hasGeminiKey: false,
+		model: AI_MODELS.openai[0],
+		apiKey: '',
 	};
+	let isKeyRevealed = false;
 
 	const aiForm = document.getElementById('ai-settings-form');
-	if (aiForm instanceof HTMLFormElement && typeof aiForm.dataset.initialSettings === 'string') {
-		try {
-			const parsed = JSON.parse(aiForm.dataset.initialSettings);
-			aiState = {
-				provider: parsed.provider ?? aiState.provider,
-				model: parsed.model ?? aiState.model,
-				hasOpenaiKey: Boolean(parsed.hasOpenaiKey),
-				hasGeminiKey: Boolean(parsed.hasGeminiKey),
-			};
-		} catch (error) {
-			console.error('Failed to parse initial AI settings:', error);
-		}
-	}
 
 	// Get DOM elements
 	const providerSelect = document.getElementById('ai-provider') as HTMLSelectElement | null;
@@ -634,16 +565,7 @@ const aiSettingsPayload = JSON.stringify({
 	const toastEl = document.getElementById('toast-notification');
 	const toastMessage = document.getElementById('toast-message');
 
-	// Parse model options and labels
-	let modelOptions: Record<string, string[]> = {};
-	if (typeof modelSelect?.dataset.modelOptions === 'string') {
-		try {
-			modelOptions = JSON.parse(modelSelect.dataset.modelOptions);
-		} catch (error) {
-			console.error('Failed to parse model options dataset:', error);
-		}
-	}
-
+	// Parse model labels for the provider/model controls.
 	let modelLabels: Record<string, string> = {};
 	if (typeof modelSelect?.dataset.modelLabels === 'string') {
 		try {
@@ -653,73 +575,93 @@ const aiSettingsPayload = JSON.stringify({
 		}
 	}
 
-	// Initialize UI state manager
-	const uiState = new ProfileUiState(
-		{
-			apiKeyInput,
-			apiKeyLabel,
-			apiKeyStatus,
-			apiKeyHelp,
-			clearKeyButton,
-			showKeyButton,
-			hideKeyButton,
-			copyKeyButton,
-		},
-		aiState,
-	);
+	function updateApiKeyUI(): void {
+		const hasKey = aiState.apiKey.length > 0;
+		const isOpenAI = aiState.provider === 'openai';
 
-	// Track if user wants to explicitly clear the API key
-	let clearKeyRequested = false;
+		if (apiKeyLabel) {
+			apiKeyLabel.textContent = isOpenAI ? 'OpenAI API Key' : 'Gemini API Key';
+		}
+		if (apiKeyHelp) {
+			apiKeyHelp.textContent = isOpenAI
+				? 'Required for the GPT-4o rival. The key is stored in this browser only. Switching provider replaces the active record.'
+				: 'Used for Gemini Flash rivals. The key is stored in this browser only. Switching provider replaces the active record.';
+		}
+		if (apiKeyInput) {
+			apiKeyInput.placeholder = isOpenAI ? 'sk-...' : 'AIza...';
+			apiKeyInput.type = isKeyRevealed ? 'text' : 'password';
+			if (isKeyRevealed) {
+				apiKeyInput.value = aiState.apiKey;
+			} else if (hasKey) {
+				apiKeyInput.value = '•'.repeat(aiState.apiKey.length || 20);
+				apiKeyInput.placeholder = 'Saved key (masked)';
+			} else {
+				apiKeyInput.value = '';
+			}
+		}
+		if (apiKeyStatus) {
+			apiKeyStatus.textContent = hasKey ? 'Saved' : 'Not saved';
+		}
+		if (clearKeyButton) clearKeyButton.style.display = hasKey ? 'inline-block' : 'none';
+		if (showKeyButton) {
+			showKeyButton.style.display = hasKey && !isKeyRevealed ? 'block' : 'none';
+		}
+		if (hideKeyButton) {
+			hideKeyButton.style.display = hasKey && isKeyRevealed ? 'block' : 'none';
+		}
+		if (copyKeyButton) copyKeyButton.style.display = hasKey ? 'block' : 'none';
+	}
 
 	// Initialize provider select and populate models
 	if (providerSelect) {
 		providerSelect.value = aiState.provider;
-		populateModels(modelSelect, aiState.provider, aiState.model, modelOptions, modelLabels);
-		uiState.updateApiKeyUI(aiState.provider);
+		populateModels(modelSelect, aiState.provider, aiState.model, AI_MODELS, modelLabels);
+		updateApiKeyUI();
 
 		providerSelect.addEventListener('change', () => {
-			const nextProvider = providerSelect.value;
-			populateModels(
-				modelSelect,
-				nextProvider,
-				modelSelect?.value ?? '',
-				modelOptions,
-				modelLabels,
-			);
-			clearKeyRequested = false;
-			uiState.clearRevealedKey();
-			uiState.updateApiKeyUI(nextProvider, false);
+			const nextProvider = providerSelect.value as AiSettings['provider'];
+			if (!AI_PROVIDERS.includes(nextProvider)) return;
+
+			populateModels(modelSelect, nextProvider, AI_MODELS[nextProvider][0], AI_MODELS, modelLabels);
+			aiState = {
+				provider: nextProvider,
+				model: modelSelect?.value ?? AI_MODELS[nextProvider][0],
+				apiKey: '',
+			};
+			isKeyRevealed = false;
+			updateApiKeyUI();
 		});
 	}
 
 	// Show API key button
 	if (showKeyButton) {
-		showKeyButton.addEventListener('click', async () => {
-			const currentProvider = providerSelect?.value ?? aiState.provider;
-			const success = await uiState.revealApiKey(currentProvider, fetchApiKey);
-			if (success) {
-				uiState.updateApiKeyUI(currentProvider);
-			}
+		showKeyButton.addEventListener('click', () => {
+			isKeyRevealed = true;
+			updateApiKeyUI();
 		});
 	}
 
 	// Hide API key button
 	if (hideKeyButton) {
 		hideKeyButton.addEventListener('click', () => {
-			const currentProvider = providerSelect?.value ?? aiState.provider;
-			uiState.hideApiKey(currentProvider);
-			uiState.updateApiKeyUI(currentProvider);
+			isKeyRevealed = false;
+			updateApiKeyUI();
 		});
 	}
 
 	// Copy API key button
 	if (copyKeyButton) {
 		copyKeyButton.addEventListener('click', async () => {
-			const currentProvider = providerSelect?.value ?? aiState.provider;
-			const success = await uiState.copyApiKey(currentProvider, fetchApiKey);
-			if (success) {
+			if (!aiState.apiKey) {
+				showToast(toastEl, toastMessage, 'No API key saved');
+				return;
+			}
+
+			try {
+				await navigator.clipboard.writeText(aiState.apiKey);
 				showToast(toastEl, toastMessage, 'API key copied to clipboard!');
-			} else {
+			} catch (error) {
+				console.error('Failed to copy API key:', error);
 				showToast(toastEl, toastMessage, 'Failed to copy to clipboard');
 			}
 		});
@@ -729,42 +671,44 @@ const aiSettingsPayload = JSON.stringify({
 	if (clearKeyButton) {
 		clearKeyButton.addEventListener('click', () => {
 			if (confirm('Are you sure you want to remove your saved API key?')) {
-				clearKeyRequested = true;
-				if (apiKeyInput) {
-					apiKeyInput.value = '';
-				}
-				if (aiForm instanceof HTMLFormElement) {
-					aiForm.requestSubmit();
-				}
+				clearAiSettingsFromForm();
+				aiState = { ...aiState, apiKey: '' };
+				isKeyRevealed = false;
+				updateApiKeyUI();
+				setFeedback(feedbackEl, 'API key cleared', 'success');
 			}
 		});
 	}
 
 	// Form submission
-	aiForm?.addEventListener('submit', async (event) => {
-		await handleAiSettingsSubmit(
-			event as SubmitEvent,
-			aiState,
-			providerSelect,
-			modelSelect,
-			apiKeyInput,
-			clearKeyRequested,
-			feedbackEl,
-			(updatedState) => {
-				// On success, update state and UI
-				uiState.updateAiState(updatedState);
-				Object.assign(aiState, updatedState);
+	aiForm?.addEventListener('submit', (event) => {
+		event.preventDefault();
+		if (!providerSelect || !modelSelect) return;
 
-				if (providerSelect && providerSelect.value !== aiState.provider) {
-					providerSelect.value = aiState.provider;
-				}
+		const provider = providerSelect.value as AiSettings['provider'];
+		if (!AI_PROVIDERS.includes(provider)) {
+			setFeedback(feedbackEl, 'Could not save preferences', 'error');
+			return;
+		}
 
-				populateModels(modelSelect, aiState.provider, aiState.model, modelOptions, modelLabels);
-				uiState.updateApiKeyUI(aiState.provider);
-			},
-		);
-
-		// Reset clear flag after submission
-		clearKeyRequested = false;
+		setFeedback(feedbackEl, 'Saving…', 'neutral');
+		try {
+			const previous = readCurrentAiSettings() ?? (aiState.apiKey ? aiState : null);
+			aiState = saveAiSettingsFromForm(
+				provider,
+				modelSelect.value,
+				apiKeyInput?.value ?? '',
+				previous,
+			);
+			isKeyRevealed = false;
+			populateModels(modelSelect, aiState.provider, aiState.model, AI_MODELS, modelLabels);
+			updateApiKeyUI();
+			setFeedback(feedbackEl, 'Rival preferences saved', 'success');
+		} catch (error) {
+			console.error('Failed to save AI rival settings:', error);
+			setFeedback(feedbackEl, 'Could not save preferences', 'error');
+		}
 	});
+
+	updateApiKeyUI();
 </script>

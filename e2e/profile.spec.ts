@@ -119,26 +119,73 @@ test.describe('Profile Page', () => {
 		await expect(page.locator('button:has-text("Save Rival Preferences")')).toBeVisible();
 	});
 
-	test('can save AI settings without API key', async ({ page }) => {
-		const providerSelect = page.locator('#ai-provider');
-		const modelSelect = page.locator('#ai-model');
-		const saveButton = page.locator('button:has-text("Save Rival Preferences")');
+	test('saves AI settings in browser local storage and reloads them', async ({ page }) => {
+		await page.goto('/profile');
+		await page.selectOption('#ai-provider', 'openai');
+		await page.selectOption('#ai-model', 'gpt-4o');
+		await page.fill('#api-key', 'sk-e2e-local');
+		await page.click('#ai-settings-form button[type="submit"]');
 
-		// Select settings
-		await providerSelect.selectOption('openai');
-		await modelSelect.selectOption('gpt-4o');
+		const stored = await page.evaluate(() => localStorage.getItem('arcturus-ai-settings'));
+		expect(JSON.parse(stored!)).toEqual({
+			provider: 'openai',
+			model: 'gpt-4o',
+			apiKey: 'sk-e2e-local',
+		});
 
-		// Click save
-		await saveButton.click();
+		await page.reload();
+		await expect(page.locator('#api-key-status')).toContainText('Saved');
+	});
 
-		// Wait for the save operation to complete before asserting
-		await page.waitForResponse(
-			(response) =>
-				response.url().includes('/api/profile/llm-settings') && response.status() === 200,
-		);
+	test('shows a saved API key without a reveal request', async ({ page }) => {
+		await page.fill('#api-key', 'sk-e2e-show');
+		await page.click('#ai-settings-form button[type="submit"]');
+		await expect(page.locator('#show-api-key')).toBeVisible();
 
-		// Verify no error occurred and page is still on profile
-		await expect(page).toHaveURL('/profile');
+		await page.click('#show-api-key');
+		await expect(page.locator('#api-key')).toHaveAttribute('type', 'text');
+		await expect(page.locator('#api-key')).toHaveValue('sk-e2e-show');
+
+		await page.click('#hide-api-key');
+		await expect(page.locator('#api-key')).toHaveAttribute('type', 'password');
+	});
+
+	test('copies the saved API key from browser-local state', async ({ page }) => {
+		await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+		await page.fill('#api-key', 'sk-e2e-copy');
+		await page.click('#ai-settings-form button[type="submit"]');
+
+		await page.click('#copy-api-key');
+		await expect(page.locator('#toast-message')).toContainText('API key copied to clipboard');
+		expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('sk-e2e-copy');
+	});
+
+	test('clears the active browser-local API key', async ({ page }) => {
+		await page.fill('#api-key', 'sk-e2e-clear');
+		await page.click('#ai-settings-form button[type="submit"]');
+		await expect(page.locator('#clear-api-key')).toBeVisible();
+
+		page.once('dialog', (dialog) => dialog.accept());
+		await page.click('#clear-api-key');
+		await expect(page.locator('#api-key-status')).toContainText('Not saved');
+		expect(await page.evaluate(() => localStorage.getItem('arcturus-ai-settings'))).toBeNull();
+	});
+
+	test('switching providers replaces the single stored record', async ({ page }) => {
+		await page.fill('#api-key', 'sk-e2e-openai');
+		await page.click('#ai-settings-form button[type="submit"]');
+
+		await page.selectOption('#ai-provider', 'gemini');
+		await page.selectOption('#ai-model', 'gemini-2.5-flash');
+		await page.fill('#api-key', 'AIza-e2e-gemini');
+		await page.click('#ai-settings-form button[type="submit"]');
+
+		const stored = await page.evaluate(() => localStorage.getItem('arcturus-ai-settings'));
+		expect(JSON.parse(stored!)).toEqual({
+			provider: 'gemini',
+			model: 'gemini-2.5-flash',
+			apiKey: 'AIza-e2e-gemini',
+		});
 	});
 
 	test('sign out button works', async ({ browser, baseURL }) => {

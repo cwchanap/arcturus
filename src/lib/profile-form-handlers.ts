@@ -3,9 +3,28 @@
  * Manages form submission, validation, and UI feedback
  */
 
-import type { AiState } from './profile-ui-state';
-import type { LlmSettingsPayload } from './profile-api';
-import { saveLlmSettings } from './profile-api';
+import { clearAiSettings, loadAiSettings, saveAiSettings, type AiSettings } from './ai';
+
+export function readCurrentAiSettings(): AiSettings | null {
+	return loadAiSettings();
+}
+
+export function saveAiSettingsFromForm(
+	provider: AiSettings['provider'],
+	model: string,
+	apiKeyInput: string,
+	previous: AiSettings | null,
+): AiSettings {
+	const masked = /^•+$/.test(apiKeyInput);
+	const apiKey = masked && previous?.provider === provider ? previous.apiKey : apiKeyInput.trim();
+	const next = { provider, model, apiKey };
+	saveAiSettings(next);
+	return next;
+}
+
+export function clearAiSettingsFromForm(): void {
+	clearAiSettings();
+}
 
 /**
  * Show toast notification
@@ -60,7 +79,7 @@ export function populateModels(
 	modelSelect: HTMLSelectElement | null,
 	provider: string,
 	desiredModel: string,
-	modelOptions: Record<string, string[]>,
+	modelOptions: Readonly<Record<string, readonly string[]>>,
 	modelLabels: Record<string, string>,
 ): void {
 	if (!modelSelect) return;
@@ -80,64 +99,5 @@ export function populateModels(
 
 	if (models.length > 0 && !models.includes(desiredModel)) {
 		modelSelect.value = models[0];
-	}
-}
-
-/**
- * Handle form submission for AI settings
- */
-export async function handleAiSettingsSubmit(
-	event: SubmitEvent,
-	aiState: AiState,
-	providerSelect: HTMLSelectElement | null,
-	modelSelect: HTMLSelectElement | null,
-	apiKeyInput: HTMLInputElement | null,
-	clearKeyRequested: boolean,
-	feedbackEl: HTMLElement | null,
-	onSuccess: (updatedState: Partial<AiState>) => void,
-): Promise<void> {
-	event.preventDefault();
-	if (!providerSelect || !modelSelect) return;
-
-	const currentProvider = providerSelect.value;
-	const apiKeyValue = apiKeyInput?.value.trim() ?? '';
-
-	// Ignore masked placeholder - treat it as empty
-	const isMaskedPlaceholder = apiKeyValue.length > 0 && /^•+$/.test(apiKeyValue);
-	const actualKeyValue = isMaskedPlaceholder ? '' : apiKeyValue;
-
-	// Build payload
-	const payload: LlmSettingsPayload = {
-		provider: currentProvider,
-		model: modelSelect.value,
-	};
-
-	// Include API key if: user entered a new value OR explicitly requested to clear
-	if ((actualKeyValue.length > 0 && !isMaskedPlaceholder) || clearKeyRequested) {
-		if (currentProvider === 'openai') {
-			payload.openaiApiKey = actualKeyValue;
-		} else if (currentProvider === 'gemini') {
-			payload.geminiApiKey = actualKeyValue;
-		}
-	}
-
-	setFeedback(feedbackEl, 'Saving…', 'neutral');
-
-	try {
-		const data = await saveLlmSettings(payload);
-		const updated = data?.settings ?? {};
-
-		const updatedState: Partial<AiState> = {
-			provider: updated.provider ?? payload.provider,
-			model: updated.model ?? payload.model,
-			hasOpenaiKey: Boolean(updated.hasOpenaiKey),
-			hasGeminiKey: Boolean(updated.hasGeminiKey),
-		};
-
-		onSuccess(updatedState);
-		setFeedback(feedbackEl, 'Rival preferences saved', 'success');
-	} catch (error) {
-		console.error('Failed to save AI rival settings:', error);
-		setFeedback(feedbackEl, 'Could not save preferences', 'error');
 	}
 }

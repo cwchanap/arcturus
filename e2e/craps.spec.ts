@@ -327,6 +327,82 @@ test.describe('Craps — Game Flow', () => {
 			await context.close();
 		}
 	});
+
+	test('does not resurrect a settled wager after a failed settlement and page reload', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedCrapsPage(browser, baseURL);
+		try {
+			await ensureMinimumBalance(page, 100);
+			const walletBalance = parseBalance(await page.locator('#chip-balance').innerText());
+			const persistedSessionKey = await page.locator('#craps-root').evaluate((root) => {
+				const userId = (root as HTMLElement).dataset.userId ?? 'anonymous';
+				return `craps-session:${userId}`;
+			});
+			const settlementCommands: Array<Record<string, unknown>> = [];
+			await page.route('**/api/wallet/settle', async (route) => {
+				const command = route.request().postDataJSON() as Record<string, unknown>;
+				settlementCommands.push(command);
+				// Simulate a committed-but-response-lost settlement: the server
+				// processes the request but the client never receives the result.
+				await route.fulfill({
+					status: 503,
+					contentType: 'application/json',
+					body: JSON.stringify({ error: 'offline' }),
+				});
+			});
+
+			await page.getByTestId('chip-5').click();
+			await page.click('[data-bet-type="passLine"]');
+			for (let attempt = 0; attempt < 20; attempt += 1) {
+				if (await page.getByTestId('settlement-recovery').isVisible()) break;
+				const rollButton = page.getByTestId('roll-button');
+				if (await rollButton.isDisabled()) {
+					await page.click('[data-bet-type="passLine"]');
+				}
+				await rollButton.click();
+				await page.waitForTimeout(700);
+			}
+
+			// A settlement must have been attempted and failed.
+			expect(settlementCommands.length).toBeGreaterThanOrEqual(1);
+			await expect(page.getByTestId('settlement-recovery')).toBeVisible();
+
+			// The authenticated session must not persist table state to localStorage.
+			// If it did, a reload would restore the pre-roll wager and allow it to be
+			// settled a second time under a new settlement id.
+			expect(
+				await page.evaluate(
+					(sessionKey) => window.localStorage.getItem(sessionKey),
+					persistedSessionKey,
+				),
+			).toBeNull();
+
+			// Reload: the page re-renders the authoritative server balance and must
+			// start with a clean come-out table — no resurrected wagers.
+			await page.reload({ waitUntil: 'networkidle' });
+
+			await expect(page.getByTestId('settlement-recovery')).toBeHidden();
+			await expect(page.getByTestId('roll-button')).toBeDisabled();
+			await expect(page.getByTestId('total-bet')).toContainText('$0');
+			await expect(page.getByTestId('active-bets')).toContainText('No bets placed');
+			expect(
+				await page.evaluate(
+					(sessionKey) => window.localStorage.getItem(sessionKey),
+					persistedSessionKey,
+				),
+			).toBeNull();
+
+			// The server balance is unchanged because the mocked settlement returned
+			// 503 (no server-side commit in the test harness). The reloaded balance
+			// must equal the original wallet balance — no wager is deducted.
+			const balanceAfterReload = parseBalance(await page.locator('#chip-balance').innerText());
+			expect(balanceAfterReload).toBe(walletBalance);
+		} finally {
+			await context.close();
+		}
+	});
 });
 
 test.describe('Craps — Active Bets Panel', () => {

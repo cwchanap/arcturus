@@ -537,35 +537,55 @@ git commit -m "refactor: keep AI settings in browser"
 - Consumes: `AiSettings`, `generateAiJson()`, `loadAiSettings()`.
 - Produces: `getBlackjackStrategyAdvice(context)` and `getBlackjackAdvice(context, settings)`; Ask AI available on every player turn.
 
-- [ ] **Step 1: Add failing deterministic-authority tests**
+- [ ] **Step 1: Add deterministic-authority tests using existing `card`, `createContext`, and `mockFetch` helpers**
 
 ```ts
 test('hard 16 against dealer 10 recommends legal hit', () => {
-  const context = makeContext({ playerRanks: ['10', '6'], dealerRank: '10', availableActions: ['hit', 'stand'] });
+  const context = createContext(
+    [card('10', 'hearts'), card('6', 'spades')],
+    card('10', 'clubs'),
+    ['hit', 'stand'],
+  );
   const advice = getBlackjackStrategyAdvice(context);
   expect(advice.recommendedAction).toBe('hit');
   expect(context.availableActions).toContain(advice.recommendedAction);
 });
 
-test('provider cannot replace deterministic action', async () => {
-  const context = makeContext({ playerRanks: ['10', '6'], dealerRank: '10', availableActions: ['hit', 'stand'] });
-  mockGenerateAiJson.mockResolvedValue({
-    ok: true,
-    value: { action: 'stand', reasoning: 'Take a card against this strong up-card.' },
+test('provider reasoning cannot replace deterministic action', async () => {
+  mockFetch(async () => new Response(JSON.stringify({
+    choices: [{ message: { content: '{"action":"stand","reasoning":"Take a card against this strong up-card."}' } }],
+  }), { status: 200 }));
+  const context = createContext(
+    [card('10', 'hearts'), card('6', 'spades')],
+    card('10', 'clubs'),
+    ['hit', 'stand'],
+  );
+  const advice = await getBlackjackAdvice(context, {
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: 'test-key',
   });
-  const advice = await getBlackjackAdvice(context, AI_SETTINGS);
   expect(advice.recommendedAction).toBe('hit');
+  expect(advice.reasoning).toContain('strong up-card');
 });
 
 test('provider failure returns exact local advice', async () => {
-  const context = makeContext({ playerRanks: ['10', '6'], dealerRank: '10', availableActions: ['hit', 'stand'] });
+  mockFetch(async () => { throw new DOMException('Aborted', 'AbortError'); });
+  const context = createContext(
+    [card('10', 'hearts'), card('6', 'spades')],
+    card('10', 'clubs'),
+    ['hit', 'stand'],
+  );
   const local = getBlackjackStrategyAdvice(context);
-  mockGenerateAiJson.mockResolvedValue({ ok: false, code: 'timeout', message: 'AI request timed out' });
-  expect(await getBlackjackAdvice(context, AI_SETTINGS)).toEqual(local);
+  expect(await getBlackjackAdvice(context, {
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: 'test-key',
+  })).toEqual(local);
 });
 ```
 
-Keep/add stand, double-down, split, and unavailable-preferred-action fixtures.
+Keep/add stand, double-down, split, and unavailable-preferred-action fixtures with the same existing helpers.
 
 - [ ] **Step 2: Remove `useLLM` from Blackjack settings and its E2E contract**
 
@@ -590,7 +610,7 @@ test('Ask AI works with default Blackjack settings', async ({ browser, baseURL }
 
 - [ ] **Step 3: Export the current basic fallback as authoritative local strategy**
 
-Implement `getBlackjackStrategyAdvice()` by promoting the existing `getBasicStrategyAdvice()` logic. Preserve the current hit/stand/double/split rules, then enforce legality with:
+Promote `getBasicStrategyAdvice()` to `getBlackjackStrategyAdvice()`. Preserve the current hit/stand/double/split rules, then enforce legality:
 
 ```ts
 const legalActions = availableActions.filter((action) => action !== 'ask-ai');
@@ -603,7 +623,7 @@ if (!legalActions.includes(recommendedAction)) {
 }
 ```
 
-Return `confidence: 1` and the deterministic reasoning.
+Return `confidence: 1` and deterministic reasoning.
 
 - [ ] **Step 4: Make provider output reasoning-only**
 
@@ -647,24 +667,50 @@ highlightRecommendedAction(advice.recommendedAction);
 
 Guests always receive local advice and never call a provider.
 
-- [ ] **Step 6: Add client tests and verify**
+- [ ] **Step 6: Extend `blackjackClient.init.test.ts` using its existing DOM/fetch helpers**
 
 ```ts
-test('guest Ask AI does not call provider', async () => {
-  setGuestMode(true);
-  mockLoadAiSettings.mockReturnValue({ provider: 'openai', model: 'gpt-4o', apiKey: 'stale-key' });
+test('guest Ask AI renders advice without provider traffic', async () => {
+  localStorage.setItem('arcturus-ai-settings', JSON.stringify({
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: 'stale-key',
+  }));
+  const { calls } = installFetch();
+  const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-ai', initialBalance: 1000 });
   initBlackjackClient();
-  await reachPlayerTurn();
-  clickAskAi();
-  expect(mockGenerateAiJson).not.toHaveBeenCalled();
+  await flush(5);
+  clickDeal();
+  await flush(2);
+  (document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
+  await flush(5);
+  expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
+  expect(calls.some(({ url }) => url.includes('api.openai.com') || url.includes('generativelanguage.googleapis.com'))).toBe(false);
+  root.remove();
+  localStorage.removeItem('arcturus-ai-settings');
 });
 
-test('round completion does not call provider', async () => {
+test('round completion does not make provider request', async () => {
+  localStorage.setItem('arcturus-ai-settings', JSON.stringify({
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: 'test-key',
+  }));
+  const { calls } = installFetch({ settlement: makeResponse(200, { balance: 950, duplicate: false }) });
+  const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-ai', initialBalance: 1000 });
   initBlackjackClient();
-  await finishOneRound();
-  expect(mockGenerateAiJson).not.toHaveBeenCalled();
+  await flush(5);
+  clickDeal();
+  await flush(2);
+  clickStand();
+  await flush(15);
+  expect(calls.some(({ url }) => url.includes('api.openai.com') || url.includes('generativelanguage.googleapis.com'))).toBe(false);
+  root.remove();
+  localStorage.removeItem('arcturus-ai-settings');
 });
 ```
+
+- [ ] **Step 7: Verify and commit**
 
 Run: `bun test src/lib/blackjack && bunx playwright test e2e/blackjack-settings.spec.ts`
 
@@ -690,9 +736,9 @@ git commit -m "feat: make blackjack advice always local-first"
 - Consumes: `AiSettings`, `generateAiJson()`, `loadAiSettings()`.
 - Produces: existing `getCrapsAdvice()` with pure bet aggregation and no Astro advice route.
 
-- [ ] **Step 1: Move `aggregateBets()` into Craps strategy and preserve its existing pure tests**
+- [ ] **Step 1: Move `aggregateBets()` into Craps strategy and preserve its pure tests**
 
-Keep the same grouping rule: same bet type + point combine `amount` and `odds`; different points/types remain separate. Remove route auth/DB/body-hardening tests because the route is deleted.
+Keep the existing grouping rule: same bet type + point combine `amount` and `odds`; different points/types remain separate. Remove route auth/DB/body-hardening tests because that boundary disappears.
 
 - [ ] **Step 2: Replace Craps provider calls with shared JSON client**
 
@@ -712,7 +758,7 @@ export async function getCrapsAdvice(ctx: CrapsAdviceContext, settings: AiSettin
 
 Delete Craps-local provider functions, `LLMSettings`, and the 8-second timeout.
 
-- [ ] **Step 3: Call the strategy directly from `craps.astro`, then delete the route**
+- [ ] **Step 3: Call strategy directly from `craps.astro`, then delete the route**
 
 ```ts
 llmAdviceBtn.addEventListener('click', async () => {
@@ -741,7 +787,7 @@ llmAdviceBtn.addEventListener('click', async () => {
 });
 ```
 
-Delete `src/pages/api/craps-advice.ts` and `src/lib/craps/craps-advice-validation.test.ts` after this caller change in the same task.
+Delete `src/pages/api/craps-advice.ts` and `src/lib/craps/craps-advice-validation.test.ts` after the caller change in the same task.
 
 - [ ] **Step 4: Verify and commit**
 
@@ -781,28 +827,9 @@ git commit -m "refactor: call craps AI from browser"
 
 - [ ] **Step 1: Add failing shared-client seam tests**
 
-```ts
-mockGenerateAiJson.mockResolvedValue({
-  ok: true,
-  value: { advice: 'Banker has the lowest standard house edge.', suggestedBets: ['banker'], confidence: 'high' },
-});
-expect((await getBaccaratAdvice(context, AI_SETTINGS)).suggestedBets).toEqual(['banker']);
-```
-
-```ts
-mockGenerateAiJson.mockResolvedValue({
-  ok: false,
-  code: 'provider-error',
-  message: 'Provider request failed (500)',
-});
-const decision = await makeLLMDecision(context, 'tight-aggressive', AI_SETTINGS);
-expect(['fold', 'check', 'call', 'raise']).toContain(decision.action);
-expect(decision.reasoning).toContain('fallback');
-```
+For Baccarat, add a fixture that stubs the shared JSON result to `{ advice, suggestedBets: ['banker'], confidence: 'high' }` and asserts `getBaccaratAdvice()` preserves those validated fields. For Poker, change the existing provider-error test to stub the shared result as `{ ok: false, code: 'provider-error', message: 'Provider request failed (500)' }` and assert the existing rule-based fallback action/reasoning still returns.
 
 - [ ] **Step 2: Migrate Baccarat transport only**
-
-Keep Baccarat prompt/payload validation; replace private provider calls with:
 
 ```ts
 const result = await generateAiJson(settings, {
@@ -815,7 +842,7 @@ if (!result.ok) throw new Error(result.message);
 return parseBaccaratPayload(result.value);
 ```
 
-Do not add Baccarat UI.
+Keep Baccarat prompt/payload validation. Do not add UI.
 
 - [ ] **Step 3: Migrate Poker LLM opponents without changing `DecisionCache`**
 
@@ -838,7 +865,6 @@ Keep cache key/TTL/clear behavior unchanged.
 - [ ] **Step 4: Migrate Poker AI Rival and PokerGame settings lookup**
 
 ```ts
-// AIRivalAssistant.ts
 private hydrateFromLocalSettings(): void {
   this.aiSettings = loadAiSettings();
   this.setButtonState({ disabled: !this.aiSettings });
@@ -846,7 +872,7 @@ private hydrateFromLocalSettings(): void {
 }
 ```
 
-Use `generateAiJson()` in AIRivalAssistant but keep `parseAiMove()` and highlighting local. Replace PokerGame’s profile-settings fetch with `loadAiSettings()`. Keep guests provider-disabled/rule-based.
+Use `generateAiJson()` in AIRivalAssistant but keep `parseAiMove()`/highlighting local. Replace PokerGame’s profile-settings fetch with `loadAiSettings()`. Keep guests provider-disabled/rule-based.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -892,18 +918,18 @@ rg "/api/profile/llm-settings|/api/profile/reveal-api-key|getLlmSettings|upsertL
 
 Expected: no Profile/Blackjack/Poker/Craps caller remains. Matches may exist only in the legacy helper/routes/tests deleted below.
 
-- [ ] **Step 2: Remove `llmSettings` from `src/db/schema.ts` and generate the drop migration**
+- [ ] **Step 2: Remove `llmSettings` from the schema and generate the drop migration**
 
-Delete the `llmSettings` table declaration, then run:
+Delete the table declaration, then run:
 
 ```bash
 bunx drizzle-kit generate --name=drop_llm_settings
 cat drizzle/0017_drop_llm_settings.sql
 ```
 
-Expected: `drizzle/0017_drop_llm_settings.sql` removes `llm_settings` and contains no unrelated schema changes. Keep any metadata files generated by Drizzle Kit unedited.
+Expected: `drizzle/0017_drop_llm_settings.sql` removes `llm_settings` and has no unrelated schema changes. Keep any generated Drizzle metadata unedited.
 
-- [ ] **Step 3: Delete the dead repository/API files**
+- [ ] **Step 3: Delete dead repository/API files**
 
 ```bash
 rm src/lib/llm-settings.ts \
@@ -913,9 +939,9 @@ rm src/lib/llm-settings.ts \
    src/pages/api/profile/reveal-api-key.ts
 ```
 
-Do not edit or delete historical migration files.
+Do not edit/delete historical migrations.
 
-- [ ] **Step 4: Verify active references are gone while migration history is allowed to mention the table**
+- [ ] **Step 4: Verify active references are gone while history may mention the table**
 
 Run:
 
@@ -927,7 +953,7 @@ rg "llm_settings" drizzle
 
 Expected: first two scans have zero matches. The `drizzle` scan may show historical creation plus `0017_drop_llm_settings.sql`.
 
-- [ ] **Step 5: Run tests/build and commit**
+- [ ] **Step 5: Verify and commit**
 
 Run: `bun run test && bun run build`
 
@@ -960,8 +986,6 @@ async function gotoBlackjack(page: Page) {
 }
 ```
 
-Delete the old settings-toggle steps from `gotoBlackjack()`.
-
 - [ ] **Step 2: Cover authenticated no-provider advice**
 
 ```ts
@@ -992,9 +1016,7 @@ test('no provider still receives local Blackjack advice', async ({ browser, base
 ```ts
 test('guest receives local advice and never calls provider', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-    provider: 'openai',
-    model: 'gpt-4o',
-    apiKey: 'stale-key',
+    provider: 'openai', model: 'gpt-4o', apiKey: 'stale-key',
   })));
   const providerRequests: string[] = [];
   page.on('request', (request) => {
@@ -1012,15 +1034,13 @@ test('guest receives local advice and never calls provider', async ({ page }) =>
 });
 ```
 
-This uses the default unauthenticated Playwright page instead of inventing a guest helper.
+The default Playwright page is unauthenticated, so no new guest helper is needed.
 
 - [ ] **Step 4: Cover configured explicit-only provider use and failure fallback**
 
 ```ts
 await page.addInitScript(() => localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-  provider: 'openai',
-  model: 'gpt-4o',
-  apiKey: 'sk-fake',
+  provider: 'openai', model: 'gpt-4o', apiKey: 'sk-fake',
 })));
 let calls = 0;
 await page.route('https://api.openai.com/**', async (route) => {
@@ -1041,7 +1061,7 @@ await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({ time
 expect(calls).toBe(1);
 ```
 
-Change the current provider-failure test to assert deterministic recommendation/reasoning stays visible. Delete the post-round commentary E2E.
+Change the current provider-failure test to assert deterministic recommendation/reasoning remains visible. Delete the post-round commentary E2E.
 
 - [ ] **Step 5: Run architecture scans**
 
@@ -1055,8 +1075,6 @@ Expected: provider URLs only in `src/lib/ai/client.ts`; other scans have zero ac
 
 - [ ] **Step 6: Run full code-quality gates**
 
-Run:
-
 ```bash
 bun run test
 bun run lint
@@ -1068,8 +1086,6 @@ Expected: PASS.
 
 - [ ] **Step 7: Run representative E2E gates**
 
-Run:
-
 ```bash
 bunx playwright test \
   e2e/blackjack-settings.spec.ts \
@@ -1080,7 +1096,7 @@ bunx playwright test \
 
 Expected: PASS.
 
-- [ ] **Step 8: Review the final diff and leave verification clean**
+- [ ] **Step 8: Review final diff and leave verification clean**
 
 ```bash
 git diff --stat main...HEAD

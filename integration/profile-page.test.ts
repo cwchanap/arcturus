@@ -15,22 +15,6 @@ vi.mock('../src/lib/game-stats/player-statistics', async (importOriginal) => {
 	};
 });
 
-vi.mock('../src/lib/llm-settings', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('../src/lib/llm-settings')>();
-
-	return {
-		...actual,
-		getLlmSettings: vi.fn(async () => ({
-			provider: 'openai',
-			model: 'gpt-4o',
-			openaiApiKey: null,
-			geminiApiKey: null,
-			createdAt: new Date(0),
-			updatedAt: new Date(0),
-		})),
-	};
-});
-
 vi.mock('../src/lib/achievements/achievements', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('../src/lib/achievements/achievements')>();
 
@@ -41,6 +25,13 @@ vi.mock('../src/lib/achievements/achievements', async (importOriginal) => {
 });
 
 const now = new Date('2026-07-30T00:00:00.000Z');
+const d1Queries: string[] = [];
+const dbBinding = {
+	prepare(sql: string) {
+		d1Queries.push(sql);
+		throw new Error(`Unexpected Profile D1 query: ${sql}`);
+	},
+} as unknown as D1Database;
 const user = {
 	id: 'profile-statistics-integration-user',
 	name: 'Integration Player',
@@ -55,7 +46,7 @@ const user = {
 const locals = {
 	runtime: {
 		env: {
-			DB: {},
+			DB: dbBinding,
 		},
 	},
 	session: {
@@ -79,6 +70,7 @@ function normalizedText(element: Element | null): string {
 describe('profile route statistics failure isolation', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		d1Queries.length = 0;
 	});
 
 	test('renders only the unavailable statistics state while the rest of the profile remains intact', async () => {
@@ -112,6 +104,9 @@ describe('profile route statistics failure isolation', () => {
 			expect(profileText).toContain('Account Details');
 			expect(profileText).toContain('Casino Tips');
 			expect(profileText).toContain('AI Rival Settings');
+			expect(profileText).toContain('stored in this browser only');
+			expect(window.document.querySelector('[data-initial-settings]')).toBeNull();
+			expect(d1Queries.some((sql) => /llm_settings/i.test(sql))).toBe(false);
 		} finally {
 			consoleError.mockRestore();
 		}

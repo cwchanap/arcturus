@@ -169,115 +169,107 @@ describe('AIRivalAssistant - Response Parsing', () => {
 		assistant = new AIRivalAssistant();
 	});
 
-	test('parses valid JSON fold response', () => {
+	test('parses a shared-client fold record', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"fold"}';
+		const response = { move: 'fold' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('fold');
 		expect(move.amount).toBeNull();
-		expect(move.raw).toBe(response);
+		expect(move.raw).toBe(JSON.stringify(response));
 	});
 
-	test('parses valid JSON check response', () => {
+	test('parses a shared-client check record', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"check"}';
+		const response = { move: 'check' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('check');
 		expect(move.amount).toBeNull();
 	});
 
-	test('parses valid JSON call response', () => {
+	test('parses a shared-client call record', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"call"}';
+		const response = { move: 'call' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('call');
 		expect(move.amount).toBeNull();
 	});
 
-	test('parses valid JSON raise response with amount', () => {
+	test('parses a shared-client raise record with amount', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"raise","amount":50}';
+		const response = { move: 'raise', amount: 50 };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
 		expect(move.amount).toBe(50);
 	});
 
-	test('extracts JSON from markdown code block', () => {
+	test('uses the already-parsed record without a JSON extraction shim', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '```json\n{"move":"raise","amount":75}\n```';
+		const response = { move: 'raise', amount: 75, explanation: 'raise after the flop' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
 		expect(move.amount).toBe(75);
 	});
 
-	test('extracts JSON from text with surrounding content', () => {
+	test('defaults invalid move values to check', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = 'Based on your hand, I recommend: {"move":"call"} which is the best play.';
+		const response = { move: 'all-in' };
 		const move = parseAiMove(response);
 
-		expect(move.move).toBe('call');
+		expect(move.move).toBe('check');
 	});
 
 	test('handles case-insensitive move types', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"RAISE","amount":100}';
+		const response = { move: 'RAISE', amount: 100 };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
 		expect(move.amount).toBe(100);
 	});
 
-	test('falls back to heuristic parsing when JSON invalid', () => {
+	test('defaults missing move values to check', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = 'I think you should fold this hand.';
-		const move = parseAiMove(response);
-
-		expect(move.move).toBe('fold');
-	});
-
-	test('defaults to check when no move detected', () => {
-		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = 'This is a difficult situation to analyze.';
+		const response = { explanation: 'No recommendation was returned.' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('check');
 	});
 
-	test('extracts amount from text for raise without JSON amount', () => {
+	test('leaves a missing raise amount null', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"raise"} I suggest raising to 120 chips.';
-		const move = parseAiMove(response);
-
-		expect(move.move).toBe('raise');
-		expect(move.amount).toBe(120);
-	});
-
-	test('handles null amount in JSON', () => {
-		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"raise","amount":null}';
+		const response = { move: 'raise' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
 		expect(move.amount).toBeNull();
 	});
 
-	test('handles string amount in JSON by converting to number', () => {
+	test('handles null amount in a shared-client record', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"raise","amount":"85"}';
+		const response = { move: 'raise', amount: null };
+		const move = parseAiMove(response);
+
+		expect(move.move).toBe('raise');
+		expect(move.amount).toBeNull();
+	});
+
+	test('converts a string amount in a shared-client record', () => {
+		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
+		const response = { move: 'raise', amount: '85' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
 		expect(move.amount).toBe(85);
 	});
 
-	test('handles NaN amount gracefully', () => {
+	test('handles an invalid amount gracefully', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"raise","amount":"invalid"}';
+		const response = { move: 'raise', amount: 'invalid' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
@@ -446,7 +438,7 @@ describe('AIRivalAssistant - Integration Logic', () => {
 
 	test('parsing fold recommendation works end-to-end', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{"move":"fold"}';
+		const response = { move: 'fold' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('fold');
@@ -457,7 +449,7 @@ describe('AIRivalAssistant - Integration Logic', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
 		const clampRaise = (assistant as any).clampRaise.bind(assistant);
 
-		const response = '{"move":"raise","amount":2000}';
+		const response = { move: 'raise', amount: 2000 };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
@@ -469,7 +461,7 @@ describe('AIRivalAssistant - Integration Logic', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
 		const clampRaise = (assistant as any).clampRaise.bind(assistant);
 
-		const response = '{"move":"raise","amount":3}';
+		const response = { move: 'raise', amount: 3 };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('raise');
@@ -477,20 +469,17 @@ describe('AIRivalAssistant - Integration Logic', () => {
 		expect(clamped).toBe(10); // Min clamped
 	});
 
-	test('handles malformed JSON gracefully', () => {
+	test('handles a malformed move value gracefully', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = '{move:raise,amount:50}'; // Invalid JSON (no quotes)
+		const response = { move: { action: 'raise' }, amount: 50 };
 		const move = parseAiMove(response);
 
-		// Should fall back to heuristic parsing
-		expect(move.move).toBe('raise');
+		expect(move.move).toBe('check');
 	});
 
-	test('extracts move from verbose LLM response', () => {
+	test('ignores non-move fields in the shared-client record', () => {
 		const parseAiMove = (assistant as any).parseAiMove.bind(assistant);
-		const response = `Based on your position and the pot odds, I strongly recommend that you call this bet. 
-		Here's the recommendation in JSON format: {"move":"call"} 
-		This gives you the best chance of seeing the next card.`;
+		const response = { move: 'call', explanation: 'Call this bet.' };
 		const move = parseAiMove(response);
 
 		expect(move.move).toBe('call');

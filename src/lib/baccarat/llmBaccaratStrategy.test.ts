@@ -55,4 +55,25 @@ describe('getBaccaratAdvice', () => {
 			'Provider returned no valid JSON object',
 		);
 	});
+
+	test('filters invalid suggested bet values from a parsed provider response', async () => {
+		globalThis.fetch = async () =>
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"advice":"Prefer the banker bet.","suggestedBets":["banker","invalid"],"confidence":"medium"}',
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			);
+
+		const result = await getBaccaratAdvice(context, settings);
+
+		expect(result.suggestedBets).toEqual(['banker']);
+	});
 });

@@ -170,68 +170,37 @@ Keep the JSON as the only output.`;
 
 	// === Response Parsing ===
 
-	private parseAiMove(raw: string): AiMove {
-		const source = typeof raw === 'string' ? raw.trim() : '';
-		let payload = source;
-
-		const jsonMatch = source.match(/\{[\s\S]*\}/);
-		if (jsonMatch) {
-			payload = jsonMatch[0];
-		}
-
-		let parsed: Record<string, unknown> | null = null;
-
-		try {
-			parsed = JSON.parse(payload);
-		} catch (_error) {
-			// ignore parse error and fallback to heuristics
-		}
-
+	private parseAiMove(payload: Record<string, unknown>): AiMove {
 		let move: AiMoveType | null = null;
 		let amount: number | null = null;
 
-		if (parsed && typeof parsed === 'object') {
-			const rawMove = parsed.move;
-			if (typeof rawMove === 'string') {
-				const normalized = rawMove.toLowerCase();
-				if (
-					normalized === 'fold' ||
-					normalized === 'check' ||
-					normalized === 'call' ||
-					normalized === 'raise'
-				) {
-					move = normalized;
-				}
-			}
-
-			const rawAmount = parsed.amount;
-			if (rawAmount !== undefined && rawAmount !== null) {
-				const attempt = Number(rawAmount);
-				if (!Number.isNaN(attempt)) {
-					amount = attempt;
-				}
+		const rawMove = payload.move;
+		if (typeof rawMove === 'string') {
+			const normalized = rawMove.toLowerCase();
+			if (
+				normalized === 'fold' ||
+				normalized === 'check' ||
+				normalized === 'call' ||
+				normalized === 'raise'
+			) {
+				move = normalized;
 			}
 		}
 
-		if (!move) {
-			if (/fold/i.test(source)) move = 'fold';
-			else if (/check/i.test(source)) move = 'check';
-			else if (/call/i.test(source)) move = 'call';
-			else if (/raise/i.test(source)) move = 'raise';
-			else move = 'check';
-		}
-
-		if (move === 'raise' && (amount === null || Number.isNaN(amount))) {
-			const amountMatch = source.match(/(\d{2,4})/);
-			if (amountMatch) {
-				amount = Number(amountMatch[1]);
+		const rawAmount = payload.amount;
+		if (rawAmount !== undefined && rawAmount !== null) {
+			const attempt = Number(rawAmount);
+			if (Number.isFinite(attempt)) {
+				amount = attempt;
 			}
 		}
+
+		const validatedMove = move ?? 'check';
 
 		return {
-			move,
+			move: validatedMove,
 			amount: Number.isFinite(amount) ? amount : null,
-			raw: source,
+			raw: JSON.stringify(payload),
 		};
 	}
 
@@ -326,7 +295,7 @@ Keep the JSON as the only output.`;
 			});
 			if (!result.ok) throw new Error(result.message);
 
-			const move = this.parseAiMove(JSON.stringify(result.value));
+			const move = this.parseAiMove(result.value);
 			this.applyAiMove(move, updateGameStatusCallback);
 
 			const stillHasKey = Boolean(this.getAiKey(this.aiSettings));

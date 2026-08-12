@@ -21,6 +21,12 @@ export interface BaccaratAdvice {
 	raw: string;
 }
 
+const VALID_BET_TYPES = new Set<BetType>(['player', 'banker', 'tie', 'playerPair', 'bankerPair']);
+
+function isBetType(value: unknown): value is BetType {
+	return typeof value === 'string' && VALID_BET_TYPES.has(value as BetType);
+}
+
 /**
  * Format history for display in prompt
  */
@@ -123,12 +129,13 @@ Provide advice in this JSON format:
 function parseBaccaratPayload(payload: Record<string, unknown>): BaccaratAdvice {
 	const raw = JSON.stringify(payload);
 	const confidence = payload.confidence;
+	const suggestedBets = Array.isArray(payload.suggestedBets)
+		? payload.suggestedBets.filter(isBetType)
+		: [];
 
 	return {
 		advice: typeof payload.advice === 'string' ? payload.advice : raw,
-		suggestedBets: Array.isArray(payload.suggestedBets)
-			? (payload.suggestedBets as BetType[])
-			: ['banker'],
+		suggestedBets: suggestedBets.length > 0 ? suggestedBets : ['banker'],
 		confidence:
 			confidence === 'low' || confidence === 'medium' || confidence === 'high'
 				? confidence

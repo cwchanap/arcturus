@@ -1,14 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { llmSettings } from '../db/schema';
 import type { Database } from './db';
-
-export const AI_PROVIDERS = ['openai', 'gemini'] as const;
-export type AiProvider = (typeof AI_PROVIDERS)[number];
-
-export const AI_MODELS: Record<AiProvider, readonly string[]> = {
-	openai: ['gpt-4o'],
-	gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-} as const;
+export { AI_MODELS, AI_PROVIDERS, isValidModel, isValidProvider } from './ai/settings';
+export type { AiProvider } from './ai/types';
+import type { AiProvider } from './ai/types';
 
 export interface LlmSettingsInput {
 	provider: AiProvider;
@@ -103,12 +98,4 @@ export async function upsertLlmSettings(db: Database, userId: string, input: Llm
 				updatedAt: now,
 			},
 		});
-}
-
-export function isValidProvider(provider: string): provider is AiProvider {
-	return AI_PROVIDERS.includes(provider as AiProvider);
-}
-
-export function isValidModel(provider: AiProvider, model: string): boolean {
-	return AI_MODELS[provider]?.includes(model) ?? false;
 }

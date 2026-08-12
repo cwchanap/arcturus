@@ -790,8 +790,19 @@ const clientUserId = gameSession.clientUserId;
 
 		function persistSession() {
 			const state = game.getState();
-			if (state.activeBets.length === 0 && state.phase === 'come-out' && state.point === null) {
+			const isEmpty =
+				state.activeBets.length === 0 && state.phase === 'come-out' && state.point === null;
+			if (isEmpty) {
 				localStorage.removeItem(persistedSessionKey);
+				persistGuestBalance();
+				return;
+			}
+			if (!isGuestMode) {
+				// Authenticated users rely on the server-authoritative wallet balance
+				// rendered into the page. Persisting local table state would let a
+				// committed-but-unadopted settlement resurface after a refresh and be
+				// rolled/settled a second time under a new settlement id. Guests have
+				// no server to reconcile against, so their full state is persisted.
 				persistGuestBalance();
 				return;
 			}
@@ -921,6 +932,19 @@ const clientUserId = gameSession.clientUserId;
 		});
 
 		function restoreSession() {
+			if (!isGuestMode) {
+				// Authenticated sessions start from the server-rendered wallet balance.
+				// Any locally persisted table state is discarded to prevent a
+				// committed-but-unadopted settlement from being re-rolled and settled
+				// a second time after a refresh. Guests have no server to reconcile
+				// against, so their full state is restored from localStorage.
+				try {
+					localStorage.removeItem(persistedSessionKey);
+				} catch (err) {
+					console.error('[CRAPS] Failed to clear stale session on restore:', err);
+				}
+				return;
+			}
 			let raw: string | null;
 			try {
 				raw = localStorage.getItem(persistedSessionKey);
@@ -934,26 +958,6 @@ const clientUserId = gameSession.clientUserId;
 				if (!parsed.gameState || !game.restoreState(parsed.gameState)) {
 					localStorage.removeItem(persistedSessionKey);
 					return;
-				}
-				if (!isGuestMode) {
-					// Reconcile restored bets against the server-authoritative initialBalance.
-					// Bets placed since the last synced roll are at risk but not yet deducted
-					// server-side, so subtract getTotalAtRisk() from the server balance to get the
-					// true available chip count. If the result is negative the session is invalid.
-					const totalAtRisk = game.getTotalAtRisk();
-					let reconciledBalance: number;
-					try {
-						reconciledBalance = getAvailableCrapsBalance(initialBalance, totalAtRisk);
-					} catch {
-						console.warn(
-							'[CRAPS] Restored session has more chips at risk than server balance allows; clearing.',
-						);
-						localStorage.removeItem(persistedSessionKey);
-						game.reset(initialBalance);
-						return;
-					}
-					game.setBalance(reconciledBalance);
-					serverSyncedBalance = initialBalance;
 				}
 				if (
 					typeof parsed.selectedChipAmount === 'number' &&

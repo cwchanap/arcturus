@@ -197,26 +197,13 @@ describe('PokerGame Core Logic', () => {
 			key: () => null,
 			length: 0,
 		};
-		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
-			async (input: string | URL | Request) => {
-				const url =
-					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-
-				if (url === '/api/profile/llm-settings') {
-					return {
-						ok: true,
-						status: 200,
-						json: async () => ({ settings: null }),
-					};
-				}
-
-				return {
-					ok: true,
-					status: 200,
-					json: async () => ({ balance: 500 }),
-				};
-			},
-		) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 500 }),
+			};
+		}) as unknown as typeof fetch;
 	});
 
 	describe('Player management', () => {
@@ -1013,14 +1000,6 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			const url =
 				typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
-			if (url === '/api/profile/llm-settings') {
-				return {
-					ok: true,
-					status: 200,
-					json: async () => ({ settings: null }),
-				};
-			}
-
 			chipUpdateBodies.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
 			return {
 				ok: true,
@@ -1248,16 +1227,9 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			key: () => null,
 			length: 0,
 		};
-		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
-			async (input: string | URL | Request) => {
-				const url =
-					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-				if (url === '/api/profile/llm-settings') {
-					return { ok: true, status: 200, json: async () => ({ settings: null }) };
-				}
-				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
-			},
-		) as unknown as typeof fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => {
+			return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+		}) as unknown as typeof fetch;
 	});
 
 	test('getLLMSettings returns null in guest mode without fetching', async () => {
@@ -1299,10 +1271,46 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			expect(game.isGuestMode).toBe(true);
 			const result = await game.getLLMSettings();
 			expect(result).toBeNull();
-			expect(fetchCalls).not.toContain('/api/profile/llm-settings');
+			expect(fetchCalls).toEqual([]);
 		} finally {
 			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
 		}
+	});
+
+	test('getLLMSettings reads browser-local settings without profile fetches', async () => {
+		const storage = new Map<string, string>();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => storage.set(key, value),
+			removeItem: (key: string) => storage.delete(key),
+			clear: () => storage.clear(),
+			key: (index: number) => Array.from(storage.keys())[index] ?? null,
+			get length() {
+				return storage.size;
+			},
+		};
+		localStorage.setItem(
+			'arcturus-ai-settings',
+			JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' }),
+		);
+
+		const fetchCalls: string[] = [];
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				fetchCalls.push(url);
+				return { ok: true, status: 200, json: async () => ({ settings: null }) };
+			},
+		) as unknown as typeof fetch;
+
+		const game = new PokerGame() as unknown as {
+			getLLMSettings: () => Promise<unknown>;
+		};
+		const result = await game.getLLMSettings();
+
+		expect(result).toEqual({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' });
+		expect(fetchCalls).toEqual([]);
 	});
 
 	test('formatShowdownMessage covers single winner, tie, empty, and multi-tier cases', () => {

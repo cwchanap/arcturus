@@ -4,13 +4,7 @@
  */
 
 import type { RoundOutcome, BetType } from './types';
-import { fetchWithTimeout } from '../fetch-with-timeout';
-
-export interface LLMSettings {
-	provider: 'openai' | 'gemini';
-	apiKey: string;
-	model: string;
-}
+import { generateAiJson, type AiSettings } from '../ai';
 
 export interface BaccaratAdviceContext {
 	roundHistory: RoundOutcome[];
@@ -26,8 +20,6 @@ export interface BaccaratAdvice {
 	confidence: 'low' | 'medium' | 'high';
 	raw: string;
 }
-
-const DEFAULT_TIMEOUT = 5000; // 5 seconds
 
 /**
  * Format history for display in prompt
@@ -126,135 +118,23 @@ Provide advice in this JSON format:
 }
 
 /**
- * Call OpenAI API
+ * Parse the shared client's structured response into Baccarat advice.
  */
-async function callOpenAI(
-	systemPrompt: string,
-	userPrompt: string,
-	model: string,
-	apiKey: string,
-): Promise<string> {
-	try {
-		const response = await fetchWithTimeout(
-			'https://api.openai.com/v1/chat/completions',
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${apiKey}`,
-				},
-				body: JSON.stringify({
-					model,
-					messages: [
-						{ role: 'system', content: systemPrompt },
-						{ role: 'user', content: userPrompt },
-					],
-					temperature: 0.7,
-					max_tokens: 300,
-				}),
-			},
-			DEFAULT_TIMEOUT,
-		);
+function parseBaccaratPayload(payload: Record<string, unknown>): BaccaratAdvice {
+	const raw = JSON.stringify(payload);
+	const confidence = payload.confidence;
 
-		if (!response.ok) {
-			const error = await response.text();
-			throw new Error(`OpenAI API error: ${response.status} - ${error}`);
-		}
-
-		const data = (await response.json()) as {
-			choices?: Array<{ message?: { content?: string } }>;
-		};
-		return data.choices?.[0]?.message?.content || '';
-	} catch (error) {
-		if (error instanceof Error && error.name === 'AbortError') {
-			throw new Error('Request timed out');
-		}
-		throw error;
-	}
-}
-
-/**
- * Call Gemini API
- */
-async function callGemini(
-	systemPrompt: string,
-	userPrompt: string,
-	model: string,
-	apiKey: string,
-): Promise<string> {
-	try {
-		const response = await fetchWithTimeout(
-			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-			{
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					contents: [
-						{
-							parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-						},
-					],
-					generationConfig: {
-						temperature: 0.7,
-						maxOutputTokens: 300,
-					},
-				}),
-			},
-			DEFAULT_TIMEOUT,
-		);
-
-		if (!response.ok) {
-			const error = await response.text();
-			throw new Error(`Gemini API error: ${response.status} - ${error}`);
-		}
-
-		const data = (await response.json()) as {
-			candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-		};
-		return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-	} catch (error) {
-		if (error instanceof Error && error.name === 'AbortError') {
-			throw new Error('Request timed out');
-		}
-		throw error;
-	}
-}
-
-/**
- * Parse LLM response into structured advice
- */
-function parseResponse(rawResponse: string): BaccaratAdvice {
-	// Try to extract JSON from response
-	const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-	if (!jsonMatch) {
-		return {
-			advice: rawResponse.trim(),
-			suggestedBets: ['banker'], // Default to lowest house edge
-			confidence: 'low',
-			raw: rawResponse,
-		};
-	}
-
-	try {
-		const parsed = JSON.parse(jsonMatch[0]);
-		return {
-			advice: parsed.advice || rawResponse.trim(),
-			suggestedBets: Array.isArray(parsed.suggestedBets) ? parsed.suggestedBets : ['banker'],
-			confidence: ['low', 'medium', 'high'].includes(parsed.confidence)
-				? parsed.confidence
+	return {
+		advice: typeof payload.advice === 'string' ? payload.advice : raw,
+		suggestedBets: Array.isArray(payload.suggestedBets)
+			? (payload.suggestedBets as BetType[])
+			: ['banker'],
+		confidence:
+			confidence === 'low' || confidence === 'medium' || confidence === 'high'
+				? confidence
 				: 'medium',
-			raw: rawResponse,
-		};
-	} catch {
-		return {
-			advice: rawResponse.trim(),
-			suggestedBets: ['banker'],
-			confidence: 'low',
-			raw: rawResponse,
-		};
-	}
+		raw,
+	};
 }
 
 /**
@@ -262,26 +142,20 @@ function parseResponse(rawResponse: string): BaccaratAdvice {
  */
 export async function getBaccaratAdvice(
 	context: BaccaratAdviceContext,
-	settings: LLMSettings,
+	settings: AiSettings,
 ): Promise<BaccaratAdvice> {
 	if (!settings.apiKey) {
 		throw new Error('API key not configured');
 	}
 
-	const systemPrompt = buildSystemPrompt();
-	const userPrompt = buildPrompt(context);
-
-	let rawResponse: string;
-
-	if (settings.provider === 'openai') {
-		rawResponse = await callOpenAI(systemPrompt, userPrompt, settings.model, settings.apiKey);
-	} else if (settings.provider === 'gemini') {
-		rawResponse = await callGemini(systemPrompt, userPrompt, settings.model, settings.apiKey);
-	} else {
-		throw new Error(`Unsupported provider: ${settings.provider}`);
-	}
-
-	return parseResponse(rawResponse);
+	const result = await generateAiJson(settings, {
+		system: buildSystemPrompt(),
+		prompt: buildPrompt(context),
+		temperature: 0.7,
+		maxOutputTokens: 300,
+	});
+	if (!result.ok) throw new Error(result.message);
+	return parseBaccaratPayload(result.value);
 }
 
 /**

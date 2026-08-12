@@ -8,13 +8,7 @@ import { getSuitSymbol } from '../card-format';
 import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStrategy';
 import { DEFAULT_AI_DIFFICULTY, type AIDifficulty } from './aiDifficulty';
 import { getHighestBet, getCallAmount } from './player';
-import { fetchWithTimeout } from '../fetch-with-timeout';
-
-export interface LLMSettings {
-	provider: 'openai' | 'gemini';
-	apiKey: string;
-	model: string;
-}
+import { generateAiJson, type AiSettings } from '../ai';
 
 /**
  * Cache for LLM decisions to reduce API calls
@@ -122,113 +116,40 @@ Make your decision now:`;
 }
 
 /**
- * Call OpenAI API
+ * Parse an already-structured shared-client response into AIDecision.
  */
-async function callOpenAI(prompt: string, model: string, apiKey: string): Promise<string> {
-	const response = await fetchWithTimeout(
-		'https://api.openai.com/v1/chat/completions',
-		{
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				authorization: `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({
-				model,
-				messages: [
-					{
-						role: 'system',
-						content: 'You are an expert poker AI. Respond only with valid JSON.',
-					},
-					{ role: 'user', content: prompt },
-				],
-				temperature: 0.7,
-				max_tokens: 100,
-			}),
-		},
-		5000, // 5 second timeout
-	);
+function parseLLMPayload(
+	payload: Record<string, unknown>,
+	context: GameContext,
+): AIDecision | null {
+	const rawAction = payload.action;
+	const action = typeof rawAction === 'string' ? rawAction.toLowerCase() : '';
+	if (!['fold', 'check', 'call', 'raise'].includes(action)) return null;
 
-	if (!response.ok) {
-		throw new Error(`OpenAI API error: ${response.status}`);
+	let amount = 0;
+	if (action === 'raise') {
+		const requested = typeof payload.amount === 'number' ? Math.round(payload.amount) : 0;
+		const minRaise = Math.max(context.minimumBet, 10);
+		amount = Math.max(minRaise, Math.min(requested, context.player.chips, 200));
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const data = (await response.json()) as any;
-	return data?.choices?.[0]?.message?.content ?? '';
+	return {
+		action: action as AIDecision['action'],
+		amount,
+		confidence: 0.8,
+		reasoning: `LLM decision: ${action}${action === 'raise' ? ` $${amount}` : ''}`,
+	};
 }
 
-/**
- * Call Gemini API
- */
-async function callGemini(prompt: string, model: string, apiKey: string): Promise<string> {
-	const response = await fetchWithTimeout(
-		`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-		{
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				generationConfig: { temperature: 0.7, maxOutputTokens: 100 },
-				contents: [
-					{
-						role: 'user',
-						parts: [{ text: prompt }],
-					},
-				],
-			}),
-		},
-		5000, // 5 second timeout
-	);
-
-	if (!response.ok) {
-		throw new Error(`Gemini API error: ${response.status}`);
-	}
-
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const data = (await response.json()) as any;
-	const text = data?.candidates?.[0]?.content?.parts
-		?.map((part: { text?: string }) => part.text ?? '')
-		.join('')
-		.trim();
-	return text || '';
-}
-
-/**
- * Parse LLM response into AIDecision
- */
-function parseLLMResponse(response: string, context: GameContext): AIDecision | null {
-	try {
-		// Extract JSON from response
-		const jsonMatch = response.match(/\{[\s\S]*\}/);
-		if (!jsonMatch) {
-			return null;
-		}
-
-		const parsed = JSON.parse(jsonMatch[0]);
-		const action = parsed.action?.toLowerCase();
-
-		if (!action || !['fold', 'check', 'call', 'raise'].includes(action)) {
-			return null;
-		}
-
-		let amount = 0;
-		if (action === 'raise') {
-			amount = typeof parsed.amount === 'number' ? Math.round(parsed.amount) : 0;
-			// Clamp raise amount to respect table minimum bet and max of player chips or 200
-			const minRaise = Math.max(context.minimumBet, 10);
-			amount = Math.max(minRaise, Math.min(amount, context.player.chips, 200));
-		}
-
-		return {
-			action: action as 'fold' | 'check' | 'call' | 'raise',
-			amount,
-			confidence: 0.8,
-			reasoning: `LLM decision: ${action}${action === 'raise' ? ` $${amount}` : ''}`,
-		};
-	} catch (error) {
-		console.error('Failed to parse LLM response:', error);
-		return null;
-	}
+function ruleBasedFallback(
+	context: GameContext,
+	personality: AIPersonality,
+	difficulty: AIDifficulty,
+	reason: string,
+): AIDecision {
+	const aiConfig = createAIConfig(personality, difficulty);
+	const decision = makeRuleBasedDecision(context, aiConfig);
+	return { ...decision, reasoning: `${decision.reasoning} (${reason})` };
 }
 
 /**
@@ -237,7 +158,7 @@ function parseLLMResponse(response: string, context: GameContext): AIDecision | 
 export async function makeLLMDecision(
 	context: GameContext,
 	personality: AIPersonality,
-	llmSettings: LLMSettings | null,
+	llmSettings: AiSettings | null,
 	difficulty: AIDifficulty = DEFAULT_AI_DIFFICULTY,
 ): Promise<AIDecision> {
 	// Check cache first
@@ -248,22 +169,21 @@ export async function makeLLMDecision(
 
 	// If no LLM settings, fall back to rule-based
 	if (!llmSettings) {
-		const aiConfig = createAIConfig(personality, difficulty);
-		const decision = makeRuleBasedDecision(context, aiConfig);
-		return { ...decision, reasoning: `${decision.reasoning} (rule-based fallback)` };
+		return ruleBasedFallback(context, personality, difficulty, 'rule-based fallback');
 	}
 
 	try {
-		const prompt = buildLLMPrompt(context, personality);
-		let response = '';
-
-		if (llmSettings.provider === 'openai') {
-			response = await callOpenAI(prompt, llmSettings.model, llmSettings.apiKey);
-		} else {
-			response = await callGemini(prompt, llmSettings.model, llmSettings.apiKey);
+		const result = await generateAiJson(llmSettings, {
+			system: 'You are an expert poker AI. Respond only with valid JSON.',
+			prompt: buildLLMPrompt(context, personality),
+			temperature: 0.7,
+			maxOutputTokens: 100,
+		});
+		if (!result.ok) {
+			return ruleBasedFallback(context, personality, difficulty, 'LLM error fallback');
 		}
 
-		const decision = parseLLMResponse(response, context);
+		const decision = parseLLMPayload(result.value, context);
 		if (decision) {
 			// Cache successful decision
 			decisionCache.set(context, decision);
@@ -271,15 +191,11 @@ export async function makeLLMDecision(
 		}
 
 		// Parse failed, fall back to rule-based
-		const aiConfig = createAIConfig(personality, difficulty);
-		const fallbackDecision = makeRuleBasedDecision(context, aiConfig);
-		return { ...fallbackDecision, reasoning: `${fallbackDecision.reasoning} (LLM parse failed)` };
+		return ruleBasedFallback(context, personality, difficulty, 'LLM parse failed');
 	} catch (error) {
 		console.error('LLM decision failed:', error);
 		// Fall back to rule-based on error
-		const aiConfig = createAIConfig(personality, difficulty);
-		const fallbackDecision = makeRuleBasedDecision(context, aiConfig);
-		return { ...fallbackDecision, reasoning: `${fallbackDecision.reasoning} (LLM error fallback)` };
+		return ruleBasedFallback(context, personality, difficulty, 'LLM error fallback');
 	}
 }
 

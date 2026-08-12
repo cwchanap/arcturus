@@ -27,6 +27,20 @@ function mockDocument() {
 	}
 }
 
+function setLocalAiSettings(): void {
+	(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+		getItem: (key: string) =>
+			key === 'arcturus-ai-settings'
+				? JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' })
+				: null,
+		setItem: () => {},
+		removeItem: () => {},
+		clear: () => {},
+		key: () => null,
+		length: 1,
+	};
+}
+
 // Helper to create a card
 function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
@@ -54,6 +68,30 @@ function player(
 		hasActed: false,
 	};
 }
+
+describe('AIRivalAssistant - browser-local settings', () => {
+	test('hydrates local settings without fetching profile-backed settings', async () => {
+		mockDocument();
+		setLocalAiSettings();
+		const calls: string[] = [];
+		globalThis.fetch = mock((input: string | URL | Request) => {
+			calls.push(typeof input === 'string' ? input : input.toString());
+			return Promise.reject(new Error('unexpected network request'));
+		}) as unknown as typeof fetch;
+
+		const assistant = new AIRivalAssistant() as unknown as {
+			aiSettings: { provider: string; model: string; apiKey: string } | null;
+		};
+		await Promise.resolve();
+
+		expect(assistant.aiSettings).toEqual({
+			provider: 'openai',
+			model: 'gpt-4o',
+			apiKey: 'sk-local',
+		});
+		expect(calls).toEqual([]);
+	});
+});
 
 describe('AIRivalAssistant - Prompt Building', () => {
 	let assistant: AIRivalAssistant;
@@ -299,258 +337,40 @@ describe('AIRivalAssistant - Raise Amount Clamping', () => {
 	});
 });
 
-describe('AIRivalAssistant - OpenAI API Call', () => {
-	let assistant: AIRivalAssistant;
-
-	beforeEach(() => {
+describe('AIRivalAssistant - shared AI client', () => {
+	test('requests a move through the shared client', async () => {
 		mockDocument();
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ settings: null }), {
+		setLocalAiSettings();
+		const calls: Array<{ url: string; init?: RequestInit }> = [];
+		globalThis.fetch = mock((input: string | URL | Request, init?: RequestInit) => {
+			calls.push({
+				url:
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
+				init,
+			});
+			return Promise.resolve(
+				new Response(JSON.stringify({ choices: [{ message: { content: '{"move":"call"}' } }] }), {
 					status: 200,
+					headers: { 'content-type': 'application/json' },
 				}),
-			),
-		);
-		assistant = new AIRivalAssistant();
-		// Reset global fetch mock
-		globalThis.fetch = mock(() => Promise.resolve(new Response()));
-	});
+			);
+		}) as unknown as typeof fetch;
 
-	test('constructs correct OpenAI API request', async () => {
-		const mockResponse = {
-			choices: [{ message: { content: '{"move":"call"}' } }],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
+		const assistant = new AIRivalAssistant();
+		const messages: string[] = [];
+		await assistant.requestAiMove(
+			'preflop',
+			player(0, 500, 0, [card('A', 'hearts', 14), card('K', 'spades', 13)]),
+			[],
+			15,
+			[player(0, 500, 0), player(1, 500, 10)],
+			(message) => messages.push(message),
 		);
 
-		const callOpenAi = (assistant as any).callOpenAi.bind(assistant);
-		await callOpenAi('test prompt', 'gpt-4o', 'test-key');
-
-		expect(fetch).toHaveBeenCalledTimes(1);
-		const call = (fetch as any).mock.calls[0];
-		expect(call[0]).toBe('https://api.openai.com/v1/chat/completions');
-		expect(call[1].method).toBe('POST');
-		expect(call[1].headers['authorization']).toBe('Bearer test-key');
-
-		const body = JSON.parse(call[1].body);
-		expect(body.model).toBe('gpt-4o');
-		expect(body.messages).toHaveLength(2);
-		expect(body.messages[0].role).toBe('system');
-		expect(body.messages[1].role).toBe('user');
-		expect(body.messages[1].content).toBe('test prompt');
-		expect(body.temperature).toBe(0.6);
-	});
-
-	test('extracts content from OpenAI response', async () => {
-		const mockResponse = {
-			choices: [{ message: { content: '{"move":"raise","amount":100}' } }],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callOpenAi = (assistant as any).callOpenAi.bind(assistant);
-		const result = await callOpenAi('test prompt', 'gpt-4o', 'test-key');
-
-		expect(result).toBe('{"move":"raise","amount":100}');
-	});
-
-	test('throws error on OpenAI API failure', async () => {
-		const mockError = {
-			error: { message: 'Invalid API key' },
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockError), {
-					status: 401,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callOpenAi = (assistant as any).callOpenAi.bind(assistant);
-
-		await expect(callOpenAi('test prompt', 'gpt-4o', 'bad-key')).rejects.toThrow('Invalid API key');
-	});
-
-	test('returns default response when content missing', async () => {
-		const mockResponse = {
-			choices: [],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callOpenAi = (assistant as any).callOpenAi.bind(assistant);
-		const result = await callOpenAi('test prompt', 'gpt-4o', 'test-key');
-
-		expect(result).toBe('{"move":"check","amount":null}');
-	});
-});
-
-describe('AIRivalAssistant - Gemini API Call', () => {
-	let assistant: AIRivalAssistant;
-
-	beforeEach(() => {
-		mockDocument();
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ settings: null }), {
-					status: 200,
-				}),
-			),
-		);
-		assistant = new AIRivalAssistant();
-		globalThis.fetch = mock(() => Promise.resolve(new Response()));
-	});
-
-	test('constructs correct Gemini API request', async () => {
-		const mockResponse = {
-			candidates: [
-				{
-					content: {
-						parts: [{ text: '{"move":"fold"}' }],
-					},
-				},
-			],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callGemini = (assistant as any).callGemini.bind(assistant);
-		await callGemini('test prompt', 'gemini-2.0-flash-exp', 'test-key');
-
-		expect(fetch).toHaveBeenCalledTimes(1);
-		const call = (fetch as any).mock.calls[0];
-		expect(call[0]).toContain('generativelanguage.googleapis.com');
-		expect(call[0]).toContain('gemini-2.0-flash-exp');
-		expect(call[0]).toContain('key=test-key');
-		expect(call[1].method).toBe('POST');
-
-		const body = JSON.parse(call[1].body);
-		expect(body.generationConfig.temperature).toBe(0.6);
-		expect(body.contents[0].role).toBe('user');
-		expect(body.contents[0].parts[0].text).toContain('test prompt');
-	});
-
-	test('extracts text from Gemini response', async () => {
-		const mockResponse = {
-			candidates: [
-				{
-					content: {
-						parts: [{ text: '{"move":"call"}' }],
-					},
-				},
-			],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callGemini = (assistant as any).callGemini.bind(assistant);
-		const result = await callGemini('test prompt', 'gemini-2.0-flash-exp', 'test-key');
-
-		expect(result).toBe('{"move":"call"}');
-	});
-
-	test('combines multiple text parts from Gemini', async () => {
-		const mockResponse = {
-			candidates: [
-				{
-					content: {
-						parts: [{ text: '{"move":' }, { text: '"raise","amount":50}' }],
-					},
-				},
-			],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callGemini = (assistant as any).callGemini.bind(assistant);
-		const result = await callGemini('test prompt', 'gemini-2.0-flash-exp', 'test-key');
-
-		expect(result).toBe('{"move":"raise","amount":50}');
-	});
-
-	test('throws error on Gemini API failure', async () => {
-		const mockError = {
-			error: { message: 'API key not valid' },
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockError), {
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callGemini = (assistant as any).callGemini.bind(assistant);
-
-		await expect(callGemini('test prompt', 'gemini-2.0-flash-exp', 'bad-key')).rejects.toThrow(
-			'API key not valid',
-		);
-	});
-
-	test('returns default response when text missing', async () => {
-		const mockResponse = {
-			candidates: [],
-		};
-
-		globalThis.fetch = mock(() =>
-			Promise.resolve(
-				new Response(JSON.stringify(mockResponse), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' },
-				}),
-			),
-		);
-
-		const callGemini = (assistant as any).callGemini.bind(assistant);
-		const result = await callGemini('test prompt', 'gemini-2.0-flash-exp', 'test-key');
-
-		expect(result).toBe('{"move":"check","amount":null}');
+		expect(calls).toHaveLength(1);
+		expect(new URL(calls[0].url).pathname).toBe('/v1/chat/completions');
+		expect(JSON.parse(String(calls[0].init?.body)).model).toBe('gpt-4o');
+		expect(messages[0]).toContain('call');
 	});
 });
 
@@ -575,8 +395,7 @@ describe('AIRivalAssistant - Settings Management', () => {
 		const settings = {
 			provider: 'openai' as const,
 			model: 'gpt-4o',
-			openaiApiKey: 'sk-test123',
-			geminiApiKey: null,
+			apiKey: 'sk-test123',
 		};
 
 		expect(getAiKey(settings)).toBe('sk-test123');
@@ -587,8 +406,7 @@ describe('AIRivalAssistant - Settings Management', () => {
 		const settings = {
 			provider: 'gemini' as const,
 			model: 'gemini-2.0-flash-exp',
-			openaiApiKey: null,
-			geminiApiKey: 'gem-test456',
+			apiKey: 'gem-test456',
 		};
 
 		expect(getAiKey(settings)).toBe('gem-test456');
@@ -599,8 +417,7 @@ describe('AIRivalAssistant - Settings Management', () => {
 		const settings = {
 			provider: 'openai' as const,
 			model: 'gpt-4o',
-			openaiApiKey: null,
-			geminiApiKey: 'gem-test',
+			apiKey: '',
 		};
 
 		expect(getAiKey(settings)).toBeNull();

@@ -33,6 +33,7 @@ import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager, isAIPersonality, isAISpeed } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
+import { loadAiSettings, type AiSettings } from '../ai';
 import {
 	DEFAULT_GUEST_GAME_BALANCE,
 	isGuestModeValue,
@@ -417,48 +418,15 @@ export class PokerGame {
 	}
 
 	/**
-	 * Get LLM settings from user profile for AI opponents
+	 * Get browser-local AI settings for automatic LLM opponents.
 	 * Returns null if not configured or LLM AI is disabled
 	 */
-	private async getLLMSettings(): Promise<{
-		provider: 'openai' | 'gemini';
-		apiKey: string;
-		model: string;
-	} | null> {
+	private async getLLMSettings(): Promise<AiSettings | null> {
 		if (this.isGuestMode) {
 			return null;
 		}
 
-		try {
-			const response = await fetch('/api/profile/llm-settings');
-			if (!response.ok) {
-				return null;
-			}
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const data = (await response.json()) as any;
-			const settings = data?.settings;
-			if (!settings || (settings.provider !== 'openai' && settings.provider !== 'gemini')) {
-				return null;
-			}
-
-			const apiKey = settings.provider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-
-			if (!apiKey || typeof apiKey !== 'string') {
-				return null;
-			}
-
-			// Use provider-specific default models
-			const defaultModel = settings.provider === 'openai' ? 'gpt-4o' : 'gemini-1.5-pro';
-
-			return {
-				provider: settings.provider,
-				apiKey,
-				model: typeof settings.model === 'string' ? settings.model : defaultModel,
-			};
-		} catch (error) {
-			console.error('Failed to load LLM settings:', error);
-			return null;
-		}
+		return loadAiSettings();
 	}
 
 	public async dealNewHand() {

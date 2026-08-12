@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { makeLLMDecision, clearLLMCache, type LLMSettings } from './llmAIStrategy';
+import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
+import type { AiSettings } from '../ai';
 import type { GameContext, Player, Card, BettingRound } from './types';
 
 // Helper to create a card
@@ -110,7 +111,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Network error');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -146,7 +147,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -160,7 +161,35 @@ describe('llmAIStrategy', () => {
 			const decision = await makeLLMDecision(context, 'loose-aggressive', llmSettings);
 
 			expect(decision.action).toBeDefined();
-			expect(decision.reasoning).toContain('LLM parse failed');
+			expect(decision.reasoning).toContain('LLM error fallback');
+		});
+
+		test('uses the shared-client error fallback for a non-object JSON response', async () => {
+			mockFetch(
+				async () =>
+					new Response(JSON.stringify({ choices: [{ message: { content: '[]' } }] }), {
+						status: 200,
+						headers: { 'content-type': 'application/json' },
+					}),
+			);
+
+			const llmSettings: AiSettings = {
+				provider: 'openai',
+				apiKey: 'test-key',
+				model: 'gpt-4o',
+			};
+			const context = createContext(
+				player(1, 1_000, 0, [card('7', 'clubs', 7), card('2', 'diamonds', 2)]),
+				[
+					player(0, 1_000, 0),
+					player(1, 1_000, 0, [card('7', 'clubs', 7), card('2', 'diamonds', 2)]),
+				],
+			);
+
+			const decision = await makeLLMDecision(context, 'tight-aggressive', llmSettings);
+
+			expect(decision.action).toBeDefined();
+			expect(decision.reasoning).toContain('LLM error fallback');
 		});
 	});
 
@@ -178,7 +207,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -214,7 +243,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-3.5-turbo',
@@ -247,7 +276,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -280,7 +309,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -313,7 +342,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -338,7 +367,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'invalid-key',
 				model: 'gpt-4',
@@ -370,7 +399,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'gemini',
 				apiKey: 'test-key',
 				model: 'gemini-pro',
@@ -402,7 +431,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'gemini',
 				apiKey: 'test-key',
 				model: 'gemini-pro',
@@ -433,7 +462,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'gemini',
 				apiKey: 'bad-key',
 				model: 'gemini-pro',
@@ -457,7 +486,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'gemini',
 				apiKey: 'test-key',
 				model: 'gemini-pro',
@@ -495,7 +524,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -528,7 +557,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -557,7 +586,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -590,7 +619,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -630,7 +659,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -667,7 +696,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -705,7 +734,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -749,7 +778,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',
@@ -784,7 +813,7 @@ describe('llmAIStrategy', () => {
 				throw new Error('Unexpected URL');
 			});
 
-			const llmSettings: LLMSettings = {
+			const llmSettings: AiSettings = {
 				provider: 'openai',
 				apiKey: 'test-key',
 				model: 'gpt-4',

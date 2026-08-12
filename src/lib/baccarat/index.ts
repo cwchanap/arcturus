@@ -92,7 +92,8 @@ export { BaccaratUIRenderer } from './BaccaratUIRenderer';
 
 // LLM integration
 export { getBaccaratAdvice, buildAdviceContext } from './llmBaccaratStrategy';
-export type { LLMSettings, BaccaratAdviceContext, BaccaratAdvice } from './llmBaccaratStrategy';
+export type { BaccaratAdviceContext, BaccaratAdvice } from './llmBaccaratStrategy';
+export type { AiSettings } from '../ai';
 
 // Settings management
 export { GameSettingsManager } from './GameSettingsManager';

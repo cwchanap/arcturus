@@ -10,8 +10,6 @@
  *  - gamesTried metadata deduplication works across calls
  *  - Null outcome short-circuits the whole function (no rows written)
  *
- * Pattern: see src/lib/roulette/spin-cascade.integration.test.ts for the
- * Miniflare + drizzle migration bootstrap.
  */
 
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';

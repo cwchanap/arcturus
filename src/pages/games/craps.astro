@@ -84,6 +84,28 @@ const clientUserId = gameSession.clientUserId;
 						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm">
 							Place your bets, then roll!
 						</div>
+						<div
+							id="settlement-recovery"
+							class="hidden mt-2 flex flex-wrap gap-2"
+							data-testid="settlement-recovery"
+						>
+							<button
+								id="btn-retry-settlement"
+								type="button"
+								class="btn-gold px-3 py-1 rounded text-xs font-bold"
+								data-testid="retry-settlement"
+							>
+								Retry settlement
+							</button>
+							<button
+								id="btn-reset-settlement"
+								type="button"
+								class="px-3 py-1 rounded text-xs border border-[var(--deco-line)]"
+								data-testid="reset-settlement"
+							>
+								Reset settlement
+							</button>
+						</div>
 					</div>
 
 					<div>
@@ -672,12 +694,9 @@ const clientUserId = gameSession.clientUserId;
 
 <script>
 	import {
-		buildCrapsSyncBatch,
-		getBalanceAfterCrapsSyncFailure,
-		getBalanceAfterCrapsSyncSuccess,
-		MAX_CRAPS_SYNC_HANDS_PER_REQUEST,
-		type PendingRollSync,
-	} from '../../lib/craps/balanceSync';
+		buildCrapsSettlementCommand,
+		getAvailableCrapsBalance,
+	} from '../../lib/craps/settlement';
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
@@ -688,20 +707,12 @@ const clientUserId = gameSession.clientUserId;
 		persistGuestBankroll,
 		shouldSyncAccountChips,
 	} from '../../lib/public-game-session';
+	import { createSettlementGate, newSettlementId, type SettleRoundResult } from '../../lib/wallet';
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
 		selectedChipAmount?: number;
 	};
-
-	type PersistedDroppedRollSyncs = {
-		rolls: PendingRollSync[];
-		droppedDueTo4xx: true;
-		error?: string;
-		status: number;
-	};
-
-	const BASE_SYNC_RETRY_DELAY_MS = 100;
 
 	// ─── Initialisation ─────────────────────────────────────────────────────────
 	if (typeof window !== 'undefined') {
@@ -711,7 +722,6 @@ const clientUserId = gameSession.clientUserId;
 		const userId = root.dataset.userId ?? 'anonymous';
 		const isGuestMode = isGuestModeValue(root.dataset.guestMode);
 		const persistedSessionKey = `craps-session:${userId}`;
-		const droppedRollSyncsKey = `craps-dropped-roll-syncs:${userId}`;
 		const guestBankrollGameKey = 'craps';
 
 		// For guest sessions, restore the bankroll from the shared per-user
@@ -738,17 +748,12 @@ const clientUserId = gameSession.clientUserId;
 		};
 
 		let selectedChipAmount = 25;
-		let lastSyncedBalance = restoredGuestBalance;
-		let isSyncInProgress = false;
-		let syncPending = false;
-		let pendingRetryScheduled = false;
-		let pendingRollSyncs: PendingRollSync[] = [];
-		let retryDelayMs = BASE_SYNC_RETRY_DELAY_MS; // Base retry delay, doubles on network failure (max 30s)
+		let serverSyncedBalance = initialBalance;
+		const settlementGate = createSettlementGate();
 		let diceAnimationTimeoutId: ReturnType<typeof setTimeout> | null = null;
 		function getMaxOddsMultiplier(): number {
 			return game.getState().settings.maxOddsMultiplier;
 		}
-		const maxSyncHandsPerRequest = MAX_CRAPS_SYNC_HANDS_PER_REQUEST;
 
 		// ─── DOM helpers ─────────────────────────────────────────────────────────────
 
@@ -774,24 +779,18 @@ const clientUserId = gameSession.clientUserId;
 		const llmAdviceBtn = el<HTMLButtonElement>('llm-advice-btn');
 		const comeOddsPanel = el('come-odds-panel');
 		const comeOddsListEl = el('come-odds-list');
+		const settlementRecovery = el('settlement-recovery');
+		const retrySettlementBtn = el<HTMLButtonElement>('btn-retry-settlement');
+		const resetSettlementBtn = el<HTMLButtonElement>('btn-reset-settlement');
 
-		function hasPendingLocalChanges(): boolean {
-			return (
-				pendingRollSyncs.length > 0 ||
-				game.getBalance() !== lastSyncedBalance ||
-				game.getState().activeBets.length > 0
-			);
-		}
+		// Set when a settlement commits server-side but adoptSettlementResult fails
+		// locally. The roll button stays disabled and retry falls through to reset
+		// until the user explicitly resets (re-syncing the authoritative balance).
+		let settlementBlocked = false;
 
 		function persistSession() {
 			const state = game.getState();
-			if (
-				state.activeBets.length === 0 &&
-				pendingRollSyncs.length === 0 &&
-				state.phase === 'come-out' &&
-				state.point === null &&
-				game.getBalance() === lastSyncedBalance
-			) {
+			if (state.activeBets.length === 0 && state.phase === 'come-out' && state.point === null) {
 				localStorage.removeItem(persistedSessionKey);
 				persistGuestBalance();
 				return;
@@ -808,25 +807,118 @@ const clientUserId = gameSession.clientUserId;
 			persistGuestBalance();
 		}
 
-		function persistDroppedRollSyncs(error: string | undefined, status: number): boolean {
-			if (!shouldSyncAccountChips({ isGuestMode })) {
-				return false;
-			}
+		function showSettlementRecovery(message: string) {
+			showMessage(message, 'error');
+			settlementRecovery.classList.remove('hidden');
+			updateUI({ persist: false });
+		}
 
-			const payload: PersistedDroppedRollSyncs = {
-				rolls: pendingRollSyncs.map((roll) => ({ ...roll })),
-				droppedDueTo4xx: true,
-				status,
-				...(error ? { error } : {}),
-			};
+		function hideSettlementRecovery() {
+			settlementRecovery.classList.add('hidden');
+		}
+
+		function adoptSettlementResult(result: SettleRoundResult) {
+			serverSyncedBalance = result.balance;
+			const availableBalance = getAvailableCrapsBalance(result.balance, game.getTotalAtRisk());
+			if (!game.setBalance(availableBalance)) {
+				throw new Error('Wallet returned an invalid Craps balance');
+			}
+			// Persist only after the authoritative wallet balance has been adopted.
+			// A failed pending command must leave the last durable game snapshot intact.
+			persistSession();
+			hideSettlementRecovery();
+			settlementBlocked = false;
+			if (result.newAchievements?.length) {
+				window.dispatchEvent(
+					new CustomEvent('achievement-earned', {
+						detail: { achievements: result.newAchievements },
+					}),
+				);
+			}
+			updateUI({ persist: false });
+		}
+
+		async function fetchServerBalance(): Promise<number | null> {
 			try {
-				localStorage.setItem(droppedRollSyncsKey, JSON.stringify(payload));
-				return true;
-			} catch (err) {
-				console.error('[CRAPS] Failed to persist dropped roll syncs — data will be lost:', err);
-				return false;
+				const response = await fetch('/api/chips/balance');
+				if (!response.ok) return null;
+				const data = (await response.json()) as { balance?: unknown };
+				return typeof data.balance === 'number' && Number.isFinite(data.balance)
+					? data.balance
+					: null;
+			} catch {
+				return null;
 			}
 		}
+
+		async function settleAuthenticatedRoll(
+			command: ReturnType<typeof buildCrapsSettlementCommand>,
+		) {
+			if (!command) return;
+			let result: SettleRoundResult;
+			try {
+				result = await settlementGate.settle(command);
+			} catch (error) {
+				console.error('[WALLET_SETTLEMENT] Craps settlement failed:', error);
+				showSettlementRecovery('Settlement failed. Retry or reset before rolling again.');
+				return;
+			}
+			// Settlement committed server-side; adopting locally can still fail.
+			// Block further rolls until the user explicitly resets to re-sync.
+			try {
+				adoptSettlementResult(result);
+			} catch (error) {
+				settlementBlocked = true;
+				console.error('[WALLET_SETTLEMENT] Craps adoption failed after settlement:', error);
+				showSettlementRecovery(
+					'Settlement committed but local balance could not be applied. Reset to sync your balance.',
+				);
+			}
+		}
+
+		retrySettlementBtn.addEventListener('click', async () => {
+			if (!settlementGate.pending) {
+				// Settlement committed but local adoption failed — no command to retry.
+				// Fall through to the reset path to re-sync the authoritative balance.
+				if (settlementBlocked) resetSettlementBtn.click();
+				return;
+			}
+			retrySettlementBtn.disabled = true;
+			showMessage('Retrying settlement...', 'info');
+			try {
+				const result = await settlementGate.retry();
+				if (result) adoptSettlementResult(result);
+			} catch (error) {
+				console.error('[WALLET_SETTLEMENT] Craps settlement retry failed:', error);
+				showSettlementRecovery('Settlement failed again. Retry or reset before rolling again.');
+			} finally {
+				retrySettlementBtn.disabled = false;
+				updateUI({ persist: false });
+			}
+		});
+
+		resetSettlementBtn.addEventListener('click', async () => {
+			resetSettlementBtn.disabled = true;
+			try {
+				// Refresh the authoritative balance before resetting local state so
+				// reset does not silently discard a committed-but-unadopted round.
+				const serverBalance = await fetchServerBalance();
+				if (serverBalance !== null) serverSyncedBalance = serverBalance;
+			} catch {
+				// Balance refresh is best-effort; fall back to last known balance.
+			}
+			settlementGate.reset();
+			settlementBlocked = false;
+			// Discard the partially settled table and re-sync to the authoritative
+			// balance. Preserving local wagers/phase after a failed settlement can
+			// silently refund a resolved loss while its roll/phase transition remains
+			// in effect, because the resolved bets are no longer counted as at-risk.
+			game.reset(serverSyncedBalance);
+			hideSettlementRecovery();
+			updateUI();
+			showMessage('Settlement reset. Place your bets, then roll.');
+			resetSettlementBtn.disabled = false;
+		});
 
 		function restoreSession() {
 			let raw: string | null;
@@ -849,8 +941,10 @@ const clientUserId = gameSession.clientUserId;
 					// server-side, so subtract getTotalAtRisk() from the server balance to get the
 					// true available chip count. If the result is negative the session is invalid.
 					const totalAtRisk = game.getTotalAtRisk();
-					const reconciledBalance = initialBalance - totalAtRisk;
-					if (reconciledBalance < 0 || !Number.isFinite(reconciledBalance)) {
+					let reconciledBalance: number;
+					try {
+						reconciledBalance = getAvailableCrapsBalance(initialBalance, totalAtRisk);
+					} catch {
 						console.warn(
 							'[CRAPS] Restored session has more chips at risk than server balance allows; clearing.',
 						);
@@ -859,9 +953,8 @@ const clientUserId = gameSession.clientUserId;
 						return;
 					}
 					game.setBalance(reconciledBalance);
+					serverSyncedBalance = initialBalance;
 				}
-				// pendingRollSyncs are intentionally not restored — synthetic entries could
-				// forge stats (wins, biggest-win) without risking chips on reload.
 				if (
 					typeof parsed.selectedChipAmount === 'number' &&
 					[5, 25, 50, 100, 500].includes(parsed.selectedChipAmount)
@@ -1035,7 +1128,7 @@ const clientUserId = gameSession.clientUserId;
 
 		// ─── UI update ───────────────────────────────────────────────────────────────
 
-		function updateUI() {
+		function updateUI({ persist = true }: { persist?: boolean } = {}) {
 			const state = game.getState();
 
 			// Balance
@@ -1045,8 +1138,12 @@ const clientUserId = gameSession.clientUserId;
 			const total = game.getTotalAtRisk();
 			totalBetEl.textContent = `$${total}`;
 
-			// Roll button
-			rollButton.disabled = !game.canRoll();
+			// An authenticated roll cannot start while its previous resolved wagers
+			// still need wallet settlement. Guests remain local-only and are never gated.
+			rollButton.disabled =
+				!game.canRoll() ||
+				(shouldSyncAccountChips({ isGuestMode }) &&
+					(settlementGate.isBlocked || settlementBlocked));
 
 			// Phase badge
 			if (state.phase === 'come-out') {
@@ -1146,7 +1243,7 @@ const clientUserId = gameSession.clientUserId;
 
 			// Active bets list
 			renderActiveBets(state.activeBets);
-			persistSession();
+			if (persist) persistSession();
 		}
 
 		function applyPhaseRestrictions(phase: 'come-out' | 'point') {
@@ -1251,7 +1348,6 @@ const clientUserId = gameSession.clientUserId;
 						return;
 					}
 					updateUI();
-					void syncBalance();
 				});
 			});
 		}
@@ -1333,7 +1429,6 @@ const clientUserId = gameSession.clientUserId;
 			const r = game.placeBet(type, selectedChipAmount);
 			if (r.success) {
 				updateUI();
-				void syncBalance();
 			} else {
 				showMessage(r.error ?? 'Cannot place bet', 'error');
 			}
@@ -1355,6 +1450,13 @@ const clientUserId = gameSession.clientUserId;
 
 		// Roll button
 		rollButton.addEventListener('click', async () => {
+			if (
+				shouldSyncAccountChips({ isGuestMode }) &&
+				(settlementGate.isBlocked || settlementBlocked)
+			) {
+				showSettlementRecovery('Settlement is still pending. Retry or reset before rolling again.');
+				return;
+			}
 			rollButton.disabled = true;
 			try {
 				const prevPhase = game.getState().phase;
@@ -1386,29 +1488,16 @@ const clientUserId = gameSession.clientUserId;
 
 				showRollResult(result);
 				addRollToHistory(result.roll.total, prevPhase);
-				updateUI();
+				// Keep the resolved roll out of durable session state until its wallet
+				// settlement succeeds. Guests and unresolved rolls persist below.
+				updateUI({ persist: false });
 
-				// Only queue rolls that resolved at least one wager.
-				const rollWins = result.evaluations.filter((e) => e.outcome === 'win').length;
-				const rollLosses = result.evaluations.filter((e) => e.outcome === 'lose').length;
-				const rollPushes = result.evaluations.filter((e) => e.outcome === 'push').length;
-				const resolvedWagers = rollWins + rollLosses + rollPushes;
-				if (resolvedWagers > 0) {
-					const grossWinAmount = result.evaluations
-						.filter((e) => e.outcome === 'win')
-						.reduce((sum, e) => sum + e.payout, 0);
-					pendingRollSyncs.push({
-						netDelta: result.netDelta,
-						winsCount: rollWins,
-						lossesCount: rollLosses,
-						pushesCount: rollPushes,
-						grossWinAmount: grossWinAmount > 0 ? grossWinAmount : undefined,
-					});
+				const command = buildCrapsSettlementCommand(newSettlementId('craps'), result);
+				if (command && shouldSyncAccountChips({ isGuestMode })) {
+					await settleAuthenticatedRoll(command);
+				} else {
+					persistSession();
 				}
-				persistSession();
-
-				// Sync balance after roll
-				await syncBalance();
 
 				if (game.hasInsufficientChips()) {
 					insufOverlay.classList.remove('hidden');
@@ -1418,7 +1507,7 @@ const clientUserId = gameSession.clientUserId;
 				console.error('[CRAPS] Unexpected error in roll handler:', err);
 				showMessage('An unexpected error occurred. Please try again.', 'error');
 			} finally {
-				rollButton.disabled = !game.canRoll();
+				updateUI({ persist: false });
 			}
 		});
 
@@ -1426,7 +1515,6 @@ const clientUserId = gameSession.clientUserId;
 		clearBetsBtn.addEventListener('click', () => {
 			game.clearBets();
 			updateUI();
-			void syncBalance(); // Sync refunded chips to server without recording a round
 		});
 
 		// LLM Advisor
@@ -1468,263 +1556,6 @@ const clientUserId = gameSession.clientUserId;
 			}
 		});
 
-		// ─── Balance sync ─────────────────────────────────────────────────────────────
-
-		async function syncBalance() {
-			if (!shouldSyncAccountChips({ isGuestMode })) {
-				pendingRollSyncs = [];
-				syncPending = false;
-				pendingRetryScheduled = false;
-				persistSession();
-				return;
-			}
-
-			if (isSyncInProgress) {
-				syncPending = true;
-				return;
-			}
-
-			const ackPreviousBalance = lastSyncedBalance;
-			const ackCurrentBalance = game.getBalance();
-			const {
-				ackRollSyncs,
-				ackHands,
-				ackWins,
-				ackLosses,
-				ackStatsDelta,
-				ackBiggestWin,
-				ackDelta,
-				pendingBalanceDelta,
-				remainingRollDelta,
-			} = buildCrapsSyncBatch({
-				pendingRollSyncs,
-				currentBalance: ackCurrentBalance,
-				previousBalance: ackPreviousBalance,
-				maxSyncHandsPerRequest,
-			});
-			const hasPendingStats = ackHands > 0;
-			if (ackDelta === 0 && !hasPendingStats) {
-				syncPending = false;
-				retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
-				return;
-			}
-
-			const outcome: 'win' | 'loss' | 'push' =
-				ackStatsDelta > 0
-					? 'win'
-					: ackStatsDelta < 0
-						? 'loss'
-						: ackWins > 0 && ackLosses === 0
-							? 'win'
-							: ackLosses > 0 && ackWins === 0
-								? 'loss'
-								: 'push';
-
-			isSyncInProgress = true;
-
-			try {
-				const payload: Record<string, unknown> = {
-					delta: ackDelta,
-					gameType: 'craps',
-					previousBalance: ackPreviousBalance,
-				};
-				if (hasPendingStats) {
-					payload.outcome = outcome;
-					payload.handCount = ackHands;
-					payload.winsIncrement = ackWins;
-					payload.lossesIncrement = ackLosses;
-					// Send statsDelta separately to track round results without including wager amounts
-					// This ensures leaderboards and stats reflect actual net profit/loss from rounds
-					payload.statsDelta = ackStatsDelta;
-					if (ackBiggestWin !== undefined) {
-						payload.biggestWinCandidate = ackBiggestWin;
-					}
-				}
-				const response = await fetch('/api/chips/update', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(payload),
-				});
-
-				if (response.ok) {
-					const data = (await response.json().catch((parseErr: unknown) => {
-						console.error('[CRAPS_SYNC] Failed to parse response JSON:', parseErr);
-						return {} as Record<string, unknown>;
-					})) as {
-						balance?: number;
-						newAchievements?: Array<{ id: string; name: string; icon: string }>;
-					};
-					// Apply server-authoritative balance to client game state and UI
-					if (typeof data.balance === 'number') {
-						const reconciledBalance = getBalanceAfterCrapsSyncSuccess({
-							serverBalance: data.balance,
-							ackCurrentBalance,
-							currentBalance: game.getBalance(),
-							remainingRollDelta,
-						});
-						game.setBalance(reconciledBalance);
-						lastSyncedBalance = data.balance;
-						pendingRollSyncs = pendingRollSyncs.slice(ackRollSyncs.length);
-						syncPending = hasPendingLocalChanges();
-						retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
-						updateUI();
-					} else {
-						// Server returned 200 without a balance field — do not advance
-						// lastSyncedBalance to an unconfirmed local estimate.
-						// Keep sync pending to force retry even if counters are drained.
-						console.error('[CRAPS_SYNC] 200 response missing balance field:', data);
-						syncPending = true;
-					}
-
-					if (data.newAchievements?.length) {
-						window.dispatchEvent(
-							new CustomEvent('achievement-earned', {
-								detail: { achievements: data.newAchievements },
-							}),
-						);
-					}
-				} else {
-					const err = (await response.json().catch((parseErr: unknown) => {
-						console.error('[CRAPS_SYNC] Failed to parse error response JSON:', parseErr);
-						return {} as Record<string, unknown>;
-					})) as { error?: string; currentBalance?: number };
-
-					// Handle unrecoverable 4xx client errors - do not retry
-					const isUnrecoverable4xx =
-						response.status >= 400 && response.status < 500 && err.error !== 'RATE_LIMITED';
-
-					if (err.error === 'RATE_LIMITED') {
-						// Rate limit - retry with fixed delay
-						syncPending = true;
-						if (!pendingRetryScheduled) {
-							pendingRetryScheduled = true;
-							setTimeout(() => {
-								pendingRetryScheduled = false;
-								void syncBalance();
-							}, 2500);
-						}
-					} else if (err.error === 'BALANCE_MISMATCH') {
-						// Balance mismatch - resync with server balance and keep stats pending for retry
-						if (typeof err.currentBalance === 'number') {
-							const reconciledBalance = getBalanceAfterCrapsSyncFailure({
-								serverBalance: err.currentBalance,
-								ackCurrentBalance,
-								currentBalance: game.getBalance(),
-								pendingBalanceDelta,
-							});
-							if (game.applyServerBalance(reconciledBalance)) {
-								lastSyncedBalance = err.currentBalance;
-								syncPending = hasPendingLocalChanges();
-							} else {
-								console.error(
-									'[CRAPS_SYNC] Failed to apply reconciled balance:',
-									reconciledBalance,
-								);
-								syncPending = true;
-							}
-							updateUI();
-						} else {
-							// The server returned BALANCE_MISMATCH without a currentBalance (concurrent
-							// UPDATE affected 0 rows). We cannot reconcile the balance here, but the
-							// pending wager delta must not be silently dropped — schedule a retry so the
-							// next sync can either succeed or receive a currentBalance to reconcile with.
-							console.error(
-								'[CRAPS_SYNC] BALANCE_MISMATCH without currentBalance — retrying:',
-								err,
-							);
-							syncPending = true;
-							if (!pendingRetryScheduled) {
-								pendingRetryScheduled = true;
-								setTimeout(() => {
-									pendingRetryScheduled = false;
-									void syncBalance();
-								}, retryDelayMs);
-							}
-						}
-					} else if (isUnrecoverable4xx) {
-						// Unrecoverable client error - do not retry, show error to user
-						console.error('[CRAPS_SYNC] Unrecoverable 4xx error:', err.error, response.status);
-						// Do NOT set syncPending = true to prevent infinite retries
-						// Clear pending counters to stop retry loop
-						const hasPendingRollSyncs = pendingRollSyncs.length > 0;
-						const persistedDropped = hasPendingRollSyncs
-							? persistDroppedRollSyncs(err.error, response.status)
-							: false;
-						pendingRollSyncs = [];
-						persistSession();
-						showMessage(
-							persistedDropped
-								? `Sync failed: ${err.error || 'Client error'}. Pending rolls were saved locally for manual reconciliation.`
-								: `Sync failed: ${err.error || 'Client error'}`,
-							'error',
-						);
-					} else if (typeof err.currentBalance === 'number') {
-						const reconciledBalance = getBalanceAfterCrapsSyncFailure({
-							serverBalance: err.currentBalance,
-							ackCurrentBalance,
-							currentBalance: game.getBalance(),
-							pendingBalanceDelta,
-						});
-						if (game.applyServerBalance(reconciledBalance)) {
-							lastSyncedBalance = err.currentBalance;
-							syncPending = hasPendingLocalChanges();
-						} else {
-							console.error('[CRAPS_SYNC] Failed to apply reconciled balance:', reconciledBalance);
-							syncPending = true;
-						}
-						updateUI();
-					} else {
-						// 5xx server errors - retry with exponential backoff
-						console.error('[CRAPS_SYNC] Server error - will retry:', err.error, response.status);
-						syncPending = true;
-						if (!pendingRetryScheduled) {
-							pendingRetryScheduled = true;
-							setTimeout(() => {
-								pendingRetryScheduled = false;
-								void syncBalance();
-							}, retryDelayMs);
-						}
-					}
-				}
-			} catch (err) {
-				// Only network-type errors (fetch failures) should trigger exponential backoff.
-				// Programming errors are logged but do not retry.
-				const isNetworkError =
-					err instanceof TypeError &&
-					(err.message.includes('fetch') ||
-						err.message.includes('network') ||
-						err.message.includes('Failed to fetch'));
-				console.error('[CRAPS_SYNC] Balance sync failed:', err);
-				if (isNetworkError) {
-					retryDelayMs = Math.min(retryDelayMs * 2, 30000);
-					if (!pendingRetryScheduled) {
-						pendingRetryScheduled = true;
-						setTimeout(() => {
-							pendingRetryScheduled = false;
-							void syncBalance();
-						}, retryDelayMs);
-					}
-				} else {
-					// Programming error — retrying will not help, notify the user
-					showMessage('A sync error occurred. Please refresh if balance seems incorrect.', 'error');
-				}
-			} finally {
-				isSyncInProgress = false;
-				const hasRemainingPendingStats = pendingRollSyncs.length > 0;
-				// Reset retry delay only on successful sync (no pending state after response processing)
-				if (!syncPending && !hasRemainingPendingStats) {
-					retryDelayMs = BASE_SYNC_RETRY_DELAY_MS;
-				}
-				if ((syncPending || hasRemainingPendingStats) && !pendingRetryScheduled) {
-					pendingRetryScheduled = true;
-					setTimeout(() => {
-						pendingRetryScheduled = false;
-						void syncBalance();
-					}, retryDelayMs);
-				}
-			}
-		}
-
 		// ─── Achievement toast ───────────────────────────────────────────────────────
 
 		const achievementToast = document.getElementById('achievement-toast');
@@ -1753,8 +1584,5 @@ const clientUserId = gameSession.clientUserId;
 
 		initializeInteractiveBetZones();
 		updateUI();
-		if (hasPendingLocalChanges()) {
-			void syncBalance();
-		}
 	}
 </script>

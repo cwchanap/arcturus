@@ -70,8 +70,8 @@ function makeRoot(): HTMLElement {
 		<button data-testid="btn-clear">Clear</button>
 		<button data-testid="btn-repeat">Repeat</button>
 		<button data-testid="btn-draw" disabled>Draw</button>
-		<div data-testid="sync-paused-banner" class="hidden">
-			<button data-testid="btn-retry-sync">Retry Sync</button>
+		<div data-testid="settlement-paused-banner" class="hidden">
+			<button data-testid="btn-retry-settlement">Retry Settlement</button>
 		</div>
 		<div data-testid="recent-tickets"></div>
 		<div data-testid="paytable-body"></div>
@@ -260,6 +260,28 @@ describe('KenoUIRenderer', () => {
 			expect(root.querySelector<HTMLElement>('[data-testid="game-status"]')?.textContent).toBe(
 				'Pick your numbers',
 			);
+		});
+	});
+
+	describe('settlement paused banner', () => {
+		test('showSettlementPaused removes hidden class from the banner', () => {
+			const banner = root.querySelector<HTMLElement>('[data-testid="settlement-paused-banner"]')!;
+			expect(banner.classList.contains('hidden')).toBe(true);
+			renderer.showSettlementPaused();
+			expect(banner.classList.contains('hidden')).toBe(false);
+		});
+
+		test('hideSettlementPaused adds hidden class back to the banner', () => {
+			const banner = root.querySelector<HTMLElement>('[data-testid="settlement-paused-banner"]')!;
+			renderer.showSettlementPaused();
+			expect(banner.classList.contains('hidden')).toBe(false);
+			renderer.hideSettlementPaused();
+			expect(banner.classList.contains('hidden')).toBe(true);
+		});
+
+		test('getRetrySettlementButton returns the retry settlement button', () => {
+			const btn = renderer.getRetrySettlementButton();
+			expect(btn.dataset.testid).toBe('btn-retry-settlement');
 		});
 	});
 

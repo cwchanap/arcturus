@@ -4,6 +4,7 @@ import {
 	determineShowdownWinners,
 	estimateDrawingOuts,
 	evaluatePostflopHand,
+	evaluatePreflopHand,
 } from './handEvaluator';
 import { createPlayer } from './player';
 
@@ -536,5 +537,79 @@ describe('estimateDrawingOuts()', () => {
 
 		// Straight is made; no flush draw, no pair → 0 outs.
 		expect(outs).toBe(0);
+	});
+});
+
+describe('evaluatePreflopHand', () => {
+	function preflop([v1, s1]: CardSpec, [v2, s2]: CardSpec): number {
+		return evaluatePreflopHand(makeCard([v1, s1]), makeCard([v2, s2]));
+	}
+
+	test('premium pairs scale with rank (AA > KK > QQ > JJ)', () => {
+		expect(preflop(['A', 'spades'], ['A', 'hearts'])).toBeCloseTo(0.975, 10);
+		expect(preflop(['K', 'spades'], ['K', 'hearts'])).toBeCloseTo(0.95, 10);
+		expect(preflop(['Q', 'spades'], ['Q', 'hearts'])).toBe(0.925);
+		expect(preflop(['J', 'spades'], ['J', 'hearts'])).toBe(0.9);
+	});
+
+	test('medium pairs scale with rank (TT down to 22)', () => {
+		expect(preflop(['10', 'spades'], ['10', 'hearts'])).toBe(0.6 + (10 - 2) * 0.03);
+		expect(preflop(['2', 'spades'], ['2', 'hearts'])).toBe(0.6);
+	});
+
+	test('Ace-high hands: AK, AQ, AJ, AT, A-low (suited and offsuit)', () => {
+		expect(preflop(['A', 'spades'], ['K', 'spades'])).toBe(0.85);
+		expect(preflop(['A', 'spades'], ['K', 'hearts'])).toBe(0.75);
+		expect(preflop(['A', 'spades'], ['Q', 'spades'])).toBe(0.75);
+		expect(preflop(['A', 'spades'], ['Q', 'hearts'])).toBe(0.65);
+		expect(preflop(['A', 'spades'], ['J', 'spades'])).toBe(0.7);
+		expect(preflop(['A', 'spades'], ['J', 'hearts'])).toBe(0.6);
+		expect(preflop(['A', 'spades'], ['10', 'spades'])).toBe(0.65);
+		expect(preflop(['A', 'spades'], ['10', 'hearts'])).toBe(0.55);
+		// A-low
+		expect(preflop(['A', 'spades'], ['5', 'spades'])).toBe(0.45);
+		expect(preflop(['A', 'spades'], ['5', 'hearts'])).toBe(0.35);
+	});
+
+	test('King-high hands: KQ, KJ, KT, K-low (suited and offsuit)', () => {
+		expect(preflop(['K', 'spades'], ['Q', 'spades'])).toBe(0.7);
+		expect(preflop(['K', 'spades'], ['Q', 'hearts'])).toBe(0.6);
+		expect(preflop(['K', 'spades'], ['J', 'spades'])).toBe(0.65);
+		expect(preflop(['K', 'spades'], ['J', 'hearts'])).toBe(0.55);
+		expect(preflop(['K', 'spades'], ['10', 'spades'])).toBe(0.6);
+		expect(preflop(['K', 'spades'], ['10', 'hearts'])).toBe(0.5);
+		// K-low
+		expect(preflop(['K', 'spades'], ['5', 'spades'])).toBe(0.4);
+		expect(preflop(['K', 'spades'], ['5', 'hearts'])).toBe(0.3);
+	});
+
+	test('suited connectors (gap <= 1, low >= 7)', () => {
+		expect(preflop(['9', 'spades'], ['8', 'spades'])).toBe(0.55);
+	});
+
+	test('one-gap suited connectors (gap <= 2, low >= 6)', () => {
+		expect(preflop(['9', 'spades'], ['7', 'spades'])).toBe(0.45);
+	});
+
+	test('default weak hands: suited and offsuit', () => {
+		expect(preflop(['7', 'spades'], ['2', 'spades'])).toBe(0.35);
+		expect(preflop(['7', 'spades'], ['2', 'hearts'])).toBe(0.25);
+	});
+});
+
+describe('evaluatePostflopHand — short-handed branches', () => {
+	test('falls back to preflop evaluation with 2 hole cards and <5 total cards', () => {
+		const hand = [makeCard(['A', 'spades']), makeCard(['K', 'spades'])];
+		// 4 cards total → preflop fallback for 2-card hand
+		const shortCommunity = [makeCard(['2', 'clubs']), makeCard(['3', 'clubs'])];
+		const result = evaluatePostflopHand(hand, shortCommunity);
+		expect(result).toBe(0.85); // AK suited preflop
+	});
+
+	test('falls back to 0.25 when fewer than 2 cards are available', () => {
+		const hand = [makeCard(['A', 'spades'])];
+		const community: Card[] = [];
+		const result = evaluatePostflopHand(hand, community);
+		expect(result).toBe(0.25);
 	});
 });

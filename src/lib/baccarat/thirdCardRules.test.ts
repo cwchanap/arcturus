@@ -8,6 +8,7 @@ import {
 	shouldBankerDraw,
 	shouldBankerDrawAfterPlayerDrew,
 	explainBankerDecision,
+	getBankerRulesDescription,
 } from './thirdCardRules';
 import type { Card } from './types';
 
@@ -168,9 +169,90 @@ describe('explainBankerDecision', () => {
 		expect(explanation).toContain('draws');
 	});
 
-	test('should explain complex third card rules', () => {
-		const explanation = explainBankerDecision(3, makeCard('8'), false, false);
+	test('should explain player stood with banker standing', () => {
+		const explanation = explainBankerDecision(6, null, true, false);
+		expect(explanation).toContain('Player stood');
 		expect(explanation).toContain('stands');
-		expect(explanation).toContain('8');
+	});
+
+	test('should explain invalid state when player drew but no third card provided', () => {
+		const explanation = explainBankerDecision(3, null, false, false);
+		expect(explanation).toContain('Invalid state');
+	});
+
+	test('should explain banker 0-2 always draws', () => {
+		const draw = explainBankerDecision(0, makeCard('5'), false, true);
+		expect(draw).toContain('always draws on 0-2');
+
+		const draw2 = explainBankerDecision(2, makeCard('3'), false, true);
+		expect(draw2).toContain('always draws on 0-2');
+	});
+
+	test('should explain banker 3 with player third 8 (stands)', () => {
+		const explanation = explainBankerDecision(3, makeCard('8'), false, false);
+		expect(explanation).toContain('stands on 8');
+	});
+
+	test('should explain banker 3 with player third not 8 (draws)', () => {
+		const explanation = explainBankerDecision(3, makeCard('5'), false, true);
+		expect(explanation).toContain('draws otherwise');
+	});
+
+	test('should explain banker 4 draws on 2-7', () => {
+		const explanation = explainBankerDecision(4, makeCard('5'), false, true);
+		expect(explanation).toContain('draws on 2-7');
+	});
+
+	test('should explain banker 4 stands otherwise', () => {
+		const explanation = explainBankerDecision(4, makeCard('9'), false, false);
+		expect(explanation).toContain('stands otherwise');
+	});
+
+	test('should explain banker 5 draws on 4-7', () => {
+		const explanation = explainBankerDecision(5, makeCard('6'), false, true);
+		expect(explanation).toContain('draws on 4-7');
+	});
+
+	test('should explain banker 5 stands otherwise', () => {
+		const explanation = explainBankerDecision(5, makeCard('2'), false, false);
+		expect(explanation).toContain('stands otherwise');
+	});
+
+	test('should explain banker 6 draws on 6-7', () => {
+		const explanation = explainBankerDecision(6, makeCard('7'), false, true);
+		expect(explanation).toContain('draws on 6-7');
+	});
+
+	test('should explain banker 6 stands otherwise', () => {
+		const explanation = explainBankerDecision(6, makeCard('3'), false, false);
+		expect(explanation).toContain('stands otherwise');
+	});
+
+	test('should explain default case for out-of-range banker value', () => {
+		// Values >= 8 are caught by the natural check, so use a value
+		// that is not 0-7 and not >= 8 — e.g. a negative number — to
+		// hit the default branch.
+		const explanation = explainBankerDecision(-1, makeCard('5'), false, false);
+		expect(explanation).toContain('Banker');
+	});
+});
+
+describe('getBankerRulesDescription', () => {
+	test('returns a human-readable description of all banker rules', () => {
+		const description = getBankerRulesDescription();
+		expect(description).toContain('Banker Third-Card Rules');
+		expect(description).toContain('0-2: Always draw');
+		expect(description).toContain("3: Draw unless Player's third card was 8");
+		expect(description).toContain("4: Draw if Player's third card was 2-7");
+		expect(description).toContain("5: Draw if Player's third card was 4-7");
+		expect(description).toContain("6: Draw if Player's third card was 6-7");
+		expect(description).toContain('7: Always stand');
+		expect(description).toContain('8-9: Natural (no draw)');
+		expect(description).toContain('If Player stood (6-7): Banker draws on 0-5, stands on 6-7');
+	});
+
+	test('returns a trimmed string with no leading/trailing whitespace', () => {
+		const description = getBankerRulesDescription();
+		expect(description).toBe(description.trim());
 	});
 });

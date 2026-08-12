@@ -87,15 +87,15 @@ test.describe('authed user preservation', () => {
 			);
 
 			await isolated.page.locator('#bet-amount').fill('50');
-			const chipUpdatePromise = isolated.page.waitForResponse(
+			const settlementPromise = isolated.page.waitForResponse(
 				(response) =>
-					new URL(response.url()).pathname === '/api/chips/update' &&
+					new URL(response.url()).pathname === '/api/wallet/settle' &&
 					response.request().method() === 'POST',
 			);
 			await isolated.page.getByRole('button', { name: 'Deal' }).click();
-			const chipUpdate = await chipUpdatePromise;
-			expect(chipUpdate.ok()).toBe(true);
-			const settledBalance = ((await chipUpdate.json()) as { balance: number }).balance;
+			const settlement = await settlementPromise;
+			expect(settlement.ok()).toBe(true);
+			const settledBalance = ((await settlement.json()) as { balance: number }).balance;
 
 			await expect(isolated.page.locator('#btn-new-round')).toBeVisible();
 			await expect(isolated.page.locator('#game-status')).toContainText('BLACKJACK');

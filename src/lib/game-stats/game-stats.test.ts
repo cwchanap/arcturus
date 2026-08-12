@@ -66,8 +66,13 @@ let recordGameRound: typeof import('./game-stats').recordGameRound;
 let getGameLeaderboardData: typeof import('./game-stats').getGameLeaderboardData;
 let getUserStatsAllGames: typeof import('./game-stats').getUserStatsAllGames;
 
-beforeAll(() => {
+beforeAll(async () => {
+	const actualAchievementRepository = await import(
+		`../achievements/achievement-repository.ts?mock=${Date.now()}`
+	);
+
 	mock.module('../achievements/achievement-repository', () => ({
+		...actualAchievementRepository,
 		getBulkUserAchievements: async (...args: unknown[]) => {
 			mockGetBulkUserAchievements.calls.push(args);
 			return mockGetBulkUserAchievements.impl();

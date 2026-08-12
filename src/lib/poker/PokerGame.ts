@@ -40,39 +40,34 @@ import {
 	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from '../public-game-session';
-import { fetchJsonWithTimeout } from '../fetch-with-timeout';
+import {
+	createSettlementGate,
+	ensureSettlementRecoveryControls,
+	newSettlementId,
+	type SettlementGate,
+	type SettleRoundCommand,
+	type SettleRoundResult,
+} from '../wallet';
 
-type ChipSyncOutcome = 'win' | 'loss' | 'push';
-const VALID_CHIP_SYNC_OUTCOMES = new Set<string>(['win', 'loss', 'push']);
-const CHIP_SYNC_RETRY_DELAY_MS = 2000;
-const PENDING_SYNCS_STORAGE_KEY_PREFIX = 'arcturus_poker_pending_syncs';
-const MAX_DEAL_SYNC_RETRIES = 10;
-// Client-side TTL for persisted pending chip syncs. Must be shorter than the
-// server-side retention window (RETENTION_DAYS = 30 in src/server/cleanup.ts)
-// so that a stale snapshot is dropped before its idempotency receipt row is
-// deleted. Without this, a sync that committed server-side but whose response
-// was lost could be replayed after cleanup as a fresh update, double-applying
-// the delta.
-const PENDING_SYNC_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-// Timeout for the balance-recovery fetch when an expired pending sync is
-// dropped. A hung fetch would leave the chip-sync flush loop stuck; the
-// abort ensures we fall through to the refresh-required fallback.
-const BALANCE_FETCH_TIMEOUT_MS = 15000;
+export type PokerSettlementOutcome = 'win' | 'loss' | 'push';
 
-type PendingChipSync = {
-	syncId: string;
-	previousBalance: number;
-	delta: number;
-	outcome?: ChipSyncOutcome;
-	biggestWinCandidate?: number;
-	createdAt: number;
-};
-
-type EarnedAchievement = {
-	id: string;
-	name: string;
-	icon: string;
-};
+/** Build the one wallet command for a completed single-player Poker hand. */
+export function buildPokerSettlementCommand(
+	delta: number,
+	outcome: PokerSettlementOutcome,
+): SettleRoundCommand {
+	return {
+		settlementId: newSettlementId('poker'),
+		game: 'poker',
+		delta,
+		stats: {
+			rounds: 1,
+			wins: outcome === 'win' ? 1 : 0,
+			losses: outcome === 'loss' ? 1 : 0,
+			biggestWin: outcome === 'win' ? Math.max(0, delta) : 0,
+		},
+	};
+}
 
 type AIDifficultySetting = GameSettings['aiDifficulty1'];
 
@@ -102,24 +97,19 @@ export class PokerGame {
 	private hasServerSyncedBalance = false;
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
-	private pendingChipSyncs: PendingChipSync[] = [];
-	private isChipSyncInFlight = false;
-	private pendingSyncsDirty = false;
-	private pendingSyncsStorageKey: string;
+	private settlementGate: SettlementGate;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
-	private chipSyncRetryTimeoutId: ReturnType<typeof setTimeout> | null = null;
-	private chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
 	private turnTransitionTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private pendingTurnTransitionResolver: ((completed: boolean) => void) | null = null;
 	private turnTransitionToken = 0;
-	private dealSyncRetryCount = 0;
 	private isGuestMode = false;
 	private clientUserId = '';
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
-	constructor(aiRandom?: () => number) {
+	constructor(aiRandom?: () => number, settlementGate?: SettlementGate) {
 		this.aiRandom = aiRandom;
+		this.settlementGate = settlementGate ?? createSettlementGate();
 		this.deck = new DeckManager();
 		this.ui = new PokerUIRenderer();
 		this.aiRival = new AIRivalAssistant();
@@ -143,9 +133,6 @@ export class PokerGame {
 
 		const userId = balanceEl?.dataset?.userId ?? '';
 		this.clientUserId = userId;
-		this.pendingSyncsStorageKey = userId
-			? `${PENDING_SYNCS_STORAGE_KEY_PREFIX}:${userId}`
-			: PENDING_SYNCS_STORAGE_KEY_PREFIX;
 
 		if (this.isGuestMode && this.hasServerSyncedBalance) {
 			this.serverSyncedBalance = loadGuestBankroll(
@@ -164,6 +151,8 @@ export class PokerGame {
 			this.ui.updateUI(this.pot, this.players[0]);
 		}
 		this.attachEventListeners();
+		this.ensureSettlementRecoveryControls();
+		this.wireSettlementRecoveryControls();
 		this.attachSettingsListeners();
 		this.renderSettingsPanel();
 		this.updateBetControls(); // Initialize bet controls based on settings
@@ -175,140 +164,22 @@ export class PokerGame {
 				dealButton.disabled = true;
 			}
 			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
-		} else if (!this.isGuestMode) {
-			this.loadPersistedPendingSyncs();
-			if (this.pendingChipSyncs.length > 0) {
-				this.rebaseHumanTableBalance(this.serverSyncedBalance);
-				void this.flushChipSyncQueue();
-			}
 		}
 
 		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
 		void this.checkLlmConfigOnLoad();
 
 		window.addEventListener('beforeunload', () => {
-			this.finalizeActiveHandBeforeDeal();
-			if (!this.isGuestMode) {
-				this.persistPendingSyncs();
-			}
+			if (this.isGuestMode) this.persistGuestBankroll();
 		});
 	}
 
-	private getPendingChipSyncDelta(): number {
-		return this.pendingChipSyncs.reduce((sum, sync) => sum + sync.delta, 0);
-	}
-
 	private getEffectiveServerBalance(): number {
-		return Math.max(0, this.serverSyncedBalance + this.getPendingChipSyncDelta());
-	}
-
-	private createChipSyncId(): string {
-		if (typeof globalThis.crypto?.randomUUID === 'function') {
-			return globalThis.crypto.randomUUID();
-		}
-
-		return `poker-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-	}
-
-	private rebasePendingChipSyncBaselines(serverBalance: number): void {
-		if (this.pendingChipSyncs.length === 0) {
-			return;
-		}
-
-		const baselineShift = serverBalance - this.pendingChipSyncs[0].previousBalance;
-		if (baselineShift === 0) {
-			return;
-		}
-
-		this.pendingChipSyncs = this.pendingChipSyncs.map((pendingSync) => ({
-			...pendingSync,
-			previousBalance: Math.max(0, pendingSync.previousBalance + baselineShift),
-		}));
-		this.markPendingSyncsDirty();
-	}
-
-	private rebaseHumanTableBalance(serverBalance: number): void {
-		const pendingDelta = this.getPendingChipSyncDelta();
-		const currentHandDelta =
-			this.humanChipsBefore > 0 ? this.players[0].chips - this.humanChipsBefore : 0;
-		const rebasedBaseline = Math.max(0, serverBalance + pendingDelta);
-
-		this.serverSyncedBalance = serverBalance;
-
-		if (this.humanChipsBefore > 0) {
-			this.humanChipsBefore = rebasedBaseline;
-			this.players[0] = {
-				...this.players[0],
-				chips: Math.max(0, rebasedBaseline + currentHandDelta),
-			};
-		} else {
-			this.players[0] = {
-				...this.players[0],
-				chips: rebasedBaseline,
-			};
-		}
-
-		this.ui.updateUI(this.pot, this.players[0]);
-		this.updateActionButtons();
-	}
-
-	private acknowledgeAppliedChipSync(sync: PendingChipSync, serverBalance: number): void {
-		const remainingPendingDelta = this.pendingChipSyncs
-			.slice(1)
-			.reduce((sum, pendingSync) => sum + pendingSync.delta, 0);
-		const currentHandDelta =
-			this.humanChipsBefore > 0 ? this.players[0].chips - this.humanChipsBefore : 0;
-		const rebasedBaseline = Math.max(0, serverBalance + remainingPendingDelta);
-
-		this.serverSyncedBalance = serverBalance;
-
-		if (this.humanChipsBefore > 0) {
-			this.humanChipsBefore = rebasedBaseline;
-			this.players[0] = {
-				...this.players[0],
-				chips: Math.max(0, rebasedBaseline + currentHandDelta),
-			};
-		} else {
-			this.players[0] = {
-				...this.players[0],
-				chips: rebasedBaseline,
-			};
-		}
-
-		this.ui.updateUI(this.pot, this.players[0]);
-		this.updateActionButtons();
-	}
-
-	private dispatchEarnedAchievements(achievements?: EarnedAchievement[]): void {
-		if (!achievements || achievements.length === 0) {
-			return;
-		}
-
-		if (
-			typeof window === 'undefined' ||
-			typeof window.dispatchEvent !== 'function' ||
-			typeof CustomEvent !== 'function'
-		) {
-			return;
-		}
-
-		window.dispatchEvent(
-			new CustomEvent('achievement-earned', {
-				detail: { achievements },
-			}),
-		);
-	}
-
-	private discardRejectedChipSync(sync: PendingChipSync): void {
-		this.rebasePendingChipSyncBaselines(sync.previousBalance);
-		this.rebaseHumanTableBalance(sync.previousBalance);
-		this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
+		return Math.max(0, this.serverSyncedBalance);
 	}
 
 	private clearTimeoutRef(id: ReturnType<typeof setTimeout> | null): null {
-		if (id !== null) {
-			clearTimeout(id);
-		}
+		if (id !== null) clearTimeout(id);
 		return null;
 	}
 
@@ -317,13 +188,8 @@ export class PokerGame {
 		this.autoDealTimeoutId = this.clearTimeoutRef(this.autoDealTimeoutId);
 	}
 
-	private cancelPendingChipSyncRetry(): void {
-		this.chipSyncRetryTimeoutId = this.clearTimeoutRef(this.chipSyncRetryTimeoutId);
-	}
-
 	private clearPendingTurnTransitionTimeout(completed: boolean): void {
 		this.turnTransitionTimeoutId = this.clearTimeoutRef(this.turnTransitionTimeoutId);
-
 		if (this.pendingTurnTransitionResolver !== null) {
 			const resolvePendingTurnTransition = this.pendingTurnTransitionResolver;
 			this.pendingTurnTransitionResolver = null;
@@ -342,9 +208,7 @@ export class PokerGame {
 		this.clearPendingTurnTransitionTimeout(false);
 		this.turnTransitionTimeoutId = setTimeout(() => {
 			this.turnTransitionTimeoutId = null;
-			if (turnTransitionToken !== this.turnTransitionToken) {
-				return;
-			}
+			if (turnTransitionToken !== this.turnTransitionToken) return;
 			callback();
 		}, delayMs);
 	}
@@ -361,126 +225,6 @@ export class PokerGame {
 		});
 	}
 
-	private persistPendingSyncs(): void {
-		if (this.pendingSyncsDirty) {
-			this.pendingSyncsDirty = false;
-		}
-		try {
-			if (this.pendingChipSyncs.length === 0) {
-				localStorage.removeItem(this.pendingSyncsStorageKey);
-			} else {
-				localStorage.setItem(this.pendingSyncsStorageKey, JSON.stringify(this.pendingChipSyncs));
-			}
-		} catch {
-			// localStorage unavailable or full — best effort
-		}
-	}
-
-	private loadPersistedPendingSyncs(): void {
-		try {
-			const raw = localStorage.getItem(this.pendingSyncsStorageKey);
-			if (!raw) return;
-			const parsed = JSON.parse(raw);
-			if (!Array.isArray(parsed) || parsed.length === 0) return;
-			const SYNC_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-			const now = Date.now();
-			const restored: PendingChipSync[] = [];
-			for (const entry of parsed) {
-				if (
-					typeof entry?.syncId === 'string' &&
-					SYNC_ID_RE.test(entry.syncId) &&
-					typeof entry.previousBalance === 'number' &&
-					Number.isInteger(entry.previousBalance) &&
-					typeof entry.delta === 'number' &&
-					Number.isInteger(entry.delta)
-				) {
-					// Drop legacy entries written before the TTL fix: a missing
-					// createdAt gives no bound on how long the entry has sat in
-					// localStorage. If the server already committed it (response
-					// lost / client crashed before clearing storage) more than
-					// RETENTION_DAYS ago, runRetentionCleanup will have reaped
-					// the idempotency receipt, so replaying the same syncId
-					// would re-apply the delta (double-spend). We cannot
-					// distinguish "never committed" from "committed long ago"
-					// without a timestamp, and creating chips out of thin air
-					// is a worse failure than losing a stale pending win, so
-					// legacy entries are discarded rather than replayed.
-					const createdAt = entry.createdAt;
-					if (typeof createdAt !== 'number' || !Number.isFinite(createdAt)) {
-						console.warn(
-							'[CHIP_SYNC] Dropping legacy persisted pending sync (no createdAt):',
-							entry.syncId,
-						);
-						continue;
-					}
-					if (createdAt > now || now - createdAt > PENDING_SYNC_MAX_AGE_MS) {
-						console.warn('[CHIP_SYNC] Dropping expired persisted pending sync:', entry.syncId);
-						continue;
-					}
-					const restoredEntry: PendingChipSync = {
-						syncId: entry.syncId,
-						previousBalance: entry.previousBalance,
-						delta: entry.delta,
-						createdAt,
-					};
-					if (typeof entry.outcome === 'string' && VALID_CHIP_SYNC_OUTCOMES.has(entry.outcome)) {
-						restoredEntry.outcome = entry.outcome as ChipSyncOutcome;
-						if (
-							typeof entry.biggestWinCandidate === 'number' &&
-							Number.isInteger(entry.biggestWinCandidate) &&
-							entry.biggestWinCandidate >= 0
-						) {
-							restoredEntry.biggestWinCandidate = entry.biggestWinCandidate;
-						}
-					}
-					restored.push(restoredEntry);
-				}
-			}
-			if (restored.length > 0) {
-				this.pendingChipSyncs = restored;
-			} else {
-				// All entries were stale/invalid — clear the orphaned storage.
-				localStorage.removeItem(this.pendingSyncsStorageKey);
-			}
-		} catch {
-			// Corrupted data — ignore
-		}
-	}
-
-	private markPendingSyncsDirty(): void {
-		this.pendingSyncsDirty = true;
-		try {
-			queueMicrotask(() => {
-				if (this.pendingSyncsDirty) {
-					this.persistPendingSyncs();
-				}
-			});
-		} catch {
-			this.persistPendingSyncs();
-		}
-	}
-
-	private scheduleChipSyncRetry(delayMs = CHIP_SYNC_RETRY_DELAY_MS): void {
-		if (this.pendingChipSyncs.length === 0 || this.isChipSyncInFlight) {
-			return;
-		}
-
-		this.cancelPendingChipSyncRetry();
-		this.chipSyncRetryTimeoutId = setTimeout(() => {
-			this.chipSyncRetryTimeoutId = null;
-			void this.flushChipSyncQueue();
-		}, delayMs);
-	}
-
-	private getChipSyncRetryDelayMs(retryAfterHeader?: string | null): number {
-		const retryAfterSeconds = Number.parseInt(retryAfterHeader ?? '', 10);
-		if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-			return retryAfterSeconds * 1000;
-		}
-
-		return CHIP_SYNC_RETRY_DELAY_MS;
-	}
-
 	private scheduleAutoDeal(delayMs: number): void {
 		this.cancelPendingAutoDeal();
 		const autoDealToken = this.autoDealToken;
@@ -493,15 +237,7 @@ export class PokerGame {
 		}, delayMs);
 	}
 
-	private getBiggestWinCandidate(delta: number): number {
-		return Math.max(0, delta);
-	}
-
-	/**
-	 * Check LLM configuration once on page load.
-	 * If LLM AI is enabled but no valid key is configured, show the overlay and
-	 * prevent the user from starting LLM-powered games until resolved.
-	 */
+	// Check LLM configuration once on page load.
 	private async checkLlmConfigOnLoad() {
 		if (this.isGuestMode) {
 			return;
@@ -525,51 +261,128 @@ export class PokerGame {
 		}
 	}
 
-	private syncChips(outcome?: ChipSyncOutcome): void {
+	private getSettlementRecoveryControls(): {
+		container: HTMLElement | null;
+		retry: HTMLButtonElement | null;
+		reset: HTMLButtonElement | null;
+	} {
+		return ensureSettlementRecoveryControls({
+			attachTo: null,
+		});
+	}
+
+	private ensureSettlementRecoveryControls(): void {
+		ensureSettlementRecoveryControls({
+			containerClass: 'hidden mt-2 flex flex-wrap justify-center gap-2',
+			retryClass: 'deco-btn deco-btn-outline',
+			retryLabel: 'Retry settlement',
+			resetClass: 'deco-btn deco-btn-outline',
+			resetLabel: 'Reset round',
+			attachTo: document.getElementById('game-status')?.parentElement ?? null,
+		});
+	}
+
+	private dispatchEarnedAchievements(
+		achievements?: Array<{ id: string; name: string; icon: string }>,
+	): void {
+		if (!achievements || achievements.length === 0) return;
+		if (
+			typeof window === 'undefined' ||
+			typeof window.dispatchEvent !== 'function' ||
+			typeof CustomEvent !== 'function'
+		) {
+			return;
+		}
+		window.dispatchEvent(new CustomEvent('achievement-earned', { detail: { achievements } }));
+	}
+
+	private showSettlementRecovery(message: string): void {
+		this.updateGameStatus(message);
+		const controls = this.getSettlementRecoveryControls();
+		controls.container?.classList.remove('hidden');
+		controls.retry?.classList.remove('hidden');
+		controls.reset?.classList.remove('hidden');
+	}
+
+	private hideSettlementRecovery(): void {
+		const controls = this.getSettlementRecoveryControls();
+		controls.container?.classList.add('hidden');
+		controls.retry?.classList.add('hidden');
+		controls.reset?.classList.add('hidden');
+	}
+
+	private adoptSettlementResult(result: SettleRoundResult): void {
+		this.serverSyncedBalance = result.balance;
+		this.players[0] = { ...this.players[0], chips: result.balance };
+		this.humanChipsBefore = 0;
+		this.hideSettlementRecovery();
+		if (result.newAchievements && result.newAchievements.length > 0) {
+			this.dispatchEarnedAchievements(result.newAchievements);
+		}
+		this.ui.updateUI(this.pot, this.players[0]);
+		this.updateActionButtons();
+	}
+
+	private persistGuestBankroll(): void {
+		if (!this.isGuestMode) return;
+		const persistedChips = Math.max(0, this.players[0]?.chips ?? this.serverSyncedBalance);
+		persistGuestBankroll(PokerGame.GUEST_BANKROLL_GAME_KEY, this.clientUserId, persistedChips);
+		this.serverSyncedBalance = persistedChips;
+	}
+
+	private settleHand(outcome: PokerSettlementOutcome = 'push'): void {
 		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
 			if (this.isGuestMode) {
-				// Persist the new chip count and keep the in-memory baseline in
-				// step with it. Without this, dealNewHand() would use the stale
-				// page-load baseline via getEffectiveServerBalance() and silently
-				// revive a busted guest instead of routing to game-over/rebuy;
-				// saving settings would also reset them to the stale amount.
-				const persistedChips = Math.max(0, this.players[0]?.chips ?? this.serverSyncedBalance);
-				persistGuestBankroll(PokerGame.GUEST_BANKROLL_GAME_KEY, this.clientUserId, persistedChips);
-				this.serverSyncedBalance = persistedChips;
+				this.persistGuestBankroll();
 			}
 			this.humanChipsBefore = 0;
 			return;
 		}
 
-		if (!this.hasServerSyncedBalance) {
-			console.warn('[CHIP_SYNC] syncChips called without an available server balance; skipping.');
-			return;
-		}
-
-		if (this.humanChipsBefore <= 0) {
-			console.warn('[CHIP_SYNC] syncChips called before hand baseline established; skipping.');
+		if (!this.hasServerSyncedBalance || this.humanChipsBefore <= 0) {
+			console.warn('[WALLET_SETTLEMENT] Settlement requested without a hand baseline.');
 			return;
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		const pendingSync: PendingChipSync = {
-			syncId: this.createChipSyncId(),
-			previousBalance: this.getEffectiveServerBalance(),
-			delta,
-			createdAt: Date.now(),
-		};
-		if (outcome !== undefined) {
-			pendingSync.outcome = outcome;
-			pendingSync.biggestWinCandidate =
-				outcome === 'win' && delta > 0 ? this.getBiggestWinCandidate(delta) : 0;
-		}
-		this.pendingChipSyncs.push(pendingSync);
-		this.markPendingSyncsDirty();
+		const command = buildPokerSettlementCommand(delta, outcome);
 		this.humanChipsBefore = 0;
-		if (this.chipSyncRetryTimeoutId !== null) {
-			return;
+		void this.settleAuthenticatedRound(command);
+	}
+
+	private async settleAuthenticatedRound(command: SettleRoundCommand): Promise<void> {
+		try {
+			const result = await this.settlementGate.settle(command);
+			this.adoptSettlementResult(result);
+		} catch (error) {
+			console.error('[WALLET_SETTLEMENT] Poker settlement failed:', error);
+			this.showSettlementRecovery('Settlement failed. Retry or reset before dealing another hand.');
 		}
-		void this.flushChipSyncQueue();
+	}
+
+	private wireSettlementRecoveryControls(): void {
+		const controls = this.getSettlementRecoveryControls();
+		controls.retry?.addEventListener('click', async () => {
+			if (!this.settlementGate.pending) return;
+			this.updateGameStatus('Retrying settlement...');
+			try {
+				const result = await this.settlementGate.retry();
+				if (result) this.adoptSettlementResult(result);
+			} catch (error) {
+				console.error('[WALLET_SETTLEMENT] Poker settlement retry failed:', error);
+				this.showSettlementRecovery(
+					'Settlement failed again. Retry or reset before dealing another hand.',
+				);
+			}
+		});
+		controls.reset?.addEventListener('click', () => {
+			this.settlementGate.reset();
+			this.players[0] = { ...this.players[0], chips: this.serverSyncedBalance };
+			this.humanChipsBefore = 0;
+			this.hideSettlementRecovery();
+			this.ui.updateUI(this.pot, this.players[0]);
+			this.updateGameStatus('Settlement reset. Deal a new hand when ready.');
+		});
 	}
 
 	private finalizeActiveHandBeforeDeal(): void {
@@ -577,269 +390,7 @@ export class PokerGame {
 			return;
 		}
 
-		this.syncChips('loss');
-	}
-
-	// Fetch the authoritative chip balance from the server. Returns null
-	// on any failure (timeout, network, bad body) so the caller can fall
-	// through to the refresh-required fallback.
-	private async fetchServerBalance(): Promise<number | null> {
-		try {
-			// Use fetchJsonWithTimeout so the abort timer stays armed across
-			// the body read, not just the headers. fetchWithTimeout clears its
-			// timer once fetch() resolves, so a /api/chips/balance response
-			// that returns headers but stalls while writing the body would
-			// leave response.json() pending forever — the pending-sync flush
-			// would never reach the rebase or refresh fallback.
-			const { response, data } = await fetchJsonWithTimeout<{ balance?: number }>(
-				'/api/chips/balance',
-				{ method: 'GET' },
-				BALANCE_FETCH_TIMEOUT_MS,
-			);
-			if (!response.ok) return null;
-			return typeof data.balance === 'number' ? data.balance : null;
-		} catch {
-			return null;
-		}
-	}
-
-	// Block further play when the authoritative server balance cannot be
-	// recovered. Disables the deal button and shows a refresh-required
-	// message, matching the constructor's hasServerSyncedBalance guard.
-	private blockPlayForRefresh(): void {
-		this.hasServerSyncedBalance = false;
-		const dealButton = document.getElementById('btn-deal') as HTMLButtonElement | null;
-		if (dealButton) {
-			dealButton.disabled = true;
-		}
-		this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
-	}
-
-	private async flushChipSyncQueue(): Promise<void> {
-		if (this.pendingChipSyncs.length === 0) {
-			this.cancelPendingChipSyncRetry();
-			return;
-		}
-
-		if (this.isChipSyncInFlight) {
-			return;
-		}
-
-		this.cancelPendingChipSyncRetry();
-		this.isChipSyncInFlight = true;
-
-		try {
-			let retryCount = 0;
-			const MAX_RETRIES = 3;
-
-			while (this.pendingChipSyncs.length > 0) {
-				// Enforce the age limit before every in-memory retry, not just
-				// on load. A sync whose response was lost stays queued and is
-				// retried indefinitely; once the server's idempotency receipt
-				// is cleaned up (RETENTION_DAYS in src/server/cleanup.ts), a
-				// late retry would re-apply the same delta. Dropping an
-				// expired entry here matches the load-time TTL behavior.
-				const head = this.pendingChipSyncs[0];
-				if (
-					typeof head.createdAt === 'number' &&
-					Number.isFinite(head.createdAt) &&
-					(head.createdAt > Date.now() || Date.now() - head.createdAt > PENDING_SYNC_MAX_AGE_MS)
-				) {
-					console.warn('[CHIP_SYNC] Dropping expired in-memory pending sync:', head.syncId);
-					this.pendingChipSyncs.shift();
-					retryCount = 0;
-					// Reconcile players[0].chips with the authoritative server
-					// balance. The dropped sync's delta was never confirmed, so
-					// the local balance may be inflated/deflated. If the balance
-					// cannot be recovered, block further play and require a
-					// refresh instead of continuing with an untrustworthy balance.
-					const recoveredBalance = await this.fetchServerBalance();
-					if (recoveredBalance !== null) {
-						this.rebaseHumanTableBalance(recoveredBalance);
-						continue;
-					}
-					console.error(
-						'[CHIP_SYNC] Failed to recover server balance after dropping expired sync. Blocking play.',
-					);
-					this.blockPlayForRefresh();
-					break;
-				}
-
-				const result = await this.sendChipSync(this.pendingChipSyncs[0]);
-
-				if (result === 'synced') {
-					retryCount = 0;
-					this.pendingChipSyncs.shift();
-					continue;
-				}
-
-				if (result === 'discarded') {
-					retryCount = 0;
-					const discardedSync = this.pendingChipSyncs.shift();
-					if (discardedSync) {
-						this.discardRejectedChipSync(discardedSync);
-					}
-					continue;
-				}
-
-				if (result === 'retry') {
-					retryCount++;
-					if (retryCount >= MAX_RETRIES) {
-						console.error(
-							'[CHIP_SYNC] Max retries exceeded for BALANCE_MISMATCH. Leaving sync queued.',
-						);
-						retryCount = 0;
-						break;
-					}
-					continue;
-				}
-
-				break;
-			}
-		} finally {
-			this.isChipSyncInFlight = false;
-			this.markPendingSyncsDirty();
-			if (this.pendingChipSyncs.length > 0) {
-				this.scheduleChipSyncRetry(this.chipSyncRetryDelayMs);
-			}
-		}
-	}
-
-	private async sendChipSync(
-		sync: PendingChipSync,
-	): Promise<'discarded' | 'synced' | 'retry' | 'pending'> {
-		try {
-			const requestBody: {
-				previousBalance: number;
-				delta: number;
-				gameType: 'poker';
-				syncId: string;
-				outcome?: ChipSyncOutcome;
-				handCount?: number;
-				winsIncrement?: number;
-				lossesIncrement?: number;
-				biggestWinCandidate?: number;
-			} = {
-				previousBalance: sync.previousBalance,
-				delta: sync.delta,
-				gameType: 'poker',
-				syncId: sync.syncId,
-			};
-
-			if (sync.outcome !== undefined) {
-				requestBody.outcome = sync.outcome;
-				requestBody.handCount = 1;
-				requestBody.winsIncrement = sync.outcome === 'win' ? 1 : 0;
-				requestBody.lossesIncrement = sync.outcome === 'loss' ? 1 : 0;
-				requestBody.biggestWinCandidate = sync.biggestWinCandidate ?? 0;
-			}
-
-			const response = await fetch('/api/chips/update', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(requestBody),
-			});
-
-			let data: {
-				balance?: number;
-				currentBalance?: number;
-				error?: string;
-				newAchievements?: EarnedAchievement[];
-			} | null = null;
-
-			try {
-				data = (await response.json()) as {
-					balance?: number;
-					currentBalance?: number;
-					error?: string;
-					newAchievements?: EarnedAchievement[];
-				};
-			} catch (parseError) {
-				console.warn('[CHIP_SYNC] Failed to parse chip sync response JSON:', parseError);
-				if (response.ok) {
-					this.acknowledgeAppliedChipSync(sync, Math.max(0, sync.previousBalance + sync.delta));
-					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-					return 'synced';
-				}
-
-				if (response.status >= 400 && response.status < 500) {
-					if (response.status === 409 || response.status === 429) {
-						this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
-							response.headers?.get?.('Retry-After') ?? null,
-						);
-						return 'pending';
-					}
-
-					console.error('[CHIP_SYNC] Dropping permanently rejected sync', response.status);
-					this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-					return 'discarded';
-				}
-
-				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
-					response.headers?.get?.('Retry-After') ?? null,
-				);
-				return 'pending';
-			}
-
-			if (typeof data?.balance === 'number') {
-				this.acknowledgeAppliedChipSync(sync, data.balance);
-				this.dispatchEarnedAchievements(data.newAchievements);
-				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'synced';
-			}
-
-			if (response.ok) {
-				this.acknowledgeAppliedChipSync(sync, Math.max(0, sync.previousBalance + sync.delta));
-				this.dispatchEarnedAchievements(data?.newAchievements);
-				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'synced';
-			}
-
-			if (
-				response.status === 409 &&
-				data?.error === 'BALANCE_MISMATCH' &&
-				typeof data.currentBalance === 'number'
-			) {
-				this.rebasePendingChipSyncBaselines(data.currentBalance);
-				this.rebaseHumanTableBalance(data.currentBalance);
-				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'retry';
-			}
-
-			// Fallback for BALANCE_MISMATCH responses that do not include a numeric
-			// currentBalance (the branch above handles the case with currentBalance
-			// and calls rebasePendingChipSyncBaselines + rebaseHumanTableBalance).
-			// Also covers 429 rate-limit responses. Both cases defer the sync.
-			if (
-				response.status === 429 ||
-				(response.status === 409 && data?.error === 'BALANCE_MISMATCH')
-			) {
-				this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
-					response.headers?.get?.('Retry-After') ?? null,
-				);
-				console.warn('[CHIP_SYNC] Sync deferred after transient response', response.status);
-				return 'pending';
-			}
-
-			if (response.status >= 400 && response.status < 500) {
-				console.error(
-					'[CHIP_SYNC] Dropping permanently rejected sync',
-					response.status,
-					data?.error,
-				);
-				this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-				return 'discarded';
-			}
-
-			this.chipSyncRetryDelayMs = this.getChipSyncRetryDelayMs(
-				response.headers?.get?.('Retry-After') ?? null,
-			);
-			return 'pending';
-		} catch (error) {
-			console.error('[CHIP_SYNC] Network error syncing chips to server:', error);
-			this.chipSyncRetryDelayMs = CHIP_SYNC_RETRY_DELAY_MS;
-			return 'pending';
-		}
+		this.settleHand('loss');
 	}
 
 	private buildAIConfig(personality: AIPersonality, difficulty: AIDifficulty): AIConfig {
@@ -942,21 +493,20 @@ export class PokerGame {
 			return;
 		}
 
-		const preExistingPendingCount = this.pendingChipSyncs.length;
-		this.finalizeActiveHandBeforeDeal();
-
-		if (preExistingPendingCount > 0 && this.pendingChipSyncs.length > 0) {
-			if (this.dealSyncRetryCount >= MAX_DEAL_SYNC_RETRIES) {
-				this.dealSyncRetryCount = 0;
-				this.updateGameStatus('Unable to sync chip balance. Please refresh the page.');
-				return;
-			}
-			this.dealSyncRetryCount++;
-			this.updateGameStatus('Syncing chip balance...');
-			this.scheduleAutoDeal(1000);
+		if (!this.isGuestMode && this.settlementGate.isBlocked) {
+			this.showSettlementRecovery(
+				'Settlement is still pending. Retry or reset before dealing another hand.',
+			);
 			return;
 		}
-		this.dealSyncRetryCount = 0;
+
+		this.finalizeActiveHandBeforeDeal();
+		if (!this.isGuestMode && this.settlementGate.isBlocked) {
+			this.showSettlementRecovery(
+				'Settlement is still pending. Retry or reset before dealing another hand.',
+			);
+			return;
+		}
 
 		// Check for eliminated players (0 chips)
 
@@ -1343,7 +893,7 @@ export class PokerGame {
 			this.ui.updateOpponentUI(this.players);
 			// Only sync when the human won (AI winning sole-survivor hands needs no sync)
 			if (winner.id === 0) {
-				this.syncChips('win');
+				this.settleHand('win');
 			}
 			this.scheduleAutoDeal(3000);
 			return;
@@ -1378,7 +928,7 @@ export class PokerGame {
 				this.players[winner.id] = awardChips(winner, this.pot);
 				this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
 				if (winner.id === 0) {
-					this.syncChips('win');
+					this.settleHand('win');
 				}
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
@@ -1409,9 +959,9 @@ export class PokerGame {
 				// across side pots where the human may win some tiers and lose others)
 				if (!this.players[0].folded) {
 					const humanDelta = this.players[0].chips - this.humanChipsBefore;
-					const outcome: ChipSyncOutcome =
+					const outcome: PokerSettlementOutcome =
 						humanDelta > 0 ? 'win' : humanDelta < 0 ? 'loss' : 'push';
-					this.syncChips(outcome);
+					this.settleHand(outcome);
 				}
 			}
 			this.pot = 0;
@@ -1490,7 +1040,7 @@ export class PokerGame {
 				this.ui.updateUI(this.pot, this.players[0]);
 				this.updateGameStatus('You folded');
 				// Sync immediately — human chip count is now locked in for this hand
-				this.syncChips('loss');
+				this.settleHand('loss');
 			} finally {
 				this.isProcessingAction = false;
 			}

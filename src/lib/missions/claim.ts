@@ -36,7 +36,7 @@ export async function claimMission(
 	// In-SQL changes() cascade: the grant UPDATE gates on the claim UPDATE's changes().
 	// D1 batch runs ALL statements, but the WHERE changes() = 1 on the grant
 	// makes it a no-op when the claim didn't match. Atomic — no crash window.
-	// This matches the chip-sync cascade pattern (chip-sync-batch-sql.ts).
+	// This uses the same in-SQL cascade pattern as wallet settlement.
 	//
 	// Reroll race guard (daily only): a game-progress update can snapshot the
 	// original daily mission as active, race with a successful reroll that

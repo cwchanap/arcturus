@@ -142,8 +142,15 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 			await expect(chip).toHaveClass(/selected/);
 
 			await page.click('[data-bet-type="banker"]');
+			const settlementResponsePromise = page.waitForResponse(
+				(response) =>
+					new URL(response.url()).pathname === '/api/wallet/settle' &&
+					response.request().method() === 'POST',
+			);
 			await page.click('#deal-button');
 			await expect(page.locator('#round-result')).toBeVisible({ timeout: 15000 });
+			const settlementResponse = await settlementResponsePromise;
+			expect(settlementResponse.ok()).toBe(true);
 
 			// Click new round button
 			await page.click('#new-round-button');

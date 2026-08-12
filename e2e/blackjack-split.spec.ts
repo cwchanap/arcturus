@@ -59,14 +59,15 @@ async function ensureMinimumBalance(page: Page, minimumBalance: number) {
 
 		const delta = minimumBalance - balance;
 		const result = await page.evaluate(
-			async ({ delta, previousBalance }) => {
-				const response = await fetch('/api/chips/update', {
+			async ({ delta }) => {
+				const response = await fetch('/api/wallet/settle', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
+						settlementId: `e2e-blackjack-topup-${crypto.randomUUID()}`,
+						game: 'blackjack',
 						delta,
-						gameType: 'blackjack',
-						previousBalance,
+						stats: { rounds: 1, wins: 1, losses: 0, biggestWin: delta },
 					}),
 				});
 
@@ -80,22 +81,13 @@ async function ensureMinimumBalance(page: Page, minimumBalance: number) {
 				return {
 					ok: response.ok,
 					status: response.status,
-					retryAfter: response.headers.get('Retry-After'),
 					data,
 				};
 			},
-			{ delta, previousBalance: balance },
+			{ delta },
 		);
 
 		if (result.ok) {
-			await refreshBlackjack(page);
-			continue;
-		}
-
-		if (result.status === 429) {
-			const retryAfter = Number(result.retryAfter ?? '2');
-			const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
-			await page.waitForTimeout(sleepMs);
 			await refreshBlackjack(page);
 			continue;
 		}
@@ -199,23 +191,22 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 			const currentBalanceText = await page.locator('#player-balance').innerText();
 			let currentBalance = parseBalance(currentBalanceText);
 			const targetBalance = 100;
-			const maxAllowedDelta = 40000; // blackjack max per-request loss cap from chips update API
 			const epsilon = 0.001;
 
-			// Loop until we reach target balance (delta clamping may require multiple calls)
+			// Use distinct wallet settlements until the account reaches the target.
 			for (let attempt = 0; attempt < 10 && currentBalance > targetBalance + epsilon; attempt++) {
 				const delta = targetBalance - currentBalance;
-				const clampedDelta = Math.max(delta, -maxAllowedDelta);
 
 				const result = await page.evaluate(
-					async ({ delta, previousBalance }) => {
-						const response = await fetch('/api/chips/update', {
+					async ({ delta }) => {
+						const response = await fetch('/api/wallet/settle', {
 							method: 'POST',
 							headers: { 'Content-Type': 'application/json' },
 							body: JSON.stringify({
+								settlementId: `e2e-blackjack-drain-${crypto.randomUUID()}`,
+								game: 'blackjack',
 								delta,
-								gameType: 'blackjack',
-								previousBalance,
+								stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0 },
 							}),
 						});
 
@@ -229,19 +220,13 @@ test.describe('Blackjack advanced actions - Split & Double Down', () => {
 						return {
 							ok: response.ok,
 							status: response.status,
-							retryAfter: response.headers.get('Retry-After'),
 							data,
 						};
 					},
-					{ delta: clampedDelta, previousBalance: currentBalance },
+					{ delta },
 				);
 
 				if (result.ok) {
-					await refreshBlackjack(page);
-				} else if (result.status === 429) {
-					const retryAfter = Number(result.retryAfter ?? '2');
-					const sleepMs = (Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100;
-					await page.waitForTimeout(sleepMs);
 					await refreshBlackjack(page);
 				} else if (result.status === 409) {
 					await refreshBlackjack(page);

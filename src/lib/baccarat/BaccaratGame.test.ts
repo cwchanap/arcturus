@@ -342,4 +342,31 @@ describe('BaccaratGame', () => {
 			expect(state2.activeBets.length).toBe(2);
 		});
 	});
+
+	describe('Query methods', () => {
+		test('getWinner returns null when no rounds have been played', () => {
+			expect(game.getWinner()).toBeNull();
+		});
+
+		test('getWinner returns the winner of the most recent round', () => {
+			game.placeBet('player', 100);
+			game.deal();
+			const firstOutcome = game.getLastOutcome();
+			expect(firstOutcome).not.toBeNull();
+
+			// Play a second round to verify getWinner selects the newest from roundHistory
+			game.newRound();
+			game.placeBet('banker', 100);
+			game.deal();
+			const secondOutcome = game.getLastOutcome();
+			expect(secondOutcome).not.toBeNull();
+			expect(secondOutcome).not.toBe(firstOutcome);
+
+			expect(game.getWinner()).toBe(secondOutcome?.winner);
+		});
+
+		test('getLastOutcome returns null before any round is dealt', () => {
+			expect(game.getLastOutcome()).toBeNull();
+		});
+	});
 });

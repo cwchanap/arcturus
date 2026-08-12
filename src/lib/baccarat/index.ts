@@ -89,8 +89,6 @@ export { BaccaratGame } from './BaccaratGame';
 
 // UI modules
 export { BaccaratUIRenderer } from './BaccaratUIRenderer';
-export { BaccaratClient } from './baccaratClient';
-export type { BaccaratClientConfig } from './baccaratClient';
 
 // LLM integration
 export { getBaccaratAdvice, buildAdviceContext } from './llmBaccaratStrategy';

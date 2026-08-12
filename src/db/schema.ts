@@ -32,31 +32,20 @@ export const session = sqliteTable('session', {
 		.references(() => user.id),
 });
 
-export const chipSyncReceipt = sqliteTable(
-	'chip_sync_receipt',
+export const walletSettlement = sqliteTable(
+	'wallet_settlement',
 	{
 		userId: text('userId')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		syncId: text('syncId').notNull(),
-		gameType: text('gameType').notNull(),
-		previousBalance: integer('previousBalance').notNull(),
+		settlementId: text('settlementId').notNull(),
+		attemptId: text('attemptId').notNull(),
 		balance: integer('balance').notNull(),
-		delta: integer('delta').notNull(),
-		statsDelta: integer('statsDelta'),
-		outcome: text('outcome'),
-		handCount: integer('handCount'),
-		winsIncrement: integer('winsIncrement'),
-		lossesIncrement: integer('lossesIncrement'),
-		biggestWinCandidate: integer('biggestWinCandidate'),
-		overallRank: integer('overallRank'),
-		achievementPayload: text('achievementPayload'),
 		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	},
 	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.syncId] }),
-		userCreatedIdx: index('chip_sync_receipt_user_created_idx').on(table.userId, table.createdAt),
-		createdIdx: index('chip_sync_receipt_created_idx').on(table.createdAt),
+		pk: primaryKey({ columns: [table.userId, table.settlementId] }),
+		createdIdx: index('wallet_settlement_created_idx').on(table.createdAt),
 	}),
 );
 
@@ -235,30 +224,6 @@ export const userAchievement = sqliteTable(
 		pk: primaryKey({ columns: [table.userId, table.achievementId] }),
 		// Index for fetching user's achievements
 		userEarnedIdx: index('user_achievement_user_earned_idx').on(table.userId, table.earnedAt),
-	}),
-);
-
-export const rouletteRound = sqliteTable(
-	'roulette_round',
-	{
-		syncId: text('syncId').notNull(),
-		userId: text('userId')
-			.notNull()
-			.references(() => user.id, { onDelete: 'cascade' }),
-		winningNumber: integer('winningNumber').notNull(),
-		betsJson: text('betsJson').notNull(),
-		totalBet: integer('totalBet').notNull(),
-		totalPayout: integer('totalPayout').notNull(),
-		netDelta: integer('netDelta').notNull(),
-		previousBalance: integer('previousBalance').notNull(),
-		newBalance: integer('newBalance').notNull(),
-		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL writers
-		// (spin endpoint) must bind Math.trunc(Date.now() / 1000).
-		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
-	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.syncId] }),
-		createdIdx: index('roulette_round_created_idx').on(table.createdAt),
 	}),
 );
 

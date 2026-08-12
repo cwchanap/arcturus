@@ -17,10 +17,6 @@ function parseChipBalance(text: string): number | null {
 	return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function sleep(ms: number) {
-	await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function readChipBalanceFromPage(page: Page): Promise<number | null> {
 	const loc = page.locator('[data-chip-balance]');
 	const count = await loc.count();
@@ -52,41 +48,29 @@ async function provisionUser(
 	let currentBalance = (await readChipBalanceFromPage(page)) ?? 0;
 	if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
 		for (let attempt = 0; attempt < 5; attempt++) {
-			const delta = MINIMUM_E2E_CHIP_BALANCE - currentBalance;
-			const response = await page.request.post(`${baseURL}/api/chips/update`, {
-				data: { delta, gameType: 'blackjack', previousBalance: currentBalance },
+			const delta = Math.min(MINIMUM_E2E_CHIP_BALANCE - currentBalance, 1_000_000);
+			const response = await page.request.post(`${baseURL}/api/wallet/settle`, {
+				data: {
+					settlementId: `e2e-setup-${Date.now()}-${attempt}`,
+					game: 'blackjack',
+					delta,
+					stats: { rounds: 1, wins: 1, losses: 0, biggestWin: delta },
+				},
 			});
 			if (response.ok()) {
-				let refreshed: number | null = null;
-				for (let r = 0; r < 3; r++) {
-					await sleep(2100);
-					await page.reload({ waitUntil: 'networkidle' });
-					refreshed = await readChipBalanceFromPage(page);
-					if (typeof refreshed === 'number') break;
+				const data = (await response.json().catch(() => null)) as { balance?: unknown } | null;
+				if (typeof data?.balance !== 'number') {
+					throw new Error('Wallet settlement succeeded but returned no balance');
 				}
-				if (typeof refreshed === 'number') {
-					currentBalance = refreshed;
-					break;
-				}
-				throw new Error('Chip balance update succeeded but could not be read back');
-			}
-			if (response.status() === 429) {
-				const retryAfter = Number(response.headers()['retry-after'] ?? '2');
-				await sleep((Number.isFinite(retryAfter) ? retryAfter : 2) * 1000 + 100);
-				currentBalance = (await readChipBalanceFromPage(page)) ?? currentBalance;
+				currentBalance = data.balance;
+				if (currentBalance >= MINIMUM_E2E_CHIP_BALANCE) break;
 				continue;
 			}
 			if (response.status() === 409) {
-				const data = (await response.json().catch(() => null)) as {
-					currentBalance?: number;
-				} | null;
-				if (typeof data?.currentBalance === 'number') {
-					currentBalance = data.currentBalance;
-					continue;
-				}
+				continue;
 			}
 			const errorText = await response.text().catch(() => '');
-			throw new Error(`Failed to top up chip balance: ${response.status()} ${errorText}`);
+			throw new Error(`Failed to top up wallet balance: ${response.status()} ${errorText}`);
 		}
 		if (currentBalance < MINIMUM_E2E_CHIP_BALANCE) {
 			throw new Error(

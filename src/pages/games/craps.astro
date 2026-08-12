@@ -698,8 +698,10 @@ const clientUserId = gameSession.clientUserId;
 		getAvailableCrapsBalance,
 	} from '../../lib/craps/settlement';
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
+	import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
 	import { BET_LABELS } from '../../lib/craps/constants';
 	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
+	import { loadAiSettings } from '../../lib/ai';
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import {
 		isGuestModeValue,
@@ -1523,34 +1525,46 @@ const clientUserId = gameSession.clientUserId;
 
 		// LLM Advisor
 		llmAdviceBtn.addEventListener('click', async () => {
+			if (isGuestMode) {
+				llmAdviceEl.textContent =
+					'Sign in and configure an AI provider in Profile to use provider advice.';
+				return;
+			}
+
+			const settings = loadAiSettings();
+			if (!settings) {
+				llmAdviceEl.textContent = 'Configure an AI provider in Profile to use advice.';
+				return;
+			}
+
 			llmAdviceBtn.disabled = true;
 			llmAdviceBtn.textContent = '...';
 			llmAdviceEl.textContent = 'Thinking...';
 
 			try {
 				const state = game.getState();
-				const adviceRes = await fetch('/api/craps-advice', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({
+				const result = await getCrapsAdvice(
+					{
 						phase: state.phase,
 						point: state.point,
 						activeBets: state.activeBets,
 						rollHistory: state.rollHistory,
 						chipBalance: state.chipBalance,
-					}),
-				});
+					},
+					settings,
+				);
 
-				const data = (await adviceRes.json().catch(() => ({}))) as {
-					advice?: string;
-					error?: string;
-				};
-
-				if (!adviceRes.ok) {
-					throw new Error(data.error ?? 'Failed to load advice');
+				if (!result.ok) {
+					llmAdviceEl.textContent =
+						result.status === 401
+							? 'Invalid API key. Update your AI settings in Profile.'
+							: result.status === 429
+								? 'AI provider rate limit reached. Please wait a moment.'
+								: 'AI advice is unavailable. You can keep playing normally.';
+					return;
 				}
 
-				llmAdviceEl.textContent = data.advice ?? 'No advice returned.';
+				llmAdviceEl.textContent = result.value.advice;
 			} catch (e) {
 				console.error('[CRAPS] Failed to load LLM advice:', e);
 				llmAdviceEl.textContent = 'Could not load advice. Please try again.';

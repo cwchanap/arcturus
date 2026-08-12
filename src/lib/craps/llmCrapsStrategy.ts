@@ -3,16 +3,39 @@
  * Provides colorful commentary and betting suggestions based on game state
  */
 
-import type { CrapsAdvice, CrapsAdviceContext, BetType, DiceRoll } from './types';
-import { fetchWithTimeout } from '../fetch-with-timeout';
+import { generateAiJson, type AiResult, type AiSettings } from '../ai';
+import type { CrapsAdvice, CrapsAdviceContext, BetType, CrapsBet, DiceRoll } from './types';
 
-export interface LLMSettings {
-	provider: 'openai' | 'gemini';
-	apiKey: string;
-	model: string;
+/**
+ * Aggregate repeated bets into one entry for the provider prompt.
+ * Each click creates a separate bet object in game state, but advice only
+ * needs the total amount for each type/point combination.
+ */
+export function aggregateBets(
+	activeBets: CrapsAdviceContext['activeBets'],
+): CrapsAdviceContext['activeBets'] {
+	const aggregated = new Map<string, CrapsBet>();
+
+	for (const bet of activeBets) {
+		const key = `${bet.type}-${bet.point ?? 'null'}`;
+		const existing = aggregated.get(key);
+
+		if (existing) {
+			existing.amount += bet.amount;
+			existing.odds = (existing.odds ?? 0) + (bet.odds ?? 0);
+		} else {
+			aggregated.set(key, {
+				id: `aggregated-${bet.type}-${bet.point ?? 'null'}`,
+				type: bet.type,
+				amount: bet.amount,
+				point: bet.point,
+				odds: bet.odds,
+			});
+		}
+	}
+
+	return Array.from(aggregated.values());
 }
-
-const DEFAULT_TIMEOUT = 8000;
 
 function formatRollHistory(history: DiceRoll[]): string {
 	if (history.length === 0) return 'No rolls yet';
@@ -75,114 +98,35 @@ Reply in JSON:
 {"advice":"<2-3 sentences>","suggestedBets":["passLine"|"come"|"place6"|"place8"|...],"confidence":"low|medium|high"}`;
 }
 
-async function callOpenAI(
-	system: string,
-	user: string,
-	model: string,
-	apiKey: string,
-): Promise<string> {
-	try {
-		const res = await fetchWithTimeout(
-			'https://api.openai.com/v1/chat/completions',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-				body: JSON.stringify({
-					model,
-					messages: [
-						{ role: 'system', content: system },
-						{ role: 'user', content: user },
-					],
-					temperature: 0.8,
-					max_tokens: 250,
-				}),
-			},
-			DEFAULT_TIMEOUT,
-		);
-		if (!res.ok) throw new Error(`OpenAI error ${res.status}`);
-		const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-		return data.choices?.[0]?.message?.content ?? '';
-	} catch (e) {
-		if (e instanceof Error && e.name === 'AbortError') throw new Error('Request timed out');
-		throw e;
-	}
-}
+function parsePayload(payload: Record<string, unknown>): CrapsAdvice {
+	const raw = JSON.stringify(payload);
+	const confidence = payload.confidence;
 
-async function callGemini(
-	system: string,
-	user: string,
-	model: string,
-	apiKey: string,
-): Promise<string> {
-	try {
-		const res = await fetchWithTimeout(
-			`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					contents: [{ parts: [{ text: `${system}\n\n${user}` }] }],
-					generationConfig: { temperature: 0.8, maxOutputTokens: 250 },
-				}),
-			},
-			DEFAULT_TIMEOUT,
-		);
-		if (!res.ok) throw new Error(`Gemini error ${res.status}`);
-		const data = (await res.json()) as {
-			candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-		};
-		return data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-	} catch (e) {
-		if (e instanceof Error && e.name === 'AbortError') throw new Error('Request timed out');
-		throw e;
-	}
-}
-
-function parseResponse(raw: string): CrapsAdvice {
-	const jsonMatch = raw.match(/\{[\s\S]*\}/);
-	if (!jsonMatch) {
-		throw new Error(
-			`[LLM_CRAPS] No JSON found in LLM response. Raw (truncated): ${raw.slice(0, 200)}`,
-		);
-	}
-	try {
-		const p = JSON.parse(jsonMatch[0]) as {
-			advice?: string;
-			suggestedBets?: BetType[];
-			confidence?: string;
-		};
-		return {
-			advice: p.advice ?? raw.trim(),
-			suggestedBets: Array.isArray(p.suggestedBets) ? p.suggestedBets : ['passLine'],
-			confidence: (['low', 'medium', 'high'] as const).includes(p.confidence as 'low')
-				? (p.confidence as 'low' | 'medium' | 'high')
+	return {
+		advice: typeof payload.advice === 'string' ? payload.advice : raw,
+		suggestedBets: Array.isArray(payload.suggestedBets)
+			? (payload.suggestedBets as BetType[])
+			: ['passLine'],
+		confidence:
+			confidence === 'low' || confidence === 'medium' || confidence === 'high'
+				? confidence
 				: 'medium',
-			raw,
-		};
-	} catch (parseErr) {
-		throw new Error(
-			`[LLM_CRAPS] Failed to parse LLM JSON response: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw (truncated): ${raw.slice(0, 200)}`,
-		);
-	}
+		raw,
+	};
 }
 
 export async function getCrapsAdvice(
 	ctx: CrapsAdviceContext,
-	settings: LLMSettings,
-): Promise<CrapsAdvice> {
-	if (!settings.apiKey) throw new Error('API key not configured');
-
-	const system = buildSystemPrompt();
-	const user = buildPrompt(ctx);
-
-	let raw: string;
-	if (settings.provider === 'openai') {
-		raw = await callOpenAI(system, user, settings.model, settings.apiKey);
-	} else if (settings.provider === 'gemini') {
-		raw = await callGemini(system, user, settings.model, settings.apiKey);
-	} else {
-		throw new Error(`Unsupported provider: ${settings.provider}`);
-	}
-
-	return parseResponse(raw);
+	settings: AiSettings,
+): Promise<AiResult<CrapsAdvice>> {
+	const normalized = { ...ctx, activeBets: aggregateBets(ctx.activeBets) };
+	const result = await generateAiJson(settings, {
+		system: buildSystemPrompt(),
+		prompt: buildPrompt(normalized),
+		temperature: 0.8,
+		maxOutputTokens: 250,
+		timeoutMs: 8_000,
+	});
+	if (!result.ok) return result;
+	return { ok: true, value: parsePayload(result.value) };
 }

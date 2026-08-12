@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace duplicated/server-backed AI provider plumbing with one browser-local BYOK module, make Blackjack advice always available and deterministic, and delete obsolete credential/server paths only after every live caller has migrated.
+**Goal:** Collapse five duplicated provider clients into one browser-local BYOK boundary, make Blackjack advice always local-first and deterministic, and delete D1 credential/server paths after every live caller has migrated.
 
-**Architecture:** Add `src/lib/ai` beside the existing `src/lib/wallet` boundary. Move provider/model validation there, store one local provider/model/key record, and centralize only OpenAI/Gemini HTTP mapping through `fetchJsonWithTimeout`. Games keep prompts, parsers, caches, legality rules, and fallbacks. Blackjack removes its redundant `useLLM` toggle: every Ask AI click returns local advice, while a configured provider may rewrite only the reasoning for signed-in players.
+**Architecture:** Add `src/lib/ai` beside the existing `src/lib/wallet` boundary. Move provider/model validation there, reuse `fetchJsonWithTimeout` plus the existing `extractBalancedJsonObjects()` parser, and store one provider/model/key record in browser `localStorage`. Games keep prompts, domain validation, caches, and fallbacks. Blackjack removes its redundant `useLLM` toggle; Poker keeps `useLLMAI` because its LLM opponents can make automatic paid calls during play.
 
 **Tech Stack:** TypeScript, Astro 5, Bun, Vitest, Playwright, browser `localStorage`, Drizzle Kit, Cloudflare D1 for unrelated application state.
 
@@ -15,21 +15,27 @@
 - Store exactly one active `{ provider, model, apiKey }` record under `arcturus-ai-settings`.
 - Move existing provider/model constants and validators from `src/lib/llm-settings.ts`; do not fork them.
 - Preserve model choices: OpenAI `gpt-4o`; Gemini `gemini-2.5-flash` and `gemini-2.5-flash-lite`.
-- Use one provider timeout: `5_000` ms.
-- Shared AI code owns provider HTTP mapping only. Games own prompts and game-domain validation.
+- Default provider timeout is `5_000` ms. Only Craps overrides it to its existing `8_000` ms budget.
+- Shared AI code owns provider HTTP mapping and generic JSON-object extraction only. Games own prompts and field/domain validation.
+- `AiResult` errors are limited to `timeout`, `provider-error`, and `invalid-response`; parseable HTTP failures may carry `status?: number`.
 - Blackjack Ask AI works with default settings and for guests without any provider request.
-- Remove Blackjack `useLLM`, its settings UI/test contract, configuration overlay, and automatic post-round commentary.
-- Poker keeps `DecisionCache`, rule-based fallback, and its existing guest/provider policy.
-- Baccarat gets transport migration only; do not add UI.
-- Keep legacy `/api/profile/llm-settings` until Blackjack and Poker no longer call it.
+- Remove Blackjack `useLLM`, its settings/UI/test contract, configuration overlay, and automatic post-round commentary.
+- Poker keeps `useLLMAI`, `DecisionCache`, rule-based fallback, and its current guest/provider policy because its LLM opponent path can call providers automatically during play.
+- Baccarat receives transport migration only; do not add UI.
+- Keep legacy `/api/profile/llm-settings` and D1 credential storage until Blackjack and Poker no longer call them.
+- Tasks 2–5 are one non-deployable migration sequence. Do not deploy or merge a partial sequence merely to avoid a temporary local-vs-D1 configuration mismatch.
 - Remove `llm_settings` through a forward generated migration; do not rewrite historical migration files.
 - Do not log API-key values.
 
 ## Implementation Risks
 
-1. **Blackjack gate survives:** Task 3 removes `useLLM`, guest button disabling, and the old E2E gate in the same commit.
-2. **Deleted endpoint gap:** Task 6 owns legacy API/D1 deletion only after Tasks 3-5 migrate the last callers.
-3. **Stalled provider body:** Task 1 uses `fetchJsonWithTimeout`, which keeps the timeout armed through body parsing.
+1. **Parser regression:** the shared client must reuse `extractBalancedJsonObjects()` instead of introducing another greedy brace regex.
+2. **Blackjack E2E blast radius:** removing `useLLM`, the config overlay, and commentary invalidates multiple E2E files; Task 3 owns all of them before its commit.
+3. **Migration gap:** after Profile moves local but before all games migrate, newly saved keys do not reach unmigrated D1-reading games. This is acceptable only because Tasks 2–5 ship together.
+4. **Stalled provider body:** use `fetchJsonWithTimeout`, which keeps the abort timer active through JSON body parsing.
+5. **Craps latency regression:** preserve its existing 8-second budget through `AiGenerateRequest.timeoutMs`.
+
+---
 
 ## File Structure
 
@@ -48,6 +54,7 @@
 
 - `src/lib/llm-settings.ts` temporarily in Task 1; delete in Task 6.
 - `src/lib/llm-settings.test.ts` temporarily in Task 1; delete in Task 6.
+- `src/lib/llm-response-parsing.test.ts`
 - `src/pages/profile.astro`
 - `src/lib/profile-form-handlers.ts`
 - `integration/profile-page.test.ts`
@@ -64,6 +71,8 @@
 - `src/pages/games/blackjack.astro`
 - `e2e/blackjack-settings.spec.ts`
 - `e2e/blackjack-llm.spec.ts`
+- `e2e/blackjack-split.spec.ts`
+- `e2e/public-single-player-games.spec.ts`
 - `src/lib/craps/llmCrapsStrategy.ts`
 - `src/pages/games/craps.astro`
 - `src/lib/craps/craps-advice.test.ts`
@@ -75,14 +84,14 @@
 - `src/lib/poker/PokerGame.ts`
 - `src/lib/poker/PokerGame.test.ts`
 - `src/db/schema.ts`
-- `e2e/public-single-player-games.spec.ts` if its existing settings-endpoint interception remains after caller migration.
 
 ### Delete
 
+- `src/lib/blackjack/llmResponseParsing.ts`
 - `src/lib/profile-ui-state.ts`
+- `src/lib/profile-api.ts`
 - `src/lib/llm-settings.ts`
 - `src/lib/llm-settings.test.ts`
-- `src/lib/profile-api.ts`
 - `src/pages/api/profile/llm-settings.ts`
 - `src/pages/api/profile/reveal-api-key.ts`
 - `src/pages/api/craps-advice.ts`
@@ -92,7 +101,7 @@ Historical `drizzle/0000_powerful_wrecking_crew.sql` and `drizzle/0002_jittery_f
 
 ---
 
-### Task 1: Add the shared AI settings and provider client
+## Task 1: Add the shared AI client and reuse the existing JSON parser
 
 **Files:**
 - Create: `src/lib/ai/types.ts`
@@ -102,14 +111,19 @@ Historical `drizzle/0000_powerful_wrecking_crew.sql` and `drizzle/0002_jittery_f
 - Create: `src/lib/ai/settings.test.ts`
 - Create: `src/lib/ai/client.test.ts`
 - Modify: `src/lib/llm-settings.ts`
+- Modify: `src/lib/llm-response-parsing.test.ts`
 - Test: `src/lib/llm-settings.test.ts`
+- Delete: `src/lib/blackjack/llmResponseParsing.ts`
 - Reuse: `src/lib/fetch-with-timeout.ts`
+- Reuse: `src/lib/llm-response-parsing.ts`
 
 **Interfaces:**
-- Consumes: `fetchJsonWithTimeout<T>(url, init, timeoutMs)`.
+- Consumes: `fetchJsonWithTimeout<T>(url: string, init: RequestInit, timeoutMs: number)` and `extractBalancedJsonObjects(input: string): string[]`.
 - Produces: `AiProvider`, `AiSettings`, `AiGenerateRequest`, `AiErrorCode`, `AiResult<T>`, provider/model constants/validators, local settings functions, `generateAiText()`, and `generateAiJson()`.
 
-- [ ] **Step 1: Write failing settings tests**
+- [ ] **Step 1: Write failing local-settings tests**
+
+Create `src/lib/ai/settings.test.ts`:
 
 ```ts
 import { afterEach, expect, test } from 'bun:test';
@@ -134,14 +148,14 @@ Object.defineProperty(globalThis, 'localStorage', {
 
 afterEach(() => memory.clear());
 
-test('validates the existing provider/model contract', () => {
+test('reuses the current provider/model validation contract', () => {
   expect(isValidProvider('openai')).toBe(true);
   expect(isValidProvider('other')).toBe(false);
   expect(isValidModel('openai', 'gpt-4o')).toBe(true);
   expect(isValidModel('openai', 'gemini-2.5-flash')).toBe(false);
 });
 
-test('save replaces the single active record and trims the key', () => {
+test('save replaces the one active record and trims the key', () => {
   saveAiSettings({ provider: 'openai', model: 'gpt-4o', apiKey: ' sk-test ' });
   expect(loadAiSettings()).toEqual({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' });
 
@@ -153,46 +167,66 @@ test('save replaces the single active record and trims the key', () => {
   });
 });
 
-test('load ignores garbage while save rejects invalid values', () => {
+test('load ignores garbage while save rejects invalid records', () => {
   localStorage.setItem(AI_SETTINGS_STORAGE_KEY, '{broken');
   expect(loadAiSettings()).toBeNull();
   expect(() => saveAiSettings({ provider: 'openai', model: 'bad-model', apiKey: 'x' })).toThrow();
   expect(() => saveAiSettings({ provider: 'openai', model: 'gpt-4o', apiKey: '   ' })).toThrow();
 });
 
-test('clear removes the record', () => {
+test('clear removes the current record', () => {
   saveAiSettings({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' });
   clearAiSettings();
   expect(loadAiSettings()).toBeNull();
 });
 ```
 
-- [ ] **Step 2: Verify the new settings test fails before implementation**
+- [ ] **Step 2: Verify the settings tests fail before implementation**
 
-Run: `bun test src/lib/ai/settings.test.ts`
+Run:
+
+```bash
+bun test src/lib/ai/settings.test.ts
+```
 
 Expected: FAIL resolving `./settings`.
 
-- [ ] **Step 3: Move provider/model definitions and implement local settings**
+- [ ] **Step 3: Implement shared types and move provider/model definitions**
+
+Create `src/lib/ai/types.ts`:
 
 ```ts
-// src/lib/ai/types.ts
 export type AiProvider = 'openai' | 'gemini';
-export interface AiSettings { provider: AiProvider; model: string; apiKey: string; }
+
+export interface AiSettings {
+  provider: AiProvider;
+  model: string;
+  apiKey: string;
+}
+
 export interface AiGenerateRequest {
   system?: string;
   prompt: string;
   temperature?: number;
   maxOutputTokens?: number;
+  timeoutMs?: number;
 }
-export type AiErrorCode = 'missing-key' | 'timeout' | 'provider-error' | 'invalid-response';
+
+export type AiErrorCode = 'timeout' | 'provider-error' | 'invalid-response';
+
 export type AiResult<T> =
   | { ok: true; value: T }
-  | { ok: false; code: AiErrorCode; message: string };
+  | {
+      ok: false;
+      code: AiErrorCode;
+      message: string;
+      status?: number;
+    };
 ```
 
+Create `src/lib/ai/settings.ts`:
+
 ```ts
-// src/lib/ai/settings.ts
 import type { AiProvider, AiSettings } from './types';
 
 export const AI_SETTINGS_STORAGE_KEY = 'arcturus-ai-settings';
@@ -249,91 +283,157 @@ export function clearAiSettings(): void {
 }
 ```
 
-In `src/lib/llm-settings.ts`, import/re-export `AI_MODELS`, `AI_PROVIDERS`, `isValidModel`, and `isValidProvider` from `./ai/settings`; remove its duplicate definitions. Keep its DB functions until Task 6.
+In `src/lib/llm-settings.ts`, remove its duplicated `AI_PROVIDERS`, `AI_MODELS`, `isValidProvider`, and `isValidModel` definitions and import/re-export them from `./ai/settings`. Keep its D1 functions until Task 6.
 
-- [ ] **Step 4: Run new plus legacy settings tests**
+- [ ] **Step 4: Run new and legacy settings tests**
 
-Run: `bun test src/lib/ai/settings.test.ts src/lib/llm-settings.test.ts`
+Run:
+
+```bash
+bun test src/lib/ai/settings.test.ts src/lib/llm-settings.test.ts
+```
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing provider-client tests**
+- [ ] **Step 5: Retarget the existing parser tests before deleting the Blackjack wrapper**
+
+Edit `src/lib/llm-response-parsing.test.ts` so it imports only:
+
+```ts
+import { describe, expect, test } from 'bun:test';
+import { extractBalancedJsonObjects } from './llm-response-parsing';
+```
+
+Delete the `parseLLMResponse`/Blackjack-action test sections. Keep the extractor cases for no braces, one object, multiple objects, nested braces, braces inside strings, escaped quotes, stray closing brace, and unclosed objects.
+
+Then delete `src/lib/blackjack/llmResponseParsing.ts`.
+
+- [ ] **Step 6: Write failing shared-client tests, including parser reuse and timeout/status behavior**
+
+Create `src/lib/ai/client.test.ts` with representative cases:
 
 ```ts
 import { afterEach, expect, mock, test } from 'bun:test';
 import { generateAiJson, generateAiText } from './client';
 
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
 
 test('OpenAI mapping extracts text', async () => {
+  globalThis.fetch = mock(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      model: string;
+      messages: Array<{ content: string }>;
+    };
+    expect(body.model).toBe('gpt-4o');
+    expect(body.messages.at(-1)?.content).toBe('Explain this move');
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: 'Stand here.' } }] }),
+    );
+  }) as typeof fetch;
+
+  expect(
+    await generateAiText(
+      { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
+      { prompt: 'Explain this move' },
+    ),
+  ).toEqual({ ok: true, value: 'Stand here.' });
+});
+
+test('generateAiJson tries balanced candidates instead of a greedy brace regex', async () => {
   globalThis.fetch = mock(async () =>
-    new Response(JSON.stringify({ choices: [{ message: { content: 'Stand here.' } }] })),
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            message: {
+              content:
+                'first {not valid} then {"reasoning":"Brace } inside string is safe"} trailing {"ignored":true}',
+            },
+          },
+        ],
+      }),
+    ),
   ) as typeof fetch;
-  expect(await generateAiText(
-    { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
-    { prompt: 'Explain this move' },
-  )).toEqual({ ok: true, value: 'Stand here.' });
+
+  expect(
+    await generateAiJson(
+      { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
+      { prompt: 'Explain' },
+    ),
+  ).toEqual({ ok: true, value: { reasoning: 'Brace } inside string is safe' } });
 });
 
-test('Gemini mapping extracts JSON', async () => {
-  globalThis.fetch = mock(async () => new Response(JSON.stringify({
-    candidates: [{ content: { parts: [{ text: '{"reasoning":"Dealer is weak"}' }] } }],
-  }))) as typeof fetch;
-  expect(await generateAiJson(
-    { provider: 'gemini', model: 'gemini-2.5-flash', apiKey: 'AIza-test' },
-    { prompt: 'Explain' },
-  )).toEqual({ ok: true, value: { reasoning: 'Dealer is weak' } });
+test('parseable HTTP error preserves status', async () => {
+  globalThis.fetch = mock(async () =>
+    new Response(JSON.stringify({ error: { message: 'bad key' } }), { status: 401 }),
+  ) as typeof fetch;
+
+  expect(
+    await generateAiText(
+      { provider: 'openai', model: 'gpt-4o', apiKey: 'bad-key' },
+      { prompt: 'x' },
+    ),
+  ).toEqual({
+    ok: false,
+    code: 'provider-error',
+    message: 'Provider request failed (401)',
+    status: 401,
+  });
 });
 
-test('parseable HTTP errors, aborts, and malformed bodies normalize', async () => {
-  globalThis.fetch = mock(async () => new Response(JSON.stringify({ error: 'rate limited' }), { status: 429 })) as typeof fetch;
-  const http = await generateAiText(
-    { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
-    { prompt: 'x' },
-  );
-  expect(http.ok).toBe(false);
-  if (!http.ok) expect(http.code).toBe('provider-error');
+test('timeout override is passed through the shared request path', async () => {
+  globalThis.fetch = mock(
+    async (_url, init) =>
+      await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      }),
+  ) as typeof fetch;
 
-  globalThis.fetch = mock(async () => { throw new DOMException('Aborted', 'AbortError'); }) as typeof fetch;
-  const timeout = await generateAiText(
+  const started = Date.now();
+  const result = await generateAiText(
     { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
-    { prompt: 'x' },
+    { prompt: 'x', timeoutMs: 1 },
   );
-  expect(timeout.ok).toBe(false);
-  if (!timeout.ok) expect(timeout.code).toBe('timeout');
-
-  globalThis.fetch = mock(async () => new Response('not-json')) as typeof fetch;
-  const malformed = await generateAiText(
-    { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' },
-    { prompt: 'x' },
-  );
-  expect(malformed.ok).toBe(false);
-  if (!malformed.ok) expect(malformed.code).toBe('invalid-response');
+  expect(Date.now() - started).toBeLessThan(500);
+  expect(result).toEqual({ ok: false, code: 'timeout', message: 'AI request timed out' });
 });
 ```
 
-- [ ] **Step 6: Implement the two-provider client on `fetchJsonWithTimeout`**
+- [ ] **Step 7: Implement the two-provider client on existing timeout/parser seams**
+
+Create `src/lib/ai/client.ts`:
 
 ```ts
-// src/lib/ai/client.ts
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
+import { extractBalancedJsonObjects } from '../llm-response-parsing';
 import type { AiGenerateRequest, AiResult, AiSettings } from './types';
 
 export const AI_REQUEST_TIMEOUT_MS = 5_000;
 
-type OpenAiPayload = { choices?: Array<{ message?: { content?: string } }> };
-type GeminiPayload = { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+type OpenAiPayload = {
+  choices?: Array<{ message?: { content?: string } }>;
+};
 
-function providerRequest(settings: AiSettings, request: AiGenerateRequest) {
+type GeminiPayload = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+};
+
+function buildProviderRequest(settings: AiSettings, request: AiGenerateRequest) {
   const temperature = request.temperature ?? 0.3;
   const maxOutputTokens = request.maxOutputTokens ?? 200;
+
   if (settings.provider === 'openai') {
     return {
       url: 'https://api.openai.com/v1/chat/completions',
       init: {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${settings.apiKey}` },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${settings.apiKey}`,
+        },
         body: JSON.stringify({
           model: settings.model,
           messages: [
@@ -346,13 +446,23 @@ function providerRequest(settings: AiSettings, request: AiGenerateRequest) {
       } satisfies RequestInit,
     };
   }
+
   return {
     url: `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
     init: {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: `${request.system ? `${request.system}\n\n` : ''}${request.prompt}` }] }],
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `${request.system ? `${request.system}\n\n` : ''}${request.prompt}`,
+              },
+            ],
+          },
+        ],
         generationConfig: { temperature, maxOutputTokens },
       }),
     } satisfies RequestInit,
@@ -363,24 +473,44 @@ export async function generateAiText(
   settings: AiSettings,
   request: AiGenerateRequest,
 ): Promise<AiResult<string>> {
-  if (!settings.apiKey.trim()) return { ok: false, code: 'missing-key', message: 'API key not configured' };
-  const { url, init } = providerRequest(settings, request);
+  const { url, init } = buildProviderRequest(settings, request);
+
   let response: Response;
   let data: OpenAiPayload | GeminiPayload;
   try {
-    ({ response, data } = await fetchJsonWithTimeout<OpenAiPayload | GeminiPayload>(url, init, AI_REQUEST_TIMEOUT_MS));
+    const result = await fetchJsonWithTimeout<OpenAiPayload | GeminiPayload>(
+      url,
+      init,
+      request.timeoutMs ?? AI_REQUEST_TIMEOUT_MS,
+    );
+    response = result.response;
+    data = result.data;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
       return { ok: false, code: 'timeout', message: 'AI request timed out' };
     }
-    return { ok: false, code: 'invalid-response', message: 'Provider returned invalid JSON' };
+    if (error instanceof SyntaxError) {
+      return { ok: false, code: 'invalid-response', message: 'Provider returned invalid JSON' };
+    }
+    return { ok: false, code: 'provider-error', message: 'AI request failed' };
   }
+
   if (!response.ok) {
-    return { ok: false, code: 'provider-error', message: `Provider request failed (${response.status})` };
+    return {
+      ok: false,
+      code: 'provider-error',
+      message: `Provider request failed (${response.status})`,
+      status: response.status,
+    };
   }
-  const value = settings.provider === 'openai'
-    ? (data as OpenAiPayload).choices?.[0]?.message?.content
-    : (data as GeminiPayload).candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('');
+
+  const value =
+    settings.provider === 'openai'
+      ? (data as OpenAiPayload).choices?.[0]?.message?.content
+      : (data as GeminiPayload).candidates?.[0]?.content?.parts
+          ?.map((part) => part.text ?? '')
+          .join('');
+
   return typeof value === 'string' && value.trim()
     ? { ok: true, value: value.trim() }
     : { ok: false, code: 'invalid-response', message: 'Provider returned no text' };
@@ -392,32 +522,71 @@ export async function generateAiJson(
 ): Promise<AiResult<Record<string, unknown>>> {
   const text = await generateAiText(settings, request);
   if (!text.ok) return text;
-  const match = text.value.match(/\{[\s\S]*\}/);
-  if (!match) return { ok: false, code: 'invalid-response', message: 'Provider returned no JSON object' };
-  try {
-    return { ok: true, value: JSON.parse(match[0]) as Record<string, unknown> };
-  } catch {
-    return { ok: false, code: 'invalid-response', message: 'Provider returned invalid JSON object' };
+
+  for (const candidate of extractBalancedJsonObjects(text.value)) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return { ok: true, value: parsed as Record<string, unknown> };
+      }
+    } catch {
+      // Try the next balanced object.
+    }
   }
+
+  return { ok: false, code: 'invalid-response', message: 'Provider returned no valid JSON object' };
 }
 ```
 
-`src/lib/ai/index.ts` re-exports the public types/settings/client functions. Keep `providerRequest()` private.
+Create `src/lib/ai/index.ts`:
 
-- [ ] **Step 7: Run focused tests and commit**
+```ts
+export type {
+  AiProvider,
+  AiSettings,
+  AiGenerateRequest,
+  AiErrorCode,
+  AiResult,
+} from './types';
+export {
+  AI_SETTINGS_STORAGE_KEY,
+  AI_PROVIDERS,
+  AI_MODELS,
+  isValidProvider,
+  isValidModel,
+  loadAiSettings,
+  saveAiSettings,
+  clearAiSettings,
+} from './settings';
+export { AI_REQUEST_TIMEOUT_MS, generateAiText, generateAiJson } from './client';
+```
 
-Run: `bun test src/lib/ai src/lib/llm-settings.test.ts && bunx eslint src/lib/ai src/lib/llm-settings.ts`
+- [ ] **Step 8: Run focused tests/lint and commit**
 
-Expected: PASS.
+Run:
 
 ```bash
-git add src/lib/ai src/lib/llm-settings.ts src/lib/llm-settings.test.ts
-git commit -m "feat: add shared browser AI module"
+bun test \
+  src/lib/ai/settings.test.ts \
+  src/lib/ai/client.test.ts \
+  src/lib/llm-settings.test.ts \
+  src/lib/llm-response-parsing.test.ts
+bunx eslint src/lib/ai src/lib/llm-settings.ts src/lib/llm-response-parsing.ts
+```
+
+Expected: PASS with zero warnings.
+
+Commit:
+
+```bash
+git add src/lib/ai src/lib/llm-settings.ts src/lib/llm-response-parsing.test.ts
+git add -u src/lib/blackjack/llmResponseParsing.ts
+git commit -m "feat: add shared browser AI client"
 ```
 
 ---
 
-### Task 2: Move Profile settings local without deleting legacy APIs
+## Task 2: Move Profile AI settings to browser-local storage
 
 **Files:**
 - Modify: `src/pages/profile.astro`
@@ -425,100 +594,151 @@ git commit -m "feat: add shared browser AI module"
 - Modify: `integration/profile-page.test.ts`
 - Modify: `e2e/profile.spec.ts`
 - Delete: `src/lib/profile-ui-state.ts`
-- Keep: `src/lib/profile-api.ts`, profile AI API routes, `src/lib/llm-settings.ts`, and `src/db/schema.ts` until Task 6.
+- Delete: `src/lib/profile-api.ts`
+- Keep for now: `src/lib/llm-settings.ts`
+- Keep for now: `src/pages/api/profile/llm-settings.ts`
+- Keep for now: `src/pages/api/profile/reveal-api-key.ts`
 
 **Interfaces:**
-- Consumes: `AI_MODELS`, `AI_PROVIDERS`, `isValidProvider()`, `loadAiSettings()`, `saveAiSettings()`, `clearAiSettings()`.
-- Produces: Profile UI backed only by one local `AiSettings` record.
+- Consumes: `AI_MODELS`, `AI_PROVIDERS`, `loadAiSettings()`, `saveAiSettings()`, `clearAiSettings()`.
+- Produces: Profile browser UI with no D1 AI read/write or reveal fetch.
 
-- [ ] **Step 1: Change Profile tests to require local persistence and no D1 settings read**
+- [ ] **Step 1: Change Profile tests to require local persistence**
+
+In `e2e/profile.spec.ts`, cover the real local record:
 
 ```ts
 await page.goto('/profile');
 await page.selectOption('#ai-provider', 'openai');
 await page.selectOption('#ai-model', 'gpt-4o');
 await page.fill('#api-key', 'sk-e2e-local');
-await page.locator('#ai-settings-form').getByRole('button', { name: /save/i }).click();
-expect(await page.evaluate(() => localStorage.getItem('arcturus-ai-settings'))).toBe(
-  JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-e2e-local' }),
-);
+await page.click('#ai-settings-form button[type="submit"]');
+
+const stored = await page.evaluate(() => localStorage.getItem('arcturus-ai-settings'));
+expect(JSON.parse(stored!)).toEqual({
+  provider: 'openai',
+  model: 'gpt-4o',
+  apiKey: 'sk-e2e-local',
+});
+
+await page.reload();
+await expect(page.locator('#api-key-status')).toContainText('Saved');
 ```
 
-In `integration/profile-page.test.ts`, remove the expected `getLlmSettings()` server read.
+Also cover Show, Copy, Clear, and switching providers replacing the single stored record. Do not intercept `/api/profile/llm-settings` or `/api/profile/reveal-api-key` in the new cases.
 
-- [ ] **Step 2: Run Profile tests and verify they fail**
+In `integration/profile-page.test.ts`, remove `getLlmSettings` setup and assert Profile rendering no longer performs an AI-settings D1 read.
 
-Run: `vitest run integration/profile-page.test.ts`
+- [ ] **Step 2: Run focused tests and verify they fail against the server-backed implementation**
 
-Expected: FAIL while Profile still reads D1 AI settings.
+Run:
 
-- [ ] **Step 3: Delete the reveal-oriented state class and save locally**
+```bash
+vitest run integration/profile-page.test.ts
+bunx playwright test e2e/profile.spec.ts
+```
+
+Expected: at least the new local-settings cases FAIL before implementation.
+
+- [ ] **Step 3: Delete reveal-oriented UI state and make form handling local**
+
+Delete `src/lib/profile-ui-state.ts`.
+
+In `src/lib/profile-form-handlers.ts`, use the shared settings API directly:
 
 ```ts
-// src/lib/profile-form-handlers.ts
-import { isValidProvider, saveAiSettings, type AiSettings } from './ai';
+import {
+  clearAiSettings,
+  loadAiSettings,
+  saveAiSettings,
+  type AiSettings,
+} from './ai';
+
+export function readCurrentAiSettings(): AiSettings | null {
+  return loadAiSettings();
+}
 
 export function saveAiSettingsFromForm(
-  providerValue: string,
+  provider: AiSettings['provider'],
   model: string,
-  apiKey: string,
+  apiKeyInput: string,
+  previous: AiSettings | null,
 ): AiSettings {
-  if (!isValidProvider(providerValue)) throw new Error('Unsupported AI provider');
-  const settings = { provider: providerValue, model, apiKey };
-  saveAiSettings(settings);
-  return settings;
+  const masked = /^•+$/.test(apiKeyInput);
+  const apiKey =
+    masked && previous?.provider === provider
+      ? previous.apiKey
+      : apiKeyInput.trim();
+  const next = { provider, model, apiKey };
+  saveAiSettings(next);
+  return next;
+}
+
+export function clearAiSettingsFromForm(): void {
+  clearAiSettings();
 }
 ```
 
-Delete `src/lib/profile-ui-state.ts`; do not preserve `revealApiKey(fetchFn)` or dual-key flags.
+Keep existing `showToast`, `setFeedback`, and `populateModels` helpers if still used. Delete server-save/reveal helpers and imports from `profile-api.ts`.
 
-- [ ] **Step 4: Wire Profile show/copy/clear directly to local state**
+- [ ] **Step 4: Make `profile.astro` initialize from localStorage only**
+
+Remove the server-side `getLlmSettings()` read from Profile’s `Promise.all` and remove the serialized server AI-settings payload.
+
+In the client script:
 
 ```ts
+import {
+  AI_MODELS,
+  AI_PROVIDERS,
+  loadAiSettings,
+} from '../lib/ai';
+
 const stored = loadAiSettings();
 let aiState = stored ?? {
   provider: 'openai' as const,
   model: AI_MODELS.openai[0],
   apiKey: '',
 };
-
-showKeyButton?.addEventListener('click', () => {
-  if (apiKeyInput && aiState.apiKey) {
-    apiKeyInput.type = 'text';
-    apiKeyInput.value = aiState.apiKey;
-  }
-});
-
-copyKeyButton?.addEventListener('click', async () => {
-  if (!aiState.apiKey) return;
-  await navigator.clipboard.writeText(aiState.apiKey);
-  showToast(toastEl, toastMessage, 'API key copied to clipboard!');
-});
-
-clearKeyButton?.addEventListener('click', () => {
-  clearAiSettings();
-  aiState = { provider: aiState.provider, model: aiState.model, apiKey: '' };
-  if (apiKeyInput) apiKeyInput.value = '';
-});
 ```
 
-Remove Profile’s server-side `getLlmSettings()` work and `aiSettingsPayload`. Update copy to “Stored in this browser only.” Leave old API files in place for unmigrated game callers.
+Show/copy uses `aiState.apiKey` directly. Clear removes local settings. Update copy/help text to state that the key is stored in this browser only and switching provider replaces the active record.
 
-- [ ] **Step 5: Verify and commit**
+- [ ] **Step 5: Delete the now-unused Profile API wrapper, but keep server endpoints temporarily**
 
-Run: `vitest run integration/profile-page.test.ts && bunx playwright test e2e/profile.spec.ts && bun run build`
+Delete:
+
+```text
+src/lib/profile-api.ts
+```
+
+Do **not** delete `/api/profile/llm-settings`, `/api/profile/reveal-api-key`, or `src/lib/llm-settings.ts` yet; unmigrated Blackjack/Poker still read them.
+
+- [ ] **Step 6: Run focused Profile/build verification and commit**
+
+Run:
+
+```bash
+vitest run integration/profile-page.test.ts
+bunx playwright test e2e/profile.spec.ts
+bun run build
+```
 
 Expected: PASS.
 
+Commit:
+
 ```bash
 git add src/pages/profile.astro src/lib/profile-form-handlers.ts integration/profile-page.test.ts e2e/profile.spec.ts
-git add -u src/lib/profile-ui-state.ts
-git commit -m "refactor: keep AI settings in browser"
+git add -u src/lib/profile-ui-state.ts src/lib/profile-api.ts
+git commit -m "refactor: keep BYOK settings in browser"
 ```
+
+**Deployment note:** do not deploy this commit by itself. Newly saved Profile keys are local-only while Blackjack/Poker still read legacy D1 settings until later tasks.
 
 ---
 
-### Task 3: Make Blackjack Ask AI always local-first
+## Task 3: Make Blackjack local-first and update its complete E2E blast radius
 
 **Files:**
 - Modify: `src/lib/blackjack/types.ts`
@@ -532,100 +752,109 @@ git commit -m "refactor: keep AI settings in browser"
 - Modify: `src/lib/blackjack/blackjackClient.init.test.ts`
 - Modify: `src/pages/games/blackjack.astro`
 - Modify: `e2e/blackjack-settings.spec.ts`
+- Modify: `e2e/blackjack-llm.spec.ts`
+- Modify: `e2e/blackjack-split.spec.ts`
+- Modify: `e2e/public-single-player-games.spec.ts`
 
 **Interfaces:**
 - Consumes: `AiSettings`, `generateAiJson()`, `loadAiSettings()`.
-- Produces: `getBlackjackStrategyAdvice(context)` and `getBlackjackAdvice(context, settings)`; Ask AI available on every player turn.
+- Produces: `getBlackjackStrategyAdvice(context): BlackjackAdvice` and `getBlackjackAdvice(context, settings): Promise<BlackjackAdvice>` where the action is always deterministic/legal and provider output may change reasoning only.
 
-- [ ] **Step 1: Add deterministic-authority tests using existing `card`, `createContext`, and `mockFetch` helpers**
+- [ ] **Step 1: Remove `useLLM` from the Blackjack settings contract tests first**
 
-```ts
-test('hard 16 against dealer 10 recommends legal hit', () => {
-  const context = createContext(
-    [card('10', 'hearts'), card('6', 'spades')],
-    card('10', 'clubs'),
-    ['hit', 'stand'],
-  );
-  const advice = getBlackjackStrategyAdvice(context);
-  expect(advice.recommendedAction).toBe('hit');
-  expect(context.availableActions).toContain(advice.recommendedAction);
-});
+Update `GameSettingsManager.test.ts` and `e2e/blackjack-settings.spec.ts` so saved/reset settings cover only starting chips, min/max bet, and dealer speed.
 
-test('provider reasoning cannot replace deterministic action', async () => {
-  mockFetch(async () => new Response(JSON.stringify({
-    choices: [{ message: { content: '{"action":"stand","reasoning":"Take a card against this strong up-card."}' } }],
-  }), { status: 200 }));
-  const context = createContext(
-    [card('10', 'hearts'), card('6', 'spades')],
-    card('10', 'clubs'),
-    ['hit', 'stand'],
-  );
-  const advice = await getBlackjackAdvice(context, {
-    provider: 'openai',
-    model: 'gpt-4o',
-    apiKey: 'test-key',
-  });
-  expect(advice.recommendedAction).toBe('hit');
-  expect(advice.reasoning).toContain('strong up-card');
-});
+In `e2e/blackjack-settings.spec.ts`:
 
-test('provider failure returns exact local advice', async () => {
-  mockFetch(async () => { throw new DOMException('Aborted', 'AbortError'); });
-  const context = createContext(
-    [card('10', 'hearts'), card('6', 'spades')],
-    card('10', 'clubs'),
-    ['hit', 'stand'],
-  );
-  const local = getBlackjackStrategyAdvice(context);
-  expect(await getBlackjackAdvice(context, {
-    provider: 'openai',
-    model: 'gpt-4o',
-    apiKey: 'test-key',
-  })).toEqual(local);
-});
+- remove `controls.useLlm` from the settings-control helper;
+- remove the saved-settings expectation that `useLlm` is checked;
+- remove the reset-defaults expectation that `useLlm` is unchecked;
+- replace the old “LLM toggle can disable AI Rival” test with a local-advice test that requires no toggle.
+
+- [ ] **Step 2: Remove `useLLM` from production settings/UI**
+
+Delete the property from `BlackjackSettings`, defaults, update/reset logic, and settings markup. Delete `llmUserEnabled` from `blackjackClient.ts`.
+
+Run:
+
+```bash
+rg "useLLM|setting-use-llm" src/lib/blackjack src/pages/games/blackjack.astro e2e/blackjack-settings.spec.ts
 ```
 
-Keep/add stand, double-down, split, and unavailable-preferred-action fixtures with the same existing helpers.
+Expected: zero matches after the task edits are complete.
 
-- [ ] **Step 2: Remove `useLLM` from Blackjack settings and its E2E contract**
+- [ ] **Step 3: Promote the existing basic-strategy fallback into the authoritative local function**
 
-Delete `useLLM` from `BlackjackSettings`, `DEFAULT_SETTINGS`, GameSettingsManager read/write/update paths, Blackjack settings markup/client wiring, and related tests.
-
-Replace the current E2E gate test with:
+In `llmBlackjackStrategy.ts`, rename/export the current basic-strategy function rather than replacing it with a new abstraction:
 
 ```ts
-test('Ask AI works with default Blackjack settings', async ({ browser, baseURL }) => {
-  const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-  try {
-    await dealHand(page, 50);
-    const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
-    await expect(aiButton).toBeEnabled();
-    await aiButton.click();
-    await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
-  } finally {
-    await context.close();
+export function getBlackjackStrategyAdvice(
+  context: BlackjackAdviceContext,
+): BlackjackAdvice {
+  const { playerHand, dealerUpCard, availableActions } = context;
+  const handValue = calculateHandValue(playerHand.cards);
+  const dealerValue = ['J', 'Q', 'K'].includes(dealerUpCard.rank)
+    ? 10
+    : dealerUpCard.rank === 'A'
+      ? 11
+      : Number.parseInt(dealerUpCard.rank, 10);
+
+  let action: BlackjackAction = 'stand';
+  let reasoning = '';
+
+  if (handValue.value <= 11) {
+    action = 'hit';
+    reasoning = `With ${handValue.value}, take a card because this total cannot bust on one hit.`;
+  } else if (handValue.value >= 17) {
+    action = 'stand';
+    reasoning = `With ${handValue.value}, stand rather than take unnecessary bust risk.`;
+  } else if (dealerValue >= 7) {
+    action = 'hit';
+    reasoning = `With ${handValue.value} against dealer ${dealerValue}, improve the hand against a strong up-card.`;
+  } else {
+    action = 'stand';
+    reasoning = `With ${handValue.value} against dealer ${dealerValue}, let the dealer take the bust risk.`;
   }
-});
-```
 
-- [ ] **Step 3: Export the current basic fallback as authoritative local strategy**
+  if (
+    availableActions.includes('double-down') &&
+    (handValue.value === 10 || handValue.value === 11)
+  ) {
+    action = 'double-down';
+    reasoning = `With ${handValue.value}, double down while the one-card upside is strong.`;
+  }
 
-Promote `getBasicStrategyAdvice()` to `getBlackjackStrategyAdvice()`. Preserve the current hit/stand/double/split rules, then enforce legality:
+  if (availableActions.includes('split') && playerHand.cards.length === 2) {
+    const [first, second] = playerHand.cards;
+    if (first.rank === second.rank && (first.rank === 'A' || first.rank === '8')) {
+      action = 'split';
+      reasoning = `Split ${first.rank}s according to the current basic-strategy rule.`;
+    }
+  }
 
-```ts
-const legalActions = availableActions.filter((action) => action !== 'ask-ai');
-if (!legalActions.includes(recommendedAction)) {
-  recommendedAction = legalActions.includes('hit')
-    ? 'hit'
-    : legalActions.includes('stand')
-      ? 'stand'
-      : legalActions[0];
+  const legalActions = availableActions.filter((candidate) => candidate !== 'ask-ai');
+  if (!legalActions.includes(action)) {
+    action = legalActions.includes('hit')
+      ? 'hit'
+      : legalActions.includes('stand')
+        ? 'stand'
+        : legalActions[0];
+  }
+
+  return {
+    recommendedAction: action ?? null,
+    reasoning: `${reasoning} (basic strategy)`,
+    confidence: 1,
+    raw: '',
+  };
 }
 ```
 
-Return `confidence: 1` and deterministic reasoning.
+Keep the ticket scoped to the existing strategy rules; do not add a full strategy-table engine.
 
-- [ ] **Step 4: Make provider output reasoning-only**
+- [ ] **Step 4: Change provider behavior to reasoning-only**
+
+Use the shared client:
 
 ```ts
 export async function getBlackjackAdvice(
@@ -634,25 +863,103 @@ export async function getBlackjackAdvice(
 ): Promise<BlackjackAdvice> {
   const deterministic = getBlackjackStrategyAdvice(context);
   if (!settings || !deterministic.recommendedAction) return deterministic;
+
   const result = await generateAiJson(settings, {
-    system: 'Explain the already-selected Blackjack move. Do not choose another move.',
-    prompt: `Move: ${deterministic.recommendedAction}\nBase explanation: ${deterministic.reasoning}\nReturn {"reasoning":"one concise explanation"}.`,
+    system: 'Explain the already-selected Blackjack move. Do not choose a different move.',
+    prompt: [
+      `Move: ${deterministic.recommendedAction}`,
+      `Base explanation: ${deterministic.reasoning}`,
+      'Return {"reasoning":"one concise explanation"}.',
+    ].join('\n'),
     temperature: 0.3,
     maxOutputTokens: 120,
   });
+
   if (!result.ok) return deterministic;
   const reasoning = result.value.reasoning;
   return typeof reasoning === 'string' && reasoning.trim()
-    ? { ...deterministic, reasoning: reasoning.trim(), raw: JSON.stringify(result.value) }
+    ? {
+        ...deterministic,
+        reasoning: reasoning.trim(),
+        raw: JSON.stringify(result.value),
+      }
     : deterministic;
 }
 ```
 
-Delete private Blackjack provider functions/action parser and `getRoundCommentary()`. Remove its export from `src/lib/blackjack/index.ts`.
+Delete Blackjack’s private provider functions, private action parser, and `getRoundCommentary()`.
 
-- [ ] **Step 5: Remove guest/settings gating from the click path and delete commentary/overlay DOM**
+Update `src/lib/blackjack/index.ts` to export `getBlackjackStrategyAdvice` / `getBlackjackAdvice` and remove `getRoundCommentary`.
 
-Delete `llmUserEnabled`, `llmConfigured`, `llmSettingsLoading`, `loadLlmSettings()`, guest button disabling, the “AI Rival is disabled” branch, configuration overlay, and post-round commentary code.
+- [ ] **Step 5: Add strategy tests using the existing `card`, `createContext`, and `mockFetch` helpers**
+
+Representative deterministic case:
+
+```ts
+const context = createContext(
+  [card('10', 'hearts'), card('6', 'spades')],
+  card('10', 'clubs'),
+  ['hit', 'stand'],
+);
+const local = getBlackjackStrategyAdvice(context);
+expect(local.recommendedAction).toBe('hit');
+expect(context.availableActions).toContain(local.recommendedAction);
+```
+
+Provider cannot change the action:
+
+```ts
+mockFetch(async () =>
+  new Response(
+    JSON.stringify({
+      choices: [
+        {
+          message: {
+            content: '{"action":"stand","reasoning":"Dealer pressure still favors taking a card."}',
+          },
+        },
+      ],
+    }),
+  ),
+);
+
+const advice = await getBlackjackAdvice(context, {
+  provider: 'openai',
+  model: 'gpt-4o',
+  apiKey: 'test-key',
+});
+expect(advice.recommendedAction).toBe('hit');
+expect(advice.reasoning).toContain('Dealer pressure');
+```
+
+Provider failure returns exactly local advice:
+
+```ts
+mockFetch(async () => {
+  throw new Error('network down');
+});
+expect(
+  await getBlackjackAdvice(context, {
+    provider: 'openai',
+    model: 'gpt-4o',
+    apiKey: 'test-key',
+  }),
+).toEqual(local);
+```
+
+Keep explicit hit, stand, double-down, split, and unavailable-preferred-action fixtures.
+
+- [ ] **Step 6: Remove guest/config gating and automatic commentary in the client**
+
+Delete:
+
+- `llmConfigured` / `llmSettingsLoading` / `loadLlmSettings()`;
+- the “AI Rival is disabled” branch;
+- guest button disabling;
+- config-overlay flow;
+- commentary DOM state and post-round provider call.
+
+The click path becomes:
 
 ```ts
 const providerSettings = isGuestMode ? null : loadAiSettings();
@@ -665,65 +972,158 @@ aiAdviceReasoning.textContent = advice.reasoning;
 highlightRecommendedAction(advice.recommendedAction);
 ```
 
-Guests always receive local advice and never call a provider.
+Guests therefore receive local advice and never send their local browser key to a provider through Blackjack.
 
-- [ ] **Step 6: Extend `blackjackClient.init.test.ts` using its existing DOM/fetch helpers**
+Delete commentary/config-overlay markup from `blackjack.astro` when no longer used.
+
+- [ ] **Step 7: Update `blackjackClient.init.test.ts` with the existing DOM harness**
+
+Use existing `buildBlackjackDOM`, `installFetch`, `clickDeal`, `clickStand`, and `flush` helpers.
+
+Guest local advice case:
 
 ```ts
-test('guest Ask AI renders advice without provider traffic', async () => {
-  localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-    provider: 'openai',
-    model: 'gpt-4o',
-    apiKey: 'stale-key',
-  }));
-  const { calls } = installFetch();
-  const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-ai', initialBalance: 1000 });
-  initBlackjackClient();
-  await flush(5);
-  clickDeal();
-  await flush(2);
-  (document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
-  await flush(5);
-  expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
-  expect(calls.some(({ url }) => url.includes('api.openai.com') || url.includes('generativelanguage.googleapis.com'))).toBe(false);
-  root.remove();
-  localStorage.removeItem('arcturus-ai-settings');
-});
-
-test('round completion does not make provider request', async () => {
-  localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-    provider: 'openai',
-    model: 'gpt-4o',
-    apiKey: 'test-key',
-  }));
-  const { calls } = installFetch({ settlement: makeResponse(200, { balance: 950, duplicate: false }) });
-  const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-ai', initialBalance: 1000 });
-  initBlackjackClient();
-  await flush(5);
-  clickDeal();
-  await flush(2);
-  clickStand();
-  await flush(15);
-  expect(calls.some(({ url }) => url.includes('api.openai.com') || url.includes('generativelanguage.googleapis.com'))).toBe(false);
-  root.remove();
-  localStorage.removeItem('arcturus-ai-settings');
-});
+const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-ai', initialBalance: 1000 });
+localStorage.setItem(
+  'arcturus-ai-settings',
+  JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'stale-guest-key' }),
+);
+const { calls } = installFetch();
+initBlackjackClient();
+await flush(5);
+clickDeal();
+await flush(2);
+(document.getElementById('btn-ai-rival') as HTMLButtonElement).click();
+await flush(2);
+expect(document.getElementById('ai-advice-action')?.textContent).toContain('Recommended:');
+expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
+root.remove();
 ```
 
-- [ ] **Step 7: Verify and commit**
+Round completion no longer performs AI traffic:
 
-Run: `bun test src/lib/blackjack && bunx playwright test e2e/blackjack-settings.spec.ts`
+```ts
+const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-ai', initialBalance: 1000 });
+const { calls } = installFetch();
+initBlackjackClient();
+await flush(5);
+clickDeal();
+await flush(2);
+clickStand();
+await flush(15);
+expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
+root.remove();
+```
 
-Expected: PASS.
+- [ ] **Step 8: Rewrite `e2e/blackjack-llm.spec.ts` in this task, not final cleanup**
+
+Change `gotoBlackjack()` to navigation only:
+
+```ts
+async function gotoBlackjack(page: Page) {
+  await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
+}
+```
+
+Delete the old helper that intercepts `/api/profile/llm-settings`, the no-key overlay test, the “Unable to get advice” expectation, and the post-round commentary test.
+
+No-provider case:
+
+```ts
+await page.addInitScript(() => localStorage.removeItem('arcturus-ai-settings'));
+const providerRequests: string[] = [];
+page.on('request', (request) => {
+  if (
+    request.url().includes('api.openai.com') ||
+    request.url().includes('generativelanguage.googleapis.com')
+  ) {
+    providerRequests.push(request.url());
+  }
+});
+await gotoBlackjack(page);
+await dealHand(page, 50);
+const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
+await expect(aiButton).toBeEnabled();
+await aiButton.click();
+await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
+await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
+expect(providerRequests).toEqual([]);
+```
+
+Configured explicit-only case:
+
+```ts
+await page.addInitScript(() =>
+  localStorage.setItem(
+    'arcturus-ai-settings',
+    JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-fake' }),
+  ),
+);
+let calls = 0;
+await page.route('https://api.openai.com/**', async (route) => {
+  calls += 1;
+  await route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      choices: [
+        { message: { content: '{"reasoning":"Local strategy explained."}' } },
+      ],
+    }),
+  });
+});
+await gotoBlackjack(page);
+await dealHand(page, 50);
+expect(calls).toBe(0);
+await page.getByRole('button', { name: 'Ask AI Rival' }).click();
+await expect.poll(() => calls).toBe(1);
+await page.getByRole('button', { name: 'Stand' }).click();
+await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({ timeout: 15000 });
+expect(calls).toBe(1);
+```
+
+Provider-failure case must still show deterministic recommendation/reasoning.
+
+- [ ] **Step 9: Update public guest and split regression E2E unconditionally**
+
+In `e2e/public-single-player-games.spec.ts`, remove the persisted Blackjack `useLLM: true` setup, `#setting-use-llm` assertions, disabled Ask AI assertion, and “Sign in” status expectation. Replace them with an enabled Ask AI + local advice/no-provider-request assertion.
+
+Keep Poker’s `poker_game_settings.useLLMAI` guest test unchanged because Poker retains that setting.
+
+`e2e/blackjack-split.spec.ts` does not need new feature assertions; run it as regression coverage for the same Blackjack client initialization/action path and change only any `useLLM`/removed-DOM references if its current file contains them.
+
+- [ ] **Step 10: Run the complete Blackjack gate before committing**
+
+Run:
 
 ```bash
-git add src/lib/blackjack src/pages/games/blackjack.astro e2e/blackjack-settings.spec.ts
+bun test src/lib/blackjack
+bunx playwright test \
+  e2e/blackjack-settings.spec.ts \
+  e2e/blackjack-llm.spec.ts \
+  e2e/blackjack-split.spec.ts \
+  e2e/public-single-player-games.spec.ts
+rg "useLLM|setting-use-llm|getRoundCommentary|ai-commentary-box|llm-config-overlay" \
+  src/lib/blackjack \
+  src/pages/games/blackjack.astro \
+  e2e/blackjack-settings.spec.ts \
+  e2e/blackjack-llm.spec.ts \
+  e2e/public-single-player-games.spec.ts
+```
+
+Expected: tests PASS; scan has zero Blackjack legacy matches.
+
+Commit:
+
+```bash
+git add src/lib/blackjack src/pages/games/blackjack.astro
+git add e2e/blackjack-settings.spec.ts e2e/blackjack-llm.spec.ts e2e/blackjack-split.spec.ts e2e/public-single-player-games.spec.ts
 git commit -m "feat: make blackjack advice always local-first"
 ```
 
 ---
 
-### Task 4: Move Craps advice off the server proxy
+## Task 4: Move Craps advice off the server proxy while preserving timeout/status UX
 
 **Files:**
 - Modify: `src/lib/craps/llmCrapsStrategy.ts`
@@ -733,32 +1133,54 @@ git commit -m "feat: make blackjack advice always local-first"
 - Delete: `src/lib/craps/craps-advice-validation.test.ts`
 
 **Interfaces:**
-- Consumes: `AiSettings`, `generateAiJson()`, `loadAiSettings()`.
-- Produces: existing `getCrapsAdvice()` with pure bet aggregation and no Astro advice route.
+- Consumes: `AiSettings`, `AiResult<T>`, `generateAiJson()`, `loadAiSettings()`.
+- Produces: `getCrapsAdvice(context, settings): Promise<AiResult<CrapsAdvice>>` with local bet aggregation, 8-second provider budget, and no Astro advice route.
 
-- [ ] **Step 1: Move `aggregateBets()` into Craps strategy and preserve its pure tests**
+- [ ] **Step 1: Preserve useful pure aggregation tests and replace route tests**
 
-Keep the existing grouping rule: same bet type + point combine `amount` and `odds`; different points/types remain separate. Remove route auth/DB/body-hardening tests because that boundary disappears.
+Move `aggregateBets()` from the deleted API route into `llmCrapsStrategy.ts`. Keep existing tests proving same type/point bets aggregate, different points remain separate, different types remain separate, and odds are summed.
 
-- [ ] **Step 2: Replace Craps provider calls with shared JSON client**
+Add a shared-client strategy test:
 
 ```ts
-export async function getCrapsAdvice(ctx: CrapsAdviceContext, settings: AiSettings): Promise<CrapsAdvice> {
+const result = await getCrapsAdvice(
+  {
+    phase: 'come-out',
+    point: null,
+    chipBalance: 1000,
+    activeBets: [{ id: 'bet-1', type: 'passLine', amount: 25 }],
+    rollHistory: [{ die1: 3, die2: 4, total: 7 }],
+  },
+  { provider: 'openai', model: 'gpt-4o', apiKey: 'test-key' },
+);
+expect(result.ok).toBe(true);
+```
+
+Delete route auth/DB/request-body tests; that boundary disappears.
+
+- [ ] **Step 2: Replace provider transport and retain game-domain parsing**
+
+```ts
+export async function getCrapsAdvice(
+  ctx: CrapsAdviceContext,
+  settings: AiSettings,
+): Promise<AiResult<CrapsAdvice>> {
   const normalized = { ...ctx, activeBets: aggregateBets(ctx.activeBets) };
   const result = await generateAiJson(settings, {
     system: buildSystemPrompt(),
     prompt: buildPrompt(normalized),
     temperature: 0.8,
     maxOutputTokens: 250,
+    timeoutMs: 8_000,
   });
-  if (!result.ok) throw new Error(result.message);
-  return parsePayload(result.value);
+  if (!result.ok) return result;
+  return { ok: true, value: parsePayload(result.value) };
 }
 ```
 
-Delete Craps-local provider functions, `LLMSettings`, and the 8-second timeout.
+Delete Craps’ local OpenAI/Gemini functions, local `LLMSettings`, and old timeout constant. Keep prompt, bet validation, response-field parsing, and the moved `aggregateBets()` local to Craps.
 
-- [ ] **Step 3: Call strategy directly from `craps.astro`, then delete the route**
+- [ ] **Step 3: Call Craps directly from the page and preserve actionable errors**
 
 ```ts
 llmAdviceBtn.addEventListener('click', async () => {
@@ -766,40 +1188,63 @@ llmAdviceBtn.addEventListener('click', async () => {
     llmAdviceEl.textContent = 'Sign in and configure an AI provider in Profile to use provider advice.';
     return;
   }
+
   const settings = loadAiSettings();
   if (!settings) {
     llmAdviceEl.textContent = 'Configure an AI provider in Profile to use advice.';
     return;
   }
+
   const state = game.getState();
-  try {
-    const advice = await getCrapsAdvice({
+  const result = await getCrapsAdvice(
+    {
       phase: state.phase,
       point: state.point,
       activeBets: state.activeBets,
       rollHistory: state.rollHistory,
       chipBalance: state.chipBalance,
-    }, settings);
-    llmAdviceEl.textContent = advice.advice;
-  } catch {
-    llmAdviceEl.textContent = 'AI advice is unavailable. You can keep playing normally.';
+    },
+    settings,
+  );
+
+  if (!result.ok) {
+    llmAdviceEl.textContent =
+      result.status === 401
+        ? 'Invalid API key. Update your AI settings in Profile.'
+        : result.status === 429
+          ? 'AI provider rate limit reached. Please wait a moment.'
+          : 'AI advice is unavailable. You can keep playing normally.';
+    return;
   }
+
+  llmAdviceEl.textContent = result.value.advice;
 });
 ```
 
-Delete `src/pages/api/craps-advice.ts` and `src/lib/craps/craps-advice-validation.test.ts` after the caller change in the same task.
+- [ ] **Step 4: Delete the proxy only after the page migration is complete**
 
-- [ ] **Step 4: Verify and commit**
+Delete:
+
+```text
+src/pages/api/craps-advice.ts
+src/lib/craps/craps-advice-validation.test.ts
+```
+
+- [ ] **Step 5: Run Craps tests/build/scan and commit**
 
 Run:
 
 ```bash
 bun test src/lib/craps
-rg "/api/craps-advice|getLlmSettings" src/lib/craps src/pages/games/craps.astro
 bun run build
+rg "/api/craps-advice|getLlmSettings|api.openai.com|generativelanguage.googleapis.com" \
+  src/lib/craps \
+  src/pages/games/craps.astro
 ```
 
 Expected: tests/build PASS; scan has zero matches.
+
+Commit:
 
 ```bash
 git add src/lib/craps src/pages/games/craps.astro
@@ -809,7 +1254,7 @@ git commit -m "refactor: call craps AI from browser"
 
 ---
 
-### Task 5: Migrate Baccarat and both Poker AI paths
+## Task 5: Migrate Baccarat and both Poker AI paths
 
 **Files:**
 - Create: `src/lib/baccarat/llmBaccaratStrategy.test.ts`
@@ -823,13 +1268,46 @@ git commit -m "refactor: call craps AI from browser"
 
 **Interfaces:**
 - Consumes: `AiSettings`, `generateAiJson()`, `loadAiSettings()`.
-- Produces: existing `BaccaratAdvice`, `AIDecision`, and `AiMove` contracts with one provider transport.
+- Produces: existing Baccarat/Poker domain outputs with no direct provider HTTP outside `src/lib/ai/client.ts`.
 
-- [ ] **Step 1: Add failing shared-client seam tests**
+- [ ] **Step 1: Add failing Baccarat/Poker tests around the shared-client behavior**
 
-For Baccarat, add a fixture that stubs the shared JSON result to `{ advice, suggestedBets: ['banker'], confidence: 'high' }` and asserts `getBaccaratAdvice()` preserves those validated fields. For Poker, change the existing provider-error test to stub the shared result as `{ ok: false, code: 'provider-error', message: 'Provider request failed (500)' }` and assert the existing rule-based fallback action/reasoning still returns.
+Baccarat representative assertion:
+
+```ts
+const result = await getBaccaratAdvice(context, {
+  provider: 'openai',
+  model: 'gpt-4o',
+  apiKey: 'test-key',
+});
+expect(result.suggestedBets).toContain('banker');
+```
+
+Poker LLM-opponent failure must still use the current rule-based fallback:
+
+```ts
+const decision = await makeLLMDecision(
+  context,
+  'tight-aggressive',
+  { provider: 'openai', model: 'gpt-4o', apiKey: 'test-key' },
+);
+expect(['fold', 'check', 'call', 'raise']).toContain(decision.action);
+```
+
+Poker AI Rival/PokerGame tests should set:
+
+```ts
+localStorage.setItem(
+  'arcturus-ai-settings',
+  JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' }),
+);
+```
+
+and assert no `/api/profile/llm-settings` fetch occurs after migration.
 
 - [ ] **Step 2: Migrate Baccarat transport only**
+
+Keep its existing prompt/session logic. Replace local provider methods with:
 
 ```ts
 const result = await generateAiJson(settings, {
@@ -842,9 +1320,40 @@ if (!result.ok) throw new Error(result.message);
 return parseBaccaratPayload(result.value);
 ```
 
-Keep Baccarat prompt/payload validation. Do not add UI.
+Delete its local `LLMSettings`, timeout constant, `callOpenAI`, and `callGemini`. Do not add UI.
 
-- [ ] **Step 3: Migrate Poker LLM opponents without changing `DecisionCache`**
+- [ ] **Step 3: Migrate Poker LLM opponents while preserving cache/fallback**
+
+Keep `DecisionCache` unchanged.
+
+Convert the parser to accept an already-parsed payload:
+
+```ts
+function parseLLMPayload(
+  payload: Record<string, unknown>,
+  context: GameContext,
+): AIDecision | null {
+  const rawAction = payload.action;
+  const action = typeof rawAction === 'string' ? rawAction.toLowerCase() : '';
+  if (!['fold', 'check', 'call', 'raise'].includes(action)) return null;
+
+  let amount = 0;
+  if (action === 'raise') {
+    const requested = typeof payload.amount === 'number' ? Math.round(payload.amount) : 0;
+    const minRaise = Math.max(context.minimumBet, 10);
+    amount = Math.max(minRaise, Math.min(requested, context.player.chips, 200));
+  }
+
+  return {
+    action: action as AIDecision['action'],
+    amount,
+    confidence: 0.8,
+    reasoning: `LLM decision: ${action}${action === 'raise' ? ` $${amount}` : ''}`,
+  };
+}
+```
+
+Provider path:
 
 ```ts
 const result = await generateAiJson(llmSettings, {
@@ -853,16 +1362,25 @@ const result = await generateAiJson(llmSettings, {
   temperature: 0.7,
   maxOutputTokens: 100,
 });
-if (!result.ok) return ruleBasedFallback(context, personality, difficulty, 'LLM error fallback');
+
+if (!result.ok) {
+  return ruleBasedFallback(context, personality, difficulty, 'LLM error fallback');
+}
+
 const decision = parseLLMPayload(result.value, context);
-if (!decision) return ruleBasedFallback(context, personality, difficulty, 'LLM parse failed');
+if (!decision) {
+  return ruleBasedFallback(context, personality, difficulty, 'LLM parse failed');
+}
+
 decisionCache.set(context, decision);
 return decision;
 ```
 
-Keep cache key/TTL/clear behavior unchanged.
+Delete local provider methods only; retain cache and rule-based behavior.
 
-- [ ] **Step 4: Migrate Poker AI Rival and PokerGame settings lookup**
+- [ ] **Step 4: Migrate Poker AI Rival and settings lookup**
+
+In `AIRivalAssistant.ts`:
 
 ```ts
 private hydrateFromLocalSettings(): void {
@@ -872,76 +1390,97 @@ private hydrateFromLocalSettings(): void {
 }
 ```
 
-Use `generateAiJson()` in AIRivalAssistant but keep `parseAiMove()`/highlighting local. Replace PokerGame’s profile-settings fetch with `loadAiSettings()`. Keep guests provider-disabled/rule-based.
+Replace its OpenAI/Gemini methods with `generateAiJson()`, keeping `parseAiMove()` and button/highlight behavior local.
 
-- [ ] **Step 5: Verify and commit**
+In `PokerGame.ts`, replace `getLLMSettings()`’s `/api/profile/llm-settings` fetch with `loadAiSettings()`.
+
+Keep `settings.useLLMAI` and its missing-key guard. It controls automatic LLM opponents and therefore remains explicit cost control.
+
+- [ ] **Step 5: Run affected tests and provider/settings scans**
 
 Run:
 
 ```bash
-bun test src/lib/baccarat/llmBaccaratStrategy.test.ts src/lib/poker/llmAIStrategy.test.ts src/lib/poker/AIRivalAssistant.test.ts src/lib/poker/PokerGame.test.ts
-rg "api.openai.com|generativelanguage.googleapis.com" src/lib src/pages
+bun test \
+  src/lib/baccarat/llmBaccaratStrategy.test.ts \
+  src/lib/poker/llmAIStrategy.test.ts \
+  src/lib/poker/AIRivalAssistant.test.ts \
+  src/lib/poker/PokerGame.test.ts
+rg "api.openai.com|generativelanguage.googleapis.com|/api/profile/llm-settings" \
+  src/lib/baccarat \
+  src/lib/poker
 ```
 
-Expected: tests PASS; provider URLs only in `src/lib/ai/client.ts`.
+Expected: tests PASS; scan has zero matches.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/lib/baccarat src/lib/poker
 git commit -m "refactor: share AI provider transport"
 ```
 
+**Deployment note:** Tasks 2–5 now form the complete browser-local migration. Do not deploy a partial subset.
+
 ---
 
-### Task 6: Delete legacy D1/profile AI storage with a forward migration
+## Task 6: Delete legacy D1 credential storage and generate a forward migration
 
 **Files:**
 - Modify: `src/db/schema.ts`
-- Create: `drizzle/0017_drop_llm_settings.sql` with Drizzle Kit.
+- Generate: `drizzle/0017_drop_llm_settings.sql`
 - Delete: `src/lib/llm-settings.ts`
 - Delete: `src/lib/llm-settings.test.ts`
-- Delete: `src/lib/profile-api.ts`
 - Delete: `src/pages/api/profile/llm-settings.ts`
 - Delete: `src/pages/api/profile/reveal-api-key.ts`
-- Preserve: historical `drizzle/0000_powerful_wrecking_crew.sql` and `drizzle/0002_jittery_firebrand.ts`.
 
 **Interfaces:**
-- Consumes: Tasks 1-5.
-- Produces: no active D1 AI credential repository/API/table.
+- Consumes: all caller migrations from Tasks 2–5.
+- Produces: no runtime server-side AI credential persistence or API.
 
-- [ ] **Step 1: Prove remaining legacy API matches are implementation files only**
+- [ ] **Step 1: Prove no live caller still needs the legacy path**
 
 Run:
 
 ```bash
-rg "/api/profile/llm-settings|/api/profile/reveal-api-key|getLlmSettings|upsertLlmSettings" src integration e2e
+rg "/api/profile/llm-settings|/api/profile/reveal-api-key|getLlmSettings|upsertLlmSettings" \
+  src integration e2e
 ```
 
-Expected: no Profile/Blackjack/Poker/Craps caller remains. Matches may exist only in the legacy helper/routes/tests deleted below.
+Expected before deletion: only the legacy endpoint/repository files themselves remain. If another live caller appears, migrate it before continuing.
 
-- [ ] **Step 2: Remove `llmSettings` from the schema and generate the drop migration**
+- [ ] **Step 2: Remove `llmSettings` from the active schema**
 
-Delete the table declaration, then run:
+Delete the `llmSettings = sqliteTable('llm_settings', ...)` definition from `src/db/schema.ts` and remove any now-unused imports caused by that deletion.
+
+- [ ] **Step 3: Generate a named forward migration through the repository script**
+
+Run:
 
 ```bash
-bunx drizzle-kit generate --name=drop_llm_settings
-cat drizzle/0017_drop_llm_settings.sql
+bun run db:generate --name=drop_llm_settings
 ```
 
-Expected: `drizzle/0017_drop_llm_settings.sql` removes `llm_settings` and has no unrelated schema changes. Keep any generated Drizzle metadata unedited.
+Inspect the new migration. Expected SQL effect:
 
-- [ ] **Step 3: Delete dead repository/API files**
-
-```bash
-rm src/lib/llm-settings.ts \
-   src/lib/llm-settings.test.ts \
-   src/lib/profile-api.ts \
-   src/pages/api/profile/llm-settings.ts \
-   src/pages/api/profile/reveal-api-key.ts
+```sql
+DROP TABLE `llm_settings`;
 ```
 
-Do not edit/delete historical migrations.
+The generated filename should use the next migration number and `drop_llm_settings` name. Commit any generated Drizzle metadata as produced by the command. Do not hand-edit historical `0000` or delete `0002_jittery_firebrand.ts`.
 
-- [ ] **Step 4: Verify active references are gone while history may mention the table**
+- [ ] **Step 4: Delete the legacy repository/endpoints and their tests**
+
+Delete:
+
+```text
+src/lib/llm-settings.ts
+src/lib/llm-settings.test.ts
+src/pages/api/profile/llm-settings.ts
+src/pages/api/profile/reveal-api-key.ts
+```
+
+- [ ] **Step 5: Verify active references are gone while history may still mention the table**
 
 Run:
 
@@ -951,159 +1490,152 @@ rg "llm_settings" src
 rg "llm_settings" drizzle
 ```
 
-Expected: first two scans have zero matches. The `drizzle` scan may show historical creation plus `0017_drop_llm_settings.sql`.
+Expected:
 
-- [ ] **Step 5: Verify and commit**
+- first scan: zero matches;
+- second scan: zero matches;
+- third scan: historical creation plus the new forward drop migration may match.
 
-Run: `bun run test && bun run build`
+- [ ] **Step 6: Run schema/test/build gates and commit**
 
-Expected: PASS.
-
-```bash
-git add src/db/schema.ts drizzle
-git add -u src/lib/llm-settings.ts src/lib/llm-settings.test.ts src/lib/profile-api.ts src/pages/api/profile/llm-settings.ts src/pages/api/profile/reveal-api-key.ts
-git commit -m "refactor: remove server AI credential storage"
-```
-
----
-
-### Task 7: Replace browser contracts and run full verification
-
-**Files:**
-- Modify: `e2e/blackjack-llm.spec.ts`
-- Modify: `e2e/profile.spec.ts`
-- Modify: `e2e/public-single-player-games.spec.ts` if it still contains a deleted settings-endpoint interception.
-
-**Interfaces:**
-- Consumes: Tasks 1-6.
-- Produces: browser proof that Blackjack is local-first, provider calls are explicit-only, Profile is browser-local, and no legacy runtime path remains.
-
-- [ ] **Step 1: Remove the old helper that enables `useLLM`**
-
-```ts
-async function gotoBlackjack(page: Page) {
-  await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
-}
-```
-
-- [ ] **Step 2: Cover authenticated no-provider advice**
-
-```ts
-test('no provider still receives local Blackjack advice', async ({ browser, baseURL }) => {
-  const { context, page } = await createIsolatedBlackjackPage(browser, baseURL);
-  try {
-    await page.addInitScript(() => localStorage.removeItem('arcturus-ai-settings'));
-    const providerRequests: string[] = [];
-    page.on('request', (request) => {
-      if (request.url().includes('api.openai.com') || request.url().includes('generativelanguage.googleapis.com')) {
-        providerRequests.push(request.url());
-      }
-    });
-    await gotoBlackjack(page);
-    await dealHand(page, 50);
-    await page.getByRole('button', { name: 'Ask AI Rival' }).click();
-    await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
-    await expect(page.locator('#ai-advice-reasoning')).not.toBeEmpty();
-    expect(providerRequests).toEqual([]);
-  } finally {
-    await context.close();
-  }
-});
-```
-
-- [ ] **Step 3: Cover guest local advice explicitly**
-
-```ts
-test('guest receives local advice and never calls provider', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-    provider: 'openai', model: 'gpt-4o', apiKey: 'stale-key',
-  })));
-  const providerRequests: string[] = [];
-  page.on('request', (request) => {
-    if (request.url().includes('api.openai.com') || request.url().includes('generativelanguage.googleapis.com')) {
-      providerRequests.push(request.url());
-    }
-  });
-  await gotoBlackjack(page);
-  await dealHand(page, 50);
-  const aiButton = page.getByRole('button', { name: 'Ask AI Rival' });
-  await expect(aiButton).toBeEnabled();
-  await aiButton.click();
-  await expect(page.locator('#ai-advice-action')).toContainText('Recommended:');
-  expect(providerRequests).toEqual([]);
-});
-```
-
-The default Playwright page is unauthenticated, so no new guest helper is needed.
-
-- [ ] **Step 4: Cover configured explicit-only provider use and failure fallback**
-
-```ts
-await page.addInitScript(() => localStorage.setItem('arcturus-ai-settings', JSON.stringify({
-  provider: 'openai', model: 'gpt-4o', apiKey: 'sk-fake',
-})));
-let calls = 0;
-await page.route('https://api.openai.com/**', async (route) => {
-  calls += 1;
-  await route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ choices: [{ message: { content: '{"reasoning":"Local strategy explained."}' } }] }),
-  });
-});
-await gotoBlackjack(page);
-await dealHand(page, 50);
-expect(calls).toBe(0);
-await page.getByRole('button', { name: 'Ask AI Rival' }).click();
-await expect.poll(() => calls).toBe(1);
-await page.getByRole('button', { name: 'Stand' }).click();
-await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({ timeout: 15_000 });
-expect(calls).toBe(1);
-```
-
-Change the current provider-failure test to assert deterministic recommendation/reasoning remains visible. Delete the post-round commentary E2E.
-
-- [ ] **Step 5: Run architecture scans**
-
-```bash
-rg "api.openai.com|generativelanguage.googleapis.com" src/lib src/pages
-rg "/api/profile/llm-settings|/api/profile/reveal-api-key|/api/craps-advice" src integration e2e
-rg "getRoundCommentary|useLLM" src/lib/blackjack src/pages/games/blackjack.astro e2e/blackjack-*.spec.ts
-```
-
-Expected: provider URLs only in `src/lib/ai/client.ts`; other scans have zero active matches.
-
-- [ ] **Step 6: Run full code-quality gates**
+Run:
 
 ```bash
 bun run test
-bun run lint
-bun run format:check
 bun run build
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Run representative E2E gates**
+Commit:
+
+```bash
+git add src/db/schema.ts drizzle
+git add -u src/lib/llm-settings.ts src/lib/llm-settings.test.ts src/pages/api/profile/llm-settings.ts src/pages/api/profile/reveal-api-key.ts
+git commit -m "refactor: remove server AI credential storage"
+```
+
+---
+
+## Task 7: Cross-feature cleanup and full verification
+
+**Files:**
+- Modify only existing files implicated by a failing verification command.
+
+**Interfaces:**
+- Consumes: Tasks 1–6.
+- Produces: one provider boundary, one local settings record, green tests, and no obsolete AI infrastructure.
+
+- [ ] **Step 1: Run architecture scans**
+
+```bash
+rg "api.openai.com|generativelanguage.googleapis.com" src/lib src/pages
+rg "/api/profile/llm-settings|/api/profile/reveal-api-key|/api/craps-advice" src integration e2e
+rg "useLLM|setting-use-llm|getRoundCommentary|llm-config-overlay|ai-commentary-box" \
+  src/lib/blackjack \
+  src/pages/games/blackjack.astro \
+  e2e
+rg "parseLLMResponse" src/lib
+```
+
+Expected:
+
+- provider URLs appear only in `src/lib/ai/client.ts`;
+- legacy endpoint/Blackjack scans have zero matches;
+- `parseLLMResponse` scan has zero matches;
+- `extractBalancedJsonObjects` remains in `src/lib/llm-response-parsing.ts`, its tests, and `src/lib/ai/client.ts`.
+
+- [ ] **Step 2: Run unit and integration suites**
+
+Run:
+
+```bash
+bun run test
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Run lint, format check, and build**
+
+Run:
+
+```bash
+bun run lint
+bun run format:check
+bun run build
+```
+
+Expected: PASS with zero errors/warnings.
+
+- [ ] **Step 4: Run representative E2E gates**
+
+Run:
 
 ```bash
 bunx playwright test \
   e2e/blackjack-settings.spec.ts \
   e2e/blackjack-llm.spec.ts \
+  e2e/blackjack-split.spec.ts \
+  e2e/public-single-player-games.spec.ts \
   e2e/profile.spec.ts \
   e2e/craps.spec.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 8: Review final diff and leave verification clean**
+- [ ] **Step 5: Run the full Playwright gate**
+
+Run:
+
+```bash
+bun run test:e2e
+```
+
+Expected: PASS under the repository’s normal E2E environment.
+
+- [ ] **Step 6: Review the final diff for KISS/deletion goals**
+
+Run:
 
 ```bash
 git diff --stat main...HEAD
-git diff main...HEAD -- src/lib/ai src/lib/blackjack src/lib/craps src/lib/baccarat src/lib/poker src/pages/profile.astro src/db/schema.ts drizzle/0017_drop_llm_settings.sql
+git diff main...HEAD -- \
+  src/lib/ai \
+  src/lib/llm-response-parsing.ts \
+  src/lib/llm-response-parsing.test.ts \
+  src/lib/blackjack \
+  src/lib/craps \
+  src/lib/baccarat \
+  src/lib/poker \
+  src/pages/profile.astro \
+  src/db/schema.ts \
+  drizzle
+```
+
+Verify from the diff:
+
+- one provider transport;
+- one local settings record;
+- one provider/model validator source;
+- existing balanced JSON extractor is reused rather than copied;
+- no Blackjack enable toggle or guest local-advice gate;
+- no automatic Blackjack provider request;
+- Poker retains `useLLMAI` only for automatic opponent cost control;
+- Craps explicitly keeps an 8-second timeout and status-aware 401/429 UX;
+- no legacy runtime credential API/repository;
+- no compatibility adapter/provider hierarchy;
+- migration history was not rewritten.
+
+- [ ] **Step 7: Commit only concrete verification fixes if verification changed files**
+
+Run:
+
+```bash
 git status --short
 ```
 
-Verify: one provider transport; one local settings record; one validator source; no Blackjack enable/guest-local gate; no automatic Blackjack provider request; no legacy runtime credential API/repository; no compatibility/provider framework; historical migrations unchanged.
+If the tree is clean, do not create an empty commit. If a preceding verification command required a fix, stage the exact paths shown by `git status --short`, rerun the failed command, and commit those concrete paths with:
 
-Expected final `git status --short`: empty. If verification exposes a defect, return to the task that owns that behavior, fix it there, rerun that task’s focused checks, and commit it with that task rather than creating a generic catch-all commit.
+```bash
+git commit -m "fix: complete HPA-185 AI migration"
+```

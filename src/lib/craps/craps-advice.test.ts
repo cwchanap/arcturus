@@ -1,435 +1,65 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { aggregateBets, createPostHandler } from '../../pages/api/craps-advice';
-import { getCrapsAdvice } from './llmCrapsStrategy';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { getCrapsAdvice, aggregateBets } from './llmCrapsStrategy';
+import type { AiSettings } from '../ai';
 import type { CrapsAdviceContext } from './types';
 
-function createValidAdvicePayload(overrides: Record<string, unknown> = {}) {
-	return {
-		phase: 'come-out',
-		point: null,
-		chipBalance: 1000,
-		activeBets: [{ id: 'bet-1', type: 'passLine', amount: 25 }],
-		rollHistory: [{ die1: 3, die2: 4, total: 7 }],
-		query: 'What should I do next?',
-		...overrides,
-	};
-}
+const settings: AiSettings = {
+	provider: 'openai',
+	model: 'gpt-4o',
+	apiKey: 'test-key',
+};
 
-function createLocals({
-	withSession = true,
-	withDb = true,
-}: {
-	withSession?: boolean;
-	withDb?: boolean;
-} = {}) {
-	return {
-		session: withSession ? { user: { id: 'user-1' } } : null,
-		runtime: withDb ? { env: { DB: { binding: true } } } : { env: {} },
-	};
-}
+const originalFetch = globalThis.fetch;
 
-async function readJson(response: Response) {
-	return JSON.parse(await response.text());
-}
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+});
 
 describe('aggregateBets', () => {
-	test('aggregates Come bets at the same point with different odds into one entry', () => {
+	test('aggregates same-type bets at the same point and sums odds', () => {
 		const result = aggregateBets([
 			{ id: '1', type: 'come', amount: 100, point: 6, odds: 200 },
 			{ id: '2', type: 'come', amount: 100, point: 6, odds: 400 },
 		]);
 
-		expect(result).toHaveLength(1);
-		expect(result[0].amount).toBe(200);
-		expect(result[0].odds).toBe(600);
+		expect(result).toEqual([
+			{ id: 'aggregated-come-6', type: 'come', amount: 200, point: 6, odds: 600 },
+		]);
 	});
 
-	test('keeps distinct bets at different points separate', () => {
+	test('keeps same-type bets at different points separate', () => {
 		const result = aggregateBets([
 			{ id: '1', type: 'come', amount: 100, point: 6, odds: 200 },
 			{ id: '2', type: 'come', amount: 100, point: 8, odds: 100 },
 		]);
 
 		expect(result).toHaveLength(2);
+		expect(result.map((bet) => bet.point)).toEqual([6, 8]);
 	});
 
-	test('keeps distinct bet types separate even at the same point', () => {
+	test('keeps different bet types at the same point separate', () => {
 		const result = aggregateBets([
 			{ id: '1', type: 'come', amount: 100, point: 6, odds: 200 },
 			{ id: '2', type: 'dontCome', amount: 100, point: 6, odds: 200 },
 		]);
 
 		expect(result).toHaveLength(2);
+		expect(result.map((bet) => bet.type)).toEqual(['come', 'dontCome']);
 	});
 
-	test('aggregates bets with no odds', () => {
+	test('aggregates same-type bets without odds', () => {
 		const result = aggregateBets([
 			{ id: '1', type: 'passLine', amount: 50 },
 			{ id: '2', type: 'passLine', amount: 75 },
 		]);
 
-		expect(result).toHaveLength(1);
-		expect(result[0].amount).toBe(125);
+		expect(result).toEqual([
+			{ id: 'aggregated-passLine-null', type: 'passLine', amount: 125, odds: 0 },
+		]);
 	});
 });
 
-describe('craps advice API route', () => {
-	let settingsResult: {
-		provider: 'openai' | 'gemini';
-		model: string;
-		openaiApiKey: string | null;
-		geminiApiKey: string | null;
-		createdAt: Date;
-		updatedAt: Date;
-	} = {
-		provider: 'openai',
-		model: 'gpt-4o',
-		openaiApiKey: 'openai-key',
-		geminiApiKey: null,
-		createdAt: new Date(0),
-		updatedAt: new Date(0),
-	};
-	let adviceResult = {
-		advice: 'Take odds behind the line.',
-		suggestedBets: ['passLine'] as const,
-		confidence: 'high' as const,
-		raw: '{"advice":"Take odds behind the line."}',
-	};
-	const createDbCalls: unknown[] = [];
-	const getSettingsCalls: unknown[][] = [];
-	const getAdviceCalls: unknown[][] = [];
-
-	const createDbImpl = (dbBinding: unknown) => {
-		createDbCalls.push(dbBinding);
-		return { db: true };
-	};
-	const getLlmSettingsImpl = async (...args: unknown[]) => {
-		getSettingsCalls.push(args);
-		return settingsResult;
-	};
-	let adviceImpl = async (...args: unknown[]) => {
-		getAdviceCalls.push(args);
-		return adviceResult;
-	};
-
-	function resetRouteMocks() {
-		createDbCalls.length = 0;
-		getSettingsCalls.length = 0;
-		getAdviceCalls.length = 0;
-		settingsResult = {
-			provider: 'openai',
-			model: 'gpt-4o',
-			openaiApiKey: 'openai-key',
-			geminiApiKey: null,
-			createdAt: new Date(0),
-			updatedAt: new Date(0),
-		};
-		adviceResult = {
-			advice: 'Take odds behind the line.',
-			suggestedBets: ['passLine'],
-			confidence: 'high',
-			raw: '{"advice":"Take odds behind the line."}',
-		};
-		adviceImpl = async (...args: unknown[]) => {
-			getAdviceCalls.push(args);
-			return adviceResult;
-		};
-	}
-
-	test('rejects unauthorized requests', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const response = await POST({
-			locals: createLocals({ withSession: false }),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(401);
-		expect(body.error).toBe('Unauthorized');
-	});
-
-	test('rejects when DB binding is unavailable', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const response = await POST({
-			locals: createLocals({ withDb: false }),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toBe('Database unavailable');
-	});
-
-	test('rejects malformed JSON request body', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: '{"phase":"come-out"',
-				headers: { 'content-type': 'application/json' },
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('Invalid JSON payload');
-	});
-
-	test('rejects invalid context payload', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload({ phase: 'invalid-phase' })),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('Invalid advice context');
-	});
-
-	test('rejects invalid roll history entries and oversized roll history', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const invalidRollResponse = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(
-					createValidAdvicePayload({
-						rollHistory: [{ die1: 6, die2: 6, total: 11 }],
-					}),
-				),
-			}),
-		} as any);
-		const invalidRollBody = await readJson(invalidRollResponse);
-		expect(invalidRollResponse.status).toBe(400);
-		expect(invalidRollBody.error).toBe('Invalid advice context');
-
-		const tooLongHistory = Array.from({ length: 31 }, () => ({ die1: 1, die2: 1, total: 2 }));
-		const oversizedHistoryResponse = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload({ rollHistory: tooLongHistory })),
-			}),
-		} as any);
-		const oversizedHistoryBody = await readJson(oversizedHistoryResponse);
-		expect(oversizedHistoryResponse.status).toBe(400);
-		expect(oversizedHistoryBody.error).toBe('Invalid advice context');
-	});
-
-	test('aggregates duplicate bets and truncates query before calling strategy', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const longQuery = 'q'.repeat(650);
-		const manyDuplicateBets = Array.from({ length: 80 }, (_unused, index) => ({
-			id: `bet-${index}`,
-			type: 'passLine',
-			amount: 5,
-		}));
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(
-					createValidAdvicePayload({
-						activeBets: manyDuplicateBets,
-						query: longQuery,
-					}),
-				),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(200);
-		expect(body.advice).toBe('Take odds behind the line.');
-		expect(getAdviceCalls.length).toBe(1);
-		const [context] = getAdviceCalls[0] as [CrapsAdviceContext, unknown];
-		expect(context.activeBets).toHaveLength(1);
-		expect(context.activeBets[0].amount).toBe(400);
-		expect(context.query?.length).toBe(500);
-		expect(createDbCalls.length).toBe(1);
-		expect(getSettingsCalls.length).toBe(1);
-	});
-
-	test('rejects when aggregated active bets exceed limit', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const types = [
-			'passLine',
-			'dontPass',
-			'come',
-			'dontCome',
-			'place4',
-			'place5',
-			'place6',
-			'place8',
-			'place9',
-			'place10',
-		];
-		const points = [null, 4, 5, 6, 8, 9, 10];
-		const lotsOfDistinctBets = types
-			.flatMap((type) => points.map((point) => ({ type, point })))
-			.slice(0, 65)
-			.map((bet, index) => ({
-				id: `bet-${index}`,
-				type: bet.type,
-				amount: 5,
-				point: bet.point,
-			}));
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload({ activeBets: lotsOfDistinctBets })),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toBe('Invalid advice context');
-	});
-
-	test('returns missing API key error for configured provider', async () => {
-		resetRouteMocks();
-		settingsResult = {
-			...settingsResult,
-			provider: 'gemini',
-			geminiApiKey: null,
-		};
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(400);
-		expect(body.error).toContain('No API key configured');
-		expect(getAdviceCalls.length).toBe(0);
-	});
-
-	test('maps timeout and provider errors to expected status codes', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-
-		adviceImpl = async (...args: unknown[]) => {
-			getAdviceCalls.push(args);
-			throw new Error('request timed out');
-		};
-		const timeoutResponse = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const timeoutBody = await readJson(timeoutResponse);
-		expect(timeoutResponse.status).toBe(504);
-		expect(timeoutBody.error).toContain('timed out');
-
-		adviceImpl = async (...args: unknown[]) => {
-			getAdviceCalls.push(args);
-			throw new Error('OpenAI error 401');
-		};
-		const authResponse = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const authBody = await readJson(authResponse);
-		expect(authResponse.status).toBe(400);
-		expect(authBody.error).toContain('Invalid API key');
-
-		adviceImpl = async (...args: unknown[]) => {
-			getAdviceCalls.push(args);
-			throw new Error('provider 429');
-		};
-		const limitResponse = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const limitBody = await readJson(limitResponse);
-		expect(limitResponse.status).toBe(429);
-		expect(limitBody.error).toContain('rate limit');
-	});
-
-	test('maps unknown errors to generic 500 response', async () => {
-		resetRouteMocks();
-		const POST = createPostHandler({
-			createDb: createDbImpl as any,
-			getLlmSettings: getLlmSettingsImpl as any,
-			getCrapsAdvice: ((...args: unknown[]) => adviceImpl(...args)) as any,
-		});
-		adviceImpl = async (...args: unknown[]) => {
-			getAdviceCalls.push(args);
-			throw 'unexpected-failure';
-		};
-		const response = await POST({
-			locals: createLocals(),
-			request: new Request('http://test.local', {
-				method: 'POST',
-				body: JSON.stringify(createValidAdvicePayload()),
-			}),
-		} as any);
-		const body = await readJson(response);
-		expect(response.status).toBe(500);
-		expect(body.error).toContain('Failed to get advice');
-	});
-});
-
-describe('llm craps strategy', () => {
+describe('getCrapsAdvice', () => {
 	const baseContext: CrapsAdviceContext = {
 		phase: 'point',
 		point: 6,
@@ -437,62 +67,21 @@ describe('llm craps strategy', () => {
 		activeBets: [
 			{ id: 'b1', type: 'passLine', amount: 25 },
 			{ id: 'b2', type: 'come', amount: 10, point: 6, odds: 20 },
+			{ id: 'b3', type: 'come', amount: 15, point: 6, odds: 30 },
 		],
-		rollHistory: [
-			{ die1: 1, die2: 1, total: 2 },
-			{ die1: 2, die2: 3, total: 5 },
-			{ die1: 3, die2: 3, total: 6 },
-			{ die1: 4, die2: 3, total: 7 },
-			{ die1: 2, die2: 6, total: 8 },
-			{ die1: 5, die2: 4, total: 9 },
-			{ die1: 6, die2: 4, total: 10 },
-			{ die1: 5, die2: 6, total: 11 },
-			{ die1: 6, die2: 6, total: 12 },
-		],
+		rollHistory: [{ die1: 3, die2: 3, total: 6 }],
 		query: 'Should I take odds now?',
 	};
-	let originalFetch: typeof fetch;
-	let originalConsoleError: typeof console.error;
 
-	function setMockFetch(fn: (...args: unknown[]) => Promise<Response>) {
-		globalThis.fetch = fn as unknown as typeof fetch;
-	}
-
-	beforeEach(() => {
-		originalFetch = globalThis.fetch;
-		originalConsoleError = console.error;
-		console.error = () => {};
-	});
-
-	afterEach(() => {
-		globalThis.fetch = originalFetch;
-		console.error = originalConsoleError;
-	});
-
-	test('throws when API key is missing', async () => {
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				apiKey: '',
-			}),
-		).rejects.toThrow('API key not configured');
-	});
-
-	test('calls OpenAI and parses valid JSON advice', async () => {
-		setMockFetch(async (input: unknown, init?: unknown) => {
-			expect(String(input)).toContain('/v1/chat/completions');
-			const requestInit = init as RequestInit | undefined;
-			const body = JSON.parse(String(requestInit?.body)) as {
+	test('uses the shared client and parses Craps advice', async () => {
+		globalThis.fetch = async (input, init) => {
+			expect(new URL(String(input)).pathname).toBe('/v1/chat/completions');
+			const body = JSON.parse(String(init?.body)) as {
 				model: string;
 				messages: Array<{ role: string; content: string }>;
 			};
 			expect(body.model).toBe('gpt-4o');
-			expect(body.messages).toHaveLength(2);
-			expect(body.messages[1].content).toContain('Point Phase — Point is 6');
-			expect(body.messages[1].content).toContain('Should I take odds now?');
-			expect(body.messages[1].content).toContain('2(1+1)*');
-			expect(body.messages[1].content).not.toContain('12(6+6)*');
+			expect(body.messages[1].content).toContain('passLine:$25');
 			return new Response(
 				JSON.stringify({
 					choices: [
@@ -506,188 +95,111 @@ describe('llm craps strategy', () => {
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
 			);
-		});
+		};
 
-		const advice = await getCrapsAdvice(baseContext, {
-			provider: 'openai',
-			model: 'gpt-4o',
-			apiKey: 'openai-key',
-		});
-		expect(advice.advice).toContain('pass line');
-		expect(advice.suggestedBets).toEqual(['passLine', 'place6']);
-		expect(advice.confidence).toBe('high');
+		const result = await getCrapsAdvice(
+			{
+				phase: 'come-out',
+				point: null,
+				chipBalance: 1000,
+				activeBets: [{ id: 'bet-1', type: 'passLine', amount: 25 }],
+				rollHistory: [{ die1: 3, die2: 4, total: 7 }],
+			},
+			settings,
+		);
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value.advice).toBe('Stay on the pass line and press odds.');
+			expect(result.value.suggestedBets).toEqual(['passLine', 'place6']);
+			expect(result.value.confidence).toBe('high');
+		}
 	});
 
-	test('calls Gemini and uses default query/history text for empty context values', async () => {
-		setMockFetch(async (input: unknown, init?: unknown) => {
-			expect(String(input)).toContain('generativelanguage.googleapis.com');
-			expect(String(input)).toContain('gemini-1.5-flash');
-			const requestInit = init as RequestInit | undefined;
-			const body = JSON.parse(String(requestInit?.body)) as {
-				contents: Array<{ parts: Array<{ text: string }> }>;
+	test('normalizes duplicate bets before building the provider prompt', async () => {
+		globalThis.fetch = async (_input, init) => {
+			const body = JSON.parse(String(init?.body)) as {
+				messages: Array<{ content: string }>;
 			};
-			const prompt = body.contents[0].parts[0].text;
-			expect(prompt).toContain('Come-Out Roll (no point yet)');
-			expect(prompt).toContain('Active bets: None');
-			expect(prompt).toContain('Recent rolls: No rolls yet');
-			expect(prompt).toContain('What should I do next?');
+			expect(body.messages[1].content).toContain('come:$25 @6 +odds:$50');
+			expect(body.messages[1].content).not.toContain('come:$10 @6 +odds:$20');
+			expect(body.messages[1].content).not.toContain('come:$15 @6 +odds:$30');
 			return new Response(
+				JSON.stringify({ choices: [{ message: { content: '{"advice":"Keep it steady."}' } }] }),
+			);
+		};
+
+		const result = await getCrapsAdvice(baseContext, settings);
+
+		expect(result).toMatchObject({ ok: true });
+	});
+
+	test('preserves parseable provider status for page-level UX', async () => {
+		globalThis.fetch = async () =>
+			new Response(JSON.stringify({ error: 'bad key' }), { status: 401 });
+
+		expect(await getCrapsAdvice(baseContext, settings)).toEqual({
+			ok: false,
+			code: 'provider-error',
+			message: 'Provider request failed (401)',
+			status: 401,
+		});
+	});
+
+	test('uses the Craps eight-second provider budget', async () => {
+		const capturedTimeouts: number[] = [];
+		const originalSetTimeout = globalThis.setTimeout;
+		const originalClearTimeout = globalThis.clearTimeout;
+		globalThis.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+			capturedTimeouts.push(timeout ?? 0);
+			return originalSetTimeout(handler, 0, ...args);
+		}) as typeof setTimeout;
+		globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout>) => {
+			originalClearTimeout(timer);
+		}) as typeof clearTimeout;
+
+		try {
+			globalThis.fetch = async (_input, init) =>
+				await new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('Aborted', 'AbortError')),
+					);
+				});
+
+			const result = await getCrapsAdvice(baseContext, settings);
+
+			expect(capturedTimeouts).toContain(8_000);
+			expect(result).toEqual({ ok: false, code: 'timeout', message: 'AI request timed out' });
+		} finally {
+			globalThis.setTimeout = originalSetTimeout;
+			globalThis.clearTimeout = originalClearTimeout;
+		}
+	});
+
+	test('keeps Craps response defaults for missing or invalid fields', async () => {
+		globalThis.fetch = async () =>
+			new Response(
 				JSON.stringify({
-					candidates: [
+					choices: [
 						{
-							content: {
-								parts: [
-									{
-										text: '{"advice":"Yo-eleven energy. Start with pass line.","suggestedBets":["passLine"],"confidence":"medium"}',
-									},
-								],
+							message: {
+								content:
+									'{"advice":"Take single odds.","suggestedBets":"passLine","confidence":"extreme"}',
 							},
 						},
 					],
 				}),
-				{ status: 200, headers: { 'content-type': 'application/json' } },
 			);
-		});
 
-		const advice = await getCrapsAdvice(
-			{
-				phase: 'come-out',
-				point: null,
-				chipBalance: 900,
-				activeBets: [],
-				rollHistory: [],
+		const result = await getCrapsAdvice(baseContext, settings);
+
+		expect(result).toMatchObject({
+			ok: true,
+			value: {
+				advice: 'Take single odds.',
+				suggestedBets: ['passLine'],
+				confidence: 'medium',
 			},
-			{
-				provider: 'gemini',
-				model: 'gemini-1.5-flash',
-				apiKey: 'gemini-key',
-			},
-		);
-		expect(advice.confidence).toBe('medium');
-		expect(advice.suggestedBets).toEqual(['passLine']);
-	});
-
-	test('throws when response has no JSON object', async () => {
-		setMockFetch(
-			async () =>
-				new Response(
-					JSON.stringify({
-						choices: [
-							{ message: { content: 'Take a conservative line bet and watch the point.' } },
-						],
-					}),
-					{ status: 200, headers: { 'content-type': 'application/json' } },
-				),
-		);
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				apiKey: 'openai-key',
-			}),
-		).rejects.toThrow('[LLM_CRAPS] No JSON found in LLM response');
-	});
-
-	test('falls back to defaults for invalid parsed fields', async () => {
-		setMockFetch(
-			async () =>
-				new Response(
-					JSON.stringify({
-						choices: [
-							{
-								message: {
-									content:
-										'{"advice":"Take single odds.","suggestedBets":"passLine","confidence":"extreme"}',
-								},
-							},
-						],
-					}),
-					{ status: 200, headers: { 'content-type': 'application/json' } },
-				),
-		);
-
-		const advice = await getCrapsAdvice(baseContext, {
-			provider: 'openai',
-			model: 'gpt-4o',
-			apiKey: 'openai-key',
 		});
-		expect(advice.advice).toBe('Take single odds.');
-		expect(advice.suggestedBets).toEqual(['passLine']);
-		expect(advice.confidence).toBe('medium');
-	});
-
-	test('throws when JSON parsing fails', async () => {
-		setMockFetch(
-			async () =>
-				new Response(
-					JSON.stringify({
-						choices: [{ message: { content: '{"advice":"Broken JSON",invalid}' } }],
-					}),
-					{ status: 200, headers: { 'content-type': 'application/json' } },
-				),
-		);
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				apiKey: 'openai-key',
-			}),
-		).rejects.toThrow('[LLM_CRAPS] Failed to parse LLM JSON response');
-	});
-
-	test('maps AbortError to timeout for OpenAI and Gemini', async () => {
-		setMockFetch(async () => {
-			const abortError = new Error('aborted');
-			abortError.name = 'AbortError';
-			throw abortError;
-		});
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				apiKey: 'openai-key',
-			}),
-		).rejects.toThrow('Request timed out');
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'gemini',
-				model: 'gemini-1.5-flash',
-				apiKey: 'gemini-key',
-			}),
-		).rejects.toThrow('Request timed out');
-	});
-
-	test('propagates provider HTTP errors and unsupported providers', async () => {
-		setMockFetch(
-			async () => new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 }),
-		);
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'openai',
-				model: 'gpt-4o',
-				apiKey: 'openai-key',
-			}),
-		).rejects.toThrow('OpenAI error 401');
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'gemini',
-				model: 'gemini-1.5-flash',
-				apiKey: 'gemini-key',
-			}),
-		).rejects.toThrow('Gemini error 401');
-
-		await expect(
-			getCrapsAdvice(baseContext, {
-				provider: 'anthropic',
-				model: 'claude',
-				apiKey: 'key',
-			} as any),
-		).rejects.toThrow('Unsupported provider: anthropic');
 	});
 });

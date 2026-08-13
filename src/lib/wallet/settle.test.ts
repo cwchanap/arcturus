@@ -39,7 +39,7 @@ describe('wallet settlement validation', () => {
 	test('rejects malformed settlement IDs and unknown games', () => {
 		expectInvalid(command({ settlementId: 'bad id' }));
 		expectInvalid(command({ settlementId: 'x'.repeat(129) }));
-		expectInvalid({ ...command(), game: 'video-poker' });
+		expectInvalid({ ...command(), game: 'unknown-game' as never });
 	});
 
 	test('rejects invalid round statistics', () => {

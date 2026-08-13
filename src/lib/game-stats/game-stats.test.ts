@@ -6,6 +6,7 @@ import {
 	isValidGameType,
 	isValidRankingMetric,
 	GAME_TYPE_LABELS,
+	GAME_TYPE_ICONS,
 	RANKING_METRIC_LABELS,
 } from './constants';
 
@@ -138,6 +139,12 @@ function resetGameStatsMocks() {
 }
 
 beforeEach(() => {});
+
+test('registers Video Poker as a valid game type', () => {
+	expect(isValidGameType('video-poker')).toBe(true);
+	expect(GAME_TYPE_LABELS['video-poker']).toBe('Video Poker');
+	expect(GAME_TYPE_ICONS['video-poker']).toBe('♠️');
+});
 
 describe('calculateMetrics', () => {
 	test('calculates win rate correctly for player with wins and losses', () => {
@@ -424,7 +431,8 @@ describe('constants', () => {
 		expect(GAME_TYPES).toContain('poker');
 		expect(GAME_TYPES).toContain('slots');
 		expect(GAME_TYPES).toContain('roulette');
-		expect(GAME_TYPES.length).toBe(7);
+		expect(GAME_TYPES).toContain('video-poker');
+		expect(GAME_TYPES.length).toBe(8);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {

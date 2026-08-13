@@ -74,6 +74,16 @@ describe('VideoPokerGame', () => {
 		});
 	});
 
+	test('setBalance replaces the balance with a normalized integer', () => {
+		const game = new VideoPokerGame(100, () => 0);
+		game.deal();
+		game.draw();
+		game.setBalance(250.7);
+		expect(game.getState().balance).toBe(250);
+		expect(() => game.setBalance(-1)).toThrow(RangeError);
+		expect(() => game.setBalance(Number.NaN)).toThrow(RangeError);
+	});
+
 	test('getState returns a deep snapshot that cannot mutate internal state', () => {
 		const game = new VideoPokerGame(100, () => 0);
 		game.deal();

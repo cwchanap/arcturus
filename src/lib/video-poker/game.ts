@@ -31,10 +31,14 @@ export class VideoPokerGame {
 	getState(): Readonly<VideoPokerState> {
 		return {
 			...this.state,
-			hand: [...this.state.hand],
+			hand: this.state.hand.map((card) => ({ ...card })),
 			heldIndexes: [...this.state.heldIndexes],
 			result: this.state.result
-				? { ...this.state.result, finalHand: [...this.state.result.finalHand] }
+				? {
+						...this.state.result,
+						evaluation: { ...this.state.result.evaluation },
+						finalHand: this.state.result.finalHand.map((card) => ({ ...card })),
+					}
 				: null,
 		};
 	}

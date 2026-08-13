@@ -97,7 +97,7 @@ export function initVideoPokerClient(): void {
 		const state = game.getState();
 		renderCards();
 
-		if (balanceEl) balanceEl.textContent = String(state.balance);
+		if (balanceEl) balanceEl.textContent = state.balance.toLocaleString('en-US');
 
 		for (const button of wagerButtons) {
 			button.setAttribute('aria-pressed', String(Number(button.dataset.wager) === state.wager));

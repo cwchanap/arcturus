@@ -1,0 +1,121 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import CardSlot from '../../components/CardSlot.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { PAYTABLE_ROWS, WAGER_OPTIONS } from '../../lib/video-poker';
+
+const gameSession = createPublicGameSession(Astro.locals.user);
+---
+
+<CasinoLayout title="Video Poker - Arcturus Casino">
+	<main
+		id="video-poker-root"
+		data-testid="video-poker-root"
+		data-user-id={gameSession.clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={gameSession.initialBalance}
+		class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"
+	>
+		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+			<div>
+				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
+				<h1 class="deco-section-title text-4xl">Video Poker</h1>
+				<p class="text-[var(--deco-muted)]">Jacks or Better · 9/6 paytable</p>
+			</div>
+			<div class="deco-panel px-5 py-3">
+				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
+				<div
+					id="chip-balance"
+					data-testid="chip-balance"
+					class="text-2xl font-bold text-[var(--deco-brass)]"
+				>
+					{gameSession.initialBalance.toLocaleString()}
+				</div>
+			</div>
+		</header>
+
+		<section class="felt-table rounded-3xl p-6">
+			<div id="video-poker-status" role="status" aria-live="polite" class="mb-4 text-center">
+				Choose a wager and deal
+			</div>
+
+			<div class="grid grid-cols-5 gap-3">
+				{
+					Array.from({ length: 5 }, (_, index) => (
+						<div class="relative flex justify-center">
+							<CardSlot id={`video-poker-slot-${index}`} size="large" showPlaceholder={true} />
+							<button
+								type="button"
+								data-card-index={index}
+								data-card-id=""
+								aria-label={`Card ${index + 1}`}
+								aria-pressed="false"
+								disabled
+								class="card-hold-toggle absolute inset-0 rounded-xl border-2 border-transparent"
+							/>
+						</div>
+					))
+				}
+			</div>
+
+			<div
+				id="video-poker-result"
+				role="status"
+				aria-live="polite"
+				class="mt-4 min-h-6 text-center"
+			>
+			</div>
+
+			<div class="mt-5 flex flex-wrap justify-center gap-2">
+				{
+					WAGER_OPTIONS.map((wager) => (
+						<button
+							type="button"
+							data-wager={wager}
+							aria-pressed={wager === 1 ? 'true' : 'false'}
+							class="deco-btn rounded-lg px-4 py-2"
+						>
+							{wager}
+						</button>
+					))
+				}
+			</div>
+
+			<div class="mt-5 flex justify-center">
+				<button id="video-poker-action" type="button" class="deco-btn rounded-lg px-8 py-3">
+					Deal
+				</button>
+			</div>
+			<div id="video-poker-recovery-host"></div>
+		</section>
+
+		<aside class="deco-panel mt-6 p-5">
+			<h2 class="deco-section-title text-2xl">Paytable</h2>
+			<div class="mt-3 grid gap-2">
+				{
+					PAYTABLE_ROWS.map(([label, payout]) => (
+						<div class="flex justify-between gap-4">
+							<>
+								<span>{label}</span>
+								<span>{payout}</span>
+							</>
+						</div>
+					))
+				}
+			</div>
+		</aside>
+	</main>
+</CasinoLayout>
+
+<style>
+	.card-hold-toggle[aria-pressed='true'] {
+		border-color: var(--deco-brass);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--deco-brass) 35%, transparent);
+	}
+</style>
+
+<script>
+	import { initVideoPokerClient } from '../../lib/video-poker';
+
+	initVideoPokerClient();
+</script>

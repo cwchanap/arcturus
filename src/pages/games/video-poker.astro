@@ -39,10 +39,10 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 				Choose a wager and deal
 			</div>
 
-			<div class="grid grid-cols-5 gap-3">
+			<div class="flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center">
 				{
 					Array.from({ length: 5 }, (_, index) => (
-						<div class="relative flex justify-center">
+						<div class="relative h-28 w-20 shrink-0">
 							<CardSlot id={`video-poker-slot-${index}`} size="large" showPlaceholder={true} />
 							<button
 								type="button"

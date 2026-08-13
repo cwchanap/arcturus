@@ -97,7 +97,11 @@ export function initVideoPokerClient(): void {
 		const state = game.getState();
 		renderCards();
 
-		if (balanceEl) balanceEl.textContent = state.balance.toLocaleString('en-US');
+		const formattedBalance = state.balance.toLocaleString('en-US');
+		if (balanceEl) balanceEl.textContent = formattedBalance;
+		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
+			el.textContent = `${formattedBalance} chips`;
+		});
 
 		for (const button of wagerButtons) {
 			button.setAttribute('aria-pressed', String(Number(button.dataset.wager) === state.wager));
@@ -177,6 +181,7 @@ export function initVideoPokerClient(): void {
 	recovery.retry?.addEventListener('click', async () => {
 		if (!gate.pending) return;
 		if (recovery.retry) recovery.retry.disabled = true;
+		if (recovery.reset) recovery.reset.disabled = true;
 		settlementMessage = 'Retrying settlement...';
 		render();
 		try {
@@ -190,6 +195,7 @@ export function initVideoPokerClient(): void {
 			showSettlementRecovery('Settlement failed again. Retry or reset the hand.');
 		} finally {
 			if (recovery.retry) recovery.retry.disabled = false;
+			if (recovery.reset) recovery.reset.disabled = false;
 		}
 	});
 

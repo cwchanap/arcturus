@@ -711,7 +711,11 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			setFeedback(feedbackEl, 'Rival preferences saved', 'success');
 		} catch (error) {
 			console.error('Failed to save AI rival settings:', error);
-			setFeedback(feedbackEl, 'Could not save preferences', 'error');
+			setFeedback(
+				feedbackEl,
+				error instanceof Error ? error.message : 'Could not save preferences',
+				'error',
+			);
 		}
 	});
 

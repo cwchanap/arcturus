@@ -16,8 +16,17 @@ export function saveAiSettingsFromForm(
 	previous: AiSettings | null,
 ): AiSettings {
 	const masked = /^•+$/.test(apiKeyInput);
-	const apiKey = masked && previous?.provider === provider ? previous.apiKey : apiKeyInput.trim();
-	const next = { provider, model, apiKey };
+	if (masked) {
+		// A masked field is a display artifact, never persistence data. It is
+		// only valid when it represents the previous key for the same provider.
+		if (previous?.provider === provider) {
+			const next = { provider, model, apiKey: previous.apiKey };
+			saveAiSettings(next);
+			return next;
+		}
+		throw new Error('API key required');
+	}
+	const next = { provider, model, apiKey: apiKeyInput.trim() };
 	saveAiSettings(next);
 	return next;
 }

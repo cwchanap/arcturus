@@ -166,7 +166,7 @@ export function generateAiJson(
 It owns:
 
 - OpenAI `/v1/chat/completions` URL, authorization header, messages request shape, and content extraction.
-- Gemini `generateContent` URL, API-key query parameter, contents request shape, and content extraction.
+- Gemini `generateContent` URL, `x-goog-api-key` header, contents request shape, and content extraction.
 - `request.timeoutMs ?? AI_REQUEST_TIMEOUT_MS` as the timeout budget.
 - Parseable non-2xx normalization with `status: response.status`.
 - Provider text extraction.

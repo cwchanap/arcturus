@@ -63,7 +63,7 @@ test('unmasked edited input is submitted directly', () => {
 	expect(result.apiKey).toBe('sk-brand-new');
 });
 
-test('masked input with a different provider does not recover the old key', () => {
+test('masked input with a different provider is rejected as API key required', () => {
 	installMemoryStorage();
 	const previous: AiSettings = {
 		provider: 'openai',
@@ -71,9 +71,10 @@ test('masked input with a different provider does not recover the old key', () =
 		apiKey: 'sk-openai-key',
 	};
 
-	// Switching provider invalidates the masked draft for the old provider.
-	const result = saveAiSettingsFromForm('gemini', 'gemini-2.5-flash', '•••••', previous);
-
-	expect(result.apiKey).toBe('•••••');
-	expect(result.provider).toBe('gemini');
+	// A masked display value is never persistence data. Switching provider
+	// invalidates the masked draft, so the helper must reject rather than
+	// persist the mask as a real key.
+	expect(() => saveAiSettingsFromForm('gemini', 'gemini-2.5-flash', '•••••', previous)).toThrow(
+		'API key required',
+	);
 });

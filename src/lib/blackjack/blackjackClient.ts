@@ -1,6 +1,10 @@
 import { BlackjackGame } from './BlackjackGame';
 import { GameSettingsManager } from './GameSettingsManager';
-import { getBlackjackAdvice, type BlackjackAdviceContext } from './llmBlackjackStrategy';
+import {
+	getBlackjackAdvice,
+	getBlackjackStrategyAdvice,
+	type BlackjackAdviceContext,
+} from './llmBlackjackStrategy';
 import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
@@ -556,36 +560,53 @@ export function initBlackjackClient(): void {
 			return;
 		}
 
-		// Show loading state
+		const activeHandIndex = state.activeHandIndex;
+		const activeHand = state.playerHands[activeHandIndex];
+		const dealerUpCard = state.dealerHand.cards[0];
+
+		const context: BlackjackAdviceContext = {
+			playerHand: activeHand,
+			dealerUpCard: dealerUpCard,
+			availableActions: game.getAvailableActions(),
+			playerBalance: game.getBalance(),
+			currentBet: activeHand.bet,
+		};
+
+		// 1. Render the deterministic recommendation synchronously so the user
+		//    never waits on the provider for an answer that is already known.
+		const deterministic = getBlackjackStrategyAdvice(context);
+		aiAdviceBox.classList.remove('hidden');
+		aiAdviceAction.textContent = deterministic.recommendedAction
+			? `Recommended: ${deterministic.recommendedAction.toUpperCase()}`
+			: 'No legal recommendation';
+		aiAdviceReasoning.textContent = deterministic.reasoning;
+		highlightRecommendedAction(deterministic.recommendedAction);
+
+		// 2. Optionally ask the provider to rewrite only the reasoning. The
+		//    recommended action is never changed by the provider.
+		const providerSettings: AiSettings | null = isGuestMode ? null : loadAiSettings();
+		if (!providerSettings || !deterministic.recommendedAction) return;
+
+		// Capture the turn identity so a late provider response cannot update
+		// advice after the hand has advanced.
+		const turnSignature = `${activeHandIndex}:${activeHand.cards
+			.map((card) => `${card.rank}${card.suit}`)
+			.join(',')}`;
+
 		btnAiRival.disabled = true;
 		btnAiRivalText.textContent = 'Thinking...';
-		aiAdviceBox.classList.add('hidden');
-
 		try {
-			const activeHand = state.playerHands[state.activeHandIndex];
-			const dealerUpCard = state.dealerHand.cards[0];
-
-			const context: BlackjackAdviceContext = {
-				playerHand: activeHand,
-				dealerUpCard: dealerUpCard,
-				availableActions: game.getAvailableActions(),
-				playerBalance: game.getBalance(),
-				currentBet: activeHand.bet,
-			};
-
-			const providerSettings: AiSettings | null = isGuestMode ? null : loadAiSettings();
 			const advice = await getBlackjackAdvice(context, providerSettings);
-
-			aiAdviceBox.classList.remove('hidden');
-			aiAdviceAction.textContent = advice.recommendedAction
-				? `Recommended: ${advice.recommendedAction.toUpperCase()}`
-				: 'No legal recommendation';
-			aiAdviceReasoning.textContent = advice.reasoning;
-			highlightRecommendedAction(advice.recommendedAction);
+			const current = game.getState();
+			const currentHand = current.playerHands[current.activeHandIndex];
+			const currentSignature = `${current.activeHandIndex}:${currentHand?.cards
+				.map((card) => `${card.rank}${card.suit}`)
+				.join(',')}`;
+			if (current.phase === 'player-turn' && currentSignature === turnSignature) {
+				aiAdviceReasoning.textContent = advice.reasoning;
+			}
 		} catch (_error) {
-			aiAdviceBox.classList.remove('hidden');
-			aiAdviceAction.textContent = 'Unable to get advice';
-			aiAdviceReasoning.textContent = 'Try again or play without AI assistance.';
+			// Deterministic advice is already shown; leave it in place.
 		} finally {
 			btnAiRival.disabled = false;
 			btnAiRivalText.textContent = 'Ask AI Rival';

@@ -73,4 +73,29 @@ describe('VideoPokerGame', () => {
 			result: null,
 		});
 	});
+
+	test('getState returns a deep snapshot that cannot mutate internal state', () => {
+		const game = new VideoPokerGame(100, () => 0);
+		game.deal();
+		game.toggleHold(0);
+		game.draw();
+
+		const snapshot = game.getState();
+		const internalBefore = game.getState();
+
+		// Mutate every cloneable field on the snapshot
+		if (snapshot.hand[0]) snapshot.hand[0].rank = 2;
+		if (snapshot.hand[0]) snapshot.hand[0].suit = 'clubs';
+		if (snapshot.result) {
+			snapshot.result.evaluation.category = 'royal-flush';
+			snapshot.result.evaluation.label = 'tampered';
+			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].rank = 14;
+			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].suit = 'spades';
+		}
+
+		const internalAfter = game.getState();
+		expect(internalAfter.hand).toEqual(internalBefore.hand);
+		expect(internalAfter.result?.evaluation).toEqual(internalBefore.result?.evaluation);
+		expect(internalAfter.result?.finalHand).toEqual(internalBefore.result?.finalHand);
+	});
 });

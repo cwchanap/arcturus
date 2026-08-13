@@ -54,6 +54,65 @@ test.describe('Video Poker guest', () => {
 		await expect(page.locator('#video-poker-action')).toHaveText('Deal');
 		expect(walletRequests).toEqual([]);
 	});
+
+	test('deterministic win hand reports the expected category and payout', async ({ page }) => {
+		const walletRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/wallet/settle')) walletRequests.push(request.url());
+		});
+		// random=0 with no holds yields a Straight Flush (50x). At wager 2: payout 100, net +98.
+		await page.addInitScript(() => {
+			Math.random = () => 0;
+		});
+		await gotoVideoPoker(page);
+
+		await expect(page.getByTestId('video-poker-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.getByTestId('chip-balance')).toContainText('1,000');
+		await page.locator('[data-wager="2"]').click();
+		await page.locator('#video-poker-action').click(); // Deal
+		await expect(page.locator('#video-poker-action')).toHaveText('Draw');
+
+		// No holds — draw replaces all five cards with the next five from the same deck.
+		await page.locator('#video-poker-action').click(); // Draw
+
+		await expect(page.locator('#video-poker-action')).toHaveText('New Round');
+		await expect(page.locator('#video-poker-result')).toHaveText(
+			'Straight Flush: 100 chips (+98 net)',
+		);
+		await expect(page.getByTestId('chip-balance')).toContainText('1,098');
+
+		await page.locator('#video-poker-action').click(); // New Round
+		await expect(page.locator('#video-poker-action')).toHaveText('Deal');
+		expect(walletRequests).toEqual([]);
+	});
+
+	test('deterministic loss hand reports No Win and zero payout', async ({ page }) => {
+		const walletRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/wallet/settle')) walletRequests.push(request.url());
+		});
+		// random=0.2 with no holds yields "nothing". At wager 2: payout 0, net -2.
+		await page.addInitScript(() => {
+			Math.random = () => 0.2;
+		});
+		await gotoVideoPoker(page);
+
+		await expect(page.getByTestId('video-poker-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.getByTestId('chip-balance')).toContainText('1,000');
+		await page.locator('[data-wager="2"]').click();
+		await page.locator('#video-poker-action').click(); // Deal
+		await expect(page.locator('#video-poker-action')).toHaveText('Draw');
+
+		await page.locator('#video-poker-action').click(); // Draw
+
+		await expect(page.locator('#video-poker-action')).toHaveText('New Round');
+		await expect(page.locator('#video-poker-result')).toHaveText('No Win: 0 chips (-2 net)');
+		await expect(page.getByTestId('chip-balance')).toContainText('998');
+
+		await page.locator('#video-poker-action').click(); // New Round
+		await expect(page.locator('#video-poker-action')).toHaveText('Deal');
+		expect(walletRequests).toEqual([]);
+	});
 });
 
 test.describe('Video Poker narrow layout', () => {

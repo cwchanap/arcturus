@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { initVideoPokerClient } from './client';
+import { VideoPokerGame } from './game';
 
 // ---------------------------------------------------------------------------
 // happy-dom globals
@@ -592,6 +593,239 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 			]);
 		} finally {
 			window.removeEventListener('achievement-earned', handler);
+			root.remove();
+		}
+	});
+});
+
+describe('initVideoPokerClient — settlement retry', () => {
+	test('retry handler re-submits settlement and adopts the server balance on success', async () => {
+		localStorage.clear();
+		installFetch({
+			settlement: (call) =>
+				call === 1
+					? makeResponse(500, { error: 'INTERNAL_ERROR' })
+					: makeResponse(200, { balance: 1100, duplicate: false }),
+		});
+		const root = buildVideoPokerDOM({
+			guestMode: false,
+			userId: 'vp-auth-retry-ok',
+			initialBalance: 1000,
+		});
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			actionButton().click();
+			await waitFor(
+				() =>
+					document
+						.getElementById('video-poker-settlement-recovery')
+						?.classList.contains('hidden') === false,
+			);
+
+			const retryButton = document.getElementById(
+				'video-poker-retry-settlement',
+			) as HTMLButtonElement;
+			expect(retryButton).toBeTruthy();
+			retryButton.click();
+
+			await waitFor(
+				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '1,100',
+			);
+			expect((document.getElementById('chip-balance') as HTMLElement).textContent).toBe('1,100');
+			expect(
+				document.getElementById('video-poker-settlement-recovery')?.classList.contains('hidden'),
+			).toBe(true);
+		} finally {
+			root.remove();
+		}
+	});
+
+	test('retry handler surfaces a second failure and keeps recovery controls visible', async () => {
+		localStorage.clear();
+		installFetch({
+			settlement: () => makeResponse(500, { error: 'INTERNAL_ERROR' }),
+		});
+		const root = buildVideoPokerDOM({
+			guestMode: false,
+			userId: 'vp-auth-retry-fail',
+			initialBalance: 1000,
+		});
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			actionButton().click();
+			await waitFor(
+				() =>
+					document
+						.getElementById('video-poker-settlement-recovery')
+						?.classList.contains('hidden') === false,
+			);
+
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			const retryButton = document.getElementById(
+				'video-poker-retry-settlement',
+			) as HTMLButtonElement;
+			retryButton.click();
+
+			await waitFor(() => statusEl.textContent?.includes('failed again'));
+			expect(statusEl.textContent).toContain('failed again');
+			expect(
+				document.getElementById('video-poker-settlement-recovery')?.classList.contains('hidden'),
+			).toBe(false);
+			expect(retryButton.disabled).toBe(false);
+		} finally {
+			root.remove();
+		}
+	});
+});
+
+describe('initVideoPokerClient — defensive error paths', () => {
+	test('card hold toggle surfaces an error when the card index is out of range', async () => {
+		localStorage.clear();
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-hold-err',
+			initialBalance: 1000,
+		});
+		const rogueButton = document.createElement('button');
+		rogueButton.type = 'button';
+		rogueButton.setAttribute('data-card-index', '99');
+		rogueButton.setAttribute('aria-pressed', 'false');
+		root.appendChild(rogueButton);
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+
+			rogueButton.click();
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			expect(statusEl.textContent).toContain('Card index');
+		} finally {
+			root.remove();
+		}
+	});
+
+	test('primary action surfaces a wager error when clicked with an invalid wager', async () => {
+		localStorage.clear();
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-deal-wager-err',
+			initialBalance: 1000,
+		});
+		// Patch getWagerError so the deal button is disabled but balance is still
+		// above MIN_WAGER — this lets the wagerMessage branch render in the status
+		// (the "Not enough chips" branch only fires when balance < MIN_WAGER).
+		const originalGetWagerError = VideoPokerGame.prototype.getWagerError;
+		VideoPokerGame.prototype.getWagerError = function () {
+			return 'custom wager error';
+		};
+		try {
+			initVideoPokerClient();
+			// The Deal button is disabled because getWagerError returns non-null.
+			// Temporarily enable it so .click() fires the handler; onPrimaryAction
+			// re-checks getWagerError, hits the wager-error branch, and render()
+			// re-disables the button.
+			expect(actionButton().disabled).toBe(true);
+			actionButton().disabled = false;
+			actionButton().click();
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			expect(statusEl.textContent).toContain('custom wager error');
+		} finally {
+			VideoPokerGame.prototype.getWagerError = originalGetWagerError;
+			root.remove();
+		}
+	});
+
+	test('primary action catches a deal() error and surfaces the message', async () => {
+		localStorage.clear();
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-deal-throw',
+			initialBalance: 1000,
+		});
+		const originalDeal = VideoPokerGame.prototype.deal;
+		VideoPokerGame.prototype.deal = function () {
+			throw new Error('deal boom');
+		};
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => {
+				const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+				return statusEl.textContent?.includes('deal boom');
+			});
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			expect(statusEl.textContent).toContain('deal boom');
+			expect(actionButton().textContent).toBe('Deal');
+		} finally {
+			VideoPokerGame.prototype.deal = originalDeal;
+			root.remove();
+		}
+	});
+
+	test('primary action catches a draw() error and surfaces the message', async () => {
+		localStorage.clear();
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-draw-throw',
+			initialBalance: 1000,
+		});
+		const originalDraw = VideoPokerGame.prototype.draw;
+		VideoPokerGame.prototype.draw = function () {
+			throw new Error('draw boom');
+		} as unknown as typeof VideoPokerGame.prototype.draw;
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			actionButton().click();
+			await waitFor(() => {
+				const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+				return statusEl.textContent?.includes('draw boom');
+			});
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			expect(statusEl.textContent).toContain('draw boom');
+		} finally {
+			VideoPokerGame.prototype.draw = originalDraw;
+			root.remove();
+		}
+	});
+
+	test('primary action catches a resetRound() error and surfaces the message', async () => {
+		localStorage.clear();
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-reset-throw',
+			initialBalance: 1000,
+		});
+		const originalReset = VideoPokerGame.prototype.resetRound;
+		VideoPokerGame.prototype.resetRound = function () {
+			throw new Error('reset boom');
+		};
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'New Round');
+
+			actionButton().click();
+			await waitFor(() => {
+				const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+				return statusEl.textContent?.includes('reset boom');
+			});
+			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
+			expect(statusEl.textContent).toContain('reset boom');
+		} finally {
+			VideoPokerGame.prototype.resetRound = originalReset;
 			root.remove();
 		}
 	});

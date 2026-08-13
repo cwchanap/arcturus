@@ -107,7 +107,7 @@ A round works as follows:
 4. `Draw` replaces every unheld card from the same remaining deck exactly once.
 5. The final five-card hand is evaluated, gross payout is credited locally, and the round result is frozen.
 6. Guest mode persists the resulting local bankroll. Authenticated mode submits one wallet settlement using the round's net delta.
-7. A new round cannot begin while authenticated settlement is pending or failed.
+7. The primary action reads `Deal` in `ready`, `Draw` in `holding`, and `New Round` in `complete`. `New Round` stays disabled while authenticated settlement is pending or failed, so the result remains visible until the player explicitly starts the next hand.
 
 No draw animation, sound, hand history, double-up game, or multi-hand play is required.
 
@@ -180,7 +180,7 @@ Own the one local paytable and wager choices:
 - display rows for the Astro page
 - `calculatePayout(category, wager): number`
 
-The paytable is a plain data object plus the one Royal Flush five-chip exception. Do not introduce a generic paytable engine.
+`calculatePayout()` returns `0` for `nothing`. It throws `RangeError` when `wager` is not an integer from 1 through 5. The paytable is a plain data object plus the one Royal Flush five-chip exception. Do not introduce a generic paytable engine.
 
 ### `game.ts`
 
@@ -205,7 +205,7 @@ State phases:
 
 - `ready` — wager can change; Deal is allowed when balance covers the wager.
 - `holding` — five cards are visible; only hold toggles and Draw are allowed.
-- `complete` — result is frozen until settlement is complete/reset and the next round begins.
+- `complete` — result is frozen. After guest completion, or after successful authenticated settlement, `New Round` may call `resetRound()` to return to `ready`.
 
 Keep one remaining-deck array inside the game object between Deal and Draw. There is no generic state machine abstraction.
 
@@ -216,7 +216,7 @@ Own browser composition only:
 - Read `data-*` session metadata from `#video-poker-root`.
 - Restore/persist guest bankroll through `public-game-session`.
 - Instantiate `VideoPokerGame`.
-- Render five cards, held state, wager, balance, result, paytable status, and button states.
+- Render five cards, held state, wager, balance, result, paytable status, and the `Deal` → `Draw` → `New Round` action state.
 - Reuse `getSuitGlyph()` / `isRedSuit()` from `card-format.ts` for card display.
 - Build one wallet command from a completed result.
 - Use one `createSettlementGate()` for authenticated settlement.
@@ -245,7 +245,7 @@ Create `src/pages/games/video-poker.astro`.
 The page should:
 
 - Call `createPublicGameSession(Astro.locals.user)` server-side.
-- Render title, balance, 1–5 chip wager controls, five card buttons/slots, Deal/Draw action, result/status text, and a compact paytable panel.
+- Render title, balance, 1–5 chip wager controls, five card buttons/slots, the primary Deal/Draw/New Round action, result/status text, and a compact paytable panel.
 - Pass `clientUserId`, guest mode, and initial balance through root `data-*` attributes.
 - Import and call `initVideoPokerClient()` in the page script.
 - Contain no hand evaluation, payout calculation, or wallet request code.
@@ -282,21 +282,21 @@ No database schema change is required because game type storage is textual and t
 
 ### Invalid wager
 
-Reject non-finite, out-of-range, or over-balance wagers before dealing. Keep the current round in `ready` and show the validation message.
+Reject non-finite, non-integer, out-of-range, or over-balance wagers before dealing. Keep the current round in `ready` and show the validation message.
 
 ### Empty/invalid game action
 
-`toggleHold` outside `holding`, invalid card indexes, a second Draw, or Deal during an unfinished round should fail synchronously in the pure game layer. The client surfaces the message and leaves the previous valid state intact.
+`toggleHold` outside `holding`, invalid card indexes, a second Draw, Deal during an unfinished round, or New Round before `complete` should fail synchronously in the pure game layer. The client surfaces the message and leaves the previous valid state intact.
 
 ### Wallet settlement failure
 
 Do not auto-retry.
 
 - Keep the settlement command in the existing gate.
-- Block a new authenticated round.
+- Block `New Round` for authenticated play.
 - Show Retry and Reset.
 - Retry resubmits the exact same command/settlement ID.
-- Reset discards the failed local round state and restores the last server-confirmed balance.
+- Reset calls `gate.reset()`, restores the last server-confirmed balance with `game.setBalance()`, then clears the failed hand with `game.resetRound()`.
 
 Guest mode never calls `/api/wallet/settle`.
 
@@ -329,7 +329,8 @@ Guest mode never calls `/api/wallet/settle`.
 
 - standard per-chip payouts
 - 5-chip Royal Flush pays 4,000
-- invalid wager/category combinations are rejected or return the defined non-paying result
+- `nothing` pays 0
+- non-integer and out-of-range wagers throw `RangeError`
 
 `game.test.ts`:
 
@@ -340,13 +341,15 @@ Guest mode never calls `/api/wallet/settle`.
 - wager changes are rejected outside `ready`
 - over-balance wager/deal is rejected
 - payout and net delta update balance correctly
+- `complete` preserves the visible result until `resetRound()`
 - reset clears the hand/result without changing the confirmed balance
 
 `client.test.ts`:
 
 - settlement command maps net delta to wallet stats correctly
 - guest mode never needs the settlement gate to begin another round
-- authenticated mode blocks a new round while the gate is pending
+- authenticated mode blocks New Round while the gate is pending
+- successful settlement adopts the server balance before New Round is enabled
 - retry/reset wiring delegates to the shared gate rather than reimplementing retry policy
 
 ### Playwright
@@ -359,8 +362,9 @@ Create `e2e/video-poker.spec.ts` with one representative guest flow:
 4. Deal five cards.
 5. Hold a strict subset of cards.
 6. Draw once.
-7. Confirm held card text is unchanged, a result is shown, balance is rendered, and Draw cannot be repeated for the same hand.
-8. Confirm no `/api/wallet/settle` request was made.
+7. Confirm held card text is unchanged, a result is shown, balance is rendered, and the primary action now reads `New Round` rather than allowing a second Draw.
+8. Start a new round and confirm the hand resets.
+9. Confirm no `/api/wallet/settle` request was made.
 
 The test should control `Math.random` through `page.addInitScript()` so it asserts behavior rather than depending on luck.
 

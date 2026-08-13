@@ -114,4 +114,29 @@ describe('settlement gate', () => {
 		await expect(failed.retry()).resolves.toBeNull();
 		expect(calls).toBe(1);
 	});
+
+	test('a failed retry keeps the command pending so another retry can succeed', async () => {
+		let attempts = 0;
+		const gate = createSettlementGate({
+			submit: async () => {
+				attempts += 1;
+				if (attempts < 3) throw new Error('offline');
+				return RESULT;
+			},
+		});
+
+		await expect(gate.settle(COMMAND)).rejects.toThrow('offline');
+		expect(gate.isBlocked).toBe(true);
+
+		// First retry fails — gate must stay blocked and remain retryable.
+		await expect(gate.retry()).rejects.toThrow('offline');
+		expect(gate.pending).toBe(COMMAND);
+		expect(gate.isBlocked).toBe(true);
+
+		// Second retry succeeds — gate clears.
+		await expect(gate.retry()).resolves.toEqual(RESULT);
+		expect(gate.pending).toBeNull();
+		expect(gate.isBlocked).toBe(false);
+		expect(attempts).toBe(3);
+	});
 });

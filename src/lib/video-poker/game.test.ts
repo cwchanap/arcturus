@@ -108,4 +108,27 @@ describe('VideoPokerGame', () => {
 		expect(internalAfter.result?.evaluation).toEqual(internalBefore.result?.evaluation);
 		expect(internalAfter.result?.finalHand).toEqual(internalBefore.result?.finalHand);
 	});
+
+	test('draw returns a deep snapshot that cannot mutate internal state', () => {
+		const game = new VideoPokerGame(100, () => 0);
+		game.deal();
+		game.toggleHold(0);
+		const result = game.draw();
+		const internalBefore = game.getState();
+
+		// Mutate every cloneable field on the value returned directly by draw()
+		if (result.finalHand[0]) result.finalHand[0].rank = 14;
+		if (result.finalHand[0]) result.finalHand[0].suit = 'spades';
+		result.evaluation.category = 'royal-flush';
+		result.evaluation.label = 'tampered';
+		result.payout = 999999;
+		result.netDelta = 999999;
+
+		const internalAfter = game.getState();
+		expect(internalAfter.hand).toEqual(internalBefore.hand);
+		expect(internalAfter.result?.evaluation).toEqual(internalBefore.result?.evaluation);
+		expect(internalAfter.result?.finalHand).toEqual(internalBefore.result?.finalHand);
+		expect(internalAfter.result?.payout).toBe(internalBefore.result?.payout);
+		expect(internalAfter.result?.netDelta).toBe(internalBefore.result?.netDelta);
+	});
 });

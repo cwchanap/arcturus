@@ -110,7 +110,13 @@ export class VideoPokerGame {
 			hand: [...finalHand],
 			result,
 		};
-		return result;
+		// Return a deep clone so callers cannot mutate internal state through the
+		// same aliasing path that getState() already guards against.
+		return {
+			...result,
+			evaluation: { ...result.evaluation },
+			finalHand: result.finalHand.map((card) => ({ ...card })),
+		};
 	}
 
 	resetRound(): void {

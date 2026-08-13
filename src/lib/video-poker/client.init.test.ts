@@ -216,10 +216,13 @@ function installFetch(config: FetchConfig = {}): { calls: Array<{ url: string }>
 	return { calls };
 }
 
-async function flush(ticks = 10): Promise<void> {
-	for (let i = 0; i < ticks; i++) {
+async function waitFor(predicate: () => boolean, maxTicks = 500): Promise<void> {
+	for (let i = 0; i < maxTicks; i++) {
+		if (predicate()) return;
 		await Promise.resolve();
 	}
+	if (predicate()) return;
+	throw new Error(`waitFor condition not met after ${maxTicks} microtask ticks`);
 }
 
 function actionButton(): HTMLButtonElement {
@@ -264,7 +267,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 
 			// Deal
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			expect(actionButton().textContent).toBe('Draw');
 			for (let i = 0; i < 5; i++) {
 				expect(cardButton(i).disabled).toBe(false);
@@ -278,7 +281,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 			expect(cardButton(2).getAttribute('aria-pressed')).toBe('true');
 
 			actionButton().click();
-			await flush(5);
+			await waitFor(() => actionButton().textContent === 'New Round');
 
 			// Round complete: action says New Round, result text rendered.
 			expect(actionButton().textContent).toBe('New Round');
@@ -291,7 +294,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 
 			// Start a new round
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Deal');
 			expect(actionButton().textContent).toBe('Deal');
 			expect(cardButton(0).disabled).toBe(true);
 		} finally {
@@ -315,7 +318,9 @@ describe('initVideoPokerClient — guest round flow', () => {
 
 			// Dealing after the wager change deducts 3 chips.
 			actionButton().click();
-			await flush(2);
+			await waitFor(
+				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '997',
+			);
 			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
 			expect(balanceEl.textContent).toBe('997');
 		} finally {
@@ -350,7 +355,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 		try {
 			initVideoPokerClient();
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			expect(actionButton().textContent).toBe('Draw');
 
 			// Clicking a wager during holding phase is a no-op (disabled + handler guard).
@@ -425,7 +430,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 
 			// Dealing deducts the wager; the mirror should reflect the new balance.
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => mirror?.textContent === '999 chips');
 			expect(mirror?.textContent).toBe('999 chips');
 		} finally {
 			root.remove();
@@ -446,7 +451,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 
 			// Dealing still succeeds because the wager remained at 1.
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			expect(actionButton().textContent).toBe('Draw');
 			expect(statusEl.textContent).toContain('Hold any cards');
 		} finally {
@@ -467,9 +472,11 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 		try {
 			initVideoPokerClient();
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			actionButton().click();
-			await flush(15);
+			await waitFor(
+				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '1,234',
+			);
 
 			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
 			expect(balanceEl.textContent).toBe('1,234');
@@ -492,15 +499,25 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 		try {
 			initVideoPokerClient();
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			actionButton().click();
-			await flush(15);
+			await waitFor(
+				() =>
+					document
+						.getElementById('video-poker-settlement-recovery')
+						?.classList.contains('hidden') === false,
+			);
 
 			const recoveryContainer = document.getElementById('video-poker-settlement-recovery');
 			expect(recoveryContainer?.classList.contains('hidden')).toBe(false);
 
 			(document.getElementById('video-poker-reset-settlement') as HTMLButtonElement).click();
-			await flush(5);
+			await waitFor(
+				() =>
+					document
+						.getElementById('video-poker-settlement-recovery')
+						?.classList.contains('hidden') === true,
+			);
 
 			expect(recoveryContainer?.classList.contains('hidden')).toBe(true);
 			// After reset the round is back to ready (Deal), balance restored to the
@@ -524,17 +541,16 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 		try {
 			initVideoPokerClient();
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			actionButton().click();
-			await flush(15);
+			await waitFor(() => actionButton().disabled === true);
 
 			// Settlement failed → gate is blocked. New Round is disabled.
 			expect(actionButton().disabled).toBe(true);
 
-			// Reset to clear the gate, then verify the complete-phase guard path
-			// by re-blocking via a second failing hand.
+			// Reset clears the gate and re-enables the action button.
 			(document.getElementById('video-poker-reset-settlement') as HTMLButtonElement).click();
-			await flush(5);
+			await waitFor(() => actionButton().disabled === false);
 			expect(actionButton().disabled).toBe(false);
 		} finally {
 			root.remove();
@@ -566,9 +582,9 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 		try {
 			initVideoPokerClient();
 			actionButton().click();
-			await flush(2);
+			await waitFor(() => actionButton().textContent === 'Draw');
 			actionButton().click();
-			await flush(15);
+			await waitFor(() => events.length === 1);
 
 			expect(events).toHaveLength(1);
 			expect(events[0].achievements).toEqual([

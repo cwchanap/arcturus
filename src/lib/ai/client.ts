@@ -41,10 +41,13 @@ function buildProviderRequest(settings: AiSettings, request: AiGenerateRequest):
 	}
 
 	return {
-		url: `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
+		url: `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent`,
 		init: {
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: {
+				'content-type': 'application/json',
+				'x-goog-api-key': settings.apiKey,
+			},
 			body: JSON.stringify({
 				contents: [
 					{

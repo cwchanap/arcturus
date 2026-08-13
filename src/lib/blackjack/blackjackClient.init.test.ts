@@ -468,6 +468,7 @@ describe('Blackjack client initialization and settlement flow', () => {
 			expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
 		} finally {
 			Math.random = originalRandom;
+			localStorage.removeItem('arcturus-ai-settings');
 			root.remove();
 		}
 	});
@@ -475,16 +476,19 @@ describe('Blackjack client initialization and settlement flow', () => {
 	test('round completion does not perform automatic provider traffic', async () => {
 		const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-ai', initialBalance: 1000 });
 		const { calls } = installFetch();
-		initBlackjackClient();
-		await flush(5);
+		try {
+			initBlackjackClient();
+			await flush(5);
 
-		clickDeal();
-		await flush(2);
-		clickStand();
-		await flush(15);
+			clickDeal();
+			await flush(2);
+			clickStand();
+			await flush(15);
 
-		expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
-		root.remove();
+			expect(calls.some((call) => call.url.includes('api.openai.com'))).toBe(false);
+		} finally {
+			root.remove();
+		}
 	});
 
 	test('settlement success adopts server balance and hides recovery controls', async () => {

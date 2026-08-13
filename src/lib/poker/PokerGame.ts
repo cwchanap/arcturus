@@ -419,7 +419,8 @@ export class PokerGame {
 
 	/**
 	 * Get browser-local AI settings for automatic LLM opponents.
-	 * Returns null if not configured or LLM AI is disabled
+	 * Returns null only when guest mode prevents access; otherwise returns
+	 * the browser-local AI settings (which may be null if unconfigured).
 	 */
 	private async getLLMSettings(): Promise<AiSettings | null> {
 		if (this.isGuestMode) {

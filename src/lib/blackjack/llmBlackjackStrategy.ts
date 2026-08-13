@@ -72,12 +72,13 @@ export function getBlackjackStrategyAdvice(context: BlackjackAdviceContext): Bla
 	}
 
 	const legalActions = availableActions.filter((candidate) => candidate !== 'ask-ai');
-	if (!legalActions.includes(action)) {
+	if (legalActions.length > 0 && !legalActions.includes(action)) {
 		action = legalActions.includes('hit')
 			? 'hit'
 			: legalActions.includes('stand')
 				? 'stand'
 				: (legalActions[0] ?? 'stand');
+		reasoning = `Preferred move unavailable; falling back to ${action}.`;
 	}
 
 	return {

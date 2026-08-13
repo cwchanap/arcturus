@@ -22,7 +22,7 @@ export class AIRivalAssistant {
 	constructor() {
 		if (this.isGuestMode()) {
 			this.setButtonState({ disabled: true });
-			this.updateStatus('Sign in to use profile-backed AI rivals.', 'neutral');
+			this.updateStatus('Sign in to use browser-local AI rivals.', 'neutral');
 			return;
 		}
 		this.hydrateFromLocalSettings();

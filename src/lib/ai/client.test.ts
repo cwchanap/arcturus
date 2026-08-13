@@ -29,7 +29,8 @@ test('Gemini mapping sends system and prompt text with provider defaults', async
 	globalThis.fetch = mock(async (url, init) => {
 		const parsedUrl = new URL(String(url));
 		expect(parsedUrl.pathname).toBe('/v1beta/models/gemini-2.5-flash:generateContent');
-		expect(parsedUrl.searchParams.get('key')).toBe('AIza-test');
+		expect(parsedUrl.searchParams.get('key')).toBeNull();
+		expect((init?.headers as Record<string, string>)['x-goog-api-key']).toBe('AIza-test');
 
 		const body = JSON.parse(String(init?.body)) as {
 			contents: Array<{ role: string; parts: Array<{ text: string }> }>;

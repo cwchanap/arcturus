@@ -13,6 +13,7 @@ export const GAME_TYPES = [
 	'slots',
 	'roulette',
 	'keno',
+	'video-poker',
 ] as const;
 
 /**
@@ -41,6 +42,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	slots: 'Slots',
 	roulette: 'Roulette',
 	keno: 'Keno',
+	'video-poker': 'Video Poker',
 };
 
 /**
@@ -54,6 +56,7 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	slots: '🎰',
 	roulette: '\u{1F3AB}',
 	keno: '\u{1F3B1}',
+	'video-poker': '♠️',
 };
 
 /**

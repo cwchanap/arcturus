@@ -96,15 +96,21 @@ describe('VideoPokerGame', () => {
 		// Mutate every cloneable field on the snapshot
 		if (snapshot.hand[0]) snapshot.hand[0].rank = 2;
 		if (snapshot.hand[0]) snapshot.hand[0].suit = 'clubs';
+		// Mutate the arrays themselves to expose shared references
+		snapshot.hand.push({ rank: 99, suit: 'hearts' });
+		snapshot.heldIndexes.push(99);
+		snapshot.heldIndexes.length = 0;
 		if (snapshot.result) {
 			snapshot.result.evaluation.category = 'royal-flush';
 			snapshot.result.evaluation.label = 'tampered';
+			snapshot.result.finalHand.push({ rank: 99, suit: 'hearts' });
 			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].rank = 14;
 			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].suit = 'spades';
 		}
 
 		const internalAfter = game.getState();
 		expect(internalAfter.hand).toEqual(internalBefore.hand);
+		expect(internalAfter.heldIndexes).toEqual(internalBefore.heldIndexes);
 		expect(internalAfter.result?.evaluation).toEqual(internalBefore.result?.evaluation);
 		expect(internalAfter.result?.finalHand).toEqual(internalBefore.result?.finalHand);
 	});

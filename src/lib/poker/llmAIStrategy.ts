@@ -128,7 +128,10 @@ function parseLLMPayload(
 
 	let amount = 0;
 	if (action === 'raise') {
-		const requested = typeof payload.amount === 'number' ? Math.round(payload.amount) : 0;
+		const requested =
+			typeof payload.amount === 'number' && Number.isFinite(payload.amount)
+				? Math.round(payload.amount)
+				: 0;
 		const minRaise = Math.max(context.minimumBet, 10);
 		amount = Math.max(minRaise, Math.min(requested, context.player.chips, 200));
 	}

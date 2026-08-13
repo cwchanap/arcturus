@@ -72,6 +72,9 @@ function player(
 describe('AIRivalAssistant - browser-local settings', () => {
 	test('hydrates local settings without fetching profile-backed settings', async () => {
 		mockDocument();
+		const originalLocalStorage = (globalThis as typeof globalThis & { localStorage: Storage })
+			.localStorage;
+		const originalFetch = globalThis.fetch;
 		setLocalAiSettings();
 		const calls: string[] = [];
 		globalThis.fetch = mock((input: string | URL | Request) => {
@@ -79,17 +82,23 @@ describe('AIRivalAssistant - browser-local settings', () => {
 			return Promise.reject(new Error('unexpected network request'));
 		}) as unknown as typeof fetch;
 
-		const assistant = new AIRivalAssistant() as unknown as {
-			aiSettings: { provider: string; model: string; apiKey: string } | null;
-		};
-		await Promise.resolve();
+		try {
+			const assistant = new AIRivalAssistant() as unknown as {
+				aiSettings: { provider: string; model: string; apiKey: string } | null;
+			};
+			await Promise.resolve();
 
-		expect(assistant.aiSettings).toEqual({
-			provider: 'openai',
-			model: 'gpt-4o',
-			apiKey: 'sk-local',
-		});
-		expect(calls).toEqual([]);
+			expect(assistant.aiSettings).toEqual({
+				provider: 'openai',
+				model: 'gpt-4o',
+				apiKey: 'sk-local',
+			});
+			expect(calls).toEqual([]);
+		} finally {
+			(globalThis as typeof globalThis & { localStorage: Storage }).localStorage =
+				originalLocalStorage;
+			globalThis.fetch = originalFetch;
+		}
 	});
 });
 
@@ -362,6 +371,8 @@ describe('AIRivalAssistant - shared AI client', () => {
 		expect(calls).toHaveLength(1);
 		expect(new URL(calls[0].url).pathname).toBe('/v1/chat/completions');
 		expect(JSON.parse(String(calls[0].init?.body)).model).toBe('gpt-4o');
+		const headers = calls[0].init?.headers as Record<string, string>;
+		expect(headers.authorization).toBe('Bearer sk-local');
 		expect(messages[0]).toContain('call');
 	});
 });

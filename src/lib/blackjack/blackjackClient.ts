@@ -773,8 +773,8 @@ export function initBlackjackClient(): void {
 				game.getBalance() - serverSyncedBalance,
 				state.playerHands,
 			);
-			// Start the gate before optional commentary awaits, so New Round sees
-			// the blocked state for the entire settlement attempt.
+			// Start the gate before settlement, so New Round observes the blocked
+			// state throughout the settlement attempt.
 			settlementPromise = settleAuthenticatedRound(command);
 		}
 

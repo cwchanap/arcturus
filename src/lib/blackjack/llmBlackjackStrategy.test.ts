@@ -111,6 +111,25 @@ describe('Blackjack strategy advice', () => {
 		expect(await getBlackjackAdvice(context, null)).toEqual(getBlackjackStrategyAdvice(context));
 	});
 
+	test('ask-ai-only actions yield no recommendation and skip the provider', async () => {
+		let fetchCalled = false;
+		mockFetch(async () => {
+			fetchCalled = true;
+			return new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }));
+		});
+
+		const context = createContext(
+			[card('10', 'hearts'), card('6', 'spades')],
+			card('10', 'clubs'),
+			['ask-ai'],
+		);
+
+		const advice = await getBlackjackAdvice(context, settings);
+
+		expect(advice.recommendedAction).toBeNull();
+		expect(fetchCalled).toBe(false);
+	});
+
 	test('provider output can rewrite reasoning but cannot change the local action', async () => {
 		mockFetch(
 			async () =>

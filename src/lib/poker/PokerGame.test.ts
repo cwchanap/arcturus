@@ -1278,6 +1278,9 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 	});
 
 	test('getLLMSettings reads browser-local settings without profile fetches', async () => {
+		const originalLocalStorage = (globalThis as typeof globalThis & { localStorage: Storage })
+			.localStorage;
+		const originalFetch = globalThis.fetch;
 		const storage = new Map<string, string>();
 		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
 			getItem: (key: string) => storage.get(key) ?? null,
@@ -1304,13 +1307,19 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			},
 		) as unknown as typeof fetch;
 
-		const game = new PokerGame() as unknown as {
-			getLLMSettings: () => Promise<unknown>;
-		};
-		const result = await game.getLLMSettings();
+		try {
+			const game = new PokerGame() as unknown as {
+				getLLMSettings: () => Promise<unknown>;
+			};
+			const result = await game.getLLMSettings();
 
-		expect(result).toEqual({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' });
-		expect(fetchCalls).toEqual([]);
+			expect(result).toEqual({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-local' });
+			expect(fetchCalls).toEqual([]);
+		} finally {
+			(globalThis as typeof globalThis & { localStorage: Storage }).localStorage =
+				originalLocalStorage;
+			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+		}
 	});
 
 	test('formatShowdownMessage covers single winner, tie, empty, and multi-tier cases', () => {

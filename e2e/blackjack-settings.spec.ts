@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
 import { createIsolatedPage } from './isolated-page';
+import { dealHand } from './blackjack-helpers';
 
 async function gotoBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
@@ -28,22 +29,6 @@ function getSettingsControls(page: Page) {
 		saveButton: page.locator('#btn-save-settings'),
 		resetButton: page.locator('#btn-reset-settings'),
 	};
-}
-
-async function dealHand(page: Page, bet: number = 50) {
-	for (let attempt = 0; attempt < 5; attempt++) {
-		await page.fill('#bet-amount', String(bet));
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await page.locator('#game-controls').waitFor({ state: 'visible' });
-
-		const newRoundButton = page.getByRole('button', { name: 'New Round' });
-		const finished = await newRoundButton.isVisible().catch(() => false);
-		if (!finished) return;
-
-		await page.reload({ waitUntil: 'networkidle' });
-	}
-
-	throw new Error('Unable to reach player turn for testing');
 }
 
 // Phase 6: Blackjack Game Settings (US4)

@@ -1,26 +1,11 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { dealHand } from './blackjack-helpers';
 
 const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 
 async function gotoBlackjack(page: Page) {
 	await page.goto('/games/blackjack', { waitUntil: 'networkidle' });
-}
-
-async function dealHand(page: Page, bet: number = 50) {
-	for (let attempt = 0; attempt < 5; attempt++) {
-		await page.fill('#bet-amount', String(bet));
-		await page.getByRole('button', { name: 'Deal' }).click();
-		await page.locator('#game-controls').waitFor({ state: 'visible' });
-
-		const newRoundButton = page.getByRole('button', { name: 'New Round' });
-		const finished = await newRoundButton.isVisible().catch(() => false);
-		if (!finished) return;
-
-		await page.reload({ waitUntil: 'networkidle' });
-	}
-
-	throw new Error('Unable to reach player turn for testing');
 }
 
 test.describe('Blackjack AI Rival - local-first advice', () => {
@@ -74,6 +59,9 @@ test.describe('Blackjack AI Rival - local-first advice', () => {
 
 		await page.getByRole('button', { name: 'Stand' }).click();
 		await expect(page.getByRole('button', { name: 'New Round' })).toBeVisible({ timeout: 15000 });
+		// Allow provider requests issued during handleRoundComplete to settle
+		// before asserting no extra calls were made.
+		await page.waitForTimeout(500);
 		expect(calls).toBe(1);
 	});
 

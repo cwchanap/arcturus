@@ -642,6 +642,11 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 	// Hide API key button
 	if (hideKeyButton) {
 		hideKeyButton.addEventListener('click', () => {
+			// Capture the in-field draft before masking so a later save keeps
+			// the edited value instead of reverting to aiState.apiKey.
+			if (apiKeyInput && !/^•+$/.test(apiKeyInput.value)) {
+				aiState = { ...aiState, apiKey: apiKeyInput.value };
+			}
 			isKeyRevealed = false;
 			updateApiKeyUI();
 		});
@@ -691,7 +696,9 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 
 		setFeedback(feedbackEl, 'Saving…', 'neutral');
 		try {
-			const previous = readCurrentAiSettings() ?? (aiState.apiKey ? aiState : null);
+			// Prefer the in-memory draft as `previous` so a masked input
+			// recovers the just-edited key rather than the stale stored one.
+			const previous = aiState.apiKey ? aiState : readCurrentAiSettings();
 			aiState = saveAiSettingsFromForm(
 				provider,
 				modelSelect.value,

@@ -332,13 +332,13 @@ Before deploying to Cloudflare:
 2. Update `database_id` in `wrangler.toml`
 3. Set secret: `wrangler secret put BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
 4. Set Google OAuth client secret: `wrangler secret put GOOGLE_CLIENT_SECRET` (`GOOGLE_CLIENT_ID` is a public Worker var already declared in `wrangler.toml`)
-5. Apply migrations: `bun run db:migrate:remote`
-6. Deploy: `bun run deploy`
+5. Deploy the new Worker and verify it: `bun run deploy`
+6. Apply migrations after the new Worker is live: `bun run db:migrate:remote`
 
-**HPA-185 rollout exception:** Deploy and verify the new Worker with `bun run deploy`
-before running `bun run db:migrate:remote`. The old Worker still reads
-`llm_settings`; migrate-first can break requests handled by old code after the
-table is dropped. If the migration SQL succeeds but recording fails, the
+**Why deploy before migrate:** the running Worker must already understand the
+new schema before the database changes it. Migrating first can break requests
+still served by old code (e.g. HPA-185 drops the `llm_settings` table the old
+Worker reads). If the migration SQL succeeds but recording fails, the
 migration runner prints `MANUAL RECOVERY REQUIRED` and the exact command to run:
 
 ```bash

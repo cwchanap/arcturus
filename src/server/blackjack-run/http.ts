@@ -115,7 +115,7 @@ function parsePeriodKey(raw: string | undefined): string {
 	if (!parsed.success) throw new BlackjackRunServiceError('INVALID_REQUEST');
 	const candidate = parsed.data;
 	// Reject syntactically-valid-but-impossible keys (e.g. 2027-13-99),
-	// matching the legacy daily-challenge leaderboard route.
+	// matching the pre-consolidation daily leaderboard route.
 	const epochMs = Date.parse(`${candidate}T00:00:00.000Z`);
 	if (Number.isNaN(epochMs)) throw new BlackjackRunServiceError('INVALID_REQUEST');
 	if (new Date(epochMs).toISOString().slice(0, 10) !== candidate) {

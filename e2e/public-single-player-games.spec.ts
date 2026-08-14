@@ -190,13 +190,13 @@ test.describe('public single-player games', () => {
 
 	test('guest blackjack can complete a round without wallet settlement', async ({ page }) => {
 		const settlementRequests: string[] = [];
-		const rankedRequests: string[] = [];
+		const runRequests: string[] = [];
 		page.on('request', (request) => {
 			if (request.url().includes('/api/wallet/settle')) {
 				settlementRequests.push(request.url());
 			}
-			if (request.url().includes('/api/ranked/')) {
-				rankedRequests.push(request.url());
+			if (request.url().includes('/api/blackjack-runs')) {
+				runRequests.push(request.url());
 			}
 		});
 
@@ -236,7 +236,7 @@ test.describe('public single-player games', () => {
 		// settlement requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
 		expect(settlementRequests).toEqual([]);
-		expect(rankedRequests).toEqual([]);
+		expect(runRequests).toEqual([]);
 	});
 
 	test('guest craps restores persisted local bankroll without wallet settlement', async ({

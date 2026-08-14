@@ -54,7 +54,7 @@ test.describe('authed user preservation', () => {
 		expect(userId?.startsWith('u_')).toBe(true);
 	});
 
-	test('authenticated Casual Blackjack settles normally without ranked requests', async ({
+	test('authenticated Casual Blackjack settles normally without run requests', async ({
 		browser,
 		baseURL,
 	}) => {
@@ -64,10 +64,10 @@ test.describe('authed user preservation', () => {
 		});
 
 		try {
-			const rankedRequests: string[] = [];
+			const runRequests: string[] = [];
 			isolated.page.on('request', (request) => {
-				if (request.url().includes('/api/ranked/')) {
-					rankedRequests.push(request.url());
+				if (request.url().includes('/api/blackjack-runs')) {
+					runRequests.push(request.url());
 				}
 			});
 			await isolated.page.addInitScript(() => {
@@ -103,7 +103,7 @@ test.describe('authed user preservation', () => {
 				`$${settledBalance.toLocaleString('en-US')}`,
 			);
 			await isolated.page.waitForLoadState('networkidle');
-			expect(rankedRequests).toEqual([]);
+			expect(runRequests).toEqual([]);
 		} finally {
 			await isolated.context.close();
 		}

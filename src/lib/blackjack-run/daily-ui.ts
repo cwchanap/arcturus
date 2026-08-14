@@ -17,8 +17,7 @@ import {
 /**
  * Daily Challenge DOM behavior for the unified Blackjack Run APIs.
  *
- * Moves the Daily DOM behavior from the legacy `src/lib/daily-challenge/ui.ts`
- * onto the Task 1/5/6 surfaces:
+ * Consolidates the Daily DOM behavior onto the unified run surfaces:
  *
  * - Practice is fully browser-local: a `crypto.getRandomValues` seed, a local
  *   sequenced command array, and `replayDailyRun` drive the view. No API
@@ -33,8 +32,8 @@ import {
  *   sign-in CTA.
  *
  * Exact-ranked replay, historical replay, the seven-day history, and every
- * receipt/hash/commitment/version surface from the legacy page are
- * deliberately absent.
+ * verifiable-receipt surface from the pre-consolidation page are deliberately
+ * absent.
  */
 
 export type DailyRunState = Extract<BlackjackRunPublicState, { mode: 'daily' }>;

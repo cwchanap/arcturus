@@ -4,11 +4,11 @@ import type { BlackjackAction, BlackjackRunPublicState } from './protocol';
 /**
  * Ranked Blackjack Run DOM renderer.
  *
- * Moves the Ranked DOM behavior from the legacy `src/lib/ranked/blackjack/ui.ts`
- * (wager input/validation, cards, legal actions, countdown, pending state,
- * error state, terminal Result) onto the unified blackjack-run public state.
- * Receipt/hash/commitment/version/reward-effect display, the achievement
- * toast, and the multiplayer wallet-lock copy are deliberately absent.
+ * Renders the Ranked DOM behavior (wager input/validation, cards, legal
+ * actions, countdown, pending state, error state, terminal Result) onto the
+ * unified blackjack-run public state. Receipt/hash/commitment/version/
+ * reward-effect display, the achievement toast, and the multiplayer
+ * wallet-lock copy are deliberately absent.
  */
 
 export type RankedRunState = Extract<BlackjackRunPublicState, { mode: 'ranked' }>;

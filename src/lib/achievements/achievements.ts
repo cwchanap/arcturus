@@ -19,7 +19,7 @@ type AchievementContextOptions = {
 	gameType?: GameType;
 	overallRank?: number | null;
 };
-import { ACHIEVEMENTS, ACHIEVEMENT_CHECKS, EVALUATED_ACHIEVEMENTS } from './achievement-rules';
+import { ACHIEVEMENTS, ACHIEVEMENT_CHECKS } from './achievement-rules';
 import type { AchievementCheckFn } from './achievement-rules';
 import {
 	getUserAchievements,
@@ -113,7 +113,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		userId: string,
 		currentChipBalance: number,
 		options: AchievementContextOptions = {},
-		achievementsList: AchievementDefinition[] = EVALUATED_ACHIEVEMENTS,
+		achievementsList: AchievementDefinition[] = ACHIEVEMENTS,
 	): Promise<AchievementDefinition[]> {
 		const context = await buildAchievementContext(db, userId, currentChipBalance, options);
 

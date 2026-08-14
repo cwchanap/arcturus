@@ -1,8 +1,7 @@
 import { z } from 'zod';
 
 // Schema primitives. Re-defined here so the blackjack-run module is
-// self-contained; the legacy ranked/daily-challenge protocol modules are
-// deleted at cutover and must not be imported.
+// self-contained; no other protocol module is imported.
 export const requestIdSchema = z.string().regex(/^[A-Za-z0-9_-]{16,128}$/);
 export const safeIntegerSchema = z
 	.number()

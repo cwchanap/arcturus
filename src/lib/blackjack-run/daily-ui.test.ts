@@ -327,7 +327,7 @@ describe('daily page — guest bootstrap and local practice', () => {
 		expect(get(root, 'daily-challenge-current-standing').hidden).toBe(true);
 	});
 
-	test('practice plays entirely locally: no run POSTs, no legacy endpoints, no localStorage', async () => {
+	test('practice plays entirely locally: no run API calls, no localStorage', async () => {
 		const root = makeRoot(false);
 		const seedSpy = { count: 0 };
 		await initDailyChallengePage(root, { createSeed: createSeedQueue(seedSpy) });
@@ -365,7 +365,7 @@ describe('daily page — guest bootstrap and local practice', () => {
 		}
 
 		expect(postedRequests()).toHaveLength(0);
-		expect(fetchLog.some((entry) => entry.url.includes('/api/daily-challenges'))).toBe(false);
+		expect(fetchLog.some((entry) => entry.url.includes('/api/blackjack-runs'))).toBe(false);
 		expect(happyWindow.localStorage.length).toBe(0);
 	});
 
@@ -689,7 +689,7 @@ describe('daily run renderer — direct DOM behavior', () => {
 
 		renderer.setPending(true);
 		// Every game control locks while a run request is in flight; the mode
-		// switch stays usable (matching the legacy daily UI).
+		// switch stays usable (matching the pre-consolidation daily UI).
 		const controlIds = [
 			'daily-challenge-start-ranked',
 			'daily-challenge-start-round',

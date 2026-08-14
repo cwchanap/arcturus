@@ -219,17 +219,18 @@ const RANKED_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId = ? AND mode = 'ranked'
 	AND status = 'active' AND nextSequence = ?
-	AND EXISTS (SELECT 1 FROM user WHERE id = ? AND chipBalance >= ?)
-	AND changes() = 1`;
+	AND EXISTS (SELECT 1 FROM user WHERE id = ? AND chipBalance >= ?)`;
 
 // Guarded atomic Ranked action: the command append runs first (its own CAS on
 // the run state plus a pre-debit balance check), then the additional-wager
-// debit chains off the append by requiring the run to carry the exact new log
-// and bumped sequence. Both statements run in one D1 batch. Because the
-// balance check is evaluated before the debit statement runs, an insufficient
-// stake leaves the command log, sequence, and balance all untouched; and the
-// debit can only match when this batch's append actually wrote the log, so a
-// stale-sequence request cannot move chips.
+// debit chains off the append in the same D1 batch. The append is the batch's
+// first statement, so it never reads changes(): that would reflect arbitrary
+// prior connection state. The debit keeps changes()=1, which anchors it to
+// this batch's append — the append is the connection's most recent write, so
+// a 1-row append lets the debit run while a 0-row append (CAS lost or
+// insufficient balance, both decided before the debit runs) blocks the debit
+// at changes()=0. A stale-sequence request therefore cannot move chips, and
+// two concurrent batches at the same sequence can never both debit.
 const RANKED_ACTION_WAGER_DEDUCTION_SQL = `UPDATE user
 SET chipBalance = chipBalance - ?, updatedAt = ?
 WHERE id = ?
@@ -253,22 +254,19 @@ ON CONFLICT DO NOTHING`;
 const DAILY_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId IS NULL AND mode = 'daily'
-	AND status = 'active' AND nextSequence = ?
-	AND changes() = 1`;
+	AND status = 'active' AND nextSequence = ?`;
 
 const RANKED_FINISH_SQL = `UPDATE blackjack_run
 SET activeUserId = NULL, status = ?, resultJson = ?, dailyEndingBankroll = ?,
 	dailyRoundsCompleted = ?, settledAt = ?, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId = ? AND mode = 'ranked'
-	AND status = 'active' AND nextSequence = ?
-	AND changes() = 1`;
+	AND status = 'active' AND nextSequence = ?`;
 
 const DAILY_FINISH_SQL = `UPDATE blackjack_run
 SET status = ?, resultJson = ?, dailyEndingBankroll = ?, dailyRoundsCompleted = ?,
 	settledAt = ?, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId IS NULL AND mode = 'daily'
-	AND status = 'active' AND nextSequence = ?
-	AND changes() = 1`;
+	AND status = 'active' AND nextSequence = ?`;
 
 const DAILY_LEADERBOARD_SQL = `WITH ranked AS (
 	SELECT
@@ -548,13 +546,10 @@ async function executeRankedCommandAppend(
 		}
 		return { kind: 'applied' };
 	}
-	if (wagerChanges === 1) {
-		// The append missed its sequence CAS, yet the debit matched the exact
-		// new log at the bumped sequence: a concurrent request appended the
-		// identical command before this batch. The command is in the log, so
-		// report applied (the duplicate debit is a documented race residual).
-		return { kind: 'applied' };
-	}
+	// A 0-row append blocks the debit: the debit's changes()=1 chains it to
+	// this batch's append (the connection's most recent write), so append=0
+	// forces debit=0. No concurrent batch can have applied this command, so
+	// append=0 means the command is simply not in the log.
 	const row = await db
 		.prepare('SELECT status, nextSequence FROM blackjack_run WHERE id = ? AND userId = ? LIMIT 1')
 		.bind(input.runId, input.userId)

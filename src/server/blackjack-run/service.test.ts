@@ -3,7 +3,7 @@ import type { Miniflare } from 'miniflare';
 import type { D1Database } from '@cloudflare/workers-types';
 import { createBlackjackRunTestD1, insertTestUser } from './test-d1';
 import { replayBlackjackRound, type BlackjackRoundOutcome } from '../../lib/blackjack-run/engine';
-import { replayDailyRun } from '../../lib/blackjack-run/daily';
+import { getDailyWindowForPeriodKey, replayDailyRun } from '../../lib/blackjack-run/daily';
 import { buildExpiryOutcome } from '../../lib/blackjack-run/ranked';
 import {
 	BlackjackRunError,
@@ -667,6 +667,33 @@ describe('ranked lifecycle', () => {
 		expect(retry.spy.calls).toHaveLength(2);
 		expect(retryRepository.findActiveRun(SECOND_USER, 'ranked')).resolves.toBeNull();
 	});
+
+	test('a command rejected at expiry finalizes the active run instead of appending', async () => {
+		const { service, spy, setNow, repository } = makeService(randomBytesOf(seedOf(13)));
+		const state = isRankedState(
+			await service.start(USER_ID, rankedStart('request-ranked-0001', 100)),
+		);
+		const append = repository.appendRankedCommandWithStake.bind(repository);
+		let appendCalls = 0;
+		repository.appendRankedCommandWithStake = async (input) => {
+			appendCalls += 1;
+			setNow(state.expiresAt);
+			return append({ ...input, nowSeconds: state.expiresAt });
+		};
+
+		const expired = isRankedState(await service.command(USER_ID, state.runId, action(0, 'split')));
+		expect(appendCalls).toBe(1);
+		expect(expired.status).toBe('expired');
+		expect(expired.outcome?.committedWager).toBe(100);
+		expect(expired.outcome?.gameNetDelta).toBe(-100);
+		expect(spy.calls).toHaveLength(1);
+
+		const run = await repository.findOwnedRun(USER_ID, state.runId);
+		expect(run?.status).toBe('expired');
+		expect(run?.nextSequence).toBe(0);
+		expect(run?.commands).toEqual([]);
+		expect(await readChipBalance()).toBe(900);
+	});
 });
 
 // --- Step 4.2: Daily lifecycle tests ---
@@ -693,6 +720,84 @@ describe('daily lifecycle', () => {
 		);
 		expect(await readChipBalance()).toBe(1000);
 		expect(spy.calls).toHaveLength(0);
+	});
+
+	test('daily starts before entry close, rejects at and after close, and replays after close', async () => {
+		const { service, setNow, repository } = makeService(randomBytesOf(seedOf(0)));
+		const entryClose = getDailyWindowForPeriodKey(PERIOD_KEY).rankedEntryClosesAt;
+		setNow(entryClose - 1);
+		const first = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
+		expect(first.status).toBe('active');
+
+		setNow(entryClose);
+		await expectServiceError(
+			service.start(USER_ID, dailyStart('request-daily-0002')),
+			'INVALID_REQUEST',
+		);
+		setNow(entryClose + 1);
+		await expectServiceError(
+			service.start(USER_ID, dailyStart('request-daily-0003')),
+			'INVALID_REQUEST',
+		);
+
+		const replay = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
+		expect(replay.runId).toBe(first.runId);
+		expect(replay.status).toBe('active');
+		expect((await repository.findDailyRun(USER_ID, PERIOD_KEY))?.id).toBe(first.runId);
+	});
+
+	test('daily users share one lazily-created period seed and replay it deterministically', async () => {
+		await insertTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
+		const source = randomBytesOf(seedOf(0));
+		let randomCalls = 0;
+		const { service, repository } = makeService((length) => {
+			randomCalls += 1;
+			return source(length);
+		});
+
+		const first = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
+		const second = isDailyState(await service.start(SECOND_USER, dailyStart('request-daily-0002')));
+		const firstRun = await repository.findDailyRun(USER_ID, PERIOD_KEY);
+		const secondRun = await repository.findDailyRun(SECOND_USER, PERIOD_KEY);
+		expect(firstRun?.seed).toBe(secondRun?.seed);
+		expect(randomCalls).toBe(3);
+
+		const definition = await db
+			.prepare('SELECT periodKey, seed FROM blackjack_daily WHERE periodKey = ?')
+			.bind(PERIOD_KEY)
+			.first<{ periodKey: string; seed: string }>();
+		expect(definition).toEqual({ periodKey: PERIOD_KEY, seed: firstRun?.seed });
+		const count = await db
+			.prepare('SELECT COUNT(*) AS count FROM blackjack_daily WHERE periodKey = ?')
+			.bind(PERIOD_KEY)
+			.first<{ count: number }>();
+		expect(count?.count).toBe(1);
+
+		const firstAfterStart = isDailyState(
+			await service.command(USER_ID, first.runId, {
+				sequence: 0,
+				command: 'start-round',
+				wager: 10,
+			}),
+		);
+		const secondAfterStart = isDailyState(
+			await service.command(SECOND_USER, second.runId, {
+				sequence: 0,
+				command: 'start-round',
+				wager: 10,
+			}),
+		);
+		expect(secondAfterStart.activeRound).toEqual(firstAfterStart.activeRound);
+		expect(secondAfterStart.availableBankroll).toBe(firstAfterStart.availableBankroll);
+
+		const firstAfterStand = isDailyState(
+			await service.command(USER_ID, first.runId, { sequence: 1, command: 'stand' }),
+		);
+		const secondAfterStand = isDailyState(
+			await service.command(SECOND_USER, second.runId, { sequence: 1, command: 'stand' }),
+		);
+		expect(secondAfterStand.availableBankroll).toBe(firstAfterStand.availableBankroll);
+		expect(secondAfterStand.roundsCompleted).toBe(firstAfterStand.roundsCompleted);
 	});
 
 	test('exactly one attempt per period', async () => {

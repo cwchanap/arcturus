@@ -429,6 +429,7 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 				throw new BlackjackRunServiceError('INTERNAL_ERROR', 'Ranked command append lost its run');
 			}
 			if (current.status !== 'active') return this.renderRunState(userId, current);
+			if (this.nowSeconds() >= current.expiresAt) return this.renderRunState(userId, current);
 			if (current.nextSequence > actionCommand.sequence) {
 				const stored = current.commands[actionCommand.sequence];
 				if (stored && stored.command === actionCommand.command) {
@@ -452,11 +453,8 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		userId: string,
 		input: DailyStartInput,
 	): Promise<BlackjackRunPublicState> {
-		const nowSeconds = this.nowSeconds();
-		if (input.periodKey !== getDailyWindow(nowSeconds).periodKey) {
-			throw new BlackjackRunServiceError('INVALID_REQUEST');
-		}
-
+		// Resolve request-id replays before checking the entry window: an
+		// already-created attempt remains idempotently readable after close.
 		const existing = await this.repository.findByStartRequest(userId, input.requestId);
 		if (existing) {
 			if (existing.mode !== 'daily' || existing.periodKey !== input.periodKey) {
@@ -464,16 +462,28 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 			}
 			return this.renderRunState(userId, existing);
 		}
+
+		const nowSeconds = this.nowSeconds();
+		const window = getDailyWindow(nowSeconds);
+		if (input.periodKey !== window.periodKey || nowSeconds >= window.rankedEntryClosesAt) {
+			throw new BlackjackRunServiceError('INVALID_REQUEST');
+		}
+
 		const prior = await this.repository.findDailyRun(userId, input.periodKey);
 		if (prior) return this.renderRunState(userId, prior);
 
 		const id = encodeBase64Url(this.requireRandomBytes(16));
+		const daily = await this.repository.getOrCreateDaily(
+			input.periodKey,
+			() => encodeBase64Url(this.requireRandomBytes(32)),
+			nowSeconds,
+		);
 		const result = await this.repository.createDailyRun({
 			userId,
 			id,
 			periodKey: input.periodKey,
 			startRequestId: input.requestId,
-			seed: encodeBase64Url(this.requireRandomBytes(32)),
+			seed: daily.seed,
 			expiresAt: nowSeconds + DAILY_RUN_CONFIG.attemptTtlSeconds,
 			createdAt: nowSeconds,
 			updatedAt: nowSeconds,
@@ -545,6 +555,7 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 				throw new BlackjackRunServiceError('INTERNAL_ERROR', 'Daily command append lost its run');
 			}
 			if (current.status !== 'active') return this.renderRunState(userId, current);
+			if (this.nowSeconds() >= current.expiresAt) return this.renderRunState(userId, current);
 			if (current.nextSequence > command.sequence) {
 				const stored = current.commands[command.sequence];
 				if (stored && stored.command === command.command && stored.wager === command.wager) {

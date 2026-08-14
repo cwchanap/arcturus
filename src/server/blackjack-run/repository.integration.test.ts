@@ -320,6 +320,25 @@ describe('ranked command appends with stake', () => {
 		expect(run!.nextSequence).toBe(1);
 		expect(run!.commands).toEqual([{ sequence: 0, command: 'hit' }]);
 	});
+
+	test('an expired wager append is not applied and does not debit the balance', async () => {
+		await repository.createRankedRunWithStake(
+			rankedStartInput({ id: runId(21), expiresAt: NOW_SECONDS }),
+		);
+		const result = await repository.appendRankedCommandWithStake({
+			userId: USER_ID,
+			runId: runId(21),
+			expectedSequence: 0,
+			commandsJson: JSON.stringify([{ sequence: 0, command: 'split' }]),
+			additionalWager: 100,
+			nowSeconds: NOW_SECONDS,
+		});
+		expect(result).toEqual({ kind: 'not-applied' });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
+		const run = await repository.findOwnedRun(USER_ID, runId(21));
+		expect(run!.nextSequence).toBe(0);
+		expect(run!.commands).toEqual([]);
+	});
 });
 
 describe('daily command appends', () => {
@@ -350,6 +369,23 @@ describe('daily command appends', () => {
 		const run = await repository.findDailyRun('daily-user-3', '2026-10-11');
 		expect(run!.nextSequence).toBe(3);
 		expect(run!.commands).toEqual(commands);
+	});
+
+	test('an expired daily append is not applied and leaves the log and balance unchanged', async () => {
+		await repository.createDailyRun(dailyStartInput({ id: runId(31), expiresAt: NOW_SECONDS }));
+		const before = await readBalance();
+		const result = await repository.appendDailyCommand({
+			userId: USER_ID,
+			runId: runId(31),
+			expectedSequence: 0,
+			commandsJson: JSON.stringify([{ sequence: 0, command: 'start-round', wager: 100 }]),
+			nowSeconds: NOW_SECONDS,
+		});
+		expect(result).toEqual({ kind: 'not-applied' });
+		expect(await readBalance()).toEqual(before);
+		const run = await repository.findDailyRun(USER_ID, '2026-10-11');
+		expect(run!.nextSequence).toBe(0);
+		expect(run!.commands).toEqual([]);
 	});
 });
 

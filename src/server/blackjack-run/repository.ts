@@ -149,6 +149,7 @@ export interface BlackjackRunRepository {
 	): Promise<CreateRankedRunWithStakeResult>;
 	createDailyRun(input: CreateDailyRunInput): Promise<CreateDailyRunResult>;
 	findOwnedRun(userId: string, runId: string): Promise<BlackjackRunRecord | null>;
+	findRunById(runId: string): Promise<BlackjackRunRecord | null>;
 	findByStartRequest(userId: string, requestId: string): Promise<BlackjackRunRecord | null>;
 	findActiveRun(userId: string, mode: BlackjackRunMode): Promise<BlackjackRunRecord | null>;
 	findDailyRun(userId: string, periodKey: string): Promise<BlackjackRunRecord | null>;
@@ -636,6 +637,12 @@ export function createBlackjackRunRepository(db: D1Database): BlackjackRunReposi
 				userId,
 				runId,
 			);
+		},
+		findRunById(runId) {
+			if (typeof runId !== 'string' || runId.length === 0) {
+				return invariant('Invalid blackjack run id');
+			}
+			return readRun(db, 'SELECT * FROM blackjack_run WHERE id = ? LIMIT 1', runId);
 		},
 		findByStartRequest(userId, requestId) {
 			return readRun(

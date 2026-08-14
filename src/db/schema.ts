@@ -431,6 +431,70 @@ export const dailyChallengeAttempt = sqliteTable(
 	}),
 );
 
+export const blackjackRun = sqliteTable(
+	'blackjack_run',
+	{
+		id: text('id').primaryKey(),
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		// Equals userId only while the run is active. The unique index on
+		// (activeUserId, mode) enforces one active run per user per mode;
+		// SQLite allows multiple NULLs in a unique index, so inactive rows
+		// (activeUserId = NULL) never conflict.
+		activeUserId: text('activeUserId').references(() => user.id, { onDelete: 'cascade' }),
+		mode: text('mode').notNull(), // 'ranked' | 'daily'
+		// Daily only; null for Ranked runs.
+		periodKey: text('periodKey'),
+		startRequestId: text('startRequestId').notNull(),
+		// Ranked only; null for Daily runs.
+		initialWager: integer('initialWager'),
+		// Server-only sensitive replay material. Never expose through public APIs or logs.
+		seed: text('seed').notNull(),
+		// Plain ordered command log (no hash). The canonical replay source.
+		commandsJson: text('commandsJson').notNull(),
+		nextSequence: integer('nextSequence').notNull().default(0),
+		status: text('status').notNull(),
+		// Nullable terminal result (Ranked outcome or Daily terminal projection).
+		resultJson: text('resultJson'),
+		// Daily leaderboard projections; non-null only for completed Daily runs.
+		dailyEndingBankroll: integer('dailyEndingBankroll'),
+		dailyRoundsCompleted: integer('dailyRoundsCompleted'),
+		// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL
+		// writers (repository transitions) must bind
+		// Math.trunc(Date.now() / 1000).
+		expiresAt: integer('expiresAt', { mode: 'timestamp' }).notNull(),
+		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
+		settledAt: integer('settledAt', { mode: 'timestamp' }),
+	},
+	(table) => ({
+		startRequestUnique: uniqueIndex('blackjack_run_user_start_request_idx').on(
+			table.userId,
+			table.startRequestId,
+		),
+		activeUserModeUnique: uniqueIndex('blackjack_run_active_user_mode_idx').on(
+			table.activeUserId,
+			table.mode,
+		),
+		userModePeriodUnique: uniqueIndex('blackjack_run_user_mode_period_idx').on(
+			table.userId,
+			table.mode,
+			table.periodKey,
+		),
+		expiryIdx: index('blackjack_run_status_expiry_idx').on(table.status, table.expiresAt),
+	}),
+);
+
+export const blackjackDaily = sqliteTable('blackjack_daily', {
+	periodKey: text('periodKey').primaryKey(),
+	// Server-only sensitive replay material. Never expose through public APIs or logs.
+	seed: text('seed').notNull(),
+	// mode: 'timestamp' stores/reads unix seconds (not ms). Raw SQL writers
+	// (repository get-or-create) must bind Math.trunc(Date.now() / 1000).
+	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
+});
+
 export const dailyChallengeResult = sqliteTable(
 	'daily_challenge_result',
 	{

@@ -1,11 +1,11 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
-import { getDailyChallengeWindow } from '../../lib/daily-challenge/config';
+import { getDailyWindow } from '../../lib/blackjack-run/daily';
 import { hashUserId } from '../../lib/public-game-session';
 
 // Guest access is an intentional exception for the Daily Challenge page: unauthenticated
-// visitors can browse the current challenge, leaderboard, and history, and play practice
-// scenarios. Other game pages redirect to /signin, but this page serves a public, cacheable
+// visitors can browse the current period, leaderboard, and play the browser-local practice
+// scenario. Other game pages redirect to /signin, but this page serves a public, cacheable
 // summary. The 'guest' surrogate user ID keeps data-user-id present on cached HTML so the
 // client can distinguish guests from a missing attribute.
 const user = Astro.locals.user;
@@ -20,7 +20,7 @@ if (user) {
 	Astro.response.headers.set('Vary', 'Cookie');
 }
 
-const currentWindow = getDailyChallengeWindow(Math.trunc(Date.now() / 1000));
+const currentWindow = getDailyWindow(Math.trunc(Date.now() / 1000));
 const currentPeriod = currentWindow.periodKey;
 const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 	.toISOString()
@@ -31,6 +31,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 	<main
 		id="daily-challenge-root"
 		data-user-id={user ? hashUserId(user.id) : 'guest'}
+		data-period-key={currentPeriod}
 		class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
 	>
 		<header class="mb-8 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -92,11 +93,12 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 		</div>
 
 		<div data-testid="daily-challenge-practice-notices" class="mb-6 space-y-2" hidden>
-			<p data-testid="daily-challenge-practice-different" class="text-sm text-[var(--deco-muted)]">
-				Practice uses a different scenario from today&rsquo;s ranked attempt.
-			</p>
-			<p data-testid="daily-challenge-shared-seed-notice" class="text-sm text-[var(--deco-muted)]">
-				Shared daily scenarios are not resistant to player-to-player spoilers.
+			<p
+				data-testid="daily-challenge-practice-local"
+				class="rounded-lg border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm text-[var(--deco-muted)]"
+			>
+				Practice plays a browser-local scenario &mdash; every restart deals a fresh shuffle and
+				never touches the server.
 			</p>
 		</div>
 
@@ -248,20 +250,6 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				<button type="button" data-testid="daily-challenge-restart-practice" class="deco-btn">
 					Restart Practice
 				</button>
-				<button
-					type="button"
-					data-testid="daily-challenge-replay-scenario-practice"
-					class="deco-btn deco-btn-outline"
-				>
-					Practice Scenario
-				</button>
-				<button
-					type="button"
-					data-testid="daily-challenge-replay-scenario-exact-ranked"
-					class="deco-btn deco-btn-outline"
-				>
-					Exact Ranked Replay
-				</button>
 			</div>
 
 			<section
@@ -312,29 +300,17 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 			</ol>
 		</section>
 
-		<section data-testid="daily-challenge-history">
-			<div class="mb-4">
-				<p class="deco-section-eyebrow">Past Days</p>
-				<h2 class="deco-section-title text-3xl">Your Last 7 Days</h2>
-			</div>
-			<ol
-				data-testid="daily-challenge-history-rows"
-				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
-			>
-			</ol>
-		</section>
-
 		<noscript>
 			<div class="deco-panel deco-frame mt-10 p-6 text-center text-sm text-[var(--deco-muted)]">
-				The Daily Challenge needs JavaScript to load today&rsquo;s scenario, leaderboard, and replay
-				controls. Enable JavaScript and reload this page.
+				The Daily Challenge needs JavaScript to play the local practice scenario, your ranked
+				attempt, and today&rsquo;s leaderboard. Enable JavaScript and reload this page.
 			</div>
 		</noscript>
 	</main>
 </CasinoLayout>
 
 <script>
-	import { initDailyChallengePage } from '../../lib/daily-challenge/client';
+	import { initDailyChallengePage } from '../../lib/blackjack-run/daily-ui';
 
 	const root = document.querySelector<HTMLElement>('#daily-challenge-root');
 	if (root) void initDailyChallengePage(root);

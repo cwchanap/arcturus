@@ -1,58 +1,38 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import {
-	dailyChallengeAttemptPublicStateSchema,
-	dailyChallengeChallengeResponseSchema,
-	dailyChallengeLeaderboardResponseSchema,
-	dailyChallengePeriodKeySchema,
-} from '../src/lib/daily-challenge/protocol';
-import { createDailyChallengeSeedCommitment } from '../src/lib/daily-challenge/random';
-import { encodeBase64Url } from '../src/lib/ranked/canonical';
+	blackjackRunPublicStateSchema,
+	type BlackjackRunPublicState,
+} from '../src/lib/blackjack-run/protocol';
 import { createIsolatedPage } from './isolated-page';
 
+/**
+ * Daily Challenge E2E on the unified Blackjack Run APIs (HPA-553 Task 7).
+ *
+ * Proves, in order:
+ *  1. guest current Daily/leaderboard load (Task 5 guest surface);
+ *  2. Practice works with ZERO `POST /api/blackjack-runs`;
+ *  3. authenticated one-attempt start;
+ *  4. the new command endpoint drives rounds;
+ *  5. reload resumes the run;
+ *  6. an eligible terminal appears in the leaderboard;
+ *  7. rank/percentile/current-user standing renders;
+ *  8. a second attempt is unavailable;
+ *  9. the old history/replay UI is absent.
+ */
+
 const DAILY_CHALLENGE_PAGE = '/games/daily-challenge';
-// Derive the archived day as the previous UTC calendar day so the history/reveal
-// scenario stays consistent regardless of when the suite runs.
-const previousUtcDay = new Date();
-previousUtcDay.setUTCDate(previousUtcDay.getUTCDate() - 1);
-const HISTORY_PERIOD_KEY = `${previousUtcDay.getUTCFullYear()}-${String(
-	previousUtcDay.getUTCMonth() + 1,
-).padStart(2, '0')}-${String(previousUtcDay.getUTCDate()).padStart(2, '0')}`;
-const HISTORY_PAGE = `/games/daily-challenge/${HISTORY_PERIOD_KEY}`;
-// Noon UTC on the archived day, as epoch seconds, for fixture timestamps.
-const HISTORY_SETTLED_AT = Math.floor(
-	Date.UTC(
-		previousUtcDay.getUTCFullYear(),
-		previousUtcDay.getUTCMonth(),
-		previousUtcDay.getUTCDate(),
-		12,
-		0,
-		0,
-	) / 1000,
-);
+const RUNS_BASE = '/api/blackjack-runs';
+const GUEST_CURRENT_PATH = '/api/blackjack-daily/current';
 const ROUND_COUNT = 10;
 const RANKED_WAGER = 10;
-const ATTEMPTS_START_PATH = '/api/daily-challenges/current/attempts';
+const RUN_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
+
 const CURRENCY = new Intl.NumberFormat('en-US', {
 	style: 'currency',
 	currency: 'USD',
 	minimumFractionDigits: 0,
 	maximumFractionDigits: 0,
 });
-
-function pathname(url: string): string {
-	return new URL(url).pathname;
-}
-
-function isAttemptStart(url: string, method: string): boolean {
-	return pathname(url) === ATTEMPTS_START_PATH && method === 'POST';
-}
-
-function isAttemptCommand(url: string, method: string): boolean {
-	return (
-		/^\/api\/daily-challenge-attempts\/[A-Za-z0-9_-]{22}\/commands$/.test(pathname(url)) &&
-		method === 'POST'
-	);
-}
 
 function formatCurrency(value: number): string {
 	return CURRENCY.format(value);
@@ -64,25 +44,73 @@ function parseCurrency(text: string | null): number | null {
 	return digits.length > 0 && Number.isSafeInteger(parsed) ? parsed : null;
 }
 
-function roundLabel(completed: number): string {
-	return `Round ${Math.min(completed + 1, ROUND_COUNT)} of ${ROUND_COUNT}`;
+function pathname(url: string): string {
+	return new URL(url).pathname;
+}
+
+function isRunStart(url: string, method: string): boolean {
+	return pathname(url) === RUNS_BASE && method === 'POST';
+}
+
+function isRunCurrentDaily(url: string, method: string): boolean {
+	const parsed = new URL(url);
+	return (
+		parsed.pathname === `${RUNS_BASE}/current` &&
+		parsed.searchParams.get('mode') === 'daily' &&
+		method === 'GET'
+	);
+}
+
+function isRunCommand(url: string, method: string): boolean {
+	return (
+		/^\/api\/blackjack-runs\/[A-Za-z0-9_-]{22}\/commands$/.test(pathname(url)) && method === 'POST'
+	);
+}
+
+function isGuestCurrent(url: string, method: string): boolean {
+	return pathname(url) === GUEST_CURRENT_PATH && method === 'GET';
+}
+
+function isDailyLeaderboard(url: string, method: string): boolean {
+	return (
+		/^\/api\/blackjack-daily\/\d{4}-\d{2}-\d{2}\/leaderboard$/.test(pathname(url)) &&
+		method === 'GET'
+	);
+}
+
+function isLegacyDailyEndpoint(url: string): boolean {
+	return /\/api\/(daily-challenges|daily-challenge-attempts)/.test(pathname(url));
+}
+
+function parseDailyState(text: string): Extract<BlackjackRunPublicState, { mode: 'daily' }> {
+	const state = blackjackRunPublicStateSchema.parse(JSON.parse(text) as unknown);
+	expect(state.mode).toBe('daily');
+	return state;
 }
 
 type WriteRecord = { url: string; method: string };
 
-function collectChallengeWrites(page: Page): WriteRecord[] {
-	const writes: WriteRecord[] = [];
+/** Records every POST the page issues — Practice must produce none. */
+function collectPosts(page: Page): WriteRecord[] {
+	const posts: WriteRecord[] = [];
 	page.on('request', (request) => {
-		if (request.method() !== 'POST') return;
-		const path = pathname(request.url());
-		if (
-			path === ATTEMPTS_START_PATH ||
-			/^\/api\/daily-challenge-attempts\/[A-Za-z0-9_-]+(\/commands)?$/.test(path)
-		) {
-			writes.push({ url: path, method: request.method() });
+		if (request.method() === 'POST') {
+			posts.push({ url: pathname(request.url()), method: request.method() });
 		}
 	});
-	return writes;
+	return posts;
+}
+
+function recordVisitedUrls(page: Page): string[] {
+	const urls: string[] = [];
+	page.on('request', (request) => {
+		urls.push(request.url());
+	});
+	return urls;
+}
+
+function roundLabel(completed: number): string {
+	return `Round ${Math.min(completed + 1, ROUND_COUNT)} of ${ROUND_COUNT}`;
 }
 
 async function isStandEnabled(page: Page): Promise<boolean> {
@@ -106,11 +134,10 @@ async function progressLabel(page: Page): Promise<string> {
 /**
  * Waits until the round is either awaiting player input ('turn', Stand
  * enabled) or already settled by the deal ('settled', e.g. a natural). The
- * round-progress label cannot distinguish these (replay and ranked rounds
- * reuse labels), so the settled signal is the committed wager returning to
- * '—' with Start Round re-enabled. Both states are stable by the time the
- * poll observes them: the client flips pending synchronously in the click
- * handler, so the poll can never race a stale pre-click render.
+ * settled signal is the committed wager returning to '—' with Start Round
+ * re-enabled. Daily practice flips state synchronously in the click handler
+ * and ranked commands render before pending releases, so the poll can never
+ * race a stale pre-click render.
  */
 async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled'> {
 	let state: 'turn' | 'settled' | 'waiting' = 'waiting';
@@ -132,10 +159,7 @@ async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled'> {
 	return state;
 }
 
-/**
- * Plays one ranked round through the real API: starts it (unless a player
- * turn is already up, e.g. after a reload) and stands whenever legal.
- */
+/** Plays one ranked round through the new command endpoint: stand when legal. */
 async function playRankedRound(page: Page, round: number): Promise<void> {
 	if (!(await isStandEnabled(page))) {
 		await page.getByTestId('daily-challenge-start-round').click();
@@ -151,82 +175,28 @@ async function playRankedRound(page: Page, round: number): Promise<void> {
 		.toBe('done');
 }
 
-async function startRankedAttempt(
-	page: Page,
-): Promise<ReturnType<typeof dailyChallengeAttemptPublicStateSchema.parse>> {
-	const responsePromise = page.waitForResponse((response) =>
-		isAttemptStart(response.url(), response.request().method()),
-	);
-	await page.getByTestId('daily-challenge-start-ranked').click();
-	const response = await responsePromise;
-	expect(response.ok()).toBe(true);
-	return dailyChallengeAttemptPublicStateSchema.parse(await response.json());
+async function assertNoLegacyDailyUi(page: Page): Promise<void> {
+	// Proof 9: the historical replay page, seven-day history, seed
+	// commitment/reveal copy, and replay-scenario controls are all gone.
+	const legacySelectors = [
+		'[data-testid="daily-challenge-history"]',
+		'[data-testid="daily-challenge-history-rows"]',
+		'[data-testid="daily-challenge-history-link"]',
+		'[data-testid="daily-challenge-replay-scenario-exact-ranked"]',
+		'[data-testid="daily-challenge-replay-scenario-practice"]',
+		'[data-testid="daily-challenge-commitment"]',
+		'[data-testid="daily-challenge-reveal-status"]',
+	];
+	expect(page.locator(legacySelectors.join(','))).toHaveCount(0);
+	expect(
+		await page.evaluate(() =>
+			Object.keys(localStorage).filter((key) => key.toLowerCase().includes('daily')),
+		),
+	).toEqual([]);
 }
 
-// DailyChallengeAttemptPublicStateV1 does not carry periodKey. Fetch it from
-// the current challenge response so fixtures and leaderboard URLs use the
-// authoritative value rather than a non-existent field.
-async function fetchCurrentPeriodKey(page: Page): Promise<string> {
-	const result = await page.evaluate(async () => {
-		const res = await fetch('/api/daily-challenges/current');
-		const data = (await res.json()) as { periodKey: string };
-		return data.periodKey;
-	});
-	return dailyChallengePeriodKeySchema.parse(result);
-}
-
-const RANKED_SEED = new Uint8Array(32).fill(0x51);
-const PRACTICE_SEED = new Uint8Array(32).fill(0x29);
-const RANKED_SEED_COMMITMENT = createDailyChallengeSeedCommitment(
-	'blackjack-daily-v1',
-	RANKED_SEED,
-);
-const RANKED_SEED_B64 = encodeBase64Url(RANKED_SEED);
-const PRACTICE_SEED_B64 = encodeBase64Url(PRACTICE_SEED);
-
-function historicalChallengeFixture(revealedRankedSeed: string | null) {
-	return dailyChallengeChallengeResponseSchema.parse({
-		periodKey: HISTORY_PERIOD_KEY,
-		challengeKind: 'blackjack-daily',
-		challengeRulesetVersion: 'blackjack-daily-v1',
-		gameRulesetVersion: 'blackjack-ranked-v1',
-		scoreVersion: 'blackjack-daily-score-v1',
-		startsAt: 1785628800,
-		rankedEntryClosesAt: 1785713400,
-		endsAt: 1785715200,
-		configHash: '0'.repeat(64),
-		rankedSeedCommitment: RANKED_SEED_COMMITMENT,
-		practiceSeed: PRACTICE_SEED_B64,
-		revealedRankedSeed,
-		attempt: null,
-	});
-}
-
-const TIED_LEADERBOARD = dailyChallengeLeaderboardResponseSchema.parse({
-	periodKey: HISTORY_PERIOD_KEY,
-	entries: [
-		{
-			rank: 1,
-			playerName: 'Alice',
-			endingBankroll: 980,
-			roundsCompleted: 10,
-			durationSeconds: 0,
-			settledAt: HISTORY_SETTLED_AT,
-		},
-		{
-			rank: 1,
-			playerName: 'Bob',
-			endingBankroll: 980,
-			roundsCompleted: 10,
-			durationSeconds: 0,
-			settledAt: HISTORY_SETTLED_AT,
-		},
-	],
-	currentUser: null,
-});
-
-test.describe('daily challenge guest practice', () => {
-	test('plays and restarts a local round write-free and surfaces the sign-in CTA', async ({
+test.describe('daily challenge — guest surface and browser-local practice', () => {
+	test('loads the guest current/leaderboard surface and plays practice with zero run POSTs', async ({
 		browser,
 		baseURL,
 	}) => {
@@ -235,9 +205,27 @@ test.describe('daily challenge guest practice', () => {
 			storageState: { cookies: [], origins: [] },
 		});
 		const page = await context.newPage();
-		const writes = collectChallengeWrites(page);
+		const posts = collectPosts(page);
+		const requestedUrls = recordVisitedUrls(page);
+
 		try {
-			await page.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' });
+			const [guestCurrent, leaderboard] = await Promise.all([
+				page.waitForResponse((response) =>
+					isGuestCurrent(response.url(), response.request().method()),
+				),
+				page.waitForResponse((response) =>
+					isDailyLeaderboard(response.url(), response.request().method()),
+				),
+				page.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
+			]);
+
+			// Proof 1: the Task 5 guest surface answers a definitive 404
+			// RUN_NOT_FOUND, and the leaderboard is guest-readable.
+			expect(guestCurrent.status()).toBe(404);
+			expect(await guestCurrent.json()).toEqual({ error: 'RUN_NOT_FOUND' });
+			expect(leaderboard.ok()).toBe(true);
+			const leaderboardBody = (await leaderboard.json()) as { entries: unknown[] };
+			expect(Array.isArray(leaderboardBody.entries)).toBe(true);
 
 			await expect(page.getByTestId('daily-challenge-controls')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-mode-practice')).toBeVisible();
@@ -247,41 +235,57 @@ test.describe('daily challenge guest practice', () => {
 				'Sign in to play Ranked',
 			);
 			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
-			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('\u2014');
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
-			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText('\u2014');
 
-			await page.getByTestId('daily-challenge-replay-scenario-practice').click();
-			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
-				'Start practice to play the local scenario.',
-			);
+			// Practice starts immediately at the virtual bankroll.
+			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(formatCurrency(1000));
+			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText(roundLabel(0));
+
+			// Proof 2: a fully local round — no POST of any kind.
+			await page.getByTestId('daily-challenge-wager').fill(String(RANKED_WAGER));
 			await page.getByTestId('daily-challenge-start-round').click();
-			const state = await waitForTurnOrSettled(page);
+			let state = await waitForTurnOrSettled(page);
 			if (state === 'turn') {
 				await page.getByTestId('daily-challenge-action-stand').click();
 			}
 			await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
 
+			// Restart deals a fresh browser-local scenario.
 			await page.getByTestId('daily-challenge-restart-practice').click();
-			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
-				'Start practice to play the local scenario.',
-			);
-			await expect(page.getByTestId('daily-challenge-start-round')).toBeEnabled();
+			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(formatCurrency(1000));
+			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText(roundLabel(0));
+			await page.getByTestId('daily-challenge-start-round').click();
+			state = await waitForTurnOrSettled(page);
+			if (state === 'turn') {
+				await page.getByTestId('daily-challenge-action-stand').click();
+			}
+			await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
 
-			await page.getByTestId('daily-challenge-mode-practice').click();
-			await expect(page.getByTestId('daily-challenge-sign-in-cta')).toBeVisible();
-			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
+			// Leaderboard rows render for guests from the public endpoint.
+			const rows = page.getByTestId('daily-challenge-leaderboard-row');
+			const rowCount = await rows.count();
+			for (let index = 0; index < rowCount; index += 1) {
+				await expect(rows.nth(index)).toHaveText(/^#\d+ .+ \$[\d,]+$/);
+			}
+			await expect(page.getByTestId('daily-challenge-current-standing')).toBeHidden();
 
-			expect(writes).toHaveLength(0);
+			// No run writes, no legacy daily endpoints (also Proof 9's network half).
+			expect(posts).toHaveLength(0);
+			expect(requestedUrls.some((url) => isLegacyDailyEndpoint(url))).toBe(false);
+			expect(
+				await page.evaluate(() =>
+					Object.keys(localStorage).filter((key) => key.toLowerCase().includes('daily')),
+				),
+			).toEqual([]);
+
+			await assertNoLegacyDailyUi(page);
 		} finally {
 			await context.close();
 		}
 	});
 });
 
-test.describe('daily challenge ranked attempt', () => {
-	test('runs one real attempt to completion with refresh recovery and no second start', async ({
+test.describe('daily challenge — authenticated ranked attempt', () => {
+	test('runs one real daily attempt to an eligible terminal with resume, standing, and no second start', async ({
 		browser,
 		baseURL,
 	}) => {
@@ -292,41 +296,105 @@ test.describe('daily challenge ranked attempt', () => {
 			navigate: (candidate) =>
 				candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
 		});
+		const requestedUrls = recordVisitedUrls(page);
 
 		try {
+			// A fresh user has no daily run: the shared client's current load
+			// resolves the definitive 404 and the page shows the idle start form.
+			const initialCurrent = page.waitForResponse((response) =>
+				isRunCurrentDaily(response.url(), response.request().method()),
+			);
+			await page.reload({ waitUntil: 'domcontentloaded' });
+			const initialCurrentResponse = await initialCurrent;
+			expect(initialCurrentResponse.status()).toBe(404);
+			expect(await initialCurrentResponse.json()).toEqual({ error: 'RUN_NOT_FOUND' });
+
 			await expect(page.getByTestId('daily-challenge-sign-in-cta')).toBeHidden();
+			await expect(page.getByTestId('daily-challenge-mode-ranked')).toBeVisible();
+			// The page defaults to Practice; switching to Ranked shows the idle
+			// start form for a user without an attempt.
+			await page.getByTestId('daily-challenge-mode-ranked').click();
 			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeVisible();
+			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeEnabled();
 			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText('\u2014');
 			await expect(page.getByTestId('daily-challenge-status')).toHaveText(
 				'Start your ranked attempt to begin.',
 			);
 
+			const periodKey = (await page
+				.locator('#daily-challenge-root')
+				.getAttribute('data-period-key')) as string;
+			expect(periodKey).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+			// Proof 3: the single authenticated start goes through the unified
+			// run API with a daily body.
 			await page.getByTestId('daily-challenge-wager').fill(String(RANKED_WAGER));
-			const started = await startRankedAttempt(page);
-			const attemptId = started.attemptId;
+			const [startRequest, startResponse] = await Promise.all([
+				page.waitForRequest((request) => isRunStart(request.url(), request.method())),
+				page.waitForResponse((response) => isRunStart(response.url(), response.request().method())),
+				page.getByTestId('daily-challenge-start-ranked').click(),
+			]);
+			expect(startResponse.ok()).toBe(true);
+			expect(JSON.parse(startRequest.postData() ?? '{}')).toEqual({
+				mode: 'daily',
+				requestId: expect.stringMatching(/^[A-Za-z0-9_-]{16,128}$/),
+				periodKey,
+			});
+			const started = parseDailyState(await startResponse.text());
+			const runId = started.runId;
+			expect(runId).toMatch(RUN_ID_PATTERN);
 			expect(started.status).toBe('active');
 			expect(started.availableBankroll).toBe(1000);
 			expect(started.roundsCompleted).toBe(0);
-			expect(started.receipt).toBeNull();
+			expect(started.activeRound).toBeNull();
 
+			// The active attempt routes all controls to the server and hides
+			// the start button.
+			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
+			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(formatCurrency(1000));
+			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText(roundLabel(0));
+
+			// Proof 4: rounds are driven by the new command endpoint, stamped
+			// with the server-provided sequence.
+			const [firstCommandRequest, firstCommandResponse] = await Promise.all([
+				page.waitForRequest(
+					(request) =>
+						isRunCommand(request.url(), request.method()) &&
+						pathname(request.url()) === `${RUNS_BASE}/${runId}/commands`,
+				),
+				page.waitForResponse(
+					(response) =>
+						isRunCommand(response.url(), response.request().method()) &&
+						pathname(response.url()) === `${RUNS_BASE}/${runId}/commands`,
+				),
+				page.getByTestId('daily-challenge-start-round').click(),
+			]);
+			expect(firstCommandResponse.ok()).toBe(true);
+			expect(JSON.parse(firstCommandRequest.postData() ?? '{}')).toEqual({
+				sequence: started.nextCommandSequence,
+				command: 'start-round',
+				wager: RANKED_WAGER,
+			});
+			const afterFirstRound = parseDailyState(await firstCommandResponse.text());
+			expect(afterFirstRound.nextCommandSequence).toBe(started.nextCommandSequence + 1);
+			if (afterFirstRound.activeRound) {
+				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText(
+					formatCurrency(RANKED_WAGER),
+				);
+			}
 			await playRankedRound(page, 1);
-			await playRankedRound(page, 2);
 
-			// Refresh mid-attempt during a player turn and verify the same
-			// attempt, bankroll, round, and committed wager are resumed.
-			// Openings that settle on the deal produce no turn; retry with a
-			// fresh round a few times, and fall back to the terminal state if
-			// every opening settles (vanishingly unlikely).
-			let nextRound = 3;
-			let refreshed = false;
-			for (let attempt = 0; attempt < 3 && !refreshed && nextRound <= ROUND_COUNT; attempt += 1) {
+			// Proof 5: reload mid-run resumes the same run from the server.
+			let nextRound = 2;
+			let resumedOnce = false;
+			for (let attempt = 0; attempt < 3 && !resumedOnce && nextRound <= ROUND_COUNT; attempt += 1) {
 				await page.getByTestId('daily-challenge-start-round').click();
 				const state = await waitForTurnOrSettled(page);
 				if (state !== 'turn') {
 					nextRound += 1;
 					continue;
 				}
-				refreshed = true;
+				resumedOnce = true;
 				const committedBefore = await page
 					.getByTestId('daily-challenge-committed-wager')
 					.textContent();
@@ -338,39 +406,32 @@ test.describe('daily challenge ranked attempt', () => {
 				expect(bankrollBefore).not.toBeNull();
 				expect(progressBefore).toBe(roundLabel(nextRound - 1));
 
-				// On reload the client fetches /api/daily-challenges/current, which
-				// already embeds the authenticated user's active attempt. The client
-				// calls rankedClient.adopt(challenge.attempt) and intentionally skips
-				// the extra attempt-resume GET, so we wait for the current-challenge
-				// response and inspect its attempt field rather than the GET that
-				// never fires.
-				const currentChallengePromise = page.waitForResponse(
-					(response) =>
-						pathname(response.url()) === '/api/daily-challenges/current' &&
-						response.request().method() === 'GET',
+				const currentReload = page.waitForResponse((response) =>
+					isRunCurrentDaily(response.url(), response.request().method()),
 				);
 				await page.reload({ waitUntil: 'domcontentloaded' });
-				const currentChallengeResponse = await currentChallengePromise;
-				expect(currentChallengeResponse.ok()).toBe(true);
-				const currentChallenge = dailyChallengeChallengeResponseSchema.parse(
-					await currentChallengeResponse.json(),
-				);
-				expect(currentChallenge.attempt).not.toBeNull();
-				const resumed = currentChallenge.attempt;
-				expect(resumed?.attemptId).toBe(attemptId);
-				expect(resumed?.roundsCompleted).toBe(nextRound - 1);
-				expect(resumed?.availableBankroll).toBe(bankrollBefore);
-				expect(resumed?.activeRound?.committedWager).toBe(RANKED_WAGER);
+				const currentReloadResponse = await currentReload;
+				expect(currentReloadResponse.ok()).toBe(true);
+				const resumed = parseDailyState(await currentReloadResponse.text());
+				expect(resumed.runId).toBe(runId);
+				expect(resumed.status).toBe('active');
+				expect(resumed.roundsCompleted).toBe(nextRound - 1);
+				expect(resumed.availableBankroll).toBe(bankrollBefore);
+				expect(resumed.activeRound?.committedWager).toBe(RANKED_WAGER);
 				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText(
 					formatCurrency(RANKED_WAGER),
 				);
 				await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText(progressBefore);
+				await expect(page.getByTestId('daily-challenge-start-ranked')).toBeHidden();
 			}
+			expect(resumedOnce).toBe(true);
 
 			for (let round = nextRound; round <= ROUND_COUNT; round += 1) {
 				await playRankedRound(page, round);
 			}
 
+			// Eligible terminal: completed all rounds with a bankroll at or
+			// above the minimum wager.
 			await expect(page.getByTestId('daily-challenge-receipt')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-receipt-eligibility')).toHaveText(
 				'Eligible for ranking',
@@ -382,298 +443,75 @@ test.describe('daily challenge ranked attempt', () => {
 				await page.getByTestId('daily-challenge-receipt-bankroll').textContent(),
 			);
 			expect(receiptBankroll).not.toBeNull();
+			expect(receiptBankroll as number).toBeGreaterThanOrEqual(RANKED_WAGER);
 			await expect(page.getByTestId('daily-challenge-rank')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-rank')).toHaveText(/^#\d+$/);
+			await expect(page.getByTestId('daily-challenge-percentile')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-percentile')).toHaveText(
 				/^\d+(st|nd|rd|th) percentile$/,
 			);
 
-			// The leaderboard and standing render from a page-load fetch, so a
-			// reload after completion surfaces the finished entry.
-			const periodKey = await fetchCurrentPeriodKey(page);
-			const leaderboardPromise = page.waitForResponse(
-				(response) => pathname(response.url()) === `/api/daily-challenges/${periodKey}/leaderboard`,
+			// Proofs 6 + 7: the eligible terminal appears in the leaderboard,
+			// and the current-user standing renders rank/totalEligible/percentile.
+			const leaderboardReload = page.waitForResponse((response) =>
+				isDailyLeaderboard(response.url(), response.request().method()),
 			);
 			await page.reload({ waitUntil: 'domcontentloaded' });
-			const leaderboardResponse = await leaderboardPromise;
+			const leaderboardResponse = await leaderboardReload;
 			expect(leaderboardResponse.ok()).toBe(true);
-			const leaderboard = dailyChallengeLeaderboardResponseSchema.parse(
-				await leaderboardResponse.json(),
-			);
-			expect(leaderboard.entries.length).toBeGreaterThanOrEqual(1);
+			const leaderboard = (await leaderboardResponse.json()) as {
+				entries: Array<{ dailyEndingBankroll: number }>;
+				currentUser: { rank: number; totalEligible: number; percentile: number } | null;
+			};
+			expect(
+				leaderboard.entries.some(
+					(entry) => entry.dailyEndingBankroll === (receiptBankroll as number),
+				),
+			).toBe(true);
 			expect(leaderboard.currentUser).not.toBeNull();
-			expect(leaderboard.currentUser?.rank).toBeGreaterThanOrEqual(1);
-			expect(leaderboard.currentUser?.totalEligible).toBeGreaterThanOrEqual(1);
-			expect(leaderboard.currentUser?.percentile).toBeGreaterThanOrEqual(0);
-			expect(leaderboard.currentUser?.percentile).toBeLessThanOrEqual(100);
-			await expect(
-				page
-					.getByTestId('daily-challenge-leaderboard-row')
-					.filter({ hasText: formatCurrency(receiptBankroll as number) }),
-			).toHaveCount(1);
+			const { rank, totalEligible, percentile } = leaderboard.currentUser!;
+			expect(rank).toBeGreaterThanOrEqual(1);
+			expect(totalEligible).toBeGreaterThanOrEqual(1);
+			expect(percentile).toBeGreaterThanOrEqual(0);
+			expect(percentile).toBeLessThanOrEqual(100);
 			await expect(page.getByTestId('daily-challenge-current-standing')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-current-standing')).toHaveText(
-				/^#\d+ \u00b7 \d+%$/,
+				`#${rank} · ${percentile}% · ${totalEligible} eligible`,
 			);
-			await expect(
-				page.getByTestId('daily-challenge-history-row').filter({ hasText: periodKey }),
-			).toHaveCount(1);
-			await expect(
-				page.getByTestId('daily-challenge-history-row').filter({ hasText: 'Completed' }),
-			).toHaveCount(1);
+			// The terminal bankroll appears as a leaderboard row. Prior local-D1
+			// runs on the same day can tie the bankroll, so at-least-one is the
+			// contract (the API assertion above pins the entry itself).
+			const matchingRows = await page
+				.getByTestId('daily-challenge-leaderboard-row')
+				.filter({ hasText: formatCurrency(receiptBankroll as number) })
+				.count();
+			expect(matchingRows).toBeGreaterThanOrEqual(1);
 
-			// A second start returns the consumed attempt instead of resetting.
-			const secondStart = await startRankedAttempt(page);
-			expect(secondStart.attemptId).toBe(attemptId);
-			expect(secondStart.status).toBe('completed');
-			expect(secondStart.receipt).not.toBeNull();
-			expect(secondStart.receipt?.attemptId).toBe(attemptId);
+			// Proof 8: the one attempt per period is spent. The UI forbids a
+			// restart and the server returns the same completed run.
+			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeVisible();
+			await expect(page.getByTestId('daily-challenge-start-ranked')).toBeDisabled();
+			const secondStart = await page.request.post(RUNS_BASE, {
+				data: JSON.stringify({
+					mode: 'daily',
+					requestId: `e2e-second-${Math.random().toString(36).slice(2)}-${Date.now()}`,
+					periodKey,
+				}),
+				headers: { 'content-type': 'application/json' },
+			});
+			expect(secondStart.ok()).toBe(true);
+			const second = parseDailyState(await secondStart.text());
+			expect(second.runId).toBe(runId);
+			expect(second.status).toBe('completed');
+			expect(second.eligible).toBe(true);
 			await expect(page.getByTestId('daily-challenge-receipt')).toBeVisible();
 			await expect(page.getByTestId('daily-challenge-receipt-eligibility')).toHaveText(
 				'Eligible for ranking',
 			);
-			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(
-				formatCurrency(receiptBankroll as number),
-			);
-			await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
-		} finally {
-			await context.close();
-		}
-	});
-});
 
-test.describe('daily challenge uncertain and terminal command recovery', () => {
-	test('drops one command response, then recovers on the idempotent retry', async ({
-		browser,
-		baseURL,
-	}) => {
-		const { context, page } = await createIsolatedPage(browser, baseURL, {
-			emailPrefix: 'dc-drop',
-			namePrefix: 'Daily Challenge E2E',
-			navigate: (candidate) =>
-				candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
-		});
-
-		try {
-			await page.getByTestId('daily-challenge-wager').fill(String(RANKED_WAGER));
-			const started = await startRankedAttempt(page);
-			const attemptId = started.attemptId;
-
-			// Forward the first command to the server (it applies), then drop
-			// the browser-side response so the client sees an uncertain failure
-			// and retries the identical command.
-			let dropNext = true;
-			const commandBodies: string[] = [];
-			await page.route(`**/api/daily-challenge-attempts/${attemptId}/commands`, async (route) => {
-				commandBodies.push(route.request().postData() ?? '');
-				if (dropNext) {
-					dropNext = false;
-					await route.fetch();
-					await route.abort('connectionfailed');
-					return;
-				}
-				await route.continue();
-			});
-
-			await page.getByTestId('daily-challenge-start-round').click();
-			const state = await waitForTurnOrSettled(page);
-
-			expect(commandBodies).toHaveLength(2);
-			expect(commandBodies[1]).toBe(commandBodies[0]);
-			if (state === 'turn') {
-				await expect(page.getByTestId('daily-challenge-action-stand')).toBeEnabled();
-				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText(
-					formatCurrency(RANKED_WAGER),
-				);
-			} else {
-				await expect(page.getByTestId('daily-challenge-committed-wager')).toHaveText('\u2014');
-			}
-			await expect(page.getByTestId('daily-challenge-bankroll')).not.toHaveText('\u2014');
-			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('failed');
-			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('TypeError');
-		} finally {
-			await context.close();
-		}
-	});
-
-	test('renders the immutable receipt after an ATTEMPT_COMPLETE fixture', async ({
-		browser,
-		baseURL,
-	}) => {
-		const { context, page } = await createIsolatedPage(browser, baseURL, {
-			emailPrefix: 'dc-expiry',
-			namePrefix: 'Daily Challenge E2E',
-			navigate: (candidate) =>
-				candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
-		});
-
-		try {
-			await page.getByTestId('daily-challenge-wager').fill(String(RANKED_WAGER));
-			const started = await startRankedAttempt(page);
-			const attemptId = started.attemptId;
-			const periodKey = await fetchCurrentPeriodKey(page);
-
-			const terminal = dailyChallengeAttemptPublicStateSchema.parse({
-				attemptId,
-				challengeId: started.challengeId,
-				startRequestId: started.startRequestId,
-				status: 'expired',
-				nextCommandSequence: started.nextCommandSequence,
-				availableBankroll: 970,
-				roundsCompleted: 3,
-				activeRound: null,
-				rank: null,
-				percentile: null,
-				receipt: {
-					attemptId,
-					challengeId: started.challengeId,
-					periodKey,
-					challengeRulesetVersion: 'blackjack-daily-v1',
-					gameRulesetVersion: 'blackjack-ranked-v1',
-					scoreVersion: 'blackjack-daily-score-v1',
-					configHash: '0'.repeat(64),
-					rankedSeedCommitment: '1'.repeat(64),
-					actionLogHash: '2'.repeat(64),
-					endingBankroll: 970,
-					roundsCompleted: 3,
-					eligible: false,
-					terminalReason: 'expired',
-					durationSeconds: 0,
-					settledAt: 1785790000,
-					receiptHash: '3'.repeat(64),
-				},
-				expiresAt: started.expiresAt,
-			});
-
-			await page.route(`**/api/daily-challenge-attempts/${attemptId}/commands`, async (route) => {
-				await route.fulfill({
-					status: 409,
-					contentType: 'application/json',
-					body: JSON.stringify({ error: 'ATTEMPT_COMPLETE' }),
-				});
-			});
-			await page.route(`**/api/daily-challenge-attempts/${attemptId}`, async (route) => {
-				if (route.request().method() === 'GET') {
-					await route.fulfill({
-						status: 200,
-						contentType: 'application/json',
-						body: JSON.stringify(terminal),
-					});
-					return;
-				}
-				await route.continue();
-			});
-
-			await page.getByTestId('daily-challenge-start-round').click();
-
-			await expect(page.getByTestId('daily-challenge-receipt')).toBeVisible();
-			await expect(page.getByTestId('daily-challenge-receipt-eligibility')).toHaveText(
-				'Not eligible for ranking',
-			);
-			await expect(page.getByTestId('daily-challenge-receipt-rounds')).toHaveText('3 of 10 rounds');
-			await expect(page.getByTestId('daily-challenge-receipt-bankroll')).toHaveText('$970');
-			await expect(page.getByTestId('daily-challenge-rank')).toBeHidden();
-			await expect(page.getByTestId('daily-challenge-percentile')).toBeHidden();
-			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('failed');
-			await expect(page.getByTestId('daily-challenge-status')).not.toContainText('TypeError');
-		} finally {
-			await context.close();
-		}
-	});
-});
-
-test.describe('daily challenge historical reveal UI', () => {
-	async function installFixtures(page: Page, revealedRankedSeed: string | null): Promise<void> {
-		const challenge = historicalChallengeFixture(revealedRankedSeed);
-		await page.route(`**/api/daily-challenges/${HISTORY_PERIOD_KEY}`, async (route) => {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify(challenge),
-			});
-		});
-		await page.route(`**/api/daily-challenges/${HISTORY_PERIOD_KEY}/leaderboard`, async (route) => {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify(TIED_LEADERBOARD),
-			});
-		});
-	}
-
-	async function playLocalRound(page: Page): Promise<void> {
-		await page.getByTestId('daily-challenge-replay-scenario-practice').click();
-		await page.getByTestId('daily-challenge-start-round').click();
-		const state = await waitForTurnOrSettled(page);
-		if (state === 'turn') {
-			await page.getByTestId('daily-challenge-action-stand').click();
-		}
-		await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
-	}
-
-	test('pre-close page commits to the seed without revealing it and replays write-free', async ({
-		browser,
-		baseURL,
-	}) => {
-		const context = await browser.newContext({ baseURL });
-		const page = await context.newPage();
-		const writes = collectChallengeWrites(page);
-		try {
-			await installFixtures(page, null);
-			await page.goto(HISTORY_PAGE, { waitUntil: 'domcontentloaded' });
-
-			await expect(page.getByTestId('daily-challenge-reveal-status')).toHaveText(
-				'Ranked seed not yet revealed',
-			);
-			await expect(page.getByTestId('daily-challenge-commitment')).toHaveText(
-				RANKED_SEED_COMMITMENT,
-			);
-			await expect(page.getByTestId('daily-challenge-replay-scenario-exact-ranked')).toBeDisabled();
-			await expect(page.getByTestId('daily-challenge-replay-scenario-practice')).toBeEnabled();
-
-			await playLocalRound(page);
-
-			const rows = page.getByTestId('daily-challenge-leaderboard-row');
-			await expect(rows).toHaveCount(2);
-			await expect(rows.nth(0)).toHaveText(/^#1 Alice \$980$/);
-			await expect(rows.nth(1)).toHaveText(/^#1 Bob \$980$/);
-			await expect(rows.nth(0)).not.toContainText(/playing|live|active/i);
-			await expect(page.getByTestId('daily-challenge-current-standing')).toBeHidden();
-
-			expect(writes).toHaveLength(0);
-		} finally {
-			await context.close();
-		}
-	});
-
-	test('closed page verifies the revealed seed and enables both replay modes', async ({
-		browser,
-		baseURL,
-	}) => {
-		const context = await browser.newContext({ baseURL });
-		const page = await context.newPage();
-		const writes = collectChallengeWrites(page);
-		try {
-			await installFixtures(page, RANKED_SEED_B64);
-			await page.goto(HISTORY_PAGE, { waitUntil: 'domcontentloaded' });
-
-			await expect(page.getByTestId('daily-challenge-reveal-status')).toHaveText(
-				'Commitment verified',
-			);
-			await expect(page.getByTestId('daily-challenge-commitment')).toHaveText(
-				RANKED_SEED_COMMITMENT,
-			);
-			await expect(page.getByTestId('daily-challenge-replay-scenario-exact-ranked')).toBeEnabled();
-			await expect(page.getByTestId('daily-challenge-replay-scenario-practice')).toBeEnabled();
-
-			await page.getByTestId('daily-challenge-replay-scenario-exact-ranked').click();
-			await page.getByTestId('daily-challenge-start-round').click();
-			await waitForTurnOrSettled(page);
-
-			await playLocalRound(page);
-
-			await expect(page.getByTestId('daily-challenge-current-standing')).toBeHidden();
-			expect(writes).toHaveLength(0);
+			// Proof 9 (network + DOM): no legacy daily endpoints or UI.
+			expect(requestedUrls.some((url) => isLegacyDailyEndpoint(url))).toBe(false);
+			await assertNoLegacyDailyUi(page);
 		} finally {
 			await context.close();
 		}

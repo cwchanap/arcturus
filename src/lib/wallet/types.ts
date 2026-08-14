@@ -5,6 +5,14 @@ export interface RoundStats {
 	wins: number;
 	losses: number;
 	biggestWin: number;
+	/**
+	 * True game net profit for the settled round(s). When omitted, callers
+	 * keep the legacy semantics and `delta` is used as net profit instead
+	 * (e.g. non-ranked games where the wallet delta is the full net result).
+	 * Ranked runs debit stakes during the run, so they credit the gross
+	 * payout via `delta` and record the true net result here.
+	 */
+	netProfit?: number;
 }
 
 export interface SettleRoundCommand {

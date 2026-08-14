@@ -1,16 +1,41 @@
+import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import { Database as SQLiteDatabase } from 'bun:sqlite';
-import { describe, expect, test } from 'bun:test';
 import type { D1Database } from '@cloudflare/workers-types';
-import {
-	applyWalletSettlementBatch,
-	findWalletSettlement,
-	getRowsAffected,
-	readWalletBalance,
-} from './repository';
+import type { MissionGameEvent } from '../missions/types';
 import type { SettleRoundCommand } from './types';
 
 let sqlite: SQLiteDatabase;
 let db: D1Database;
+
+// Captures every mission event passed to prepareMissionProgressStatements so
+// tests can assert the outcome classification and event delta directly (the
+// mission subsystem does not persist `outcome` or `delta` anywhere).
+const capturedMissionEvents: MissionGameEvent[] = [];
+
+let applyWalletSettlementBatch: typeof import('./repository').applyWalletSettlementBatch;
+let findWalletSettlement: typeof import('./repository').findWalletSettlement;
+let getRowsAffected: typeof import('./repository').getRowsAffected;
+let readWalletBalance: typeof import('./repository').readWalletBalance;
+
+beforeAll(async () => {
+	// Load the real mission module (cache-busted to bypass the override) and
+	// wrap prepareMissionProgressStatements with a delegating spy. The mock is
+	// registered before ./repository is imported so its internal import of
+	// ../missions/progress resolves to the spy.
+	const realProgress = await import(`../missions/progress?spy=${Date.now()}`);
+	mock.module('../missions/progress', () => ({
+		...realProgress,
+		prepareMissionProgressStatements: async (...args: unknown[]) => {
+			const entries = args[1] as Array<{ event: MissionGameEvent }>;
+			for (const entry of entries) capturedMissionEvents.push(entry.event);
+			return realProgress.prepareMissionProgressStatements(
+				...(args as Parameters<typeof realProgress.prepareMissionProgressStatements>),
+			);
+		},
+	}));
+	({ applyWalletSettlementBatch, findWalletSettlement, getRowsAffected, readWalletBalance } =
+		await import('./repository'));
+});
 
 function createDatabase(): D1Database {
 	sqlite = new SQLiteDatabase(':memory:');
@@ -116,6 +141,21 @@ async function insertUser(userId: string, chipBalance = 1000): Promise<void> {
 		)
 		.bind(userId, userId, `${userId}@example.test`, 0, chipBalance, 1, 1)
 		.run();
+}
+
+async function readGameStats(userId: string): Promise<{
+	totalWins: number;
+	totalLosses: number;
+	handsPlayed: number;
+	biggestWin: number;
+	netProfit: number;
+} | null> {
+	return db!
+		.prepare(
+			'SELECT totalWins, totalLosses, handsPlayed, biggestWin, netProfit FROM game_stats WHERE userId = ? AND gameType = ?',
+		)
+		.bind(userId, 'blackjack')
+		.first();
 }
 
 async function insertWalletSettlement(
@@ -338,5 +378,113 @@ describe('wallet settlement repository', () => {
 			.bind(userId, 'daily-win-3')
 			.first<{ progress: number }>();
 		expect(mission?.progress).toBe(2);
+	});
+
+	test('records command.delta as net profit when stats.netProfit is omitted', async () => {
+		const userId = 'net-profit-omitted';
+		await insertUser(userId);
+		capturedMissionEvents.length = 0;
+		await applyWalletSettlementBatch(db!, {
+			userId,
+			attemptId: 'attempt-omitted',
+			expectedBalance: 1000,
+			nextBalance: 1100,
+			command: command({ settlementId: 'blackjack-omitted-net-profit' }),
+			nowSeconds: 20,
+		});
+		expect(await readWalletBalance(db!, userId)).toBe(1100);
+		const stats = await readGameStats(userId);
+		expect(stats).toEqual({
+			totalWins: 1,
+			totalLosses: 0,
+			handsPlayed: 1,
+			biggestWin: 100,
+			netProfit: 100,
+		});
+		expect(capturedMissionEvents.at(-1)).toMatchObject({ outcome: 'win', delta: 100 });
+	});
+
+	test('records stats.netProfit in game_stats while the balance moves by delta', async () => {
+		const userId = 'net-profit-provided';
+		await insertUser(userId);
+		capturedMissionEvents.length = 0;
+		await applyWalletSettlementBatch(db!, {
+			userId,
+			attemptId: 'attempt-provided',
+			expectedBalance: 1000,
+			nextBalance: 1300,
+			command: command({
+				settlementId: 'blackjack-provided-net-profit',
+				delta: 300,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 300, netProfit: 100 },
+			}),
+			nowSeconds: 21,
+		});
+		expect(await readWalletBalance(db!, userId)).toBe(1300);
+		const stats = await readGameStats(userId);
+		expect(stats).toEqual({
+			totalWins: 1,
+			totalLosses: 0,
+			handsPlayed: 1,
+			biggestWin: 300,
+			netProfit: 100,
+		});
+		expect(capturedMissionEvents.at(-1)).toMatchObject({ outcome: 'win', delta: 100 });
+	});
+
+	test('classifies a payout-only ranked loss as a loss mission event, not push', async () => {
+		const userId = 'ranked-loss-classification';
+		await insertUser(userId);
+		capturedMissionEvents.length = 0;
+		await applyWalletSettlementBatch(db!, {
+			userId,
+			attemptId: 'attempt-ranked-loss',
+			expectedBalance: 1000,
+			nextBalance: 1000,
+			command: command({
+				settlementId: 'blackjack-ranked-loss',
+				delta: 0,
+				stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0, netProfit: -100 },
+			}),
+			nowSeconds: 22,
+		});
+		expect(await readWalletBalance(db!, userId)).toBe(1000);
+		const stats = await readGameStats(userId);
+		expect(stats).toEqual({
+			totalWins: 0,
+			totalLosses: 1,
+			handsPlayed: 1,
+			biggestWin: 0,
+			netProfit: -100,
+		});
+		expect(capturedMissionEvents.at(-1)).toMatchObject({ outcome: 'loss', delta: -100 });
+	});
+
+	test('classifies wins=1 as a win mission event even when payout differs from net profit', async () => {
+		const userId = 'ranked-win-classification';
+		await insertUser(userId);
+		capturedMissionEvents.length = 0;
+		await applyWalletSettlementBatch(db!, {
+			userId,
+			attemptId: 'attempt-ranked-win',
+			expectedBalance: 1000,
+			nextBalance: 1000,
+			command: command({
+				settlementId: 'blackjack-ranked-win',
+				delta: 0,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 0, netProfit: -50 },
+			}),
+			nowSeconds: 23,
+		});
+		expect(await readWalletBalance(db!, userId)).toBe(1000);
+		const stats = await readGameStats(userId);
+		expect(stats).toEqual({
+			totalWins: 1,
+			totalLosses: 0,
+			handsPlayed: 1,
+			biggestWin: 0,
+			netProfit: -50,
+		});
+		expect(capturedMissionEvents.at(-1)).toMatchObject({ outcome: 'win', delta: -50 });
 	});
 });

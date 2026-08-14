@@ -57,6 +57,76 @@ describe('wallet settlement validation', () => {
 		expectInvalid(command({ delta: -MAX_ABSOLUTE_SETTLEMENT_DELTA - 1 }));
 	});
 
+	test('rejects unsafe or out-of-bound netProfit statistics', () => {
+		expectInvalid(
+			command({
+				stats: {
+					rounds: 1,
+					wins: 0,
+					losses: 0,
+					biggestWin: 0,
+					netProfit: Number.MAX_SAFE_INTEGER + 1,
+				},
+			}),
+		);
+		expectInvalid(
+			command({
+				stats: {
+					rounds: 1,
+					wins: 0,
+					losses: 0,
+					biggestWin: 0,
+					netProfit: MAX_ABSOLUTE_SETTLEMENT_STAT + 1,
+				},
+			}),
+		);
+		expectInvalid(
+			command({
+				stats: {
+					rounds: 1,
+					wins: 0,
+					losses: 0,
+					biggestWin: 0,
+					netProfit: -(MAX_ABSOLUTE_SETTLEMENT_STAT + 1),
+				},
+			}),
+		);
+		expect(() =>
+			validate(
+				command({
+					stats: {
+						rounds: 1,
+						wins: 0,
+						losses: 0,
+						biggestWin: 0,
+						netProfit: MAX_ABSOLUTE_SETTLEMENT_STAT,
+					},
+				}),
+			),
+		).not.toThrow();
+		expect(() =>
+			validate(
+				command({
+					stats: {
+						rounds: 1,
+						wins: 0,
+						losses: 0,
+						biggestWin: 0,
+						netProfit: -MAX_ABSOLUTE_SETTLEMENT_STAT,
+					},
+				}),
+			),
+		).not.toThrow();
+	});
+
+	test('rejects a zero-round settlement even when netProfit is present', () => {
+		expectInvalid(
+			command({
+				stats: { rounds: 0, wins: 0, losses: 0, biggestWin: 0, netProfit: 0 },
+			}),
+		);
+	});
+
 	test('rejects excessive statistic values even with a zero delta', () => {
 		expectInvalid(
 			command({

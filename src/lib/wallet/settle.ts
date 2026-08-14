@@ -66,7 +66,10 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 	if (Math.abs(delta) > MAX_ABSOLUTE_SETTLEMENT_DELTA) return invalidCommand();
 
 	const stats = command.stats;
-	if (!isRecord(stats) || !hasOnlyKeys(stats, ['rounds', 'wins', 'losses', 'biggestWin'])) {
+	if (
+		!isRecord(stats) ||
+		!hasOnlyKeys(stats, ['rounds', 'wins', 'losses', 'biggestWin', 'netProfit'])
+	) {
 		return invalidCommand();
 	}
 
@@ -74,6 +77,7 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 	const wins = requireSafeInteger(stats.wins);
 	const losses = requireSafeInteger(stats.losses);
 	const biggestWin = requireSafeInteger(stats.biggestWin);
+	const netProfit = stats.netProfit === undefined ? undefined : requireSafeInteger(stats.netProfit);
 	if (
 		rounds < 1 ||
 		wins < 0 ||
@@ -89,7 +93,8 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 		rounds > MAX_ABSOLUTE_SETTLEMENT_STAT ||
 		wins > MAX_ABSOLUTE_SETTLEMENT_STAT ||
 		losses > MAX_ABSOLUTE_SETTLEMENT_STAT ||
-		biggestWin > MAX_ABSOLUTE_SETTLEMENT_STAT
+		biggestWin > MAX_ABSOLUTE_SETTLEMENT_STAT ||
+		(netProfit !== undefined && Math.abs(netProfit) > MAX_ABSOLUTE_SETTLEMENT_STAT)
 	) {
 		return invalidCommand();
 	}

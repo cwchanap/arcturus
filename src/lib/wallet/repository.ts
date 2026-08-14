@@ -81,18 +81,27 @@ export async function applyWalletSettlementBatch(
 	params: ApplyWalletSettlementBatchParams,
 ): Promise<boolean> {
 	const { command, userId, attemptId, expectedBalance, nextBalance, nowSeconds } = params;
+	// Ranked runs debit stakes during the run, so the wallet delta is only the
+	// gross payout to credit back; the true game net result (payout minus
+	// committed stakes) arrives via stats.netProfit. Non-ranked callers omit
+	// it and keep the legacy semantics: delta IS the net profit.
+	const netProfit = command.stats.netProfit ?? command.delta;
 	const missionEvent = {
 		gameType: command.game,
 		outcome:
-			command.delta > 0
+			command.stats.wins > 0
 				? ('win' as const)
-				: command.delta < 0
+				: command.stats.losses > 0
 					? ('loss' as const)
-					: ('push' as const),
+					: netProfit > 0
+						? ('win' as const)
+						: netProfit < 0
+							? ('loss' as const)
+							: ('push' as const),
 		handCount: command.stats.rounds,
 		winsIncrement: command.stats.wins,
 		lossesIncrement: command.stats.losses,
-		delta: command.delta,
+		delta: netProfit,
 	};
 	const gate: WalletSettlementGate = {
 		settlementId: command.settlementId,
@@ -131,7 +140,7 @@ export async function applyWalletSettlementBatch(
 				command.stats.losses,
 				command.stats.rounds,
 				Math.max(command.stats.biggestWin, 0),
-				command.delta,
+				netProfit,
 				nowSeconds,
 				userId,
 				command.settlementId,

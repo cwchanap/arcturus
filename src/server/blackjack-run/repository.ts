@@ -219,7 +219,7 @@ WHERE id = ?
 const RANKED_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId = ? AND mode = 'ranked'
-	AND status = 'active' AND nextSequence = ?
+	AND status = 'active' AND nextSequence = ? AND expiresAt > ?
 	AND EXISTS (SELECT 1 FROM user WHERE id = ? AND chipBalance >= ?)`;
 
 // Guarded atomic Ranked action: the command append runs first (its own CAS on
@@ -255,7 +255,7 @@ ON CONFLICT DO NOTHING`;
 const DAILY_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId IS NULL AND mode = 'daily'
-	AND status = 'active' AND nextSequence = ?`;
+	AND status = 'active' AND nextSequence = ? AND expiresAt > ?`;
 
 const RANKED_FINISH_SQL = `UPDATE blackjack_run
 SET activeUserId = NULL, status = ?, resultJson = ?, dailyEndingBankroll = ?,
@@ -513,6 +513,7 @@ async function executeRankedCommandAppend(
 			input.userId,
 			input.userId,
 			input.expectedSequence,
+			input.nowSeconds,
 			input.userId,
 			input.additionalWager,
 		);
@@ -552,10 +553,17 @@ async function executeRankedCommandAppend(
 	// forces debit=0. No concurrent batch can have applied this command, so
 	// append=0 means the command is simply not in the log.
 	const row = await db
-		.prepare('SELECT status, nextSequence FROM blackjack_run WHERE id = ? AND userId = ? LIMIT 1')
+		.prepare(
+			'SELECT status, nextSequence, expiresAt FROM blackjack_run WHERE id = ? AND userId = ? LIMIT 1',
+		)
 		.bind(input.runId, input.userId)
-		.first<{ status: string; nextSequence: number }>();
-	if (row && row.status === 'active' && row.nextSequence === input.expectedSequence) {
+		.first<{ status: string; nextSequence: number; expiresAt: number }>();
+	if (
+		row &&
+		row.status === 'active' &&
+		row.nextSequence === input.expectedSequence &&
+		row.expiresAt > input.nowSeconds
+	) {
 		return { kind: 'insufficient' };
 	}
 	return { kind: 'not-applied' };
@@ -569,7 +577,14 @@ async function executeDailyCommandAppend(
 	assertSafeNonNegativeInteger(input.nowSeconds, 'command nowSeconds');
 	const result = await db
 		.prepare(DAILY_COMMAND_APPEND_SQL)
-		.bind(input.commandsJson, input.nowSeconds, input.runId, input.userId, input.expectedSequence)
+		.bind(
+			input.commandsJson,
+			input.nowSeconds,
+			input.runId,
+			input.userId,
+			input.expectedSequence,
+			input.nowSeconds,
+		)
 		.run();
 	return readChanges(result, 'daily command append') === 1
 		? { kind: 'applied' }

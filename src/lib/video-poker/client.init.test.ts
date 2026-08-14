@@ -216,12 +216,19 @@ function installFetch(config: FetchConfig = {}): { calls: Array<{ url: string }>
 	return { calls };
 }
 
-async function waitFor(predicate: () => boolean, maxTicks = 500): Promise<void> {
+async function waitFor(predicate: () => boolean | undefined, maxTicks = 500): Promise<void> {
 	for (let i = 0; i < maxTicks; i++) {
-		if (predicate()) return;
+		if (predicate() === true) return;
 		await Promise.resolve();
+		// Periodically yield to the timer (macrotask) queue so
+		// setTimeout-based settlement paths — e.g. the abort timer in
+		// fetchJsonWithTimeout — can progress while polling. Only `true`
+		// satisfies the predicate; `false`/`undefined` keep polling.
+		if (i % 10 === 9) {
+			await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		}
 	}
-	if (predicate()) return;
+	if (predicate() === true) return;
 	throw new Error(`waitFor condition not met after ${maxTicks} microtask ticks`);
 }
 

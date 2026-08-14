@@ -1,4 +1,4 @@
-import type { SettleRoundCommand } from '../../wallet/types';
+import type { SettleRoundCommand } from '../wallet/types';
 import type { BlackjackRoundOutcome, BlackjackRoundState } from './engine';
 import type { BlackjackAction } from './protocol';
 

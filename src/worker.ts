@@ -21,6 +21,9 @@ import { MultiplayerPokerRoom } from './server/mp/multiplayer-poker-room';
 import { createRankedCoordinator } from './server/ranked/coordinator';
 import { runRankedExpiration, runRankedRateLimitCleanup } from './server/ranked/expiration';
 import { createRankedRepository } from './server/ranked/repository';
+import { runBlackjackRunExpiration } from './server/blackjack-run/expiration';
+import { createBlackjackRunRepository } from './server/blackjack-run/repository';
+import { createBlackjackRunService } from './server/blackjack-run/service';
 
 interface AstroManifest {
 	[key: string]: unknown;
@@ -85,6 +88,31 @@ const scheduledJobDeps: ScheduledJobDeps = {
 	},
 	async dailyChallengeRetention(db, nowSeconds) {
 		await runDailyChallengeRetention(createDailyChallengeRepository(db), nowSeconds);
+	},
+	async blackjackRunExpiration(db, nowSeconds) {
+		// Temporary dual-run: the legacy Ranked/Daily jobs above still expire
+		// old-format rows; this job expires blackjack_run rows. The legacy
+		// jobs are removed at cutover (Task 8).
+		const service = createBlackjackRunService({
+			repository: createBlackjackRunRepository(db),
+			db,
+			// Use the scheduled job's authoritative clock so expiration
+			// decisions are consistent with the cursor that selected the rows.
+			now: () => nowSeconds,
+			randomBytes(length) {
+				return crypto.getRandomValues(new Uint8Array(length));
+			},
+		});
+		await runBlackjackRunExpiration(db, {
+			expire: (runId) => service.expire(runId),
+			nowSeconds: () => nowSeconds,
+			log(event, runId) {
+				console.warn('[BLACKJACK_RUN]', { event, runId });
+			},
+			warn(message, error) {
+				console.warn(message, error);
+			},
+		});
 	},
 	nowSeconds: () => Math.trunc(Date.now() / 1000),
 	warn(message, error) {

@@ -42,7 +42,8 @@ export type BlackjackRunServiceErrorCode =
 	| 'INSUFFICIENT_BALANCE'
 	| 'INVALID_REQUEST'
 	| 'SETTLEMENT_CONFLICT'
-	| 'INTERNAL_ERROR';
+	| 'INTERNAL_ERROR'
+	| 'UNAUTHORIZED';
 
 export class BlackjackRunServiceError extends Error {
 	readonly code: BlackjackRunServiceErrorCode;

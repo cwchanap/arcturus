@@ -37,6 +37,7 @@ export interface ScheduledJobDeps {
 	retentionCleanup(db: D1Database): Promise<void>;
 	dailyChallengeExpiration(db: D1Database, nowSeconds: number): Promise<void>;
 	dailyChallengeRetention(db: D1Database, nowSeconds: number): Promise<void>;
+	blackjackRunExpiration(db: D1Database, nowSeconds: number): Promise<void>;
 	nowSeconds(): number;
 	warn(message: string, error?: unknown): void;
 }
@@ -82,6 +83,11 @@ export async function runScheduledJobs(
 		await deps.dailyChallengeRetention(db, deps.nowSeconds());
 	} catch (error) {
 		deps.warn('[SCHEDULED] Daily Challenge retention failed', error);
+	}
+	try {
+		await deps.blackjackRunExpiration(db, deps.nowSeconds());
+	} catch (error) {
+		deps.warn('[SCHEDULED] Blackjack run expiration failed', error);
 	}
 }
 

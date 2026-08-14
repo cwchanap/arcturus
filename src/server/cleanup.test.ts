@@ -327,6 +327,9 @@ describe('runScheduledJobs', () => {
 			async dailyChallengeRetention(_db, _nowSeconds) {
 				events.push('daily-retention');
 			},
+			async blackjackRunExpiration(_db, _nowSeconds) {
+				events.push('blackjack-run-expiration');
+			},
 			nowSeconds: () => 1_750_000_000,
 			warn(message, _error) {
 				warnings.push(message);
@@ -351,6 +354,7 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 	});
 
@@ -370,6 +374,7 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 		expect(harness.warnings).toEqual(['[SCHEDULED] Ranked expiration failed']);
 	});
@@ -390,6 +395,7 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 		expect(harness.warnings).toEqual(['[SCHEDULED] Ranked rate-limit cleanup failed']);
 	});
@@ -410,6 +416,7 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 		expect(harness.warnings).toEqual(['[SCHEDULED] Retention cleanup failed']);
 	});
@@ -430,6 +437,7 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 		expect(harness.warnings).toEqual(['[SCHEDULED] Daily Challenge expiration failed']);
 	});
@@ -450,8 +458,30 @@ describe('runScheduledJobs', () => {
 			'retention-cleanup',
 			'daily-expiration',
 			'daily-retention',
+			'blackjack-run-expiration',
 		]);
 		expect(harness.warnings).toEqual(['[SCHEDULED] Daily Challenge retention failed']);
+	});
+
+	test('a blackjack run expiration failure is isolated to its own scheduled job', async () => {
+		const harness = scheduledHarness({
+			async blackjackRunExpiration() {
+				harness.events.push('blackjack-run-expiration');
+				throw new Error('blackjack run expiration failure');
+			},
+		});
+
+		await harness.run();
+
+		expect(harness.events).toEqual([
+			'ranked-expiration',
+			'ranked-rate-cleanup',
+			'retention-cleanup',
+			'daily-expiration',
+			'daily-retention',
+			'blackjack-run-expiration',
+		]);
+		expect(harness.warnings).toEqual(['[SCHEDULED] Blackjack run expiration failed']);
 	});
 
 	test('missing DB logs once and skips every scheduled job', async () => {

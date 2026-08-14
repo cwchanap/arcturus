@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
 import type { D1Database } from '@cloudflare/workers-types';
-import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+import { createBlackjackRunTestD1, insertTestUser } from './test-d1';
 import { replayBlackjackRound, type BlackjackRoundOutcome } from '../../lib/blackjack-run/engine';
 import { replayDailyRun } from '../../lib/blackjack-run/daily';
 import { buildExpiryOutcome } from '../../lib/blackjack-run/ranked';
@@ -32,7 +32,7 @@ let mf: Miniflare;
 let db: D1Database;
 
 beforeAll(async () => {
-	({ mf, db } = await createRankedTestD1());
+	({ mf, db } = await createBlackjackRunTestD1());
 });
 
 afterAll(async () => {
@@ -45,7 +45,7 @@ beforeEach(async () => {
 		db.prepare('DELETE FROM blackjack_daily'),
 		db.prepare('DELETE FROM user'),
 	]);
-	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+	await insertTestUser(db, { id: USER_ID, chipBalance: 1000 });
 });
 
 // --- deterministic fixtures ---
@@ -430,7 +430,7 @@ describe('ranked lifecycle', () => {
 		expect(spy.calls).toHaveLength(1);
 
 		// Double-down on a second user with a double-down-legal seed.
-		await insertRankedTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
+		await insertTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
 		const doubleService = makeService(randomBytesOf(seedOf(18)));
 		const doubleRun = isRankedState(
 			await doubleService.service.start(SECOND_USER, rankedStart('request-ranked-0001', 100)),
@@ -517,7 +517,7 @@ describe('ranked lifecycle', () => {
 		});
 
 		// Opening-blackjack terminal: delta = payout, netProfit = +150.
-		await insertRankedTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
+		await insertTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
 		const blackjackService = makeService(randomBytesOf(seedOf(4)));
 		const blackjack = isRankedState(
 			await blackjackService.service.start(SECOND_USER, rankedStart('request-ranked-0001', 100)),
@@ -645,7 +645,7 @@ describe('ranked lifecycle', () => {
 
 		// Same retry policy on expiration: a conflict leaves the run active,
 		// and a later read converges.
-		await insertRankedTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
+		await insertTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
 		const retry = makeService(randomBytesOf(seedOf(13)));
 		const retryRepository = retry.repository;
 		const retryRun = isRankedState(
@@ -889,7 +889,7 @@ describe('daily lifecycle', () => {
 	});
 
 	test('rank/percentile standing covers multiple eligible players', async () => {
-		await insertRankedTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
+		await insertTestUser(db, { id: SECOND_USER, chipBalance: 1000 });
 		const first = makeService(randomBytesOf(seedOf(0)));
 		const firstState = isDailyState(
 			await first.service.start(USER_ID, dailyStart('request-daily-0001')),

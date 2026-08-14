@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
-import { createRankedTestD1, insertRankedTestUser } from '../ranked/test-d1';
+import { createBlackjackRunTestD1, insertTestUser } from './test-d1';
 import {
 	BLACKJACK_RUN_EXPIRATION_PAGE_SIZE,
 	createBlackjackRunRepository,
@@ -19,7 +19,7 @@ let db: D1Database;
 let repository: BlackjackRunRepository;
 
 beforeAll(async () => {
-	({ mf, db } = await createRankedTestD1());
+	({ mf, db } = await createBlackjackRunTestD1());
 	repository = createBlackjackRunRepository(db);
 });
 
@@ -33,7 +33,7 @@ beforeEach(async () => {
 		db.prepare('DELETE FROM blackjack_daily'),
 		db.prepare('DELETE FROM user'),
 	]);
-	await insertRankedTestUser(db, { id: USER_ID, chipBalance: 1000 });
+	await insertTestUser(db, { id: USER_ID, chipBalance: 1000 });
 });
 
 function runId(sequence: number): string {
@@ -81,7 +81,7 @@ async function readBalance(userId: string = USER_ID): Promise<{ chipBalance: num
 }
 
 // Direct row inserter for repository test setup (expiration paging, raw-state
-// fixtures). Modeled on insertRankedTestUser/insertRankedSession in
+// fixtures). Modeled on insertTestUser/insertRankedSession in
 // ../ranked/test-d1.
 async function insertBlackjackRunRow(
 	db: D1Database,
@@ -144,7 +144,7 @@ describe('ranked run start with stake', () => {
 	});
 
 	test('insufficient or raced initial stake leaves no run and no balance mutation', async () => {
-		await insertRankedTestUser(db, { id: 'low-balance-user', chipBalance: 50 });
+		await insertTestUser(db, { id: 'low-balance-user', chipBalance: 50 });
 		const insufficient = await repository.createRankedRunWithStake(
 			rankedStartInput({ userId: 'low-balance-user', id: runId(2), initialWager: 100 }),
 		);
@@ -205,7 +205,7 @@ describe('ranked run start with stake', () => {
 			await repository.createDailyRun(dailyStartInput({ id: runId(10), periodKey: '2026-10-12' })),
 		).toEqual({ kind: 'created' });
 
-		await insertRankedTestUser(db, { id: 'daily-user-2', chipBalance: 500 });
+		await insertTestUser(db, { id: 'daily-user-2', chipBalance: 500 });
 		expect(
 			await repository.createDailyRun(
 				dailyStartInput({ userId: 'daily-user-2', id: runId(11), periodKey: '2026-10-11' }),
@@ -257,7 +257,7 @@ describe('ranked command appends with stake', () => {
 	});
 
 	test('additional stake equal to the full remaining balance still applies', async () => {
-		await insertRankedTestUser(db, { id: 'edge-user', chipBalance: 200 });
+		await insertTestUser(db, { id: 'edge-user', chipBalance: 200 });
 		await repository.createRankedRunWithStake(
 			rankedStartInput({ userId: 'edge-user', id: runId(20), initialWager: 100 }),
 		);
@@ -324,7 +324,7 @@ describe('ranked command appends with stake', () => {
 
 describe('daily command appends', () => {
 	test('daily appends never touch the account balance', async () => {
-		await insertRankedTestUser(db, { id: 'daily-user-3', chipBalance: 500 });
+		await insertTestUser(db, { id: 'daily-user-3', chipBalance: 500 });
 		await repository.createDailyRun(
 			dailyStartInput({ userId: 'daily-user-3', id: runId(30), periodKey: '2026-10-11' }),
 		);
@@ -443,7 +443,7 @@ describe('daily leaderboard', () => {
 
 	test('orders completed runs and reports current-user standing', async () => {
 		for (const player of players) {
-			await insertRankedTestUser(db, { id: player.id, chipBalance: 100 });
+			await insertTestUser(db, { id: player.id, chipBalance: 100 });
 			await repository.createDailyRun(
 				dailyStartInput({
 					userId: player.id,
@@ -464,7 +464,7 @@ describe('daily leaderboard', () => {
 			});
 		}
 		// Non-eligible rows (forfeited, active) must be excluded.
-		await insertRankedTestUser(db, { id: 'leader-e', chipBalance: 100 });
+		await insertTestUser(db, { id: 'leader-e', chipBalance: 100 });
 		await repository.createDailyRun(
 			dailyStartInput({ userId: 'leader-e', id: 'leader-run-leader-e', periodKey: '2026-10-11' }),
 		);
@@ -479,7 +479,7 @@ describe('daily leaderboard', () => {
 			dailyRoundsCompleted: null,
 			nowSeconds: NOW_SECONDS + 400,
 		});
-		await insertRankedTestUser(db, { id: 'leader-f', chipBalance: 100 });
+		await insertTestUser(db, { id: 'leader-f', chipBalance: 100 });
 		await repository.createDailyRun(
 			dailyStartInput({ userId: 'leader-f', id: 'leader-run-leader-f', periodKey: '2026-10-11' }),
 		);
@@ -523,7 +523,7 @@ describe('expired run paging', () => {
 	test('pages active expired runs in (expiresAt, id) cursor order', async () => {
 		const users = ['exp-user-1', 'exp-user-2', 'exp-user-3', 'exp-user-4', 'exp-user-5'];
 		for (const userId of users) {
-			await insertRankedTestUser(db, { id: userId, chipBalance: 1000 });
+			await insertTestUser(db, { id: userId, chipBalance: 1000 });
 		}
 		await insertBlackjackRunRow(db, { id: runId(51), userId: 'exp-user-1', expiresAt: 100 });
 		await insertBlackjackRunRow(db, { id: runId(52), userId: 'exp-user-2', expiresAt: 100 });
@@ -553,7 +553,7 @@ describe('expired run paging', () => {
 	});
 
 	test('bounds the page size to the exported limit', async () => {
-		await insertRankedTestUser(db, { id: 'exp-user-6', chipBalance: 1000 });
+		await insertTestUser(db, { id: 'exp-user-6', chipBalance: 1000 });
 		for (let index = 0; index < 3; index += 1) {
 			await insertBlackjackRunRow(db, {
 				id: runId(60 + index),

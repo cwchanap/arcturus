@@ -90,8 +90,8 @@ export interface BlackjackRunService {
 	): Promise<DailyLeaderboardRead>;
 }
 
-// Base64url helpers for run ids and seeds (the module is self-contained; the
-// legacy ranked canonical helpers are deleted at cutover).
+// Base64url helpers for run ids and seeds (the module is self-contained and
+// defines its own encoding helpers).
 const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const BASE64URL_PATTERN = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}|[A-Za-z0-9_-]{3})?$/;
 const SEED_LENGTH = 32;

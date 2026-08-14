@@ -41,7 +41,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		description: `Enter the top ${ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK} leaderboard`,
 		category: 'leaderboard',
 		icon: '🌟',
-		grantSource: 'evaluated',
 	},
 	{
 		id: 'high_roller',
@@ -49,7 +48,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		description: `Reach the top ${ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK} on the leaderboard`,
 		category: 'leaderboard',
 		icon: '💎',
-		grantSource: 'evaluated',
 	},
 	{
 		id: 'champion',
@@ -57,7 +55,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		description: 'Reach #1 position on the leaderboard',
 		category: 'leaderboard',
 		icon: '🏆',
-		grantSource: 'evaluated',
 	},
 	{
 		id: 'consistent',
@@ -65,7 +62,6 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		description: `Win ${ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS} hands across all games`,
 		category: 'milestone',
 		icon: '🎯',
-		grantSource: 'evaluated',
 	},
 	{
 		id: 'comeback',
@@ -73,21 +69,8 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		description: `Win after dropping below ${new Intl.NumberFormat('en-US').format(ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE)} chips`,
 		category: 'gameplay',
 		icon: '🔥',
-		grantSource: 'evaluated',
-	},
-	{
-		id: 'ranked_debut',
-		name: 'Ranked Debut',
-		description: 'Complete your first ranked game.',
-		category: 'milestone',
-		icon: '🎖️',
-		grantSource: 'ranked-terminal',
 	},
 ];
-
-export const EVALUATED_ACHIEVEMENTS = ACHIEVEMENTS.filter(
-	(achievement) => achievement.grantSource === 'evaluated',
-);
 
 /**
  * Check function type

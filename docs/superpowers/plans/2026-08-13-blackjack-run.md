@@ -931,10 +931,18 @@ Documentation does not justify runtime growth.
 The release is intentionally breaking; do not add dual-read/dual-write support.
 Follow an expand/deploy/contract sequence so the old Worker never sees a
 missing or half-dropped schema and the new Worker never serves against
-tables that do not exist yet:
+tables that do not exist yet.
 
-- [ ] Apply the **additive** migration (new tables/indexes only) to production
-  **before** deploying:
+The migration runner (`scripts/apply-migrations.ts`) applies **all** pending
+migrations in a single invocation — it cannot stop at a boundary. The
+destructive cutover (active old Ranked stake refunds + old table drops) is
+therefore split into a **separate follow-up PR** so that the first
+`bun run db:migrate:remote` only applies additive migrations:
+
+### This PR — additive schema only
+
+- [ ] Apply the **additive** migrations (0018 `blackjack_run` tables +
+  0020 daily leaderboard index) to production **before** deploying:
 
 ```bash
 bun run db:migrate:remote
@@ -942,6 +950,8 @@ bun run db:migrate:remote
 
 The old Worker ignores the new tables; creating them early removes the window
 where the new Worker would serve DB-backed routes before its schema exists.
+The old Ranked/Daily tables still exist and the old Worker continues to serve
+traffic against them.
 
 - [ ] Deploy the new Worker and move traffic to it:
 
@@ -953,8 +963,11 @@ bun run deploy
   paths work against the additive schema (old tables still exist, so reads and
   refunds are possible).
 
-- [ ] Only once the new Worker owns traffic, apply the **destructive** cutover
-  migration (active old Ranked stake refunds + old table drops):
+### Follow-up PR — destructive cutover
+
+- [ ] Only once the new Worker owns traffic, land the **destructive** cutover
+  migration (active old Ranked stake refunds + old table drops) as a new
+  numbered migration in a separate PR. Apply it:
 
 ```bash
 bun run db:migrate:remote
@@ -964,8 +977,6 @@ bun run db:migrate:remote
   after the destructive migration.
 
 Never run the destructive drop while the old Worker is still serving requests.
-
-**Commit:** `refactor(blackjack): delete legacy run stacks`
 
 ---
 
@@ -984,7 +995,7 @@ Never run the destructive drop while the old Worker is still serving requests.
 - [ ] Ranked E2E passed in Task 6 before old deletion.
 - [ ] Daily E2E passed in Task 7 before old deletion.
 - [ ] Active old Ranked committed wagers are refunded before old table drop.
-- [ ] Additive migrations are applied before the new Worker deploy; the destructive refund/drop migration runs only after the new Worker owns traffic.
+- [ ] Additive migrations (0018 + 0020) are applied before the new Worker deploy; the destructive refund/drop migration is a separate follow-up PR applied only after the new Worker owns traffic.
 - [ ] Old protocols/hashes/commitments/receipts/rate-limit/history surfaces are deleted, together with the legacy browser recovery machinery: no localStorage run ownership, no persisted retry queue, and no automatic backoff/retry loop. Uncertain-response recovery is exclusively the explicit `loadRun(runId)` by-ID path.
 - [ ] Full tests/lint/format/build/E2E pass after cutover.
 - [ ] Final authoritative source + tests are materially smaller than the old two stacks.

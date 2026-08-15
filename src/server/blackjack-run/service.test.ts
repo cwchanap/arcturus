@@ -669,7 +669,16 @@ describe('ranked lifecycle', () => {
 	});
 
 	test('a command rejected at expiry finalizes the active run instead of appending', async () => {
+		// Use a real-time-based clock so that expiresAt lands in the past
+		// relative to the DB clock (unixepoch). The command append CAS uses
+		// expiresAt > unixepoch(), so expiresAt must be in the past for the
+		// CAS to reject the late write. The service's mocked clock starts
+		// before expiry (so it doesn't finalize early) and the wrapper
+		// advances it to the expiry boundary right before the DB write.
+		const realNow = Math.trunc(Date.now() / 1000);
+		const pastNow = realNow - 1000; // expiresAt = pastNow + 900 = realNow - 100
 		const { service, spy, setNow, repository } = makeService(randomBytesOf(seedOf(13)));
+		setNow(pastNow);
 		const state = isRankedState(
 			await service.start(USER_ID, rankedStart('request-ranked-0001', 100)),
 		);

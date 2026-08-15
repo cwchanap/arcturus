@@ -2,9 +2,11 @@
 //
 // Spec: docs/superpowers/specs/2026-08-13-sic-bo-design.md §Client DOM tests.
 // Covers Sic-Bo-specific wiring only: guest bankroll persistence without
-// wallet settlement, bet slip clearing, Roll disabled state, and the
-// complete-phase New Round action. The wallet gate's own success/retry/reset
-// matrix is covered by the shared gate tests and Task 5 E2E.
+// wallet settlement, bet slip clearing, Roll disabled state, the
+// complete-phase New Round action, and the authenticated settlement window
+// (New Round stays disabled while settlement is in flight). The wallet gate's
+// own success/retry/reset matrix is covered by the shared gate tests and
+// Task 5 E2E.
 
 import { Window } from 'happy-dom';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
@@ -249,6 +251,65 @@ describe('initSicBoClient — guest bet slip wiring', () => {
 			betButton('big').click();
 			expect(actionButton().disabled).toBe(true);
 		} finally {
+			root.remove();
+		}
+	});
+});
+
+describe('initSicBoClient — authenticated settlement window', () => {
+	test('New Round stays disabled while settlement is in flight, then unlocks after balance adoption', async () => {
+		localStorage.clear();
+		const calls: string[] = [];
+		let resolveFetch: (value: unknown) => void = () => {};
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			writable: true,
+			value: () => {
+				calls.push('fetch called');
+				return new Promise((resolve) => {
+					resolveFetch = resolve;
+				});
+			},
+		});
+		const origRandom = Math.random;
+		// Constant 0 → dice [1,1,1] → any-triple wins 24:1.
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			expect(actionButton().textContent).toBe('Roll');
+			expect(actionButton().disabled).toBe(false);
+
+			// Roll: the settlement request goes out and stays in flight.
+			actionButton().click();
+			expect(calls).toHaveLength(1);
+
+			// In-flight window: New Round is painted but disabled.
+			expect(actionButton().textContent).toBe('New Round');
+			expect(actionButton().disabled).toBe(true);
+			expect(document.getElementById('sic-bo-result')!.textContent).toBe('Won +24');
+
+			// Server adopts the balance; the button unlocks.
+			resolveFetch({
+				ok: true,
+				status: 200,
+				json: async () => ({ balance: 1024, duplicate: false }),
+			});
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(balanceEl().textContent).toBe('1,024');
+			expect(actionButton().textContent).toBe('New Round');
+			expect(actionButton().disabled).toBe(false);
+
+			// New Round is usable again: back to betting with the retained slip.
+			actionButton().click();
+			expect(actionButton().textContent).toBe('Roll');
+			expect(actionButton().disabled).toBe(false);
+		} finally {
+			Math.random = origRandom;
 			root.remove();
 		}
 	});

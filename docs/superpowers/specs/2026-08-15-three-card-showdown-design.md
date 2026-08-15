@@ -4,31 +4,26 @@
 
 Build HPA-198 as the next small single-player Arcturus game: a focused Ante → Fold/Play → result loop at `/games/three-card-showdown`.
 
-The design intentionally stays close to the current Video Poker and Sic Bo module shape:
+The design stays deliberately small:
 
-- Extract only the neutral 52-card `Card`/deck helpers from Video Poker into one shared `src/lib/cards.ts` file, because Three-Card Showdown becomes the second concrete consumer.
-- Keep Three-Card Showdown hand ranking, dealer qualification, payout resolution, state transitions, settlement mapping, and UI behavior inside `src/lib/three-card-showdown/`.
-- Reuse `src/lib/bet-validation.ts`, `src/lib/public-game-session.ts`, `src/lib/wallet`, `src/components/CardSlot.astro`, and `src/lib/card-slot-utils.ts` as-is.
-- Add no database table, API route, server-authoritative card flow, generic poker evaluator, game framework, strategy layer, history, AI, ranked mode, side bet, or compatibility layer.
+- Extract only the neutral 52-card `Card`/deck helpers from Video Poker into `src/lib/cards.ts`, because Three-Card Showdown becomes the second clean consumer.
+- Keep three-card ranking, dealer qualification, payout resolution, state, settlement mapping, and UI behavior inside `src/lib/three-card-showdown/`.
+- Reuse the existing wager validation, public-game session, wallet settlement/recovery, `CardSlot`, and card-slot rendering APIs unchanged.
+- Add no database table, API route, server-authoritative card flow, generic poker evaluator, base game class, strategy layer, history, AI, ranked mode, side bet, or compatibility path.
 
-This is deliberately smaller than HPA-197 Pai Gow Poker. HPA-198 has one wager, one decision, six dealt cards, and no arrangement UI or house-way logic, so it is the better next feature for fast iteration.
+HPA-198 is a better next slice than HPA-197 Pai Gow Poker because it adds one wager and one decision rather than seven-card arrangement, foul validation, and dealer house-way UI.
 
-## Why HPA-198 is next
+## Why this is actionable now
 
-The parent architecture roadmap's required cleanup sequence is already complete: private-room Poker isolation, wallet settlement simplification, BYOK AI cleanup, Video Poker, and Blackjack Run consolidation have all landed. Sic Bo, the next small game slice, is also complete.
+The HPA-167 architecture sequence is complete: private-room Poker isolation, wallet settlement simplification, BYOK AI cleanup, Video Poker, and Blackjack Run consolidation have landed. Sic Bo is also complete.
 
-The remaining open roadmap children fall into two groups:
+The other open roadmap children are either explicitly deferred (`HPA-174`, `HPA-177`) or larger future games (`HPA-197`). HPA-198 is therefore the smallest unblocked product slice that continues the single-player modular direction.
 
-- Explicitly deferred features: recent Blackjack run history and a weekly Daily leaderboard.
-- Future games: HPA-197 Pai Gow Poker and HPA-198 Three-Card Showdown.
+## Reuse decisions
 
-Choose HPA-198 before HPA-197 because it validates card-domain reuse with much less new UI and rules surface. Pai Gow remains a good later consumer once the simpler three-card module is proven.
+### 1. Share only the neutral card/deck primitive
 
-## Reuse survey
-
-### Shared cards: extract now, but only the neutral primitive
-
-Video Poker currently owns a small standard 52-card model and Fisher-Yates deck helper in `src/lib/video-poker/cards.ts`:
+Video Poker currently owns exactly the standard card concept HPA-198 needs:
 
 ```ts
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
@@ -44,39 +39,35 @@ export function shuffleDeck(deck: readonly Card[], random?: () => number): Card[
 export function createShuffledDeck(random?: () => number): Card[];
 ```
 
-When HPA-195 was designed, keeping those rules local was correct because there was only one clean consumer. HPA-198 creates the second concrete consumer with exactly the same 52-card shape and shuffle semantics. The extraction is now justified.
-
-Move only those types/functions into:
+Move those types/functions to:
 
 ```text
 src/lib/cards.ts
 src/lib/cards.test.ts
 ```
 
-Then update Video Poker to import `Card`, `Rank`, `Suit`, and `createShuffledDeck` from `../cards` and delete its old local `cards.ts`/`cards.test.ts`.
+Then update Video Poker to consume the shared file and delete its local `cards.ts`/`cards.test.ts`.
 
-Do **not** migrate `src/lib/poker/DeckManager.ts` or `src/lib/poker/types.ts`. Texas Hold'em currently uses a different `{ value, suit, rank }` shape and has broader engine coupling. Converting it would turn HPA-198 into an unrelated Poker refactor.
+Do **not** refactor `src/lib/poker/**`. Texas Hold'em uses a different `{ value, suit, rank }` card shape and is coupled to its existing engine. No compatibility alias is needed for Video Poker's old local card exports.
 
-Do **not** extract any evaluator. Five-card Jacks-or-Better evaluation and three-card showdown evaluation have materially different hand ordering and tie-break rules.
+Do **not** share an evaluator. Five-card Jacks-or-Better and three-card showdown use different category ordering and tie-break semantics.
 
-### Card rendering
+### 2. Reuse existing card presentation
 
-Reuse the already-shared rendering seam:
+Reuse:
 
 - `src/components/CardSlot.astro`
 - `src/lib/card-slot-utils.ts`
 
-Three player slots render face-up after Deal. Three dealer slots render face-down during the decision phase and face-up only after Fold or Play resolves the round.
+The page owns six slots directly. Player cards are face-up after Deal. Dealer cards are facedown during `decision` and face-up at `complete`.
 
-No new generic card-row component is needed; six `CardSlot` instances in the page are simpler.
+No generic card-row component is needed.
 
-### Wager validation
+### 3. Reuse wager validation, with one game-local affordability rule
 
-Reuse `validateBet()` from `src/lib/bet-validation.ts` for numeric min/max validation.
+Reuse `validateBet()` from `src/lib/bet-validation.ts`.
 
-Three-Card Showdown owns one additional affordability rule: before Deal, the account must be able to cover **two Ante units** so the player is never dealt into a state where Play is impossible solely because the second equal wager cannot be funded.
-
-Use:
+Three-Card Showdown constants:
 
 ```ts
 export const MIN_ANTE = 1;
@@ -87,20 +78,26 @@ export const ANTE_OPTIONS = [1, 5, 10, 25, 50, 100] as const;
 `getAnteError(ante)` requires:
 
 1. a whole number;
-2. `MIN_ANTE <= ante <= MAX_ANTE` through `validateBet()`; and
-3. `ante * 2 <= current balance`.
+2. `MIN_ANTE <= ante <= MAX_ANTE`; and
+3. `ante * 2 <= balance`.
 
-The UI exposes only `ANTE_OPTIONS`, but the pure domain contract remains the integer range rather than introducing a denomination type.
+The third rule guarantees that after Deal the equal Play wager is always affordable. It avoids a second decision-state error path.
 
-### Guest/public session
+### 4. Reuse public-game session and guest bankroll
 
-Reuse `createPublicGameSession()`, `loadGuestBankroll()`, `persistGuestBankroll()`, `isGuestModeValue()`, and `shouldSyncAccountChips()` exactly as Video Poker does.
+Use the existing:
 
-Use game key `three-card-showdown` for guest bankroll storage and game statistics.
+- `createPublicGameSession()`
+- `loadGuestBankroll()`
+- `persistGuestBankroll()`
+- `isGuestModeValue()`
+- `shouldSyncAccountChips()`
 
-### Wallet settlement
+Use game key `three-card-showdown` for guest storage and game statistics.
 
-Reuse the existing public wallet boundary:
+### 5. Reuse the existing wallet gate unchanged
+
+Use:
 
 - `newSettlementId(game)`
 - `createSettlementGate()`
@@ -108,52 +105,53 @@ Reuse the existing public wallet boundary:
 - `SettleRoundCommand`
 - `SettleRoundResult`
 
-Every completed Fold or Play produces exactly one logical settlement command for authenticated play. Retry reuses the exact pending command and settlement ID through the existing gate.
+Every completed Fold or Play creates exactly one logical authenticated settlement. Retry reuses the exact pending command/ID through the gate.
 
-Keep the command builder game-local:
+Keep command construction local:
 
 ```ts
 buildThreeCardShowdownSettlementCommand(settlementId, result)
 ```
 
-The wallet delta is already the full game net result, so no `RoundStats.netProfit` override is needed.
-
-Statistics mapping:
+Mapping:
 
 ```ts
 {
-  rounds: 1,
-  wins: result.netDelta > 0 ? 1 : 0,
-  losses: result.netDelta < 0 ? 1 : 0,
-  biggestWin: Math.max(result.netDelta, 0),
+  settlementId,
+  game: 'three-card-showdown',
+  delta: result.netDelta,
+  stats: {
+    rounds: 1,
+    wins: result.netDelta > 0 ? 1 : 0,
+    losses: result.netDelta < 0 ? 1 : 0,
+    biggestWin: Math.max(result.netDelta, 0),
+  },
 }
 ```
 
-A tie records one round with zero wins/losses. Folding records a loss.
+A tie is one round with zero wins/losses. Folding is a loss. No `stats.netProfit` override is needed because `delta` is already the true game net result.
 
 ## Alternatives considered
 
-### A. Extract a minimal shared card/deck primitive + local game module — selected
+### A. Minimal shared cards + local Three-Card module — selected
 
-Move the now-duplicated neutral card/deck concept into `src/lib/cards.ts`. Keep every Three-Card-specific rule local.
+This removes one real duplication now that there are two clean consumers while keeping game semantics isolated.
 
-**Why:** it removes one real duplication with two active consumers while preserving clear module ownership.
+### B. Duplicate Video Poker's deck — rejected
 
-### B. Duplicate Video Poker's deck inside Three-Card Showdown — rejected
+It is only a few lines, but the exact same 52-card model and Fisher-Yates helper would immediately exist twice. This is now a real shared concept rather than hypothetical reuse.
 
-This would be only a few lines, but the exact same card shape and Fisher-Yates deck would immediately exist in two clean single-player modules. The roadmap explicitly allows sharing domain-neutral card primitives when there is a real consumer.
+### C. Reuse/refactor Texas Hold'em Poker internals — rejected
 
-### C. Reuse or refactor Texas Hold'em Poker internals — rejected
+That would turn HPA-198 into an unrelated legacy Poker refactor and increase coupling.
 
-Poker's `DeckManager`, card type, evaluator, and engine are coupled to the older Hold'em module and use a different card shape. Pulling HPA-198 through that code would increase coupling and scope without improving the new game's rules.
+### D. Build a configurable poker evaluator — rejected
 
-### D. Create a generic poker-hand evaluator for 3-card and 5-card games — rejected
-
-Three-card hand precedence differs from standard five-card poker: Straight beats Flush, and the evaluator needs dealer-qualification/tie-break semantics that Video Poker does not. A configurable evaluator would be more abstraction than either game needs.
+Three-card ranking differs from five-card poker, notably Straight > Flush. A generic evaluator adds configuration and abstraction without a concrete need.
 
 ## Game rules
 
-### Hand ranking
+### Hand order
 
 Highest to lowest:
 
@@ -164,69 +162,69 @@ Highest to lowest:
 5. Pair
 6. High Card
 
-Important three-card rules:
+Rules:
 
-- Straight ranks above Flush.
+- Straight beats Flush.
 - A-K-Q is the highest straight.
-- A-2-3 is the lowest straight.
+- A-2-3 is the lowest straight and uses straight-high `3` for comparison.
 - K-A-2 is not a straight.
 - Suits never break ties.
 
 ### Tie breakers
 
-`evaluateThreeCardHand(cards)` returns a category plus ordered numeric tie breakers.
+`evaluateThreeCardHand(cards)` returns a category plus ordered numeric tie breakers:
 
-Use these keys:
+- Straight Flush / Straight: `[straightHigh]`
+- Three of a Kind: `[tripRank]`
+- Flush / High Card: ranks descending
+- Pair: `[pairRank, kickerRank]`
 
-- Straight Flush / Straight: `[straightHigh]`, where A-2-3 uses `3`.
-- Three of a Kind: `[tripRank]`.
-- Flush / High Card: ranks descending, e.g. `[14, 11, 8]`.
-- Pair: `[pairRank, kickerRank]`.
-
-`compareThreeCardHands(left, right)` compares category strength first, then tie breakers lexicographically, returning `1`, `0`, or `-1`.
+`compareThreeCardHands(left, right)` compares category strength, then tie breakers lexicographically, returning `-1 | 0 | 1`.
 
 ### Dealer qualification
 
-The dealer qualifies with Queen-high or better.
+Dealer qualifies with Queen-high or better:
 
-Implement `dealerQualifies(evaluation)` without a separate strategy object:
+- every Pair-or-better hand qualifies;
+- High Card qualifies when `tieBreakers[0] >= 12`.
 
-- every Pair-or-better category qualifies;
-- a High Card qualifies when its highest tie breaker is at least Queen (`12`).
+No strategy object or rules version is needed.
 
 ### Round flow
 
-1. Player chooses an Ante.
-2. `Deal` validates that two Ante units are affordable, deducts one Ante, creates one shuffled deck, deals three player cards and three dealer cards, and enters `decision`.
-3. Dealer cards stay face-down in the UI.
-4. Player chooses exactly one action:
-   - `Fold`: lose the Ante and complete the round.
-   - `Play`: deduct one additional wager equal to the Ante, reveal the dealer, and compare hands.
-5. On completion, credit the gross payout locally and freeze one `ThreeCardShowdownRoundResult`.
-6. Guest mode persists the resulting local bankroll. Authenticated mode submits one wallet settlement using `netDelta`.
-7. `New Round` clears cards/result and keeps the selected Ante.
-8. Authenticated `New Round` remains disabled while settlement is pending or failed.
+```text
+betting --Deal--> decision --Fold/Play--> complete --New Round--> betting
+```
 
-### Payout resolution
+1. Player chooses Ante.
+2. Deal validates two-Ante affordability, deducts one Ante, shuffles one 52-card deck, deals three player cards then three dealer cards, and enters `decision`.
+3. Dealer cards remain facedown.
+4. Fold completes immediately and loses only the Ante.
+5. Play deducts one second wager equal to Ante, reveals dealer, resolves the comparison, credits gross payout, and completes.
+6. Guest completion persists the local bankroll.
+7. Authenticated completion submits one net settlement.
+8. New Round clears cards/result, keeps the selected Ante, and is disabled while authenticated settlement is blocked.
 
-There is **no Ante Bonus, Pair Plus, Hand Bonus, or any other side/bonus wager** in HPA-198.
+### Payouts
 
-For Fold:
+There is **no Ante Bonus, Pair Plus, Hand Bonus, or other side/bonus wager**.
 
-- total wager: `ante`
-- gross payout: `0`
-- net delta: `-ante`
+Fold:
 
-For Play, total wager is `2 * ante`:
+| Outcome | Total wager | Gross payout | Net delta |
+| --- | ---: | ---: | ---: |
+| Fold | `ante` | `0` | `-ante` |
+
+Play uses total wager `2 * ante`:
 
 | Outcome | Gross payout | Net delta |
 | --- | ---: | ---: |
 | Dealer does not qualify | `3 * ante` | `+ante` |
-| Dealer qualifies, player wins | `4 * ante` | `+2 * ante` |
+| Qualified dealer, player wins | `4 * ante` | `+2 * ante` |
 | Tie | `2 * ante` | `0` |
-| Dealer qualifies, dealer wins | `0` | `-2 * ante` |
+| Qualified dealer, dealer wins | `0` | `-2 * ante` |
 
-“Gross payout” includes returned stake, matching how Video Poker credits payout after locally deducting wager(s).
+Gross payout includes returned stake, matching the current Video Poker balance model: deduct wagers first, then credit gross payout.
 
 ## Module shape
 
@@ -249,24 +247,13 @@ src/pages/games/three-card-showdown.astro
 e2e/three-card-showdown.spec.ts
 ```
 
-### `src/lib/cards.ts`
+## Domain types
 
-Own only:
-
-- `Suit`
-- `Rank`
-- `Card`
-- `createDeck()`
-- `shuffleDeck()`
-- `createShuffledDeck()`
-
-No evaluator, card formatting, UI behavior, shoe, discard pile, or Poker compatibility adapter belongs here.
-
-### `three-card-showdown/types.ts`
-
-Own only game-domain types:
+`types.ts` owns only Three-Card domain types:
 
 ```ts
+import type { Card } from '../cards';
+
 export type ThreeCardHandCategory =
   | 'straight-flush'
   | 'three-of-kind'
@@ -282,6 +269,7 @@ export interface ThreeCardHandEvaluation {
 }
 
 export type ThreeCardShowdownPhase = 'betting' | 'decision' | 'complete';
+
 export type ThreeCardShowdownOutcome =
   | 'fold'
   | 'dealer-not-qualified'
@@ -290,21 +278,24 @@ export type ThreeCardShowdownOutcome =
   | 'dealer-win';
 ```
 
-`ThreeCardShowdownRoundResult` stores the chosen outcome, ante, total wager, gross payout, net delta, both frozen hands/evaluations, and whether the dealer qualified.
+`ThreeCardShowdownRoundResult` stores outcome, ante, total wager, gross payout, net delta, dealer-qualified flag, both hands, and both evaluations.
 
-`ThreeCardShowdownState` stores phase, balance, ante, player hand, dealer hand, and optional result.
+`ThreeCardShowdownState` stores phase, balance, ante, both hands, and optional result.
 
-### `three-card-showdown/rules.ts`
+## Pure rules API
 
-Own the game-specific pure rules:
+`rules.ts` exposes:
 
 ```ts
 export function evaluateThreeCardHand(cards: readonly Card[]): ThreeCardHandEvaluation;
+
 export function compareThreeCardHands(
   left: ThreeCardHandEvaluation,
   right: ThreeCardHandEvaluation,
 ): -1 | 0 | 1;
+
 export function dealerQualifies(evaluation: ThreeCardHandEvaluation): boolean;
+
 export function resolvePlayedHand(
   playerCards: readonly Card[],
   dealerCards: readonly Card[],
@@ -312,11 +303,11 @@ export function resolvePlayedHand(
 ): ThreeCardShowdownRoundResult;
 ```
 
-`evaluateThreeCardHand()` requires exactly three cards and throws for programmer-invalid input. It does not know about bankroll, DOM, wallet, or settlement IDs.
+`evaluateThreeCardHand()` requires exactly three cards and throws only for programmer-invalid input. Rules code has no bankroll, DOM, fetch, storage, or wallet dependency.
 
-### `three-card-showdown/game.ts`
+## Pure game API
 
-`ThreeCardShowdownGame` owns the pure lifecycle:
+`game.ts` exposes:
 
 ```ts
 export class ThreeCardShowdownGame {
@@ -332,185 +323,184 @@ export class ThreeCardShowdownGame {
 }
 ```
 
-State transitions:
+The game owns deck/deal order and local balance math. It delegates hand evaluation/comparison to `rules.ts`.
 
-```text
-betting --deal--> decision --fold/play--> complete --resetRound--> betting
-```
+## Client/page design
 
-The game class owns deck creation/deal order and local balance math. It delegates hand ranking and played-hand payout resolution to `rules.ts`.
-
-### `three-card-showdown/client.ts`
-
-Own DOM rendering, guest persistence, and wallet integration only.
+`client.ts` owns only DOM rendering, guest persistence, and wallet composition.
 
 Responsibilities:
 
-- initialize the pure game with session balance;
-- render player/dealer slots through `setSlotState()`;
-- hide dealer faces in `decision` and reveal them in `complete`;
-- wire Ante buttons, Deal, Fold, Play, and New Round;
-- build one game-local settlement command;
-- persist guest balance after a completed action;
-- submit authenticated settlement through one `createSettlementGate()`;
-- use the existing recovery controls for Retry/Reset;
-- adopt the authoritative returned balance after successful settlement;
-- update both local balance text and shared header `[data-chip-balance]` text.
+- initialize `ThreeCardShowdownGame` with the public-session balance;
+- render cards through `setSlotState()`;
+- render dealer as facedown in `decision` and face-up in `complete`;
+- wire Ante, Deal, Fold, Play, and New Round;
+- persist guest balance after completion;
+- submit one authenticated settlement and adopt returned balance;
+- use existing Retry/Reset recovery controls;
+- update `#chip-balance` and shared `[data-chip-balance]` elements.
 
-Do not extract a shared “casino game client controller” from Video Poker/Sic Bo. Their DOM/state semantics are still different and the duplicated glue is small.
+Do not extract a shared casino client controller from Video Poker/Sic Bo.
 
-### `three-card-showdown/index.ts`
+The page uses `CasinoLayout` and six `CardSlot` instances. It contains:
 
-Export only the page/test-facing public surface:
+- Back to Games, title, `Ante · Fold or Play · Dealer qualifies with Queen-high`, and balance panel;
+- Dealer three-card row;
+- Player three-card row;
+- status/result area;
+- Ante buttons;
+- phase-specific Deal / Fold + Play / New Round buttons;
+- settlement recovery host;
+- a small static Rules panel.
 
-- `ThreeCardShowdownGame`
-- rule functions needed by focused tests
-- `ANTE_OPTIONS`
-- `initThreeCardShowdownClient`
-- relevant game-domain result/evaluation types
+Result copy is compact and deterministic:
 
-Do not create a second barrel hierarchy.
+- Fold: `Fold · -<ante> net`
+- Dealer not qualified: `Dealer does not qualify · +<ante> net`
+- Player win: `Player wins · +<2 * ante> net`
+- Tie: `Tie · 0 net`
+- Dealer win: `Dealer wins · -<2 * ante> net`
 
-## Page/UI
+Cards themselves show the compared hands, so do not duplicate hand labels in result copy.
 
-Add `/games/three-card-showdown` using the existing casino layout.
-
-Layout:
-
-- header with Back to Games, game title, concise “Ante · Fold or Play · Dealer qualifies with Queen-high” copy, and balance panel;
-- felt table with a three-card Dealer row and three-card Player row;
-- compact status/result area;
-- Ante option buttons;
-- phase actions:
-  - `Deal` in betting;
-  - `Fold` and `Play` in decision;
-  - `New Round` in complete;
-- existing wallet recovery controls attached below actions when needed;
-- a small static “Rules” panel listing hand order and dealer qualification.
-
-No card animations, drag/drop, sound, strategy hints, odds display, history, or bonus-paytable UI.
+No animation, sound, odds, strategy hints, drag/drop, history, or bonus-paytable UI.
 
 ## Game registration
 
-Add `three-card-showdown` as the next `GameType` in `src/lib/game-stats/constants.ts` with:
+Add `three-card-showdown` to `src/lib/game-stats/constants.ts` with exact values:
 
-- label: `Three-Card Showdown`
-- icon: `🂡` or the existing card-style fallback if the project font renders it poorly
+```ts
+GAME_TYPE_LABELS['three-card-showdown'] = 'Three-Card Showdown';
+GAME_TYPE_ICONS['three-card-showdown'] = '♠️';
+```
 
-Add the lobby card in `src/pages/index.astro` and any game-directory fixture/assertion that enumerates all games.
+Use the already-proven `♠️` card icon rather than adding a new font-dependent playing-card glyph.
 
-No schema migration is required; game statistics use the application-level game identifier.
+Update the fixed canonical game list in `e2e/profile-statistics.spec.ts` and add one focused `game-stats.test.ts` registration assertion.
+
+Add a normal lobby card in `src/pages/index.astro` linking to `/games/three-card-showdown`.
+
+No schema migration is required.
 
 ## Error and recovery behavior
 
-Keep normal errors user-visible and local:
+Normal invalid Ante state is rendered from `getAnteError()` and disables Deal.
 
-- invalid/unaffordable Ante disables Deal and renders `getAnteError()`;
-- Fold/Play outside `decision` are programmer-invalid and may throw;
-- Deal while another hand is active may throw;
-- missing DOM elements make client initialization no-op where existing clients already tolerate them.
+Programmer-invalid phase transitions may throw:
 
-Wallet failure behavior remains exactly the existing gate policy:
+- Deal outside `betting`;
+- Fold/Play outside `decision`;
+- New Round outside `complete`.
 
-- the completed round stays visible;
+Wallet failure uses the existing gate policy only:
+
+- completed result remains visible;
 - New Round is disabled;
-- Retry resubmits the exact command;
-- Reset discards the failed local round, restores the last server-synced balance, clears the gate, and returns to betting.
+- Retry resubmits the exact pending command;
+- Reset clears the gate, restores the last server-synced balance, discards the failed completed round, and returns to `betting`.
 
-No timers, automatic retry, localStorage pending command, outbox, background sync, or cross-tab coordination.
+No timer, auto-retry, pending-command persistence, outbox, background sync, or cross-tab coordination.
 
 ## Testing
 
-### Shared card extraction
+### Shared cards
 
-Move the existing Video Poker deck tests to `src/lib/cards.test.ts` and keep coverage for:
+Move Video Poker's deck tests to `src/lib/cards.test.ts` and cover:
 
 - 52 unique cards;
-- all suits/ranks;
+- all ranks/suits;
 - deterministic injectable shuffle;
-- source deck not mutated.
+- source deck is not mutated.
 
-Run Video Poker focused tests after moving imports to prove no behavior change.
+Run all Video Poker unit/DOM tests after the import move.
 
 ### Rules
 
-`rules.test.ts` covers:
+Cover:
 
-- category order: Straight Flush > Trips > Straight > Flush > Pair > High Card;
+- every category and exact category order;
+- Straight > Flush;
 - A-K-Q highest straight;
 - A-2-3 lowest straight;
 - K-A-2 not straight;
 - Pair kicker comparison;
-- Flush/High Card lexicographic comparison;
-- exact ties ignore suit;
-- dealer qualification at Q-high versus J-high;
-- dealer-not-qualified payout;
-- player win, tie, and dealer win payouts.
+- High Card/Flush lexicographic comparison;
+- suit-insensitive ties;
+- Q-high qualifies / J-high does not;
+- dealer-not-qualified, player-win, tie, dealer-win payouts.
 
 ### Game state
 
-`game.test.ts` covers:
+Cover:
 
-- Ante validation and two-unit affordability;
-- Deal deducts one Ante and deals six unique cards;
-- Fold loses only the Ante;
-- Play deducts the second Ante and resolves once;
-- New Round keeps Ante and clears cards/result;
-- `setBalance()` adopts an authoritative non-negative balance;
-- invalid phase transitions reject.
+- Ante bounds/integer/two-unit affordability;
+- Deal deducts one Ante and produces six unique cards;
+- Fold loses one Ante only;
+- Play deducts the second Ante and resolves exactly once;
+- New Round retains Ante but clears cards/result;
+- authoritative `setBalance()`;
+- invalid transitions.
 
-### Client unit/DOM tests
+### Client tests
 
-Follow the Video Poker/Sic Bo pattern:
+Keep `client.test.ts` to settlement-command mapping.
 
-- `client.test.ts` asserts settlement command mapping only;
-- `client.init.test.ts` covers phase-specific buttons, dealer facedown/reveal rendering, balance updates, guest persistence, settlement blocking, Retry exact-command reuse, and Reset restoring the last server balance.
+`client.init.test.ts` covers composition only:
 
-Do not duplicate the wallet settlement gate's internal state-machine tests.
+- phase-specific action buttons;
+- dealer facedown/reveal behavior;
+- balance rendering;
+- guest persistence and no wallet call;
+- settlement blocks New Round;
+- Retry uses exact command;
+- Reset restores last server balance.
+
+Do not duplicate wallet-gate internals.
 
 ### E2E
 
-Keep HPA-198 to two representative browser flows:
+Use two representative flows.
 
-1. Guest Ante → Deal → Play → result → New Round, with deterministic `Math.random` and no `/api/wallet/settle` request.
-2. Authenticated completed hand with first settlement returning `503`, recovery shown, Retry using the exact same command, then authoritative balance adoption.
+**Guest deterministic flow:** set `Math.random = () => 0`, select Ante `10`, Deal then Play. With the shared deck order and Fisher-Yates shuffle, player receives `3♥ 4♥ 5♥`; dealer receives `6♥ 7♥ 8♥`. Both are Straight Flushes, dealer wins by straight high. Assert `Dealer wins · -20 net`, final balance `980`, revealed dealer cards, and zero `/api/wallet/settle` requests. Then New Round returns to betting.
 
-Also extend `e2e/profile-statistics.spec.ts` only if its current fixed game list requires the new registered game to appear.
+**Authenticated recovery flow:** complete one Play, make the first `/api/wallet/settle` return 503, assert recovery and blocked New Round, Retry, assert the second request body exactly equals the first, then adopt the returned authoritative balance.
+
+Also update `e2e/profile-statistics.spec.ts`'s fixed `CANONICAL_GAME_TYPES` array with `three-card-showdown`.
 
 ## Delivery risks
 
-### Shared-card extraction can accidentally widen scope
+### Shared-card extraction grows into a Poker rewrite
 
-Mitigation: move only the exact Video Poker card type/deck helper. Do not touch Hold'em Poker.
+Mitigation: touch only Video Poker and the new game. `src/lib/poker/**` stays unchanged.
 
-### Three-card hand ordering is easy to implement like five-card Poker by mistake
+### Five-card ranking assumptions leak into three-card rules
 
-Mitigation: pin Straight > Flush and A-2-3 low-straight behavior in focused rules tests before implementing the evaluator.
+Mitigation: test Straight > Flush and A-2-3 before implementation.
 
-### Local balance math can double-count returned stakes
+### Returned stakes are double-counted
 
-Mitigation: tests assert both gross payout and net delta for all four Play outcomes plus Fold. The game deducts wagers before crediting gross payout, mirroring Video Poker's balance model.
+Mitigation: assert gross payout and net delta for Fold plus all four Play outcomes. Game code deducts stake before applying gross payout.
 
-### Settlement recovery can allow a second round too early
+### A second round starts before settlement resolves
 
-Mitigation: use the existing settlement gate and keep New Round disabled whenever authenticated settlement is blocked, matching Video Poker and Sic Bo.
+Mitigation: use the existing gate and disable New Round whenever authenticated settlement is blocked.
 
 ## Non-goals
 
 - Pair Plus, Ante Bonus, Hand Bonus, side bets, progressive prizes.
-- More than one Ante/Play wager pair.
-- AI advice, strategy hints, Q-6-4 recommendations, or post-round coaching.
-- Ranked/Daily mode, server-authoritative dealing, anti-cheat, signatures, or replay verification.
-- History, replays, persisted unfinished hands, crash recovery, automatic retries, or cross-tab coordination.
-- Generic poker evaluator, generic paytable system, base game class, generic casino client controller, game plugin system, or card-layout framework.
-- Refactoring Texas Hold'em Poker to the new shared card type.
-- Backward-compatible aliases for Video Poker's old local card exports.
+- AI advice or strategy coaching.
+- Ranked/Daily mode or server-authoritative dealing.
+- History, replay, persisted unfinished hands, crash recovery, automatic retry, cross-tab coordination.
+- Generic poker evaluator, paytable engine, base game class, generic casino client controller, plugin system, or card-layout framework.
+- Texas Hold'em card/evaluator refactor.
+- Backward-compatible Video Poker card aliases.
 
 ## Definition of done
 
-- HPA-198 provides one complete, understandable Ante → Fold/Play → result game loop.
-- Video Poker and Three-Card Showdown share exactly one neutral `cards.ts` primitive and no game-specific evaluator/state.
-- Guest play is local; authenticated completed rounds use one existing wallet settlement command/gate.
-- Three-card ranking, dealer qualification, wager accounting, and state transitions are thoroughly unit tested.
-- One representative guest flow and one authenticated recovery flow pass in Playwright.
-- The final implementation introduces no database migration, new API endpoint, generic framework, compatibility layer, or unrelated Poker refactor.
+- One complete Ante → Fold/Play → result loop exists at `/games/three-card-showdown`.
+- Video Poker and Three-Card Showdown share exactly the neutral `src/lib/cards.ts` primitive.
+- Guest play remains local; authenticated completion uses one existing wallet settlement command/gate.
+- Three-card ranking, qualification, wager accounting, and state transitions have focused unit coverage.
+- The deterministic guest E2E and authenticated recovery E2E pass.
+- The new game is registered in statistics/profile/lobby surfaces.
+- No schema migration, new API, framework, compatibility layer, or unrelated Poker refactor is introduced.

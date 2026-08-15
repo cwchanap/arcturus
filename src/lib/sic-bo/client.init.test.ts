@@ -382,3 +382,242 @@ describe('initSicBoClient — guest round flow', () => {
 		}
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Settlement recovery: failure, retry (success + failure), and reset paths.
+// These cover showSettlementRecovery, adoptSettlementResult (incl. achievement
+// dispatch), the retry handler, the reset handler, and the settlement-failure
+// catch in the action handler.
+// ---------------------------------------------------------------------------
+function installFailingFetch(): void {
+	Object.defineProperty(globalThis, 'fetch', {
+		configurable: true,
+		writable: true,
+		value: async () => {
+			throw new Error('Network error');
+		},
+	});
+}
+
+function flushMicrotasks(): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe('initSicBoClient — settlement recovery', () => {
+	test('settlement failure shows recovery UI with retry and reset buttons', async () => {
+		localStorage.clear();
+		installFailingFetch();
+		const origRandom = Math.random;
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			actionButton().click();
+			await flushMicrotasks();
+
+			// Recovery container is visible.
+			const container = document.getElementById('sic-bo-settlement-recovery');
+			expect(container).not.toBeNull();
+			expect(container?.classList.contains('hidden')).toBe(false);
+
+			// Status shows the settlement-failed message (settlementMessage path).
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
+				'Settlement failed. Retry or reset before rolling again.',
+			);
+
+			// Retry and reset buttons exist.
+			expect(document.getElementById('sic-bo-retry-settlement')).not.toBeNull();
+			expect(document.getElementById('sic-bo-reset-settlement')).not.toBeNull();
+
+			// Action button stays disabled while gate is blocked.
+			expect(actionButton().disabled).toBe(true);
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
+
+	test('retry success adopts balance and dispatches achievement event', async () => {
+		localStorage.clear();
+		let fetchCallCount = 0;
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				fetchCallCount++;
+				if (fetchCallCount === 1) throw new Error('Network error');
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						balance: 1024,
+						duplicate: false,
+						newAchievements: [{ id: 'sic-bo-master', name: 'Sic Bo Master', icon: 'dice' }],
+					}),
+				};
+			},
+		});
+		const origRandom = Math.random;
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			const achievementEvents: Array<{ achievements: unknown }> = [];
+			const onAchievement = (event: Event): void => {
+				achievementEvents.push((event as CustomEvent).detail);
+			};
+			window.addEventListener('achievement-earned', onAchievement);
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			actionButton().click();
+			await flushMicrotasks();
+
+			// Settlement failed — recovery visible.
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
+				'Settlement failed. Retry or reset before rolling again.',
+			);
+
+			// Click retry — second fetch succeeds.
+			document.getElementById('sic-bo-retry-settlement')!.click();
+			await flushMicrotasks();
+
+			expect(fetchCallCount).toBe(2);
+			expect(balanceEl().textContent).toBe('1,024');
+			expect(achievementEvents).toHaveLength(1);
+			expect(achievementEvents[0].achievements).toEqual([
+				{ id: 'sic-bo-master', name: 'Sic Bo Master', icon: 'dice' },
+			]);
+
+			// Recovery hidden after successful adoption.
+			const container = document.getElementById('sic-bo-settlement-recovery');
+			expect(container?.classList.contains('hidden')).toBe(true);
+
+			// Action button unlocked (gate no longer blocked).
+			expect(actionButton().disabled).toBe(false);
+
+			window.removeEventListener('achievement-earned', onAchievement);
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
+
+	test('retry failure shows updated recovery message', async () => {
+		localStorage.clear();
+		installFailingFetch();
+		const origRandom = Math.random;
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			actionButton().click();
+			await flushMicrotasks();
+
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
+				'Settlement failed. Retry or reset before rolling again.',
+			);
+
+			// Click retry — fetch fails again.
+			document.getElementById('sic-bo-retry-settlement')!.click();
+			await flushMicrotasks();
+
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
+				'Settlement failed again. Retry or reset before rolling again.',
+			);
+
+			// Recovery still visible.
+			const container = document.getElementById('sic-bo-settlement-recovery');
+			expect(container?.classList.contains('hidden')).toBe(false);
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
+
+	test('reset round restores server balance and hides recovery', async () => {
+		localStorage.clear();
+		installFailingFetch();
+		const origRandom = Math.random;
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			actionButton().click();
+			await flushMicrotasks();
+
+			// After failed settlement, balance is locally 1024 (from the roll).
+			expect(balanceEl().textContent).toBe('1,024');
+
+			// Click reset — restores server-synced balance (1000).
+			document.getElementById('sic-bo-reset-settlement')!.click();
+
+			expect(balanceEl().textContent).toBe('1,000');
+
+			// Recovery hidden.
+			const container = document.getElementById('sic-bo-settlement-recovery');
+			expect(container?.classList.contains('hidden')).toBe(true);
+
+			// Back to betting phase with retained slip — Roll enabled.
+			expect(actionButton().textContent).toBe('Roll');
+			expect(actionButton().disabled).toBe(false);
+			expect(betAmount('any-triple').textContent).toBe('1');
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Bet and roll error catch paths in the action and bet-button handlers.
+// ---------------------------------------------------------------------------
+describe('initSicBoClient — bet and roll error handling', () => {
+	test('bet exceeding balance shows error status without placing the bet', () => {
+		localStorage.clear();
+		const root = makeSicBoRoot({ guestMode: true, initialBalance: 1 });
+		try {
+			initSicBoClient();
+
+			// Default denomination is 1 — place big (uses entire balance).
+			betButton('big').click();
+			expect(betAmount('big').textContent).toBe('1');
+
+			// Try small — 1 (big) + 1 (small) = 2 > balance 1 → setBet throws.
+			betButton('small').click();
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
+				'Selected bets exceed available balance',
+			);
+			expect(betAmount('small').textContent).toBe('');
+		} finally {
+			root.remove();
+		}
+	});
+
+	test('roll with empty slip shows error status via the catch path', () => {
+		localStorage.clear();
+		installFetchSpy();
+		const root = makeSicBoRoot({ guestMode: true, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			// Action is disabled (empty slip) — dispatch a click event directly
+			// to bypass the disabled guard and exercise the roll() catch.
+			actionButton().dispatchEvent(new happyWindow.Event('click'));
+
+			expect(document.getElementById('sic-bo-status')!.textContent).toBe('Place at least one bet');
+		} finally {
+			root.remove();
+		}
+	});
+});

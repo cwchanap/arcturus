@@ -76,7 +76,15 @@ export function initSicBoClient(): void {
 	function render(): void {
 		const state = game.getState();
 
-		if (balanceEl) balanceEl.textContent = state.balance.toLocaleString('en-US');
+		const formattedBalance = state.balance.toLocaleString('en-US');
+		if (balanceEl) balanceEl.textContent = formattedBalance;
+		// Keep the shared header balance pill in sync alongside the canonical
+		// panel balance. CasinoLayout renders [data-chip-balance] for
+		// authenticated users; without this it stays at the SSR balance until
+		// the next navigation.
+		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
+			el.textContent = `${formattedBalance} chips`;
+		});
 		if (totalStakeEl) totalStakeEl.textContent = `Total stake: ${game.getTotalStake()}`;
 
 		document.querySelectorAll<HTMLElement>('[data-bet-amount]').forEach((el) => {

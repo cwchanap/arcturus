@@ -88,6 +88,13 @@ function makeSicBoRoot(opts: { guestMode?: boolean; initialBalance?: number } = 
 	balance.textContent = String(opts.initialBalance ?? 1000);
 	root.appendChild(balance);
 
+	// Mirror element that CasinoLayout renders alongside the canonical balance
+	// in the shared header for authenticated users.
+	const chipBalanceMirror = document.createElement('span');
+	chipBalanceMirror.setAttribute('data-chip-balance', '');
+	chipBalanceMirror.textContent = `${opts.initialBalance ?? 1000} chips`;
+	root.appendChild(chipBalanceMirror);
+
 	const status = document.createElement('div');
 	status.id = 'sic-bo-status';
 	root.appendChild(status);
@@ -301,6 +308,9 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
 			expect(balanceEl().textContent).toBe('1,024');
+			expect(root.querySelector<HTMLElement>('[data-chip-balance]')?.textContent).toBe(
+				'1,024 chips',
+			);
 			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(false);
 

@@ -731,28 +731,72 @@ describe('daily lifecycle', () => {
 		expect(spy.calls).toHaveLength(0);
 	});
 
-	test('daily starts before entry close, rejects at and after close, and replays after close', async () => {
+	test('daily starts before entry close, recovers an existing run at and after close, and replays after close', async () => {
 		const { service, setNow, repository } = makeService(randomBytesOf(seedOf(0)));
 		const entryClose = getDailyWindowForPeriodKey(PERIOD_KEY).rankedEntryClosesAt;
 		setNow(entryClose - 1);
 		const first = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
 		expect(first.status).toBe('active');
 
+		// A fresh request id at/after close recovers the already-created
+		// attempt instead of rejecting: the close check gates creation, not
+		// recovery, so a lost start response can be retried across the
+		// entry-close boundary.
 		setNow(entryClose);
-		await expectServiceError(
-			service.start(USER_ID, dailyStart('request-daily-0002')),
-			'INVALID_REQUEST',
+		const retryAtClose = isDailyState(
+			await service.start(USER_ID, dailyStart('request-daily-0002')),
 		);
+		expect(retryAtClose.runId).toBe(first.runId);
+		expect(retryAtClose.status).toBe('active');
+
 		setNow(entryClose + 1);
-		await expectServiceError(
-			service.start(USER_ID, dailyStart('request-daily-0003')),
-			'INVALID_REQUEST',
+		const retryAfterClose = isDailyState(
+			await service.start(USER_ID, dailyStart('request-daily-0003')),
 		);
+		expect(retryAfterClose.runId).toBe(first.runId);
+		expect(retryAfterClose.status).toBe('active');
 
 		const replay = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
 		expect(replay.runId).toBe(first.runId);
 		expect(replay.status).toBe('active');
 		expect((await repository.findDailyRun(USER_ID, PERIOD_KEY))?.id).toBe(first.runId);
+	});
+
+	test('a closed window still rejects when no attempt exists for the period', async () => {
+		const { service, setNow } = makeService(randomBytesOf(seedOf(0)));
+		const entryClose = getDailyWindowForPeriodKey(PERIOD_KEY).rankedEntryClosesAt;
+
+		setNow(entryClose);
+		await expectServiceError(
+			service.start(USER_ID, dailyStart('request-daily-0001')),
+			'INVALID_REQUEST',
+		);
+		setNow(entryClose + 1);
+		await expectServiceError(
+			service.start(USER_ID, dailyStart('request-daily-0002')),
+			'INVALID_REQUEST',
+		);
+		expect(await readChipBalance()).toBe(1000);
+	});
+
+	test('a lost daily start response retried with a fresh request id recovers across the entry-close boundary', async () => {
+		const { service, setNow, repository } = makeService(randomBytesOf(seedOf(0)));
+		const entryClose = getDailyWindowForPeriodKey(PERIOD_KEY).rankedEntryClosesAt;
+
+		// First attempt commits one second before close; its response is lost.
+		setNow(entryClose - 1);
+		const first = isDailyState(await service.start(USER_ID, dailyStart('request-A-boundary')));
+		expect(first.status).toBe('active');
+
+		// The retry arrives at the close boundary with a fresh request id (the
+		// client mints a new nonce per explicit start). It must recover the
+		// same existing run rather than fail with INVALID_REQUEST.
+		setNow(entryClose);
+		const retried = isDailyState(await service.start(USER_ID, dailyStart('request-B-boundary')));
+		expect(retried.runId).toBe(first.runId);
+		expect(retried.status).toBe('active');
+		expect((await repository.findDailyRun(USER_ID, PERIOD_KEY))?.id).toBe(first.runId);
+		expect(await readChipBalance()).toBe(1000);
 	});
 
 	test('daily users share one lazily-created period seed and replay it deterministically', async () => {

@@ -234,6 +234,54 @@ describe('blackjack run HTTP authentication and strict parsing', () => {
 		expect(service.calls.leaderboard).toEqual([{ periodKey: PERIOD_KEY, userId: null, limit: 50 }]);
 	});
 
+	test('leaderboard response strips the internal userId from every entry', async () => {
+		// The fake service returns entries carrying `userId` (the internal
+		// account identifier the repository row exposes); the HTTP projection
+		// must drop it before serializing to an unauthenticated guest.
+		const service = fakeService();
+		const handlers = createBlackjackRunHttpHandlers({
+			createService: () => service,
+		});
+
+		const guestResponse = await handlers.leaderboard(
+			context({
+				userId: null,
+				request: makeRequest('/api/blackjack-daily/2027-01-15/leaderboard'),
+			}),
+		);
+		const authedResponse = await handlers.leaderboard(
+			context({
+				request: makeRequest('/api/blackjack-daily/2027-01-15/leaderboard'),
+			}),
+		);
+
+		expect(guestResponse.status).toBe(200);
+		expect(authedResponse.status).toBe(200);
+
+		const guestBody = (await guestResponse.json()) as { entries: Record<string, unknown>[] };
+		const authedBody = (await authedResponse.json()) as { entries: Record<string, unknown>[] };
+
+		for (const entry of [...guestBody.entries, ...authedBody.entries]) {
+			expect(entry).not.toHaveProperty('userId');
+			expect(Object.keys(entry).sort()).toEqual([
+				'dailyEndingBankroll',
+				'dailyRoundsCompleted',
+				'playerName',
+				'rank',
+				'settledAt',
+			]);
+		}
+		expect(guestBody.entries).toEqual([
+			{
+				rank: 1,
+				playerName: 'Leader',
+				dailyEndingBankroll: 1200,
+				dailyRoundsCompleted: 10,
+				settledAt: 1_800_001_000,
+			},
+		]);
+	});
+
 	test('a guest without an attempt receives a RUN_NOT_FOUND guest surface', async () => {
 		const handlers = createBlackjackRunHttpHandlers({
 			createService: () =>

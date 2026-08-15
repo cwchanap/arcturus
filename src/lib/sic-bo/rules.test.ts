@@ -149,6 +149,16 @@ describe('isSupportedBetKey', () => {
 		expect(isSupportedBetKey('total:abc')).toBe(false);
 		expect(isSupportedBetKey('')).toBe(false);
 	});
+
+	test('rejects non-canonical total suffixes that Number() would coerce', () => {
+		expect(isSupportedBetKey('total:04')).toBe(false); // leading zero
+		expect(isSupportedBetKey('total:4.0')).toBe(false); // decimal
+		expect(isSupportedBetKey('total:4e0')).toBe(false); // exponent
+		expect(isSupportedBetKey('total:0x4')).toBe(false); // hex
+		expect(isSupportedBetKey('total:+4')).toBe(false); // sign
+		expect(isSupportedBetKey('total: 4 ')).toBe(false); // whitespace
+		expect(isSupportedBetKey('total: 4')).toBe(false); // leading whitespace
+	});
 });
 
 describe('forged bet key rejection', () => {

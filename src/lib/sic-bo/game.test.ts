@@ -161,7 +161,7 @@ describe('SicBoGame lifecycle', () => {
 		state.bets['big'] = 999;
 		state.balance = 0;
 		state.result.netDelta = -999;
-		state.result.roll[0] = 1;
+		state.result.roll[0] = 6;
 		state.result.results[0].amount = 999;
 
 		const fresh = game.getState();
@@ -205,5 +205,37 @@ describe('SicBoGame setBalance', () => {
 		expect(() => game.setBalance(Number.POSITIVE_INFINITY)).toThrow();
 		expect(() => game.setBalance(Number.NEGATIVE_INFINITY)).toThrow();
 		expect(game.getState().balance).toBe(100);
+	});
+});
+
+describe('SicBoGame forged bet key rejection', () => {
+	test('setBet rejects forged totals and keeps the slip clean', () => {
+		const game = new SicBoGame(100);
+		expect(() => game.setBet('total:3' as never, 10)).toThrow();
+		expect(() => game.setBet('total:18' as never, 10)).toThrow();
+		expect(() => game.setBet('doubles' as never, 10)).toThrow();
+		expect(game.getTotalStake()).toBe(0);
+		expect(game.getState().bets).toEqual({});
+	});
+
+	test('getBetError flags forged keys without mutating state', () => {
+		const game = new SicBoGame(100);
+		expect(game.getBetError('total:3' as never, 10)).not.toBeNull();
+		expect(game.getBetError('total:18' as never, 10)).not.toBeNull();
+		expect(game.getTotalStake()).toBe(0);
+	});
+
+	test('rolling after a forged setBet attempt produces no NaN balance', () => {
+		const game = new SicBoGame(100, sequenceRandom([0, 0.5, 0.9]));
+		try {
+			game.setBet('total:3' as never, 10);
+		} catch {
+			// expected
+		}
+		game.setBet('big', 10);
+		const result = game.roll();
+		expect(Number.isNaN(result.netDelta)).toBe(false);
+		expect(Number.isNaN(game.getState().balance)).toBe(false);
+		expect(game.getState().balance).toBe(110);
 	});
 });

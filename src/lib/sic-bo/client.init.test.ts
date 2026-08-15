@@ -9,7 +9,7 @@
 // Task 5 E2E.
 
 import { Window } from 'happy-dom';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { SIC_BO_CHIP_DENOMINATIONS, TOTAL_ODDS } from './rules';
 import { initSicBoClient } from './client';
 
@@ -403,21 +403,45 @@ function flushMicrotasks(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+// Shared setup for the settlement-recovery tests: clears localStorage, stubs
+// Math.random, creates the Sic Bo root, initialises the client, places the
+// standard any-triple bet at denomination 1, triggers the roll, and flushes
+// microtasks so the settlement promise settles. Callers install their own
+// fetch override BEFORE calling this so the settlement path observes it.
+async function setupRecoveryTest(): Promise<{
+	root: HTMLElement;
+	cleanup: () => void;
+}> {
+	localStorage.clear();
+	const origRandom = Math.random;
+	Math.random = () => 0;
+	const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+	initSicBoClient();
+	denomButton(1).click();
+	betButton('any-triple').click();
+	actionButton().click();
+	await flushMicrotasks();
+	return {
+		root,
+		cleanup: () => {
+			Math.random = origRandom;
+			root.remove();
+		},
+	};
+}
+
 describe('initSicBoClient — settlement recovery', () => {
+	// Restore globalThis.fetch after each test so a failing/custom fetch
+	// installed by one test never leaks into the next. The suite-level
+	// afterAll still runs as a final safety net.
+	afterEach(() => {
+		restore(origFetch, 'fetch');
+	});
+
 	test('settlement failure shows recovery UI with retry and reset buttons', async () => {
-		localStorage.clear();
 		installFailingFetch();
-		const origRandom = Math.random;
-		Math.random = () => 0;
-		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		const { cleanup } = await setupRecoveryTest();
 		try {
-			initSicBoClient();
-
-			denomButton(1).click();
-			betButton('any-triple').click();
-			actionButton().click();
-			await flushMicrotasks();
-
 			// Recovery container is visible.
 			const container = document.getElementById('sic-bo-settlement-recovery');
 			expect(container).not.toBeNull();
@@ -435,13 +459,11 @@ describe('initSicBoClient — settlement recovery', () => {
 			// Action button stays disabled while gate is blocked.
 			expect(actionButton().disabled).toBe(true);
 		} finally {
-			Math.random = origRandom;
-			root.remove();
+			cleanup();
 		}
 	});
 
 	test('retry success adopts balance and dispatches achievement event', async () => {
-		localStorage.clear();
 		let fetchCallCount = 0;
 		Object.defineProperty(globalThis, 'fetch', {
 			configurable: true,
@@ -460,23 +482,15 @@ describe('initSicBoClient — settlement recovery', () => {
 				};
 			},
 		});
-		const origRandom = Math.random;
-		Math.random = () => 0;
-		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+
+		const achievementEvents: Array<{ achievements: unknown }> = [];
+		const onAchievement = (event: Event): void => {
+			achievementEvents.push((event as CustomEvent).detail);
+		};
+		window.addEventListener('achievement-earned', onAchievement);
+
+		const { cleanup } = await setupRecoveryTest();
 		try {
-			initSicBoClient();
-
-			const achievementEvents: Array<{ achievements: unknown }> = [];
-			const onAchievement = (event: Event): void => {
-				achievementEvents.push((event as CustomEvent).detail);
-			};
-			window.addEventListener('achievement-earned', onAchievement);
-
-			denomButton(1).click();
-			betButton('any-triple').click();
-			actionButton().click();
-			await flushMicrotasks();
-
 			// Settlement failed — recovery visible.
 			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
 				'Settlement failed. Retry or reset before rolling again.',
@@ -499,28 +513,16 @@ describe('initSicBoClient — settlement recovery', () => {
 
 			// Action button unlocked (gate no longer blocked).
 			expect(actionButton().disabled).toBe(false);
-
-			window.removeEventListener('achievement-earned', onAchievement);
 		} finally {
-			Math.random = origRandom;
-			root.remove();
+			window.removeEventListener('achievement-earned', onAchievement);
+			cleanup();
 		}
 	});
 
 	test('retry failure shows updated recovery message', async () => {
-		localStorage.clear();
 		installFailingFetch();
-		const origRandom = Math.random;
-		Math.random = () => 0;
-		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		const { cleanup } = await setupRecoveryTest();
 		try {
-			initSicBoClient();
-
-			denomButton(1).click();
-			betButton('any-triple').click();
-			actionButton().click();
-			await flushMicrotasks();
-
 			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
 				'Settlement failed. Retry or reset before rolling again.',
 			);
@@ -537,25 +539,14 @@ describe('initSicBoClient — settlement recovery', () => {
 			const container = document.getElementById('sic-bo-settlement-recovery');
 			expect(container?.classList.contains('hidden')).toBe(false);
 		} finally {
-			Math.random = origRandom;
-			root.remove();
+			cleanup();
 		}
 	});
 
 	test('reset round restores server balance and hides recovery', async () => {
-		localStorage.clear();
 		installFailingFetch();
-		const origRandom = Math.random;
-		Math.random = () => 0;
-		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		const { cleanup } = await setupRecoveryTest();
 		try {
-			initSicBoClient();
-
-			denomButton(1).click();
-			betButton('any-triple').click();
-			actionButton().click();
-			await flushMicrotasks();
-
 			// After failed settlement, balance is locally 1024 (from the roll).
 			expect(balanceEl().textContent).toBe('1,024');
 
@@ -573,8 +564,7 @@ describe('initSicBoClient — settlement recovery', () => {
 			expect(actionButton().disabled).toBe(false);
 			expect(betAmount('any-triple').textContent).toBe('1');
 		} finally {
-			Math.random = origRandom;
-			root.remove();
+			cleanup();
 		}
 	});
 });

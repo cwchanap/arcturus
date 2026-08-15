@@ -26,7 +26,15 @@ export const TOTAL_ODDS = {
 } as const;
 
 const PRIMARY_BET_KEYS = new Set(['big', 'small', 'odd', 'even', 'any-triple']);
-const SUPPORTED_TOTALS = new Set<number>(Object.keys(TOTAL_ODDS).map(Number));
+/**
+ * Canonical `total:N` bet keys derived from `TOTAL_ODDS`. Membership is checked
+ * as exact strings so non-canonical suffixes (`total:04`, `total:4.0`,
+ * `total:4e0`, `total:0x4`, `total: 4 `) are rejected rather than coerced by
+ * `Number()` into a supported total.
+ */
+const SUPPORTED_TOTAL_KEYS = new Set<string>(
+	Object.keys(TOTAL_ODDS).map((total) => `total:${total}`),
+);
 
 /**
  * Runtime guard for Sic Bo bet keys. The `SicBoBetKey` type is a closed template
@@ -36,9 +44,7 @@ const SUPPORTED_TOTALS = new Set<number>(Object.keys(TOTAL_ODDS).map(Number));
  */
 export function isSupportedBetKey(key: string): key is SicBoBetKey {
 	if (PRIMARY_BET_KEYS.has(key)) return true;
-	if (!key.startsWith('total:')) return false;
-	const total = Number(key.slice('total:'.length));
-	return Number.isInteger(total) && SUPPORTED_TOTALS.has(total);
+	return SUPPORTED_TOTAL_KEYS.has(key);
 }
 
 /** Odds for a bet key. Big/Small/Odd/Even pay even money. */

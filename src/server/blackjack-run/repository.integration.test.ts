@@ -14,6 +14,14 @@ const NOW_SECONDS = 1_800_000_000;
 const SEED_A = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const SEED_B = 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
 
+// Real-time unix seconds for expiry-CAS tests. The command append SQL uses
+// expiresAt > unixepoch() (DB time), so tests that exercise the expiry guard
+// must set expiresAt relative to the real clock, not the fixed NOW_SECONDS
+// constant (which is in 2027 and therefore always in the future).
+function realNowSeconds(): number {
+	return Math.trunc(Date.now() / 1000);
+}
+
 let mf: Miniflare;
 let db: D1Database;
 let repository: BlackjackRunRepository;
@@ -343,8 +351,9 @@ describe('ranked command appends with stake', () => {
 	});
 
 	test('an expired wager append is not applied and does not debit the balance', async () => {
+		const expiredAt = realNowSeconds() - 1;
 		await repository.createRankedRunWithStake(
-			rankedStartInput({ id: runId(21), expiresAt: NOW_SECONDS }),
+			rankedStartInput({ id: runId(21), expiresAt: expiredAt }),
 		);
 		const result = await repository.appendRankedCommandWithStake({
 			userId: USER_ID,
@@ -357,6 +366,33 @@ describe('ranked command appends with stake', () => {
 		expect(result).toEqual({ kind: 'not-applied' });
 		expect(await readBalance()).toEqual({ chipBalance: 900 });
 		const run = await repository.findOwnedRun(USER_ID, runId(21));
+		expect(run!.nextSequence).toBe(0);
+		expect(run!.commands).toEqual([]);
+	});
+
+	test('a stale nowSeconds captured before TTL cannot commit a command after TTL', async () => {
+		// Simulate the interleaving race: the request captured nowSeconds
+		// BEFORE the run expired, but the DB write happens AFTER TTL. With the
+		// old expiresAt > ? bound to nowSeconds, the CAS would pass (stale
+		// timestamp) and the command would commit post-expiry. With
+		// expiresAt > unixepoch() the CAS uses DB time at write execution and
+		// correctly rejects the late write.
+		const expiresAt = realNowSeconds() - 1;
+		const staleNowSeconds = realNowSeconds() - 2; // captured before expiresAt
+		await repository.createRankedRunWithStake(
+			rankedStartInput({ id: runId(22), expiresAt: expiresAt }),
+		);
+		const result = await repository.appendRankedCommandWithStake({
+			userId: USER_ID,
+			runId: runId(22),
+			expectedSequence: 0,
+			commandsJson: JSON.stringify([{ sequence: 0, command: 'split' }]),
+			additionalWager: 100,
+			nowSeconds: staleNowSeconds,
+		});
+		expect(result).toEqual({ kind: 'not-applied' });
+		expect(await readBalance()).toEqual({ chipBalance: 900 });
+		const run = await repository.findOwnedRun(USER_ID, runId(22));
 		expect(run!.nextSequence).toBe(0);
 		expect(run!.commands).toEqual([]);
 	});
@@ -393,7 +429,8 @@ describe('daily command appends', () => {
 	});
 
 	test('an expired daily append is not applied and leaves the log and balance unchanged', async () => {
-		await repository.createDailyRun(dailyStartInput({ id: runId(31), expiresAt: NOW_SECONDS }));
+		const expiredAt = realNowSeconds() - 1;
+		await repository.createDailyRun(dailyStartInput({ id: runId(31), expiresAt: expiredAt }));
 		const before = await readBalance();
 		const result = await repository.appendDailyCommand({
 			userId: USER_ID,
@@ -404,6 +441,26 @@ describe('daily command appends', () => {
 		});
 		expect(result).toEqual({ kind: 'not-applied' });
 		expect(await readBalance()).toEqual(before);
+		const run = await repository.findDailyRun(USER_ID, '2026-10-11');
+		expect(run!.nextSequence).toBe(0);
+		expect(run!.commands).toEqual([]);
+	});
+
+	test('a stale nowSeconds captured before TTL cannot commit a daily command after TTL', async () => {
+		// Same interleaving race as the Ranked variant: nowSeconds was
+		// captured before the run expired, but the DB write happens after
+		// TTL. The DB-time CAS (expiresAt > unixepoch()) must reject it.
+		const expiresAt = realNowSeconds() - 1;
+		const staleNowSeconds = realNowSeconds() - 2;
+		await repository.createDailyRun(dailyStartInput({ id: runId(32), expiresAt: expiresAt }));
+		const result = await repository.appendDailyCommand({
+			userId: USER_ID,
+			runId: runId(32),
+			expectedSequence: 0,
+			commandsJson: JSON.stringify([{ sequence: 0, command: 'start-round', wager: 100 }]),
+			nowSeconds: staleNowSeconds,
+		});
+		expect(result).toEqual({ kind: 'not-applied' });
 		const run = await repository.findDailyRun(USER_ID, '2026-10-11');
 		expect(run!.nextSequence).toBe(0);
 		expect(run!.commands).toEqual([]);

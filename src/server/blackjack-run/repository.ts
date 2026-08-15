@@ -216,10 +216,15 @@ WHERE id = ?
 		WHERE id = ? AND userId = ? AND activeUserId = ? AND mode = 'ranked' AND status = 'active'
 	)`;
 
+// The expiry CAS uses unixepoch() (DB time at write execution) rather than a
+// request-captured timestamp. A request that begins before TTL can stall and
+// reach the DB write after TTL; binding expiresAt > ? to a stale nowSeconds
+// would let that late write commit a command after the run has actually
+// expired, racing the expiration sweeper's forced-loss wallet settlement.
 const RANKED_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId = ? AND mode = 'ranked'
-	AND status = 'active' AND nextSequence = ? AND expiresAt > ?
+	AND status = 'active' AND nextSequence = ? AND expiresAt > unixepoch()
 	AND EXISTS (SELECT 1 FROM user WHERE id = ? AND chipBalance >= ?)`;
 
 // Guarded atomic Ranked action: the command append runs first (its own CAS on
@@ -255,7 +260,7 @@ ON CONFLICT DO NOTHING`;
 const DAILY_COMMAND_APPEND_SQL = `UPDATE blackjack_run
 SET commandsJson = ?, nextSequence = nextSequence + 1, updatedAt = ?
 WHERE id = ? AND userId = ? AND activeUserId IS NULL AND mode = 'daily'
-	AND status = 'active' AND nextSequence = ? AND expiresAt > ?`;
+	AND status = 'active' AND nextSequence = ? AND expiresAt > unixepoch()`;
 
 const RANKED_FINISH_SQL = `UPDATE blackjack_run
 SET activeUserId = NULL, status = ?, resultJson = ?, dailyEndingBankroll = ?,
@@ -513,7 +518,6 @@ async function executeRankedCommandAppend(
 			input.userId,
 			input.userId,
 			input.expectedSequence,
-			input.nowSeconds,
 			input.userId,
 			input.additionalWager,
 		);
@@ -552,17 +556,20 @@ async function executeRankedCommandAppend(
 	// this batch's append (the connection's most recent write), so append=0
 	// forces debit=0. No concurrent batch can have applied this command, so
 	// append=0 means the command is simply not in the log.
+	// The expiry check uses unixepoch() for the same reason as the append CAS:
+	// a stale nowSeconds would misclassify a late write as insufficient when
+	// the run has actually expired.
 	const row = await db
 		.prepare(
-			'SELECT status, nextSequence, expiresAt FROM blackjack_run WHERE id = ? AND userId = ? LIMIT 1',
+			'SELECT status, nextSequence, expiresAt > unixepoch() AS notExpired FROM blackjack_run WHERE id = ? AND userId = ? LIMIT 1',
 		)
 		.bind(input.runId, input.userId)
-		.first<{ status: string; nextSequence: number; expiresAt: number }>();
+		.first<{ status: string; nextSequence: number; notExpired: number }>();
 	if (
 		row &&
 		row.status === 'active' &&
 		row.nextSequence === input.expectedSequence &&
-		row.expiresAt > input.nowSeconds
+		row.notExpired === 1
 	) {
 		return { kind: 'insufficient' };
 	}
@@ -577,14 +584,7 @@ async function executeDailyCommandAppend(
 	assertSafeNonNegativeInteger(input.nowSeconds, 'command nowSeconds');
 	const result = await db
 		.prepare(DAILY_COMMAND_APPEND_SQL)
-		.bind(
-			input.commandsJson,
-			input.nowSeconds,
-			input.runId,
-			input.userId,
-			input.expectedSequence,
-			input.nowSeconds,
-		)
+		.bind(input.commandsJson, input.nowSeconds, input.runId, input.userId, input.expectedSequence)
 		.run();
 	return readChanges(result, 'daily command append') === 1
 		? { kind: 'applied' }

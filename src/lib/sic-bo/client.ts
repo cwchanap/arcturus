@@ -110,7 +110,8 @@ export function initSicBoClient(): void {
 		if (resultEl) {
 			if (state.result) {
 				const delta = state.result.netDelta;
-				resultEl.textContent = delta > 0 ? `Won +${delta}` : delta < 0 ? `Lost ${delta}` : 'Push';
+				resultEl.textContent =
+					delta > 0 ? `Won +${delta}` : delta < 0 ? `Lost ${Math.abs(delta)}` : 'Push';
 			} else {
 				resultEl.textContent = '';
 			}

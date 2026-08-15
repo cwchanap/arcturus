@@ -4,7 +4,7 @@
  */
 
 import { rollThreeDice } from './dice';
-import { SIC_BO_CHIP_DENOMINATIONS, resolveBet } from './rules';
+import { SIC_BO_CHIP_DENOMINATIONS, isSupportedBetKey, resolveBet } from './rules';
 import type { SicBoBetKey, SicBoPhase, SicBoRoll, SicBoRoundResult, SicBoState } from './types';
 
 export class SicBoGame {
@@ -33,6 +33,7 @@ export class SicBoGame {
 	}
 
 	getBetError(key: SicBoBetKey, amount: number): string | null {
+		if (!isSupportedBetKey(key)) return 'Unsupported bet';
 		if (this.phase !== 'betting') return 'Bets can only change before rolling';
 		if (!SIC_BO_CHIP_DENOMINATIONS.includes(amount as (typeof SIC_BO_CHIP_DENOMINATIONS)[number])) {
 			return 'Choose a valid chip denomination';

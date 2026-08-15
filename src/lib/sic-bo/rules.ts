@@ -25,8 +25,25 @@ export const TOTAL_ODDS = {
 	17: 50,
 } as const;
 
+const PRIMARY_BET_KEYS = new Set(['big', 'small', 'odd', 'even', 'any-triple']);
+const SUPPORTED_TOTALS = new Set<number>(Object.keys(TOTAL_ODDS).map(Number));
+
+/**
+ * Runtime guard for Sic Bo bet keys. The `SicBoBetKey` type is a closed template
+ * literal, but TypeScript types are erased at runtime and the client casts DOM
+ * attributes with `as SicBoBetKey`. Forged keys such as `total:3` or `total:18`
+ * would otherwise index `TOTAL_ODDS` out of bounds and produce `NaN` odds.
+ */
+export function isSupportedBetKey(key: string): key is SicBoBetKey {
+	if (PRIMARY_BET_KEYS.has(key)) return true;
+	if (!key.startsWith('total:')) return false;
+	const total = Number(key.slice('total:'.length));
+	return Number.isInteger(total) && SUPPORTED_TOTALS.has(total);
+}
+
 /** Odds for a bet key. Big/Small/Odd/Even pay even money. */
 export function getBetOdds(key: SicBoBetKey): number {
+	if (!isSupportedBetKey(key)) throw new Error(`Unsupported Sic Bo bet key: ${key}`);
 	switch (key) {
 		case 'big':
 		case 'small':
@@ -42,6 +59,7 @@ export function getBetOdds(key: SicBoBetKey): number {
 
 /** Whether a bet wins on a given roll. Big/Small/Odd/Even lose on every triple. */
 export function isWinningBet(key: SicBoBetKey, roll: SicBoRoll): boolean {
+	if (!isSupportedBetKey(key)) throw new Error(`Unsupported Sic Bo bet key: ${key}`);
 	const [a, b, c] = roll;
 	const sum = a + b + c;
 	const isTriple = a === b && b === c;

@@ -7,6 +7,7 @@ export {
 	SIC_BO_CHIP_DENOMINATIONS,
 	TOTAL_ODDS,
 	getBetOdds,
+	isSupportedBetKey,
 	isWinningBet,
 	resolveBet,
 } from './rules';

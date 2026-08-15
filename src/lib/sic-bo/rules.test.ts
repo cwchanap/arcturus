@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	getBetOdds,
+	isSupportedBetKey,
 	isWinningBet,
 	resolveBet,
 	SIC_BO_CHIP_DENOMINATIONS,
@@ -121,5 +122,49 @@ describe('resolveBet', () => {
 			won: false,
 			grossReturn: 0,
 		});
+	});
+});
+
+describe('isSupportedBetKey', () => {
+	test('accepts primary keys and valid exact totals', () => {
+		expect(isSupportedBetKey('big')).toBe(true);
+		expect(isSupportedBetKey('small')).toBe(true);
+		expect(isSupportedBetKey('odd')).toBe(true);
+		expect(isSupportedBetKey('even')).toBe(true);
+		expect(isSupportedBetKey('any-triple')).toBe(true);
+		expect(isSupportedBetKey('total:4')).toBe(true);
+		expect(isSupportedBetKey('total:17')).toBe(true);
+	});
+
+	test('rejects forged totals outside 4-17', () => {
+		expect(isSupportedBetKey('total:3')).toBe(false);
+		expect(isSupportedBetKey('total:18')).toBe(false);
+		expect(isSupportedBetKey('total:0')).toBe(false);
+		expect(isSupportedBetKey('total:99')).toBe(false);
+	});
+
+	test('rejects unknown keys and malformed totals', () => {
+		expect(isSupportedBetKey('doubles')).toBe(false);
+		expect(isSupportedBetKey('total:')).toBe(false);
+		expect(isSupportedBetKey('total:abc')).toBe(false);
+		expect(isSupportedBetKey('')).toBe(false);
+	});
+});
+
+describe('forged bet key rejection', () => {
+	test('getBetOdds throws on forged totals instead of returning NaN', () => {
+		expect(() => getBetOdds('total:3' as never)).toThrow();
+		expect(() => getBetOdds('total:18' as never)).toThrow();
+		expect(() => getBetOdds('doubles' as never)).toThrow();
+	});
+
+	test('isWinningBet throws on forged totals instead of producing a result', () => {
+		expect(() => isWinningBet('total:3' as never, [1, 1, 1])).toThrow();
+		expect(() => isWinningBet('total:18' as never, [6, 6, 6])).toThrow();
+	});
+
+	test('resolveBet throws on forged keys so no NaN grossReturn is produced', () => {
+		expect(() => resolveBet({ key: 'total:3' as never, amount: 10 }, [1, 1, 1])).toThrow();
+		expect(() => resolveBet({ key: 'total:18' as never, amount: 10 }, [6, 6, 6])).toThrow();
 	});
 });

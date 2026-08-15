@@ -349,20 +349,18 @@ describe('daily page — guest bootstrap and local practice', () => {
 			!afterStart.activeRoundPublic?.availableActions.includes('stand'),
 		);
 
-		if (afterStart.activeRoundPublic?.availableActions.includes('stand')) {
-			button(root, 'daily-challenge-action-stand').click();
-			await flush();
-			const afterStand = replayDailyRun(SEED_A, [
-				{ sequence: 0, command: 'start-round', wager: 10 },
-				{ sequence: 1, command: 'stand' },
-			]);
-			expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
-				formatCurrency(afterStand.availableBankroll),
-			);
-			expect(get(root, 'daily-challenge-round-progress').textContent).toBe(
-				roundLabel(afterStand.roundsCompleted),
-			);
-		}
+		const afterStand = replayDailyRun(SEED_A, [
+			{ sequence: 0, command: 'start-round', wager: 10 },
+			{ sequence: 1, command: 'stand' },
+		]);
+		button(root, 'daily-challenge-action-stand').click();
+		await flush();
+		expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
+			formatCurrency(afterStand.availableBankroll),
+		);
+		expect(get(root, 'daily-challenge-round-progress').textContent).toBe(
+			roundLabel(afterStand.roundsCompleted),
+		);
 
 		expect(postedRequests()).toHaveLength(0);
 		expect(fetchLog.some((entry) => entry.url.includes('/api/blackjack-runs'))).toBe(false);
@@ -410,9 +408,22 @@ describe('daily page — guest bootstrap and local practice', () => {
 
 	test('surfaces an error when the guest current endpoint fails unexpectedly', async () => {
 		const root = makeRoot(false);
-		globalThis.fetch = mock(() =>
-			Promise.resolve(new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), { status: 500 })),
-		) as typeof fetch;
+		// Only the guest-current endpoint fails; the leaderboard still loads so
+		// the assertion observes the guest-current error itself.
+		globalThis.fetch = mock((input: RequestInfo | URL) => {
+			const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+			if (url === '/api/blackjack-daily/current') {
+				return Promise.resolve(
+					new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), { status: 500 }),
+				);
+			}
+			return Promise.resolve(
+				new Response(JSON.stringify(LEADERBOARD_PAYLOAD), {
+					status: 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+			);
+		}) as typeof fetch;
 
 		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
 
@@ -420,6 +431,21 @@ describe('daily page — guest bootstrap and local practice', () => {
 		// Practice remains playable offline.
 		expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
 			formatCurrency(DAILY_RUN_CONFIG.startingBankroll),
+		);
+	});
+
+	test('surfaces a visible error when the leaderboard request fails or is malformed', async () => {
+		const root = makeRoot(false);
+		globalThis.fetch = mock(() =>
+			Promise.resolve(new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), { status: 500 })),
+		) as typeof fetch;
+
+		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
+
+		// A failed/malformed leaderboard renders an error status instead of an
+		// indistinguishably empty leaderboard.
+		expect(get(root, 'daily-challenge-status').textContent).toBe(
+			'Daily leaderboard is unavailable — refresh to retry.',
 		);
 	});
 

@@ -43,10 +43,10 @@ export const walletSettlement = sqliteTable(
 		balance: integer('balance').notNull(),
 		createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.settlementId] }),
-		createdIdx: index('wallet_settlement_created_idx').on(table.createdAt),
-	}),
+	(table) => [
+		primaryKey({ columns: [table.userId, table.settlementId] }),
+		index('wallet_settlement_created_idx').on(table.createdAt),
+	],
 );
 
 export const account = sqliteTable('account', {
@@ -85,9 +85,7 @@ export const mission = sqliteTable(
 			.references(() => user.id),
 		completedDate: integer('completedDate', { mode: 'timestamp' }),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.missionId] }),
-	}),
+	(table) => [primaryKey({ columns: [table.userId, table.missionId] })],
 );
 
 export const missionProgress = sqliteTable(
@@ -103,9 +101,7 @@ export const missionProgress = sqliteTable(
 		completedAt: integer('completedAt', { mode: 'timestamp' }),
 		claimedAt: integer('claimedAt', { mode: 'timestamp' }),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.missionDefId, table.periodKey] }),
-	}),
+	(table) => [primaryKey({ columns: [table.userId, table.missionDefId, table.periodKey] })],
 );
 
 export const missionGameTried = sqliteTable(
@@ -119,11 +115,11 @@ export const missionGameTried = sqliteTable(
 		gameType: text('gameType').notNull(),
 		firstTriedAt: integer('firstTriedAt').notNull(),
 	},
-	(table) => ({
-		pk: primaryKey({
+	(table) => [
+		primaryKey({
 			columns: [table.userId, table.missionDefId, table.periodKey, table.gameType],
 		}),
-	}),
+	],
 );
 
 export const loginStreak = sqliteTable('login_streak', {
@@ -146,16 +142,16 @@ export const missionOverride = sqliteTable(
 		replacementMissionDefId: text('replacementMissionDefId').notNull(),
 		rerolledAt: integer('rerolledAt', { mode: 'timestamp' }).notNull(),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.periodKey, table.originalMissionDefId] }),
+	(table) => [
+		primaryKey({ columns: [table.userId, table.periodKey, table.originalMissionDefId] }),
 		// One reroll per user per daily period. The PK alone allows multiple
 		// rows for the same (userId, periodKey) keyed by originalMissionDefId;
 		// this unique constraint closes the concurrent-reroll race where two
 		// requests both pass the read-side `overrides.length === 0` check and
 		// both INSERT. The reroll path uses INSERT ... ON CONFLICT(userId,
 		// periodKey) DO NOTHING and treats 0 rows affected as `reroll-used`.
-		onePerDay: unique('mission_override_one_per_day').on(table.userId, table.periodKey),
-	}),
+		unique('mission_override_one_per_day').on(table.userId, table.periodKey),
+	],
 );
 
 /**
@@ -181,16 +177,13 @@ export const gameStats = sqliteTable(
 
 		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.gameType] }),
+	(table) => [
+		primaryKey({ columns: [table.userId, table.gameType] }),
 		// Indexes for leaderboard queries
-		gameTypeWinsIdx: index('game_stats_type_wins_idx').on(table.gameType, table.totalWins),
-		gameTypeProfitIdx: index('game_stats_type_profit_idx').on(table.gameType, table.netProfit),
-		gameTypeBiggestWinIdx: index('game_stats_type_biggest_win_idx').on(
-			table.gameType,
-			table.biggestWin,
-		),
-	}),
+		index('game_stats_type_wins_idx').on(table.gameType, table.totalWins),
+		index('game_stats_type_profit_idx').on(table.gameType, table.netProfit),
+		index('game_stats_type_biggest_win_idx').on(table.gameType, table.biggestWin),
+	],
 );
 
 /**
@@ -208,11 +201,11 @@ export const userAchievement = sqliteTable(
 		// Game context when achievement was earned (null for global achievements)
 		gameType: text('gameType'),
 	},
-	(table) => ({
-		pk: primaryKey({ columns: [table.userId, table.achievementId] }),
+	(table) => [
+		primaryKey({ columns: [table.userId, table.achievementId] }),
 		// Index for fetching user's achievements
-		userEarnedIdx: index('user_achievement_user_earned_idx').on(table.userId, table.earnedAt),
-	}),
+		index('user_achievement_user_earned_idx').on(table.userId, table.earnedAt),
+	],
 );
 
 export const blackjackRun = sqliteTable(
@@ -252,22 +245,21 @@ export const blackjackRun = sqliteTable(
 		updatedAt: integer('updatedAt', { mode: 'timestamp' }).notNull(),
 		settledAt: integer('settledAt', { mode: 'timestamp' }),
 	},
-	(table) => ({
-		startRequestUnique: uniqueIndex('blackjack_run_user_start_request_idx').on(
-			table.userId,
-			table.startRequestId,
-		),
-		activeUserModeUnique: uniqueIndex('blackjack_run_active_user_mode_idx').on(
-			table.activeUserId,
-			table.mode,
-		),
-		userModePeriodUnique: uniqueIndex('blackjack_run_user_mode_period_idx').on(
-			table.userId,
+	(table) => [
+		uniqueIndex('blackjack_run_user_start_request_idx').on(table.userId, table.startRequestId),
+		uniqueIndex('blackjack_run_active_user_mode_idx').on(table.activeUserId, table.mode),
+		uniqueIndex('blackjack_run_user_mode_period_idx').on(table.userId, table.mode, table.periodKey),
+		index('blackjack_run_status_expiry_idx').on(table.status, table.expiresAt),
+		// Serves the Daily leaderboard filter (mode/periodKey/status) and its
+		// leading sort keys; settledAt/userId stay in-scan tie-breakers.
+		index('blackjack_run_daily_leaderboard_idx').on(
 			table.mode,
 			table.periodKey,
+			table.status,
+			table.dailyEndingBankroll,
+			table.dailyRoundsCompleted,
 		),
-		expiryIdx: index('blackjack_run_status_expiry_idx').on(table.status, table.expiresAt),
-	}),
+	],
 );
 
 export const blackjackDaily = sqliteTable('blackjack_daily', {

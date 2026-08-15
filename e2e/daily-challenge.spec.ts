@@ -83,9 +83,11 @@ function isLegacyDailyEndpoint(url: string): boolean {
 }
 
 function parseDailyState(text: string): Extract<BlackjackRunPublicState, { mode: 'daily' }> {
-	const state = blackjackRunPublicStateSchema.parse(JSON.parse(text) as unknown);
+	const state: BlackjackRunPublicState = blackjackRunPublicStateSchema.parse(
+		JSON.parse(text) as unknown,
+	);
 	expect(state.mode).toBe('daily');
-	return state;
+	return state as Extract<BlackjackRunPublicState, { mode: 'daily' }>;
 }
 
 type WriteRecord = { url: string; method: string };
@@ -187,7 +189,7 @@ async function assertNoLegacyDailyUi(page: Page): Promise<void> {
 		'[data-testid="daily-challenge-commitment"]',
 		'[data-testid="daily-challenge-reveal-status"]',
 	];
-	expect(page.locator(legacySelectors.join(','))).toHaveCount(0);
+	await expect(page.locator(legacySelectors.join(','))).toHaveCount(0);
 	expect(
 		await page.evaluate(() =>
 			Object.keys(localStorage).filter((key) => key.toLowerCase().includes('daily')),
@@ -260,7 +262,10 @@ test.describe('daily challenge — guest surface and browser-local practice', ()
 			}
 			await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
 
-			// Leaderboard rows render for guests from the public endpoint.
+			// Leaderboard rows render for guests from the public endpoint. The
+			// container must be visible even when the day has no entries yet, so
+			// an empty leaderboard is still distinguishable from a missing one.
+			await expect(page.getByTestId('daily-challenge-leaderboard-rows')).toBeVisible();
 			const rows = page.getByTestId('daily-challenge-leaderboard-row');
 			const rowCount = await rows.count();
 			for (let index = 0; index < rowCount; index += 1) {

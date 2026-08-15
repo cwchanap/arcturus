@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { Card, Rank, Suit } from '../blackjack/types';
 import {
 	projectBlackjackRoundReplay,
 	replayBlackjackRound,
@@ -7,43 +6,7 @@ import {
 	shuffleDeck,
 } from './engine';
 import { BlackjackRunError, type BlackjackAction } from './protocol';
-
-const SUITS: readonly Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
-const RANKS: readonly Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
-function card(rank: Rank, suit: Suit): Card {
-	return { rank, suit };
-}
-
-/**
- * Builds a complete, unique 52-card deck. `draws` is written in human deal
- * order, while the returned deck places those cards in reverse at the array
- * end because Blackjack deals with `pop()` semantics.
- */
-function deckWithDraws(...draws: readonly Card[]): Card[] {
-	const canonicalDeck = SUITS.flatMap((suit) => RANKS.map((rank) => card(rank, suit)));
-	const drawKeys = new Set(draws.map(({ rank, suit }) => `${rank}:${suit}`));
-	expect(drawKeys.size).toBe(draws.length);
-	const deck = [
-		...canonicalDeck.filter(({ rank, suit }) => !drawKeys.has(`${rank}:${suit}`)),
-		...[...draws].reverse(),
-	];
-	expect(deck).toHaveLength(52);
-	return deck;
-}
-
-function deckForMixedSplit(): Card[] {
-	return deckWithDraws(
-		card('8', 'hearts'),
-		card('8', 'diamonds'),
-		card('6', 'hearts'),
-		card('10', 'clubs'),
-		card('10', 'hearts'),
-		card('9', 'hearts'),
-		card('10', 'diamonds'),
-		card('2', 'clubs'),
-	);
-}
+import { card, deckWithDraws, splitCapableDeck } from './deck-helpers';
 
 function deckForFourHands(): Card[] {
 	return deckWithDraws(
@@ -230,11 +193,7 @@ describe('Blackjack dealer transition and settlement', () => {
 	});
 
 	test('a final split-hand bust still runs the dealer when an earlier hand stood', () => {
-		const replay = replayBlackjackRoundWithDeck(100, deckForMixedSplit(), [
-			'split',
-			'stand',
-			'hit',
-		]);
+		const replay = replayBlackjackRoundWithDeck(100, splitCapableDeck(), ['split', 'stand', 'hit']);
 		expect(replay.state.phase).toBe('complete');
 		// Dealer drew exactly one card (the 2♣) to a hard 16 then stood at 18.
 		// Pinning the exact cards catches a regression where the dealer

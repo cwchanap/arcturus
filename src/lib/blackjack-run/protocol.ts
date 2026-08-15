@@ -70,7 +70,7 @@ const cardSchema = z
 
 const handValueSchema = z
 	.object({
-		value: z.number(),
+		value: safeIntegerSchema,
 		isSoft: z.boolean(),
 		isBust: z.boolean(),
 	})
@@ -148,7 +148,8 @@ export const blackjackRunPublicStateSchema = z.discriminatedUnion('mode', [
 			roundsCompleted: safeIntegerSchema.min(0),
 			activeRound: blackjackActiveRoundSchema.nullable(),
 			rank: safeIntegerSchema.min(1).nullable(),
-			percentile: z.number().min(0).max(100).nullable(),
+			// calculateDailyPercentile emits integers clamped to 1-100.
+			percentile: safeIntegerSchema.min(1).max(100).nullable(),
 		})
 		.strict(),
 ]);

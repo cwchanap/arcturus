@@ -20,7 +20,7 @@
 - `SETTLEMENT_CONFLICT` is retryable and never becomes a skipped payout.
 - Daily: starting bankroll 1,000; 10 rounds; wager 10–1,000; 30-minute TTL; entry closes 30 minutes before UTC day end.
 - Daily Practice is local-only. Keep current Daily rank/totalEligible/percentile.
-- No Daily covering index or separate score/result/history table.
+- No separate Daily score/result/history table (a plain leaderboard index on `blackjack_run` is allowed).
 - No localStorage run ownership, durable queue, automatic retry/backoff, compatibility parser, hash/commitment/receipt display, or durable throttling.
 - Delete `ranked_debut` and +100 first-Ranked reward.
 - Completed Ranked rounds intentionally enter shared `game_stats`, missions, and evaluated achievements.
@@ -52,6 +52,20 @@ git grep -lE \
   -- src e2e scripts drizzle CLAUDE.md README.md \
   | sort -u > /tmp/hpa-553-files.txt
 ```
+
+- [ ] Build an import and symbol inventory next, because the path regex above
+  misses aliased imports and legacy symbol references in files it does not
+  match:
+
+```bash
+git grep -nE "(import|export)[^'\"]*['\"][^'\"]*(ranked|daily-challenge|dailyChallenge|seedCommitment|receiptHash)[^'\"]*['\"]" \
+  -- src e2e scripts | sort -u > /tmp/hpa-553-imports.txt
+```
+
+  The classification below uses the file list **and** this symbol inventory as
+  its source, so an aliased import (`import x as legacySession from ...`) or a
+  legacy symbol referenced from an otherwise-unrelated path is still
+  classified rather than silently kept.
 
 - [ ] Create `/tmp/hpa-553-classified.tsv` with exactly one row per path:
 
@@ -115,7 +129,7 @@ Record only genuine pre-existing failures.
 - Produces: `replayBlackjackRound`, `replayDailyRun`, period/window/scoring/percentile helpers
 - Produces: Ranked wager constants, additional-wager mapping, expiry outcome, terminal settlement-command builder
 
-### Step 1.1: move Ranked engine/projection tests first
+## Step 1.1: move Ranked engine/projection tests first
 
 - [ ] Move behavioral cases into `src/lib/blackjack-run/engine.test.ts` for deterministic deal, hit, stand, double, split/multiple hands, blackjack, bust, push, dealer draw, legal actions, and public projection.
 
@@ -141,7 +155,7 @@ export function replayBlackjackRound(input: {
 
 No adapter registry, ruleset version, hashes, commitments, or generic game type.
 
-### Step 1.2: move Daily replay/window/seed/scoring behavior
+## Step 1.2: move Daily replay/window/seed/scoring behavior
 
 - [ ] Move useful tests into `daily.test.ts` covering:
   - `getDailyPeriodKey` / real-calendar UTC windows;
@@ -167,7 +181,7 @@ export function compareDailyScores(left: DailyScore, right: DailyScore): number;
 export function calculateDailyPercentile(totalEligible: number, playersStrictlyAbove: number): number;
 ```
 
-### Step 1.3: define strict Zod protocol
+## Step 1.3: define strict Zod protocol
 
 - [ ] Add `protocol.test.ts` cases proving:
   - only `ranked|daily` starts parse;
@@ -189,7 +203,7 @@ export const blackjackRunCommandSchema = z.discriminatedUnion('command', [
 
 - [ ] Infer TypeScript types from Zod. Do not add `Envelope<TState, TResult>` or a separate handwritten HTTP contract.
 
-### Step 1.4: Ranked pure mapping
+## Step 1.4: Ranked pure mapping
 
 - [ ] Add tests for:
   - wager min/max;
@@ -222,7 +236,7 @@ export function buildRankedSettlementCommand(
 }
 ```
 
-### Step 1.5: verify pure core
+## Step 1.5: verify pure core
 
 ```bash
 bun test \
@@ -250,7 +264,7 @@ bunx prettier --write src/lib/blackjack-run
 - Existing wallet callers remain source-compatible and keep current semantics
 - Ranked terminal can credit gross payout while recording true net profit
 
-### Step 2.1: write failing wallet tests
+## Step 2.1: write failing wallet tests
 
 - [ ] Add tests proving:
   1. omitted `stats.netProfit` still records `command.delta` as net profit;
@@ -260,7 +274,7 @@ bunx prettier --write src/lib/blackjack-run
   5. unsafe/out-of-bound `netProfit` is rejected;
   6. `rounds >= 1` remains enforced.
 
-### Step 2.2: extend the type/validator minimally
+## Step 2.2: extend the type/validator minimally
 
 - [ ] Change only `RoundStats`:
 
@@ -278,7 +292,7 @@ export interface RoundStats {
 
 Do not add a mode/kind/options object or zero-round settlement concept.
 
-### Step 2.3: use gameplay net profit for stats/missions
+## Step 2.3: use gameplay net profit for stats/missions
 
 - [ ] In wallet repository logic:
 
@@ -295,7 +309,7 @@ const outcome =
 
 - [ ] Keep account balance mutation based only on `command.delta`.
 
-### Step 2.4: verify wallet regression surface
+## Step 2.4: verify wallet regression surface
 
 ```bash
 bun test src/lib/wallet
@@ -322,7 +336,7 @@ Existing games must pass unchanged.
 - Ranked start/action methods own atomic run+stake updates
 - Daily methods never touch `user.chipBalance`
 
-### Step 3.1: write D1 integration tests first
+## Step 3.1: write D1 integration tests first
 
 - [ ] Reuse the existing Ranked Miniflare/migration helper; do not create a third D1 harness.
 
@@ -341,7 +355,7 @@ Existing games must pass unchanged.
   12. leaderboard ordering + current-user standing inputs;
   13. expired page cursor ordering `(expiresAt,id)`.
 
-### Step 3.2: add new tables beside old ones
+## Step 3.2: add new tables beside old ones
 
 - [ ] Add `blackjackRun` with fields:
 
@@ -359,13 +373,20 @@ uniqueIndex('blackjack_run_user_start_request_idx').on(table.userId, table.start
 uniqueIndex('blackjack_run_active_user_mode_idx').on(table.activeUserId, table.mode);
 uniqueIndex('blackjack_run_user_mode_period_idx').on(table.userId, table.mode, table.periodKey);
 index('blackjack_run_status_expiry_idx').on(table.status, table.expiresAt);
+index('blackjack_run_daily_leaderboard_idx').on(
+	table.mode,
+	table.periodKey,
+	table.status,
+	table.dailyEndingBankroll,
+	table.dailyRoundsCompleted,
+);
 ```
 
 - [ ] Add `blackjackDaily(periodKey, seed, createdAt)`.
 
 - [ ] Keep all old Ranked/Daily declarations unchanged in Task 3.
 
-### Step 3.3: implement explicit repository methods
+## Step 3.3: implement explicit repository methods
 
 - [ ] Implement:
 
@@ -388,11 +409,18 @@ listDailyLeaderboard(periodKey, limit, userId?)
 
 - [ ] `createRankedRunWithStake` must make run insert + initial debit one D1 batch outcome. Return a concrete result such as `applied | insufficient | active-exists | duplicate-request` rather than throwing for ordinary races.
 
+- [ ] `getOrCreateDaily(periodKey, seedFactory, nowSeconds)` must guarantee one
+  canonical `blackjack_daily` seed per period even under concurrent first
+  access: when the lazy insert loses the unique-key race, reload and return the
+  winning row's seed instead of retaining the locally generated seed. Cover
+  this with a race test (two concurrent first accesses with different
+  `seedFactory` draws both resolve to the single persisted winner seed).
+
 - [ ] `appendRankedCommandWithStake` must make additional debit + command append one batch outcome. If `additionalWager=0`, do only the guarded command update.
 
 Do not create an escrow table or generic transaction hook.
 
-### Step 3.4: implement Daily leaderboard/standing
+## Step 3.4: implement Daily leaderboard/standing
 
 - [ ] Keep SQL eligibility to:
 
@@ -412,7 +440,7 @@ WHERE mode='daily' AND periodKey=? AND status='completed'
 
 Reuse the moved score comparator/percentile semantics rather than inventing a new score.
 
-### Step 3.5: create additive migration only
+## Step 3.5: create additive migration only
 
 - [ ] Generate/inspect a migration that creates only:
   - `blackjack_run`;
@@ -421,7 +449,7 @@ Reuse the moved score comparator/percentile semantics rather than inventing a ne
 
 It must not drop/copy old data.
 
-### Step 3.6: verify intermediate tree
+## Step 3.6: verify intermediate tree
 
 ```bash
 bun test src/server/blackjack-run/repository.integration.test.ts
@@ -461,7 +489,7 @@ currentDaily(userId | null)
 leaderboard(periodKey, userId | null, limit)
 ```
 
-### Step 4.1: write Ranked lifecycle tests
+## Step 4.1: write Ranked lifecycle tests
 
 - [ ] Cover:
   1. valid/invalid start wager;
@@ -482,11 +510,11 @@ leaderboard(periodKey, userId | null, limit)
 
 There are no skipped-wallet tests.
 
-### Step 4.2: write Daily lifecycle tests
+## Step 4.2: write Daily lifecycle tests
 
 - [ ] Cover current period/window, one attempt, virtual bankroll actions, no wallet call, eligible completion, bankroll-below-minimum completion, forfeit, expiration, current-after-terminal, rank/percentile standing.
 
-### Step 4.3: implement service dispatch with one switch
+## Step 4.3: implement service dispatch with one switch
 
 - [ ] Use one concrete replay switch:
 
@@ -499,7 +527,7 @@ switch (record.mode) {
 
 No mode adapter interface.
 
-### Step 4.4: implement Ranked start/action around atomic repository methods
+## Step 4.4: implement Ranked start/action around atomic repository methods
 
 - [ ] Start flow:
 
@@ -524,7 +552,7 @@ if terminal -> finalizeRankedTerminal
 return state
 ```
 
-### Step 4.5: terminal convergence
+## Step 4.5: terminal convergence
 
 - [ ] Implement one Ranked finalizer:
 
@@ -543,7 +571,7 @@ if finish lost race -> reload stored run
 
 - [ ] `get`, `current`, and `loadRun` service reads call terminal finalization when replay says an active Ranked row is gameplay-terminal. This lets a later explicit read converge after a transient conflict.
 
-### Step 4.6: verify service
+## Step 4.6: verify service
 
 ```bash
 bun test src/server/blackjack-run/service.test.ts
@@ -571,7 +599,7 @@ bun run test
 - By-ID GET supports `client.loadRun(runId)` uncertain-response recovery
 - New expiration job runs beside old scheduled jobs temporarily
 
-### Step 5.1: HTTP/error tests
+## Step 5.1: HTTP/error tests
 
 - [ ] Cover auth, invalid JSON/schema, not found/ownership, sequence mismatch payload, retryable `SETTLEMENT_CONFLICT`, and closed response parsing.
 
@@ -588,7 +616,7 @@ GET  /api/blackjack-daily/:periodKey/leaderboard
 
 Do not add a route barrel or generic API helper framework.
 
-### Step 5.2: move robust expiration mechanics
+## Step 5.2: move robust expiration mechanics
 
 - [ ] Move tests/implementation for:
   - `(expiresAt,id)` cursor;
@@ -600,13 +628,13 @@ Do not add a route barrel or generic API helper framework.
 
 - [ ] Point scanner at `repository.listExpiredPage` and `service.expire`.
 
-### Step 5.3: temporary scheduled wiring
+## Step 5.3: temporary scheduled wiring
 
 - [ ] Add `blackjackRunExpiration` while keeping old Ranked/Daily jobs for old rows until Task 8.
 
 No new run-retention job.
 
-### Step 5.4: verify
+## Step 5.4: verify
 
 ```bash
 bun test \
@@ -632,7 +660,7 @@ bun run build
 - Rewrite: `e2e/ranked-blackjack.spec.ts`
 - Keep old Ranked runtime/routes until Task 8
 
-### Step 6.1: shared client tests
+## Step 6.1: shared client tests
 
 - [ ] Cover:
   - `loadCurrent('ranked')`;
@@ -647,7 +675,7 @@ bun run build
 
 - [ ] Implement using `fetchJsonWithTimeout` only.
 
-### Step 6.2: Ranked UI behavior
+## Step 6.2: Ranked UI behavior
 
 - [ ] Move only wager/cards/actions/countdown/pending/error/result DOM behavior.
 
@@ -657,11 +685,11 @@ bun run build
 
 - [ ] Delete receipt/hash/commitment/version/reward-effect UI and stale multiplayer wallet-lock copy.
 
-### Step 6.3: switch `ranked.astro`
+## Step 6.3: switch `ranked.astro`
 
 - [ ] Initialize the new UI/client and remove old client script from the live page. Keep old server code/routes for one more task boundary.
 
-### Step 6.4: rewrite and run Ranked E2E now
+## Step 6.4: rewrite and run Ranked E2E now
 
 - [ ] E2E must prove:
   1. authenticated start with known balance;
@@ -699,7 +727,7 @@ Do not defer the first new-page E2E run until after deletion.
 - Rewrite: `e2e/daily-challenge.spec.ts`
 - Keep old Daily server/routes until Task 8
 
-### Step 7.1: Daily UI tests
+## Step 7.1: Daily UI tests
 
 - [ ] Cover:
   - guest Practice + sign-in CTA;
@@ -712,7 +740,7 @@ Do not defer the first new-page E2E run until after deletion.
   - current-user `rank`, `totalEligible`, `percentile` rendering;
   - no exact replay/history requests.
 
-### Step 7.2: local Practice
+## Step 7.2: local Practice
 
 - [ ] Implement:
 
@@ -725,15 +753,23 @@ restart -> fresh seed + []
 
 No API, localStorage, practice run ID, or persisted practice seed.
 
-### Step 7.3: simplify live page
+## Step 7.3: simplify live page
 
 - [ ] Keep current period/reset, Practice/Ranked switch, virtual bankroll/progress/actions, forfeit, terminal result, leaderboard, rank/percentile.
+
+- [ ] Preserve guest access as an intentional, documented exception to the
+  standard `Astro.locals.user` redirect: unauthenticated visitors may load the
+  current Daily period, the public leaderboard, and browser-local Practice,
+  and must NOT be redirected to `/signin`. Record the exception as a code
+  comment on the page (mirroring the middleware behavior, which never
+  redirects), and keep the sign-in CTA as the entry point for the ranked
+  attempt. Do not add a redirect to this page or to its API surface.
 
 - [ ] Remove exact-ranked replay, historical replay, seven-day history, receipt/hash/commitment/version copy.
 
 - [ ] Remove the historical `[periodKey]` page with no compatibility redirect.
 
-### Step 7.4: rewrite and run Daily E2E now
+## Step 7.4: rewrite and run Daily E2E now
 
 - [ ] Prove:
   1. guest current Daily/leaderboard load;
@@ -772,7 +808,7 @@ bunx playwright test e2e/daily-challenge.spec.ts
 - Modify: achievement files for `ranked_debut` deletion
 - Create: destructive cutover migration
 
-### Step 8.1: delete old runtime/routes only after both E2E flows are green
+## Step 8.1: delete old runtime/routes only after both E2E flows are green
 
 - [ ] Delete old roots/callers:
 
@@ -790,7 +826,7 @@ Keep unrelated generic Blackjack rules.
 
 - [ ] Remove old scheduled jobs and keep only `blackjackRunExpiration` for this domain.
 
-### Step 8.2: delete Ranked Debut product plumbing
+## Step 8.2: delete Ranked Debut product plumbing
 
 - [ ] Remove `ranked_debut` from:
   - achievement ID union/list;
@@ -800,7 +836,7 @@ Keep unrelated generic Blackjack rules.
 
 - [ ] Delete old `ranked_debut_100` reward assumptions with the old repository.
 
-### Step 8.3: create destructive migration with active-stake refund
+## Step 8.3: create destructive migration with active-stake refund
 
 - [ ] Before dropping `ranked_session`, refund active committed wagers:
 
@@ -828,7 +864,7 @@ The current active-owner unique constraint means at most one active old Ranked s
 
 - [ ] Remove old Drizzle declarations in the same task.
 
-### Step 8.4: inventory/deletion/anti-abstraction gates
+## Step 8.4: inventory/deletion/anti-abstraction gates
 
 - [ ] Rerun the preflight classification and inspect every surviving old identifier.
 
@@ -852,7 +888,7 @@ git grep -nE 'Adapter|Registry|rate.?limit|seed.?commit|receipt.?hash|config.?ha
 
 Inspect any match; expected architecture matches are empty.
 
-### Step 8.5: final verification
+## Step 8.5: final verification
 
 - [ ] Run full quality suite:
 
@@ -870,7 +906,7 @@ bun run test:e2e
 bunx playwright test e2e/ranked-blackjack.spec.ts e2e/daily-challenge.spec.ts
 ```
 
-### Step 8.6: prove runtime got smaller
+## Step 8.6: prove runtime got smaller
 
 - [ ] Count final module LOC:
 
@@ -890,27 +926,44 @@ git diff --numstat origin/main...HEAD | awk '{ added += $1; deleted += $2 } END 
 
 Documentation does not justify runtime growth.
 
-### Step 8.7: deployment order
+## Step 8.7: deployment order
 
 The release is intentionally breaking; do not add dual-read/dual-write support.
+Follow an expand/deploy/contract sequence so the old Worker never sees a
+missing or half-dropped schema and the new Worker never serves against
+tables that do not exist yet:
 
-- [ ] Deploy the new Worker first:
-
-```bash
-bun run deploy
-```
-
-- [ ] Confirm deployment health/build completed successfully. A short window where new DB-backed game routes are unavailable before migration is accepted for this hobby project.
-
-- [ ] Immediately apply pending production migrations:
+- [ ] Apply the **additive** migration (new tables/indexes only) to production
+  **before** deploying:
 
 ```bash
 bun run db:migrate:remote
 ```
 
-This creates new tables if not already present, refunds active old Ranked stakes, and drops old tables only after the new Worker owns traffic.
+The old Worker ignores the new tables; creating them early removes the window
+where the new Worker would serve DB-backed routes before its schema exists.
 
-- [ ] Verify Ranked and Daily live smoke flows after migration.
+- [ ] Deploy the new Worker and move traffic to it:
+
+```bash
+bun run deploy
+```
+
+- [ ] Confirm the new Worker deployment is healthy and the Ranked/Daily smoke
+  paths work against the additive schema (old tables still exist, so reads and
+  refunds are possible).
+
+- [ ] Only once the new Worker owns traffic, apply the **destructive** cutover
+  migration (active old Ranked stake refunds + old table drops):
+
+```bash
+bun run db:migrate:remote
+```
+
+- [ ] Verify Ranked start/action/terminal and Daily current/leaderboard paths
+  after the destructive migration.
+
+Never run the destructive drop while the old Worker is still serving requests.
 
 **Commit:** `refactor(blackjack): delete legacy run stacks`
 
@@ -927,11 +980,11 @@ This creates new tables if not already present, refunds active old Ranked stakes
 - [ ] Ranked contributes once per completed run to shared game stats/missions/evaluated achievements.
 - [ ] `ranked_debut` and +100 reward are gone.
 - [ ] Daily Practice is local and Daily rank/percentile remains.
-- [ ] Final persistence is only `blackjack_run` + `blackjack_daily` for this domain; no covering leaderboard index/score/history table.
+- [ ] Final persistence is only `blackjack_run` + `blackjack_daily` for this domain; no separate leaderboard score/result/history table (a plain index on `blackjack_run` for the leaderboard query is allowed).
 - [ ] Ranked E2E passed in Task 6 before old deletion.
 - [ ] Daily E2E passed in Task 7 before old deletion.
 - [ ] Active old Ranked committed wagers are refunded before old table drop.
-- [ ] New Worker deploy precedes destructive production migration.
-- [ ] Old protocols/hashes/commitments/receipts/rate/history/browser recovery are deleted.
+- [ ] Additive migrations are applied before the new Worker deploy; the destructive refund/drop migration runs only after the new Worker owns traffic.
+- [ ] Old protocols/hashes/commitments/receipts/rate-limit/history surfaces are deleted, together with the legacy browser recovery machinery: no localStorage run ownership, no persisted retry queue, and no automatic backoff/retry loop. Uncertain-response recovery is exclusively the explicit `loadRun(runId)` by-ID path.
 - [ ] Full tests/lint/format/build/E2E pass after cutover.
 - [ ] Final authoritative source + tests are materially smaller than the old two stacks.

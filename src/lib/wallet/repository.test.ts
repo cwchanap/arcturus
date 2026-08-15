@@ -143,19 +143,21 @@ async function insertUser(userId: string, chipBalance = 1000): Promise<void> {
 		.run();
 }
 
-async function readGameStats(userId: string): Promise<{
+interface GameStatsRow {
 	totalWins: number;
 	totalLosses: number;
 	handsPlayed: number;
 	biggestWin: number;
 	netProfit: number;
-} | null> {
+}
+
+async function readGameStats(userId: string): Promise<GameStatsRow | null> {
 	return db!
 		.prepare(
 			'SELECT totalWins, totalLosses, handsPlayed, biggestWin, netProfit FROM game_stats WHERE userId = ? AND gameType = ?',
 		)
 		.bind(userId, 'blackjack')
-		.first();
+		.first<GameStatsRow>();
 }
 
 async function insertWalletSettlement(

@@ -105,9 +105,13 @@ function defaultCreateRequestId(): string {
 	) {
 		return globalThis.crypto.randomUUID();
 	}
-	// Fallback nonce (36 chars, [A-Za-z0-9-]); randomUUID is universal in
-	// modern browsers and Workers, so this is defense in depth only.
-	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 18)}`;
+	// Fallback nonce; randomUUID is universal in modern browsers and Workers,
+	// so this is defense in depth only. Math.random().toString(36) can yield
+	// as few as zero fraction digits, so the random component is padded to at
+	// least 11 characters: 8 (Date.now base-36) + 1 (hyphen) + 11 >= the
+	// 16-character requestIdSchema minimum.
+	const random = Math.random().toString(36).slice(2, 18).padEnd(11, '0');
+	return `${Date.now().toString(36)}-${random}`;
 }
 
 export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): BlackjackRunClient {

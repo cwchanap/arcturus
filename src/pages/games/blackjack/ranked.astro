@@ -293,7 +293,13 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 					Math.ceil((state.expiresAt * 1000 - Date.now()) / 1000),
 				);
 				renderer.renderCountdown(secondsRemaining);
-				if (secondsRemaining <= 0) stopCountdown();
+				if (secondsRemaining <= 0) {
+					// TTL reached: stop the interval and reload the authoritative
+					// run by ID so the expired result renders instead of a frozen
+					// countdown at 0:00.
+					stopCountdown();
+					void request(() => client.loadRun(state.runId));
+				}
 			};
 			tick();
 			countdownHandle = setInterval(tick, 1000);
@@ -313,16 +319,35 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 			renderer.renderError(error instanceof Error ? error.message : 'Ranked run request failed');
 		};
 
+		/**
+		 * Runs one guarded client request at a time. While a request is in
+		 * flight the renderer is pending, so duplicate clicks are ignored by
+		 * the disabled controls instead of surfacing the client's in-flight
+		 * guard as an error. Clearing pending on settle also restores the
+		 * idle/rendered controls after a failed load or run request, so the
+		 * user can start or retry after an initial load failure.
+		 */
+		const request = (operation: () => Promise<BlackjackRunPublicState | null>): void => {
+			renderer.setPending(true);
+			operation()
+				.then(adopt)
+				.catch(fail)
+				.finally(() => {
+					renderer.setPending(false);
+				});
+		};
+
 		renderer.bind({
 			onStart(wager) {
-				client.startRanked(wager).then(adopt).catch(fail);
+				request(() => client.startRanked(wager));
 			},
 			onAction(action) {
 				if (!current || current.status !== 'active') return;
-				client.command(current.runId, { command: action }).then(adopt).catch(fail);
+				const runId = current.runId;
+				request(() => client.command(runId, { command: action }));
 			},
 		});
 
-		client.loadCurrent('ranked').then(adopt).catch(fail);
+		request(() => client.loadCurrent('ranked'));
 	}
 </script>

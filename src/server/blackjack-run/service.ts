@@ -221,7 +221,16 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		if (run.status !== 'active' || nowSeconds < run.expiresAt) {
 			return this.renderRunState(run.userId, run);
 		}
-		if (run.mode === 'daily') return this.finalizeDailyExpired(run, nowSeconds);
+		if (run.mode === 'daily') {
+			// Replay before expiring: a command log that already reached a
+			// terminal state (e.g. the completing command committed but no read
+			// finalized the row yet) must finalize as terminal and keep its
+			// leaderboard eligibility instead of being marked expired.
+			if (this.replayDaily(run).status !== 'active') {
+				return this.finalizeDailyTerminal(run.userId, run, nowSeconds);
+			}
+			return this.finalizeDailyExpired(run, nowSeconds);
+		}
 		const replay = this.replayRanked(run);
 		if (replay.state.phase === 'complete') {
 			return this.finalizeRankedTerminal(
@@ -512,7 +521,14 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 	): Promise<BlackjackRunPublicState> {
 		const nowSeconds = this.nowSeconds();
 		if (run.status !== 'active') return this.renderRunState(userId, run);
-		if (nowSeconds >= run.expiresAt) return this.finalizeDailyExpired(run, nowSeconds);
+		if (nowSeconds >= run.expiresAt) {
+			// Same replay check as expire(): a late command whose log already
+			// completed must not flip an eligible attempt to expired.
+			if (this.replayDaily(run).status !== 'active') {
+				return this.finalizeDailyTerminal(userId, run, nowSeconds);
+			}
+			return this.finalizeDailyExpired(run, nowSeconds);
+		}
 		if (command.sequence < run.nextSequence) {
 			const stored = run.commands[command.sequence];
 			if (stored && stored.command === command.command && stored.wager === command.wager) {

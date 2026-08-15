@@ -1,4 +1,5 @@
 import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/presentation';
+import { MAXIMUM_WAGER, MINIMUM_WAGER } from './ranked';
 import type { BlackjackAction, BlackjackRunPublicState } from './protocol';
 
 /**
@@ -27,24 +28,21 @@ export interface RankedRunRenderer {
 	renderError(message: string): void;
 }
 
-const MINIMUM_WAGER = 10;
-const MAXIMUM_WAGER = 1000;
-
 const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
+
+function formatChips(value: number): string {
+	return `$${new Intl.NumberFormat('en-US').format(value)}`;
+}
 
 const PRESENTATION_OPTIONS = {
 	testIdPrefix: 'ranked',
-	formatWager: (value: number) => `$${new Intl.NumberFormat('en-US').format(value)}`,
+	formatWager: formatChips,
 } as const;
 
 function requireElement<T extends Element>(root: ParentNode, selector: string): T {
 	const element = root.querySelector<T>(selector);
 	if (!element) throw new Error(`Ranked Blackjack is missing ${selector}`);
 	return element;
-}
-
-function formatChips(value: number): string {
-	return `$${new Intl.NumberFormat('en-US').format(value)}`;
 }
 
 function formatSignedChips(value: number): string {
@@ -96,7 +94,13 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 		wager.disabled = pending || isActive;
 		start.disabled = pending || isActive;
 		for (const [action, button] of actionButtons) {
-			button.disabled = pending || !isActive || !current.availableActions.includes(action);
+			// Without a rendered active state every action stays disabled
+			// (idle/terminal render); only an active run exposes legal actions.
+			button.disabled =
+				pending ||
+				current === null ||
+				current.status !== 'active' ||
+				!current.availableActions.includes(action);
 		}
 	};
 

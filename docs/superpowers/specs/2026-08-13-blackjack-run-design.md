@@ -156,8 +156,8 @@ No adapter registry or game dispatch survives.
 - expiration is ineligible;
 - deterministic distinct per-round seeds;
 - calendar-valid UTC period windows;
-- `compareDailyChallengeScores` ordering;
-- `calculateDailyChallengePercentile` current-user standing.
+- `compareDailyScores` ordering;
+- `calculateDailyPercentile` current-user standing.
 
 Leaderboard ordering remains:
 
@@ -292,7 +292,12 @@ blackjack_daily
   createdAt NOT NULL
 ```
 
-Create the current row lazily. Derive starts/entry-close/end timestamps from `periodKey`. Delete persisted Practice seed and version/config/commitment fields.
+Create the current row lazily. Concurrent first accesses race on the
+`periodKey` primary key: exactly one insert wins, and losers reload and return
+the winning row's seed — every run for the period then replays against one
+canonical seed, and the locally generated losing seed is discarded. Derive
+starts/entry-close/end timestamps from `periodKey`. Delete persisted Practice
+seed and version/config/commitment fields.
 
 ### Ranked Daily attempt
 
@@ -355,9 +360,10 @@ Final indexes/constraints:
 - unique `(userId, startRequestId)`;
 - unique `(activeUserId, mode)`;
 - unique `(userId, mode, periodKey)`;
-- `(status, expiresAt)`.
+- `(status, expiresAt)`;
+- `(mode, periodKey, status, dailyEndingBankroll, dailyRoundsCompleted)` serving the leaderboard filter and leading sort keys.
 
-No Daily covering index, score table, result table, or history table.
+No Daily score table, result table, or history table.
 
 Leaderboard query filters `mode='daily'`, period, and `status='completed'`, then orders by the retained score/tie-break rules. The two score projection columns avoid JSON extraction.
 
@@ -453,16 +459,22 @@ This one-time refund is intentionally small and prevents the cutover from silent
 
 ## Deployment order
 
-The release remains intentionally breaking and accepts a short maintenance window.
+The release remains intentionally breaking and accepts a short maintenance
+window, structured as expand → deploy → contract:
 
-Final production order:
-
-1. deploy the new Worker code first;
-2. confirm the Worker deployment itself is healthy;
-3. immediately apply all pending D1 migrations, including creation of the new tables and the active-stake refund/drop cutover;
+1. apply the additive D1 migrations (new `blackjack_run`/`blackjack_daily`
+   tables and their indexes) **before** deploying — the old Worker ignores the
+   new tables, so this is safe while old traffic is live;
+2. deploy the new Worker code and move traffic to it — the new Worker runs
+   against the additive schema while the old tables still exist;
+3. once the new Worker is confirmed healthy and owns traffic, apply the
+   destructive cutover migration: refund every active old Ranked stake, then
+   drop the old Ranked/Daily tables;
 4. verify Ranked start/action/terminal and Daily current/leaderboard paths.
 
-Do not run the destructive drop while the old Worker is still serving requests. Do not build dual-read/dual-write compatibility solely to eliminate the short cutover window.
+Never apply the destructive drop while the old Worker is still serving
+requests. Do not build dual-read/dual-write compatibility solely to eliminate
+the short cutover window.
 
 ## Risks and mitigations
 
@@ -559,7 +571,7 @@ Final cutover task reruns the full suite but does not postpone first E2E discove
 - Ranked initial and additional wagers are real atomic account debits, preserving current stake semantics.
 - Ranked terminal credits gross payout through `settleWalletRound`; shared stats/missions use the true net result through the one optional `stats.netProfit` override.
 - No skipped-wallet terminal policy exists; transient `SETTLEMENT_CONFLICT` remains retryable.
-- Final persistence is only `blackjack_run` + `blackjack_daily`, with no Daily covering index/score/history table.
+- Final persistence is only `blackjack_run` + `blackjack_daily`, with no separate Daily score/history table (a plain leaderboard index on `blackjack_run` is allowed).
 - Daily current-user rank/percentile remains available.
 - Old active Ranked committed wagers are refunded before old table drop.
 - `ranked_debut`/+100 is removed and Ranked now participates in shared stats/missions/evaluated achievements.

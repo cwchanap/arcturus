@@ -58,6 +58,30 @@ describe('wallet settlement validation', () => {
 	});
 
 	test('rejects unsafe or out-of-bound netProfit statistics', () => {
+		// JSON-relevant non-numeric values (null, numeric string) must be
+		// rejected by requireSafeInteger, not coerced.
+		expectInvalid(
+			command({
+				stats: {
+					rounds: 1,
+					wins: 0,
+					losses: 0,
+					biggestWin: 0,
+					netProfit: null as never,
+				},
+			}),
+		);
+		expectInvalid(
+			command({
+				stats: {
+					rounds: 1,
+					wins: 0,
+					losses: 0,
+					biggestWin: 0,
+					netProfit: '100' as never,
+				},
+			}),
+		);
 		expectInvalid(
 			command({
 				stats: {

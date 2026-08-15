@@ -4,7 +4,7 @@
 
 **Goal:** Add one focused Three-Card Showdown game with Ante → Fold/Play gameplay, a minimal shared card/deck primitive, guest-local bankrolls, and the existing authenticated wallet-settlement flow.
 
-**Architecture:** Extract Video Poker's standard 52-card type/deck helper into `src/lib/cards.ts`, then build a self-contained `src/lib/three-card-showdown` rules/state module. The Astro page/client composes existing `CardSlot`, public-game session, wager validation, and wallet gate/recovery APIs; no server route or persistence is added.
+**Architecture:** Extract Video Poker's standard 52-card type/deck helper into `src/lib/cards.ts`, while preserving Video Poker's existing `types.ts` card-type surface. Build a self-contained `src/lib/three-card-showdown` rules/state module. The Astro page/client copies the existing Video Poker/Sic Bo composition seams literally: public-session root dataset, `CardSlot`/`setSlotState`, wallet gate/recovery, authoritative balance adoption, and achievement forwarding.
 
 **Tech Stack:** Astro 5, TypeScript, Bun tests, Happy DOM, Playwright, existing Cloudflare Worker/D1 wallet APIs.
 
@@ -18,11 +18,12 @@
 - Deal requires `2 * ante <= balance`, so Play is always affordable after Deal.
 - Guest completion is local-only. Authenticated Fold/Play submits exactly one net wallet settlement through the existing gate.
 - Register exact label `Three-Card Showdown` and icon `♠️`.
-- No database migration, new API endpoint, automatic retry, persisted settlement queue, compatibility alias, generic evaluator, base game class, generic client controller, or Texas Hold'em refactor.
+- `three-card-showdown` becomes the tenth `GAME_TYPES` entry.
+- No database migration, new API endpoint, automatic retry, persisted settlement queue, generic evaluator, base game class, generic client controller, paytable engine, or Texas Hold'em/Blackjack card refactor.
 
 ---
 
-## Task 1: Extract the neutral 52-card primitive and keep Video Poker behavior unchanged
+## Task 1: Extract the neutral 52-card primitive without breaking Video Poker's type surface
 
 **Files:**
 - Create: `src/lib/cards.ts`
@@ -33,7 +34,8 @@
 - Modify: `src/lib/video-poker/game.ts`
 - Modify: `src/lib/video-poker/client.ts`
 - Modify: `src/lib/video-poker/index.ts`
-- Modify: any `src/lib/video-poker/*.test.ts` importing the removed local card file/type
+- Test: `src/lib/video-poker/evaluator.test.ts`
+- Test: all other `src/lib/video-poker/*.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -47,9 +49,10 @@ export function shuffleDeck(deck: readonly Card[], random?: () => number): Card[
 export function createShuffledDeck(random?: () => number): Card[];
 ```
 
+- Preserves: `Card`, `Rank`, and `Suit` remain importable from `src/lib/video-poker/types.ts`.
 - Consumed by: Video Poker and Tasks 2-3.
 
-- [ ] **Step 1: Write the shared deck tests first**
+- [ ] **Step 1: Write the shared-card tests**
 
 Create `src/lib/cards.test.ts`:
 
@@ -67,13 +70,12 @@ describe('shared cards', () => {
     );
   });
 
-  test('shuffle is injectable and does not mutate the source', () => {
+  test('constant-zero Fisher-Yates is pinned and source stays unchanged', () => {
     const deck = createDeck();
     const snapshot = deck.map((card) => ({ ...card }));
     const shuffled = shuffleDeck(deck, () => 0);
 
     expect(deck).toEqual(snapshot);
-    expect(shuffled).toHaveLength(52);
     expect(shuffled.slice(0, 6)).toEqual([
       { rank: 3, suit: 'hearts' },
       { rank: 4, suit: 'hearts' },
@@ -86,7 +88,7 @@ describe('shared cards', () => {
 });
 ```
 
-- [ ] **Step 2: Verify the test fails before the shared module exists**
+- [ ] **Step 2: Verify the new test fails before `cards.ts` exists**
 
 Run:
 
@@ -94,9 +96,9 @@ Run:
 bun test src/lib/cards.test.ts
 ```
 
-Expected: FAIL because `src/lib/cards.ts` is missing.
+Expected: FAIL because `src/lib/cards.ts` does not exist.
 
-- [ ] **Step 3: Move the exact neutral implementation into `src/lib/cards.ts`**
+- [ ] **Step 3: Move only the neutral implementation into `src/lib/cards.ts`**
 
 ```ts
 export type Suit = 'hearts' | 'diamonds' | 'clubs' | 'spades';
@@ -128,18 +130,28 @@ export function createShuffledDeck(random: () => number = Math.random): Card[] {
 }
 ```
 
-Do not add a barrel, RNG interface, shoe, discard pile, formatter, or evaluator.
+Do not add a barrel, RNG interface, shoe, formatter, evaluator, or adapter for Poker/Blackjack.
 
-- [ ] **Step 4: Point Video Poker at `../cards` and delete its duplicate**
+- [ ] **Step 4: Preserve Video Poker's existing `types.ts` card imports**
 
-Use:
+Replace the local `Suit`, `Rank`, and `Card` declarations in `src/lib/video-poker/types.ts` with:
 
 ```ts
-// src/lib/video-poker/types.ts
 import type { Card } from '../cards';
+export type { Card, Rank, Suit } from '../cards';
 ```
 
-Remove the local `Suit`, `Rank`, and `Card` declarations.
+Keep `Card` used locally by `VideoPokerRoundResult` / `VideoPokerState`.
+
+This is required because `src/lib/video-poker/evaluator.test.ts` currently imports:
+
+```ts
+import type { Card, Rank, Suit } from './types';
+```
+
+Do not create or keep `src/lib/video-poker/cards.ts` as a compatibility wrapper.
+
+- [ ] **Step 5: Point Video Poker implementations at `../cards`**
 
 Use:
 
@@ -155,7 +167,7 @@ Use:
 import type { Card } from '../cards';
 ```
 
-Remove `Card` from `src/lib/video-poker/index.ts`'s type exports. Update focused tests that imported `./cards` to import `../cards`.
+Keep the current `src/lib/video-poker/index.ts` type export through `./types`, so its existing `Card` export continues to resolve through the new owner.
 
 Delete:
 
@@ -164,17 +176,17 @@ src/lib/video-poker/cards.ts
 src/lib/video-poker/cards.test.ts
 ```
 
-Do not add a compatibility re-export.
+Update any focused test that imported `./cards` to import `../cards`.
 
-- [ ] **Step 5: Run shared-card and all Video Poker tests**
+- [ ] **Step 6: Run shared-card and all Video Poker tests**
 
 ```bash
 bun test src/lib/cards.test.ts src/lib/video-poker/
 ```
 
-Expected: PASS.
+Expected: PASS, including `evaluator.test.ts` importing `Card`, `Rank`, and `Suit` from `./types`.
 
-- [ ] **Step 6: Commit Task 1**
+- [ ] **Step 7: Commit Task 1**
 
 ```bash
 git add src/lib/cards.ts src/lib/cards.test.ts src/lib/video-poker
@@ -183,7 +195,7 @@ git commit -m "refactor(cards): share neutral deck primitive"
 
 ---
 
-## Task 2: Implement three-card ranking, comparison, qualification, and payouts
+## Task 2: Implement pure three-card ranking, comparison, qualification, and payouts
 
 **Files:**
 - Create: `src/lib/three-card-showdown/types.ts`
@@ -201,12 +213,16 @@ export const ANTE_OPTIONS = [1, 5, 10, 25, 50, 100] as const;
 export function evaluateThreeCardHand(cards: readonly Card[]): ThreeCardHandEvaluation;
 export function compareThreeCardHands(left: ThreeCardHandEvaluation, right: ThreeCardHandEvaluation): -1 | 0 | 1;
 export function dealerQualifies(evaluation: ThreeCardHandEvaluation): boolean;
-export function resolvePlayedHand(playerCards: readonly Card[], dealerCards: readonly Card[], ante: number): ThreeCardShowdownRoundResult;
+export function resolvePlayedHand(
+  playerCards: readonly Card[],
+  dealerCards: readonly Card[],
+  ante: number,
+): ThreeCardShowdownRoundResult;
 ```
 
-- [ ] **Step 1: Create the domain types**
+- [ ] **Step 1: Create the Three-Card-only types**
 
-`src/lib/three-card-showdown/types.ts`:
+Create `src/lib/three-card-showdown/types.ts`:
 
 ```ts
 import type { Card } from '../cards';
@@ -256,50 +272,73 @@ export interface ThreeCardShowdownState {
 }
 ```
 
-- [ ] **Step 2: Write failing category/tie-break tests**
+- [ ] **Step 2: Write ranking and comparison tests before rules code**
 
-Use a local helper:
-
-```ts
-const card = (rank: Card['rank'], suit: Card['suit']): Card => ({ rank, suit });
-```
-
-Pin the non-five-card ordering:
+Use a small card helper and pin the important ordering:
 
 ```ts
-expect(compareThreeCardHands(
-  evaluateThreeCardHand([card(9, 'hearts'), card(8, 'clubs'), card(7, 'spades')]),
-  evaluateThreeCardHand([card(14, 'diamonds'), card(9, 'diamonds'), card(4, 'diamonds')]),
-)).toBe(1); // Straight beats Flush.
+const c = (rank: Rank, suit: Suit): Card => ({ rank, suit });
+
+expect(evaluateThreeCardHand([c(10, 'hearts'), c(11, 'hearts'), c(12, 'hearts')]).category)
+  .toBe('straight-flush');
+expect(evaluateThreeCardHand([c(9, 'hearts'), c(9, 'clubs'), c(9, 'spades')]).category)
+  .toBe('three-of-kind');
+expect(evaluateThreeCardHand([c(7, 'hearts'), c(8, 'clubs'), c(9, 'spades')]).category)
+  .toBe('straight');
+expect(evaluateThreeCardHand([c(14, 'hearts'), c(9, 'hearts'), c(4, 'hearts')]).category)
+  .toBe('flush');
 ```
 
-Pin straight edge cases:
+Add assertions for:
+
+```text
+Straight > Flush
+A-K-Q straightHigh = 14
+A-2-3 straightHigh = 3
+K-A-2 = High Card/Flush, not Straight
+Pair uses [pairRank, kicker]
+High Card/Flush compare ranks descending
+same ranks with different suits tie
+```
+
+- [ ] **Step 3: Write dealer qualification tests**
 
 ```ts
-expect(evaluateThreeCardHand([
-  card(14, 'hearts'), card(13, 'clubs'), card(12, 'spades'),
-]).tieBreakers).toEqual([14]);
-
-expect(evaluateThreeCardHand([
-  card(14, 'hearts'), card(2, 'clubs'), card(3, 'spades'),
-]).tieBreakers).toEqual([3]);
-
-expect(evaluateThreeCardHand([
-  card(13, 'hearts'), card(14, 'clubs'), card(2, 'spades'),
-]).category).toBe('high-card');
+expect(dealerQualifies(evaluateThreeCardHand([c(12, 'hearts'), c(9, 'clubs'), c(4, 'spades')]))).toBe(true);
+expect(dealerQualifies(evaluateThreeCardHand([c(11, 'hearts'), c(9, 'clubs'), c(4, 'spades')]))).toBe(false);
+expect(dealerQualifies(evaluateThreeCardHand([c(2, 'hearts'), c(2, 'clubs'), c(3, 'spades')]))).toBe(true);
 ```
 
-Also test Trips, Pair kicker, Flush/High Card lexicographic comparison, and identical-rank hands with different suits comparing equal.
+- [ ] **Step 4: Write all Play payout tests**
 
-- [ ] **Step 3: Run rules tests and verify failure**
+For Ante 10, pin:
+
+```ts
+expect(resolvePlayedHand(player, nonQualifyingDealer, 10)).toMatchObject({
+  outcome: 'dealer-not-qualified', totalWager: 20, grossPayout: 30, netDelta: 10,
+});
+expect(resolvePlayedHand(winningPlayer, qualifyingDealer, 10)).toMatchObject({
+  outcome: 'player-win', totalWager: 20, grossPayout: 40, netDelta: 20,
+});
+expect(resolvePlayedHand(tiedPlayer, tiedDealer, 10)).toMatchObject({
+  outcome: 'tie', totalWager: 20, grossPayout: 20, netDelta: 0,
+});
+expect(resolvePlayedHand(losingPlayer, qualifyingDealer, 10)).toMatchObject({
+  outcome: 'dealer-win', totalWager: 20, grossPayout: 0, netDelta: -20,
+});
+```
+
+- [ ] **Step 5: Run rules tests and verify failure**
 
 ```bash
 bun test src/lib/three-card-showdown/rules.test.ts
 ```
 
-Expected: FAIL because `rules.ts` is not implemented.
+Expected: FAIL because the rules module does not exist.
 
-- [ ] **Step 4: Implement category evaluation with one fixed strength table**
+- [ ] **Step 6: Implement category strength and straight detection**
+
+Use one local map:
 
 ```ts
 const CATEGORY_STRENGTH: Record<ThreeCardHandCategory, number> = {
@@ -312,59 +351,21 @@ const CATEGORY_STRENGTH: Record<ThreeCardHandCategory, number> = {
 };
 ```
 
-Implementation must:
+Treat sorted ranks `[2, 3, 14]` as straight-high `3`; ordinary consecutive ranks use their highest rank.
 
-- require exactly three cards;
-- sort ranks descending;
-- treat `14, 3, 2` as A-2-3 with straight-high 3;
-- treat ordinary consecutive ranks with `r0 === r1 + 1 && r1 === r2 + 1`;
-- detect flush from equal suits;
-- detect Pair/Trips from rank counts;
-- return tie breakers exactly as specified in the design.
+- [ ] **Step 7: Implement evaluation, comparison, qualification, and payout resolution**
 
-- [ ] **Step 5: Add and implement the Queen-high qualification boundary**
+Requirements:
 
-Tests:
-
-```ts
-expect(dealerQualifies(evaluateThreeCardHand([
-  card(12, 'hearts'), card(7, 'clubs'), card(2, 'spades'),
-]))).toBe(true);
-
-expect(dealerQualifies(evaluateThreeCardHand([
-  card(11, 'hearts'), card(10, 'clubs'), card(8, 'spades'),
-]))).toBe(false);
+```text
+exactly 3 cards or throw RangeError
+Straight Flush > Trips > Straight > Flush > Pair > High Card
+compare category strength, then tieBreakers lexicographically
+Pair-or-better always qualifies; High Card qualifies at Q-high+
+resolvePlayedHand returns frozen hands/evaluations and the payout table above
 ```
 
-Implementation: any Pair-or-better category qualifies; High Card qualifies when `tieBreakers[0] >= 12`.
-
-- [ ] **Step 6: Add payout tests for all four Play outcomes**
-
-Use Ante 10 and fixed hands. Assert:
-
-```ts
-expect(notQualified).toMatchObject({
-  outcome: 'dealer-not-qualified',
-  totalWager: 20,
-  grossPayout: 30,
-  netDelta: 10,
-  dealerQualified: false,
-});
-
-expect(playerWin).toMatchObject({
-  outcome: 'player-win', grossPayout: 40, netDelta: 20, dealerQualified: true,
-});
-expect(tie).toMatchObject({
-  outcome: 'tie', grossPayout: 20, netDelta: 0, dealerQualified: true,
-});
-expect(dealerWin).toMatchObject({
-  outcome: 'dealer-win', grossPayout: 0, netDelta: -20, dealerQualified: true,
-});
-```
-
-- [ ] **Step 7: Implement `resolvePlayedHand()` without bankroll logic**
-
-Evaluate both hands, determine dealer qualification, compare qualified hands, and return frozen copies. Do not mutate either input.
+Do not add a generic evaluator or paytable engine.
 
 - [ ] **Step 8: Run Task 2 tests**
 
@@ -378,19 +379,19 @@ Expected: PASS.
 
 ```bash
 git add src/lib/three-card-showdown/types.ts src/lib/three-card-showdown/rules.ts src/lib/three-card-showdown/rules.test.ts
-git commit -m "feat(three-card-showdown): add hand rules"
+git commit -m "feat(three-card-showdown): add pure rules"
 ```
 
 ---
 
-## Task 3: Implement the pure bankroll/deal/decision state machine
+## Task 3: Implement the pure bankroll/deal/decision lifecycle
 
 **Files:**
 - Create: `src/lib/three-card-showdown/game.ts`
 - Create: `src/lib/three-card-showdown/game.test.ts`
 
 **Interfaces:**
-- Consumes: shared `createShuffledDeck()`, `validateBet()`, Task 2 constants/rules/types.
+- Consumes: shared `createShuffledDeck`, `validateBet`, Task 2 rule functions/types.
 - Produces:
 
 ```ts
@@ -407,14 +408,13 @@ export class ThreeCardShowdownGame {
 }
 ```
 
-- [ ] **Step 1: Write failing initial/deal tests**
+- [ ] **Step 1: Write the Deal and state-transition tests**
 
 ```ts
 const game = new ThreeCardShowdownGame(100, () => 0);
-expect(game.getState()).toMatchObject({ phase: 'betting', balance: 100, ante: 1 });
-
 game.setAnte(10);
 game.deal();
+
 expect(game.getState().phase).toBe('decision');
 expect(game.getState().balance).toBe(90);
 expect(game.getState().playerHand).toEqual([
@@ -429,7 +429,9 @@ expect(game.getState().dealerHand).toEqual([
 ]);
 ```
 
-- [ ] **Step 2: Pin Ante validation and two-unit affordability**
+Also assert all six cards are unique.
+
+- [ ] **Step 2: Pin two-Ante affordability**
 
 ```ts
 const game = new ThreeCardShowdownGame(15);
@@ -437,53 +439,47 @@ expect(game.getAnteError(10)).toBe('Ante plus Play wager exceeds available balan
 expect(() => game.setAnte(10)).toThrow('Ante plus Play wager exceeds available balance');
 ```
 
-Also test non-integer, 0, and 101.
+Add non-integer, 0, and 101 cases.
 
-- [ ] **Step 3: Add Fold accounting test**
-
-With balance 100 / Ante 10:
+- [ ] **Step 3: Pin Fold accounting**
 
 ```ts
+const game = new ThreeCardShowdownGame(100, () => 0);
+game.setAnte(10);
 game.deal();
 const result = game.fold();
-expect(result).toMatchObject({
-  outcome: 'fold', totalWager: 10, grossPayout: 0, netDelta: -10,
-});
-expect(game.getState()).toMatchObject({ phase: 'complete', balance: 90 });
+
+expect(result).toMatchObject({ outcome: 'fold', totalWager: 10, grossPayout: 0, netDelta: -10 });
+expect(game.getState().phase).toBe('complete');
+expect(game.getState().balance).toBe(90);
 ```
 
-- [ ] **Step 4: Add deterministic Play accounting test**
+- [ ] **Step 4: Pin Play accounting**
 
-With `random = () => 0`, player has 3♥4♥5♥ and dealer 6♥7♥8♥, so the dealer wins.
+With `random = () => 0`, dealer wins:
 
 ```ts
 const game = new ThreeCardShowdownGame(100, () => 0);
 game.setAnte(10);
 game.deal();
 const result = game.play();
-expect(result).toMatchObject({
-  outcome: 'dealer-win',
-  totalWager: 20,
-  grossPayout: 0,
-  netDelta: -20,
-  dealerQualified: true,
-});
-expect(game.getState()).toMatchObject({ phase: 'complete', balance: 80 });
+
+expect(result.outcome).toBe('dealer-win');
+expect(result.netDelta).toBe(-20);
+expect(game.getState().balance).toBe(80);
 ```
 
-Add one fixture for dealer-not-qualified to assert stake-credit order: 100 → 90 after Deal → 80 after Play stake → 110 after gross payout 30.
+Also test a dealer-not-qualified fixture to prove gross payout is credited after the second wager.
 
-- [ ] **Step 5: Run the game tests and verify they fail**
+- [ ] **Step 5: Run game tests and verify failure**
 
 ```bash
 bun test src/lib/three-card-showdown/game.test.ts
 ```
 
-Expected: FAIL because `game.ts` is missing.
+Expected: FAIL because `game.ts` does not exist.
 
-- [ ] **Step 6: Implement balance normalization and cloning**
-
-Use:
+- [ ] **Step 6: Implement balance normalization and Ante validation**
 
 ```ts
 function normalizeBalance(balance: number): number {
@@ -494,50 +490,56 @@ function normalizeBalance(balance: number): number {
 }
 ```
 
-`getState()` and returned results must clone hands/evaluations/tie-breaker arrays so callers cannot mutate internal state.
+`getAnteError()` order:
 
-- [ ] **Step 7: Implement `getAnteError()` / `setAnte()`**
+```text
+whole number
+validateBet(ante, MIN_ANTE, MAX_ANTE)
+ante * 2 > balance -> "Ante plus Play wager exceeds available balance"
+```
 
-Validation order:
+- [ ] **Step 7: Implement Deal, Fold, and Play**
 
-1. `Number.isInteger(ante)` else `Ante must be a whole number of chips`;
-2. `validateBet(ante, MIN_ANTE, MAX_ANTE)`;
-3. `ante * 2 > balance` else `Ante plus Play wager exceeds available balance`.
+`deal()`:
 
-`setAnte()` is allowed only in `betting`.
-
-- [ ] **Step 8: Implement `deal()`**
-
-Require `betting`, re-check current Ante, create one shuffled deck, take first 3 player + next 3 dealer cards, deduct one Ante, enter `decision`.
-
-- [ ] **Step 9: Implement `fold()` and `play()`**
+```text
+require betting
+validate selected Ante
+create one shuffled deck
+player = first 3, dealer = next 3
+subtract one Ante
+enter decision
+```
 
 `fold()`:
 
-- require `decision`;
-- evaluate both dealt hands for frozen result data;
-- do not deduct a second wager;
-- create Fold result and enter `complete`.
+```text
+require decision
+evaluate both dealt hands
+no second wager
+result netDelta = -ante
+enter complete
+```
 
 `play()`:
 
-- require `decision`;
-- subtract the second Ante;
-- call `resolvePlayedHand()`;
-- credit `grossPayout`;
-- enter `complete`.
+```text
+require decision
+subtract second equal wager
+resolvePlayedHand(...)
+credit result.grossPayout
+enter complete
+```
 
-Both return cloned results and resolve only once.
+Return deep-cloned results from Fold/Play and deep-clone hands/results from `getState()`.
 
-- [ ] **Step 10: Implement `resetRound()` / `setBalance()` and invalid-transition tests**
+- [ ] **Step 8: Implement reset and authoritative balance adoption**
 
-`resetRound()` requires `complete`, clears both hands/result, retains selected Ante, returns to `betting`.
+`resetRound()` requires `complete`, clears both hands/result, keeps selected Ante, and returns to `betting`.
 
-`setBalance()` normalizes and changes only balance.
+`setBalance()` changes only the balance via `normalizeBalance()`.
 
-Assert Deal twice, Fold/Play before Deal, Fold/Play twice, and New Round before completion all throw.
-
-- [ ] **Step 11: Run Task 3 tests**
+- [ ] **Step 9: Run Task 3 tests**
 
 ```bash
 bun test src/lib/three-card-showdown/game.test.ts src/lib/three-card-showdown/rules.test.ts
@@ -545,7 +547,7 @@ bun test src/lib/three-card-showdown/game.test.ts src/lib/three-card-showdown/ru
 
 Expected: PASS.
 
-- [ ] **Step 12: Commit Task 3**
+- [ ] **Step 10: Commit Task 3**
 
 ```bash
 git add src/lib/three-card-showdown/game.ts src/lib/three-card-showdown/game.test.ts
@@ -554,7 +556,7 @@ git commit -m "feat(three-card-showdown): add pure game state"
 
 ---
 
-## Task 4: Register the game and add the page/client on existing shared seams
+## Task 4: Register the game and add the page/client by copying existing composition seams
 
 **Files:**
 - Create: `src/lib/three-card-showdown/client.ts`
@@ -578,23 +580,23 @@ export function buildThreeCardShowdownSettlementCommand(
 export function initThreeCardShowdownClient(): void;
 ```
 
-- [ ] **Step 1: Register the exact game type and pin it with a focused test**
+- [ ] **Step 1: Update the real game registry and its pinned tests**
 
-Append `three-card-showdown` to `GAME_TYPES` and add:
+Append `three-card-showdown` to `GAME_TYPES`, then add:
 
 ```ts
 GAME_TYPE_LABELS['three-card-showdown'] = 'Three-Card Showdown';
 GAME_TYPE_ICONS['three-card-showdown'] = '♠️';
 ```
 
-Add to `src/lib/game-stats/game-stats.test.ts`:
+In the existing `describe('constants')` coverage, explicitly update the pinned contract:
 
 ```ts
-test('registers Three-Card Showdown as a valid game type', () => {
-  expect(isValidGameType('three-card-showdown')).toBe(true);
-  expect(GAME_TYPE_LABELS['three-card-showdown']).toBe('Three-Card Showdown');
-  expect(GAME_TYPE_ICONS['three-card-showdown']).toBe('♠️');
-});
+expect(GAME_TYPES).toContain('three-card-showdown');
+expect(GAME_TYPES.length).toBe(10);
+expect(isValidGameType('three-card-showdown')).toBe(true);
+expect(GAME_TYPE_LABELS['three-card-showdown']).toBe('Three-Card Showdown');
+expect(GAME_TYPE_ICONS['three-card-showdown']).toBe('♠️');
 ```
 
 Run:
@@ -603,25 +605,30 @@ Run:
 bun test src/lib/game-stats/game-stats.test.ts
 ```
 
-Expected: PASS.
+Expected: PASS. Do not leave the old `GAME_TYPES.length === 9` assertion behind.
 
-- [ ] **Step 2: Write settlement-command mapping tests**
+- [ ] **Step 2: Write the settlement-command mapping test**
 
-Create `client.test.ts` and assert loss/win/tie:
+Create `client.test.ts`:
 
 ```ts
-expect(buildThreeCardShowdownSettlementCommand('three-card-1', { netDelta: -20 })).toEqual({
-  settlementId: 'three-card-1',
-  game: 'three-card-showdown',
-  delta: -20,
-  stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0 },
+import { describe, expect, test } from 'bun:test';
+import { buildThreeCardShowdownSettlementCommand } from './client';
+
+describe('buildThreeCardShowdownSettlementCommand', () => {
+  test.each([
+    [-20, { wins: 0, losses: 1, biggestWin: 0 }],
+    [0, { wins: 0, losses: 0, biggestWin: 0 }],
+    [20, { wins: 1, losses: 0, biggestWin: 20 }],
+  ] as const)('maps net delta %i to one round', (netDelta, stats) => {
+    expect(buildThreeCardShowdownSettlementCommand('three-card-1', { netDelta })).toEqual({
+      settlementId: 'three-card-1',
+      game: 'three-card-showdown',
+      delta: netDelta,
+      stats: { rounds: 1, ...stats },
+    });
+  });
 });
-
-expect(buildThreeCardShowdownSettlementCommand('three-card-2', { netDelta: 20 }).stats)
-  .toEqual({ rounds: 1, wins: 1, losses: 0, biggestWin: 20 });
-
-expect(buildThreeCardShowdownSettlementCommand('three-card-3', { netDelta: 0 }).stats)
-  .toEqual({ rounds: 1, wins: 0, losses: 0, biggestWin: 0 });
 ```
 
 - [ ] **Step 3: Implement the game-local command builder**
@@ -645,25 +652,41 @@ export function buildThreeCardShowdownSettlementCommand(
 }
 ```
 
-Do not move this into `wallet`.
+Do not add settlement mapping to `wallet`.
 
-- [ ] **Step 4: Create the Astro page with six existing `CardSlot`s**
+- [ ] **Step 4: Create the Astro page with the exact public-session root contract**
 
-Use `CasinoLayout` and `createPublicGameSession(Astro.locals.user)`.
+Use `CasinoLayout`, six existing `CardSlot` instances, and:
+
+```astro
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import CardSlot from '../../components/CardSlot.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { ANTE_OPTIONS } from '../../lib/three-card-showdown';
+
+const gameSession = createPublicGameSession(Astro.locals.user);
+---
+
+<main
+  id="three-card-showdown-root"
+  data-testid="three-card-showdown-root"
+  data-user-id={gameSession.clientUserId}
+  data-guest-mode={gameSession.guestModeValue}
+  data-initial-balance={gameSession.initialBalance}
+>
+```
+
+These attributes are required. The client must not infer guest mode from missing values.
 
 Required stable IDs:
 
 ```text
-three-card-showdown-root
 chip-balance
 three-card-showdown-status
 three-card-showdown-result
-three-card-showdown-dealer-slot-0
-three-card-showdown-dealer-slot-1
-three-card-showdown-dealer-slot-2
-three-card-showdown-player-slot-0
-three-card-showdown-player-slot-1
-three-card-showdown-player-slot-2
+three-card-showdown-dealer-slot-0..2
+three-card-showdown-player-slot-0..2
 three-card-showdown-deal
 three-card-showdown-fold
 three-card-showdown-play
@@ -671,46 +694,34 @@ three-card-showdown-new-round
 three-card-showdown-recovery-host
 ```
 
-Ante buttons use `[data-ante]` and are generated from `ANTE_OPTIONS`.
-
-Static rules copy lists the exact hand order and `Dealer qualifies with Queen-high or better.`
+Ante buttons use `[data-ante]` and `ANTE_OPTIONS`.
 
 - [ ] **Step 5: Implement client session/card rendering**
 
-Use:
+Read the root dataset exactly:
 
 ```ts
-const GAME_KEY = 'three-card-showdown';
+const clientUserId = root.dataset.userId ?? 'anonymous';
+const isGuestMode = isGuestModeValue(root.dataset.guestMode ?? 'false');
+const initialBalance = Number(root.dataset.initialBalance ?? '1000');
 const startingBalance = isGuestMode
-  ? loadGuestBankroll(GAME_KEY, clientUserId, initialBalance)
+  ? loadGuestBankroll('three-card-showdown', clientUserId, initialBalance)
   : initialBalance;
 const game = new ThreeCardShowdownGame(startingBalance);
 const gate = createSettlementGate();
 let serverSyncedBalance = startingBalance;
 ```
 
-Use local rank formatting `11→J`, `12→Q`, `13→K`, `14→A` and existing:
-
-```ts
-setSlotState(slot, 'card', { rank: rankLabel(card.rank), suit: card.suit });
-```
-
-Dealer slots:
+Render with `setSlotState()`:
 
 ```text
-betting -> placeholder
-decision -> facedown
-complete -> card
+Dealer: betting=placeholder, decision=facedown, complete=card
+Player: betting=placeholder, decision=card, complete=card
 ```
 
-Player slots:
+Use local rank formatting `11→J`, `12→Q`, `13→K`, `14→A`.
 
-```text
-betting -> placeholder
-decision/complete -> card
-```
-
-- [ ] **Step 6: Implement exact phase buttons and result copy**
+- [ ] **Step 6: Implement phase buttons and result copy**
 
 Visibility:
 
@@ -720,7 +731,7 @@ decision -> Fold + Play
 complete -> New Round
 ```
 
-Result text:
+Result copy:
 
 ```ts
 switch (result.outcome) {
@@ -732,33 +743,45 @@ switch (result.outcome) {
 }
 ```
 
-Deal renders `getAnteError()` and never relies on catch for expected affordability errors.
+Deal renders `getAnteError()` instead of using throw/catch for expected affordability failure.
 
 - [ ] **Step 7: Wire guest completion and authenticated settlement**
 
-Fold/Play completion:
+For both Fold and Play:
 
-1. call pure `fold()` or `play()`;
-2. render completed round;
-3. guest: `persistGuestBankroll(GAME_KEY, clientUserId, game.getState().balance)` and make no wallet call;
-4. authenticated: call
-
-```ts
-gate.settle(
-  buildThreeCardShowdownSettlementCommand(
-    newSettlementId('three-card-showdown'),
-    round,
-  ),
-);
+```text
+call game.fold() or game.play()
+render complete state (dealer now revealed)
+if guest: persistGuestBankroll('three-card-showdown', clientUserId, balance); stop
+if authenticated: gate.settle(buildThreeCardShowdownSettlementCommand(newSettlementId('three-card-showdown'), round))
 ```
-
-5. successful settlement adopts `result.balance` through `game.setBalance()` and updates both balance surfaces.
 
 New Round is disabled whenever authenticated `gate.isBlocked`.
 
-- [ ] **Step 8: Reuse existing Retry/Reset controls**
+- [ ] **Step 8: Copy authoritative settlement adoption including achievements**
 
-Use exact IDs:
+Use the current Video Poker/Sic Bo shape:
+
+```ts
+function adoptSettlementResult(result: SettleRoundResult): void {
+  serverSyncedBalance = result.balance;
+  game.setBalance(result.balance);
+  hideSettlementRecovery();
+  if (result.newAchievements?.length) {
+    window.dispatchEvent(
+      new CustomEvent('achievement-earned', {
+        detail: { achievements: result.newAchievements },
+      }),
+    );
+  }
+}
+```
+
+Call this after successful initial settlement and successful Retry. Update `#chip-balance` and every `[data-chip-balance]` surface after adoption.
+
+- [ ] **Step 9: Reuse Retry/Reset controls exactly**
+
+Use IDs:
 
 ```text
 three-card-showdown-settlement-recovery
@@ -766,7 +789,7 @@ three-card-showdown-retry-settlement
 three-card-showdown-reset-settlement
 ```
 
-Retry disables Retry+Reset while `gate.retry()` is in flight, then adopts the returned balance.
+Retry disables Retry+Reset while `gate.retry()` is in flight and calls `adoptSettlementResult()` on success.
 
 Reset:
 
@@ -774,31 +797,95 @@ Reset:
 gate.reset();
 game.setBalance(serverSyncedBalance);
 if (game.getState().phase === 'complete') game.resetRound();
+hideSettlementRecovery();
+render();
 ```
 
-Then hide recovery and render betting state.
+No timer or automatic retry.
 
-- [ ] **Step 9: Add focused Happy DOM composition tests**
+- [ ] **Step 10: Add focused Happy-DOM Deal/Play composition coverage**
 
-`client.init.test.ts` must cover:
+Create a root fixture that includes the same client dataset attributes as the Astro page.
 
-- guest Deal: player slots become `card`, dealer slots become `facedown`;
-- deterministic guest Play with `Math.random=0`: result `Dealer wins · -20 net`, balance 980 from a 1000 start / Ante 10, dealer slots reveal, guest storage is written, no wallet fetch;
-- authenticated 503 settlement: recovery visible and New Round disabled;
-- Retry: second command exactly equals first and returned balance updates `#chip-balance` + `[data-chip-balance]`;
-- Reset: restores `serverSyncedBalance` and betting phase.
+With guest mode, start 1000, Ante 10, and `Math.random = () => 0`:
 
-Do not duplicate settlement-gate internal unit tests.
+```text
+before Deal: balance 1000
+Deal: balance 990, player slots card, dealer slots facedown
+Play: result "Dealer wins · -20 net", balance 980, dealer slots card
+localStorage guest bankroll = 980
+fetch count = 0
+```
 
-Run:
+- [ ] **Step 11: Add the missing guest Fold composition test**
+
+Use guest mode, start 1000, Ante 10. After Deal then Fold, assert:
+
+```ts
+expect(resultEl.textContent).toBe('Fold · -10 net');
+expect(balanceEl.textContent).toBe('990');
+expect(localStorage.getItem('three-card-showdown-bankroll:anonymous')).toBe('990');
+expect(fetchCallCount).toBe(0);
+```
+
+Also assert all three dealer slots are `data-slot-state="card"` at `complete`.
+
+This is the composition guard that proves the UI exposes the second core decision, reveals the dealer, and uses guest-local settlement.
+
+- [ ] **Step 12: Add settlement recovery + achievement forwarding coverage**
+
+Pin the failure path:
+
+```text
+first settlement throws/503
+recovery visible
+New Round disabled
+Retry sends exact same command
+```
+
+On Retry success return:
+
+```ts
+{
+  balance: 1020,
+  duplicate: false,
+  newAchievements: [
+    { id: 'three-card-master', name: 'Three-Card Master', icon: 'cards' },
+  ],
+}
+```
+
+Listen for `achievement-earned` and assert exactly one event:
+
+```ts
+expect(achievementEvents).toEqual([
+  { achievements: [{ id: 'three-card-master', name: 'Three-Card Master', icon: 'cards' }] },
+]);
+```
+
+Also assert the returned balance appears in both local and shared-header balance surfaces.
+
+- [ ] **Step 13: Add Reset coverage**
+
+After a failed authenticated settlement, click Reset and assert:
+
+```text
+gate cleared
+balance restored to serverSyncedBalance
+recovery hidden
+phase betting
+Deal visible/enabled when Ante affordable
+```
+
+- [ ] **Step 14: Run client/game-stat tests**
 
 ```bash
-bun test src/lib/three-card-showdown/client.test.ts src/lib/three-card-showdown/client.init.test.ts
+bun test src/lib/three-card-showdown/ src/lib/game-stats/game-stats.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 10: Add the narrow public barrel**
+- [ ] **Step 15: Add the narrow public barrel and lobby card**
 
 `src/lib/three-card-showdown/index.ts`:
 
@@ -818,28 +905,17 @@ export type {
 } from './types';
 ```
 
-- [ ] **Step 11: Add one normal lobby card**
+Add one normal `Three-Card Showdown` card in `src/pages/index.astro` linking to `/games/three-card-showdown`. Do not extract a lobby-card component.
 
-Modify `src/pages/index.astro` following the adjacent Video Poker/Sic Bo card markup:
-
-```text
-label: Three-Card Showdown
-href: /games/three-card-showdown
-icon/theme: existing card-game presentation
-```
-
-Do not extract a lobby-card component.
-
-- [ ] **Step 12: Run Task 4 validation**
+- [ ] **Step 16: Run Task 4 build validation**
 
 ```bash
-bun test src/lib/three-card-showdown/ src/lib/game-stats/game-stats.test.ts
 bun run build
 ```
 
 Expected: PASS.
 
-- [ ] **Step 13: Commit Task 4**
+- [ ] **Step 17: Commit Task 4**
 
 ```bash
 git add src/lib/three-card-showdown src/pages/games/three-card-showdown.astro src/lib/game-stats src/pages/index.astro
@@ -848,7 +924,7 @@ git commit -m "feat(three-card-showdown): add playable game"
 
 ---
 
-## Task 5: Add the two browser acceptance flows and finish repository validation
+## Task 5: Add browser acceptance coverage and finish repository validation
 
 **Files:**
 - Create: `e2e/three-card-showdown.spec.ts`
@@ -858,9 +934,9 @@ git commit -m "feat(three-card-showdown): add playable game"
 - Consumes: `/games/three-card-showdown`, existing `createIsolatedPage()` helper.
 - Produces no runtime interface.
 
-- [ ] **Step 1: Add the deterministic guest Play E2E**
+- [ ] **Step 1: Add the deterministic guest Play E2E with the correct bankroll timing**
 
-Use guest storage state and before navigation:
+Use guest storage state and install:
 
 ```ts
 await page.addInitScript(() => {
@@ -868,23 +944,29 @@ await page.addInitScript(() => {
 });
 ```
 
-Navigate to `/games/three-card-showdown`, select `[data-ante="10"]`, then Deal.
+Navigate to `/games/three-card-showdown`.
 
-Assert:
+Before Deal, assert the actual public-session contract and initial balance:
 
 ```ts
 await expect(page.getByTestId('three-card-showdown-root'))
   .toHaveAttribute('data-guest-mode', 'true');
 await expect(page.getByTestId('chip-balance')).toContainText('1,000');
-await expect(page.locator('[id^="three-card-showdown-player-slot-"]'))
-  .toHaveCount(3);
+```
+
+Select `[data-ante="10"]`, click Deal, then assert:
+
+```ts
+await expect(page.getByTestId('chip-balance')).toContainText('990');
 await expect(page.locator('[id^="three-card-showdown-player-slot-"][data-slot-state="card"]'))
   .toHaveCount(3);
 await expect(page.locator('[id^="three-card-showdown-dealer-slot-"][data-slot-state="facedown"]'))
   .toHaveCount(3);
 ```
 
-Click Play. Because random 0 deals player 3♥4♥5♥ and dealer 6♥7♥8♥, assert:
+Do **not** assert 1,000 after Deal. Deal has already deducted the Ante.
+
+Click Play. Constant-zero Fisher-Yates is pinned to player `3♥4♥5♥` and dealer `6♥7♥8♥`, so assert:
 
 ```ts
 await expect(page.locator('#three-card-showdown-result'))
@@ -934,7 +1016,9 @@ await expect(page.locator('#three-card-showdown-settlement-recovery')).toBeHidde
 await expect(page.locator('#three-card-showdown-new-round')).toBeEnabled();
 ```
 
-Then assert both local and shared header balances equal `startingBalance + Number(commands[1].delta)`.
+Then assert both local and shared-header balances equal `startingBalance + Number(commands[1].delta)`.
+
+Achievement forwarding is already pinned in Happy DOM; do not duplicate it here.
 
 - [ ] **Step 3: Update the fixed profile statistics game list**
 
@@ -944,7 +1028,7 @@ In `e2e/profile-statistics.spec.ts`, append:
 'three-card-showdown',
 ```
 
-to `CANONICAL_GAME_TYPES` after `sic-bo`. Existing mapped fixtures/card-count assertions then cover the new registration without adding another profile test.
+to `CANONICAL_GAME_TYPES` after `sic-bo`. Existing mapped fixtures/card-count assertions then cover the new game.
 
 - [ ] **Step 4: Run new and adjacent E2E serially**
 
@@ -982,18 +1066,21 @@ Expected: PASS except repository-documented intentional skips only.
 
 - [ ] **Step 8: Perform the final scope gate**
 
-Inspect the final diff and require all of these to be true:
+Require all of these from the final diff:
 
 ```text
 no schema/migration files changed
 no new API route exists
 src/lib/poker/** is untouched
-no generic evaluator/base game/client controller exists
-only Card + deck/shuffle moved out of Video Poker
+Blackjack card representation is untouched
+no generic evaluator/base game/client controller/paytable engine exists
+only neutral Card + deck/shuffle moved out of Video Poker
+Video Poker types.ts still exports Card/Rank/Suit
 no side bet/bonus/AI/ranked/history/replay code exists
+three-card-showdown is GAME_TYPES entry 10
 ```
 
-If any condition is false, remove the extra machinery before merge.
+Remove any extra machinery before merge.
 
 - [ ] **Step 9: Commit Task 5**
 
@@ -1006,16 +1093,19 @@ git commit -m "test(three-card-showdown): cover guest and wallet flows"
 
 ## Final Review Checklist
 
-- [ ] Shared `src/lib/cards.ts` has exactly two clean consumers: Video Poker and Three-Card Showdown.
-- [ ] `src/lib/poker/**` is untouched.
-- [ ] Straight beats Flush in all three-card comparison paths.
+- [ ] Shared `src/lib/cards.ts` has only the intended clean consumers; Texas Hold'em and Blackjack card shapes are untouched.
+- [ ] `src/lib/video-poker/types.ts` still exports `Card`, `Rank`, and `Suit`; all Video Poker tests pass after extraction.
+- [ ] Straight beats Flush in all Three-Card comparison paths.
 - [ ] Q-high qualifies and J-high does not.
 - [ ] Deal cannot create a state where the equal Play wager is unaffordable.
-- [ ] Fold loses one Ante; Play outcomes account for both wagers exactly once.
+- [ ] Guest root includes `data-testid`, `data-user-id`, `data-guest-mode`, and `data-initial-balance`.
+- [ ] Guest E2E asserts 1,000 before Deal, 990 after Deal, and 980 after the pinned losing Play.
+- [ ] Fold loses one Ante, persists guest balance, makes no wallet call, and reveals dealer cards.
+- [ ] Play outcomes account for both wagers exactly once.
 - [ ] No Ante Bonus or side-bet payout exists.
-- [ ] Guest completion makes no wallet request.
 - [ ] Authenticated completion creates one settlement command and Retry reuses it unchanged.
-- [ ] New Round is blocked while settlement is pending/failed.
-- [ ] Reset restores the last authoritative balance and returns to betting.
-- [ ] `three-card-showdown` appears in game stats, profile statistics, and lobby surfaces.
-- [ ] `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`, selected E2E, and full serial Playwright pass.
+- [ ] Successful settlement adoption updates authoritative balance and forwards `newAchievements` through `achievement-earned`.
+- [ ] New Round is blocked while settlement is pending/failed; Reset restores the last authoritative balance.
+- [ ] `GAME_TYPES` contains `three-card-showdown`, length is 10, and `isValidGameType('three-card-showdown')` is true.
+- [ ] Profile statistics canonical list and lobby include Three-Card Showdown.
+- [ ] `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`, selected E2E, and full serial Playwright pass before implementation PR completion.

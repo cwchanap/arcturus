@@ -248,9 +248,11 @@ export function initSicBoClient(): void {
 			}
 
 			try {
-				const settled = await gate.settle(
+				const settlement = gate.settle(
 					buildSicBoSettlementCommand(newSettlementId('sic-bo'), result),
 				);
+				render();
+				const settled = await settlement;
 				adoptSettlementResult(settled);
 			} catch (error) {
 				console.error('[WALLET_SETTLEMENT] Sic Bo settlement failed:', error);

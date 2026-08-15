@@ -539,7 +539,7 @@ export function createDailyPracticeController(
 			deps.render(replayDailyRun(seed, []));
 		},
 		renderCurrent() {
-			deps.render(replayDailyRun(seed, []));
+			deps.render(replayDailyRun(seed, commands));
 		},
 	};
 }
@@ -577,7 +577,11 @@ export async function initDailyChallengePage(
 		renderError: (message) => renderer.renderError(message),
 	});
 
-	const adoptRanked = (state: DailyRunState | null): void => {
+	const adoptRanked = (state: BlackjackRunPublicState | null): void => {
+		// Narrow every daily client result before adoption: the shared client
+		// types responses as the closed ranked|daily union, and only a daily
+		// state may drive the ranked-attempt view.
+		if (state !== null && state.mode !== 'daily') return;
 		ranked = state;
 		renderer.renderRanked(state);
 	};
@@ -695,5 +699,8 @@ export async function initDailyChallengePage(
 		renderer.renderLeaderboard(parseDailyLeaderboardView(data));
 	} catch (error) {
 		console.error('Daily leaderboard fetch failed', error);
+		// A failed or malformed leaderboard response must be visible as an
+		// error, not indistinguishable from an empty leaderboard.
+		renderer.renderError('Daily leaderboard is unavailable — refresh to retry.');
 	}
 }

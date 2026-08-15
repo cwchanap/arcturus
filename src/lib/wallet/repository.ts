@@ -71,6 +71,23 @@ const WALLET_STATS_UPSERT_SQL = `INSERT INTO game_stats
 		updatedAt = excluded.updatedAt`;
 
 /**
+ * Classifies a settled round for mission progress. Recorded wins take
+ * precedence, then recorded losses, then the net-profit sign (zero is a
+ * push).
+ */
+function classifyMissionOutcome(
+	wins: number,
+	losses: number,
+	netProfit: number,
+): 'win' | 'loss' | 'push' {
+	if (wins > 0) return 'win';
+	if (losses > 0) return 'loss';
+	if (netProfit > 0) return 'win';
+	if (netProfit < 0) return 'loss';
+	return 'push';
+}
+
+/**
  * Apply the guarded balance update, receipt tombstone, statistics upsert, and
  * mission writes in one D1 transaction. The receipt's `(userId,
  * settlementId)` key protects idempotency, while its server-only `attemptId`
@@ -88,16 +105,7 @@ export async function applyWalletSettlementBatch(
 	const netProfit = command.stats.netProfit ?? command.delta;
 	const missionEvent = {
 		gameType: command.game,
-		outcome:
-			command.stats.wins > 0
-				? ('win' as const)
-				: command.stats.losses > 0
-					? ('loss' as const)
-					: netProfit > 0
-						? ('win' as const)
-						: netProfit < 0
-							? ('loss' as const)
-							: ('push' as const),
+		outcome: classifyMissionOutcome(command.stats.wins, command.stats.losses, netProfit),
 		handCount: command.stats.rounds,
 		winsIncrement: command.stats.wins,
 		lossesIncrement: command.stats.losses,

@@ -13,13 +13,18 @@ let fetchImpl: ReturnType<
 	typeof mock<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>
 >;
 
+// Capture the original descriptor so the replacement is restored exactly —
+// deleting fetch would leave later suites without a real global fetch.
+const originalFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+
 beforeEach(() => {
 	fetchImpl = mock(() => Promise.resolve(jsonResponse(activeState())));
 	globalThis.fetch = fetchImpl as typeof fetch;
 });
 
 afterEach(() => {
-	delete (globalThis as { fetch?: unknown }).fetch;
+	if (originalFetch) Object.defineProperty(globalThis, 'fetch', originalFetch);
+	else Reflect.deleteProperty(globalThis, 'fetch');
 });
 
 function jsonResponse(body: unknown, status = 200): Response {

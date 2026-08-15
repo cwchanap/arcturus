@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { Card, Rank, Suit } from '../blackjack/types';
 import { replayBlackjackRoundWithDeck, type BlackjackRoundOutcome } from './engine';
 import {
 	additionalWagerFor,
@@ -9,36 +8,7 @@ import {
 	MINIMUM_WAGER,
 	RANKED_RUN_TTL_SECONDS,
 } from './ranked';
-
-const SUITS: readonly Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
-const RANKS: readonly Rank[] = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-
-function card(rank: Rank, suit: Suit): Card {
-	return { rank, suit };
-}
-
-function deckWithDraws(...draws: readonly Card[]): Card[] {
-	const canonicalDeck = SUITS.flatMap((suit) => RANKS.map((rank) => card(rank, suit)));
-	const drawKeys = new Set(draws.map(({ rank, suit }) => `${rank}:${suit}`));
-	expect(drawKeys.size).toBe(draws.length);
-	return [
-		...canonicalDeck.filter(({ rank, suit }) => !drawKeys.has(`${rank}:${suit}`)),
-		...[...draws].reverse(),
-	];
-}
-
-function splitCapableDeck(): Card[] {
-	return deckWithDraws(
-		card('8', 'hearts'),
-		card('8', 'diamonds'),
-		card('6', 'hearts'),
-		card('10', 'clubs'),
-		card('10', 'hearts'),
-		card('9', 'hearts'),
-		card('10', 'diamonds'),
-		card('2', 'clubs'),
-	);
-}
+import { splitCapableDeck } from './deck-helpers';
 
 describe('ranked wager bounds', () => {
 	test('pins the 10–1000 wager range', () => {

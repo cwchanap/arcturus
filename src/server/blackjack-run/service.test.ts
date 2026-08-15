@@ -665,7 +665,7 @@ describe('ranked lifecycle', () => {
 		expect(converged.status).toBe('expired');
 		expect(converged.balance).toBe(800);
 		expect(retry.spy.calls).toHaveLength(2);
-		expect(retryRepository.findActiveRun(SECOND_USER, 'ranked')).resolves.toBeNull();
+		await expect(retryRepository.findActiveRun(SECOND_USER, 'ranked')).resolves.toBeNull();
 	});
 
 	test('a command rejected at expiry finalizes the active run instead of appending', async () => {
@@ -977,6 +977,58 @@ describe('daily lifecycle', () => {
 		const leaderboard = await service.leaderboard(PERIOD_KEY, null, 50);
 		expect(leaderboard.entries).toEqual([]);
 		expect(await readChipBalance()).toBe(1000);
+		expect(spy.calls).toHaveLength(0);
+	});
+
+	test('expire replays a terminal daily log instead of marking it expired', async () => {
+		const { service, spy, setNow, repository } = makeService(randomBytesOf(seedOf(0)));
+		const state = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
+
+		// Simulate the terminal response being lost: the forfeit command is
+		// committed to the log while the row is still active, and the TTL
+		// lapses before any read finalizes it.
+		await db
+			.prepare('UPDATE blackjack_run SET commandsJson = ?, nextSequence = 1 WHERE id = ?')
+			.bind(JSON.stringify([{ sequence: 0, command: 'forfeit' }]), state.runId)
+			.run();
+		setNow(NOW_SECONDS + DAILY_TTL_SECONDS + 1);
+
+		// expire() replays the log first: the run is forfeited by its own
+		// commands, not expired by the scanner.
+		const terminal = isDailyState(await service.expire(state.runId));
+		expect(terminal.status).toBe('forfeited');
+		expect(terminal.terminalReason).toBe('forfeited');
+		expect(terminal.eligible).toBe(false);
+
+		const run = await repository.findDailyRun(USER_ID, PERIOD_KEY);
+		expect(run?.status).toBe('forfeited');
+		expect(run?.dailyEndingBankroll).toBeNull();
+		expect(spy.calls).toHaveLength(0);
+	});
+
+	test('a late daily command finalizes a terminal log instead of expiring it', async () => {
+		const { service, spy, setNow } = makeService(randomBytesOf(seedOf(0)));
+		const state = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));
+
+		await db
+			.prepare('UPDATE blackjack_run SET commandsJson = ?, nextSequence = 1 WHERE id = ?')
+			.bind(JSON.stringify([{ sequence: 0, command: 'forfeit' }]), state.runId)
+			.run();
+		setNow(NOW_SECONDS + DAILY_TTL_SECONDS + 1);
+
+		// The retried command arrives after expiry; the replayed log decides
+		// the outcome, so the attempt stays forfeited rather than flipping to
+		// expired (and an eligible completion would keep its projections).
+		const terminal = isDailyState(
+			await service.command(USER_ID, state.runId, {
+				sequence: 1,
+				command: 'start-round',
+				wager: 100,
+			}),
+		);
+		expect(terminal.status).toBe('forfeited');
+		expect(terminal.terminalReason).toBe('forfeited');
+		expect(terminal.eligible).toBe(false);
 		expect(spy.calls).toHaveLength(0);
 	});
 

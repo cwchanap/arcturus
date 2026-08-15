@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import type { BlackjackRunPublicState } from './protocol';
-import { createRankedRunRenderer, type RankedRunRenderer } from './ranked-ui';
+import { createRankedRunRenderer, type RankedRunRenderer, type RankedRunState } from './ranked-ui';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -28,7 +27,7 @@ afterAll(() => {
 	else Reflect.deleteProperty(globalThis, 'document');
 });
 
-function activeState(): BlackjackRunPublicState {
+function activeState(): RankedRunState {
 	return {
 		mode: 'ranked',
 		runId: 'abcdefghijklmnopqrstuv',
@@ -66,7 +65,7 @@ function activeState(): BlackjackRunPublicState {
 	};
 }
 
-function terminalState(): BlackjackRunPublicState {
+function terminalState(): RankedRunState {
 	const response = activeState();
 	return {
 		...response,

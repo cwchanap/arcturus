@@ -218,6 +218,27 @@ describe('ranked run start with stake', () => {
 	});
 });
 
+describe('daily period definition', () => {
+	test('concurrent first access converges on one canonical blackjack_daily seed', async () => {
+		const [first, second] = await Promise.all([
+			repository.getOrCreateDaily('2026-10-11', () => SEED_A, NOW_SECONDS),
+			createBlackjackRunRepository(db).getOrCreateDaily('2026-10-11', () => SEED_B, NOW_SECONDS),
+		]);
+
+		// Both concurrent first accesses resolve to the single persisted winner
+		// seed; whoever loses the unique-key insert race reloads the winning row
+		// instead of retaining its locally generated seed.
+		const seeds = new Set([first.seed, second.seed]);
+		expect(seeds.size).toBe(1);
+		const stored = await db
+			.prepare('SELECT seed FROM blackjack_daily WHERE periodKey = ?')
+			.bind('2026-10-11')
+			.first<{ seed: string }>();
+		expect(stored?.seed).toBe(first.seed);
+		expect(stored?.seed).toBe(second.seed);
+	});
+});
+
 describe('ranked command appends with stake', () => {
 	test('split/double-down additional stake applies atomically with the command', async () => {
 		await repository.createRankedRunWithStake(rankedStartInput());

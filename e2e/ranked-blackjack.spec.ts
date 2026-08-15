@@ -5,6 +5,9 @@ import {
 } from '../src/lib/blackjack-run/protocol';
 import { createIsolatedPage } from './isolated-page';
 
+/** Ranked-only view of the closed public-state union. */
+type RankedState = Extract<BlackjackRunPublicState, { mode: 'ranked' }>;
+
 const RUNS_BASE = '/api/blackjack-runs';
 const RANKED_WAGER = 10;
 const ACTIVE_RUN_ATTEMPTS = 5;
@@ -27,8 +30,12 @@ function isRankedCommands(url: string, method: string, runId: string): boolean {
 	return new URL(url).pathname === `${RUNS_BASE}/${runId}/commands` && method === 'POST';
 }
 
-function parseRankedState(text: string): BlackjackRunPublicState {
-	return blackjackRunPublicStateSchema.parse(JSON.parse(text) as unknown);
+function parseRankedState(text: string): RankedState {
+	const state: BlackjackRunPublicState = blackjackRunPublicStateSchema.parse(
+		JSON.parse(text) as unknown,
+	);
+	expect(state.mode).toBe('ranked');
+	return state as RankedState;
 }
 
 function formatChips(value: number): string {
@@ -62,7 +69,7 @@ async function openRankedPage(browser: Browser, baseURL: string | undefined, ema
  */
 async function startActiveRun(
 	page: Page,
-): Promise<{ runId: string; state: BlackjackRunPublicState; balanceBefore: number }> {
+): Promise<{ runId: string; state: RankedState; balanceBefore: number }> {
 	for (let attempt = 1; attempt <= ACTIVE_RUN_ATTEMPTS; attempt += 1) {
 		if (attempt > 1) {
 			await page.reload({ waitUntil: 'domcontentloaded' });
@@ -93,7 +100,7 @@ async function startActiveRun(
 async function standToTerminal(
 	page: Page,
 	runId: string,
-): Promise<{ commandBody: Record<string, unknown>; state: BlackjackRunPublicState }> {
+): Promise<{ commandBody: Record<string, unknown>; state: RankedState }> {
 	const [commandRequest, commandResponse] = await Promise.all([
 		page.waitForRequest((request) => isRankedCommands(request.url(), request.method(), runId)),
 		page.waitForResponse((response) =>
@@ -119,9 +126,9 @@ async function assertNoLegacyRankedArtifacts(page: Page): Promise<void> {
 		'[data-testid="ranked-stats"]',
 		'[data-testid="ranked-achievement-toast"]',
 	];
-	expect(page.locator(legacySelectors.join(','))).toHaveCount(0);
+	await expect(page.locator(legacySelectors.join(','))).toHaveCount(0);
 	// No wallet-lock / multiplayer overlap copy.
-	expect(page.getByText('cannot overlap multiplayer', { exact: false })).toHaveCount(0);
+	await expect(page.getByText('cannot overlap multiplayer', { exact: false })).toHaveCount(0);
 	// No legacy or new localStorage state for ranked runs.
 	expect(
 		await page.evaluate(() =>

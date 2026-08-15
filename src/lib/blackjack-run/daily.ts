@@ -166,12 +166,16 @@ function replayRound(
 	return replayBlackjackRoundWithDeck(round.initialWager, round.deck.slice(), round.actions);
 }
 
-function settleCompletedRound(state: MutableReplayState, replay: BlackjackRoundReplay): void {
+function settleCompletedRound(
+	state: MutableReplayState,
+	round: MutableRound,
+	replay: BlackjackRoundReplay,
+): void {
 	const outcome = replay.outcome;
 	if (!outcome) throw new Error('Completed daily round has no outcome');
 	state.availableBankroll += outcome.payout;
 	state.roundsCompleted += 1;
-	state.rounds.push(state.activeRound as MutableRound);
+	state.rounds.push(round);
 	state.activeRound = null;
 
 	if (state.roundsCompleted === DAILY_RUN_CONFIG.roundCount) {
@@ -190,7 +194,7 @@ function settleCompletedRound(state: MutableReplayState, replay: BlackjackRoundR
 function maybeSettleActiveRound(state: MutableReplayState): void {
 	const round = state.activeRound;
 	if (!round) return;
-	if (round.replay.outcome) settleCompletedRound(state, round.replay);
+	if (round.replay.outcome) settleCompletedRound(state, round, round.replay);
 }
 
 function applyStartRound(state: MutableReplayState, wager: number): void {

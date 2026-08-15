@@ -8,7 +8,11 @@ import {
 	type BlackjackRunErrorCode,
 	type BlackjackRunStart,
 } from '../../lib/blackjack-run/protocol';
-import { createBlackjackRunRepository } from './repository';
+import {
+	createBlackjackRunRepository,
+	type DailyCurrentUserStanding,
+	type DailyLeaderboardRead,
+} from './repository';
 import {
 	BlackjackRunServiceError,
 	createBlackjackRunService,
@@ -57,6 +61,35 @@ export const BLACKJACK_RUN_ERROR_STATUS: Record<BlackjackRunHttpErrorCode, numbe
 const LEADERBOARD_DEFAULT_LIMIT = 50;
 const LEADERBOARD_MIN_LIMIT = 1;
 const LEADERBOARD_MAX_LIMIT = 50;
+
+// Public leaderboard projection: the repository row carries the internal
+// account id (`userId`), which the Daily UI never consumes. Strip it at the
+// HTTP boundary so unauthenticated guests cannot harvest internal identifiers.
+export interface DailyLeaderboardPublicEntry {
+	readonly rank: number;
+	readonly playerName: string;
+	readonly dailyEndingBankroll: number;
+	readonly dailyRoundsCompleted: number;
+	readonly settledAt: number;
+}
+
+export interface DailyLeaderboardPublicView {
+	readonly entries: readonly DailyLeaderboardPublicEntry[];
+	readonly currentUser: DailyCurrentUserStanding | null;
+}
+
+function projectDailyLeaderboard(read: DailyLeaderboardRead): DailyLeaderboardPublicView {
+	return {
+		entries: read.entries.map((entry) => ({
+			rank: entry.rank,
+			playerName: entry.playerName,
+			dailyEndingBankroll: entry.dailyEndingBankroll,
+			dailyRoundsCompleted: entry.dailyRoundsCompleted,
+			settledAt: entry.settledAt,
+		})),
+		currentUser: read.currentUser,
+	};
+}
 
 function jsonSuccess(body: unknown): Response {
 	return new Response(JSON.stringify(body), {
@@ -237,7 +270,9 @@ export function createBlackjackRunHttpHandlers(
 				LEADERBOARD_DEFAULT_LIMIT,
 			);
 			const service = serviceFor(deps, locals);
-			return jsonSuccess(await service.leaderboard(periodKey, userId, limit));
+			return jsonSuccess(
+				projectDailyLeaderboard(await service.leaderboard(periodKey, userId, limit)),
+			);
 		} catch (error) {
 			return blackjackRunJsonError(error);
 		}

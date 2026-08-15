@@ -474,12 +474,24 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 
 		const nowSeconds = this.nowSeconds();
 		const window = getDailyWindow(nowSeconds);
-		if (input.periodKey !== window.periodKey || nowSeconds >= window.rankedEntryClosesAt) {
+		if (input.periodKey !== window.periodKey) {
 			throw new BlackjackRunServiceError('INVALID_REQUEST');
 		}
 
+		// A previously-created attempt for the current period is always
+		// idempotently recoverable, including a retry whose first response was
+		// lost across the entry-close boundary (the client mints a fresh
+		// request id per explicit start, so that retry misses the request-id
+		// replay above). The close check gates only *creation*: an existing
+		// run is returned, and only when none exists does a closed window
+		// reject. This preserves the one-attempt rule while still blocking any
+		// new attempt after close.
 		const prior = await this.repository.findDailyRun(userId, input.periodKey);
 		if (prior) return this.renderRunState(userId, prior);
+
+		if (nowSeconds >= window.rankedEntryClosesAt) {
+			throw new BlackjackRunServiceError('INVALID_REQUEST');
+		}
 
 		const id = encodeBase64Url(this.requireRandomBytes(16));
 		const daily = await this.repository.getOrCreateDaily(

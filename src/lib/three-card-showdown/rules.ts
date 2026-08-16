@@ -28,6 +28,10 @@ function sortedRanks(cards: readonly Card[]): number[] {
 }
 
 export function evaluateThreeCardHand(cards: readonly Card[]): ThreeCardHandEvaluation {
+	if (cards.length !== 3) {
+		throw new RangeError('Three Card Showdown hands must contain exactly three cards');
+	}
+
 	const ranks = sortedRanks(cards);
 	const [high, middle, low] = ranks;
 

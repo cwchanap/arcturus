@@ -44,6 +44,15 @@ describe('evaluateThreeCardHand', () => {
 		expect(hand.category).toBe('three-of-kind');
 		expect(hand.tieBreakers).toEqual([9]);
 	});
+
+	test('requires exactly three cards', () => {
+		expect(() => evaluate([])).toThrow(RangeError);
+		expect(() => evaluate([c(14, 'hearts')])).toThrow(RangeError);
+		expect(() => evaluate([c(14, 'hearts'), c(13, 'hearts')])).toThrow(RangeError);
+		expect(() =>
+			evaluate([c(14, 'hearts'), c(13, 'hearts'), c(12, 'hearts'), c(11, 'hearts')]),
+		).toThrow(RangeError);
+	});
 });
 
 describe('compareThreeCardHands category precedence', () => {

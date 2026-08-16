@@ -121,6 +121,12 @@ export function resolvePlayedHand(
 		}
 	}
 
+	// Shallow freeze only: the top-level result, hand arrays, and evaluation
+	// objects are frozen, but the nested Card objects and tieBreakers arrays
+	// remain mutable. This is intentional — resolvePlayedHand is an internal
+	// helper whose only production caller (ThreeCardShowdownGame.play) deep-
+	// clones the result via cloneResult before exposing it, so deep freezing
+	// here would be redundant. Do not rely on this freeze for isolation.
 	const result: ThreeCardShowdownRoundResult = {
 		outcome,
 		ante,

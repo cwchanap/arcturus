@@ -218,16 +218,21 @@ describe('resolvePlayedHand payouts for ante 10', () => {
 		expect(result.netDelta).toBe(-20);
 	});
 
-	test('returns frozen round data', () => {
+	test('returns shallowly frozen round data (nested cards/tieBreakers stay mutable)', () => {
 		const result = resolvePlayedHand(
 			[c(12, 'spades'), c(11, 'hearts'), c(9, 'diamonds')],
 			[c(11, 'clubs'), c(10, 'spades'), c(8, 'hearts')],
 			10,
 		);
+		// Top-level containers are frozen.
 		expect(Object.isFrozen(result)).toBe(true);
 		expect(Object.isFrozen(result.playerHand)).toBe(true);
 		expect(Object.isFrozen(result.dealerHand)).toBe(true);
 		expect(Object.isFrozen(result.playerEvaluation)).toBe(true);
 		expect(Object.isFrozen(result.dealerEvaluation)).toBe(true);
+		// Nested values are NOT frozen — ThreeCardShowdownGame.cloneResult
+		// provides the deep-isolation guarantee for external callers.
+		expect(Object.isFrozen(result.playerHand[0])).toBe(false);
+		expect(Object.isFrozen(result.playerEvaluation.tieBreakers)).toBe(false);
 	});
 });

@@ -57,7 +57,8 @@ export function createPublicGameSettlementController(options: {
 }): PublicGameSettlementController {
 	const clientUserId = options.root.dataset.userId ?? 'anonymous';
 	const isGuestMode = isGuestModeValue(options.root.dataset.guestMode ?? 'false');
-	const initialBalance = Number(options.root.dataset.initialBalance ?? '1000');
+	const parsedInitialBalance = Number(options.root.dataset.initialBalance ?? '1000');
+	const initialBalance = Number.isFinite(parsedInitialBalance) ? parsedInitialBalance : 1000;
 	const startingBalance = isGuestMode
 		? loadGuestBankroll(options.gameKey, clientUserId, initialBalance)
 		: initialBalance;
@@ -136,17 +137,21 @@ export function createPublicGameSettlementController(options: {
 			return;
 		}
 
+		let result: SettleRoundResult;
 		try {
 			const pending = gate.settle(
 				buildRoundSettlementCommand(options.gameKey, newSettlementId(options.gameKey), netDelta),
 			);
 			options.render();
-			adopt(await pending);
+			result = await pending;
 		} catch (error) {
 			console.error(`[WALLET_SETTLEMENT] ${options.gameKey} settlement failed:`, error);
 			statusMessage = options.messages.failed;
 			recovery.container?.classList.remove('hidden');
+			options.render();
+			return;
 		}
+		adopt(result);
 		options.render();
 	}
 

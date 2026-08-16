@@ -198,6 +198,35 @@ describe('play', () => {
 		expect(notQualified.getState().balance).toBe(110);
 	});
 
+	test('player win credits four-times-ante after the second ante deduction', () => {
+		// Constant 0.08 → player 14♥ 13♦ 13♣ (pair of kings, ace kicker) vs
+		// dealer 12♠ 7♥ 8♥ (queen-high, qualifies). Player pair beats the
+		// dealer's high card, so the ante and Play wager both pay 1:1.
+		const playerWin = new ThreeCardShowdownGame(100, () => 0.08);
+		playerWin.setAnte(10);
+		playerWin.deal();
+		expect(playerWin.getState().playerHand).toEqual([
+			c(14, 'hearts'),
+			c(13, 'diamonds'),
+			c(13, 'clubs'),
+		]);
+		expect(playerWin.getState().dealerHand).toEqual([
+			c(12, 'spades'),
+			c(7, 'hearts'),
+			c(8, 'hearts'),
+		]);
+		const played = playerWin.play();
+		expect(played).toMatchObject({
+			outcome: 'player-win',
+			totalWager: 20,
+			grossPayout: 40,
+			netDelta: 20,
+			dealerQualified: true,
+		});
+		expect(playerWin.getState().balance).toBe(120);
+		expect(playerWin.getState().phase).toBe('complete');
+	});
+
 	test('is rejected outside decision', () => {
 		const game = new ThreeCardShowdownGame(100);
 		expect(() => game.play()).toThrow();

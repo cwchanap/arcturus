@@ -4,7 +4,8 @@ import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { ANTE_OPTIONS } from '../../lib/three-card-showdown';
 
-const gameSession = createPublicGameSession(Astro.locals.user);
+const user = Astro.locals.user;
+const gameSession = createPublicGameSession(user);
 ---
 
 <CasinoLayout title="Three-Card Showdown - Arcturus Casino">

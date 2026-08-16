@@ -309,6 +309,24 @@ describe('initVideoPokerClient — guest round flow', () => {
 		}
 	});
 
+	test('constructs against settlement.startingBalance (persisted guest bankroll)', () => {
+		localStorage.clear();
+		localStorage.setItem('video-poker-bankroll:vp-guest-bal', '500');
+		installFetch();
+		const root = buildVideoPokerDOM({
+			guestMode: true,
+			userId: 'vp-guest-bal',
+			initialBalance: 1000,
+		});
+		try {
+			initVideoPokerClient();
+			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
+			expect(balanceEl.textContent).toBe('500');
+		} finally {
+			root.remove();
+		}
+	});
+
 	test('wager button updates the wager and aria-pressed state before dealing', async () => {
 		localStorage.clear();
 		installFetch();
@@ -468,7 +486,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 });
 
 describe('initVideoPokerClient — authenticated settlement', () => {
-	test('settlement success adopts the server balance and hides recovery controls', async () => {
+	test('draw completes the round through the settlement controller and adopts the server balance', async () => {
 		localStorage.clear();
 		installFetch({ settlement: makeResponse(200, { balance: 1234, duplicate: false }) });
 		const root = buildVideoPokerDOM({
@@ -495,49 +513,7 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 		}
 	});
 
-	test('reset handler clears the gate, restores the server-synced balance, and resets the hand', async () => {
-		localStorage.clear();
-		installFetch({ settlement: makeResponse(500, { error: 'INTERNAL_ERROR' }) });
-		const root = buildVideoPokerDOM({
-			guestMode: false,
-			userId: 'vp-auth-5',
-			initialBalance: 1000,
-		});
-		try {
-			initVideoPokerClient();
-			actionButton().click();
-			await waitFor(() => actionButton().textContent === 'Draw');
-			actionButton().click();
-			await waitFor(
-				() =>
-					document
-						.getElementById('video-poker-settlement-recovery')
-						?.classList.contains('hidden') === false,
-			);
-
-			const recoveryContainer = document.getElementById('video-poker-settlement-recovery');
-			expect(recoveryContainer?.classList.contains('hidden')).toBe(false);
-
-			(document.getElementById('video-poker-reset-settlement') as HTMLButtonElement).click();
-			await waitFor(
-				() =>
-					document
-						.getElementById('video-poker-settlement-recovery')
-						?.classList.contains('hidden') === true,
-			);
-
-			expect(recoveryContainer?.classList.contains('hidden')).toBe(true);
-			// After reset the round is back to ready (Deal), balance restored to the
-			// pre-settlement server-synced value (initial 1000).
-			expect(actionButton().textContent).toBe('Deal');
-			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
-			expect(balanceEl.textContent).toBe('1,000');
-		} finally {
-			root.remove();
-		}
-	});
-
-	test('blocks a new authenticated deal while settlement is pending', async () => {
+	test('blocks New Round while settlement is blocked', async () => {
 		localStorage.clear();
 		installFetch({ settlement: makeResponse(500, { error: 'INTERNAL_ERROR' }) });
 		const root = buildVideoPokerDOM({
@@ -553,69 +529,19 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 			await waitFor(() => actionButton().disabled === true);
 
 			// Settlement failed → gate is blocked. New Round is disabled.
+			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(true);
-
-			// Reset clears the gate and re-enables the action button.
-			(document.getElementById('video-poker-reset-settlement') as HTMLButtonElement).click();
-			await waitFor(() => actionButton().disabled === false);
-			expect(actionButton().disabled).toBe(false);
 		} finally {
 			root.remove();
 		}
 	});
 
-	test('dispatches achievement-earned event when settlement returns new achievements', async () => {
+	test('renders its own failure copy through settlement.statusMessage', async () => {
 		localStorage.clear();
-		installFetch({
-			settlement: makeResponse(200, {
-				balance: 1050,
-				duplicate: false,
-				newAchievements: [{ id: 'vp-win', name: 'Video Poker Master', icon: '♠' }],
-			}),
-		});
+		installFetch({ settlement: makeResponse(500, { error: 'INTERNAL_ERROR' }) });
 		const root = buildVideoPokerDOM({
 			guestMode: false,
-			userId: 'vp-auth-7',
-			initialBalance: 1000,
-		});
-
-		const events: Array<{ achievements: unknown[] }> = [];
-		const handler = (e: Event) => {
-			const detail = (e as CustomEvent).detail as { achievements: unknown[] };
-			events.push(detail);
-		};
-		window.addEventListener('achievement-earned', handler);
-
-		try {
-			initVideoPokerClient();
-			actionButton().click();
-			await waitFor(() => actionButton().textContent === 'Draw');
-			actionButton().click();
-			await waitFor(() => events.length === 1);
-
-			expect(events).toHaveLength(1);
-			expect(events[0].achievements).toEqual([
-				{ id: 'vp-win', name: 'Video Poker Master', icon: '♠' },
-			]);
-		} finally {
-			window.removeEventListener('achievement-earned', handler);
-			root.remove();
-		}
-	});
-});
-
-describe('initVideoPokerClient — settlement retry', () => {
-	test('retry handler re-submits settlement and adopts the server balance on success', async () => {
-		localStorage.clear();
-		installFetch({
-			settlement: (call) =>
-				call === 1
-					? makeResponse(500, { error: 'INTERNAL_ERROR' })
-					: makeResponse(200, { balance: 1100, duplicate: false }),
-		});
-		const root = buildVideoPokerDOM({
-			guestMode: false,
-			userId: 'vp-auth-retry-ok',
+			userId: 'vp-auth-8',
 			initialBalance: 1000,
 		});
 		try {
@@ -625,63 +551,17 @@ describe('initVideoPokerClient — settlement retry', () => {
 			actionButton().click();
 			await waitFor(
 				() =>
-					document
-						.getElementById('video-poker-settlement-recovery')
-						?.classList.contains('hidden') === false,
-			);
-
-			const retryButton = document.getElementById(
-				'video-poker-retry-settlement',
-			) as HTMLButtonElement;
-			expect(retryButton).toBeTruthy();
-			retryButton.click();
-
-			await waitFor(
-				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '1,100',
-			);
-			expect((document.getElementById('chip-balance') as HTMLElement).textContent).toBe('1,100');
-			expect(
-				document.getElementById('video-poker-settlement-recovery')?.classList.contains('hidden'),
-			).toBe(true);
-		} finally {
-			root.remove();
-		}
-	});
-
-	test('retry handler surfaces a second failure and keeps recovery controls visible', async () => {
-		localStorage.clear();
-		installFetch({
-			settlement: () => makeResponse(500, { error: 'INTERNAL_ERROR' }),
-		});
-		const root = buildVideoPokerDOM({
-			guestMode: false,
-			userId: 'vp-auth-retry-fail',
-			initialBalance: 1000,
-		});
-		try {
-			initVideoPokerClient();
-			actionButton().click();
-			await waitFor(() => actionButton().textContent === 'Draw');
-			actionButton().click();
-			await waitFor(
-				() =>
-					document
-						.getElementById('video-poker-settlement-recovery')
-						?.classList.contains('hidden') === false,
+					(document.getElementById('video-poker-status') as HTMLElement).textContent ===
+					'Settlement failed. Retry or reset before starting another hand.',
 			);
 
 			const statusEl = document.getElementById('video-poker-status') as HTMLElement;
-			const retryButton = document.getElementById(
-				'video-poker-retry-settlement',
-			) as HTMLButtonElement;
-			retryButton.click();
-
-			await waitFor(() => statusEl.textContent?.includes('failed again'));
-			expect(statusEl.textContent).toContain('failed again');
+			expect(statusEl.textContent).toBe(
+				'Settlement failed. Retry or reset before starting another hand.',
+			);
 			expect(
 				document.getElementById('video-poker-settlement-recovery')?.classList.contains('hidden'),
 			).toBe(false);
-			expect(retryButton.disabled).toBe(false);
 		} finally {
 			root.remove();
 		}

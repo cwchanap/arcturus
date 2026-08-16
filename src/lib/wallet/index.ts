@@ -15,3 +15,9 @@ export {
 	ensureSettlementRecoveryControls,
 	type SettlementRecoveryControls,
 } from './settlement-recovery';
+export {
+	buildRoundSettlementCommand,
+	createPublicGameSettlementController,
+	type PublicGameSettlementController,
+	type PublicGameSettlementMessages,
+} from './public-game-settlement';

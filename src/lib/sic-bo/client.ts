@@ -1,53 +1,18 @@
-import {
-	isGuestModeValue,
-	loadGuestBankroll,
-	persistGuestBankroll,
-	shouldSyncAccountChips,
-} from '../public-game-session';
-import {
-	createSettlementGate,
-	ensureSettlementRecoveryControls,
-	newSettlementId,
-	type SettleRoundCommand,
-	type SettleRoundResult,
-} from '../wallet';
+import { createPublicGameSettlementController } from '../wallet';
 import { SicBoGame } from './game';
 import { SIC_BO_CHIP_DENOMINATIONS } from './rules';
 import type { SicBoBetKey, SicBoRoundResult } from './types';
 
-const GAME_KEY = 'sic-bo';
-
-/**
- * Build a wallet settlement command for one completed Sic Bo round.
- */
-export function buildSicBoSettlementCommand(
-	settlementId: string,
-	result: Pick<SicBoRoundResult, 'netDelta'>,
-): SettleRoundCommand {
-	return {
-		settlementId,
-		game: 'sic-bo',
-		delta: result.netDelta,
-		stats: {
-			rounds: 1,
-			wins: result.netDelta > 0 ? 1 : 0,
-			losses: result.netDelta < 0 ? 1 : 0,
-			biggestWin: Math.max(result.netDelta, 0),
-		},
-	};
-}
-
 /**
  * Browser composition for the Sic Bo route: owns the game instance, the bet
  * slip interactions, and the guest/authenticated settlement wiring. Guests
- * stay local; authenticated rolls settle through the shared wallet gate.
+ * stay local; authenticated rolls settle through the shared wallet controller.
  */
 export function initSicBoClient(): void {
 	if (typeof window === 'undefined') return;
 	const root = document.getElementById('sic-bo-root');
 	if (!root) return;
 
-	const balanceEl = document.getElementById('chip-balance');
 	const statusEl = document.getElementById('sic-bo-status');
 	const totalStakeEl = document.getElementById('sic-bo-total-stake');
 	const resultEl = document.getElementById('sic-bo-result');
@@ -56,18 +21,7 @@ export function initSicBoClient(): void {
 	const recoveryHost = document.getElementById('sic-bo-recovery-host');
 	const dieCells = [0, 1, 2].map((i) => document.getElementById(`sic-bo-die-${i}`));
 
-	const clientUserId = root.dataset.userId ?? 'anonymous';
-	const isGuestMode = isGuestModeValue(root.dataset.guestMode ?? 'false');
-	const initialBalance = Number(root.dataset.initialBalance ?? '1000');
-	const startingBalance = isGuestMode
-		? loadGuestBankroll(GAME_KEY, clientUserId, initialBalance)
-		: initialBalance;
-
-	const game = new SicBoGame(startingBalance);
-	const gate = createSettlementGate();
-	let serverSyncedBalance = startingBalance;
 	let selectedDenomination = SIC_BO_CHIP_DENOMINATIONS[0];
-	let settlementMessage: string | null = null;
 
 	function setStatus(message: string): void {
 		if (statusEl) statusEl.textContent = message;
@@ -75,16 +29,7 @@ export function initSicBoClient(): void {
 
 	function render(): void {
 		const state = game.getState();
-
-		const formattedBalance = state.balance.toLocaleString('en-US');
-		if (balanceEl) balanceEl.textContent = formattedBalance;
-		// Keep the shared header balance pill in sync alongside the canonical
-		// panel balance. CasinoLayout renders [data-chip-balance] for
-		// authenticated users; without this it stays at the SSR balance until
-		// the next navigation.
-		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-			el.textContent = `${formattedBalance} chips`;
-		});
+		settlement.syncBalance(state.balance);
 		if (totalStakeEl) totalStakeEl.textContent = `Total stake: ${game.getTotalStake()}`;
 
 		document.querySelectorAll<HTMLElement>('[data-bet-amount]').forEach((el) => {
@@ -125,8 +70,8 @@ export function initSicBoClient(): void {
 			}
 		}
 
-		if (settlementMessage) {
-			setStatus(settlementMessage);
+		if (settlement.statusMessage) {
+			setStatus(settlement.statusMessage);
 		} else if (state.phase === 'betting') {
 			setStatus(game.getRollError() ?? 'Place your bets, then roll.');
 		} else {
@@ -136,75 +81,27 @@ export function initSicBoClient(): void {
 		if (action) {
 			action.textContent = state.phase === 'betting' ? 'Roll' : 'New Round';
 			action.disabled =
-				(state.phase === 'betting' && game.getRollError() !== null) ||
-				(!isGuestMode && gate.isBlocked);
+				(state.phase === 'betting' && game.getRollError() !== null) || settlement.isBlocked;
 		}
 	}
 
-	const recovery = ensureSettlementRecoveryControls({
-		attachTo: recoveryHost,
-		containerId: 'sic-bo-settlement-recovery',
-		retryId: 'sic-bo-retry-settlement',
-		resetId: 'sic-bo-reset-settlement',
-		containerClass: 'hidden mt-4 flex flex-wrap justify-center gap-3',
-		retryLabel: 'Retry settlement',
+	const settlement = createPublicGameSettlementController({
+		gameKey: 'sic-bo',
+		root,
+		recoveryHost,
 		resetLabel: 'Reset round',
-		retryClass: 'deco-btn px-4 py-2 rounded-lg',
-		resetClass: 'deco-btn px-4 py-2 rounded-lg',
+		messages: {
+			failed: 'Settlement failed. Retry or reset before rolling again.',
+			retrying: 'Retrying settlement...',
+			retryFailed: 'Settlement failed again. Retry or reset before rolling again.',
+		},
+		render,
+		onAdoptBalance: (balance) => game.setBalance(balance),
+		onResetRound: () => {
+			if (game.getState().phase === 'complete') game.resetRound();
+		},
 	});
-
-	function showSettlementRecovery(message: string): void {
-		settlementMessage = message;
-		recovery.container?.classList.remove('hidden');
-		render();
-	}
-
-	function hideSettlementRecovery(): void {
-		settlementMessage = null;
-		recovery.container?.classList.add('hidden');
-	}
-
-	function adoptSettlementResult(result: SettleRoundResult): void {
-		serverSyncedBalance = result.balance;
-		game.setBalance(result.balance);
-		hideSettlementRecovery();
-		if (result.newAchievements?.length) {
-			window.dispatchEvent(
-				new CustomEvent('achievement-earned', {
-					detail: { achievements: result.newAchievements },
-				}),
-			);
-		}
-	}
-
-	recovery.retry?.addEventListener('click', async () => {
-		if (!gate.pending) return;
-		if (recovery.retry) recovery.retry.disabled = true;
-		if (recovery.reset) recovery.reset.disabled = true;
-		settlementMessage = 'Retrying settlement...';
-		render();
-		try {
-			const result = await gate.retry();
-			if (result) {
-				adoptSettlementResult(result);
-				render();
-			}
-		} catch (error) {
-			console.error('[WALLET_SETTLEMENT] Sic Bo retry failed:', error);
-			showSettlementRecovery('Settlement failed again. Retry or reset before rolling again.');
-		} finally {
-			if (recovery.retry) recovery.retry.disabled = false;
-			if (recovery.reset) recovery.reset.disabled = false;
-		}
-	});
-
-	recovery.reset?.addEventListener('click', () => {
-		gate.reset();
-		game.setBalance(serverSyncedBalance);
-		if (game.getState().phase === 'complete') game.resetRound();
-		hideSettlementRecovery();
-		render();
-	});
+	const game = new SicBoGame(settlement.startingBalance);
 
 	document.querySelectorAll<HTMLButtonElement>('[data-denomination]').forEach((btn) => {
 		btn.addEventListener('click', () => {
@@ -238,10 +135,9 @@ export function initSicBoClient(): void {
 
 	action?.addEventListener('click', async () => {
 		const state = game.getState();
-		const settlementBlocked = !isGuestMode && gate.isBlocked;
 
 		if (state.phase === 'betting') {
-			if (settlementBlocked) return;
+			if (settlement.isBlocked) return;
 			let result: SicBoRoundResult;
 			try {
 				result = game.roll();
@@ -251,27 +147,11 @@ export function initSicBoClient(): void {
 			}
 			render();
 
-			if (!shouldSyncAccountChips({ isGuestMode })) {
-				persistGuestBankroll(GAME_KEY, clientUserId, game.getState().balance);
-				return;
-			}
-
-			try {
-				const settlement = gate.settle(
-					buildSicBoSettlementCommand(newSettlementId('sic-bo'), result),
-				);
-				render();
-				const settled = await settlement;
-				adoptSettlementResult(settled);
-			} catch (error) {
-				console.error('[WALLET_SETTLEMENT] Sic Bo settlement failed:', error);
-				showSettlementRecovery('Settlement failed. Retry or reset before rolling again.');
-			}
-			render();
+			await settlement.completeRound(result.netDelta, game.getState().balance);
 			return;
 		}
 
-		if (settlementBlocked) return;
+		if (settlement.isBlocked) return;
 		try {
 			game.resetRound();
 		} catch (error) {

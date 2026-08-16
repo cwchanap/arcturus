@@ -1,40 +1,9 @@
 import { setSlotState } from '../card-slot-utils';
-import {
-	isGuestModeValue,
-	loadGuestBankroll,
-	persistGuestBankroll,
-	shouldSyncAccountChips,
-} from '../public-game-session';
-import {
-	createSettlementGate,
-	ensureSettlementRecoveryControls,
-	newSettlementId,
-	type SettleRoundCommand,
-	type SettleRoundResult,
-} from '../wallet';
+import { createPublicGameSettlementController } from '../wallet';
 import { VideoPokerGame } from './game';
 import { MIN_WAGER } from './paytable';
 import type { Card } from '../cards';
 import type { VideoPokerRoundResult } from './types';
-
-const GAME_KEY = 'video-poker';
-
-export function buildVideoPokerSettlementCommand(
-	settlementId: string,
-	result: Pick<VideoPokerRoundResult, 'netDelta'>,
-): SettleRoundCommand {
-	return {
-		settlementId,
-		game: 'video-poker',
-		delta: result.netDelta,
-		stats: {
-			rounds: 1,
-			wins: result.netDelta > 0 ? 1 : 0,
-			losses: result.netDelta < 0 ? 1 : 0,
-			biggestWin: Math.max(result.netDelta, 0),
-		},
-	};
-}
 
 function rankLabel(rank: Card['rank']): string {
 	if (rank === 11) return 'J';
@@ -50,7 +19,6 @@ export function initVideoPokerClient(): void {
 	const root = document.getElementById('video-poker-root');
 	if (!root) return;
 
-	const balanceEl = document.getElementById('chip-balance');
 	const statusEl = document.getElementById('video-poker-status');
 	const resultEl = document.getElementById('video-poker-result');
 	const action = document.getElementById('video-poker-action') as HTMLButtonElement | null;
@@ -58,17 +26,7 @@ export function initVideoPokerClient(): void {
 	const cardButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-card-index]')];
 	const wagerButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-wager]')];
 
-	const clientUserId = root.dataset.userId ?? 'anonymous';
-	const isGuestMode = isGuestModeValue(root.dataset.guestMode ?? 'false');
-	const initialBalance = Number(root.dataset.initialBalance ?? '1000');
-	const startingBalance = isGuestMode
-		? loadGuestBankroll(GAME_KEY, clientUserId, initialBalance)
-		: initialBalance;
-	const game = new VideoPokerGame(startingBalance);
-	const gate = createSettlementGate();
-	let serverSyncedBalance = startingBalance;
 	let wagerMessage: string | null = null;
-	let settlementMessage: string | null = null;
 
 	function renderCards(): void {
 		const state = game.getState();
@@ -96,13 +54,8 @@ export function initVideoPokerClient(): void {
 
 	function render(): void {
 		const state = game.getState();
+		settlement.syncBalance(state.balance);
 		renderCards();
-
-		const formattedBalance = state.balance.toLocaleString('en-US');
-		if (balanceEl) balanceEl.textContent = formattedBalance;
-		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-			el.textContent = `${formattedBalance} chips`;
-		});
 
 		for (const button of wagerButtons) {
 			button.setAttribute('aria-pressed', String(Number(button.dataset.wager) === state.wager));
@@ -115,21 +68,20 @@ export function initVideoPokerClient(): void {
 				: '';
 		}
 
-		const settlementBlocked = !isGuestMode && gate.isBlocked;
 		if (action) {
 			action.textContent =
 				state.phase === 'ready' ? 'Deal' : state.phase === 'holding' ? 'Draw' : 'New Round';
 			action.disabled =
 				(state.phase === 'ready' && game.getWagerError(state.wager) !== null) ||
-				(state.phase === 'ready' && settlementBlocked) ||
-				(state.phase === 'complete' && settlementBlocked);
+				(state.phase === 'ready' && settlement.isBlocked) ||
+				(state.phase === 'complete' && settlement.isBlocked);
 		}
 
 		if (statusEl) {
 			if (state.phase === 'ready' && state.balance < MIN_WAGER) {
-				statusEl.textContent = `Not enough chips to deal.${isGuestMode ? ' Sign in to get more chips.' : ''}`;
-			} else if (settlementMessage) {
-				statusEl.textContent = settlementMessage;
+				statusEl.textContent = `Not enough chips to deal.${settlement.isGuestMode ? ' Sign in to get more chips.' : ''}`;
+			} else if (settlement.statusMessage) {
+				statusEl.textContent = settlement.statusMessage;
 			} else if (wagerMessage) {
 				statusEl.textContent = wagerMessage;
 			} else {
@@ -143,71 +95,24 @@ export function initVideoPokerClient(): void {
 		}
 	}
 
-	const recovery = ensureSettlementRecoveryControls({
-		attachTo: recoveryHost,
-		containerId: 'video-poker-settlement-recovery',
-		retryId: 'video-poker-retry-settlement',
-		resetId: 'video-poker-reset-settlement',
-		containerClass: 'hidden mt-4 flex flex-wrap justify-center gap-3',
-		retryLabel: 'Retry settlement',
+	const settlement = createPublicGameSettlementController({
+		gameKey: 'video-poker',
+		root,
+		recoveryHost,
 		resetLabel: 'Reset hand',
-		retryClass: 'deco-btn px-4 py-2 rounded-lg',
-		resetClass: 'deco-btn px-4 py-2 rounded-lg',
+		messages: {
+			failed: 'Settlement failed. Retry or reset before starting another hand.',
+			retrying: 'Retrying settlement...',
+			retryFailed: 'Settlement failed again. Retry or reset the hand.',
+		},
+		render,
+		onAdoptBalance: (balance) => game.setBalance(balance),
+		onResetRound: () => {
+			if (game.getState().phase === 'complete') game.resetRound();
+			wagerMessage = null;
+		},
 	});
-
-	function showSettlementRecovery(message: string): void {
-		settlementMessage = message;
-		recovery.container?.classList.remove('hidden');
-		render();
-	}
-
-	function hideSettlementRecovery(): void {
-		settlementMessage = null;
-		recovery.container?.classList.add('hidden');
-	}
-
-	function adoptSettlementResult(result: SettleRoundResult): void {
-		serverSyncedBalance = result.balance;
-		game.setBalance(result.balance);
-		hideSettlementRecovery();
-		if (result.newAchievements?.length) {
-			window.dispatchEvent(
-				new CustomEvent('achievement-earned', {
-					detail: { achievements: result.newAchievements },
-				}),
-			);
-		}
-	}
-
-	recovery.retry?.addEventListener('click', async () => {
-		if (!gate.pending) return;
-		if (recovery.retry) recovery.retry.disabled = true;
-		if (recovery.reset) recovery.reset.disabled = true;
-		settlementMessage = 'Retrying settlement...';
-		render();
-		try {
-			const result = await gate.retry();
-			if (result) {
-				adoptSettlementResult(result);
-				render();
-			}
-		} catch (error) {
-			console.error('[WALLET_SETTLEMENT] Video Poker retry failed:', error);
-			showSettlementRecovery('Settlement failed again. Retry or reset the hand.');
-		} finally {
-			if (recovery.retry) recovery.retry.disabled = false;
-			if (recovery.reset) recovery.reset.disabled = false;
-		}
-	});
-
-	recovery.reset?.addEventListener('click', () => {
-		gate.reset();
-		game.setBalance(serverSyncedBalance);
-		if (game.getState().phase === 'complete') game.resetRound();
-		hideSettlementRecovery();
-		wagerMessage = null;
-		render();
-	});
+	const game = new VideoPokerGame(settlement.startingBalance);
 
 	for (const button of wagerButtons) {
 		button.addEventListener('click', () => {
@@ -240,7 +145,6 @@ export function initVideoPokerClient(): void {
 
 	async function onPrimaryAction(): Promise<void> {
 		const state = game.getState();
-		const settlementBlocked = !isGuestMode && gate.isBlocked;
 
 		if (state.phase === 'ready') {
 			const wagerError = game.getWagerError(state.wager);
@@ -249,7 +153,7 @@ export function initVideoPokerClient(): void {
 				render();
 				return;
 			}
-			if (settlementBlocked) return;
+			if (settlement.isBlocked) return;
 			try {
 				game.deal();
 				wagerMessage = null;
@@ -272,27 +176,11 @@ export function initVideoPokerClient(): void {
 				return;
 			}
 
-			if (!shouldSyncAccountChips({ isGuestMode })) {
-				persistGuestBankroll(GAME_KEY, clientUserId, game.getState().balance);
-				return;
-			}
-
-			try {
-				const settlement = gate.settle(
-					buildVideoPokerSettlementCommand(newSettlementId('video-poker'), round),
-				);
-				render();
-				const result = await settlement;
-				adoptSettlementResult(result);
-			} catch (error) {
-				console.error('[WALLET_SETTLEMENT] Video Poker settlement failed:', error);
-				showSettlementRecovery('Settlement failed. Retry or reset before starting another hand.');
-			}
-			render();
+			await settlement.completeRound(round.netDelta, game.getState().balance);
 			return;
 		}
 
-		if (settlementBlocked) return;
+		if (settlement.isBlocked) return;
 		try {
 			game.resetRound();
 			wagerMessage = null;

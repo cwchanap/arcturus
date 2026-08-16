@@ -7,25 +7,31 @@ Build HPA-197 as the next concrete Arcturus roadmap slice: one self-contained si
 Keep the implementation deliberately small:
 
 - Reuse `src/lib/cards.ts` for the standard 52-card primitive; keep the Joker Pai-Gow-local.
-- Extract only the ordinary five-card ranking/comparison logic already private inside Texas Hold'em, because Pai Gow is now a second concrete consumer.
-- Keep Joker semantics, Pai Gow straight ordering, two-card Low rules, split validation, deterministic dealer arrangement, commission, game state, and UI under `src/lib/pai-gow-poker/`.
+- Make only the existing Fisher-Yates `shuffleDeck` signature type-generic so the local 53-card union can be shuffled.
+- Extract only the ordinary five-card ranking/comparison core already private inside Texas Hold'em, because Pai Gow is now a second concrete consumer.
+- Keep Joker semantics, Pai Gow straight ordering, two-card Low rules, split validation, deterministic house way, round resolution, commission, game state, immutable snapshots, and UI under `src/lib/pai-gow-poker/`.
 - Reuse `validateBet`, `CardSlot`, `setSlotState`, `createPublicGameSession`, and `createPublicGameSettlementController` unchanged.
 - Keep one main wager only.
 
-Do not build a generic poker engine, card-arrangement framework, wildcard engine, strategy platform, base game class, or new settlement layer.
+Do not build a generic poker engine, card-arrangement framework, wildcard engine, strategy platform, base game class, test-only hand injection hook, or new settlement layer.
 
 ## Why HPA-197 is next
 
 HPA-198 Three-Card Showdown is complete. The remaining HPA-167 children are either explicitly deferred (`HPA-174`, `HPA-177`) or the roadmap umbrella itself. HPA-197 is therefore the next concrete backlog item.
 
-Its only recorded blocker, HPA-545 wallet settlement simplification, is complete. HPA-198 also established two useful seams that now exist on `main`:
+Its only recorded blocker, HPA-545 wallet settlement simplification, is complete. HPA-198 also established two stable seams that now exist on `main`:
 
 - `src/lib/cards.ts` for standard cards/shuffling;
 - `src/lib/wallet/public-game-settlement.ts` for guest bankroll, one net authenticated settlement, balance adoption, and Retry/Reset recovery.
 
+Three-Card Showdown also established two local structural patterns worth copying directly rather than inventing alternatives:
+
+- pure round economics in `resolvePlayedHand(...)`;
+- deep-cloned state/result snapshots at the game boundary.
+
 ## Approaches considered
 
-### A. Extract one structural five-card comparator; keep Pai Gow rules local — selected
+### A. Small shared comparator + Pai-Gow-local rules — selected
 
 Move the exact standard five-card rank/comparison core out of `src/lib/poker/handEvaluator.ts` into a neutral pure module. Texas Hold'em keeps its player/community-card logic, combination generation, AI heuristics, and existing card type. Pai Gow wraps the comparator with local rules.
 
@@ -35,14 +41,15 @@ Why:
 - A structural `{ rank, suit }` input works with both card shapes without migrating Hold'em's extra `value` field.
 - Ordinary kicker/full-house/wheel behavior should not be copied into a second implementation now that there is a real second consumer.
 - The shared API remains only two pure functions.
+- Pai Gow's Joker and unusual straight ordering remain local and cannot leak into Hold'em.
 
 ### B. Copy the full comparator into Pai Gow — rejected
 
-This avoids a shared edit but immediately duplicates ordinary full-house, straight, pair, and kicker logic. That is maintenance cost with no product benefit.
+This avoids a shared edit but immediately duplicates ordinary full-house, straight, pair, kicker, and tie logic. That is maintenance cost with no product benefit.
 
 ### C. Unify all card/evaluator/arrangement systems — rejected
 
-Do not migrate Texas Hold'em's `{ value, suit, rank }` card type, Video Poker's Jacks-or-Better evaluator, Three-Card Showdown's three-card ordering, or Blackjack cards. Do not add rule configuration so those unrelated games can share one abstraction.
+Do not migrate Texas Hold'em's `{ value, suit, rank }` card type, Video Poker's Jacks-or-Better evaluator, Three-Card Showdown's three-card ordering, or Blackjack cards. Do not add rule configuration so unrelated games can share one abstraction.
 
 ## Shared seam 1: type-generic shuffle only
 
@@ -121,6 +128,15 @@ Shared rules are ordinary poker only:
 
 Move the existing private five-card ranking/comparison behavior from `src/lib/poker/handEvaluator.ts` rather than rewriting it independently.
 
+The seam tests must explicitly pin the two facts the Pai Gow wrapper relies on:
+
+```text
+ordinary unsuited wheel < ordinary unsuited 6-high straight
+Broadway straight flush > K-high straight flush
+```
+
+For the straight-flush case, both rankings remain category `straight-flush`; Broadway carries tie breaker `[14]` and K-high carries `[13]`. This locks Royal-collapse behavior in the neutral comparator and prevents Pai Gow-specific Royal/wheel ordering from creeping into it.
+
 Texas Hold'em keeps local:
 
 - preflop/postflop strength heuristics;
@@ -129,7 +145,7 @@ Texas Hold'em keeps local:
 - player/community-card mapping;
 - winner selection.
 
-Do not migrate Video Poker to this module. Jacks-or-Better is a payout evaluator, not the same contract.
+Do not migrate Video Poker or Three-Card Showdown to this module.
 
 ## Pai Gow-local card model
 
@@ -169,7 +185,7 @@ export function createShuffledPaiGowDeck(
 }
 ```
 
-No other game imports this Joker type.
+No other game imports the Joker type.
 
 ## Pai Gow ranking rules
 
@@ -218,9 +234,9 @@ K-Q-J-10-9 suited -> category straight-flush, tieBreakers [13]
 ...downward by ordinary high card
 ```
 
-These synthetic tie-break values exist only inside the Pai Gow wrapper. The neutral comparator keeps standard wheel ordering.
+These synthetic tie breakers exist only inside the Pai Gow wrapper. The neutral comparator keeps standard wheel/Royal-collapse behavior.
 
-### Local API
+### Local rules API
 
 Keep under `src/lib/pai-gow-poker/rules.ts`:
 
@@ -309,7 +325,7 @@ export function getArrangementError(
 
 Validation:
 
-- seven dealt cards;
+- exactly seven dealt cards;
 - exactly two Low indexes;
 - distinct indexes in `0..6`;
 - remaining five cards become High;
@@ -332,7 +348,7 @@ export function arrangeHouseWay(
 ): PaiGowArrangement;
 ```
 
-This MVP deliberately does not reproduce a named casino's long house-way chart. It uses one stable policy:
+The MVP deliberately does not reproduce a named casino's long house-way chart. It uses one stable policy:
 
 1. Enumerate all 21 ways to choose two Low cards.
 2. Discard fouled arrangements.
@@ -340,13 +356,23 @@ This MVP deliberately does not reproduce a named casino's long house-way chart. 
 4. If High ties, prefer the strongest two-card Low hand.
 5. If both rankings tie, prefer the lexicographically smaller original Low-index pair.
 
-This preserves premium High hands and is easy to test. The function is isolated so a more authentic house-way chart could replace it later without touching game state/UI.
-
 The player's **Auto Arrange** button calls the same function. It is convenience, not an AI subsystem.
 
-## Comparing player and dealer
+## Pure round resolver
 
-Dealer copies win. The player wins a sub-hand only on a strict positive comparison:
+Do not calculate round outcome or commission inside `PaiGowPokerGame.confirm()`.
+
+Keep the complete round economics next to the ranking helpers in `src/lib/pai-gow-poker/rules.ts`:
+
+```ts
+export function resolvePaiGowRound(
+  player: PaiGowArrangement,
+  dealer: PaiGowArrangement,
+  wager: number,
+): PaiGowRoundResult;
+```
+
+It owns:
 
 ```ts
 const playerWonHigh =
@@ -355,13 +381,39 @@ const playerWonLow =
   comparePaiGowRankings(player.lowRanking, dealer.lowRanking) > 0;
 ```
 
-Overall:
+Dealer copies win because only strict positive comparisons count as player wins.
+
+Outcome:
 
 - `win`: player wins both;
 - `push`: player wins exactly one;
 - `loss`: player wins neither, including dealer copies/ties.
 
-There is no separate round `tie` outcome.
+Economics:
+
+```text
+win  -> commission = wager / 20
+        grossPayout = 2 * wager - commission
+        netDelta = wager - commission
+
+push -> commission = 0
+        grossPayout = wager
+        netDelta = 0
+
+loss -> commission = 0
+        grossPayout = 0
+        netDelta = -wager
+```
+
+For wager `20`, focused resolver tests pin:
+
+```text
+win  -> +19 net, commission 1, gross 39
+push ->   0 net, commission 0, gross 20
+loss -> -20 net, commission 0, gross 0
+```
+
+Construct the player/dealer arrangements directly in unit tests. Do not hunt for RNG sequences and do not add `setHands`, deck injection, or any production test hook.
 
 ## Main wager and commission
 
@@ -383,17 +435,27 @@ A wager must:
 
 Twenty-chip increments make 5% commission an exact integer chip amount, avoiding a fractional/rounding policy.
 
-After Deal has deducted one wager:
-
-| Outcome | Gross payout credited | Net delta |
-| --- | ---: | ---: |
-| Player wins both | `2 * wager - wager / 20` | `wager - wager / 20` |
-| Push | `wager` | `0` |
-| Player loses | `0` | `-wager` |
-
 No Fortune/Envy/progressive/Tiger/insurance side wager, commission-free variant, or banking.
 
-## Pure game state
+## Result shape
+
+```ts
+export type PaiGowRoundOutcome = 'win' | 'push' | 'loss';
+
+export interface PaiGowRoundResult {
+  outcome: PaiGowRoundOutcome;
+  wager: number;
+  commission: number;
+  grossPayout: number;
+  netDelta: number;
+  player: PaiGowArrangement;
+  dealer: PaiGowArrangement;
+}
+```
+
+Commission is nonzero only on a player win.
+
+## Pure game state and immutable snapshots
 
 Create:
 
@@ -428,7 +490,7 @@ betting --Deal--> arranging --Confirm--> complete --New Round--> betting
                        +-------- click cards into/out of Low
 ```
 
-Public game API:
+Public API:
 
 ```ts
 constructor(initialBalance: number, random?: () => number)
@@ -452,27 +514,30 @@ Behavior:
 - `toggleLowCard` keeps unique indexes and never allows a third selected card;
 - Auto Arrange adopts `arrangeHouseWay(playerCards).lowIndexes`;
 - Reset clears Low selection only;
-- Confirm rejects incomplete/fouled splits, arranges dealer once, resolves locally, credits gross payout, stores result, enters `complete`;
+- Confirm rejects incomplete/fouled splits;
+- Confirm builds the current player arrangement, house-ways the dealer, calls `resolvePaiGowRound(player, dealer, wager)`, credits only `result.grossPayout`, stores the completed result, and enters `complete`;
 - New Round clears cards/result/selection and retains wager;
 - `setBalance` only adopts a validated authoritative balance after settlement/recovery.
 
-## Result shape
+`Readonly<PaiGowPokerState>` is not treated as sufficient isolation. Match the Three-Card Showdown boundary: `getState()` returns a deep clone of mutable nested data, and `confirm()` returns a deep clone that does not alias the stored result.
 
-```ts
-export type PaiGowRoundOutcome = 'win' | 'push' | 'loss';
+Private clone helpers in `game.ts` are enough:
 
-export interface PaiGowRoundResult {
-  outcome: PaiGowRoundOutcome;
-  wager: number;
-  commission: number;
-  grossPayout: number;
-  netDelta: number;
-  player: PaiGowArrangement;
-  dealer: PaiGowArrangement;
-}
+```text
+clone card objects
+clone lowIndexes arrays
+clone ranking tieBreakers
+clone arrangement high/low arrays
+clone round result
 ```
 
-Commission is nonzero only on a player win.
+No generic immutable-state utility is added.
+
+Tests must mutation-probe the contract:
+
+- mutate a returned `playerCards` card and splice/change returned `lowIndexes`; the next `getState()` is unchanged;
+- mutate a returned `confirm()` result's card/index/ranking tieBreakers; the next `getState().result` is unchanged;
+- mutate a returned `getState().result`; a subsequent `getState().result` is unchanged.
 
 ## Page and client
 
@@ -530,7 +595,7 @@ Joker uses the existing string `CardData` renderer through a local adapter:
 { rank: '★', suit: '★' }
 ```
 
-No `CardSlot` change is necessary.
+`getSuitSymbol` already falls back to the raw string, so `CardSlot` needs no change.
 
 Controls:
 
@@ -572,6 +637,8 @@ Update:
 - `src/pages/index.astro` lobby card;
 - `e2e/profile-statistics.spec.ts` canonical list.
 
+`src/pages/games/index.astro` remains only its existing redirect to `/#games`; do not add a second lobby there.
+
 No database migration is required; game keys are application-validated text.
 
 ## Deterministic acceptance fixture
@@ -594,6 +661,8 @@ Dealer Low:  2♦ 3♦
 
 Player loses High, wins Low, so the representative round is a Push. At wager 20, balance moves `1000 -> 980 -> 1000`.
 
+Use this fixture for the game lifecycle, Happy-DOM, and guest E2E spine. Win/loss payout arithmetic belongs to `resolvePaiGowRound` unit tests, not RNG-dependent `confirm()` tests.
+
 Guest E2E covers Deal -> Auto Arrange -> Confirm -> Push -> New Round and proves no wallet request. One authenticated case proves exactly one `pai-gow-poker` settlement with `delta: 0`; it does not duplicate the generic settlement recovery matrix.
 
 ## Testing focus
@@ -601,16 +670,19 @@ Guest E2E covers Deal -> Auto Arrange -> Confirm -> Push -> New Round and proves
 Pure tests cover:
 
 - 53-card uniqueness + deterministic shuffle;
+- standard comparator seam: unsuited wheel below 6-high and Broadway straight flush above K-high straight flush;
 - Five Aces, Royal, Joker restrictions, exact Pai Gow straight/SF ordering;
 - two-card Joker-as-Ace behavior;
 - incomplete/duplicate/out-of-range/fouled arrangement validation;
 - all-21-split house-way selection, High-first/Low-second/stable-index tie breakers;
+- `resolvePaiGowRound` win/push/loss arithmetic with constructed arrangements;
 - wager increment/affordability;
-- Deal, click selection, Auto Arrange, Reset, Confirm, payout, New Round, balance adoption.
+- zero-RNG Deal, click selection, Auto Arrange, Reset, Push Confirm, New Round, balance adoption;
+- immutable state/result snapshot mutation probes.
 
-Happy-DOM covers node identity/movement, `aria-pressed`, dealer reveal timing, foul message, and settlement-blocked New Round.
+Happy-DOM covers node identity/movement, `aria-pressed`, dealer reveal timing, foul message, settlement-blocked New Round, and one representative Push confirm.
 
-Playwright covers the deterministic guest Push, one authenticated settlement, and profile statistics registration.
+Playwright covers the deterministic guest Push, one authenticated `delta: 0` settlement, and profile statistics registration.
 
 ## Scope guardrails
 
@@ -628,6 +700,7 @@ Do not add:
 - base game class/client controller;
 - AI/LLM coaching;
 - ranked/daily mode, history, replay, persistence;
+- test-only hand/deck injection beyond the existing `random` callback;
 - new API, table, migration, settlement queue, automatic retry, or compatibility code.
 
 ## Scope gate
@@ -637,6 +710,6 @@ The only shared runtime edits allowed by this design are:
 1. make `shuffleDeck` type-generic without changing its algorithm;
 2. extract the ordinary five-card comparator already present in Hold'em.
 
-Everything about Joker, Pai Gow ordering, split validity, house way, commission, game lifecycle, and arrangement UI remains under `src/lib/pai-gow-poker/` plus normal route/lobby/game-registration integration.
+Everything about Joker, Pai Gow ordering, split validity, house way, round resolution, commission, game lifecycle, immutable snapshots, and arrangement UI remains under `src/lib/pai-gow-poker/` plus normal route/lobby/game-registration integration.
 
-If the shared comparator starts accepting Pai Gow/Joker/options, or implementation starts extracting generic arrangement/strategy layers, simplify before merge.
+If the shared comparator starts accepting Pai Gow/Joker/options, or implementation starts extracting generic arrangement/strategy/immutability layers, simplify before merge.

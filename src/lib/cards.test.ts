@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createDeck, shuffleDeck } from './cards';
-import type { Card } from './types';
+import type { Card } from './cards';
 
 const id = (card: Card) => `${card.rank}-${card.suit}`;
 
-describe('video poker cards', () => {
+describe('shared cards', () => {
 	test('creates exactly 52 unique cards', () => {
 		const deck = createDeck();
 		expect(deck).toHaveLength(52);
@@ -23,5 +23,16 @@ describe('video poker cards', () => {
 		const shuffled = shuffleDeck(deck, () => 0);
 		expect(shuffled.map(id)).toEqual(['3-hearts', '4-hearts', '2-hearts']);
 		expect(deck.map(id)).toEqual(['2-hearts', '3-hearts', '4-hearts']);
+	});
+
+	test('constant-zero Fisher-Yates pins the first six cards', () => {
+		expect(shuffleDeck(createDeck(), () => 0).slice(0, 6)).toEqual([
+			{ rank: 3, suit: 'hearts' },
+			{ rank: 4, suit: 'hearts' },
+			{ rank: 5, suit: 'hearts' },
+			{ rank: 6, suit: 'hearts' },
+			{ rank: 7, suit: 'hearts' },
+			{ rank: 8, suit: 'hearts' },
+		]);
 	});
 });

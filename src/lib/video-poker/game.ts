@@ -1,8 +1,8 @@
 import { validateBet } from '../bet-validation';
-import { createShuffledDeck } from './cards';
+import { createShuffledDeck, type Card } from '../cards';
 import { evaluateHand } from './evaluator';
 import { calculatePayout, MAX_WAGER, MIN_WAGER } from './paytable';
-import type { Card, VideoPokerRoundResult, VideoPokerState } from './types';
+import type { VideoPokerRoundResult, VideoPokerState } from './types';
 
 function normalizeBalance(balance: number): number {
 	if (!Number.isFinite(balance) || balance < 0) {

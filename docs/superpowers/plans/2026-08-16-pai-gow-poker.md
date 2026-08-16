@@ -2,149 +2,44 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add one focused single-player Pai Gow Poker game with seven-card arrangement, a semi-wild Joker, deterministic dealer arrangement, a pure round resolver, 5% commission, immutable game snapshots, and the existing public-game wallet settlement flow.
+**Goal:** Add one focused single-player Pai Gow Poker game with seven-card arrangement, a semi-wild Joker, deterministic Auto Arrange/dealer house way, integer-chip commission, and the existing public-game settlement flow.
 
-**Architecture:** Reuse the neutral standard-card deck and make only its Fisher-Yates shuffle type-generic. Extract the already-existing ordinary five-card poker ranking/comparison core from Texas Hold'em into one small structural module; keep Hold'em combination logic local. Keep every Pai Gow-specific rule—Joker substitution, Pai Gow straight ordering, two-card comparison, arrangement validation, 21-split house way, round resolution, payouts, immutable snapshots, state, and DOM interaction—inside `src/lib/pai-gow-poker/`. Compose the existing `createPublicGameSettlementController` without adding persistence, retry, client-controller, test-hook, or rules frameworks.
+**Architecture:** Keep exactly two shared runtime edits: extract the ordinary five-card comparator already private in Texas Hold'em, and make the existing Fisher-Yates shuffle signature type-generic when the Pai Gow 53-card deck consumes it. All Joker behavior, Pai Gow ordering, cross-size comparison, arrangement validation, house way, round economics, game state, snapshot cloning, and UI stay under `src/lib/pai-gow-poker/`.
 
 **Tech Stack:** Astro 5, TypeScript, Bun tests, Happy DOM, Playwright, existing Cloudflare Worker/D1 wallet API.
 
 ## Global Constraints
 
 - Route: `/games/pai-gow-poker`.
-- Game key: `pai-gow-poker`; label: `Pai Gow Poker`; icon: `🃏`; it becomes `GAME_TYPES` entry 11.
-- Use 52 standard shared cards plus exactly one Pai Gow-local Joker.
-- Joker is an Ace by default; it may instead complete a straight, flush, straight flush, or Royal Flush; Four Aces + Joker is Five Aces.
+- Game key: `pai-gow-poker`; label: `Pai Gow Poker`; icon: `☯️`; it becomes `GAME_TYPES` entry 11.
+- Shared `Card` stays unchanged; Joker is Pai-Gow-local.
+- Joker is Ace by default and may instead complete Straight/Flush/Straight Flush/Royal; Four Aces + Joker = Five Aces.
 - Five-card order: Five Aces > Royal Flush > Straight Flush > Four of a Kind > Full House > Flush > Straight > Three of a Kind > Two Pair > Pair > High Card.
-- Straight order: A-K-Q-J-10 highest; A-2-3-4-5 second; K-Q-J-10-9 third, then downward.
-- Non-Royal straight-flush order: A-2-3-4-5 highest, then K-Q-J-10-9, then downward; Royal Flush is a separate higher category.
-- The Low hand has exactly two cards and can rank only Pair or High Card; its Joker always acts as Ace.
-- The five-card High hand must rank strictly higher than the two-card Low hand; equal or lower is a foul.
-- Dealer copies win: the player must strictly beat the dealer in a sub-hand to win it.
-- Overall outcome is `win` only when the player wins both sub-hands, `push` when the player wins exactly one, and `loss` otherwise.
-- House way: enumerate all 21 two-card Low choices, reject fouls, maximize High ranking first, then Low ranking, then choose the lexicographically smaller low-index pair.
-- `resolvePaiGowRound(player, dealer, wager)` owns sub-hand comparison, overall outcome, commission, gross payout, and net delta. `PaiGowPokerGame.confirm()` must delegate to it.
-- Main wager only. `MIN_WAGER = 20`, `MAX_WAGER = 500`, `WAGER_OPTIONS = [20, 40, 100, 200, 500]`, and every valid wager is divisible by 20.
-- A win charges exactly 5% commission: gross payout `2 * wager - wager / 20`, net delta `wager - wager / 20`; push gross payout `wager`, net `0`; loss gross payout `0`, net `-wager`.
-- Initial wager is exactly `20`.
-- `getState()` and `confirm()` return deep-cloned snapshots; caller mutation must not change stored cards, indexes, rankings, or result data.
-- Guest rounds stay local. Authenticated Confirm produces exactly one net settlement through `createPublicGameSettlementController`.
-- Reuse `validateBet`, `CardSlot`, `setSlotState`, `createPublicGameSession`, and `createPublicGameSettlementController` unchanged.
-- No side bets, banking, commission-free variant, drag-and-drop system, generic card-arrangement component, generic wildcard engine, configurable house-way platform, generic immutability helper, base game class, AI, ranked mode, history, replay, new API, schema migration, settlement queue, automatic retry, production hand/deck test hook, or compatibility layer.
-- Do not migrate Texas Hold'em's `{ value, suit, rank }` card model, Blackjack cards, Video Poker's Jacks-or-Better evaluator, or Three-Card Showdown's three-card evaluator.
+- Pai Gow straight order: Broadway highest, wheel second, K-high third. Wheel is highest non-Royal Straight Flush.
+- Cross-size comparison: category, common tie-break prefix, then longer tie-break array wins.
+- Arrangement is legal when High >= Low. Dealer copies still win in player-vs-dealer sub-hand comparison.
+- House way enumerates all 21 Low choices. Preserve the strongest available Straight/Flush/Straight Flush/Royal High; otherwise maximize Low first, then High, then stable Low indexes.
+- Main wager only: `MIN_WAGER = 5`, `MAX_WAGER = 100`, `WAGER_OPTIONS = [5, 10, 20, 50, 100]`.
+- No wager divisibility rule. Winning commission is `Math.ceil(wager * 0.05)`.
+- `resolvePaiGowRound` owns outcome + payout math. `PaiGowPokerGame.confirm()` only orchestrates.
+- `getState()` and `confirm()` return deep-cloned snapshots.
+- Seven player card buttons stay in one stable DOM row; no render-time reparenting.
+- Arrangement UI shows local High/Low category names in the existing status area.
+- Guest play stays local. Authenticated Confirm creates exactly one settlement through `createPublicGameSettlementController`.
+- No side bets, banking, commission-free variant, drag system, generic arrangement/wildcard/house-way framework, base game class, AI, ranked/history/replay, new API/schema, settlement queue, automatic retry, compatibility layer, or production hand/deck test hook.
 
 ---
 
-## Task 1: Make Fisher-Yates type-generic without changing runtime behavior
+## Task 1: Characterize and extract ordinary five-card comparison
 
 **Files:**
-- Modify: `src/lib/cards.ts`
-- Modify: `src/lib/cards.test.ts`
-
-**Interfaces:**
-- Consumes: existing `shuffleDeck` Fisher-Yates implementation.
-- Produces:
-
-```ts
-export function shuffleDeck<T>(
-  deck: readonly T[],
-  random?: () => number,
-): T[];
-```
-
-`createDeck()` and `createShuffledDeck()` remain standard-52-card functions returning `Card[]`.
-
-This task is intentionally a type-only enabling refactor. The JavaScript algorithm already works for arbitrary array items, so do not manufacture a fake failing runtime test.
-
-- [ ] **Step 1: Add a pre-refactor runtime regression for structural items and non-mutation**
-
-Add to `src/lib/cards.test.ts`:
-
-```ts
-test('shuffleDeck preserves arbitrary structural values without mutating input', () => {
-  const input = [
-    { id: 'a', special: false },
-    { id: 'b', special: true },
-    { id: 'c', special: false },
-  ] as const;
-
-  const result = shuffleDeck(input as never, () => 0);
-
-  expect(result).toEqual([
-    { id: 'b', special: true },
-    { id: 'c', special: false },
-    { id: 'a', special: false },
-  ]);
-  expect(input.map((item) => item.id)).toEqual(['a', 'b', 'c']);
-});
-```
-
-The temporary `as never` makes the runtime regression executable before the TypeScript signature changes. Bun is not being used as a type-check claim here.
-
-- [ ] **Step 2: Run the existing shared-card suite**
-
-```bash
-bun test src/lib/cards.test.ts
-```
-
-Expected: PASS.
-
-- [ ] **Step 3: Generalize only the signature and remove the temporary cast**
-
-Change:
-
-```ts
-export function shuffleDeck(
-  deck: readonly Card[],
-  random: () => number = Math.random,
-): Card[] {
-```
-
-to:
-
-```ts
-export function shuffleDeck<T>(
-  deck: readonly T[],
-  random: () => number = Math.random,
-): T[] {
-```
-
-Then change the test call to:
-
-```ts
-const result = shuffleDeck(input, () => 0);
-```
-
-Leave the Fisher-Yates body unchanged. Do not add Joker or deck-configuration knowledge.
-
-- [ ] **Step 4: Run the shared-card suite again**
-
-```bash
-bun test src/lib/cards.test.ts
-```
-
-Expected: PASS, including the existing deterministic standard-deck fixture.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add src/lib/cards.ts src/lib/cards.test.ts
-git commit -m "refactor(cards): generalize shuffle item type"
-```
-
----
-
-## Task 2: Extract the ordinary five-card comparator from Texas Hold'em
-
-**Files:**
+- Modify: `src/lib/poker/handEvaluator.test.ts`
 - Create: `src/lib/five-card-poker.ts`
 - Create: `src/lib/five-card-poker.test.ts`
 - Modify: `src/lib/poker/handEvaluator.ts`
-- Test: `src/lib/poker/handEvaluator.test.ts`
 - Test: `src/lib/poker/PokerGame.test.ts`
 
 **Interfaces:**
-- Consumes: structural cards with `rank: number` and `suit: string`.
-- Produces:
 
 ```ts
 export interface FiveCardRankable {
@@ -178,7 +73,46 @@ export function compareFiveCardRankings(
 ): -1 | 0 | 1;
 ```
 
-- [ ] **Step 1: Write failing public-comparator tests that pin the wrapper seam**
+- [ ] **Step 1: Add the missing Hold'em Royal-vs-lower-Straight-Flush characterization**
+
+In `src/lib/poker/handEvaluator.test.ts`, inside `determineShowdownWinners()` tests, add:
+
+```ts
+test('Broadway straight flush beats a lower straight flush', () => {
+  const winners = evaluateWinners(
+    [
+      [
+        ['A', 'hearts'],
+        ['K', 'hearts'],
+      ],
+      [
+        ['9', 'hearts'],
+        ['8', 'hearts'],
+      ],
+    ],
+    [
+      ['Q', 'hearts'],
+      ['J', 'hearts'],
+      ['10', 'hearts'],
+      ['2', 'clubs'],
+      ['3', 'diamonds'],
+    ],
+  );
+
+  expect(winners).toHaveLength(1);
+  expect(winners[0].name).toBe('Player 1');
+});
+```
+
+- [ ] **Step 2: Run the existing evaluator suite before extraction**
+
+```bash
+bun test src/lib/poker/handEvaluator.test.ts
+```
+
+Expected: PASS. This is the characterization baseline that protects deleting the separate `ROYAL_FLUSH` numeric rank.
+
+- [ ] **Step 3: Write the neutral comparator tests**
 
 Create `src/lib/five-card-poker.test.ts`:
 
@@ -188,43 +122,25 @@ import { compareFiveCardRankings, rankFiveCardHand } from './five-card-poker';
 
 const c = (rank: number, suit = 'spades') => ({ rank, suit });
 
-test('standard unsuited wheel is below a standard unsuited 6-high straight', () => {
+test('standard unsuited wheel is below an unsuited 6-high straight', () => {
   const wheel = rankFiveCardHand([
-    c(14, 'spades'),
-    c(2, 'hearts'),
-    c(3, 'clubs'),
-    c(4, 'diamonds'),
-    c(5, 'spades'),
+    c(14, 'spades'), c(2, 'hearts'), c(3, 'clubs'), c(4, 'diamonds'), c(5, 'spades'),
   ]);
   const sixHigh = rankFiveCardHand([
-    c(2, 'spades'),
-    c(3, 'hearts'),
-    c(4, 'clubs'),
-    c(5, 'diamonds'),
-    c(6, 'spades'),
+    c(2, 'spades'), c(3, 'hearts'), c(4, 'clubs'), c(5, 'diamonds'), c(6, 'spades'),
   ]);
 
-  expect(wheel).toMatchObject({ category: 'straight', tieBreakers: [5] });
-  expect(sixHigh).toMatchObject({ category: 'straight', tieBreakers: [6] });
+  expect(wheel).toEqual({ category: 'straight', tieBreakers: [5] });
+  expect(sixHigh).toEqual({ category: 'straight', tieBreakers: [6] });
   expect(compareFiveCardRankings(wheel, sixHigh)).toBe(-1);
 });
 
-test('Broadway straight flush outranks K-high straight flush without a Royal category', () => {
-  const broadway = rankFiveCardHand([
-    c(10), c(11), c(12), c(13), c(14),
-  ]);
-  const kingHigh = rankFiveCardHand([
-    c(9), c(10), c(11), c(12), c(13),
-  ]);
+test('Broadway straight flush beats K-high without a Royal category', () => {
+  const broadway = rankFiveCardHand([c(10), c(11), c(12), c(13), c(14)]);
+  const kingHigh = rankFiveCardHand([c(9), c(10), c(11), c(12), c(13)]);
 
-  expect(broadway).toEqual({
-    category: 'straight-flush',
-    tieBreakers: [14],
-  });
-  expect(kingHigh).toEqual({
-    category: 'straight-flush',
-    tieBreakers: [13],
-  });
+  expect(broadway).toEqual({ category: 'straight-flush', tieBreakers: [14] });
+  expect(kingHigh).toEqual({ category: 'straight-flush', tieBreakers: [13] });
   expect(compareFiveCardRankings(broadway, kingHigh)).toBe(1);
 });
 
@@ -234,34 +150,14 @@ test('full house compares trips before pair', () => {
   expect(compareFiveCardRankings(kings, queens)).toBe(1);
 });
 
-test('two pair compares the kicker last', () => {
+test('two pair compares kicker last', () => {
   const ace = rankFiveCardHand([c(10), c(10), c(8), c(8), c(14)]);
   const king = rankFiveCardHand([c(10), c(10), c(8), c(8), c(13)]);
   expect(compareFiveCardRankings(ace, king)).toBe(1);
 });
-
-test('suits never break a perfect tie', () => {
-  const left = rankFiveCardHand([
-    c(14, 'spades'),
-    c(13, 'hearts'),
-    c(11, 'clubs'),
-    c(8, 'diamonds'),
-    c(4, 'spades'),
-  ]);
-  const right = rankFiveCardHand([
-    c(14, 'hearts'),
-    c(13, 'diamonds'),
-    c(11, 'spades'),
-    c(8, 'clubs'),
-    c(4, 'hearts'),
-  ]);
-  expect(compareFiveCardRankings(left, right)).toBe(0);
-});
 ```
 
-The first test uses mixed suits deliberately. Do not accidentally turn the standard wheel test into a straight-flush test.
-
-- [ ] **Step 2: Verify the new suite is red**
+- [ ] **Step 4: Verify the new module is red**
 
 ```bash
 bun test src/lib/five-card-poker.test.ts
@@ -269,9 +165,7 @@ bun test src/lib/five-card-poker.test.ts
 
 Expected: FAIL because `src/lib/five-card-poker.ts` does not exist.
 
-- [ ] **Step 3: Move the existing private standard ranking logic**
-
-Create `src/lib/five-card-poker.ts` by mechanically moving the ordinary five-card rank/comparison behavior from `src/lib/poker/handEvaluator.ts`.
+- [ ] **Step 5: Implement the ordinary comparator as a tested rewrite**
 
 Use category strength:
 
@@ -289,7 +183,7 @@ const CATEGORY_STRENGTH: Record<FiveCardCategory, number> = {
 };
 ```
 
-Use these exact tie breakers:
+Return one ordered `tieBreakers` array:
 
 ```text
 straight-flush -> [straightHigh]
@@ -303,17 +197,11 @@ pair           -> [pairRank, kickers descending]
 high-card      -> ranks descending
 ```
 
-The shared module uses standard poker only: Broadway is straight-high `14`, wheel is straight-high `5`, and Royal Flush is not a distinct category.
+`compareFiveCardRankings` compares category strength, then tie breakers lexicographically.
 
-- [ ] **Step 4: Run the shared comparator tests**
+Keep standard wheel high = 5. Do not add Royal or Pai Gow ordering here.
 
-```bash
-bun test src/lib/five-card-poker.test.ts
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Replace only Hold'em's private five-card rank/comparison implementation**
+- [ ] **Step 6: Replace only Hold'em's private ranking/comparison core**
 
 In `src/lib/poker/handEvaluator.ts` import:
 
@@ -325,22 +213,19 @@ import {
 } from '../five-card-poker';
 ```
 
-Delete local `HandRank`, `HandRanking`, `rankFiveCardHand`, and `compareHandRankings`.
+Delete the local `HandRank`, `HandRanking`, `rankFiveCardHand`, and `compareHandRankings` definitions. Keep `findBestHand` and its 5-of-7 combination generation local, returning `FiveCardRanking` and using `compareFiveCardRankings`.
 
-Keep combination generation in `findBestHand`, now returning `FiveCardRanking`, and replace comparator calls with `compareFiveCardRankings`. Keep `determineShowdownWinners`' public signature unchanged.
+Do not touch Hold'em card types or public winner APIs.
 
-- [ ] **Step 6: Verify Hold'em behavior is unchanged**
+- [ ] **Step 7: Run extraction regression suites**
 
 ```bash
-bun test \
-  src/lib/five-card-poker.test.ts \
-  src/lib/poker/handEvaluator.test.ts \
-  src/lib/poker/PokerGame.test.ts
+bun test src/lib/five-card-poker.test.ts src/lib/poker/handEvaluator.test.ts src/lib/poker/PokerGame.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 7: Verify unrelated card games are untouched**
+- [ ] **Step 8: Verify unrelated card evaluators did not move**
 
 ```bash
 git diff -- src/lib/video-poker src/lib/three-card-showdown src/lib/blackjack
@@ -348,45 +233,48 @@ git diff -- src/lib/video-poker src/lib/three-card-showdown src/lib/blackjack
 
 Expected: empty.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add \
-  src/lib/five-card-poker.ts \
-  src/lib/five-card-poker.test.ts \
-  src/lib/poker/handEvaluator.ts
-git commit -m "refactor(poker): share five-card hand comparison"
+git add src/lib/five-card-poker.ts src/lib/five-card-poker.test.ts src/lib/poker/handEvaluator.ts src/lib/poker/handEvaluator.test.ts
+git commit -m "refactor(poker): share five-card comparison"
 ```
 
 ---
 
-## Task 3: Add Pai Gow-local cards, rankings, arrangement validation, house way, and pure round resolver
+## Task 2: Add Pai Gow-local cards, rankings, cross-size comparison, and round resolver
 
 **Files:**
+- Modify: `src/lib/cards.ts`
+- Test: `src/lib/cards.test.ts`
 - Create: `src/lib/pai-gow-poker/types.ts`
 - Create: `src/lib/pai-gow-poker/cards.ts`
 - Create: `src/lib/pai-gow-poker/cards.test.ts`
 - Create: `src/lib/pai-gow-poker/rules.ts`
 - Create: `src/lib/pai-gow-poker/rules.test.ts`
-- Create: `src/lib/pai-gow-poker/house-way.ts`
-- Create: `src/lib/pai-gow-poker/house-way.test.ts`
 
-**Interfaces:**
-- Consumes: `Card`, `createDeck`, `shuffleDeck`, `rankFiveCardHand`, `compareFiveCardRankings`.
-- Produces: `PaiGowCard`, `PaiGowHandRanking`, `PaiGowArrangement`, `PaiGowRoundResult`, `rankPaiGowFiveCardHand`, `rankPaiGowTwoCardHand`, `comparePaiGowRankings`, `getArrangement`, `getArrangementError`, `resolvePaiGowRound`, `arrangeHouseWay`.
+**Produces:**
 
-- [ ] **Step 1: Define the local types**
+```ts
+export type PaiGowCard = Card | PaiGowJoker;
+export function createPaiGowDeck(): PaiGowCard[];
+export function createShuffledPaiGowDeck(random?: () => number): PaiGowCard[];
+export function rankPaiGowFiveCardHand(cards: readonly PaiGowCard[]): PaiGowHandRanking;
+export function rankPaiGowTwoCardHand(cards: readonly PaiGowCard[]): PaiGowHandRanking;
+export function comparePaiGowRankings(left: PaiGowHandRanking, right: PaiGowHandRanking): -1 | 0 | 1;
+export function getArrangement(cards: readonly PaiGowCard[], lowIndexes: readonly number[]): PaiGowArrangement | null;
+export function getArrangementError(cards: readonly PaiGowCard[], lowIndexes: readonly number[]): string | null;
+export function resolvePaiGowRound(player: PaiGowArrangement, dealer: PaiGowArrangement, wager: number): PaiGowRoundResult;
+```
 
-Create `src/lib/pai-gow-poker/types.ts`:
+- [ ] **Step 1: Define local Pai Gow types**
+
+Create `src/lib/pai-gow-poker/types.ts` with:
 
 ```ts
 import type { Card } from '../cards';
 
-export interface PaiGowJoker {
-  rank: 'joker';
-  suit: 'joker';
-}
-
+export interface PaiGowJoker { rank: 'joker'; suit: 'joker' }
 export type PaiGowCard = Card | PaiGowJoker;
 
 export type PaiGowCategory =
@@ -430,54 +318,31 @@ export interface PaiGowRoundResult {
 }
 ```
 
-- [ ] **Step 2: Write failing 53-card deck tests**
+- [ ] **Step 2: Make Fisher-Yates type-generic as part of the real 53-card consumer**
 
-Create `src/lib/pai-gow-poker/cards.test.ts` and pin exactly 52 unique standard cards plus one Joker:
-
-```ts
-test('creates 52 standard cards plus exactly one Joker', () => {
-  const deck = createPaiGowDeck();
-  expect(deck).toHaveLength(53);
-  expect(deck.filter(isPaiGowJoker)).toHaveLength(1);
-
-  const standards = deck.filter((card) => !isPaiGowJoker(card));
-  expect(new Set(standards.map((card) => `${card.rank}:${card.suit}`)).size).toBe(52);
-});
-```
-
-Also pin the first fourteen constant-zero cards:
+In `src/lib/cards.ts` change only:
 
 ```ts
-expect(createShuffledPaiGowDeck(() => 0).slice(0, 14)).toEqual([
-  { rank: 3, suit: 'hearts' },
-  { rank: 4, suit: 'hearts' },
-  { rank: 5, suit: 'hearts' },
-  { rank: 6, suit: 'hearts' },
-  { rank: 7, suit: 'hearts' },
-  { rank: 8, suit: 'hearts' },
-  { rank: 9, suit: 'hearts' },
-  { rank: 10, suit: 'hearts' },
-  { rank: 11, suit: 'hearts' },
-  { rank: 12, suit: 'hearts' },
-  { rank: 13, suit: 'hearts' },
-  { rank: 14, suit: 'hearts' },
-  { rank: 2, suit: 'diamonds' },
-  { rank: 3, suit: 'diamonds' },
-]);
+export function shuffleDeck<T>(
+  deck: readonly T[],
+  random: () => number = Math.random,
+): T[] {
+  const shuffled = [...deck];
+  // existing Fisher-Yates body unchanged
+}
 ```
 
-- [ ] **Step 3: Implement the local Joker deck**
+Do not add a standalone generic-shuffle test with casts. Existing standard-card tests remain the runtime regression; the Pai Gow deck test below proves the new type-level consumer.
 
-Create `src/lib/pai-gow-poker/cards.ts`:
+- [ ] **Step 3: Implement and test the 53-card deck**
+
+In `cards.ts`:
 
 ```ts
 import { createDeck, shuffleDeck } from '../cards';
 import type { PaiGowCard, PaiGowJoker } from './types';
 
-export const PAI_GOW_JOKER: PaiGowJoker = {
-  rank: 'joker',
-  suit: 'joker',
-};
+export const PAI_GOW_JOKER: PaiGowJoker = { rank: 'joker', suit: 'joker' };
 
 export function isPaiGowJoker(card: PaiGowCard): card is PaiGowJoker {
   return card.rank === 'joker';
@@ -494,218 +359,145 @@ export function createShuffledPaiGowDeck(
 }
 ```
 
-- [ ] **Step 4: Run the deck tests**
+Tests pin:
+
+```text
+53 cards total
+52 unique standard cards
+exactly one Joker
+constant-zero first 14 cards = player 3♥..9♥, dealer 10♥..A♥ 2♦ 3♦
+```
+
+Run:
 
 ```bash
-bun test src/lib/pai-gow-poker/cards.test.ts
+bun test src/lib/cards.test.ts src/lib/pai-gow-poker/cards.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Write failing local ranking tests**
+- [ ] **Step 4: Implement Pai Gow category comparison with explicit cross-size behavior**
 
-Create `src/lib/pai-gow-poker/rules.test.ts`. Pin at least:
+Use one category-strength table in `rules.ts`.
 
-```text
-Four Aces + Joker -> five-aces
-natural suited 10-J-Q-K-A -> royal-flush
-Joker completes a straight
-Joker completes a flush
-Joker cannot act as arbitrary rank to create a pair/trips/full house/quads
-two-card Joker + Ace -> pair of Aces
-two-card Joker + King -> Ace-King high
-Pai Gow wheel straight outranks K-high straight
-Royal Flush outranks wheel straight flush
-wheel straight flush outranks K-high straight flush
-dealer-copy comparison returns equality; round resolver treats it as dealer win for that sub-hand
-```
-
-For the straight-order assertions, keep the synthetic tie-breakers local:
+Comparator:
 
 ```ts
-expect(rankPaiGowFiveCardHand(wheel)).toMatchObject({
-  category: 'straight',
-  tieBreakers: [14],
-});
-expect(rankPaiGowFiveCardHand(kingHigh)).toMatchObject({
-  category: 'straight',
-  tieBreakers: [13],
-});
+export function comparePaiGowRankings(
+  left: PaiGowHandRanking,
+  right: PaiGowHandRanking,
+): -1 | 0 | 1 {
+  const categoryDiff = CATEGORY_STRENGTH[left.category] - CATEGORY_STRENGTH[right.category];
+  if (categoryDiff !== 0) return categoryDiff > 0 ? 1 : -1;
+
+  const sharedLength = Math.min(left.tieBreakers.length, right.tieBreakers.length);
+  for (let i = 0; i < sharedLength; i += 1) {
+    const diff = left.tieBreakers[i] - right.tieBreakers[i];
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+
+  if (left.tieBreakers.length === right.tieBreakers.length) return 0;
+  return left.tieBreakers.length > right.tieBreakers.length ? 1 : -1;
+}
 ```
 
-Do not change the neutral comparator to make these pass.
+Pin both mismatched-length cases:
 
-- [ ] **Step 6: Implement local five-card and two-card ranking**
+```ts
+expect(
+  comparePaiGowRankings(
+    { category: 'high-card', tieBreakers: [13, 12, 7, 5, 3] },
+    { category: 'high-card', tieBreakers: [13, 12] },
+  ),
+).toBe(1);
 
-In `rules.ts`:
+expect(
+  comparePaiGowRankings(
+    { category: 'pair', tieBreakers: [9, 13, 7, 3] },
+    { category: 'pair', tieBreakers: [9] },
+  ),
+).toBe(1);
+```
 
-1. Natural no-Joker hands call `rankFiveCardHand`.
-2. Convert the ordinary result into `PaiGowHandRanking`.
-3. Split natural suited Broadway into `royal-flush`.
-4. Remap natural wheel straight/straight-flush to Pai Gow's local synthetic ordering.
-5. For Joker hands, detect Five Aces first.
-6. Otherwise enumerate 52 standard substitutions, skip exact duplicate cards already present, allow all Ace substitutions, allow non-Ace substitutions only when they produce straight/flush/straight-flush/Royal, normalize, and keep the best.
-7. Two-card Joker always maps to Ace.
+- [ ] **Step 5: Implement non-Joker ranking by wrapping the neutral comparator**
 
-Do not introduce wildcard configuration.
+For ordinary five-card hands:
 
-- [ ] **Step 7: Add failing arrangement validation tests**
+1. call `rankFiveCardHand`;
+2. map ordinary categories to Pai Gow categories;
+3. remap straight ordering locally:
+
+```text
+ordinary straight [14] -> straight [15]       // Broadway
+ordinary straight [5]  -> straight [14]       // wheel
+ordinary straight [13] -> straight [13]
+```
+
+For ordinary straight flush:
+
+```text
+[14] -> royal-flush []
+[5]  -> straight-flush [14]
+[13] -> straight-flush [13]
+```
+
+Other categories keep ordinary tie breakers.
+
+Two-card ranking returns Pair `[pairRank]` or High Card ranks descending. Joker in Low maps to Ace 14.
+
+- [ ] **Step 6: Implement bounded Joker substitution**
+
+For five-card hands containing Joker:
+
+```text
+Four natural Aces + Joker -> five-aces
+otherwise enumerate the 52 standard cards
+skip an exact card already present
+Ace substitutions always allowed
+non-Ace substitutions allowed only when normalized category is straight/flush/straight-flush/royal-flush
+choose highest comparePaiGowRankings result
+```
 
 Pin:
 
 ```text
-not exactly seven cards -> error
-not exactly two Low indexes -> error
-duplicate Low indexes -> error
-out-of-range Low index -> error
-High < Low -> foul
-High == Low -> foul
-valid High > Low -> getArrangement returns five High + two Low with rankings
+Four Aces + Joker -> Five Aces
+KQJ10 + Joker suited -> Royal Flush
+Joker completes wheel Straight
+Joker acts as Ace when no special completion is available
+Joker may not become arbitrary rank merely to create Pair/Trips/Full House
 ```
 
-- [ ] **Step 8: Implement `getArrangementError` and `getArrangement`**
+- [ ] **Step 7: Implement arrangement validation with High >= Low**
 
-Keep index order canonical:
-
-```ts
-const sortedLowIndexes = [...lowIndexes].sort((a, b) => a - b) as [number, number];
-```
-
-Build Low from those indexes and High from the other five original cards. Require:
-
-```ts
-comparePaiGowRankings(highRanking, lowRanking) > 0
-```
-
-before returning an arrangement.
-
-- [ ] **Step 9: Write failing 21-split house-way tests**
-
-Cover each decision tier independently:
+`getArrangementError` order:
 
 ```text
-returns a valid non-fouled arrangement
-prefers stronger High even when another split has stronger Low
-when High ties, prefers stronger Low
-when both rankings tie, chooses lexicographically smaller original Low indexes
+exactly seven dealt cards
+exactly two indexes
+distinct indexes
+indexes in 0..6
+build remaining five High cards
+if comparePaiGowRankings(highRanking, lowRanking) < 0 -> foul
+otherwise valid
 ```
 
-- [ ] **Step 10: Implement the deterministic house way**
+Exact foul message:
 
-Create `house-way.ts`:
-
-```ts
-export function arrangeHouseWay(
-  cards: readonly PaiGowCard[],
-): PaiGowArrangement {
-  let best: PaiGowArrangement | null = null;
-
-  for (let left = 0; left < 6; left += 1) {
-    for (let right = left + 1; right < 7; right += 1) {
-      const candidate = getArrangement(cards, [left, right]);
-      if (!candidate) continue;
-
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-
-      const high = comparePaiGowRankings(candidate.highRanking, best.highRanking);
-      if (high > 0) {
-        best = candidate;
-        continue;
-      }
-      if (high < 0) continue;
-
-      const low = comparePaiGowRankings(candidate.lowRanking, best.lowRanking);
-      if (low > 0) {
-        best = candidate;
-        continue;
-      }
-      if (low < 0) continue;
-
-      const [candidateA, candidateB] = candidate.lowIndexes;
-      const [bestA, bestB] = best.lowIndexes;
-      if (candidateA < bestA || (candidateA === bestA && candidateB < bestB)) {
-        best = candidate;
-      }
-    }
-  }
-
-  if (!best) throw new Error('No valid Pai Gow arrangement');
-  return best;
-}
+```text
+High hand must rank at least as high as Low hand
 ```
 
-No casino chart or strategy registry.
+Add legal same-prefix tests using actual cards:
 
-- [ ] **Step 11: Write failing pure round-resolver tests with constructed arrangements**
-
-Keep the resolver tests independent of shuffle and `PaiGowPokerGame`.
-
-A small test helper may construct arrangements from explicit rankings:
-
-```ts
-const ranking = (
-  category: PaiGowCategory,
-  ...tieBreakers: number[]
-): PaiGowHandRanking => ({ category, tieBreakers });
-
-const arrangement = (
-  highRanking: PaiGowHandRanking,
-  lowRanking: PaiGowHandRanking,
-): PaiGowArrangement => ({
-  lowIndexes: [0, 1],
-  high: [],
-  low: [],
-  highRanking,
-  lowRanking,
-});
+```text
+K♥ Q♠ 7♦ 5♣ 3♥ High vs K♦ Q♥ Low -> valid
+9 9 K 7 3 High vs 9 9 Low -> valid
 ```
 
-Pin all three economics:
+Also pin a real foul where Low outranks High.
 
-```ts
-test('winning both hands pays +19 net on a 20-chip wager', () => {
-  const player = arrangement(ranking('pair', 10), ranking('high-card', 14, 13));
-  const dealer = arrangement(ranking('pair', 9), ranking('high-card', 14, 12));
-
-  expect(resolvePaiGowRound(player, dealer, 20)).toMatchObject({
-    outcome: 'win',
-    commission: 1,
-    grossPayout: 39,
-    netDelta: 19,
-  });
-});
-
-test('splitting the two comparisons pushes', () => {
-  const player = arrangement(ranking('pair', 10), ranking('high-card', 14, 11));
-  const dealer = arrangement(ranking('pair', 9), ranking('high-card', 14, 12));
-
-  expect(resolvePaiGowRound(player, dealer, 20)).toMatchObject({
-    outcome: 'push',
-    commission: 0,
-    grossPayout: 20,
-    netDelta: 0,
-  });
-});
-
-test('winning neither hand loses the full wager and dealer copies count against player', () => {
-  const player = arrangement(ranking('pair', 9), ranking('high-card', 14, 12));
-  const dealer = arrangement(ranking('pair', 9), ranking('high-card', 14, 13));
-
-  expect(resolvePaiGowRound(player, dealer, 20)).toMatchObject({
-    outcome: 'loss',
-    commission: 0,
-    grossPayout: 0,
-    netDelta: -20,
-  });
-});
-```
-
-The last case deliberately ties High (`pair 9` vs `pair 9`); that copy belongs to the dealer.
-
-- [ ] **Step 12: Implement `resolvePaiGowRound` in `rules.ts`**
+- [ ] **Step 8: Implement the pure round resolver and integer-chip commission**
 
 ```ts
 export function resolvePaiGowRound(
@@ -713,23 +505,14 @@ export function resolvePaiGowRound(
   dealer: PaiGowArrangement,
   wager: number,
 ): PaiGowRoundResult {
-  const playerWonHigh =
-    comparePaiGowRankings(player.highRanking, dealer.highRanking) > 0;
-  const playerWonLow =
-    comparePaiGowRankings(player.lowRanking, dealer.lowRanking) > 0;
+  const wonHigh = comparePaiGowRankings(player.highRanking, dealer.highRanking) > 0;
+  const wonLow = comparePaiGowRankings(player.lowRanking, dealer.lowRanking) > 0;
 
-  let outcome: PaiGowRoundOutcome;
-  if (playerWonHigh && playerWonLow) outcome = 'win';
-  else if (playerWonHigh || playerWonLow) outcome = 'push';
-  else outcome = 'loss';
+  const outcome: PaiGowRoundOutcome =
+    wonHigh && wonLow ? 'win' : wonHigh || wonLow ? 'push' : 'loss';
 
-  const commission = outcome === 'win' ? wager / 20 : 0;
-  const grossPayout =
-    outcome === 'win'
-      ? 2 * wager - commission
-      : outcome === 'push'
-        ? wager
-        : 0;
+  const commission = outcome === 'win' ? Math.ceil(wager * 0.05) : 0;
+  const grossPayout = outcome === 'win' ? wager * 2 - commission : outcome === 'push' ? wager : 0;
 
   return {
     outcome,
@@ -743,69 +526,111 @@ export function resolvePaiGowRound(
 }
 ```
 
-This function owns all round outcome and payout math. `game.ts` must not re-derive it.
+Use constructed arrangements to pin wager-20 economics:
 
-- [ ] **Step 13: Run the complete pure-rules slice**
+```text
+win  -> commission 1, gross 39, net +19
+push -> commission 0, gross 20, net 0
+loss -> commission 0, gross 0, net -20
+```
+
+Also pin one non-multiple wager, e.g. wager 25 -> commission `2` on win.
+
+- [ ] **Step 9: Run pure domain tests and commit**
 
 ```bash
-bun test \
-  src/lib/pai-gow-poker/cards.test.ts \
-  src/lib/pai-gow-poker/rules.test.ts \
-  src/lib/pai-gow-poker/house-way.test.ts \
-  src/lib/five-card-poker.test.ts
+bun test src/lib/cards.test.ts src/lib/five-card-poker.test.ts src/lib/pai-gow-poker/cards.test.ts src/lib/pai-gow-poker/rules.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 14: Commit**
-
 ```bash
-git add src/lib/pai-gow-poker
-git commit -m "feat(pai-gow): add rules and house way"
+git add src/lib/cards.ts src/lib/pai-gow-poker src/lib/five-card-poker.ts src/lib/five-card-poker.test.ts
+git commit -m "feat(pai-gow): add cards and hand rules"
 ```
 
 ---
 
-## Task 4: Add the pure game lifecycle with deep-cloned snapshots
+## Task 3: Add the 21-split house way and immutable game lifecycle
 
 **Files:**
+- Create: `src/lib/pai-gow-poker/house-way.ts`
+- Create: `src/lib/pai-gow-poker/house-way.test.ts`
+- Modify: `src/lib/pai-gow-poker/types.ts`
 - Create: `src/lib/pai-gow-poker/game.ts`
 - Create: `src/lib/pai-gow-poker/game.test.ts`
-- Modify: `src/lib/pai-gow-poker/types.ts`
-- Create or Modify: `src/lib/pai-gow-poker/index.ts`
 
-**Interfaces:**
-- Consumes:
-  - `createShuffledPaiGowDeck(random)`
-  - `getArrangement(...)`
-  - `getArrangementError(...)`
-  - `arrangeHouseWay(...)`
-  - `resolvePaiGowRound(player, dealer, wager)`
-  - `validateBet(...)`
-- Produces:
+**Consumes:** Task 2 rules/deck APIs.
+
+- [ ] **Step 1: Implement deterministic enumeration helpers**
+
+In `house-way.ts`, enumerate exactly the 21 sorted index pairs:
 
 ```ts
-export const MIN_WAGER = 20;
-export const MAX_WAGER = 500;
-export const WAGER_OPTIONS = [20, 40, 100, 200, 500] as const;
-
-export class PaiGowPokerGame {
-  constructor(initialBalance: number, random?: () => number);
-  getState(): Readonly<PaiGowPokerState>;
-  getWagerError(wager: number): string | null;
-  setWager(wager: number): void;
-  deal(): void;
-  toggleLowCard(index: number): void;
-  autoArrange(): void;
-  resetArrangement(): void;
-  getArrangementError(): string | null;
-  confirm(): PaiGowRoundResult;
-  resetRound(): void;
-  setBalance(balance: number): void;
+const lowPairs: Array<readonly [number, number]> = [];
+for (let left = 0; left < 6; left += 1) {
+  for (let right = left + 1; right < 7; right += 1) {
+    lowPairs.push([left, right]);
+  }
 }
 ```
 
-- [ ] **Step 1: Add the state type**
+Map each through `getArrangement(cards, pair)` and discard null/fouled results.
+
+- [ ] **Step 2: Implement the protected-made-hand + Low-first objective**
+
+Protected categories:
+
+```ts
+const PROTECTED_HIGH = new Set<PaiGowCategory>([
+  'straight',
+  'flush',
+  'straight-flush',
+  'royal-flush',
+]);
+```
+
+Find the strongest protected High among all valid arrangements:
+
+```ts
+let bestProtected: PaiGowHandRanking | null = null;
+for (const arrangement of valid) {
+  if (!PROTECTED_HIGH.has(arrangement.highRanking.category)) continue;
+  if (!bestProtected || comparePaiGowRankings(arrangement.highRanking, bestProtected) > 0) {
+    bestProtected = arrangement.highRanking;
+  }
+}
+```
+
+If `bestProtected` exists, only keep arrangements whose High compares equal to it. Then choose:
+
+```text
+strongest Low
+then strongest High
+then lexicographically smaller lowIndexes
+```
+
+If no protected High exists, choose by the same Low -> High -> indexes ordering over all valid arrangements.
+
+Do not add category-specific rules for quads/five aces/two-pair tiers.
+
+- [ ] **Step 3: Pin representative house-way fixtures**
+
+Use distinct suits unless a protected flush/straight is intentional.
+
+Tests:
+
+```text
+A A A K K 7 3 -> Low KK, High AAA73
+9 9 5 5 K 7 3 -> Low 55, High 99K73
+A K Q 9 7 5 3 -> Low KQ, High A9753
+3♥ 4♥ 5♥ 6♥ 7♥ 8♥ 9♥ -> Low 3♥4♥, High 5♥..9♥
+10♥ J♥ Q♥ K♥ A♥ 2♦ 3♦ -> Low 2♦3♦, High Royal
+```
+
+Also pin deterministic lexicographic Low-index selection when both rankings tie.
+
+- [ ] **Step 4: Add game state and wager policy**
 
 In `types.ts`:
 
@@ -823,88 +648,27 @@ export interface PaiGowPokerState {
 }
 ```
 
-- [ ] **Step 2: Write failing constructor and wager-validation tests**
-
-Pin:
-
-```text
-initial phase = betting
-initial balance normalized with truncation
-initial wager = 20
-hands/indexes empty; result null
-negative/non-finite initial balance rejected
-non-integer wager rejected
-outside 20..500 rejected through validateBet
-not divisible by 20 rejected locally
-wager above current balance rejected
-valid 20/40/100/200/500 accepted when affordable
-wager only changes in betting
-```
-
-Local increment message:
-
-```text
-Wager must be in 20-chip increments
-```
-
-Affordability message:
-
-```text
-Wager exceeds available balance
-```
-
-- [ ] **Step 3: Implement balance normalization and wager validation**
-
-Keep the same shape as Three-Card Showdown:
+In `game.ts`:
 
 ```ts
-function normalizeBalance(balance: number): number {
-  if (!Number.isFinite(balance) || balance < 0) {
-    throw new RangeError('Balance must be a non-negative finite number');
-  }
-  return Math.trunc(balance);
-}
+export const MIN_WAGER = 5;
+export const MAX_WAGER = 100;
+export const WAGER_OPTIONS = [5, 10, 20, 50, 100] as const;
 ```
 
-`getWagerError` order:
+`getWagerError`:
 
 ```ts
 if (!Number.isInteger(wager)) return 'Wager must be a whole number of chips';
 const rangeError = validateBet(wager, MIN_WAGER, MAX_WAGER);
 if (rangeError) return rangeError;
-if (wager % 20 !== 0) return 'Wager must be in 20-chip increments';
 if (wager > this.state.balance) return 'Wager exceeds available balance';
 return null;
 ```
 
-- [ ] **Step 4: Write the zero-RNG Deal/arrangement lifecycle tests**
+There is no `% 20` validation.
 
-Use only `() => 0` for lifecycle economics.
-
-Pin after `setWager(20); deal()`:
-
-```text
-phase = arranging
-balance = 980
-playerCards = 3♥ 4♥ 5♥ 6♥ 7♥ 8♥ 9♥
-dealerCards = 10♥ J♥ Q♥ K♥ A♥ 2♦ 3♦
-lowIndexes = []
-result = null
-```
-
-Also test:
-
-```text
-toggleLowCard adds/removes indexes
-third Low selection is rejected/no-op according to chosen domain contract
-autoArrange -> player Low [0, 1]
-resetArrangement -> []
-incomplete arrangement cannot Confirm
-```
-
-Use the already-pinned constant-zero house-way result; do not add alternative RNG sequences for win/loss payout coverage.
-
-- [ ] **Step 5: Add private deep-clone helpers before exposing state**
+- [ ] **Step 5: Add private deep-clone helpers**
 
 Keep them local to `game.ts`:
 
@@ -914,10 +678,7 @@ function cloneCard(card: PaiGowCard): PaiGowCard {
 }
 
 function cloneRanking(ranking: PaiGowHandRanking): PaiGowHandRanking {
-  return {
-    category: ranking.category,
-    tieBreakers: [...ranking.tieBreakers],
-  };
+  return { category: ranking.category, tieBreakers: [...ranking.tieBreakers] };
 }
 
 function cloneArrangement(arrangement: PaiGowArrangement): PaiGowArrangement {
@@ -939,32 +700,23 @@ function cloneResult(result: PaiGowRoundResult): PaiGowRoundResult {
 }
 ```
 
-No shared immutable-state utility.
+- [ ] **Step 6: Implement the game lifecycle**
 
-- [ ] **Step 6: Implement `getState()` as a deep snapshot**
+Constructor initial state:
 
-```ts
-getState(): Readonly<PaiGowPokerState> {
-  return {
-    phase: this.state.phase,
-    balance: this.state.balance,
-    wager: this.state.wager,
-    playerCards: this.state.playerCards.map(cloneCard),
-    dealerCards: this.state.dealerCards.map(cloneCard),
-    lowIndexes: [...this.state.lowIndexes],
-    result: this.state.result ? cloneResult(this.state.result) : null,
-  };
-}
+```text
+phase = betting
+balance = normalized initial balance
+wager = 5
+playerCards/dealerCards/lowIndexes empty
+result = null
 ```
-
-- [ ] **Step 7: Implement Deal, selection, Auto Arrange, and Reset**
 
 Deal:
 
 ```ts
 const error = this.getWagerError(this.state.wager);
 if (error) throw new Error(error);
-
 const deck = createShuffledPaiGowDeck(this.random);
 this.state = {
   ...this.state,
@@ -977,287 +729,198 @@ this.state = {
 };
 ```
 
-`toggleLowCard(index)` only accepts `0..6` during arranging, removes an existing index, adds an unselected index only when fewer than two are selected, and keeps the stored array sorted.
+`toggleLowCard(index)`:
 
-`autoArrange()` uses:
+- only in arranging;
+- reject non-integer/out-of-range indexes;
+- selected index toggles off;
+- unselected index adds only when fewer than two are selected;
+- store sorted indexes.
+
+`autoArrange()` copies `arrangeHouseWay(playerCards).lowIndexes`.
+
+`resetArrangement()` clears only the Low indexes.
+
+- [ ] **Step 7: Implement `getState()` and `confirm()` as clone boundaries**
+
+`getState()` returns cloned card arrays, index array, and cloned result.
+
+`confirm()`:
 
 ```ts
-this.state.lowIndexes = [...arrangeHouseWay(this.state.playerCards).lowIndexes];
-```
-
-`resetArrangement()` sets only `lowIndexes: []`.
-
-- [ ] **Step 8: Implement `confirm()` as orchestration only**
-
-```ts
-confirm(): PaiGowRoundResult {
-  if (this.state.phase !== 'arranging') {
-    throw new Error('Confirm is only allowed while arranging');
-  }
-
-  const error = this.getArrangementError();
-  if (error) throw new Error(error);
-
-  const player = getArrangement(this.state.playerCards, this.state.lowIndexes);
-  if (!player) throw new Error('Player arrangement must be valid');
-
-  const dealer = arrangeHouseWay(this.state.dealerCards);
-  const resolved = resolvePaiGowRound(player, dealer, this.state.wager);
-  const stored = cloneResult(resolved);
-
-  this.state = {
-    ...this.state,
-    phase: 'complete',
-    balance: this.state.balance + stored.grossPayout,
-    result: stored,
-  };
-
-  return cloneResult(stored);
+if (this.state.phase !== 'arranging') {
+  throw new Error('Confirm is only allowed while arranging');
 }
+
+const error = this.getArrangementError();
+if (error) throw new Error(error);
+
+const player = getArrangement(this.state.playerCards, this.state.lowIndexes);
+if (!player) throw new Error('Player arrangement must be valid');
+
+const dealer = arrangeHouseWay(this.state.dealerCards);
+const resolved = resolvePaiGowRound(player, dealer, this.state.wager);
+const stored = cloneResult(resolved);
+
+this.state = {
+  ...this.state,
+  phase: 'complete',
+  balance: this.state.balance + stored.grossPayout,
+  result: stored,
+};
+
+return cloneResult(stored);
 ```
 
-Do not compare High/Low or calculate commission/gross/net here.
+Do not compare sub-hands or calculate commission in `confirm()`.
 
-- [ ] **Step 9: Pin the zero-RNG Confirm Push and balance**
+- [ ] **Step 8: Pin zero-RNG lifecycle and immutable snapshots**
 
-With Auto Arrange on the constant-zero deal:
-
-```ts
-const result = game.confirm();
-
-expect(result).toMatchObject({
-  outcome: 'push',
-  wager: 20,
-  commission: 0,
-  grossPayout: 20,
-  netDelta: 0,
-});
-expect(game.getState().balance).toBe(1000);
-expect(game.getState().phase).toBe('complete');
-```
-
-This is the only payout lifecycle fixture required in `game.test.ts`; pure resolver tests own win/loss arithmetic.
-
-- [ ] **Step 10: Add immutable `getState()` mutation probes**
-
-After the zero-RNG deal:
-
-```ts
-const snapshot = game.getState();
-
-(snapshot.playerCards as PaiGowCard[])[0] = { rank: 14, suit: 'spades' };
-(snapshot.lowIndexes as number[]).push(6);
-
-const next = game.getState();
-expect(next.playerCards[0]).toEqual({ rank: 3, suit: 'hearts' });
-expect(next.lowIndexes).toEqual([]);
-```
-
-Also mutate a nested card object rather than only replacing the array slot:
-
-```ts
-const nested = game.getState();
-if (nested.playerCards[0].rank !== 'joker') {
-  (nested.playerCards[0] as { rank: number }).rank = 14;
-}
-expect(game.getState().playerCards[0]).toEqual({ rank: 3, suit: 'hearts' });
-```
-
-- [ ] **Step 11: Add immutable `confirm()` result mutation probes**
-
-After zero-RNG Deal -> Auto Arrange -> Confirm:
-
-```ts
-const result = game.confirm();
-
-(result.player.lowIndexes as number[])[0] = 6;
-(result.player.high as PaiGowCard[])[0] = { rank: 14, suit: 'spades' };
-(result.player.highRanking.tieBreakers as number[])[0] = 99;
-
-const stored = game.getState().result!;
-expect(stored.player.lowIndexes).toEqual([0, 1]);
-expect(stored.player.high[0]).toEqual({ rank: 5, suit: 'hearts' });
-expect(stored.player.highRanking.tieBreakers[0]).not.toBe(99);
-```
-
-Then mutate `stored` itself and assert a second `getState().result` is still unchanged. This pins both returned-result and returned-state isolation.
-
-- [ ] **Step 12: Implement and test New Round and authoritative balance adoption**
-
-`resetRound()` only from `complete`:
+For the economic lifecycle use wager 20 so the existing fixture remains:
 
 ```text
-phase -> betting
-retain wager
-retain current balance
-clear player/dealer cards
-clear lowIndexes
-clear result
+1000 -> Deal -> 980
+Auto Arrange
+Confirm -> Push -> 1000
 ```
 
-`setBalance()` uses `normalizeBalance()` and updates only balance.
+Mutation probes must cover all alias-prone state:
 
-Test affordability after adopting a lower balance.
+```text
+mutate returned playerCards[0]
+splice returned lowIndexes
+mutate returned result.player.high[0]
+mutate returned result.player.highRanking.tieBreakers[0]
+mutate the object returned directly by confirm()
+next getState() remains unchanged
+```
 
-- [ ] **Step 13: Run the full domain slice**
+No alternate RNG sequences for win/loss economics; Task 2 resolver tests own those cases.
+
+- [ ] **Step 9: Run house-way/game suites and commit**
 
 ```bash
-bun test \
-  src/lib/pai-gow-poker/cards.test.ts \
-  src/lib/pai-gow-poker/rules.test.ts \
-  src/lib/pai-gow-poker/house-way.test.ts \
-  src/lib/pai-gow-poker/game.test.ts
+bun test src/lib/pai-gow-poker/house-way.test.ts src/lib/pai-gow-poker/game.test.ts src/lib/pai-gow-poker/rules.test.ts
 ```
 
 Expected: PASS.
 
-- [ ] **Step 14: Commit**
-
 ```bash
 git add src/lib/pai-gow-poker
-git commit -m "feat(pai-gow): add game lifecycle"
+git commit -m "feat(pai-gow): add arrangement and game state"
 ```
 
 ---
 
-## Task 5: Register Pai Gow and add the route/client with deterministic guest acceptance
+## Task 4: Register the game and add the stable-selection route/client + guest E2E
 
 **Files:**
 - Modify: `src/lib/game-stats/constants.ts`
-- Modify: `src/lib/game-stats/game-stats.test.ts`
-- Create or Modify: `src/lib/pai-gow-poker/index.ts`
+- Modify: relevant fixed game-type/count tests
 - Create: `src/lib/pai-gow-poker/client.ts`
 - Create: `src/lib/pai-gow-poker/client.init.test.ts`
+- Create: `src/lib/pai-gow-poker/index.ts`
 - Create: `src/pages/games/pai-gow-poker.astro`
 - Modify: `src/pages/index.astro`
 - Create: `e2e/pai-gow-poker.spec.ts`
 
-**Interfaces:**
-- Consumes: `PaiGowPokerGame`, `WAGER_OPTIONS`, `CardSlot`, `setSlotState`, `createPublicGameSession`, `createPublicGameSettlementController`.
-- Produces: playable `/games/pai-gow-poker` route and guest Push acceptance.
-
 - [ ] **Step 1: Register the eleventh game**
 
-Append to `GAME_TYPES`:
+Append:
 
 ```ts
-'pai-gow-poker',
+'pai-gow-poker'
 ```
 
-Add:
+to `GAME_TYPES` and add:
 
 ```ts
-'pai-gow-poker': 'Pai Gow Poker',
+'pai-gow-poker': 'Pai Gow Poker'
+'pai-gow-poker': '☯️'
 ```
 
-and:
+to label/icon maps.
+
+Pin:
 
 ```ts
-'pai-gow-poker': '🃏',
+expect(GAME_TYPES).toContain('pai-gow-poker');
+expect(GAME_TYPES.length).toBe(11);
+expect(isValidGameType('pai-gow-poker')).toBe(true);
 ```
 
-to the typed label/icon records.
+Do not edit `src/pages/games/index.astro`; it only redirects to `/#games`.
 
-- [ ] **Step 2: Update the game-stat registration tripwire**
+- [ ] **Step 2: Build the Astro page with a stable seven-card row**
 
-In `src/lib/game-stats/game-stats.test.ts`, add one focused test:
-
-```ts
-test('registers Pai Gow Poker as the eleventh valid game type', () => {
-  expect(GAME_TYPES).toContain('pai-gow-poker');
-  expect(GAME_TYPES.length).toBe(11);
-  expect(isValidGameType('pai-gow-poker')).toBe(true);
-});
-```
-
-Do not add redundant exact label/icon tests solely to pin display copy; the typed records/build already require those keys.
-
-- [ ] **Step 3: Export the focused module API**
-
-`src/lib/pai-gow-poker/index.ts` exports only the route/client consumers:
-
-```text
-PaiGowPokerGame
-WAGER_OPTIONS
-MIN_WAGER / MAX_WAGER
-initPaiGowPokerClient
-types needed by tests/consumers
-```
-
-Do not create a cross-game poker barrel.
-
-- [ ] **Step 4: Build the Astro route from the Three-Card public-game pattern**
-
-`src/pages/games/pai-gow-poker.astro` uses:
-
-```astro
----
-import CasinoLayout from '../../layouts/casino.astro';
-import CardSlot from '../../components/CardSlot.astro';
-import { createPublicGameSession } from '../../lib/public-game-session';
-import { WAGER_OPTIONS } from '../../lib/pai-gow-poker';
-
-const user = Astro.locals.user;
-const gameSession = createPublicGameSession(user);
----
-```
-
-Root:
-
-```astro
-<main
-  id="pai-gow-poker-root"
-  data-testid="pai-gow-poker-root"
-  data-user-id={gameSession.clientUserId}
-  data-guest-mode={gameSession.guestModeValue}
-  data-initial-balance={gameSession.initialBalance}
->
-```
+Use `createPublicGameSession(user)` and the same root data contract as Three-Card Showdown.
 
 Pre-render:
 
 ```text
-7 player card buttons with nested CardSlot
+7 player card buttons, each containing CardSlot
 5 dealer High CardSlots
 2 dealer Low CardSlots
-High/unassigned container
-Low container
-wager buttons
+wager buttons 5 / 10 / 20 / 50 / 100
 Deal
 Auto Arrange
 Reset
 Confirm
 New Round
-settlement recovery host
-status/result areas
+one status/result area
+one settlement recovery host
 ```
 
-Do not add a route page under `src/pages/games/index.astro`; that file remains its redirect to `/#games`.
+Player buttons stay under one fixed container for the entire round.
 
-- [ ] **Step 5: Implement a local display adapter including Joker**
+- [ ] **Step 3: Implement local card/category display adapters**
 
 In `client.ts`:
 
 ```ts
-function cardData(card: PaiGowCard): { rank: string; suit: string } {
-  if (card.rank === 'joker') return { rank: '★', suit: '★' };
-
-  const rank =
-    card.rank === 11 ? 'J'
-      : card.rank === 12 ? 'Q'
-        : card.rank === 13 ? 'K'
-          : card.rank === 14 ? 'A'
-            : String(card.rank);
-
-  return { rank, suit: card.suit };
+function displayCard(card: PaiGowCard): { rank: string; suit: string } {
+  if (isPaiGowJoker(card)) return { rank: '★', suit: '★' };
+  return { rank: rankLabel(card.rank), suit: card.suit };
 }
 ```
 
-`CardSlot` and `card-format.ts` remain unchanged.
+Add local `CATEGORY_LABELS: Record<PaiGowCategory, string>`; do not modify the domain type to carry presentation copy.
 
-- [ ] **Step 6: Compose the existing settlement controller**
+- [ ] **Step 4: Render selection without reparenting**
 
-Follow Three-Card construction order:
+For each of the seven stable buttons:
+
+```ts
+const selected = state.lowIndexes.includes(index);
+button.setAttribute('aria-pressed', String(selected));
+button.dataset.low = String(selected);
+button.classList.toggle('pai-gow-low-selected', selected);
+```
+
+Render the card into its existing child `CardSlot`. Never call `append`, `appendChild`, or `replaceChildren` on card buttons during render.
+
+Click handler only calls `game.toggleLowCard(index)` and rerenders.
+
+- [ ] **Step 5: Show High/Low feedback while arranging**
+
+When two cards are selected:
+
+```ts
+const arrangement = getArrangement(state.playerCards, state.lowIndexes);
+const error = game.getArrangementError();
+```
+
+If valid:
+
+```text
+High: <CATEGORY_LABELS[arrangement.highRanking.category]> · Low: <CATEGORY_LABELS[arrangement.lowRanking.category]>
+```
+
+If invalid, show the exact arrangement error. With fewer than two selected, show `Choose two cards for the Low hand.`
+
+This is status copy only; no `label` property is added to rankings.
+
+- [ ] **Step 6: Compose existing settlement unchanged**
 
 ```ts
 const settlement = createPublicGameSettlementController({
@@ -1276,205 +939,85 @@ const settlement = createPublicGameSettlementController({
     if (game.getState().phase === 'complete') game.resetRound();
   },
 });
-
-const game = new PaiGowPokerGame(settlement.startingBalance);
 ```
 
-Do not add another gate or retry state.
-
-- [ ] **Step 7: Render arrangement by moving the same seven button nodes**
-
-Every player card button carries:
-
-```html
-data-card-index="0"
-aria-pressed="false"
-```
-
-During render:
+Confirm handler:
 
 ```ts
-const lowSet = new Set(state.lowIndexes);
-
-for (const button of playerCardButtons) {
-  const index = Number(button.dataset.cardIndex);
-  const host = lowSet.has(index) ? lowContainer : highContainer;
-  host.append(button);
-  button.setAttribute('aria-pressed', String(lowSet.has(index)));
-}
-```
-
-The same nodes move between containers. Do not regenerate card HTML or create a generic arrangement component.
-
-- [ ] **Step 8: Wire controls to pure game methods**
-
-Wager click:
-
-```text
-parse -> getWagerError -> show local message on error -> setWager on success
-```
-
-Deal:
-
-```text
-validate current wager -> game.deal() -> render
-```
-
-Card click:
-
-```text
-game.toggleLowCard(index) -> render
-```
-
-Auto Arrange:
-
-```text
-game.autoArrange() -> render
-```
-
-Reset:
-
-```text
-game.resetArrangement() -> render
-```
-
-Confirm:
-
-```ts
-const error = game.getArrangementError();
-if (error) {
-  arrangementMessage = error;
-  render();
-  return;
-}
-
 const result = game.confirm();
 render();
 await settlement.completeRound(result.netDelta, game.getState().balance);
 render();
 ```
 
-New Round is a no-op while `settlement.isBlocked`.
+New Round is disabled while `settlement.isBlocked`.
 
-- [ ] **Step 9: Add Happy-DOM client coverage**
+- [ ] **Step 7: Add Happy-DOM interaction coverage**
 
-`client.init.test.ts` pins:
-
-```text
-initial root balance is adopted
-zero-RNG Deal produces seven player cards and facedown dealer presentation
-clicking a player card moves the same DOM node to Low and sets aria-pressed=true
-clicking it again moves the same node back
-Auto Arrange moves indexes [0,1] into Low
-Reset moves all player nodes back to High/unassigned
-Confirm with incomplete/fouled split shows error and does not settle
-zero-RNG Auto Arrange + Confirm reveals dealer and displays Push / 0 net
-New Round is disabled while settlement is blocked
-Joker adapter renders ★ without CardSlot changes
-```
-
-For node identity:
-
-```ts
-const original = document.querySelector('[data-card-index="0"]');
-button.click();
-expect(lowContainer.querySelector('[data-card-index="0"]')).toBe(original);
-```
-
-- [ ] **Step 10: Add the lobby card in `src/pages/index.astro`**
-
-Use the existing game-card structure and link to:
+Pin:
 
 ```text
-/games/pai-gow-poker
+card button parentElement is unchanged after first and second selection
+focused first card stays connected and no render-time reparent occurs
+aria-pressed/data-low reflect selected state
+third selection does not create a third Low card
+High/Low category names appear for complete valid split
+foul copy appears for invalid split
+dealer stays face-down before Confirm and reveals after Confirm
+New Round is blocked while settlement is pending/failed
 ```
 
-Do not create a second games listing.
+- [ ] **Step 8: Add deterministic guest E2E**
 
-- [ ] **Step 11: Add deterministic guest Playwright acceptance**
-
-`e2e/pai-gow-poker.spec.ts` should pin the constant-zero fixture by overriding `Math.random` before page scripts execute.
-
-Flow:
+Pin `Math.random = () => 0`, select wager 20, then:
 
 ```text
-visit /games/pai-gow-poker as guest
-wager = 20
-Deal
-assert balance 980
+Deal -> 980
 Auto Arrange
-assert Low has 3♥ 4♥
-Confirm
-assert Push / 0 net
-assert dealer revealed as Royal High + 2♦ 3♦ Low
-assert balance returns 1000
-assert no /api/wallet/settle request
+status identifies player High/Low
+Confirm -> Push -> 1000
 New Round
-assert betting state restored
+no /api/wallet/settle request
 ```
 
-This is the guest E2E spine. Do not add win/loss RNG scenarios.
+Expected arrangements:
 
-- [ ] **Step 12: Run the route/client/guest slice**
+```text
+player High 5♥..9♥ / Low 3♥4♥
+dealer Royal / Low 2♦3♦
+```
+
+- [ ] **Step 9: Run route/client acceptance and commit**
 
 ```bash
-bun test \
-  src/lib/game-stats/game-stats.test.ts \
-  src/lib/pai-gow-poker/
-
+bun test src/lib/pai-gow-poker/client.init.test.ts src/lib/game-stats/
 bunx playwright test e2e/pai-gow-poker.spec.ts --workers=1
 ```
 
 Expected: PASS.
 
-- [ ] **Step 13: Commit**
-
 ```bash
-git add \
-  src/lib/game-stats/constants.ts \
-  src/lib/game-stats/game-stats.test.ts \
-  src/lib/pai-gow-poker \
-  src/pages/games/pai-gow-poker.astro \
-  src/pages/index.astro \
-  e2e/pai-gow-poker.spec.ts
+git add src/lib/game-stats src/lib/pai-gow-poker src/pages/index.astro src/pages/games/pai-gow-poker.astro e2e/pai-gow-poker.spec.ts
 git commit -m "feat(pai-gow): add playable route"
 ```
 
 ---
 
-## Task 6: Add authenticated settlement/profile acceptance and run final scope gates
+## Task 5: Add authenticated acceptance, profile integration, typecheck delta, and full validation
 
 **Files:**
 - Modify: `e2e/pai-gow-poker.spec.ts`
 - Modify: `e2e/profile-statistics.spec.ts`
-- Modify only if compile/test discovery requires: focused existing game-stat/profile fixtures
+- Modify only if fixed canonical game lists require it: focused game-stat/profile tests
 
-**Interfaces:**
-- Consumes: existing `createPublicGameSettlementController` and registered `pai-gow-poker` game key.
-- Produces: one authenticated `delta: 0` settlement assertion and profile-list integration.
+- [ ] **Step 1: Add one authenticated settlement case**
 
-- [ ] **Step 1: Add one authenticated settlement acceptance case**
+Reuse the constant-zero Push fixture so the expected command is simple.
 
-Use the same constant-zero Push fixture. Authenticate using the same helper pattern as the other public single-player game E2Es.
-
-Intercept `/api/wallet/settle` and capture request bodies.
-
-Flow:
-
-```text
-authenticated balance starts 1000
-Deal -> 980 locally
-Auto Arrange
-Confirm -> Push
-one wallet request occurs
-server authoritative balance is adopted
-```
-
-Assert exactly one command:
+Intercept `/api/wallet/settle`, complete one authenticated round, and assert exactly one request body with:
 
 ```ts
-expect(commands).toHaveLength(1);
-expect(commands[0]).toMatchObject({
+expect(command).toMatchObject({
   game: 'pai-gow-poker',
   delta: 0,
   stats: {
@@ -1486,131 +1029,90 @@ expect(commands[0]).toMatchObject({
 });
 ```
 
-Do not duplicate the shared Retry/Reset matrix. `public-game-settlement.test.ts` already owns exact-command retry behavior.
+Do not duplicate the shared Retry/Reset/exact-command matrix here.
 
-- [ ] **Step 2: Update profile statistics canonical game list**
+- [ ] **Step 2: Add Pai Gow to profile statistics canonical coverage**
 
-Add `pai-gow-poker` to the fixed expected list in `e2e/profile-statistics.spec.ts`.
+Update the fixed expected game list to include `pai-gow-poker` as the eleventh game and pin label/icon rendering through the existing typed maps.
 
-Keep this as list/registration coverage; no Pai-Gow-specific profile component is needed.
-
-- [ ] **Step 3: Run focused Pai Gow and profile acceptance**
+- [ ] **Step 3: Run focused acceptance**
 
 ```bash
-bunx playwright test \
-  e2e/pai-gow-poker.spec.ts \
-  e2e/profile-statistics.spec.ts \
-  --workers=1
+bunx playwright test e2e/pai-gow-poker.spec.ts e2e/profile-statistics.spec.ts --workers=1
 ```
 
 Expected: PASS.
 
-- [ ] **Step 4: Run all relevant unit/domain tests**
+- [ ] **Step 4: Capture/compare TypeScript baseline instead of pretending historical debt is clean**
+
+Before implementation, save current-main output:
 
 ```bash
-bun test \
-  src/lib/cards.test.ts \
-  src/lib/five-card-poker.test.ts \
-  src/lib/poker/handEvaluator.test.ts \
-  src/lib/poker/PokerGame.test.ts \
-  src/lib/pai-gow-poker/ \
-  src/lib/game-stats/game-stats.test.ts
+git switch main
+bunx tsc --noEmit > /tmp/arcturus-tsc-main.txt 2>&1 || true
+git switch -
+bunx tsc --noEmit > /tmp/arcturus-tsc-hpa197.txt 2>&1 || true
 ```
 
-Expected: PASS.
+Inspect the diff:
 
-- [ ] **Step 5: Run repository validation**
+```bash
+diff -u /tmp/arcturus-tsc-main.txt /tmp/arcturus-tsc-hpa197.txt || true
+```
+
+Acceptance: HPA-197 introduces **no new errors in files touched by this ticket**. Do not fix unrelated baseline errors here.
+
+- [ ] **Step 5: Run full repository validation**
 
 ```bash
 bun run test
 bun run lint
 bun run format:check
 bun run build
+bunx playwright test e2e/pai-gow-poker.spec.ts e2e/profile-statistics.spec.ts --workers=1
 ```
 
-Expected: all commands PASS.
+Expected: all commands above exit successfully. Report the TypeScript baseline delta separately from these pass/fail gates.
 
-- [ ] **Step 6: Run the no-framework scope gate**
+- [ ] **Step 6: Run final scope checks**
 
 ```bash
-git diff --name-only main...HEAD
+git diff main...HEAD -- src/lib/cards.ts src/lib/five-card-poker.ts src/lib/poker/handEvaluator.ts src/lib/pai-gow-poker src/pages/games/pai-gow-poker.astro src/pages/index.astro src/lib/game-stats e2e
 ```
 
-Manually verify:
+Confirm:
 
 ```text
-shared runtime edits outside Pai Gow are limited to:
-- src/lib/cards.ts (+ test)
-- src/lib/five-card-poker.ts (+ test)
-- src/lib/poker/handEvaluator.ts
-- normal game registration/lobby/profile integration
-
-Pai Gow implementation remains under:
-- src/lib/pai-gow-poker/**
-- src/pages/games/pai-gow-poker.astro
-- e2e/pai-gow-poker.spec.ts
+shared cards change = generic shuffle signature only
+shared five-card module = ordinary poker only
+Hold'em card type unchanged
+Video Poker / Three-Card / Blackjack evaluators unchanged
+no card-button reparenting logic
+no generic arrangement/wildcard/house-way framework
+no side bets/banking/AI/ranked/history/replay
+no API/schema/migration/queue/retry-policy additions
+no setHands/setDeck production hook
 ```
 
-Reject the implementation before merge if it adds:
-
-```text
-generic arrangement component
-generic wildcard engine
-house-way strategy registry/config
-base game class/client controller
-generic immutability helper
-new wallet gate/queue/retry policy
-test-only setHands/setDeck production API
-schema migration/new API
-side bets/banking/AI/ranked/history/replay
-```
-
-- [ ] **Step 7: Grep for accidental shared-rule leakage**
+- [ ] **Step 7: Commit final acceptance updates**
 
 ```bash
-git grep -n \
-  -e "joker" \
-  -e "house way" \
-  -e "houseWay" \
-  -e "LowHandIndexes" \
-  -- src/lib/cards.ts src/lib/five-card-poker.ts src/lib/poker
-```
-
-Expected: no Pai-Gow-specific Joker, house-way, or arrangement policy in shared/Hold'em modules.
-
-- [ ] **Step 8: Confirm resolver/snapshot obligations were not collapsed back into `confirm()`**
-
-Inspect `src/lib/pai-gow-poker/game.ts`:
-
-```text
-confirm() calls resolvePaiGowRound(...)
-confirm() does not contain playerWonHigh/playerWonLow branching
-confirm() does not calculate wager/20 or gross payout directly
-getState() clones cards/indexes/result
-confirm() returns a clone distinct from stored state
-```
-
-- [ ] **Step 9: Commit final acceptance updates**
-
-```bash
-git add e2e/pai-gow-poker.spec.ts e2e/profile-statistics.spec.ts
+git add e2e/profile-statistics.spec.ts e2e/pai-gow-poker.spec.ts src/lib/game-stats
 git commit -m "test(pai-gow): cover settlement and profile integration"
 ```
 
 ## Final acceptance checklist
 
-- [ ] `shuffleDeck<T>` is the only shared card/deck change; shared `Card` still has no Joker.
-- [ ] `five-card-poker.ts` contains ordinary poker only and pins unsuited wheel-low plus Broadway-SF-over-K-high behavior.
-- [ ] Texas Hold'em keeps its card model and 7-card combination search.
-- [ ] Video Poker and Three-Card Showdown evaluators remain unchanged.
-- [ ] Joker behavior, Pai Gow straight ordering, arrangement validation, house way, and round resolver are local to `src/lib/pai-gow-poker/`.
-- [ ] `resolvePaiGowRound` unit tests pin wager-20 win `+19`, push `0`, and loss `-20` without RNG.
-- [ ] `PaiGowPokerGame.confirm()` delegates round economics to `resolvePaiGowRound`.
-- [ ] `getState()` and `confirm()` return deep clones; mutation probes cannot corrupt stored cards, indexes, rankings, or results.
-- [ ] High-first 21-split house way is deterministic; Auto Arrange reuses it.
-- [ ] Wagers are whole, 20..500, divisible by 20, and affordable.
-- [ ] Guest constant-zero Push goes `1000 -> 980 -> 1000` with no wallet request.
-- [ ] Authenticated constant-zero Push sends exactly one `pai-gow-poker` settlement with `delta: 0`.
-- [ ] Lobby integration is only in `src/pages/index.astro`; `src/pages/games/index.astro` remains a redirect.
-- [ ] Profile statistics include the eleventh game.
-- [ ] No schema migration, new API, queue, automatic retry, drag system, wildcard/arrangement/house-way framework, test-only hand injection, AI, ranked mode, replay/history, side bet, banking, or compatibility work was added.
+- [ ] The player can Deal seven cards, choose exactly two Low cards, see current High/Low category feedback, and Confirm a legal arrangement.
+- [ ] High >= Low is accepted; a genuinely lower High is rejected as foul.
+- [ ] Cross-size comparator handles shared prefixes without reading past the shorter tie-break array.
+- [ ] Joker rules and Pai Gow straight ordering are local and covered.
+- [ ] Auto Arrange/dealer house way splits representative Full House and Two Pair hands sensibly, gives KQ Low on the pinned no-pair fixture, and preserves the documented Straight Flush/Royal fixture.
+- [ ] Resolver tests pin win `+19`, push `0`, loss `-20` at wager 20 and upward-rounded commission for a non-multiple wager.
+- [ ] `getState()` and `confirm()` cannot be used to mutate internal game state.
+- [ ] Player card buttons stay in stable DOM positions; selection uses `aria-pressed`/`data-low` and preserves keyboard focus.
+- [ ] Guest deterministic Push settles locally with no wallet request.
+- [ ] Authenticated deterministic Push sends exactly one `delta: 0` settlement.
+- [ ] Pai Gow appears as the eleventh game with distinct icon `☯️`.
+- [ ] No new touched-path TypeScript errors are introduced relative to current `main`.
+- [ ] No architecture or product non-goal was added accidentally.

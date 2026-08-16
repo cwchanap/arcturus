@@ -14,7 +14,8 @@ import {
 } from '../wallet';
 import { VideoPokerGame } from './game';
 import { MIN_WAGER } from './paytable';
-import type { Card, VideoPokerRoundResult } from './types';
+import type { Card } from '../cards';
+import type { VideoPokerRoundResult } from './types';
 
 const GAME_KEY = 'video-poker';
 

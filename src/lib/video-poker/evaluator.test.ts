@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { evaluateHand } from './evaluator';
-import type { Card, Rank, Suit } from './types';
+import type { Card, Rank, Suit } from '../cards';
 
 const c = (rank: Rank, suit: Suit): Card => ({ rank, suit });
 const category = (cards: Card[]) => evaluateHand(cards).category;

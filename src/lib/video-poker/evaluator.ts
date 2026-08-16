@@ -1,4 +1,5 @@
-import type { Card, HandCategory, HandEvaluation } from './types';
+import type { Card } from '../cards';
+import type { HandCategory, HandEvaluation } from './types';
 
 const LABELS: Readonly<Record<HandCategory, string>> = {
 	'royal-flush': 'Royal Flush',

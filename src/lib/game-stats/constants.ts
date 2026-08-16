@@ -15,6 +15,7 @@ export const GAME_TYPES = [
 	'keno',
 	'video-poker',
 	'sic-bo',
+	'three-card-showdown',
 ] as const;
 
 /**
@@ -45,6 +46,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	keno: 'Keno',
 	'video-poker': 'Video Poker',
 	'sic-bo': 'Sic Bo',
+	'three-card-showdown': 'Three-Card Showdown',
 };
 
 /**
@@ -60,6 +62,7 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	keno: '\u{1F3B1}',
 	'video-poker': '♠️',
 	'sic-bo': '🎲',
+	'three-card-showdown': '♠️',
 };
 
 /**

@@ -89,17 +89,19 @@ test.describe('Three-Card Showdown wallet recovery', () => {
 			await page.locator('#three-card-showdown-play').click();
 
 			// After Deal → Play exactly one command was sent; recovery is visible
-			// and New Round is blocked until settlement succeeds.
-			expect(commands).toHaveLength(1);
+			// and New Round is blocked until settlement succeeds. The visibility
+			// wait guarantees the route handler has captured the first command.
 			await expect(page.locator('#three-card-showdown-settlement-recovery')).toBeVisible();
+			expect(commands).toHaveLength(1);
 			await expect(page.locator('#three-card-showdown-new-round')).toBeDisabled();
 
 			await page.locator('#three-card-showdown-retry-settlement').click();
 
-			// Retry resends the exact same command; recovery clears and New Round unblocks.
+			// Retry resends the exact same command; recovery clears and New Round
+			// unblocks. The hidden wait guarantees the second command was captured.
+			await expect(page.locator('#three-card-showdown-settlement-recovery')).toBeHidden();
 			expect(commands).toHaveLength(2);
 			expect(commands[1]).toEqual(commands[0]);
-			await expect(page.locator('#three-card-showdown-settlement-recovery')).toBeHidden();
 			await expect(page.locator('#three-card-showdown-new-round')).toBeEnabled();
 
 			// Both the local balance and the shared header balance adopt the authoritative value.

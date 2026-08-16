@@ -1,6 +1,6 @@
 import { validateBet } from '../bet-validation';
 import { createShuffledDeck } from '../cards';
-import { evaluateThreeCardHand, resolvePlayedHand } from './rules';
+import { dealerQualifies, evaluateThreeCardHand, resolvePlayedHand } from './rules';
 import type {
 	ThreeCardHandEvaluation,
 	ThreeCardShowdownRoundResult,
@@ -93,17 +93,18 @@ export class ThreeCardShowdownGame {
 	fold(): ThreeCardShowdownRoundResult {
 		if (this.state.phase !== 'decision') throw new Error('Fold is only allowed after dealing');
 		const { ante, playerHand, dealerHand } = this.state;
+		const dealerEvaluation = evaluateThreeCardHand(dealerHand);
 		const result: ThreeCardShowdownRoundResult = {
 			outcome: 'fold',
 			ante,
 			totalWager: ante,
 			grossPayout: 0,
 			netDelta: -ante,
-			dealerQualified: false,
+			dealerQualified: dealerQualifies(dealerEvaluation),
 			playerHand: [...playerHand],
 			dealerHand: [...dealerHand],
 			playerEvaluation: evaluateThreeCardHand(playerHand),
-			dealerEvaluation: evaluateThreeCardHand(dealerHand),
+			dealerEvaluation,
 		};
 		this.state = { ...this.state, phase: 'complete', result };
 		// Deep clone so callers cannot mutate internal state through the return value.

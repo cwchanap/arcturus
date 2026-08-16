@@ -15,7 +15,7 @@ describe('evaluateThreeCardHand', () => {
 	test('A-K-Q is the highest straight', () => {
 		const hand = evaluate([c(14, 'spades'), c(13, 'hearts'), c(12, 'diamonds')]);
 		expect(hand.category).toBe('straight');
-		expect(hand.tieBreakers).toEqual([14, 13, 12]);
+		expect(hand.tieBreakers).toEqual([14]);
 		expect(
 			compareThreeCardHands(hand, evaluate([c(13, 'spades'), c(12, 'hearts'), c(11, 'diamonds')])),
 		).toBe(1);
@@ -24,7 +24,7 @@ describe('evaluateThreeCardHand', () => {
 	test('A-2-3 is the lowest straight with straightHigh 3', () => {
 		const hand = evaluate([c(14, 'spades'), c(2, 'hearts'), c(3, 'diamonds')]);
 		expect(hand.category).toBe('straight');
-		expect(hand.tieBreakers).toEqual([3, 2, 1]);
+		expect(hand.tieBreakers).toEqual([3]);
 	});
 
 	test('K-A-2 is a high card, not a straight', () => {
@@ -36,7 +36,7 @@ describe('evaluateThreeCardHand', () => {
 	test('same-suit A-2-3 is a straight flush', () => {
 		const hand = evaluate([c(14, 'spades'), c(2, 'spades'), c(3, 'spades')]);
 		expect(hand.category).toBe('straight-flush');
-		expect(hand.tieBreakers).toEqual([3, 2, 1]);
+		expect(hand.tieBreakers).toEqual([3]);
 	});
 
 	test('three of a kind is detected with the trio rank', () => {

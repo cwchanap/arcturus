@@ -35,7 +35,9 @@ export function evaluateThreeCardHand(cards: readonly Card[]): ThreeCardHandEval
 	const isAceLowStraight = high === 14 && middle === 3 && low === 2;
 	const isStraight = (high - middle === 1 && middle - low === 1) || isAceLowStraight;
 
-	const tieBreakers = isAceLowStraight ? [3, 2, 1] : ranks;
+	// Contract: straight/straight-flush carry a single tie breaker (straightHigh);
+	// the wheel (A-2-3) is the lowest straight with straightHigh 3.
+	const tieBreakers = isStraight ? [isAceLowStraight ? 3 : high] : ranks;
 
 	let category: ThreeCardHandCategory;
 	if (high === low) {

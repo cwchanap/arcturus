@@ -149,7 +149,9 @@ describe('fold', () => {
 		game.setAnte(10);
 		game.deal();
 		const folded = game.fold();
-		expect(folded.dealerQualified).toBe(false);
+		// The constant-zero dealer 6♥7♥8♥ straight flush qualifies, so a fold
+		// reports dealerQualified from the actual evaluation, not a hardcoded false.
+		expect(folded.dealerQualified).toBe(true);
 		expect(folded.playerHand).toEqual([c(3, 'hearts'), c(4, 'hearts'), c(5, 'hearts')]);
 		expect(folded.playerEvaluation.category).toBe('straight-flush');
 		expect(folded.dealerEvaluation.category).toBe('straight-flush');

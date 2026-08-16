@@ -333,6 +333,7 @@ describe('initSicBoClient — authenticated settlement window', () => {
 
 	test('settlement failure renders its own copy through settlement.statusMessage and blocks New Round', async () => {
 		localStorage.clear();
+		const origFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
 		Object.defineProperty(globalThis, 'fetch', {
 			configurable: true,
 			writable: true,
@@ -358,6 +359,7 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			expect(actionButton().disabled).toBe(true);
 		} finally {
 			Math.random = origRandom;
+			restore(origFetchDescriptor, 'fetch');
 			root.remove();
 		}
 	});

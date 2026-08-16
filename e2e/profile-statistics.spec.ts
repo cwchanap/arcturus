@@ -10,6 +10,7 @@ const CANONICAL_GAME_TYPES = [
 	'keno',
 	'video-poker',
 	'sic-bo',
+	'three-card-showdown',
 ] as const;
 
 type CanonicalGameType = (typeof CANONICAL_GAME_TYPES)[number];

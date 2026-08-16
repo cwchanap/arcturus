@@ -1,0 +1,161 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import CardSlot from '../../components/CardSlot.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { ANTE_OPTIONS } from '../../lib/three-card-showdown';
+
+const gameSession = createPublicGameSession(Astro.locals.user);
+---
+
+<CasinoLayout title="Three-Card Showdown - Arcturus Casino">
+	<main
+		id="three-card-showdown-root"
+		data-testid="three-card-showdown-root"
+		data-user-id={gameSession.clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={gameSession.initialBalance}
+		class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"
+	>
+		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+			<div>
+				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
+				<h1 class="deco-section-title text-4xl">Three-Card Showdown</h1>
+				<p class="text-[var(--deco-muted)]">
+					Ante + Play against a qualifying dealer hand. Fold and lose only the ante.
+				</p>
+			</div>
+			<div class="deco-panel px-5 py-3">
+				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
+				<div
+					id="chip-balance"
+					data-testid="chip-balance"
+					class="text-2xl font-bold text-[var(--deco-brass)]"
+				>
+					{gameSession.initialBalance.toLocaleString()}
+				</div>
+			</div>
+		</header>
+
+		<section class="felt-table rounded-3xl p-6">
+			<div
+				id="three-card-showdown-status"
+				data-testid="three-card-showdown-status"
+				role="status"
+				aria-live="polite"
+				class="mb-4 text-center"
+			>
+				Choose an ante, then deal.
+			</div>
+
+			<div class="mb-6">
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Dealer</div>
+				<div class="flex justify-center gap-3">
+					{
+						[0, 1, 2].map((i) => (
+							<CardSlot
+								id={`three-card-showdown-dealer-slot-${i}`}
+								size="large"
+								showPlaceholder={true}
+							/>
+						))
+					}
+				</div>
+			</div>
+
+			<div>
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Player</div>
+				<div class="flex justify-center gap-3">
+					{
+						[0, 1, 2].map((i) => (
+							<CardSlot
+								id={`three-card-showdown-player-slot-${i}`}
+								size="large"
+								showPlaceholder={true}
+							/>
+						))
+					}
+				</div>
+			</div>
+
+			<div
+				id="three-card-showdown-result"
+				data-testid="three-card-showdown-result"
+				role="status"
+				aria-live="polite"
+				class="mt-2 min-h-6 text-center font-semibold text-[var(--deco-brass)]"
+			>
+			</div>
+
+			<div class="mt-5 text-center text-sm text-[var(--deco-muted)]">Ante</div>
+			<div class="mt-2 flex flex-wrap justify-center gap-2">
+				{
+					ANTE_OPTIONS.map((ante) => (
+						<button
+							type="button"
+							data-ante={ante}
+							aria-pressed={ante === ANTE_OPTIONS[0] ? 'true' : 'false'}
+							class="deco-btn rounded-lg px-4 py-2"
+						>
+							{ante}
+						</button>
+					))
+				}
+			</div>
+
+			<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+				<button
+					id="three-card-showdown-deal"
+					data-testid="three-card-showdown-deal"
+					type="button"
+					class="btn-gold rounded-lg px-8 py-3"
+				>
+					Deal
+				</button>
+				<button
+					id="three-card-showdown-fold"
+					data-testid="three-card-showdown-fold"
+					type="button"
+					class="deco-btn rounded-lg px-6 py-3"
+					hidden
+				>
+					Fold
+				</button>
+				<button
+					id="three-card-showdown-play"
+					data-testid="three-card-showdown-play"
+					type="button"
+					class="btn-gold rounded-lg px-8 py-3"
+					hidden
+				>
+					Play
+				</button>
+				<button
+					id="three-card-showdown-new-round"
+					data-testid="three-card-showdown-new-round"
+					type="button"
+					class="deco-btn rounded-lg px-8 py-3"
+					hidden
+				>
+					New Round
+				</button>
+			</div>
+			<div id="three-card-showdown-recovery-host" class="mt-4 flex justify-center"></div>
+		</section>
+
+		<aside class="deco-panel mt-6 p-5">
+			<h2 class="deco-section-title text-2xl">How to Play</h2>
+			<p class="mt-1 text-xs text-[var(--deco-muted)]">
+				Ante to receive three cards; the dealer takes three cards face down. Fold to lose only the
+				ante, or Play a second wager equal to the ante. The dealer must hold Queen-high or better to
+				qualify — if the dealer does not qualify, your Play wager is returned and the ante is paid
+				1:1. Otherwise the best three-card hand wins; a tie pushes.
+			</p>
+		</aside>
+	</main>
+</CasinoLayout>
+
+<script>
+	import { initThreeCardShowdownClient } from '../../lib/three-card-showdown';
+
+	initThreeCardShowdownClient();
+</script>

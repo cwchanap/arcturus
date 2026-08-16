@@ -1,15 +1,14 @@
 // src/lib/sic-bo/client.init.test.ts
 //
-// Spec: docs/superpowers/specs/2026-08-13-sic-bo-design.md §Client DOM tests.
 // Covers Sic-Bo-specific wiring only: guest bankroll persistence without
 // wallet settlement, bet slip clearing, Roll disabled state, the
 // complete-phase New Round action, and the authenticated settlement window
-// (New Round stays disabled while settlement is in flight). The wallet gate's
-// own success/retry/reset matrix is covered by the shared gate tests and
-// Task 5 E2E.
+// (completeRound after roll; New Round stays disabled while settlement is
+// blocked). The wallet controller's own success/retry/reset matrix is covered
+// by src/lib/wallet/public-game-settlement.test.ts.
 
 import { Window } from 'happy-dom';
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { SIC_BO_CHIP_DENOMINATIONS, TOTAL_ODDS } from './rules';
 import { initSicBoClient } from './client';
 
@@ -177,6 +176,10 @@ function totalStakeEl(): HTMLElement {
 	return document.getElementById('sic-bo-total-stake') as HTMLElement;
 }
 
+function statusEl(): HTMLElement {
+	return document.getElementById('sic-bo-status') as HTMLElement;
+}
+
 function installFetchSpy(): { calls: string[] } {
 	const calls: string[] = [];
 	Object.defineProperty(globalThis, 'fetch', {
@@ -194,6 +197,10 @@ function installFetchSpy(): { calls: string[] } {
 // Tests
 // ---------------------------------------------------------------------------
 describe('initSicBoClient — guest bet slip wiring', () => {
+	beforeEach(() => {
+		restore(origFetch, 'fetch');
+	});
+
 	test('same-denomination re-click clears one bet and Clear bets clears the whole slip', () => {
 		localStorage.clear();
 		const root = makeSicBoRoot();
@@ -264,7 +271,7 @@ describe('initSicBoClient — guest bet slip wiring', () => {
 });
 
 describe('initSicBoClient — authenticated settlement window', () => {
-	test('New Round stays disabled while settlement is in flight, then unlocks after balance adoption', async () => {
+	test('roll completes the round through the settlement controller; New Round stays disabled while blocked, then unlocks after balance adoption', async () => {
 		localStorage.clear();
 		const calls: string[] = [];
 		let resolveFetch: (value: unknown) => void = () => {};
@@ -323,9 +330,57 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			root.remove();
 		}
 	});
+
+	test('settlement failure renders its own copy through settlement.statusMessage and blocks New Round', async () => {
+		localStorage.clear();
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			writable: true,
+			value: async () => {
+				throw new Error('Network error');
+			},
+		});
+		const origRandom = Math.random;
+		Math.random = () => 0;
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+
+			denomButton(1).click();
+			betButton('any-triple').click();
+			actionButton().click();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(statusEl().textContent).toBe(
+				'Settlement failed. Retry or reset before rolling again.',
+			);
+			expect(actionButton().textContent).toBe('New Round');
+			expect(actionButton().disabled).toBe(true);
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
 });
 
 describe('initSicBoClient — guest round flow', () => {
+	beforeEach(() => {
+		restore(origFetch, 'fetch');
+	});
+
+	test('constructs against settlement.startingBalance (persisted guest bankroll)', () => {
+		localStorage.clear();
+		localStorage.setItem(`sic-bo-bankroll:${USER_ID}`, '400');
+		installFetchSpy();
+		const root = makeSicBoRoot({ guestMode: true, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+			expect(balanceEl().textContent).toBe('400');
+		} finally {
+			root.remove();
+		}
+	});
+
 	test('guest win persists bankroll and sends no wallet settlement request', () => {
 		localStorage.clear();
 		const { calls } = installFetchSpy();
@@ -384,195 +439,13 @@ describe('initSicBoClient — guest round flow', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Settlement recovery: failure, retry (success + failure), and reset paths.
-// These cover showSettlementRecovery, adoptSettlementResult (incl. achievement
-// dispatch), the retry handler, the reset handler, and the settlement-failure
-// catch in the action handler.
-// ---------------------------------------------------------------------------
-function installFailingFetch(): void {
-	Object.defineProperty(globalThis, 'fetch', {
-		configurable: true,
-		writable: true,
-		value: async () => {
-			throw new Error('Network error');
-		},
-	});
-}
-
-function flushMicrotasks(): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-// Shared setup for the settlement-recovery tests: clears localStorage, stubs
-// Math.random, creates the Sic Bo root, initialises the client, places the
-// standard any-triple bet at denomination 1, triggers the roll, and flushes
-// microtasks so the settlement promise settles. Callers install their own
-// fetch override BEFORE calling this so the settlement path observes it.
-async function setupRecoveryTest(): Promise<{
-	root: HTMLElement;
-	cleanup: () => void;
-}> {
-	localStorage.clear();
-	const origRandom = Math.random;
-	Math.random = () => 0;
-	const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
-	initSicBoClient();
-	denomButton(1).click();
-	betButton('any-triple').click();
-	actionButton().click();
-	await flushMicrotasks();
-	return {
-		root,
-		cleanup: () => {
-			Math.random = origRandom;
-			root.remove();
-		},
-	};
-}
-
-describe('initSicBoClient — settlement recovery', () => {
-	// Restore globalThis.fetch after each test so a failing/custom fetch
-	// installed by one test never leaks into the next. The suite-level
-	// afterAll still runs as a final safety net.
-	afterEach(() => {
-		restore(origFetch, 'fetch');
-	});
-
-	test('settlement failure shows recovery UI with retry and reset buttons', async () => {
-		installFailingFetch();
-		const { cleanup } = await setupRecoveryTest();
-		try {
-			// Recovery container is visible.
-			const container = document.getElementById('sic-bo-settlement-recovery');
-			expect(container).not.toBeNull();
-			expect(container?.classList.contains('hidden')).toBe(false);
-
-			// Status shows the settlement-failed message (settlementMessage path).
-			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
-				'Settlement failed. Retry or reset before rolling again.',
-			);
-
-			// Retry and reset buttons exist.
-			expect(document.getElementById('sic-bo-retry-settlement')).not.toBeNull();
-			expect(document.getElementById('sic-bo-reset-settlement')).not.toBeNull();
-
-			// Action button stays disabled while gate is blocked.
-			expect(actionButton().disabled).toBe(true);
-		} finally {
-			cleanup();
-		}
-	});
-
-	test('retry success adopts balance and dispatches achievement event', async () => {
-		let fetchCallCount = 0;
-		Object.defineProperty(globalThis, 'fetch', {
-			configurable: true,
-			writable: true,
-			value: async () => {
-				fetchCallCount++;
-				if (fetchCallCount === 1) throw new Error('Network error');
-				return {
-					ok: true,
-					status: 200,
-					json: async () => ({
-						balance: 1024,
-						duplicate: false,
-						newAchievements: [{ id: 'sic-bo-master', name: 'Sic Bo Master', icon: 'dice' }],
-					}),
-				};
-			},
-		});
-
-		const achievementEvents: Array<{ achievements: unknown }> = [];
-		const onAchievement = (event: Event): void => {
-			achievementEvents.push((event as CustomEvent).detail);
-		};
-		window.addEventListener('achievement-earned', onAchievement);
-
-		const { cleanup } = await setupRecoveryTest();
-		try {
-			// Settlement failed — recovery visible.
-			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
-				'Settlement failed. Retry or reset before rolling again.',
-			);
-
-			// Click retry — second fetch succeeds.
-			document.getElementById('sic-bo-retry-settlement')!.click();
-			await flushMicrotasks();
-
-			expect(fetchCallCount).toBe(2);
-			expect(balanceEl().textContent).toBe('1,024');
-			expect(achievementEvents).toHaveLength(1);
-			expect(achievementEvents[0].achievements).toEqual([
-				{ id: 'sic-bo-master', name: 'Sic Bo Master', icon: 'dice' },
-			]);
-
-			// Recovery hidden after successful adoption.
-			const container = document.getElementById('sic-bo-settlement-recovery');
-			expect(container?.classList.contains('hidden')).toBe(true);
-
-			// Action button unlocked (gate no longer blocked).
-			expect(actionButton().disabled).toBe(false);
-		} finally {
-			window.removeEventListener('achievement-earned', onAchievement);
-			cleanup();
-		}
-	});
-
-	test('retry failure shows updated recovery message', async () => {
-		installFailingFetch();
-		const { cleanup } = await setupRecoveryTest();
-		try {
-			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
-				'Settlement failed. Retry or reset before rolling again.',
-			);
-
-			// Click retry — fetch fails again.
-			document.getElementById('sic-bo-retry-settlement')!.click();
-			await flushMicrotasks();
-
-			expect(document.getElementById('sic-bo-status')!.textContent).toBe(
-				'Settlement failed again. Retry or reset before rolling again.',
-			);
-
-			// Recovery still visible.
-			const container = document.getElementById('sic-bo-settlement-recovery');
-			expect(container?.classList.contains('hidden')).toBe(false);
-		} finally {
-			cleanup();
-		}
-	});
-
-	test('reset round restores server balance and hides recovery', async () => {
-		installFailingFetch();
-		const { cleanup } = await setupRecoveryTest();
-		try {
-			// After failed settlement, balance is locally 1024 (from the roll).
-			expect(balanceEl().textContent).toBe('1,024');
-
-			// Click reset — restores server-synced balance (1000).
-			document.getElementById('sic-bo-reset-settlement')!.click();
-
-			expect(balanceEl().textContent).toBe('1,000');
-
-			// Recovery hidden.
-			const container = document.getElementById('sic-bo-settlement-recovery');
-			expect(container?.classList.contains('hidden')).toBe(true);
-
-			// Back to betting phase with retained slip — Roll enabled.
-			expect(actionButton().textContent).toBe('Roll');
-			expect(actionButton().disabled).toBe(false);
-			expect(betAmount('any-triple').textContent).toBe('1');
-		} finally {
-			cleanup();
-		}
-	});
-});
-
-// ---------------------------------------------------------------------------
 // Bet and roll error catch paths in the action and bet-button handlers.
 // ---------------------------------------------------------------------------
 describe('initSicBoClient — bet and roll error handling', () => {
+	beforeEach(() => {
+		restore(origFetch, 'fetch');
+	});
+
 	test('bet exceeding balance shows error status without placing the bet', () => {
 		localStorage.clear();
 		const root = makeSicBoRoot({ guestMode: true, initialBalance: 1 });

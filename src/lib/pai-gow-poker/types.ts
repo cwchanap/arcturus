@@ -45,3 +45,15 @@ export interface PaiGowRoundResult {
 	player: PaiGowArrangement;
 	dealer: PaiGowArrangement;
 }
+
+export type PaiGowPhase = 'betting' | 'arranging' | 'complete';
+
+export interface PaiGowPokerState {
+	phase: PaiGowPhase;
+	balance: number;
+	wager: number;
+	playerCards: PaiGowCard[];
+	dealerCards: PaiGowCard[];
+	lowIndexes: number[];
+	result: PaiGowRoundResult | null;
+}

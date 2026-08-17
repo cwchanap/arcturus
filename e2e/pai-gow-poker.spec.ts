@@ -72,3 +72,39 @@ test.describe('Pai Gow Poker guest', () => {
 		expect(walletRequests).toEqual([]);
 	});
 });
+
+test.describe('Pai Gow Poker wallet', () => {
+	test.use({ storageState: 'e2e/.auth/user.json' });
+
+	test('authenticated deterministic Push settles exactly once', async ({ page }) => {
+		const commands: Array<Record<string, unknown>> = [];
+		await page.addInitScript(() => {
+			Math.random = () => 0;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'false');
+
+		await page.route('**/api/wallet/settle', async (route) => {
+			const command = route.request().postDataJSON() as Record<string, unknown>;
+			commands.push(command);
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ balance: 1000, duplicate: false }),
+			});
+		});
+
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await page.getByTestId('auto-arrange-button').click();
+		await page.getByTestId('confirm-button').click();
+
+		await expect(page.getByTestId('pai-gow-status')).toContainText('Push');
+		await expect.poll(() => commands.length).toBe(1);
+		expect(commands[0]).toMatchObject({
+			game: 'pai-gow-poker',
+			delta: 0,
+			stats: { rounds: 1, wins: 0, losses: 0, biggestWin: 0 },
+		});
+	});
+});

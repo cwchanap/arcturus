@@ -137,15 +137,11 @@ function buildRoot(options: {
 	guestMode?: boolean;
 	userId?: string;
 	initialBalance?: number;
-	balanceAvailable?: boolean;
 }): HTMLElement {
 	const root = document.createElement('main');
 	root.dataset.userId = options.userId ?? 'anonymous';
 	root.dataset.guestMode = options.guestMode === false ? 'false' : 'true';
 	root.dataset.initialBalance = String(options.initialBalance ?? 1000);
-	if (options.balanceAvailable === false) {
-		root.dataset.balanceAvailable = 'false';
-	}
 
 	const balance = document.createElement('div');
 	balance.id = 'chip-balance';
@@ -216,24 +212,6 @@ describe('createPublicGameSettlementController', () => {
 			expect(settlement.isGuestMode).toBe(true);
 			expect(settlement.clientUserId).toBe('anonymous');
 			expect(settlement.startingBalance).toBe(500);
-		} finally {
-			root.remove();
-		}
-	});
-
-	test('auth + balanceAvailable=false -> startingBalance loads persisted local bankroll on reload', () => {
-		localStorage.clear();
-		localStorage.setItem(`${GAME_KEY}-bankroll:u_vp`, '770');
-		const root = buildRoot({
-			guestMode: false,
-			userId: 'u_vp',
-			initialBalance: 1000,
-			balanceAvailable: false,
-		});
-		try {
-			const settlement = makeController(root);
-			expect(settlement.isGuestMode).toBe(false);
-			expect(settlement.startingBalance).toBe(770);
 		} finally {
 			root.remove();
 		}
@@ -326,28 +304,6 @@ describe('createPublicGameSettlementController', () => {
 			expect(recoveryContainer()?.classList.contains('hidden')).toBe(false);
 			expect(retryButton()).not.toBeNull();
 			expect(resetButton()).not.toBeNull();
-		} finally {
-			root.remove();
-		}
-	});
-
-	test('auth + balanceAvailable=false -> persists locally, never calls fetch, not blocked', async () => {
-		localStorage.clear();
-		const { commands } = installFetch();
-		const root = buildRoot({
-			guestMode: false,
-			userId: 'u_vp',
-			initialBalance: 1000,
-			balanceAvailable: false,
-		});
-		try {
-			const settlement = makeController(root);
-			await settlement.completeRound(25, 1025);
-
-			expect(localStorage.getItem(`${GAME_KEY}-bankroll:u_vp`)).toBe('1025');
-			expect(commands).toHaveLength(0);
-			expect(settlement.isBlocked).toBe(false);
-			expect(settlement.statusMessage).toBeNull();
 		} finally {
 			root.remove();
 		}

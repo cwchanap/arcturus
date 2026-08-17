@@ -317,7 +317,7 @@ describe('Pai Gow round resolution', () => {
 		});
 	});
 
-	test('rounds a non-multiple commission to the nearest chip', () => {
+	test('rounds a non-multiple commission up to the next chip', () => {
 		const player = arrangement(
 			{ category: 'high-card', tieBreakers: [14] },
 			{ category: 'high-card', tieBreakers: [13] },
@@ -328,13 +328,13 @@ describe('Pai Gow round resolution', () => {
 		);
 
 		expect(resolvePaiGowRound(player, dealer, 25)).toMatchObject({
-			commission: 1,
-			grossPayout: 49,
-			netDelta: 24,
+			commission: 2,
+			grossPayout: 48,
+			netDelta: 23,
 		});
 	});
 
-	test('charges no commission on the minimum wager', () => {
+	test('charges the minimum one-chip commission on the minimum wager', () => {
 		const player = arrangement(
 			{ category: 'high-card', tieBreakers: [14] },
 			{ category: 'high-card', tieBreakers: [13] },
@@ -347,9 +347,9 @@ describe('Pai Gow round resolution', () => {
 		expect(resolvePaiGowRound(player, dealer, 5)).toMatchObject({
 			outcome: 'win',
 			wager: 5,
-			commission: 0,
-			grossPayout: 10,
-			netDelta: 5,
+			commission: 1,
+			grossPayout: 9,
+			netDelta: 4,
 		});
 	});
 });

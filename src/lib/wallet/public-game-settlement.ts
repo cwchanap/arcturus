@@ -63,9 +63,13 @@ export function createPublicGameSettlementController(options: {
 	// balance and settles locally like a guest. Defaults to "true" so pages
 	// that do not emit the attribute keep the existing authenticated behavior.
 	const balanceAvailable = options.root.dataset.balanceAvailable !== 'false';
+	// Authenticated sessions whose account has no balance (balanceAvailable=false)
+	// play with a local bankroll just like guests: load the persisted balance on
+	// init and persist it again on each completed round.
+	const usesLocalBankroll = isGuestMode || !balanceAvailable;
 	const parsedInitialBalance = Number(options.root.dataset.initialBalance ?? '1000');
 	const initialBalance = Number.isFinite(parsedInitialBalance) ? parsedInitialBalance : 1000;
-	const startingBalance = isGuestMode
+	const startingBalance = usesLocalBankroll
 		? loadGuestBankroll(options.gameKey, clientUserId, initialBalance)
 		: initialBalance;
 
@@ -138,7 +142,7 @@ export function createPublicGameSettlementController(options: {
 	});
 
 	async function completeRound(netDelta: number, localBalance: number): Promise<void> {
-		if (isGuestMode || !balanceAvailable) {
+		if (usesLocalBankroll) {
 			persistGuestBankroll(options.gameKey, clientUserId, localBalance);
 			return;
 		}

@@ -221,6 +221,24 @@ describe('createPublicGameSettlementController', () => {
 		}
 	});
 
+	test('auth + balanceAvailable=false -> startingBalance loads persisted local bankroll on reload', () => {
+		localStorage.clear();
+		localStorage.setItem(`${GAME_KEY}-bankroll:u_vp`, '770');
+		const root = buildRoot({
+			guestMode: false,
+			userId: 'u_vp',
+			initialBalance: 1000,
+			balanceAvailable: false,
+		});
+		try {
+			const settlement = makeController(root);
+			expect(settlement.isGuestMode).toBe(false);
+			expect(settlement.startingBalance).toBe(770);
+		} finally {
+			root.remove();
+		}
+	});
+
 	test('syncBalance(990) updates #chip-balance and every [data-chip-balance] mirror', () => {
 		localStorage.clear();
 		const root = buildRoot({ guestMode: true, initialBalance: 1000 });

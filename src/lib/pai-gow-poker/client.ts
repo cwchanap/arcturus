@@ -33,6 +33,27 @@ function displayCard(card: PaiGowCard): { rank: string; suit: string } {
 	return { rank: rankLabel(card.rank), suit: card.suit };
 }
 
+const RANK_NAMES: Record<Card['rank'], string> = {
+	2: '2',
+	3: '3',
+	4: '4',
+	5: '5',
+	6: '6',
+	7: '7',
+	8: '8',
+	9: '9',
+	10: '10',
+	11: 'Jack',
+	12: 'Queen',
+	13: 'King',
+	14: 'Ace',
+};
+
+function accessibleCardName(card: PaiGowCard): string {
+	if (isPaiGowJoker(card)) return 'Joker';
+	return `${RANK_NAMES[card.rank]} of ${card.suit}`;
+}
+
 function resultText(result: PaiGowRoundResult): string {
 	const outcome =
 		result.outcome === 'win' ? 'Player wins' : result.outcome === 'loss' ? 'Loss' : 'Push';
@@ -100,7 +121,10 @@ export function initPaiGowPokerClient(): void {
 			button.dataset.low = String(selected);
 			button.classList.toggle('pai-gow-low-selected', selected);
 			button.disabled = state.phase !== 'arranging';
-			button.setAttribute('aria-label', `Card ${index + 1}`);
+			button.setAttribute(
+				'aria-label',
+				card ? `Card ${index + 1}: ${accessibleCardName(card)}` : `Card ${index + 1}`,
+			);
 		}
 
 		renderDealerSlots(state);

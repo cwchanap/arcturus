@@ -200,7 +200,7 @@ export function resolvePaiGowRound(
 	const outcome: PaiGowRoundOutcome =
 		wonHigh && wonLow ? 'win' : wonHigh || wonLow ? 'push' : 'loss';
 
-	const commission = outcome === 'win' ? Math.round(wager * 0.05) : 0;
+	const commission = outcome === 'win' ? Math.ceil(wager * 0.05) : 0;
 	const grossPayout = outcome === 'win' ? wager * 2 - commission : outcome === 'push' ? wager : 0;
 
 	return {

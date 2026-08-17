@@ -13,7 +13,7 @@ export function createDeck(): Card[] {
 	return SUITS.flatMap((suit) => RANKS.map((rank) => ({ rank, suit })));
 }
 
-export function shuffleDeck(deck: readonly Card[], random: () => number = Math.random): Card[] {
+export function shuffleDeck<T>(deck: readonly T[], random: () => number = Math.random): T[] {
 	const shuffled = [...deck];
 	for (let i = shuffled.length - 1; i > 0; i--) {
 		const j = Math.floor(random() * (i + 1));

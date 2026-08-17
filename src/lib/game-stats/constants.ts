@@ -16,6 +16,7 @@ export const GAME_TYPES = [
 	'video-poker',
 	'sic-bo',
 	'three-card-showdown',
+	'pai-gow-poker',
 ] as const;
 
 /**
@@ -47,6 +48,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	'video-poker': 'Video Poker',
 	'sic-bo': 'Sic Bo',
 	'three-card-showdown': 'Three-Card Showdown',
+	'pai-gow-poker': 'Pai Gow Poker',
 };
 
 /**
@@ -63,6 +65,7 @@ export const GAME_TYPE_ICONS: Record<(typeof GAME_TYPES)[number], string> = {
 	'video-poker': '♠️',
 	'sic-bo': '🎲',
 	'three-card-showdown': '♠️',
+	'pai-gow-poker': '☯️',
 };
 
 /**

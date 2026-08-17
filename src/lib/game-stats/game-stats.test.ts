@@ -434,7 +434,8 @@ describe('constants', () => {
 		expect(GAME_TYPES).toContain('video-poker');
 		expect(GAME_TYPES).toContain('sic-bo');
 		expect(GAME_TYPES).toContain('three-card-showdown');
-		expect(GAME_TYPES.length).toBe(10);
+		expect(GAME_TYPES).toContain('pai-gow-poker');
+		expect(GAME_TYPES.length).toBe(11);
 	});
 
 	test('RANKING_METRICS contains expected values', () => {
@@ -454,6 +455,7 @@ describe('constants', () => {
 		expect(isValidGameType('roulette')).toBe(true);
 		expect(isValidGameType('sic-bo')).toBe(true);
 		expect(isValidGameType('three-card-showdown')).toBe(true);
+		expect(isValidGameType('pai-gow-poker')).toBe(true);
 		expect(isValidGameType('')).toBe(false);
 		expect(isValidGameType(null as unknown as string)).toBe(false);
 	});

@@ -1,0 +1,197 @@
+---
+import CasinoLayout from '../../layouts/casino.astro';
+import CardSlot from '../../components/CardSlot.astro';
+import { createPublicGameSession } from '../../lib/public-game-session';
+import { WAGER_OPTIONS } from '../../lib/pai-gow-poker';
+
+const user = Astro.locals.user;
+const gameSession = createPublicGameSession(user);
+---
+
+<CasinoLayout title="Pai Gow Poker - Arcturus Casino">
+	<main
+		id="pai-gow-root"
+		data-testid="pai-gow-root"
+		data-user-id={gameSession.clientUserId}
+		data-guest-mode={gameSession.guestModeValue}
+		data-initial-balance={gameSession.initialBalance}
+		class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8"
+	>
+		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+			<div>
+				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
+				<h1 class="deco-section-title text-4xl">Pai Gow Poker</h1>
+				<p class="text-[var(--deco-muted)]">
+					Arrange seven cards into a five-card High hand and a two-card Low hand.
+				</p>
+			</div>
+			<div class="deco-panel px-5 py-3">
+				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
+				<div
+					id="chip-balance"
+					data-testid="chip-balance"
+					class="text-2xl font-bold text-[var(--deco-brass)]"
+				>
+					{gameSession.initialBalance.toLocaleString()}
+				</div>
+			</div>
+		</header>
+
+		<section class="felt-table rounded-3xl p-6">
+			<div
+				id="pai-gow-status"
+				data-testid="pai-gow-status"
+				role="status"
+				aria-live="polite"
+				class="mb-6 text-center"
+			>
+				Choose a wager, then deal.
+			</div>
+
+			<div class="mb-8">
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Dealer High</div>
+				<div class="flex justify-center gap-3 overflow-x-auto pb-2">
+					{
+						[0, 1, 2, 3, 4].map((index) => (
+							<CardSlot
+								id={`pai-gow-dealer-high-slot-${index}`}
+								size="large"
+								showPlaceholder={true}
+							/>
+						))
+					}
+				</div>
+			</div>
+
+			<div class="mb-8">
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Dealer Low</div>
+				<div class="flex justify-center gap-3">
+					{
+						[0, 1].map((index) => (
+							<CardSlot
+								id={`pai-gow-dealer-low-slot-${index}`}
+								size="large"
+								showPlaceholder={true}
+							/>
+						))
+					}
+				</div>
+			</div>
+
+			<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Player Cards</div>
+			<div
+				id="pai-gow-player-cards"
+				data-testid="pai-gow-player-cards"
+				class="flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center"
+			>
+				{
+					[0, 1, 2, 3, 4, 5, 6].map((index) => (
+						<button
+							type="button"
+							id={`pai-gow-player-card-${index}`}
+							data-testid={`pai-gow-player-card-${index}`}
+							data-card-index={index}
+							data-low="false"
+							aria-label={`Card ${index + 1}`}
+							aria-pressed="false"
+							class="shrink-0 rounded-xl border-2 border-transparent"
+						>
+							<CardSlot id={`pai-gow-player-slot-${index}`} size="large" showPlaceholder={true} />
+						</button>
+					))
+				}
+			</div>
+
+			<div class="mt-5 flex flex-wrap justify-center gap-2">
+				{
+					WAGER_OPTIONS.map((wager) => (
+						<button
+							type="button"
+							data-testid={`wager-button-${wager}`}
+							data-wager={wager}
+							aria-pressed={wager === WAGER_OPTIONS[0] ? 'true' : 'false'}
+							class="deco-btn rounded-lg px-4 py-2"
+						>
+							{wager}
+						</button>
+					))
+				}
+			</div>
+
+			<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+				<button
+					id="deal-button"
+					data-testid="deal-button"
+					type="button"
+					class="btn-gold rounded-lg px-8 py-3"
+				>
+					Deal
+				</button>
+				<button
+					id="auto-arrange-button"
+					data-testid="auto-arrange-button"
+					type="button"
+					class="deco-btn rounded-lg px-6 py-3"
+					hidden
+				>
+					Auto Arrange
+				</button>
+				<button
+					id="reset-button"
+					data-testid="reset-button"
+					type="button"
+					class="deco-btn rounded-lg px-6 py-3"
+					hidden
+				>
+					Reset
+				</button>
+				<button
+					id="confirm-button"
+					data-testid="confirm-button"
+					type="button"
+					class="btn-gold rounded-lg px-8 py-3"
+					hidden
+				>
+					Confirm
+				</button>
+				<button
+					id="new-round-button"
+					data-testid="new-round-button"
+					type="button"
+					class="deco-btn rounded-lg px-8 py-3"
+					hidden
+				>
+					New Round
+				</button>
+			</div>
+			<div
+				id="pai-gow-recovery-host"
+				data-testid="pai-gow-recovery-host"
+				class="mt-4 flex justify-center"
+			>
+			</div>
+		</section>
+
+		<aside class="deco-panel mt-6 p-5">
+			<h2 class="deco-section-title text-2xl">How to Play</h2>
+			<p class="mt-1 text-xs text-[var(--deco-muted)]">
+				Choose two cards for the Low hand; the remaining five cards form the High hand. The High
+				hand must rank at least as high as the Low hand. Winning both hands wins the wager less a 5%
+				commission, while winning one hand each results in a push.
+			</p>
+		</aside>
+	</main>
+</CasinoLayout>
+
+<style>
+	#pai-gow-player-cards button[aria-pressed='true'] {
+		border-color: var(--deco-brass);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--deco-brass) 35%, transparent);
+	}
+</style>
+
+<script>
+	import { initPaiGowPokerClient } from '../../lib/pai-gow-poker';
+
+	initPaiGowPokerClient();
+</script>

@@ -46,6 +46,31 @@ function evaluateWinners(holeCards: CardSpec[][], community: CardSpec[]): Player
 }
 
 describe('determineShowdownWinners()', () => {
+	test('Broadway straight flush beats a lower straight flush', () => {
+		const winners = evaluateWinners(
+			[
+				[
+					['A', 'hearts'],
+					['K', 'hearts'],
+				],
+				[
+					['9', 'hearts'],
+					['8', 'hearts'],
+				],
+			],
+			[
+				['Q', 'hearts'],
+				['J', 'hearts'],
+				['10', 'hearts'],
+				['2', 'clubs'],
+				['3', 'diamonds'],
+			],
+		);
+
+		expect(winners).toHaveLength(1);
+		expect(winners[0].name).toBe('Player 1');
+	});
+
 	test('detects Royal Flush', () => {
 		const winners = evaluateWinners(
 			[

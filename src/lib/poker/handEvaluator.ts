@@ -3,6 +3,11 @@
  * Evaluates hand strength for AI decision making (not full hand ranking yet)
  */
 
+import {
+	compareFiveCardRankings,
+	rankFiveCardHand,
+	type FiveCardRanking,
+} from '../five-card-poker';
 import type { Card, Player } from './types';
 
 /**
@@ -213,182 +218,9 @@ export function estimateDrawingOuts(hand: Card[], communityCards: Card[]): numbe
 }
 
 /**
- * Hand ranking values (higher is better)
- */
-const HandRank = {
-	HIGH_CARD: 1,
-	PAIR: 2,
-	TWO_PAIR: 3,
-	THREE_OF_KIND: 4,
-	STRAIGHT: 5,
-	FLUSH: 6,
-	FULL_HOUSE: 7,
-	FOUR_OF_KIND: 8,
-	STRAIGHT_FLUSH: 9,
-	ROYAL_FLUSH: 10,
-} as const;
-
-/**
- * Represents a ranked poker hand with kickers for tie-breaking
- */
-interface HandRanking {
-	rank: number; // Hand rank (1-10)
-	primaryValues: number[]; // Main card values (e.g., trip value for trips)
-	kickers: number[]; // Remaining cards for tie-breaking, sorted descending
-}
-
-/**
- * Evaluates a 5-card hand and returns its ranking with kickers
- */
-function rankFiveCardHand(cards: Card[]): HandRanking {
-	if (cards.length !== 5) {
-		throw new Error('rankFiveCardHand requires exactly 5 cards');
-	}
-
-	// Count values and suits
-	const valueCounts: Map<number, number> = new Map();
-	const suitCounts: Map<string, number> = new Map();
-
-	for (const card of cards) {
-		valueCounts.set(card.rank, (valueCounts.get(card.rank) || 0) + 1);
-		suitCounts.set(card.suit, (suitCounts.get(card.suit) || 0) + 1);
-	}
-
-	const isFlush = Math.max(...suitCounts.values()) === 5;
-
-	// Check for straight
-	const sortedValues = [...valueCounts.keys()].sort((a, b) => b - a);
-	let isStraight = false;
-	let straightHigh = 0;
-
-	// Check regular straight
-	if (sortedValues.length === 5 && sortedValues[0] - sortedValues[4] === 4) {
-		isStraight = true;
-		straightHigh = sortedValues[0];
-	}
-	// Check A-2-3-4-5 (wheel) straight
-	else if (
-		sortedValues.length === 5 &&
-		sortedValues[0] === 14 &&
-		sortedValues[1] === 5 &&
-		sortedValues[2] === 4 &&
-		sortedValues[3] === 3 &&
-		sortedValues[4] === 2
-	) {
-		isStraight = true;
-		straightHigh = 5; // Ace is low in wheel
-	}
-
-	// Straight Flush / Royal Flush
-	if (isFlush && isStraight) {
-		if (straightHigh === 14) {
-			return { rank: HandRank.ROYAL_FLUSH, primaryValues: [14], kickers: [] };
-		}
-		return { rank: HandRank.STRAIGHT_FLUSH, primaryValues: [straightHigh], kickers: [] };
-	}
-
-	// Group by count
-	const countGroups: Map<number, number[]> = new Map();
-	for (const [value, count] of valueCounts.entries()) {
-		if (!countGroups.has(count)) {
-			countGroups.set(count, []);
-		}
-		countGroups.get(count)!.push(value);
-	}
-
-	// Sort each group descending
-	for (const values of countGroups.values()) {
-		values.sort((a, b) => b - a);
-	}
-
-	// Four of a Kind
-	if (countGroups.has(4)) {
-		const quadValue = countGroups.get(4)![0];
-		const kicker = countGroups.get(1)![0];
-		return { rank: HandRank.FOUR_OF_KIND, primaryValues: [quadValue], kickers: [kicker] };
-	}
-
-	// Full House
-	if (countGroups.has(3) && countGroups.has(2)) {
-		const tripValue = countGroups.get(3)![0];
-		const pairValue = countGroups.get(2)![0];
-		return { rank: HandRank.FULL_HOUSE, primaryValues: [tripValue, pairValue], kickers: [] };
-	}
-
-	// Flush
-	if (isFlush) {
-		const kickers = sortedValues.slice();
-		return { rank: HandRank.FLUSH, primaryValues: [], kickers };
-	}
-
-	// Straight
-	if (isStraight) {
-		return { rank: HandRank.STRAIGHT, primaryValues: [straightHigh], kickers: [] };
-	}
-
-	// Three of a Kind
-	if (countGroups.has(3)) {
-		const tripValue = countGroups.get(3)![0];
-		const kickers = (countGroups.get(1) || []).sort((a, b) => b - a);
-		return { rank: HandRank.THREE_OF_KIND, primaryValues: [tripValue], kickers };
-	}
-
-	// Two Pair
-	if (countGroups.has(2) && countGroups.get(2)!.length === 2) {
-		const pairs = countGroups.get(2)!.sort((a, b) => b - a);
-		const kicker = countGroups.get(1)![0];
-		return { rank: HandRank.TWO_PAIR, primaryValues: pairs, kickers: [kicker] };
-	}
-
-	// One Pair
-	if (countGroups.has(2)) {
-		const pairValue = countGroups.get(2)![0];
-		const kickers = (countGroups.get(1) || []).sort((a, b) => b - a);
-		return { rank: HandRank.PAIR, primaryValues: [pairValue], kickers };
-	}
-
-	// High Card
-	const kickers = sortedValues.slice();
-	return { rank: HandRank.HIGH_CARD, primaryValues: [], kickers };
-}
-
-/**
- * Compares two hand rankings. Returns:
- * - Positive if hand1 > hand2
- * - Negative if hand1 < hand2
- * - Zero if tie
- */
-function compareHandRankings(hand1: HandRanking, hand2: HandRanking): number {
-	// Compare ranks first
-	if (hand1.rank !== hand2.rank) {
-		return hand1.rank - hand2.rank;
-	}
-
-	// Compare primary values
-	for (let i = 0; i < Math.max(hand1.primaryValues.length, hand2.primaryValues.length); i++) {
-		const val1 = hand1.primaryValues[i] || 0;
-		const val2 = hand2.primaryValues[i] || 0;
-		if (val1 !== val2) {
-			return val1 - val2;
-		}
-	}
-
-	// Compare kickers
-	for (let i = 0; i < Math.max(hand1.kickers.length, hand2.kickers.length); i++) {
-		const kick1 = hand1.kickers[i] || 0;
-		const kick2 = hand2.kickers[i] || 0;
-		if (kick1 !== kick2) {
-			return kick1 - kick2;
-		}
-	}
-
-	return 0; // Perfect tie
-}
-
-/**
  * Finds best 5-card hand from 7 cards (2 hole + 5 community)
  */
-function findBestHand(cards: Card[]): HandRanking {
+function findBestHand(cards: Card[]): FiveCardRanking {
 	if (cards.length < 5) {
 		throw new Error('Need at least 5 cards to evaluate hand');
 	}
@@ -416,7 +248,7 @@ function findBestHand(cards: Card[]): HandRanking {
 	let bestRanking = rankFiveCardHand(combinations[0]);
 	for (let i = 1; i < combinations.length; i++) {
 		const ranking = rankFiveCardHand(combinations[i]);
-		if (compareHandRankings(ranking, bestRanking) > 0) {
+		if (compareFiveCardRankings(ranking, bestRanking) > 0) {
 			bestRanking = ranking;
 		}
 	}
@@ -447,13 +279,13 @@ export function determineShowdownWinners(
 	// Find the best ranking
 	let bestRanking = playerHands[0].ranking;
 	for (let i = 1; i < playerHands.length; i++) {
-		if (compareHandRankings(playerHands[i].ranking, bestRanking) > 0) {
+		if (compareFiveCardRankings(playerHands[i].ranking, bestRanking) > 0) {
 			bestRanking = playerHands[i].ranking;
 		}
 	}
 
 	// Return all players with the best ranking (handles perfect ties)
 	return playerHands
-		.filter((ph) => compareHandRankings(ph.ranking, bestRanking) === 0)
+		.filter((ph) => compareFiveCardRankings(ph.ranking, bestRanking) === 0)
 		.map((ph) => ph.player);
 }

@@ -57,6 +57,12 @@ export function createPublicGameSettlementController(options: {
 }): PublicGameSettlementController {
 	const clientUserId = options.root.dataset.userId ?? 'anonymous';
 	const isGuestMode = isGuestModeValue(options.root.dataset.guestMode ?? 'false');
+	// When an authenticated user has no account balance (e.g. chipBalance is
+	// null/missing), the session emits data-balance-available="false". In that
+	// case we must not call the wallet API — the user plays with the fallback
+	// balance and settles locally like a guest. Defaults to "true" so pages
+	// that do not emit the attribute keep the existing authenticated behavior.
+	const balanceAvailable = options.root.dataset.balanceAvailable !== 'false';
 	const parsedInitialBalance = Number(options.root.dataset.initialBalance ?? '1000');
 	const initialBalance = Number.isFinite(parsedInitialBalance) ? parsedInitialBalance : 1000;
 	const startingBalance = isGuestMode
@@ -132,7 +138,7 @@ export function createPublicGameSettlementController(options: {
 	});
 
 	async function completeRound(netDelta: number, localBalance: number): Promise<void> {
-		if (isGuestMode) {
+		if (isGuestMode || !balanceAvailable) {
 			persistGuestBankroll(options.gameKey, clientUserId, localBalance);
 			return;
 		}

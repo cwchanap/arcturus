@@ -9,9 +9,10 @@ interface Props {
 	minBet: number;
 	href: string;
 	featured?: boolean;
+	icon?: string;
 }
 
-const { name, emblem, players, minBet, href, featured = false } = Astro.props;
+const { name, emblem, players, minBet, href, featured = false, icon } = Astro.props;
 const formattedPlayers = new Intl.NumberFormat('en-US').format(players);
 ---
 
@@ -25,11 +26,22 @@ const formattedPlayers = new Intl.NumberFormat('en-US').format(players);
 	}
 
 	<div class="deco-emblem-frame relative h-44 border-b border-[var(--deco-brass)]/20">
-		<GameEmblem
-			kind={emblem}
-			size={84}
-			class="transition-transform duration-300 group-hover:scale-110"
-		/>
+		{
+			icon ? (
+				<span
+					class="absolute inset-0 flex items-center justify-center text-6xl transition-transform duration-300 group-hover:scale-110"
+					aria-hidden="true"
+				>
+					{icon}
+				</span>
+			) : (
+				<GameEmblem
+					kind={emblem}
+					size={84}
+					class="transition-transform duration-300 group-hover:scale-110"
+				/>
+			)
+		}
 	</div>
 
 	<div class="p-6">

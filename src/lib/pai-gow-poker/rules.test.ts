@@ -171,6 +171,18 @@ describe('Pai Gow hand ranking', () => {
 		expect(ranking.category).toBe('pair');
 		expect(ranking.tieBreakers[0]).toBe(13);
 	});
+
+	test('completes a Flush with four suited cards plus a Joker', () => {
+		expect(
+			rankPaiGowFiveCardHand([
+				card(14, 'spades'),
+				card(8, 'spades'),
+				card(5, 'spades'),
+				card(2, 'spades'),
+				joker,
+			]),
+		).toEqual({ category: 'flush', tieBreakers: [14, 13, 8, 5, 2] });
+	});
 });
 
 describe('Pai Gow arrangements', () => {
@@ -238,6 +250,12 @@ describe('Pai Gow arrangements', () => {
 		expect(getArrangementError(sevenCards, [0, 7])).toBe(
 			'Low-hand indexes must be between 0 and 6',
 		);
+		expect(getArrangementError(sevenCards, [0, 1.5])).toBe(
+			'Low-hand indexes must be whole numbers',
+		);
+		expect(getArrangementError(sevenCards, [0.5, 1])).toBe(
+			'Low-hand indexes must be whole numbers',
+		);
 	});
 });
 
@@ -299,7 +317,7 @@ describe('Pai Gow round resolution', () => {
 		});
 	});
 
-	test('rounds a non-multiple commission up', () => {
+	test('rounds a non-multiple commission to the nearest chip', () => {
 		const player = arrangement(
 			{ category: 'high-card', tieBreakers: [14] },
 			{ category: 'high-card', tieBreakers: [13] },
@@ -310,9 +328,28 @@ describe('Pai Gow round resolution', () => {
 		);
 
 		expect(resolvePaiGowRound(player, dealer, 25)).toMatchObject({
-			commission: 2,
-			grossPayout: 48,
-			netDelta: 23,
+			commission: 1,
+			grossPayout: 49,
+			netDelta: 24,
+		});
+	});
+
+	test('charges no commission on the minimum wager', () => {
+		const player = arrangement(
+			{ category: 'high-card', tieBreakers: [14] },
+			{ category: 'high-card', tieBreakers: [13] },
+		);
+		const dealer = arrangement(
+			{ category: 'high-card', tieBreakers: [12] },
+			{ category: 'high-card', tieBreakers: [11] },
+		);
+
+		expect(resolvePaiGowRound(player, dealer, 5)).toMatchObject({
+			outcome: 'win',
+			wager: 5,
+			commission: 0,
+			grossPayout: 10,
+			netDelta: 5,
 		});
 	});
 });

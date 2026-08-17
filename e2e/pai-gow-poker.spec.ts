@@ -71,6 +71,68 @@ test.describe('Pai Gow Poker guest', () => {
 		await page.waitForLoadState('networkidle');
 		expect(walletRequests).toEqual([]);
 	});
+
+	test('plays a deterministic guest Win with payout and persisted balance', async ({ page }) => {
+		const walletRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/wallet/settle')) walletRequests.push(request.url());
+		});
+		await page.addInitScript(() => {
+			localStorage.removeItem('pai-gow-poker-bankroll:anonymous');
+			Math.random = () => 0.16;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+
+		await page.getByTestId('auto-arrange-button').click();
+		await page.getByTestId('confirm-button').click();
+
+		await expect(page.getByTestId('pai-gow-status')).toContainText('Player wins');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,019');
+
+		await page.getByTestId('new-round-button').click();
+		await expect(page.getByTestId('new-round-button')).toBeHidden();
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,019');
+		await page.waitForLoadState('networkidle');
+		expect(walletRequests).toEqual([]);
+	});
+
+	test('plays a deterministic guest Loss with wager deducted', async ({ page }) => {
+		const walletRequests: string[] = [];
+		page.on('request', (request) => {
+			if (request.url().includes('/api/wallet/settle')) walletRequests.push(request.url());
+		});
+		await page.addInitScript(() => {
+			localStorage.removeItem('pai-gow-poker-bankroll:anonymous');
+			Math.random = () => 0.07;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+
+		await page.getByTestId('auto-arrange-button').click();
+		await page.getByTestId('confirm-button').click();
+
+		await expect(page.getByTestId('pai-gow-status')).toContainText('Loss');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+
+		await page.getByTestId('new-round-button').click();
+		await expect(page.getByTestId('new-round-button')).toBeHidden();
+		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await page.waitForLoadState('networkidle');
+		expect(walletRequests).toEqual([]);
+	});
 });
 
 test.describe('Pai Gow Poker wallet', () => {
@@ -105,6 +167,74 @@ test.describe('Pai Gow Poker wallet', () => {
 			game: 'pai-gow-poker',
 			delta: 0,
 			stats: { rounds: 1, wins: 0, losses: 0, biggestWin: 0 },
+		});
+	});
+
+	test('authenticated deterministic Win settles exactly once with positive delta', async ({
+		page,
+	}) => {
+		const commands: Array<Record<string, unknown>> = [];
+		await page.addInitScript(() => {
+			Math.random = () => 0.16;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'false');
+
+		await page.route('**/api/wallet/settle', async (route) => {
+			const command = route.request().postDataJSON() as Record<string, unknown>;
+			commands.push(command);
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ balance: 1019, duplicate: false }),
+			});
+		});
+
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await page.getByTestId('auto-arrange-button').click();
+		await page.getByTestId('confirm-button').click();
+
+		await expect(page.getByTestId('pai-gow-status')).toContainText('Player wins');
+		await expect.poll(() => commands.length).toBe(1);
+		expect(commands[0]).toMatchObject({
+			game: 'pai-gow-poker',
+			delta: 19,
+			stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 19 },
+		});
+	});
+
+	test('authenticated deterministic Loss settles exactly once with negative delta', async ({
+		page,
+	}) => {
+		const commands: Array<Record<string, unknown>> = [];
+		await page.addInitScript(() => {
+			Math.random = () => 0.07;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'false');
+
+		await page.route('**/api/wallet/settle', async (route) => {
+			const command = route.request().postDataJSON() as Record<string, unknown>;
+			commands.push(command);
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ balance: 980, duplicate: false }),
+			});
+		});
+
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await page.getByTestId('auto-arrange-button').click();
+		await page.getByTestId('confirm-button').click();
+
+		await expect(page.getByTestId('pai-gow-status')).toContainText('Loss');
+		await expect.poll(() => commands.length).toBe(1);
+		expect(commands[0]).toMatchObject({
+			game: 'pai-gow-poker',
+			delta: -20,
+			stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0 },
 		});
 	});
 });

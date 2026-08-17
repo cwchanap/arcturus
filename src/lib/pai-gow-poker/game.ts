@@ -180,7 +180,18 @@ export class PaiGowPokerGame {
 		};
 	}
 
+	/**
+	 * Adopt an authoritative balance supplied by the server (after wallet
+	 * settlement) or restore a persisted guest bankroll. Only callable during
+	 * the `betting` and `complete` phases — the phases where the settlement
+	 * controller may adopt a server result or reset a round. The provided value
+	 * is treated as authoritative and is NOT re-normalized; the server is the
+	 * source of truth for authenticated balances.
+	 */
 	setBalance(balance: number): void {
+		if (this.state.phase !== 'betting' && this.state.phase !== 'complete') {
+			throw new Error('setBalance is only allowed during betting or complete phases');
+		}
 		this.state = { ...this.state, balance };
 	}
 }

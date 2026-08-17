@@ -152,9 +152,59 @@ describe('PaiGowPokerGame', () => {
 		expect(game.getState()).toEqual(expectedComplete);
 	});
 
-	test('adopts an authoritative balance as-is', () => {
+	test('resolves a deterministic win and updates the balance with commission', () => {
+		const game = new PaiGowPokerGame(1_000, () => 0.16);
+		game.setWager(20);
+		game.deal();
+		game.autoArrange();
+		const result = game.confirm();
+
+		expect(result.outcome).toBe('win');
+		expect(result.wager).toBe(20);
+		expect(result.commission).toBe(1);
+		expect(result.grossPayout).toBe(39);
+		expect(result.netDelta).toBe(19);
+		expect(game.getState()).toMatchObject({ phase: 'complete', balance: 1_019, wager: 20 });
+	});
+
+	test('resolves a deterministic loss and deducts the wager', () => {
+		const game = new PaiGowPokerGame(1_000, () => 0.07);
+		game.setWager(20);
+		game.deal();
+		game.autoArrange();
+		const result = game.confirm();
+
+		expect(result.outcome).toBe('loss');
+		expect(result.wager).toBe(20);
+		expect(result.commission).toBe(0);
+		expect(result.grossPayout).toBe(0);
+		expect(result.netDelta).toBe(-20);
+		expect(game.getState()).toMatchObject({ phase: 'complete', balance: 980, wager: 20 });
+	});
+
+	test('adopts an authoritative balance as-is during betting', () => {
 		const game = new PaiGowPokerGame(100, () => 0);
 		game.setBalance(321.5);
 		expect(game.getState().balance).toBe(321.5);
+	});
+
+	test('adopts an authoritative balance during the complete phase', () => {
+		const game = new PaiGowPokerGame(1_000, () => 0);
+		game.setWager(20);
+		game.deal();
+		game.autoArrange();
+		game.confirm();
+		expect(game.getState().phase).toBe('complete');
+		game.setBalance(500);
+		expect(game.getState().balance).toBe(500);
+	});
+
+	test('rejects setBalance during the arranging phase', () => {
+		const game = new PaiGowPokerGame(1_000, () => 0);
+		game.deal();
+		expect(game.getState().phase).toBe('arranging');
+		expect(() => game.setBalance(500)).toThrow(
+			'setBalance is only allowed during betting or complete phases',
+		);
 	});
 });

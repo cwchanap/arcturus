@@ -154,6 +154,9 @@ export function getArrangementError(
 
 	const firstIndex = lowIndexes[0]!;
 	const secondIndex = lowIndexes[1]!;
+	if (!Number.isInteger(firstIndex) || !Number.isInteger(secondIndex)) {
+		return 'Low-hand indexes must be whole numbers';
+	}
 	if (firstIndex === secondIndex) return 'Low-hand indexes must be distinct';
 	if (firstIndex < 0 || firstIndex > 6 || secondIndex < 0 || secondIndex > 6) {
 		return 'Low-hand indexes must be between 0 and 6';
@@ -197,7 +200,7 @@ export function resolvePaiGowRound(
 	const outcome: PaiGowRoundOutcome =
 		wonHigh && wonLow ? 'win' : wonHigh || wonLow ? 'push' : 'loss';
 
-	const commission = outcome === 'win' ? Math.ceil(wager * 0.05) : 0;
+	const commission = outcome === 'win' ? Math.round(wager * 0.05) : 0;
 	const grossPayout = outcome === 'win' ? wager * 2 - commission : outcome === 'push' ? wager : 0;
 
 	return {

@@ -261,7 +261,7 @@ Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-pro
 ## Configuration Files
 
 - `astro.config.mjs`: SSR mode, Cloudflare adapter, port 2000, Tailwind v4 via Vite
-- `wrangler.toml`: D1 binding name is `"DB"`, KV binding for sessions
+- `wrangler.toml`: D1 binding name is `"DB"`; Better Auth persists sessions in D1 via `drizzleAdapter` (no KV session store)
 - `drizzle.config.ts`: Schema path and migrations output
 - `src/env.d.ts`: TypeScript definitions for `Env` interface and `App.Locals`
 - `eslint.config.js`: Flat config with TypeScript + Astro support

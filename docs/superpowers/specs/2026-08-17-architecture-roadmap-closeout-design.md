@@ -149,7 +149,8 @@ Replace the auth-starter route list with stable route groups:
 - `/` — home;
 - `/signin` — Google sign-in entry;
 - `/profile` — account/profile;
-- `/games` and `/games/*` — game entry and individual game routes;
+- `/games` — redirects to the homepage game section (`/#games`); not a separate game index page;
+- `/games/*` — individual game routes;
 - `/api/*` — application HTTP endpoints.
 
 Do not enumerate every game or endpoint.
@@ -163,6 +164,8 @@ README and CLAUDE should use the same stable application-level database bullet l
 - game statistics, missions, and related progression data;
 - Blackjack Run persistence for Ranked and Daily modes;
 - focused feature data owned by the current application.
+
+Better Auth persists sessions in D1 via `drizzleAdapter`; there is no KV session store. CLAUDE's `wrangler.toml` configuration entry must not claim a KV binding for sessions.
 
 Do not maintain a duplicated exhaustive table-name inventory.
 
@@ -229,13 +232,19 @@ test -d src/lib/video-poker
 Required public-game settlement consumer check:
 
 ```bash
-rg -l "createPublicGameSettlementController" src/lib \
+set -euo pipefail
+expected="src/lib/pai-gow-poker/client.ts
+src/lib/sic-bo/client.ts
+src/lib/three-card-showdown/client.ts
+src/lib/video-poker/client.ts"
+actual=$(rg -l "createPublicGameSettlementController" src/lib \
   | grep -v '/wallet/' \
   | grep -v '\.test\.ts$' \
-  | sort
+  | sort)
+[ "$actual" = "$expected" ]
 ```
 
-The current result should be the four newer game clients for Video Poker, Sic Bo, Three-Card Showdown, and Pai Gow Poker. Documentation must not generalize that into a universal single-player path.
+The asserted result is the four newer game clients for Video Poker, Sic Bo, Three-Card Showdown, and Pai Gow Poker. Documentation must not generalize that into a universal single-player path.
 
 Required documentation formatting check:
 

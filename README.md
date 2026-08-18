@@ -153,7 +153,8 @@ Visit `http://localhost:2000`
 - `/` - Home page and game lobby
 - `/signin` - Google sign-in entry
 - `/profile` - Account/profile page
-- `/games` and `/games/*` - Game entry and individual game routes
+- `/games` - Redirects to the homepage game section (`/#games`); not a separate game index page
+- `/games/*` - Individual game routes
 - `/api/*` - Application HTTP endpoints
 
 A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
@@ -174,6 +175,8 @@ A separate sign-up route is intentionally absent; first-time players start from 
 - game statistics, missions, and related progression data;
 - Blackjack Run persistence for Ranked and Daily modes;
 - focused feature data owned by the current application.
+
+Better Auth persists sessions in D1 via `drizzleAdapter`; there is no KV session store.
 
 Do not treat this README as an exhaustive table inventory. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 

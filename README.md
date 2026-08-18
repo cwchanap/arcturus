@@ -1,6 +1,6 @@
-# Arcturus - Astro with Authentication
+# Arcturus
 
-An Astro project with Better Auth, Drizzle ORM, and Cloudflare D1 database integration, ready to deploy on Cloudflare Workers.
+Arcturus is a play-money casino and game project built as one Astro application on Cloudflare Workers with D1 persistence. The codebase is intentionally a modular monolith: game rules stay close to each game, while stable shared concerns such as wallet settlement, progression, and optional BYOK AI transport have small focused boundaries.
 
 ## Features
 
@@ -18,6 +18,21 @@ An Astro project with Better Auth, Drizzle ORM, and Cloudflare D1 database integ
 - Session management
 - Protected routes
 - User dashboard
+
+## Architecture
+
+Arcturus stays as one deployable Astro + Cloudflare Worker application backed by D1.
+
+- Product code lives primarily in focused `src/lib/<domain>/` modules. Game-specific rules, state transitions, and UI composition stay with the game that owns them.
+- Worker-only persistence or orchestration lives under `src/server/<domain>/` when a feature needs it. Prefer thin Astro pages and API routes as adapters; some older game pages still contain more orchestration and are not refactored solely for uniformity.
+- `src/lib/wallet/` owns common play-money settlement. Newer public games may compose through `public-game-settlement`; other games use wallet primitives or server settlement directly. Private multiplayer stays room-local.
+- `src/lib/ai/` owns browser-local BYOK settings and OpenAI/Gemini transport; game prompts and deterministic strategy remain game-owned.
+- `src/lib/blackjack-run/` plus `src/server/blackjack-run/` own the unified Ranked/Daily Blackjack lifecycle.
+- `src/lib/mp-poker/` plus `src/server/mp/` keep private-room multiplayer isolated with room-local chips.
+- `src/lib/game-stats/`, `src/lib/achievements/`, and `src/lib/leaderboard/` own cross-game statistics, progression, and ranking concerns; new games register with the shared game-stat identifiers instead of inventing game-local statistics identities.
+- Newer games such as Video Poker, Sic Bo, Three-Card Showdown, and Pai Gow Poker remain self-contained modules and reuse shared seams only when there is a concrete common contract.
+
+The project deliberately avoids a generic game engine, plugin framework, cross-game session framework, and compatibility infrastructure for hypothetical consumers. Prefer a local implementation first; extract shared code when multiple active consumers prove the same concept is stable.
 
 ## Quick Start
 
@@ -100,43 +115,46 @@ Visit `http://localhost:2000`
 
 ## Project Structure
 
-```
+```text
 /
-├── .husky/                # Git hooks
-├── drizzle/              # Database migrations
-├── public/               # Static assets
+├── drizzle/                 # D1 migrations
+├── public/                  # Static assets
 ├── src/
-│   ├── components/       # Astro components
+│   ├── components/          # Shared Astro presentation components
 │   ├── db/
-│   │   └── schema.ts     # Database schema
-│   ├── layouts/          # Page layouts
+│   │   └── schema.ts        # Application schema source of truth
 │   ├── lib/
-│   │   ├── auth.ts       # Server-side auth
-│   │   ├── auth-client.ts # Client-side auth
-│   │   └── db.ts         # Database client
+│   │   ├── achievements/    # Cross-game achievement logic
+│   │   ├── ai/              # Browser-local BYOK provider boundary
+│   │   ├── blackjack-run/   # Ranked/Daily Blackjack client/domain logic
+│   │   ├── game-stats/      # Shared game ids, labels, icons, and statistics
+│   │   ├── leaderboard/     # Shared ranking/leaderboard logic
+│   │   ├── missions/        # Mission board/progression logic
+│   │   ├── mp-poker/        # Pure/private-room multiplayer Poker logic
+│   │   ├── wallet/          # Play-money settlement boundary
+│   │   └── <game>/          # Focused game-owned modules
 │   ├── pages/
-│   │   ├── api/
-│   │   │   ├── auth/     # Better Auth API endpoints
-│   │   │   ├── chips/    # Chip balance API
-│   │   │   └── profile/  # Profile settings API
-│   │   ├── games/        # Casino game routes
-│   │   ├── index.astro   # Home page
-│   │   ├── signin.astro  # Sign in page
-│   │   └── profile.astro # Protected profile page
+│   │   ├── api/             # HTTP adapters
+│   │   └── games/           # Astro game routes
+│   ├── server/
+│   │   ├── blackjack-run/   # Blackjack Run persistence/application services
+│   │   └── mp/              # Multiplayer Durable Object orchestration
+│   ├── middleware.ts        # Auth/session request enrichment
 │   └── styles/
-│       └── global.css    # Global styles
-├── astro.config.mjs      # Astro configuration
-├── drizzle.config.ts     # Drizzle configuration
-├── wrangler.toml         # Cloudflare Workers config
-└── tsconfig.json         # TypeScript configuration
+│       └── global.css
+├── astro.config.mjs
+├── drizzle.config.ts
+├── wrangler.toml
+└── tsconfig.json
 ```
 
 ## Routes
 
-- `/` - Home page
-- `/signin` - Sign in page
-- `/profile` - Protected profile page (requires authentication)
-- `/api/auth/*` - Authentication API endpoints
+- `/` - Home page and game lobby
+- `/signin` - Google sign-in entry
+- `/profile` - Account/profile page
+- `/games` and `/games/*` - Game entry and individual game routes
+- `/api/*` - Application HTTP endpoints
 
 A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
 
@@ -149,12 +167,15 @@ A separate sign-up route is intentionally absent; first-time players start from 
 
 ## Database Schema
 
-The project includes tables for:
+`src/db/schema.ts` is the source of truth. D1 stores the current application's persistence needs, including:
 
-- **users** - User accounts
-- **sessions** - Active sessions
-- **accounts** - OAuth provider accounts
-- **verification** - Email verification tokens
+- Better Auth identity, account, and session data;
+- play-money wallet and idempotent settlement data;
+- game statistics, missions, and related progression data;
+- Blackjack Run persistence for Ranked and Daily modes;
+- focused feature data owned by the current application.
+
+Do not treat this README as an exhaustive table inventory. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 
 ## Deployment
 

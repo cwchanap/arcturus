@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Arcturus is a casino gaming platform built with Astro SSR, running on Cloudflare Workers. It features multiple casino games (Texas Hold'em Poker, Blackjack, Baccarat) with AI opponents, session-based authentication via Better Auth, and a chip-based economy system stored in Cloudflare D1.
+Arcturus is a play-money casino and game project built as one Astro application on Cloudflare Workers with D1 persistence. The codebase is intentionally a modular monolith: game rules stay close to each game, while stable shared concerns such as wallet settlement, progression, and optional BYOK AI transport have small focused boundaries.
+
+**Contributor guide alias:** `AGENTS.md` is a Git symlink to this file. Edit `CLAUDE.md` only; do not maintain a second copy.
 
 ## Critical Architecture Rules
 
@@ -136,93 +138,37 @@ bun run db:migrate:remote
 
 ## Project Structure
 
-```
-src/
-├── components/           # Reusable UI components
-│   ├── PlayingCard.astro  # Casino card component
-│   ├── PokerChip.astro    # Casino chip component
-│   ├── GameCard.astro     # Game selection cards
-│   └── UserNav.astro      # User balance/nav
-├── layouts/
-│   ├── casino.astro       # Casino theme (use for games)
-│   └── AppLayout.astro    # Base layout with auth
-├── pages/
-│   ├── games/             # Game routes (auth required)
-│   │   ├── index.astro    # Game lobby
-│   │   ├── poker.astro    # Texas Hold'em
-│   │   ├── blackjack.astro # Blackjack
-│   │   └── baccarat.astro  # Baccarat
-│   ├── api/
-│   │   ├── auth/[...all].ts    # Better Auth API
-│   │   ├── missions/           # Mission completion endpoints
-│   │   ├── profile/            # Profile and statistics endpoints
-│   │   └── wallet/settle.ts    # Wallet settlement endpoint
-│   ├── signin.astro
-│   └── profile.astro
-├── lib/
-│   ├── auth.ts            # Server auth factory
-│   ├── auth-client.ts     # Browser auth utils
-│   ├── card-format.ts     # Shared suit-symbol/color helpers (cross-game)
-│   ├── db.ts              # Database factory
-│   ├── fetch-with-timeout.ts # Shared fetch + abort-timeout helper (cross-game)
-│   ├── missions.ts        # Mission system logic
-│   ├── ai/                # Browser-local BYOK settings and provider transport
-│   ├── poker/             # Poker game logic (modular)
-│   │   ├── types.ts       # TypeScript interfaces
-│   │   ├── constants.ts   # Game constants
-│   │   ├── player.ts      # Player utilities (pure functions)
-│   │   ├── handEvaluator.ts    # Hand ranking logic
-│   │   ├── potCalculator.ts    # Pot + side pots
-│   │   ├── aiStrategy.ts       # AI decision engine
-│   │   ├── llmAIStrategy.ts    # LLM-powered AI
-│   │   ├── PokerGame.ts        # Main game class
-│   │   ├── DeckManager.ts      # Deck shuffling
-│   │   ├── AIRivalAssistant.ts # AI opponent personality
-│   │   ├── PokerUIRenderer.ts  # UI rendering logic
-│   │   └── GameSettingsManager.ts # Settings persistence
-│   ├── blackjack/         # Blackjack game logic (modular)
-│   │   ├── types.ts       # TypeScript interfaces
-│   │   ├── constants.ts   # Game constants
-│   │   ├── handEvaluator.ts    # Hand value calculation
-│   │   ├── dealerStrategy.ts   # Dealer AI logic
-│   │   ├── llmBlackjackStrategy.ts # LLM-powered hints
-│   │   ├── BlackjackGame.ts    # Main game class
-│   │   ├── DeckManager.ts      # Deck shuffling
-│   │   ├── BlackjackUIRenderer.ts # UI rendering logic
-│   │   ├── GameSettingsManager.ts # Settings persistence
-│   │   └── blackjackClient.ts  # Client-side integration
-│   ├── mp-poker/          # Multiplayer poker — pure logic, Bun-testable
-│   │   ├── engine.ts       # Authoritative game state machine
-│   │   ├── protocol.ts     # Zod-validated WS message schemas
-│   │   ├── client.ts       # Browser WS wrapper
-│   │   └── roomCode.ts     # Room code generator + validator
-│   └── baccarat/          # Baccarat game logic (modular)
-│       ├── types.ts       # TypeScript interfaces
-│       ├── constants.ts   # Game constants
-│       ├── handEvaluator.ts    # Hand value calculation
-│       ├── thirdCardRules.ts   # Third card drawing rules
-│       ├── payoutCalculator.ts # Payout logic
-│       ├── llmBaccaratStrategy.ts # LLM-powered hints
-│       ├── BaccaratGame.ts     # Main game class
-│       ├── DeckManager.ts      # Deck shuffling
-│       ├── BaccaratUIRenderer.ts # UI rendering logic
-│       ├── GameSettingsManager.ts # Settings persistence
-│       └── baccaratClient.ts   # Client-side integration
-├── db/
-│   └── schema.ts          # Drizzle schema (single source of truth)
-├── server/
-│   └── mp/                 # Durable Object runtime for multiplayer poker
-│       └── multiplayer-poker-room.ts # MultiplayerPokerRoom room coordinator
-└── middleware.ts          # Auth + session injection (runs on ALL requests)
-
-e2e/                       # Playwright E2E tests
-├── global-setup.ts        # Test authentication setup
-├── poker-turn-flow.spec.ts  # Poker game flow tests
-├── blackjack-*.spec.ts    # Blackjack tests (settings, split, LLM)
-├── baccarat.spec.ts       # Baccarat game flow tests
-└── profile.spec.ts        # Profile page tests
-
-drizzle/                   # Generated SQL migrations
+```text
+/
+├── drizzle/                 # D1 migrations
+├── public/                  # Static assets
+├── src/
+│   ├── components/          # Shared Astro presentation components
+│   ├── db/
+│   │   └── schema.ts        # Application schema source of truth
+│   ├── lib/
+│   │   ├── achievements/    # Cross-game achievement logic
+│   │   ├── ai/              # Browser-local BYOK provider boundary
+│   │   ├── blackjack-run/   # Ranked/Daily Blackjack client/domain logic
+│   │   ├── game-stats/      # Shared game ids, labels, icons, and statistics
+│   │   ├── leaderboard/     # Shared ranking/leaderboard logic
+│   │   ├── missions/        # Mission board/progression logic
+│   │   ├── mp-poker/        # Pure/private-room multiplayer Poker logic
+│   │   ├── wallet/          # Play-money settlement boundary
+│   │   └── <game>/          # Focused game-owned modules
+│   ├── pages/
+│   │   ├── api/             # HTTP adapters
+│   │   └── games/           # Astro game routes
+│   ├── server/
+│   │   ├── blackjack-run/   # Blackjack Run persistence/application services
+│   │   └── mp/              # Multiplayer Durable Object orchestration
+│   ├── middleware.ts        # Auth/session request enrichment
+│   └── styles/
+│       └── global.css
+├── astro.config.mjs
+├── drizzle.config.ts
+├── wrangler.toml
+└── tsconfig.json
 ```
 
 ## Key Patterns
@@ -245,33 +191,31 @@ drizzle/                   # Generated SQL migrations
 
 3. **Middleware Enrichment**: `chipBalance` is automatically added to user object in middleware
 
-4. **Modular Game Logic**: Game logic extracted to `src/lib/{game}/` with pure functions for testability. Each game follows the same structure:
-   - `{Game}Game.ts` - Main game class with state management
-   - `{Game}UIRenderer.ts` - UI rendering logic
-   - `DeckManager.ts` - Card deck operations
-   - `GameSettingsManager.ts` - Settings persistence
-   - `handEvaluator.ts` - Hand value/ranking logic
-   - `llm{Game}Strategy.ts` - LLM-powered hints/AI
-   - `{game}Client.ts` - Client-side integration script
-   - `types.ts`, `constants.ts` - TypeScript definitions and game constants
+4. **Modular Game Logic**: Keep game rules, state, evaluation, payouts, and browser composition under `src/lib/<game>/`, split by real responsibilities. There is no required `Game` class, UI renderer, deck manager, settings manager, or LLM file. Prefer pure domain functions/state where practical and keep game-specific policy local.
 
-5. **Mission System**: Daily login rewards, chip balance updates via `src/lib/missions.ts`
+5. **Mission System**: Mission board, claim, period, and progress logic lives under `src/lib/missions/`; HTTP endpoints under `src/pages/api/missions/` adapt requests to that module.
 
-6. **AI Integration**: User-configured OpenAI/Gemini settings are stored in browser `localStorage` through `src/lib/ai`; the shared client owns provider transport and each game keeps its own prompts, validation, and fallbacks.
+6. **AI Integration**: User-configured OpenAI/Gemini settings are stored in browser `localStorage` through `src/lib/ai`; the shared client owns provider transport and each game keeps its own prompts, validation, deterministic strategy, and fallbacks.
 
-7. **Wallet Settlement**: Wallet-coupled games settle each completed round through `POST /api/wallet/settle`. Room-local multiplayer games (e.g. `/games/poker-mp`) use room-local chips and never call the wallet endpoint.
+7. **Wallet Settlement**: `src/lib/wallet/` is the common play-money settlement boundary. Newer public games may use `createPublicGameSettlementController`; older games and server-authoritative modes may use lower-level wallet APIs directly. Do not retrofit a game solely to make all clients identical. Room-local multiplayer never settles through D1.
 
-8. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer poker uses room-local chips and has no D1 settlement.
+8. **Cross-game Progression**: Shared game identifiers/statistics live in `src/lib/game-stats/`, achievements in `src/lib/achievements/`, and ranking/leaderboards in `src/lib/leaderboard/`. New games register with those existing surfaces instead of creating parallel game identity or statistics systems.
+
+9. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer Poker uses room-local chips and has no D1 settlement.
+
+10. **Route/API Boundaries**: Prefer Astro pages and API routes as thin adapters around product modules. Some older game pages still contain more orchestration; improve those only when concrete feature work needs it rather than opening a uniformity refactor.
 
 ## Database Schema
 
-Tables defined in `src/db/schema.ts`:
+`src/db/schema.ts` is the source of truth. D1 stores the current application's persistence needs, including:
 
-- **user** - User accounts with `chipBalance`
-- **session** - Active sessions
-- **account** - OAuth provider accounts
-- **verification** - Email verification tokens
-- **mission** - Mission completion tracking
+- Better Auth identity, account, and session data;
+- play-money wallet and idempotent settlement data;
+- game statistics, missions, and related progression data;
+- Blackjack Run persistence for Ranked and Daily modes;
+- focused feature data owned by the current application.
+
+Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 
 ## Testing
 
@@ -377,63 +321,13 @@ wrangler secret list
 
 ## Building New Games
 
-**Pattern** (see existing games: poker, blackjack, baccarat):
+Use the smallest relevant shipped module as the reference, especially newer focused games such as `src/lib/video-poker/`, `src/lib/sic-bo/`, `src/lib/three-card-showdown/`, or `src/lib/pai-gow-poker/`.
 
-**1. Page Structure** (`src/pages/games/yourgame.astro`):
+1. Add `src/pages/games/<game>.astro` as the route/UI composition layer. Reuse existing layout, public-session, card-slot, or presentation helpers only when they match the game.
+2. Keep game-owned rules, state transitions, evaluation, payouts, and browser behavior under `src/lib/<game>/`. Split files by actual responsibility; there is no mandatory filename or class template.
+3. Reuse shared seams such as `src/lib/cards.ts`, wager validation, `src/lib/wallet/`, `src/lib/ai/`, or other neutral helpers only when the existing contract fits. Do not widen a shared API for hypothetical reuse.
+4. Keep game-specific phases, prompts, payout policy, wildcard/ranking rules, rendering decisions, and settlement-command mapping local.
+5. Register the game: add its id to `GAME_TYPES` and matching label/icon entries to `GAME_TYPE_LABELS` and `GAME_TYPE_ICONS` in `src/lib/game-stats/constants.ts`, then add its lobby card in `src/pages/index.astro`. `src/pages/games/index.astro` is only a redirect to `/#games`. Add focused unit tests plus one representative Playwright journey.
+6. Do not add a base game class, generic paytable/session/plugin framework, mandatory settings or LLM layer, compatibility adapter, or new persistence system unless a concrete requirement proves it is needed.
 
-```astro
----
-import CasinoLayout from '../../layouts/casino.astro';
-const user = Astro.locals.user;
-if (!user) return Astro.redirect('/signin');
----
-
-<CasinoLayout title="Your Game - Arcturus Casino">
-	<!-- Game UI with data-testid attributes for E2E tests -->
-</CasinoLayout>
-
-<script>
-	import { YourGame } from '../../lib/yourgame/YourGame';
-	if (typeof window !== 'undefined') {
-		new YourGame();
-	}
-</script>
-```
-
-**2. Game Logic Structure** (`src/lib/yourgame/`):
-
-Create a modular game structure following the established pattern:
-
-- `types.ts` - TypeScript interfaces for game state, cards, settings
-- `constants.ts` - Game constants (bet limits, payouts, etc.)
-- `YourGame.ts` - Main game class managing state and game flow
-- `YourGameUIRenderer.ts` - DOM manipulation and UI updates
-- `DeckManager.ts` - Card deck shuffling and dealing
-- `GameSettingsManager.ts` - LocalStorage persistence for settings
-- `handEvaluator.ts` - Game-specific hand evaluation logic
-- `llmYourGameStrategy.ts` - LLM integration for hints/AI (optional)
-- `yourgameClient.ts` - Client-side integration and event handlers
-- `*.test.ts` - Unit tests for each module
-
-**3. Implementation Steps**:
-
-1. Create game page: `src/pages/games/yourgame.astro`
-2. Build game logic in `src/lib/yourgame/` following modular pattern
-3. Write unit tests for all game logic modules
-4. Add E2E test: `e2e/yourgame.spec.ts`
-5. Update game lobby: add game card to `src/pages/games/index.astro`
-6. Integrate account rounds through `POST /api/wallet/settle`
-
-**4. Available Components**:
-
-- `PlayingCard.astro` - Cards with suits (value, suit, faceDown props)
-- `PokerChip.astro` - Casino chips (value, color props)
-- `GameCard.astro` - Game selection cards for lobby
-- `UserNav.astro` - User balance/nav display
-
-**5. Testing Requirements**:
-
-- Unit tests for all pure functions (hand evaluation, calculations)
-- E2E tests covering main game flow (place bet, play round, win/lose)
-- Test LLM integration if applicable
-- Test settings persistence
+A newer game may use `createPublicGameSettlementController`, but that is not a universal requirement. Choose the smallest existing wallet/public-session seam that fits the concrete game.

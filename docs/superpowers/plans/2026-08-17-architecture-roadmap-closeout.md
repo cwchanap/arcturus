@@ -4,48 +4,73 @@
 
 **Goal:** Refresh the repository and contributor-facing architecture guidance to match the modular application already shipped, then close HPA-167 without starting a speculative follow-up refactor.
 
-**Architecture:** This is a documentation-only closeout. Keep the existing Astro + Cloudflare Worker + D1 application and all runtime modules unchanged; update `README.md`, `CLAUDE.md`, and `AGENTS.md` to describe the current module boundaries and local-first new-game recipe, then use shipped child-issue evidence to close the Linear roadmap while leaving HPA-174 and HPA-177 deferred.
+**Architecture:** This is a documentation-only closeout. Keep the existing Astro + Cloudflare Worker + D1 application and all runtime modules unchanged; update `README.md` and `CLAUDE.md`, keep the `AGENTS.md -> CLAUDE.md` symlink unchanged, then close the Linear roadmap while leaving HPA-174 and HPA-177 deferred.
 
 **Tech Stack:** Markdown, Astro 5 repository conventions, Bun/Prettier validation, GitHub, Linear.
 
 ## Global Constraints
 
-- No runtime, schema, migration, API, game-rule, AI, settlement, or multiplayer behavior changes.
+- No runtime, schema, migration, API, game-rule, AI, settlement, multiplayer, test, or config changes.
 - Do not implement HPA-174 or HPA-177.
-- Do not create a replacement architecture roadmap or cleanup ticket unless validation finds a concrete defect that blocks this closeout.
+- Do not create a replacement architecture roadmap or cleanup ticket unless a concrete defect blocks closeout.
 - Do not move modules merely to make directory names uniform.
 - Shared code remains justified by multiple real consumers, not hypothetical reuse.
 - Keep one Astro + Cloudflare Worker + D1 application; do not add services, plugin systems, event buses, service containers, or generic session frameworks.
 - `README.md` is an orientation document, not an exhaustive table/file inventory.
-- `CLAUDE.md` and `AGENTS.md` are contributor guidance, not a mandatory per-game filename template.
+- `CLAUDE.md` is contributor guidance, not a mandatory per-game filename template.
+- `AGENTS.md` is a Git symlink to `CLAUDE.md`; edit `CLAUDE.md` only and leave the symlink unchanged.
 - Prefer thin route/API adapters, but do not refactor older mixed pages solely for consistency in this ticket.
 - Do not claim every single-player game uses `createPublicGameSettlementController`; it is a proven newer public-game composition with four current game consumers.
-- The implementation diff must stay limited to `README.md`, `CLAUDE.md`, `AGENTS.md`, plus the already-added design and plan documents.
+- The implementation diff must stay limited to `README.md`, `CLAUDE.md`, plus the already-added design and plan documents.
 - HPA-167 is marked Done only after the documentation implementation merges.
 - HPA-174 and HPA-177 remain Backlog after HPA-167 closes.
 
 ---
 
-## Task 1: Reconfirm the shipped architecture before editing guidance
+## Task 1: Reconfirm the shipped architecture and registration surfaces
 
 **Files:**
+- Read only: `AGENTS.md`
+- Read only: `CLAUDE.md`
+- Read only: `.prettierignore`
 - Read only: `src/lib/wallet/`
 - Read only: `src/lib/ai/`
 - Read only: `src/lib/blackjack-run/`
-- Read only: `src/server/blackjack-run/`
-- Read only: `src/lib/mp-poker/`
-- Read only: `src/server/mp/`
 - Read only: `src/lib/missions/`
-- Read only: `src/lib/video-poker/`
-- Read only: `src/lib/sic-bo/`
-- Read only: `src/lib/three-card-showdown/`
-- Read only: `src/lib/pai-gow-poker/`
+- Read only: `src/lib/game-stats/`
+- Read only: `src/lib/achievements/`
+- Read only: `src/lib/leaderboard/`
+- Read only: `src/lib/mp-poker/`
+- Read only: `src/server/blackjack-run/`
+- Read only: `src/server/mp/`
+- Read only: `src/pages/index.astro`
+- Read only: `src/pages/games/index.astro`
+- Read only: `src/lib/game-stats/constants.ts`
 
 **Interfaces:**
-- Consumes: current `main` module boundaries.
+- Consumes: current `main` architecture and registration facts.
 - Produces: verified facts for the documentation edits; no source changes.
 
-- [ ] **Step 1: Verify every named architecture boundary exists**
+- [ ] **Step 1: Verify `AGENTS.md` is the existing symlink, not a second document**
+
+Run:
+
+```bash
+test -L AGENTS.md && [ "$(readlink AGENTS.md)" = "CLAUDE.md" ]
+git ls-files -s AGENTS.md
+```
+
+Expected first command: exit code `0` with no output.
+
+Expected `git ls-files` line begins with symlink mode:
+
+```text
+120000
+```
+
+Do not replace or rewrite the symlink.
+
+- [ ] **Step 2: Verify every shared architecture boundary named by the docs exists**
 
 Run:
 
@@ -57,6 +82,9 @@ test -d src/server/blackjack-run && \
 test -d src/lib/mp-poker && \
 test -d src/server/mp && \
 test -d src/lib/missions && \
+test -d src/lib/game-stats && \
+test -d src/lib/achievements && \
+test -d src/lib/leaderboard && \
 test -d src/lib/video-poker && \
 test -d src/lib/sic-bo && \
 test -d src/lib/three-card-showdown && \
@@ -65,9 +93,9 @@ test -d src/lib/pai-gow-poker
 
 Expected: exit code `0` with no output.
 
-If one of these paths is missing on the implementation branch, inspect current `main` before changing the design. Do not create a missing path as part of this ticket.
+If a path is missing on the implementation branch, inspect current `main` before changing the design. Do not create a missing path as part of this ticket.
 
-- [ ] **Step 2: Verify the actual public-game settlement consumers**
+- [ ] **Step 3: Verify the actual public-game settlement consumers**
 
 Run:
 
@@ -89,7 +117,26 @@ src/lib/video-poker/client.ts
 
 If the set changed on current `main`, document the current proven seam accurately. Do not retrofit unrelated games merely to make the list uniform.
 
-- [ ] **Step 3: Verify the newer game recipe is responsibility-based, not class-template-based**
+- [ ] **Step 4: Verify the real new-game registration surfaces**
+
+Run:
+
+```bash
+rg -n "GAME_TYPES|GAME_TYPE_LABELS|GAME_TYPE_ICONS" src/lib/game-stats/constants.ts
+cat src/pages/games/index.astro
+rg -n "pai-gow-poker" src/lib/game-stats/constants.ts src/pages/index.astro
+```
+
+Confirm:
+
+- `GAME_TYPES` is a closed game-id tuple;
+- `GAME_TYPE_LABELS` and `GAME_TYPE_ICONS` are keyed by that tuple;
+- `src/pages/games/index.astro` only redirects to `/#games`;
+- the latest game is registered in `src/lib/game-stats/constants.ts` and `src/pages/index.astro`.
+
+Do not move registration as part of this documentation closeout.
+
+- [ ] **Step 5: Verify the newer game shape is responsibility-based rather than class-template-based**
 
 Run:
 
@@ -97,9 +144,7 @@ Run:
 find src/lib/video-poker -maxdepth 1 -type f -print | sort
 ```
 
-Confirm the module is organized around concrete responsibilities such as `game.ts`, `evaluator.ts`, `paytable.ts`, `client.ts`, `types.ts`, and focused tests rather than mandatory `GameUIRenderer`, `DeckManager`, `GameSettingsManager`, or LLM files.
-
-Do not create or rename files as part of this check.
+Confirm the module contains concrete files such as `game.ts`, `evaluator.ts`, `paytable.ts`, `client.ts`, `types.ts`, and focused tests rather than mandatory `GameUIRenderer`, `DeckManager`, `GameSettingsManager`, or LLM files.
 
 ---
 
@@ -109,7 +154,7 @@ Do not create or rename files as part of this check.
 - Modify: `README.md`
 
 **Interfaces:**
-- Consumes: Task 1 evidence.
+- Consumes: Task 1 verified facts.
 - Produces: current repository orientation for human contributors; no runtime interface changes.
 
 - [ ] **Step 1: Replace the starter-era title and opening description**
@@ -127,7 +172,7 @@ With:
 ```markdown
 # Arcturus
 
-Arcturus is a play-money casino and game project built as one Astro application on Cloudflare Workers with D1 persistence. The codebase is intentionally a modular monolith: game rules stay close to each game, while stable shared concerns such as wallet settlement and optional BYOK AI transport have small focused boundaries.
+Arcturus is a play-money casino and game project built as one Astro application on Cloudflare Workers with D1 persistence. The codebase is intentionally a modular monolith: game rules stay close to each game, while stable shared concerns such as wallet settlement, progression, and optional BYOK AI transport have small focused boundaries.
 ```
 
 Keep the existing technology/features list below it. Do not rewrite the README into marketing copy.
@@ -143,10 +188,11 @@ Arcturus stays as one deployable Astro + Cloudflare Worker application backed by
 
 - Product code lives primarily in focused `src/lib/<domain>/` modules. Game-specific rules, state transitions, and UI composition stay with the game that owns them.
 - Worker-only persistence or orchestration lives under `src/server/<domain>/` when a feature needs it. Prefer thin Astro pages and API routes as adapters; some older game pages still contain more orchestration and are not refactored solely for uniformity.
-- `src/lib/wallet/` owns play-money settlement. Newer public games may compose through `public-game-settlement`; other games use the wallet primitives or server settlement directly. Private multiplayer stays room-local.
+- `src/lib/wallet/` owns common play-money settlement. Newer public games may compose through `public-game-settlement`; other games use wallet primitives or server settlement directly. Private multiplayer stays room-local.
 - `src/lib/ai/` owns browser-local BYOK settings and OpenAI/Gemini transport; game prompts and deterministic strategy remain game-owned.
 - `src/lib/blackjack-run/` plus `src/server/blackjack-run/` own the unified Ranked/Daily Blackjack lifecycle.
 - `src/lib/mp-poker/` plus `src/server/mp/` keep private-room multiplayer isolated with room-local chips.
+- `src/lib/game-stats/`, `src/lib/achievements/`, and `src/lib/leaderboard/` own cross-game statistics, progression, and ranking concerns; new games register with the shared game-stat identifiers instead of inventing game-local statistics identities.
 - Newer games such as Video Poker, Sic Bo, Three-Card Showdown, and Pai Gow Poker remain self-contained modules and reuse shared seams only when there is a concrete common contract.
 
 The project deliberately avoids a generic game engine, plugin framework, cross-game session framework, and compatibility infrastructure for hypothetical consumers. Prefer a local implementation first; extract shared code when multiple active consumers prove the same concept is stable.
@@ -154,9 +200,9 @@ The project deliberately avoids a generic game engine, plugin framework, cross-g
 
 Do not add a diagram, ADR framework, or another architecture document.
 
-- [ ] **Step 3: Replace the stale `Project Structure` example with the modular shape**
+- [ ] **Step 3: Replace `Project Structure` with the shared illustrative tree**
 
-Replace the current code block under `## Project Structure` with:
+Replace the current code block under `## Project Structure` with exactly:
 
 ````markdown
 ```text
@@ -166,14 +212,17 @@ Replace the current code block under `## Project Structure` with:
 ├── src/
 │   ├── components/          # Shared Astro presentation components
 │   ├── db/
-│   │   └── schema.ts        # Application schema
+│   │   └── schema.ts        # Application schema source of truth
 │   ├── lib/
+│   │   ├── achievements/    # Cross-game achievement logic
 │   │   ├── ai/              # Browser-local BYOK provider boundary
-│   │   ├── blackjack-run/   # Shared Ranked/Daily Blackjack client/domain logic
+│   │   ├── blackjack-run/   # Ranked/Daily Blackjack client/domain logic
+│   │   ├── game-stats/      # Shared game ids, labels, icons, and statistics
+│   │   ├── leaderboard/     # Shared ranking/leaderboard logic
 │   │   ├── missions/        # Mission board/progression logic
-│   │   ├── wallet/          # Play-money settlement boundary
 │   │   ├── mp-poker/        # Pure/private-room multiplayer Poker logic
-│   │   └── <game>/          # Focused game modules such as video-poker or sic-bo
+│   │   ├── wallet/          # Play-money settlement boundary
+│   │   └── <game>/          # Focused game-owned modules
 │   ├── pages/
 │   │   ├── api/             # HTTP adapters
 │   │   └── games/           # Astro game routes
@@ -190,7 +239,7 @@ Replace the current code block under `## Project Structure` with:
 ```
 ````
 
-The tree is intentionally illustrative. Do not enumerate every game, route, migration, table, or test directory.
+This same fenced tree is used in `CLAUDE.md` so the two real documentation sources do not drift on the architecture map.
 
 - [ ] **Step 4: Replace the stale `Routes` list with stable route groups**
 
@@ -199,10 +248,10 @@ Replace the existing route list with:
 ```markdown
 ## Routes
 
-- `/` - Home page
+- `/` - Home page and game lobby
 - `/signin` - Google sign-in entry
 - `/profile` - Account/profile page
-- `/games` and `/games/*` - Game lobby and game routes
+- `/games` and `/games/*` - Game entry and individual game routes
 - `/api/*` - Application HTTP endpoints
 
 A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
@@ -210,25 +259,23 @@ A separate sign-up route is intentionally absent; first-time players start from 
 
 Do not list every game or endpoint.
 
-- [ ] **Step 5: Replace the auth-only `Database Schema` list with stable application-level wording**
+- [ ] **Step 5: Replace the auth-only `Database Schema` list with the shared stable wording**
 
-Replace the current table list with:
+Replace the current table list with exactly:
 
 ```markdown
 ## Database Schema
 
-D1 stores the current application's persistence needs, including:
+`src/db/schema.ts` is the source of truth. D1 stores the current application's persistence needs, including:
 
 - Better Auth identity, account, and session data;
-- the play-money wallet and idempotent settlement records;
+- play-money wallet and idempotent settlement data;
 - game statistics, missions, and related progression data;
-- the unified Blackjack Run persistence used by Ranked and Daily modes;
-- focused feature data that belongs to the current application.
+- Blackjack Run persistence for Ranked and Daily modes;
+- focused feature data owned by the current application.
 
-`src/db/schema.ts` is the source of truth. The schema may evolve with breaking hobby-project changes; the repository does not preserve compatibility layers solely for old local data.
+Do not treat this README as an exhaustive table inventory. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 ```
-
-Do not add an exhaustive table-name inventory.
 
 - [ ] **Step 6: Keep Multiplayer Poker facts intact**
 
@@ -245,59 +292,77 @@ Small wording edits are allowed to avoid duplication, but do not remove these fa
 
 ---
 
-## Task 3: Refresh CLAUDE.md and AGENTS.md contributor guidance
+## Task 3: Refresh `CLAUDE.md` as the single contributor guide
 
 **Files:**
 - Modify: `CLAUDE.md`
-- Modify: `AGENTS.md`
+- Do not modify: `AGENTS.md` (symlink to `CLAUDE.md`)
 
 **Interfaces:**
 - Consumes: Task 1 evidence and the same architecture vocabulary used in README.
-- Produces: aligned contributor guidance that no longer teaches the pre-roadmap game template.
+- Produces: current contributor guidance that no longer teaches the pre-roadmap game template.
 
-- [ ] **Step 1: Replace `Project Structure` in both files with the current illustrative tree**
+- [ ] **Step 1: Update the overview and document the symlink explicitly**
 
-Use the same structure in both files:
+Replace the stale project-overview paragraph with a current concise description of the modular play-money casino/game application.
+
+Add this contributor note immediately after the overview:
+
+```markdown
+**Contributor guide alias:** `AGENTS.md` is a Git symlink to this file. Edit `CLAUDE.md` only; do not maintain a second copy.
+```
+
+Do not replace the symlink with a regular file.
+
+- [ ] **Step 2: Replace `Project Structure` with the exact same fenced tree as README**
+
+Use exactly:
 
 ````markdown
 ## Project Structure
 
 ```text
-src/
-├── components/           # Shared Astro presentation components
-├── layouts/              # Shared page layouts
-├── pages/
-│   ├── games/            # Game lobby and game routes
-│   └── api/              # HTTP adapters
-├── lib/
-│   ├── ai/               # Browser-local BYOK settings/provider transport
-│   ├── blackjack-run/    # Ranked/Daily Blackjack client/domain logic
-│   ├── missions/         # Mission board/progression logic
-│   ├── wallet/           # Play-money settlement boundary
-│   ├── mp-poker/         # Pure/private-room multiplayer Poker logic
-│   └── <game>/           # Focused game-owned modules
-├── db/
-│   └── schema.ts         # Drizzle schema; persistence source of truth
-├── server/
-│   ├── blackjack-run/    # Blackjack Run application/persistence services
-│   └── mp/               # Multiplayer Durable Object orchestration
-├── middleware.ts         # Auth/session request enrichment
-└── styles/
-    └── global.css
-
-e2e/                      # Playwright E2E journeys
-drizzle/                  # Generated SQL migrations
+/
+├── drizzle/                 # D1 migrations
+├── public/                  # Static assets
+├── src/
+│   ├── components/          # Shared Astro presentation components
+│   ├── db/
+│   │   └── schema.ts        # Application schema source of truth
+│   ├── lib/
+│   │   ├── achievements/    # Cross-game achievement logic
+│   │   ├── ai/              # Browser-local BYOK provider boundary
+│   │   ├── blackjack-run/   # Ranked/Daily Blackjack client/domain logic
+│   │   ├── game-stats/      # Shared game ids, labels, icons, and statistics
+│   │   ├── leaderboard/     # Shared ranking/leaderboard logic
+│   │   ├── missions/        # Mission board/progression logic
+│   │   ├── mp-poker/        # Pure/private-room multiplayer Poker logic
+│   │   ├── wallet/          # Play-money settlement boundary
+│   │   └── <game>/          # Focused game-owned modules
+│   ├── pages/
+│   │   ├── api/             # HTTP adapters
+│   │   └── games/           # Astro game routes
+│   ├── server/
+│   │   ├── blackjack-run/   # Blackjack Run persistence/application services
+│   │   └── mp/              # Multiplayer Durable Object orchestration
+│   ├── middleware.ts        # Auth/session request enrichment
+│   └── styles/
+│       └── global.css
+├── astro.config.mjs
+├── drizzle.config.ts
+├── wrangler.toml
+└── tsconfig.json
 ```
 ````
 
-Do not enumerate Poker/Blackjack/Baccarat internal class files or every newer game.
+Do not restore an exhaustive Poker/Blackjack/Baccarat class inventory.
 
-- [ ] **Step 2: Replace stale `Key Patterns` items in both files**
+- [ ] **Step 3: Replace stale `Key Patterns` architecture items**
 
-Keep unrelated valid items such as Cloudflare binding factories and protected-route examples. Replace the stale architecture items with this guidance:
+Keep unrelated valid items such as Cloudflare binding factories and protected-route examples. Replace the stale architecture items with:
 
 ```markdown
-4. **Modular Game Logic**: Keep game rules, state, evaluation, and browser composition under `src/lib/<game>/`, split by real responsibilities. There is no required `Game` class, UI renderer, deck manager, settings manager, or LLM file. Prefer pure domain functions/state where practical and keep game-specific policy local.
+4. **Modular Game Logic**: Keep game rules, state, evaluation, payouts, and browser composition under `src/lib/<game>/`, split by real responsibilities. There is no required `Game` class, UI renderer, deck manager, settings manager, or LLM file. Prefer pure domain functions/state where practical and keep game-specific policy local.
 
 5. **Mission System**: Mission board, claim, period, and progress logic lives under `src/lib/missions/`; HTTP endpoints under `src/pages/api/missions/` adapt requests to that module.
 
@@ -305,21 +370,21 @@ Keep unrelated valid items such as Cloudflare binding factories and protected-ro
 
 7. **Wallet Settlement**: `src/lib/wallet/` is the common play-money settlement boundary. Newer public games may use `createPublicGameSettlementController`; older games and server-authoritative modes may use lower-level wallet APIs directly. Do not retrofit a game solely to make all clients identical. Room-local multiplayer never settles through D1.
 
-8. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer Poker uses room-local chips and has no D1 settlement.
+8. **Cross-game Progression**: Shared game identifiers/statistics live in `src/lib/game-stats/`, achievements in `src/lib/achievements/`, and ranking/leaderboards in `src/lib/leaderboard/`. New games register with those existing surfaces instead of creating parallel game identity or statistics systems.
 
-9. **Route/API Boundaries**: Prefer Astro pages and API routes as thin adapters around product modules. Some older game pages still contain more orchestration; improve those only when concrete feature work needs it rather than opening a uniformity refactor.
+9. **Multiplayer Poker Isolation**: Pure multiplayer logic and browser code live in `src/lib/mp-poker/*`. Worker-only room orchestration lives in `src/server/mp/multiplayer-poker-room.ts`; the `MultiplayerPokerRoom` Durable Object is bound as `MULTIPLAYER_POKER_ROOMS`. Multiplayer Poker uses room-local chips and has no D1 settlement.
+
+10. **Route/API Boundaries**: Prefer Astro pages and API routes as thin adapters around product modules. Some older game pages still contain more orchestration; improve those only when concrete feature work needs it rather than opening a uniformity refactor.
 ```
 
-Do not create a generic route/controller layer.
+- [ ] **Step 4: Replace `Database Schema` with the exact same bullets as README**
 
-- [ ] **Step 3: Replace `Database Schema` in both files**
-
-Use:
+Use exactly:
 
 ```markdown
 ## Database Schema
 
-`src/db/schema.ts` is the source of truth. D1 currently stores several kinds of application data:
+`src/db/schema.ts` is the source of truth. D1 stores the current application's persistence needs, including:
 
 - Better Auth identity, account, and session data;
 - play-money wallet and idempotent settlement data;
@@ -327,14 +392,14 @@ Use:
 - Blackjack Run persistence for Ranked and Daily modes;
 - focused feature data owned by the current application.
 
-Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-project schema changes may update the repository and database together without compatibility layers for old local data.
+Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 ```
 
-- [ ] **Step 4: Replace `Building New Games` in both files with the local-first recipe**
+- [ ] **Step 5: Replace `Building New Games` with the concrete local-first recipe**
 
-Replace the existing class/template section with:
+Replace the current class/template section with:
 
-````markdown
+```markdown
 ## Building New Games
 
 Use the smallest relevant shipped module as the reference, especially newer focused games such as `src/lib/video-poker/`, `src/lib/sic-bo/`, `src/lib/three-card-showdown/`, or `src/lib/pai-gow-poker/`.
@@ -343,25 +408,62 @@ Use the smallest relevant shipped module as the reference, especially newer focu
 2. Keep game-owned rules, state transitions, evaluation, payouts, and browser behavior under `src/lib/<game>/`. Split files by actual responsibility; there is no mandatory filename or class template.
 3. Reuse shared seams such as `src/lib/cards.ts`, wager validation, `src/lib/wallet/`, `src/lib/ai/`, or other neutral helpers only when the existing contract fits. Do not widen a shared API for hypothetical reuse.
 4. Keep game-specific phases, prompts, payout policy, wildcard/ranking rules, rendering decisions, and settlement-command mapping local.
-5. Add focused unit tests for pure rules/state and one representative Playwright journey for the major user flow. Register the game in lobby/statistics surfaces that actually apply.
+5. Register the game: add its id to `GAME_TYPES` and matching label/icon entries to `GAME_TYPE_LABELS` and `GAME_TYPE_ICONS` in `src/lib/game-stats/constants.ts`, then add its lobby card in `src/pages/index.astro`. `src/pages/games/index.astro` is only a redirect to `/#games`. Add focused unit tests plus one representative Playwright journey.
 6. Do not add a base game class, generic paytable/session/plugin framework, mandatory settings or LLM layer, compatibility adapter, or new persistence system unless a concrete requirement proves it is needed.
 
-A newer game may use `createPublicGameSettlementController`, but that is not a universal requirement. Choose the existing wallet seam that matches the concrete game instead of retrofitting unrelated games for uniformity.
-````
+A newer game may use `createPublicGameSettlementController`, but that is not a universal requirement. Choose the smallest existing wallet/public-session seam that fits the concrete game.
+```
 
-- [ ] **Step 5: Remove stale contributor claims that contradict the new sections**
+- [ ] **Step 6: Confirm stale paths/templates are gone from the contributor guide**
 
 Run:
 
 ```bash
-rg -n "src/lib/missions\.ts|Each game follows the same structure|Create a modular game structure following the established pattern" CLAUDE.md AGENTS.md
+! rg -n "src/lib/missions\.ts|YourGameUIRenderer|GameSettingsManager|llmYourGameStrategy" CLAUDE.md
+rg -n "src/lib/game-stats/constants\.ts|src/pages/index\.astro|AGENTS\.md.*symlink" CLAUDE.md
 ```
 
-Expected: no matches.
+Expected first command: exit code `0` with no matches.
 
-If a stale claim remains, update the guidance. Do not delete references to legacy classes when they describe actual existing legacy code outside the architecture/new-game guidance.
+Expected second command: matches the registration recipe and symlink note.
 
-- [ ] **Step 6: Verify the refreshed architecture sections stay aligned between the two contributor guides**
+---
+
+## Task 4: Validate the documentation-only closeout
+
+**Files:**
+- Validate: `README.md`
+- Validate: `CLAUDE.md`
+- Verify unchanged symlink: `AGENTS.md`
+
+**Interfaces:**
+- Consumes: completed README and CLAUDE edits.
+- Produces: evidence that the closeout is accurate, internally aligned, and documentation-only.
+
+- [ ] **Step 1: Format-check only files Prettier actually owns**
+
+Run:
+
+```bash
+bunx prettier --check README.md CLAUDE.md
+```
+
+Expected:
+
+```text
+All matched files use Prettier code style!
+```
+
+`docs/superpowers/` is intentionally listed in `.prettierignore`, so the historical plan/spec files are not part of this formatting check. `AGENTS.md` is a symlink and is not passed as an explicit Prettier target.
+
+If formatting fails, run:
+
+```bash
+bunx prettier --write README.md CLAUDE.md
+bunx prettier --check README.md CLAUDE.md
+```
+
+- [ ] **Step 2: Verify README and CLAUDE share the same architecture tree and database bullets**
 
 Run:
 
@@ -369,65 +471,49 @@ Run:
 python - <<'PY'
 from pathlib import Path
 
-HEADINGS = ['Project Structure', 'Key Patterns', 'Database Schema', 'Building New Games']
-
 
 def section(text: str, heading: str) -> str:
-    marker = f'## {heading}\n'
-    start = text.index(marker)
-    next_heading = text.find('\n## ', start + len(marker))
-    return text[start:] if next_heading == -1 else text[start:next_heading]
+    marker = f"## {heading}\n"
+    start = text.index(marker) + len(marker)
+    end = text.find("\n## ", start)
+    return text[start:] if end == -1 else text[start:end]
 
-claude = Path('CLAUDE.md').read_text()
-agents = Path('AGENTS.md').read_text()
-for heading in HEADINGS:
-    assert section(claude, heading) == section(agents, heading), heading
+
+def text_tree(text: str) -> str:
+    body = section(text, "Project Structure")
+    start = body.index("```text\n")
+    end = body.index("\n```", start) + len("\n```")
+    return body[start:end]
+
+
+def db_bullets(text: str) -> list[str]:
+    body = section(text, "Database Schema")
+    return [line for line in body.splitlines() if line.startswith("- ")]
+
+readme = Path("README.md").read_text()
+claude = Path("CLAUDE.md").read_text()
+
+assert text_tree(readme) == text_tree(claude), "Project Structure trees drifted"
+assert db_bullets(readme) == db_bullets(claude), "Database Schema bullets drifted"
 PY
 ```
 
 Expected: exit code `0` with no output.
 
-Do not require the two files to be globally byte-identical; only these refreshed architecture sections are required to match.
+This replaces the previous inert CLAUDE-to-AGENTS comparison; the symlink already guarantees those two paths resolve to the same content.
 
----
-
-## Task 4: Validate the documentation-only implementation
-
-**Files:**
-- Modify: none beyond Tasks 2-3 and the planning docs.
-
-**Interfaces:**
-- Consumes: completed README/contributor-guide edits.
-- Produces: a reviewable docs-only PR diff.
-
-- [ ] **Step 1: Format-check all changed Markdown**
+- [ ] **Step 3: Re-verify the symlink remained unchanged**
 
 Run:
 
 ```bash
-bunx prettier --check README.md CLAUDE.md AGENTS.md \
-  docs/superpowers/specs/2026-08-17-architecture-roadmap-closeout-design.md \
-  docs/superpowers/plans/2026-08-17-architecture-roadmap-closeout.md
+test -L AGENTS.md && [ "$(readlink AGENTS.md)" = "CLAUDE.md" ]
+git diff -- AGENTS.md
 ```
 
-Expected: all five files pass Prettier.
+Expected: first command exits `0`; second command produces no diff.
 
-If formatting fails, run the same paths through `bunx prettier --write`, then rerun the check.
-
-- [ ] **Step 2: Re-run the settlement-consumer check after edits**
-
-Run:
-
-```bash
-rg -l "createPublicGameSettlementController" src/lib \
-  | grep -v '/wallet/' \
-  | grep -v '\.test\.ts$' \
-  | sort
-```
-
-Confirm README/CLAUDE/AGENTS wording still describes the actual set as a newer-game composition rather than the universal single-player path.
-
-- [ ] **Step 3: Verify the implementation did not expand into runtime work**
+- [ ] **Step 4: Verify implementation scope**
 
 Run:
 
@@ -438,9 +524,8 @@ git diff --name-only origin/main...HEAD
 Expected paths only:
 
 ```text
-README.md
 CLAUDE.md
-AGENTS.md
+README.md
 docs/superpowers/plans/2026-08-17-architecture-roadmap-closeout.md
 docs/superpowers/specs/2026-08-17-architecture-roadmap-closeout-design.md
 ```
@@ -453,18 +538,16 @@ git diff --check
 
 Expected: no whitespace errors.
 
-Do not run the full unit or Playwright suite for this documentation-only change. If the diff contains runtime/config/schema/test files, stop and remove those changes unless a separately reviewed concrete defect requires them.
+Do not run the full unit or Playwright suite for this documentation-only change. If runtime/config/schema/test files appear, remove those changes unless a separately reviewed concrete defect requires them.
 
-- [ ] **Step 4: Commit the closeout documentation implementation**
+- [ ] **Step 5: Commit the documentation implementation**
 
 ```bash
-git add README.md CLAUDE.md AGENTS.md \
-  docs/superpowers/specs/2026-08-17-architecture-roadmap-closeout-design.md \
-  docs/superpowers/plans/2026-08-17-architecture-roadmap-closeout.md
+git add README.md CLAUDE.md
 git commit -m "docs: close out architecture roadmap"
 ```
 
-Expected: one documentation implementation commit; earlier planning commits may already exist on the branch.
+Expected: one documentation implementation commit; the planning documents are already committed on the branch.
 
 ---
 
@@ -473,37 +556,24 @@ Expected: one documentation implementation commit; earlier planning commits may 
 **Files:**
 - Modify: none in the repository.
 - Linear: `HPA-167`
-- Linear evidence: children of `HPA-167`
+- Linear evidence: direct children of `HPA-167`
 
 **Interfaces:**
-- Consumes: merged documentation closeout plus current HPA-167 child statuses.
+- Consumes: merged documentation closeout plus current HPA-167 child states.
 - Produces: HPA-167 in `Done`, with HPA-174 and HPA-177 still in `Backlog`.
 
 - [ ] **Step 1: Re-read HPA-167 and all direct children after merge**
 
-Using the connected Linear tools, fetch HPA-167 and list issues with `parentId = HPA-167`.
+Using the connected Linear tools, fetch HPA-167 and its direct children.
 
-Expected concrete architecture/game-validation children to be Done:
+Expected:
 
-```text
-HPA-542
-HPA-545
-HPA-185
-HPA-195
-HPA-553
-HPA-196
-HPA-198
-HPA-197
-```
+- every non-deferred active architecture/game-validation child is `Done`;
+- HPA-174 is `Backlog`;
+- HPA-177 is `Backlog`;
+- canceled/duplicate social or multiplayer expansions do not block closeout.
 
-Expected intentionally deferred children:
-
-```text
-HPA-174 -> Backlog
-HPA-177 -> Backlog
-```
-
-Canceled social/multiplayer expansions do not block closeout.
+Do not copy another hard-coded child-id checklist into this verification step; the closeout comment below is the canonical shipped-baseline list.
 
 - [ ] **Step 2: Verify the deferred issue descriptions still contain their evidence gates**
 
@@ -511,11 +581,11 @@ Read HPA-174 and confirm it still requires a concrete need to reopen completed B
 
 Read HPA-177 and confirm it still requires repeated multi-day Daily participation or a direct request for weekly comparison.
 
-If either ticket was intentionally promoted by a later product decision, do not silently close the roadmap; reassess the closeout against that new evidence.
+If either issue was intentionally promoted by a later product decision, do not silently close the roadmap; reassess against that new evidence.
 
-- [ ] **Step 3: Add one HPA-167 closeout comment**
+- [ ] **Step 3: Add one canonical HPA-167 closeout comment**
 
-Post this concise comment, replacing `<PR>` with the merged closeout PR number:
+Post this comment, replacing `<PR>` with the merged closeout PR number:
 
 ```markdown
 Architecture roadmap closeout is complete.
@@ -527,12 +597,12 @@ Shipped baseline:
 - HPA-195 proved the clean new-game module path with Video Poker.
 - HPA-553 unified Ranked/Daily Blackjack behind `blackjack-run`.
 - HPA-196, HPA-198, and HPA-197 subsequently added Sic Bo, Three-Card Showdown, and Pai Gow Poker without a generic game framework.
-- <PR> refreshed README plus the contributor guides to document the resulting modular-monolith boundaries and local-first new-game recipe.
+- <PR> refreshed README and the CLAUDE/AGENTS contributor guidance to document the resulting modular-monolith boundaries and real new-game registration surfaces.
 
 HPA-174 and HPA-177 remain intentionally deferred until their existing product-evidence triggers are met. No replacement architecture epic is needed now.
 ```
 
-Do not add a new umbrella issue as part of this action.
+`AGENTS.md` in that comment refers to the contributor-facing alias; the repository change itself edits `CLAUDE.md` only because `AGENTS.md` remains its symlink.
 
 - [ ] **Step 4: Mark only HPA-167 Done**
 
@@ -552,4 +622,4 @@ HPA-174 -> Backlog
 HPA-177 -> Backlog
 ```
 
-This is the terminal state for the roadmap. Future architecture work starts from a concrete feature or maintenance problem, not by reopening HPA-167 by default.
+This is the terminal state for the architecture roadmap. Future architecture work starts from a concrete feature or maintenance problem rather than reopening HPA-167 by default.

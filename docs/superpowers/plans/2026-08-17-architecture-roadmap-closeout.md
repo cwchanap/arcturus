@@ -100,13 +100,19 @@ If a path is missing on the implementation branch, inspect current `main` before
 Run:
 
 ```bash
-rg -l "createPublicGameSettlementController" src/lib \
+set -euo pipefail
+expected="src/lib/pai-gow-poker/client.ts
+src/lib/sic-bo/client.ts
+src/lib/three-card-showdown/client.ts
+src/lib/video-poker/client.ts"
+actual=$(rg -l "createPublicGameSettlementController" src/lib \
   | grep -v '/wallet/' \
   | grep -v '\.test\.ts$' \
-  | sort
+  | sort)
+[ "$actual" = "$expected" ]
 ```
 
-Expected current game consumers:
+Expected: exit code `0` with no output, confirming the four current game consumers:
 
 ```text
 src/lib/pai-gow-poker/client.ts
@@ -115,7 +121,7 @@ src/lib/three-card-showdown/client.ts
 src/lib/video-poker/client.ts
 ```
 
-If the set changed on current `main`, document the current proven seam accurately. Do not retrofit unrelated games merely to make the list uniform.
+If the set changed on current `main`, update `expected` to match the current proven seam before re-running. Do not retrofit unrelated games merely to make the list uniform.
 
 - [ ] **Step 4: Verify the real new-game registration surfaces**
 
@@ -251,7 +257,8 @@ Replace the existing route list with:
 - `/` - Home page and game lobby
 - `/signin` - Google sign-in entry
 - `/profile` - Account/profile page
-- `/games` and `/games/*` - Game entry and individual game routes
+- `/games` - Redirects to the homepage game section (`/#games`); not a separate game index page
+- `/games/*` - Individual game routes
 - `/api/*` - Application HTTP endpoints
 
 A separate sign-up route is intentionally absent; first-time players start from `/signin` and continue with Google.
@@ -274,8 +281,26 @@ Replace the current table list with exactly:
 - Blackjack Run persistence for Ranked and Daily modes;
 - focused feature data owned by the current application.
 
+Better Auth persists sessions in D1 via `drizzleAdapter`; there is no KV session store.
+
 Do not treat this README as an exhaustive table inventory. Breaking hobby-project schema changes may update the repository and database together without compatibility layers solely for old local data.
 ```
+
+The bullet list itself stays identical between README and CLAUDE so the Task 4 consistency check passes; the D1-versus-KV note is a non-bullet sentence that does not participate in that comparison.
+
+Additionally, update CLAUDE's `Configuration Files` entry for `wrangler.toml` so it no longer claims a KV binding for sessions. Replace:
+
+```text
+- `wrangler.toml`: D1 binding name is `"DB"`, KV binding for sessions
+```
+
+With:
+
+```text
+- `wrangler.toml`: D1 binding name is `"DB"`; Better Auth persists sessions in D1 via `drizzleAdapter` (no KV session store)
+```
+
+The CLAUDE `Database Schema` bullets are left unchanged; only the `Configuration Files` entry is corrected.
 
 - [ ] **Step 6: Keep Multiplayer Poker facts intact**
 

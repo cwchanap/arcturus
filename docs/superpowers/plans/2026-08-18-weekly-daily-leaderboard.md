@@ -4,7 +4,7 @@
 
 **Goal:** Add one read-only current UTC week leaderboard for unified Blackjack Daily Challenge results on the existing Daily Challenge page.
 
-**Architecture:** Extend the existing `blackjack-run` Daily read model rather than introducing competition infrastructure. Derive the current Monday-to-Monday UTC window from existing mission week helpers, aggregate completed Daily rows directly from `blackjack_run`, expose one guest-readable current-week endpoint, and render a second independent leaderboard section on `/games/daily-challenge`.
+**Architecture:** Extend the existing `blackjack-run` Daily read model. Derive two current-week date boundaries from the existing Monday-UTC reset helper, aggregate/rank completed Daily rows with one D1 query, expose one guest-readable current-week endpoint, and render a second independent leaderboard section on `/games/daily-challenge`.
 
 **Tech Stack:** Astro, TypeScript, Bun tests, Cloudflare D1/SQLite, Playwright.
 
@@ -12,40 +12,54 @@
 
 ## Global Constraints
 
-- One implementation PR for HPA-177; do not split the ticket across multiple PRs.
+- One implementation PR for HPA-177; continue on this existing branch/PR.
 - Current UTC week only: Monday 00:00 UTC through next Monday 00:00 UTC.
-- Weekly score is `SUM(dailyEndingBankroll)` over completed unified Daily rows in the current week.
-- Deterministic order is weekly score DESC, days played DESC, total rounds DESC, last settlement ASC, user id ASC.
-- Reuse `blackjack_run`; no schema change, migration, snapshot table, cache, cron, queue, or Durable Object.
-- No historical week picker/API, monthly board, rewards, seasons, leagues, generic period leaderboard framework, or old Daily compatibility.
-- Keep existing Daily Challenge gameplay and today's leaderboard behavior unchanged.
-- Weekly read failures must be local to the weekly section and must not overwrite gameplay or today's-board status.
-- Do not add a production seed endpoint, direct Playwright D1 writer, or weekly `page.route` JSON fake.
+- `getDailyWeekWindow` returns only `startPeriodKey` and `endPeriodKeyExclusive`.
+- Weekly score is `SUM(dailyEndingBankroll)` over completed unified Daily rows.
+- Deterministic order is score DESC, days DESC, rounds DESC, last settlement ASC, user id ASC.
+- Use one D1 weekly query for top rows, participant count, and optional out-of-top current user.
+- `totalRounds`, `lastSettledAt`, and `userId` remain repository-only.
+- Public current standing includes `totalEligible` because the UI renders it.
+- Reuse `blackjack_run`; no schema, migration, index, snapshot, cache, cron, queue, or Durable Object.
+- No historical week input, monthly board, rewards, seasons, leagues, generic period framework, or old Daily compatibility.
+- Weekly read failures must stay local to the weekly section.
+- No production seed endpoint, direct Playwright D1 writer, or weekly `page.route` JSON fake.
 
-## Proof boundaries
+## Proof Boundaries
 
-The repository already has two different testing seams and this plan keeps them separate:
+- **Repository integration tests own multi-user/multi-day SQL semantics.** They use the local `dailyStartInput(...)` fixture builder plus `repository.createDailyRun(...)` and `repository.finishRun(...)`. `test-d1.ts` supplies only Miniflare/D1 setup and `insertTestUser`.
+- **Playwright owns product wiring.** It plays today's real Daily attempt. It does not create historical Daily rows.
+- **Formatter correctness is a unit-test concern.** E2E may reuse exported `formatPoints` to assert wiring/copy without duplicating number-format code.
 
-- **Repository integration tests own multi-user/multi-day SQL semantics.** They may use `src/server/blackjack-run/test-d1.ts` to seed multiple users, multiple period keys, prior-week rows, and current-user-outside-top fixtures.
-- **Playwright owns real product wiring.** `e2e/daily-challenge.spec.ts` plays today's real Daily attempt through the product API. It does not have a multi-day seed helper and must not grow one for this feature.
+## Risks and Mitigations
 
-This avoids a fake E2E that only proves a stubbed JSON response while claiming to prove weekly aggregation.
+- **Ranking semantics drift:** one SQL statement owns aggregate, rank, total eligible, top rows, and current user.
+- **Wrong fixture seam:** Task 2 explicitly uses repository-local helpers rather than nonexistent Daily helpers in `test-d1.ts`.
+- **Required weekly DOM omitted from test fixtures:** Task 4 updates `makeRoot(...)` before renderer tests and keeps weekly nodes required.
+- **Persistent local D1 pushes the new E2E user outside top 50:** current standing is authoritative; top-row assertion is conditional on `rank <= 50`.
+- **Scope creep inside existing files:** final validation uses a changed-file allowlist plus manual runtime diff review; schema/migration paths are hard-rejected.
 
 ---
 
-### Task 1: Define the current Daily week window
+### Task 1: Define the current Daily week boundaries
 
 **Files:**
 - Modify: `src/lib/blackjack-run/daily.ts`
 - Modify: `src/lib/blackjack-run/daily.test.ts`
 
 **Interfaces:**
-- Consumes: `getDailyPeriodKey(date)`, `getWeeklyPeriodKey(date)`, and `getNextWeeklyReset(date)` from `src/lib/missions/periods.ts`.
-- Produces:
+
+Consumes:
+
+```ts
+getDailyPeriodKey(date: Date): string;
+getNextWeeklyReset(date: Date): Date;
+```
+
+Produces:
 
 ```ts
 export interface DailyWeekWindow {
-  readonly weekKey: string;
   readonly startPeriodKey: string;
   readonly endPeriodKeyExclusive: string;
 }
@@ -53,61 +67,56 @@ export interface DailyWeekWindow {
 export function getDailyWeekWindow(nowSeconds: number): DailyWeekWindow;
 ```
 
-- [ ] **Step 1: Add failing UTC week-window tests**
+- [ ] **Step 1: Write failing boundary tests**
 
-Add these cases to `src/lib/blackjack-run/daily.test.ts`:
+Add to `src/lib/blackjack-run/daily.test.ts`:
 
 ```ts
-import { describe, expect, test } from 'bun:test';
 import { getDailyWeekWindow } from './daily';
 
 describe('getDailyWeekWindow', () => {
   test('uses Monday 00:00 UTC through the next Monday', () => {
-    const monday = Math.trunc(Date.parse('2026-08-17T00:00:00.000Z') / 1000);
-    expect(getDailyWeekWindow(monday)).toEqual({
-      weekKey: '2026-W34',
+    const now = Math.trunc(Date.parse('2026-08-17T00:00:00.000Z') / 1000);
+    expect(getDailyWeekWindow(now)).toEqual({
       startPeriodKey: '2026-08-17',
       endPeriodKeyExclusive: '2026-08-24',
     });
   });
 
-  test('keeps Sunday night in the same UTC week', () => {
-    const sunday = Math.trunc(Date.parse('2026-08-23T23:59:59.000Z') / 1000);
-    expect(getDailyWeekWindow(sunday)).toEqual({
-      weekKey: '2026-W34',
+  test('keeps Sunday night inside the same range', () => {
+    const now = Math.trunc(Date.parse('2026-08-23T23:59:59.000Z') / 1000);
+    expect(getDailyWeekWindow(now)).toEqual({
       startPeriodKey: '2026-08-17',
       endPeriodKeyExclusive: '2026-08-24',
     });
   });
 
-  test('rolls over exactly at Monday 00:00 UTC', () => {
-    const nextMonday = Math.trunc(Date.parse('2026-08-24T00:00:00.000Z') / 1000);
-    expect(getDailyWeekWindow(nextMonday)).toEqual({
-      weekKey: '2026-W35',
+  test('rolls over exactly at next Monday UTC', () => {
+    const now = Math.trunc(Date.parse('2026-08-24T00:00:00.000Z') / 1000);
+    expect(getDailyWeekWindow(now)).toEqual({
       startPeriodKey: '2026-08-24',
       endPeriodKeyExclusive: '2026-08-31',
     });
   });
 
-  test('keeps ISO week year separate from calendar date boundaries', () => {
-    const friday = Math.trunc(Date.parse('2027-01-01T12:00:00.000Z') / 1000);
-    expect(getDailyWeekWindow(friday)).toEqual({
-      weekKey: '2026-W53',
+  test('uses calendar date boundaries across ISO week-year rollover', () => {
+    const now = Math.trunc(Date.parse('2027-01-01T12:00:00.000Z') / 1000);
+    expect(getDailyWeekWindow(now)).toEqual({
       startPeriodKey: '2026-12-28',
       endPeriodKeyExclusive: '2027-01-04',
     });
   });
 
-  test('rejects invalid time values', () => {
+  test('rejects invalid timestamps', () => {
     expect(() => getDailyWeekWindow(-1)).toThrow(TypeError);
     expect(() => getDailyWeekWindow(Number.POSITIVE_INFINITY)).toThrow(TypeError);
   });
 });
 ```
 
-The year-boundary case is required: `weekKey` is ISO week-year, while SQL filters use calendar-date `periodKey` boundaries.
+Do not import or return `getWeeklyPeriodKey`/`weekKey`.
 
-- [ ] **Step 2: Run the focused test and verify failure**
+- [ ] **Step 2: Run the focused test and confirm RED**
 
 ```bash
 bun test src/lib/blackjack-run/daily.test.ts
@@ -115,23 +124,18 @@ bun test src/lib/blackjack-run/daily.test.ts
 
 Expected: FAIL because `getDailyWeekWindow` does not exist.
 
-- [ ] **Step 3: Implement the minimal week helper**
+- [ ] **Step 3: Implement the minimal helper**
 
-Extend the import in `src/lib/blackjack-run/daily.ts`:
+Extend the existing mission-period import in `daily.ts`:
 
 ```ts
-import {
-  getDailyPeriodKey,
-  getNextWeeklyReset,
-  getWeeklyPeriodKey,
-} from '../missions/periods';
+import { getDailyPeriodKey, getNextWeeklyReset } from '../missions/periods';
 ```
 
 Add:
 
 ```ts
 export interface DailyWeekWindow {
-  readonly weekKey: string;
   readonly startPeriodKey: string;
   readonly endPeriodKeyExclusive: string;
 }
@@ -151,16 +155,13 @@ export function getDailyWeekWindow(nowSeconds: number): DailyWeekWindow {
   start.setUTCDate(start.getUTCDate() - 7);
 
   return {
-    weekKey: getWeeklyPeriodKey(now),
     startPeriodKey: getDailyPeriodKey(start),
     endPeriodKeyExclusive: getDailyPeriodKey(nextReset),
   };
 }
 ```
 
-Do not add another generic week/calendar helper.
-
-- [ ] **Step 4: Run the focused tests**
+- [ ] **Step 4: Run the focused test and confirm GREEN**
 
 ```bash
 bun test src/lib/blackjack-run/daily.test.ts
@@ -172,20 +173,20 @@ Expected: PASS.
 
 ```bash
 git add src/lib/blackjack-run/daily.ts src/lib/blackjack-run/daily.test.ts
-git commit -m "feat(daily): define current UTC week window"
+git commit -m "feat(daily): define current week boundaries"
 ```
 
 ---
 
-### Task 2: Add bounded weekly aggregation to the Blackjack Run repository
+### Task 2: Add one-query weekly aggregation and ranking
 
 **Files:**
 - Modify: `src/server/blackjack-run/repository.ts`
 - Modify: `src/server/blackjack-run/repository.integration.test.ts`
 
 **Interfaces:**
-- Consumes: canonical `YYYY-MM-DD` start/end period keys from the service caller.
-- Produces:
+
+Produces:
 
 ```ts
 export interface WeeklyLeaderboardEntry {
@@ -196,6 +197,7 @@ export interface WeeklyLeaderboardEntry {
   readonly daysPlayed: number;
   readonly totalRounds: number;
   readonly lastSettledAt: number;
+  readonly totalEligible: number;
 }
 
 export interface WeeklyCurrentUserStanding {
@@ -203,7 +205,6 @@ export interface WeeklyCurrentUserStanding {
   readonly totalEligible: number;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
 }
 
 export interface WeeklyLeaderboardRead {
@@ -219,30 +220,69 @@ listWeeklyLeaderboard(
 ): Promise<WeeklyLeaderboardRead>;
 ```
 
-- [ ] **Step 1: Add failing repository integration coverage**
+- [ ] **Step 1: Add a local helper for completed Daily fixtures**
 
-Use the existing `insertTestUser`, Daily-run creation, and finish helpers from `src/server/blackjack-run/test-d1.ts` to seed:
+Do **not** add a helper to `test-d1.ts`. Reuse the existing local `dailyStartInput(...)` and repository methods in `repository.integration.test.ts`.
 
-```text
-Alice:
-  2026-08-17 -> ending 1200, rounds 10
-  2026-08-18 -> ending 900, rounds 8
-  weekly = 2100, days = 2, rounds = 18
+Add a small test-local function only if it removes repeated setup:
 
-Bob:
-  2026-08-18 -> ending 2200, rounds 10
-  weekly = 2200, days = 1, rounds = 10
+```ts
+async function completeDailyRun(input: {
+  userId: string;
+  runSequence: number;
+  periodKey: string;
+  endingBankroll: number;
+  roundsCompleted: number;
+  settledAt: number;
+}): Promise<void> {
+  const id = runId(input.runSequence);
+  expect(
+    await repository.createDailyRun(
+      dailyStartInput({
+        userId: input.userId,
+        id,
+        periodKey: input.periodKey,
+        startRequestId: `request-${id}`,
+      }),
+    ),
+  ).toEqual({ kind: 'created' });
 
-Carol:
-  two completed current-week rows totaling 2100 with fewer than 18 total rounds
-
-Dave:
-  one completed previous-week row
+  expect(
+    await repository.finishRun({
+      userId: input.userId,
+      runId: id,
+      mode: 'daily',
+      expectedSequence: 0,
+      status: 'completed',
+      resultJson: '{}',
+      dailyEndingBankroll: input.endingBankroll,
+      dailyRoundsCompleted: input.roundsCompleted,
+      nowSeconds: input.settledAt,
+    }),
+  ).toEqual({ kind: 'applied' });
+}
 ```
 
-Also seed one current-week Ranked row and one non-completed Daily row. Neither may contribute.
+If `finishRun` requires a different `expectedSequence` for the existing fixture shape, use the same sequence setup already demonstrated by the current Daily repository tests; do not bypass the repository with direct SQL merely for convenience.
 
-Assert the bounded read:
+- [ ] **Step 2: Write failing aggregate/rank integration tests**
+
+Create users Alice, Bob, Carol, Dave with `insertTestUser`.
+
+Seed current-week completed rows using `completeDailyRun`:
+
+```text
+Alice: 2026-08-17 = 1200 / 10 rounds / settled 100
+       2026-08-18 =  900 /  8 rounds / settled 200
+Bob:   2026-08-17 = 2200 / 10 rounds / settled 150
+Carol: 2026-08-17 = 1100 /  7 rounds / settled 120
+       2026-08-18 = 1000 /  7 rounds / settled 180
+Dave:  2026-08-16 = 9999 / 10 rounds / previous week
+```
+
+Also create one current-week Ranked row and one non-completed Daily row; neither may aggregate.
+
+Call:
 
 ```ts
 const read = await repository.listWeeklyLeaderboard(
@@ -251,18 +291,21 @@ const read = await repository.listWeeklyLeaderboard(
   2,
   carolId,
 );
+```
 
+Assert:
+
+```ts
 expect(read.entries.map((entry) => ({
   name: entry.playerName,
   score: entry.weeklyScore,
   days: entry.daysPlayed,
-  rounds: entry.totalRounds,
 }))).toEqual([
-  { name: 'Bob', score: 2200, days: 1, rounds: 10 },
-  { name: 'Alice', score: 2100, days: 2, rounds: 18 },
+  { name: 'Bob', score: 2200, days: 1 },
+  { name: 'Alice', score: 2100, days: 2 },
 ]);
 
-expect(read.currentUser).toMatchObject({
+expect(read.currentUser).toEqual({
   rank: 3,
   totalEligible: 3,
   weeklyScore: 2100,
@@ -270,32 +313,34 @@ expect(read.currentUser).toMatchObject({
 });
 ```
 
-Add focused tie fixtures proving:
+Verify every returned entry reports `totalEligible === 3` internally.
 
-1. equal score -> more days wins;
-2. equal score/days -> more rounds wins;
+- [ ] **Step 3: Add focused tie-order tests**
+
+Use independent fixtures to prove:
+
+1. equal score -> more completed days wins;
+2. equal score/days -> more total rounds wins;
 3. equal score/days/rounds -> earlier `MAX(settledAt)` wins;
 4. exact remaining tie -> ascending `userId` wins.
 
-Because `userId` is inside the `RANK()` order, exact final ties must still produce distinct deterministic ranks. Repeat the read and assert the same order/ranks.
+Because `userId` is inside `RANK()`, assert exact ranks are unique and stable across repeated calls.
 
-This task is the authoritative proof for multi-day aggregation, previous-week exclusion, deterministic weekly order, and current-user standing outside the top limit.
-
-- [ ] **Step 2: Run repository integration tests and verify failure**
+- [ ] **Step 4: Run repository integration tests and confirm RED**
 
 ```bash
 bun test src/server/blackjack-run/repository.integration.test.ts
 ```
 
-Expected: FAIL because weekly repository interfaces do not exist.
+Expected: FAIL because weekly types/method/query do not exist.
 
-- [ ] **Step 3: Add weekly types and repository contract**
+- [ ] **Step 5: Add repository types and interface method**
 
-Add the interfaces above beside the existing Daily leaderboard types and extend `BlackjackRunRepository` with `listWeeklyLeaderboard(...)` exactly as specified.
+Add the interfaces above next to the existing Daily leaderboard types and extend `BlackjackRunRepository` with `listWeeklyLeaderboard(...)`.
 
-- [ ] **Step 4: Implement one shared weekly aggregate/rank CTE**
+- [ ] **Step 6: Implement one weekly SQL statement**
 
-Define a single CTE semantic source:
+Add one SQL constant with this shape:
 
 ```sql
 WITH weekly AS (
@@ -310,12 +355,17 @@ WITH weekly AS (
   JOIN user AS u ON u.id = r.userId
   WHERE r.mode = 'daily'
     AND r.status = 'completed'
-    AND r.periodKey >= ?
-    AND r.periodKey < ?
+    AND r.periodKey >= ?1
+    AND r.periodKey < ?2
   GROUP BY r.userId, u.name
 ), ranked AS (
   SELECT
-    *,
+    userId,
+    playerName,
+    weeklyScore,
+    daysPlayed,
+    totalRounds,
+    lastSettledAt,
     RANK() OVER (
       ORDER BY
         weeklyScore DESC,
@@ -323,27 +373,68 @@ WITH weekly AS (
         totalRounds DESC,
         lastSettledAt ASC,
         userId ASC
-    ) AS rank
+    ) AS rank,
+    COUNT(*) OVER () AS totalEligible
   FROM weekly
 )
+SELECT
+  userId,
+  playerName,
+  weeklyScore,
+  daysPlayed,
+  totalRounds,
+  lastSettledAt,
+  rank,
+  totalEligible
+FROM ranked
+WHERE rank <= ?3 OR userId = ?4
+ORDER BY rank ASC;
 ```
 
-Reuse the same CTE/order for:
+Do not create separate current-user or count SQL constants.
 
-- top rows with `LIMIT ?`;
-- current-user row by `userId = ?`;
-- total eligible participant count.
+- [ ] **Step 7: Parse the single result set**
 
-Do not copy the existing Daily leaderboard's separate `RANK()` definitions; that is the drift this weekly read should avoid.
+Bind:
 
-Validate numeric fields with repository invariants:
+```ts
+const rows = await db
+  .prepare(WEEKLY_LEADERBOARD_SQL)
+  .bind(startPeriodKey, endPeriodKeyExclusive, limit, userId ?? null)
+  .all<WeeklyLeaderboardRow>();
+```
 
-- `weeklyScore`, `daysPlayed`, `totalRounds`, `lastSettledAt`: safe non-negative integers;
-- `rank`, `totalEligible`: positive safe integers.
+For every row validate:
 
-Do not add or modify indexes.
+- `rank >= 1` safe integer;
+- `weeklyScore >= 0` safe integer;
+- `daysPlayed >= 1` safe integer;
+- `totalRounds >= 0` safe integer;
+- `lastSettledAt >= 0` safe integer;
+- `totalEligible >= 1` safe integer.
 
-- [ ] **Step 5: Run repository integration tests**
+Return:
+
+```ts
+const entries = parsed.filter((row) => row.rank <= limit);
+const own = userId ? parsed.find((row) => row.userId === userId) ?? null : null;
+
+return {
+  entries,
+  currentUser: own
+    ? {
+        rank: own.rank,
+        totalEligible: own.totalEligible,
+        weeklyScore: own.weeklyScore,
+        daysPlayed: own.daysPlayed,
+      }
+    : null,
+};
+```
+
+Repository entries may retain `totalRounds`, `lastSettledAt`, and `userId`; no later layer may require them.
+
+- [ ] **Step 8: Run repository integration tests and confirm GREEN**
 
 ```bash
 bun test src/server/blackjack-run/repository.integration.test.ts
@@ -351,16 +442,16 @@ bun test src/server/blackjack-run/repository.integration.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/server/blackjack-run/repository.ts src/server/blackjack-run/repository.integration.test.ts
-git commit -m "feat(daily): aggregate current-week leaderboard"
+git commit -m "feat(daily): aggregate weekly leaderboard"
 ```
 
 ---
 
-### Task 3: Expose one current-week public API
+### Task 3: Expose the current-week public API
 
 **Files:**
 - Modify: `src/server/blackjack-run/service.ts`
@@ -370,8 +461,8 @@ git commit -m "feat(daily): aggregate current-week leaderboard"
 - Create: `src/pages/api/blackjack-daily/weekly-leaderboard.ts`
 
 **Interfaces:**
-- Consumes: `getDailyWeekWindow(nowSeconds)` and `repository.listWeeklyLeaderboard(...)`.
-- Produces:
+
+Service:
 
 ```ts
 weeklyLeaderboard(
@@ -380,13 +471,7 @@ weeklyLeaderboard(
 ): Promise<WeeklyLeaderboardRead>;
 ```
 
-Endpoint:
-
-```text
-GET /api/blackjack-daily/weekly-leaderboard?limit=50
-```
-
-Public shape:
+Public response:
 
 ```ts
 export interface WeeklyLeaderboardPublicEntry {
@@ -394,21 +479,36 @@ export interface WeeklyLeaderboardPublicEntry {
   readonly playerName: string;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
+}
+
+export interface WeeklyCurrentUserPublicStanding {
+  readonly rank: number;
+  readonly totalEligible: number;
+  readonly weeklyScore: number;
+  readonly daysPlayed: number;
 }
 
 export interface WeeklyLeaderboardPublicView {
   readonly entries: readonly WeeklyLeaderboardPublicEntry[];
-  readonly currentUser: WeeklyCurrentUserStanding | null;
+  readonly currentUser: WeeklyCurrentUserPublicStanding | null;
 }
+```
+
+Endpoint:
+
+```text
+GET /api/blackjack-daily/weekly-leaderboard?limit=50
 ```
 
 - [ ] **Step 1: Add failing service tests**
 
-Freeze `now()` at `2026-08-18T12:00:00Z` and assert:
+Freeze `now()` at `2026-08-18T12:00:00Z` and spy on `listWeeklyLeaderboard`.
+
+Assert:
 
 ```ts
 await service.weeklyLeaderboard(userId, 25);
+
 expect(repository.listWeeklyLeaderboard).toHaveBeenCalledWith(
   '2026-08-17',
   '2026-08-24',
@@ -417,34 +517,29 @@ expect(repository.listWeeklyLeaderboard).toHaveBeenCalledWith(
 );
 ```
 
-Add the guest variant and assert `null` is passed through unchanged.
+Also assert `null` is passed for guests.
 
 - [ ] **Step 2: Add failing HTTP tests**
 
 Extend the fake service with `weeklyLeaderboard` and verify:
 
-- guest request succeeds;
-- default limit is `50`;
-- `?limit=1` succeeds;
-- `?limit=0`, `?limit=51`, and non-numeric limits return `400 INVALID_REQUEST`;
-- entries strip repository-only `userId` and `lastSettledAt`;
-- authenticated `currentUser` survives projection;
-- no week/date/period input is accepted because the route has no such parameter.
+- guest succeeds;
+- default limit is 50;
+- limit 1 succeeds;
+- 0, 51, and non-numeric limit return `400 INVALID_REQUEST`;
+- no week/date parameter is consumed;
+- top entries expose only rank/name/score/days;
+- authenticated current standing includes rank/totalEligible/score/days;
+- response JSON contains neither repository `userId`, `totalRounds`, nor `lastSettledAt`.
 
-Use a fake entry with `userId: 'internal-user-id'` and assert serialized JSON does not contain it.
-
-- [ ] **Step 3: Run service/HTTP tests and verify failure**
+- [ ] **Step 3: Run focused tests and confirm RED**
 
 ```bash
 bun test src/server/blackjack-run/service.test.ts
 bun test src/server/blackjack-run/http.test.ts
 ```
 
-Expected: FAIL because weekly service/handler surfaces are missing.
-
 - [ ] **Step 4: Implement service delegation**
-
-Add:
 
 ```ts
 async weeklyLeaderboard(
@@ -461,28 +556,29 @@ async weeklyLeaderboard(
 }
 ```
 
-Do not accept a week key from callers.
+Do not accept a period from callers.
 
-- [ ] **Step 5: Implement HTTP projection and handler**
-
-Reuse the existing leaderboard limit constants and `parseLimit` helper.
+- [ ] **Step 5: Implement explicit HTTP projection**
 
 ```ts
-function projectWeeklyLeaderboard(read: WeeklyLeaderboardRead): WeeklyLeaderboardPublicView {
+function projectWeeklyLeaderboard(
+  read: WeeklyLeaderboardRead,
+): WeeklyLeaderboardPublicView {
   return {
     entries: read.entries.map((entry) => ({
       rank: entry.rank,
       playerName: entry.playerName,
       weeklyScore: entry.weeklyScore,
       daysPlayed: entry.daysPlayed,
-      totalRounds: entry.totalRounds,
     })),
     currentUser: read.currentUser,
   };
 }
 ```
 
-Handler:
+Reuse the existing leaderboard `parseLimit`, limit constants, `optionalUserId`, `serviceFor`, `jsonSuccess`, and error mapping.
+
+- [ ] **Step 6: Add the handler**
 
 ```ts
 const weeklyLeaderboard: APIRoute = async ({ locals, url }) => {
@@ -504,11 +600,11 @@ const weeklyLeaderboard: APIRoute = async ({ locals, url }) => {
 };
 ```
 
-Add `weeklyLeaderboard` to `BlackjackRunHttpHandlers` and return it from `createBlackjackRunHttpHandlers`.
+Add it to `BlackjackRunHttpHandlers` and the returned handler object.
 
-- [ ] **Step 6: Add the thin Astro API route**
+- [ ] **Step 7: Add the thin Astro route**
 
-Create `src/pages/api/blackjack-daily/weekly-leaderboard.ts` using the exact sibling adapter shape:
+Create `src/pages/api/blackjack-daily/weekly-leaderboard.ts` following the existing sibling adapter pattern:
 
 ```ts
 import type { APIRoute } from 'astro';
@@ -517,18 +613,16 @@ import { blackjackRunHttpHandlers } from '../../../server/blackjack-run/http';
 export const GET: APIRoute = blackjackRunHttpHandlers.weeklyLeaderboard;
 ```
 
-No route-local parsing or service construction.
+No route-local logic.
 
-- [ ] **Step 7: Run service/HTTP tests**
+- [ ] **Step 8: Run focused tests and confirm GREEN**
 
 ```bash
 bun test src/server/blackjack-run/service.test.ts
 bun test src/server/blackjack-run/http.test.ts
 ```
 
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add \
@@ -537,12 +631,12 @@ git add \
   src/server/blackjack-run/http.ts \
   src/server/blackjack-run/http.test.ts \
   src/pages/api/blackjack-daily/weekly-leaderboard.ts
-git commit -m "feat(daily): expose current-week leaderboard"
+git commit -m "feat(daily): expose weekly leaderboard"
 ```
 
 ---
 
-### Task 4: Render the weekly board independently on Daily Challenge
+### Task 4: Render weekly results with required DOM and local states
 
 **Files:**
 - Modify: `src/lib/blackjack-run/daily-ui.ts`
@@ -550,8 +644,6 @@ git commit -m "feat(daily): expose current-week leaderboard"
 - Modify: `src/pages/games/daily-challenge.astro`
 
 **Interfaces:**
-- Consumes endpoint from Task 3.
-- Produces:
 
 ```ts
 export const DAILY_WEEKLY_LEADERBOARD_PATH = '/api/blackjack-daily/weekly-leaderboard';
@@ -561,7 +653,6 @@ export interface WeeklyLeaderboardEntryView {
   readonly playerName: string;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
 }
 
 export interface WeeklyCurrentUserStandingView {
@@ -569,7 +660,6 @@ export interface WeeklyCurrentUserStandingView {
   readonly totalEligible: number;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
 }
 
 export interface WeeklyLeaderboardView {
@@ -577,6 +667,7 @@ export interface WeeklyLeaderboardView {
   readonly currentUser: WeeklyCurrentUserStandingView | null;
 }
 
+export function formatPoints(value: number): string;
 export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardView;
 ```
 
@@ -587,9 +678,27 @@ renderWeeklyLeaderboard(leaderboard: WeeklyLeaderboardView): void;
 renderWeeklyLeaderboardError(message: string): void;
 ```
 
-- [ ] **Step 1: Add failing parser/renderer tests**
+- [ ] **Step 1: Update the shared `makeRoot(...)` fixture first**
 
-Parse this valid payload:
+`createDailyRunRenderer` resolves elements eagerly. Add these required nodes to `makeRoot` in `daily-ui.test.ts` before constructing renderer tests:
+
+```html
+<p data-testid="daily-challenge-weekly-current-standing" hidden></p>
+<p data-testid="daily-challenge-weekly-error" hidden></p>
+<ol data-testid="daily-challenge-weekly-leaderboard-rows"></ol>
+```
+
+Do not make production weekly lookups optional.
+
+- [ ] **Step 2: Write failing formatter/parser tests**
+
+Add:
+
+```ts
+expect(formatPoints(3450)).toBe('3,450');
+```
+
+Parse this payload:
 
 ```ts
 {
@@ -598,27 +707,19 @@ Parse this valid payload:
     playerName: 'Alice',
     weeklyScore: 3450,
     daysPlayed: 3,
-    totalRounds: 28,
   }],
   currentUser: {
     rank: 4,
     totalEligible: 12,
     weeklyScore: 2100,
     daysPlayed: 2,
-    totalRounds: 18,
   },
 }
 ```
 
-Assert malformed/non-integer/negative weekly score, days, rounds, rank, and total eligible are rejected.
+Reject malformed/non-integer/negative rank, score, days, and total eligible. Do not parse `totalRounds`.
 
-Add DOM fixtures for:
-
-```text
-daily-challenge-weekly-leaderboard-rows
-daily-challenge-weekly-current-standing
-daily-challenge-weekly-error
-```
+- [ ] **Step 3: Write failing renderer tests**
 
 Expected row:
 
@@ -629,37 +730,42 @@ Expected row:
 Expected current standing:
 
 ```text
-#4 · 2,100 pts · 2/7 days
+#4 of 12 · 2,100 pts · 2/7 days
 ```
 
-Verify `renderWeeklyLeaderboardError(...)` changes only `daily-challenge-weekly-error`; it must not modify `daily-challenge-status` or today's leaderboard DOM.
-
-- [ ] **Step 2: Add failing page-bootstrap request tests**
-
-Extend the existing `initDailyChallengePage` transport mocks to expect both public reads:
+Assert rows use:
 
 ```text
-/api/blackjack-daily/<periodKey>/leaderboard
-/api/blackjack-daily/weekly-leaderboard
+data-testid="daily-challenge-weekly-leaderboard-row"
 ```
 
-Verify independently:
+For `{ entries: [], currentUser: null }`, assert exactly one empty-state item:
 
-- both success -> both render;
-- daily success + weekly failure -> daily remains rendered and weekly error is visible;
-- guest mode still issues the weekly request.
+```text
+No results yet this week.
+```
 
-- [ ] **Step 3: Run Daily UI tests and verify failure**
+Assert `renderWeeklyLeaderboardError(...)` modifies only the weekly error node and does not change `daily-challenge-status` or today's leaderboard DOM.
+
+- [ ] **Step 4: Add failing bootstrap request tests**
+
+Extend fetch mocks so today's endpoint and weekly endpoint are distinguishable; do not let a generic `url.endsWith('/leaderboard')` branch accidentally return the Daily payload for the weekly request.
+
+Verify:
+
+- both requests succeed -> both render;
+- Daily success + weekly failure -> Daily remains rendered, weekly error is visible;
+- guest still issues weekly GET.
+
+- [ ] **Step 5: Run UI tests and confirm RED**
 
 ```bash
 bun test src/lib/blackjack-run/daily-ui.test.ts
 ```
 
-Expected: FAIL because the weekly parser/renderer/DOM do not exist.
+- [ ] **Step 6: Add weekly page markup**
 
-- [ ] **Step 4: Add weekly markup to `daily-challenge.astro`**
-
-Immediately after the existing `data-testid="daily-challenge-leaderboard"` section add:
+Immediately after today's leaderboard section add:
 
 ```astro
 <section class="mb-10" data-testid="daily-challenge-weekly-leaderboard">
@@ -686,33 +792,56 @@ Immediately after the existing `data-testid="daily-challenge-leaderboard"` secti
 </section>
 ```
 
-Do not add tabs, navigation, a new page, or a week picker.
+No tabs, page, picker, or chart.
 
-- [ ] **Step 5: Implement strict weekly parsing and rendering**
+- [ ] **Step 7: Implement `formatPoints`**
 
-Use the existing `parseSafeInteger` helper for weekly integer fields.
+Keep one formatter instance beside `CURRENCY`:
 
-For each row, mirror the existing Daily renderer test seam and then set its copy:
+```ts
+const POINTS = new Intl.NumberFormat('en-US');
+
+export function formatPoints(value: number): string {
+  return POINTS.format(value);
+}
+```
+
+Do not inline `toLocaleString` in weekly rendering.
+
+- [ ] **Step 8: Implement parser and renderer**
+
+Use existing `parseSafeInteger` for weekly numeric fields.
+
+For non-empty entries:
 
 ```ts
 const row = document.createElement('li');
 row.dataset.testid = 'daily-challenge-weekly-leaderboard-row';
 row.textContent =
-  `#${entry.rank} ${entry.playerName} ${entry.weeklyScore.toLocaleString('en-US')} pts · ${entry.daysPlayed}/7 days`;
+  `#${entry.rank} ${entry.playerName} ${formatPoints(entry.weeklyScore)} pts · ${entry.daysPlayed}/7 days`;
+```
+
+For zero entries:
+
+```ts
+const empty = document.createElement('li');
+empty.dataset.testid = 'daily-challenge-weekly-empty';
+empty.textContent = 'No results yet this week.';
+weeklyRowsEl.replaceChildren(empty);
 ```
 
 Current standing:
 
 ```ts
-currentWeeklyStandingEl.textContent =
-  `#${rank} · ${weeklyScore.toLocaleString('en-US')} pts · ${daysPlayed}/7 days`;
+weeklyStandingEl.textContent =
+  `#${rank} of ${totalEligible} · ${formatPoints(weeklyScore)} pts · ${daysPlayed}/7 days`;
 ```
 
-On success, clear/hide the weekly error. Do not touch the Daily gameplay status.
+Hide standing when `currentUser === null`. Clear/hide weekly error on successful weekly render.
 
-- [ ] **Step 6: Fetch the weekly endpoint independently**
+- [ ] **Step 9: Fetch weekly results independently**
 
-Keep the existing Daily leaderboard fetch intact and add a separate weekly block:
+Keep today's fetch untouched and add a separate try/catch:
 
 ```ts
 try {
@@ -733,44 +862,44 @@ try {
 }
 ```
 
-Do not route weekly failures through `renderer.renderError`.
+Never send this failure to `renderer.renderError`.
 
-- [ ] **Step 7: Run Daily UI tests**
+- [ ] **Step 10: Run UI tests and confirm GREEN**
 
 ```bash
 bun test src/lib/blackjack-run/daily-ui.test.ts
 ```
 
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
 git add \
   src/lib/blackjack-run/daily-ui.ts \
   src/lib/blackjack-run/daily-ui.test.ts \
   src/pages/games/daily-challenge.astro
-git commit -m "feat(daily): show current-week leaderboard"
+git commit -m "feat(daily): render weekly leaderboard"
 ```
 
 ---
 
-### Task 5: Extend the real Daily Challenge journey and run final validation
+### Task 5: Extend the real Daily E2E and perform final validation
 
 **Files:**
 - Modify: `e2e/daily-challenge.spec.ts`
 - Verify unchanged: `src/db/schema.ts`
-- Verify unchanged: repository migration files
+- Verify unchanged: `drizzle/`
 
 **Interfaces:**
-- Consumes the complete Task 1–4 feature.
-- Produces no runtime interface and no test-only production endpoint.
+- Consumes the complete feature from Tasks 1–4.
+- Produces no runtime/test-only API.
 
-- [ ] **Step 1: Add a weekly request matcher to the existing E2E**
+- [ ] **Step 1: Import the points formatter and add request matcher**
 
-Beside `isDailyLeaderboard`, add:
+Add:
 
 ```ts
+import { formatPoints } from '../src/lib/blackjack-run/daily-ui';
+
 const WEEKLY_LEADERBOARD_PATH = '/api/blackjack-daily/weekly-leaderboard';
 
 function isWeeklyLeaderboard(url: string, method: string): boolean {
@@ -778,11 +907,13 @@ function isWeeklyLeaderboard(url: string, method: string): boolean {
 }
 ```
 
+The unit test in Task 4 owns formatter correctness; this E2E uses it only to build the expected rendered wiring string.
+
 Do not add `page.route`, D1 writes, or seed helpers.
 
-- [ ] **Step 2: Verify the guest journey uses the real weekly endpoint**
+- [ ] **Step 2: Verify guest weekly GET**
 
-In the existing guest page-load portion, wait for the weekly response alongside the current Daily/leaderboard reads:
+In the existing guest journey, wait for the real weekly response:
 
 ```ts
 const guestWeeklyResponse = page.waitForResponse((response) =>
@@ -796,11 +927,11 @@ await expect(page.getByTestId('daily-challenge-weekly-leaderboard')).toBeVisible
 await expect(page.getByTestId('daily-challenge-weekly-error')).toBeHidden();
 ```
 
-Keep the existing guest Practice assertions intact.
+Keep current guest Practice assertions unchanged.
 
-- [ ] **Step 3: Verify today's real completed attempt appears in the weekly projection**
+- [ ] **Step 3: Extend the existing post-completion reload**
 
-After the existing ranked completion obtains `receiptBankroll`, extend the same reload that already verifies today's leaderboard. Wait for both leaderboard responses:
+After the real Daily attempt produces `receiptBankroll`, wait for both Daily and weekly responses on the same reload:
 
 ```ts
 const dailyLeaderboardReload = page.waitForResponse((response) =>
@@ -818,60 +949,73 @@ expect(dailyLeaderboardResponse.ok()).toBe(true);
 expect(weeklyLeaderboardResponse.ok()).toBe(true);
 ```
 
-Parse the weekly response:
+Preserve the current Daily leaderboard assertions.
+
+- [ ] **Step 4: Assert current weekly standing from the real response**
+
+Parse:
 
 ```ts
 const weekly = (await weeklyLeaderboardResponse.json()) as {
   entries: Array<{
+    rank: number;
+    playerName: string;
     weeklyScore: number;
     daysPlayed: number;
-    totalRounds: number;
   }>;
   currentUser: {
     rank: number;
     totalEligible: number;
     weeklyScore: number;
     daysPlayed: number;
-    totalRounds: number;
   } | null;
 };
+```
 
+Assert:
+
+```ts
 expect(weekly.currentUser).not.toBeNull();
 expect(weekly.currentUser).toMatchObject({
   weeklyScore: receiptBankroll as number,
   daysPlayed: 1,
-  totalRounds: ROUND_COUNT,
 });
+
+const standing = weekly.currentUser!;
+await expect(page.getByTestId('daily-challenge-weekly-current-standing')).toHaveText(
+  `#${standing.rank} of ${standing.totalEligible} · ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+);
 ```
 
-Then assert the real DOM wiring:
+Do not expect `totalRounds` in the HTTP response.
+
+- [ ] **Step 5: Guard the top-row assertion on the real rank**
+
+Persistent local D1 data may make the fresh user rank below the endpoint's top-50 list.
 
 ```ts
-const weeklyRank = weekly.currentUser!.rank;
-await expect(page.getByTestId('daily-challenge-weekly-current-standing')).toHaveText(
-  `#${weeklyRank} · ${(receiptBankroll as number).toLocaleString('en-US')} pts · 1/7 days`,
-);
-
-const matchingWeeklyRows = await page
-  .getByTestId('daily-challenge-weekly-leaderboard-row')
-  .filter({
-    hasText: `${(receiptBankroll as number).toLocaleString('en-US')} pts · 1/7 days`,
-  })
-  .count();
-expect(matchingWeeklyRows).toBeGreaterThanOrEqual(1);
+if (standing.rank <= 50) {
+  const matchingRows = await page
+    .getByTestId('daily-challenge-weekly-leaderboard-row')
+    .filter({
+      hasText: `${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+    })
+    .count();
+  expect(matchingRows).toBeGreaterThanOrEqual(1);
+}
 ```
 
-Do **not** assert Alice/Bob multi-day order here. Task 2 already proves that with real D1 fixtures.
+The current-standing assertion is unconditional and is the proof for ranks outside the top 50.
 
-- [ ] **Step 4: Run the real Daily Challenge E2E**
+- [ ] **Step 6: Run Daily Challenge E2E**
 
 ```bash
 bunx playwright test e2e/daily-challenge.spec.ts --workers=1
 ```
 
-Expected: PASS with the existing Practice/Ranked/Daily-board journey plus the new real weekly request/render assertions.
+Expected: PASS.
 
-- [ ] **Step 5: Run all focused HPA-177 tests**
+- [ ] **Step 7: Run all focused HPA-177 tests**
 
 ```bash
 bun test src/lib/blackjack-run/daily.test.ts
@@ -884,7 +1028,7 @@ bunx playwright test e2e/daily-challenge.spec.ts --workers=1
 
 Expected: PASS.
 
-- [ ] **Step 6: Run repository-wide validation**
+- [ ] **Step 8: Run repository-wide validation**
 
 ```bash
 bun run test
@@ -895,57 +1039,95 @@ bun run build
 
 Expected: PASS.
 
-- [ ] **Step 7: Run scope guards**
+- [ ] **Step 9: Hard-reject schema/migration leakage**
 
 ```bash
-if git diff --name-only main...HEAD | grep -Eq '(^src/db/schema\.ts$|^drizzle/|migration)'; then
+if git diff --name-only main...HEAD | grep -Eq '(^src/db/schema\.ts$|^drizzle/)'; then
   echo 'Unexpected schema/migration change'
   exit 1
 fi
-
-if git diff --name-only main...HEAD | grep -Eq '(season|snapshot|cron|reward|monthly)'; then
-  echo 'Unexpected broad competition infrastructure'
-  exit 1
-fi
-
-rg -n "page\.route|seed.*endpoint|weekly.*seed" e2e/daily-challenge.spec.ts src/pages/api src/server/blackjack-run \
-  && echo 'Review matches manually; reject any HPA-177-only test backdoor' \
-  || true
-
-git diff --name-only main...HEAD
 ```
 
-Expected implementation/test surface is limited to the files named by this plan plus the two HPA-177 planning documents.
+Expected: exit 0 with no message.
 
-Inspect the final diff and reject any new generic period-leaderboard abstraction, historical week API, cache, scheduled job, wallet mutation, production seed endpoint, direct Playwright D1 writer, or weekly response stub.
+- [ ] **Step 10: Verify the exact changed-file allowlist**
 
-- [ ] **Step 8: Commit the E2E slice**
+```bash
+cat > /tmp/hpa177-expected-files <<'EOF'
+docs/superpowers/plans/2026-08-18-weekly-daily-leaderboard.md
+docs/superpowers/specs/2026-08-18-weekly-daily-leaderboard-design.md
+e2e/daily-challenge.spec.ts
+src/lib/blackjack-run/daily-ui.test.ts
+src/lib/blackjack-run/daily-ui.ts
+src/lib/blackjack-run/daily.test.ts
+src/lib/blackjack-run/daily.ts
+src/pages/api/blackjack-daily/weekly-leaderboard.ts
+src/pages/games/daily-challenge.astro
+src/server/blackjack-run/http.test.ts
+src/server/blackjack-run/http.ts
+src/server/blackjack-run/repository.integration.test.ts
+src/server/blackjack-run/repository.ts
+src/server/blackjack-run/service.test.ts
+src/server/blackjack-run/service.ts
+EOF
+
+git diff --name-only main...HEAD | sort > /tmp/hpa177-actual-files
+diff -u /tmp/hpa177-expected-files /tmp/hpa177-actual-files
+```
+
+Expected: no diff.
+
+If an implementation step legitimately changes a different file, stop and justify it against the spec before extending this allowlist.
+
+- [ ] **Step 11: Manually inspect the runtime diff for scope**
+
+```bash
+git diff main...HEAD -- \
+  src/lib/blackjack-run \
+  src/server/blackjack-run \
+  src/pages/api/blackjack-daily \
+  src/pages/games/daily-challenge.astro \
+  e2e/daily-challenge.spec.ts
+```
+
+Reject any:
+
+- historical week/date input;
+- generic period/season abstraction;
+- cache/snapshot/scheduled-finalization code;
+- wallet/reward mutation;
+- production test seed path;
+- direct Playwright D1 writer;
+- weekly network stub presented as SQL coverage.
+
+This manual diff review replaces the previous grep gates that could not actually fail on in-file scope creep.
+
+- [ ] **Step 12: Commit the E2E slice**
 
 ```bash
 git add e2e/daily-challenge.spec.ts
 git commit -m "test(daily): cover weekly leaderboard journey"
 ```
 
-- [ ] **Step 9: Update the existing HPA-177 draft PR, not a second PR**
+- [ ] **Step 13: Update the existing draft PR**
 
-Push this same branch and keep the existing draft PR as the single implementation/design PR for HPA-177. Update its description with:
+Push the same branch. Update PR #41 with:
 
-- weekly score/order semantics;
-- actual implementation files;
-- validation results;
-- explicit confirmation that no schema/migration/cron/reward/history/general leaderboard framework/test seed path was added.
+- actual one-query implementation;
+- final public response shape;
+- validation output;
+- explicit confirmation of no schema/index/cron/snapshot/reward/history/generic framework work.
 
-Do not open another PR for implementation.
+Do not open a second implementation PR.
 
 ---
 
-## Post-merge Linear closeout
+## Post-merge Linear Closeout
 
-After the implementation PR merges:
+After this same HPA-177 PR merges:
 
 1. re-fetch HPA-177;
-2. add one concise comment with the merged PR and shipped scope;
+2. comment with the merged PR and shipped bounded scope;
 3. mark HPA-177 Done;
-4. verify HPA-167 remains Done and no broader competition roadmap is reopened.
-
-Do not create a replacement season/competition epic as part of closeout.
+4. verify HPA-167 remains Done;
+5. do not create a replacement competition/season epic as part of closeout.

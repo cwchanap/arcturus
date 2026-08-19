@@ -2,26 +2,11 @@
 
 ## Summary
 
-Activate HPA-177 as the next Arcturus product slice after the HPA-167 roadmap closeout.
+Build one read-only **current UTC week** leaderboard for Blackjack Daily Challenge.
 
-Build exactly one read-only **current UTC week** leaderboard for Blackjack Daily Challenge. Reuse the unified `blackjack_run` rows already produced by Daily mode, aggregate them directly in D1, expose one public current-week read endpoint, and render the result on the existing `/games/daily-challenge` page below the existing daily board.
+Keep the feature inside the unified `blackjack-run` read model and the existing `/games/daily-challenge` page. Reuse the current Daily result rows, existing Monday-UTC reset helper, HTTP limit/error helpers, and Daily UI renderer patterns.
 
-No schema change, migration, snapshot table, scheduled finalization, rewards, seasons, historical week picker, generic period-leaderboard framework, or new page is required.
-
-## Why this is the next actionable task
-
-The concrete HPA-167 architecture/game sequence is complete. HPA-177 is the remaining live Arcturus Backlog child, its technical prerequisite HPA-553 is already shipped, and the request to continue with the next Arcturus task is the product decision to activate this previously deferred comparison slice.
-
-HPA-553 already provides the data HPA-177 needs:
-
-- one `blackjack_run` Daily row per user and `periodKey`;
-- `status = 'completed'` for eligible terminal attempts;
-- `dailyEndingBankroll`;
-- `dailyRoundsCompleted`;
-- `settledAt`;
-- an existing Daily leaderboard repository/service/HTTP/UI path.
-
-The current database also has `blackjack_run_daily_leaderboard_idx` beginning with `(mode, periodKey, status, ...)`, so a seven-day `periodKey` range query is a bounded extension of the existing read model rather than a reason to add storage.
+No schema change, migration, index, snapshot table, cron job, cache, reward flow, historical period API, new page, or generic period-leaderboard framework is required.
 
 ## Goals
 
@@ -29,9 +14,9 @@ The current database also has `blackjack_run_daily_leaderboard_idx` beginning wi
 - Define the week as Monday 00:00 UTC through the next Monday 00:00 UTC.
 - Aggregate only completed unified Daily results from the current week.
 - Show top results to guests and authenticated users.
-- Show an authenticated user's current weekly standing even when outside the top result limit.
-- Keep weekly ranking deterministic and explainable.
-- Reuse the current Blackjack Run repository/service/HTTP/UI seams.
+- Show an authenticated user's standing even when outside the top result limit.
+- Keep ranking deterministic and explainable.
+- Keep Daily gameplay and today's leaderboard behavior unchanged.
 
 ## Non-goals
 
@@ -39,44 +24,30 @@ The current database also has `blackjack_run_daily_leaderboard_idx` beginning wi
 - Monthly boards, seasons, divisions, leagues, promotion, or archives.
 - Rewards, chips, badges, missions, notifications, or settlement changes.
 - Scheduled weekly finalization or immutable snapshots.
-- New tables, migrations, cron jobs, Durable Objects, queues, or caches.
-- Generalizing `src/lib/leaderboard/` or creating a cross-game period leaderboard framework.
-- Refactoring Daily Challenge gameplay, replay, scoring, or one-attempt-per-day behavior.
+- New tables, migrations, indexes, cron jobs, Durable Objects, queues, or caches.
+- Generalizing `src/lib/leaderboard/` or creating a cross-game period framework.
+- Refactoring Daily gameplay, scoring, or one-attempt-per-day behavior.
 - Migrating old pre-HPA-553 Daily Challenge data.
-- A test-only production seed endpoint or Playwright-side D1 mutation path.
 
-## Options considered
+## Why the existing seams are enough
 
-### A. Extend unified Daily Challenge with one current-week aggregate — selected
+HPA-553 already stores one Daily run per `(userId, mode, periodKey)` plus the projections needed here:
 
-Add a current-week aggregate method to the existing Blackjack Run repository, a thin service/HTTP path, and a second leaderboard renderer on the Daily Challenge page.
+- `status`;
+- `dailyEndingBankroll`;
+- `dailyRoundsCompleted`;
+- `settledAt`.
 
-This keeps the feature beside its only real data producer and uses the current `blackjack_run` schema directly.
+The current `blackjack_run_daily_leaderboard_idx` starts with `(mode, periodKey, status, ...)`, so the current seven-day range remains a bounded read. Do not add another index without measured evidence.
 
-### B. Add a generic period leaderboard service
-
-Rejected. Arcturus currently has one concrete weekly requirement for one game mode. A generic daily/weekly/monthly abstraction would introduce configuration, period polymorphism, and cross-game contracts without a second consumer.
-
-### C. Materialize weekly rows or snapshots
-
-Rejected. At most seven Daily rows per participating user are relevant to the current board. A bounded D1 aggregate is simpler and avoids scheduled finalization, migration, and cache invalidation behavior.
-
-### D. Add a separate weekly leaderboard page
-
-Rejected. Weekly comparison belongs to the Daily Challenge experience. A second page would duplicate navigation, loading, empty/error handling, and styling for one small read-only view.
+`src/lib/missions/periods.ts` already owns the UTC weekly reset calculation. Extend Daily by composing that helper rather than reimplementing ISO week arithmetic.
 
 ## Week semantics
 
-Use the existing UTC weekly primitives in `src/lib/missions/periods.ts` rather than inventing another week calendar:
-
-- `getWeeklyPeriodKey(date)` provides the ISO week label, e.g. `2026-W34`;
-- `getNextWeeklyReset(date)` provides the next Monday at 00:00 UTC.
-
-Add a Blackjack-Daily-owned helper in `src/lib/blackjack-run/daily.ts`:
+Add this Daily-owned helper in `src/lib/blackjack-run/daily.ts`:
 
 ```ts
 export interface DailyWeekWindow {
-  readonly weekKey: string;
   readonly startPeriodKey: string;
   readonly endPeriodKeyExclusive: string;
 }
@@ -84,46 +55,38 @@ export interface DailyWeekWindow {
 export function getDailyWeekWindow(nowSeconds: number): DailyWeekWindow;
 ```
 
-Implementation derives `endPeriodKeyExclusive` from `getNextWeeklyReset(nowDate)` and subtracts seven UTC days for `startPeriodKey`. This avoids duplicating ISO-week arithmetic while keeping the concrete Daily query range close to Daily code.
+Implementation:
 
-`weekKey` is a display/identity label only. The repository query always filters by canonical calendar-date boundaries:
+1. validate `nowSeconds` with the same non-negative safe-integer contract as `getDailyWindow`;
+2. convert to `Date`;
+3. call existing `getNextWeeklyReset(now)`;
+4. subtract seven UTC calendar days for the start;
+5. return both boundaries through `getDailyPeriodKey`.
 
-```sql
-r.mode = 'daily'
-AND r.status = 'completed'
-AND r.periodKey >= ?
-AND r.periodKey < ?
+Do **not** return an ISO `weekKey`. No caller needs it, and the repository filters only canonical `YYYY-MM-DD` period keys.
+
+Pin the year boundary directly on the date range:
+
+```text
+2027-01-01 -> start 2026-12-28, end 2027-01-04 exclusive
 ```
 
-That distinction matters across New Year: for `2027-01-01`, `weekKey` is `2026-W53` while the date range is `2026-12-28` through `2027-01-04` exclusive. Tests must pin this so no later implementation tries to filter `blackjack_run.periodKey` with the ISO week label.
+This makes it impossible for later SQL to accidentally filter Daily `periodKey` with an ISO week label.
 
 ## Weekly scoring and ranking
-
-### Weekly score
 
 For each user:
 
 ```text
 weeklyScore = SUM(dailyEndingBankroll)
+daysPlayed = COUNT(*)
+totalRounds = SUM(dailyRoundsCompleted)
+lastSettledAt = MAX(settledAt)
 ```
 
-Daily Challenge resets every attempt to the same 1,000-chip challenge bankroll, so summing ending bankrolls intentionally rewards both participation and performance. This is an engagement-oriented weekly comparison, not a persistent wallet balance and not a reward currency.
+Daily attempts all start from the same challenge bankroll, so summing ending bankrolls intentionally rewards both participation and performance. The UI labels the result **Weekly score**; it is not wallet balance or reward currency.
 
-The UI labels this value **Weekly score**. Do not normalize to an average, best-N score, net profit, or configurable point system in this slice.
-
-### Supporting values
-
-Aggregate:
-
-- `daysPlayed = COUNT(*)`;
-- `totalRounds = SUM(dailyRoundsCompleted)`;
-- `lastSettledAt = MAX(settledAt)`.
-
-Because unified Daily mode has one row per `(userId, mode, periodKey)`, `COUNT(*)` is the number of completed Daily attempts in the current week.
-
-### Deterministic order
-
-Rank every weekly participant by:
+Rank by the full deterministic order:
 
 1. `weeklyScore DESC`;
 2. `daysPlayed DESC`;
@@ -131,13 +94,15 @@ Rank every weekly participant by:
 4. `lastSettledAt ASC`;
 5. `userId ASC`.
 
-Include the full order inside the SQL `RANK()` window and use the exact same order for the displayed top rows. With `userId` as the final key, weekly ranks are unique and deterministic. This intentionally differs from the existing Daily board, where equal score/round totals may share a rank.
+Keep the full order inside `RANK()`. Because `userId` is the terminal key, weekly ranks are unique by construction.
+
+`totalRounds`, `lastSettledAt`, and `userId` are repository-only ranking data. Do not carry them through HTTP or UI merely because the query needs them.
 
 ## Repository design
 
-Keep the weekly read inside `src/server/blackjack-run/repository.ts` because it reads the same Daily projection columns as `listDailyLeaderboard`.
+Keep the weekly read in `src/server/blackjack-run/repository.ts` beside `listDailyLeaderboard`.
 
-Add focused types:
+Repository types:
 
 ```ts
 export interface WeeklyLeaderboardEntry {
@@ -148,6 +113,7 @@ export interface WeeklyLeaderboardEntry {
   readonly daysPlayed: number;
   readonly totalRounds: number;
   readonly lastSettledAt: number;
+  readonly totalEligible: number;
 }
 
 export interface WeeklyCurrentUserStanding {
@@ -155,7 +121,6 @@ export interface WeeklyCurrentUserStanding {
   readonly totalEligible: number;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
 }
 
 export interface WeeklyLeaderboardRead {
@@ -164,7 +129,7 @@ export interface WeeklyLeaderboardRead {
 }
 ```
 
-Extend the repository interface with:
+Repository interface:
 
 ```ts
 listWeeklyLeaderboard(
@@ -175,21 +140,79 @@ listWeeklyLeaderboard(
 ): Promise<WeeklyLeaderboardRead>;
 ```
 
-Use one shared weekly aggregate/ranking CTE definition for the top-list and current-user reads so ranking semantics cannot drift from display order. Follow the existing Daily pattern for returning top entries, current-user standing, and total eligible, but do not copy Daily's separate rank-window definitions.
+### One-query contract
 
-No schema/index change is planned. The existing Daily leaderboard index already starts with the range-filter columns. Only add an index if later measured query evidence shows a problem.
+Use one aggregate/rank query, not separate top/current/count statements.
+
+Semantic SQL shape:
+
+```sql
+WITH weekly AS (
+  SELECT
+    r.userId,
+    u.name AS playerName,
+    SUM(r.dailyEndingBankroll) AS weeklyScore,
+    COUNT(*) AS daysPlayed,
+    SUM(r.dailyRoundsCompleted) AS totalRounds,
+    MAX(r.settledAt) AS lastSettledAt
+  FROM blackjack_run AS r
+  JOIN user AS u ON u.id = r.userId
+  WHERE r.mode = 'daily'
+    AND r.status = 'completed'
+    AND r.periodKey >= ?1
+    AND r.periodKey < ?2
+  GROUP BY r.userId, u.name
+), ranked AS (
+  SELECT
+    userId,
+    playerName,
+    weeklyScore,
+    daysPlayed,
+    totalRounds,
+    lastSettledAt,
+    RANK() OVER (
+      ORDER BY
+        weeklyScore DESC,
+        daysPlayed DESC,
+        totalRounds DESC,
+        lastSettledAt ASC,
+        userId ASC
+    ) AS rank,
+    COUNT(*) OVER () AS totalEligible
+  FROM weekly
+)
+SELECT
+  userId,
+  playerName,
+  weeklyScore,
+  daysPlayed,
+  totalRounds,
+  lastSettledAt,
+  rank,
+  totalEligible
+FROM ranked
+WHERE rank <= ?3 OR userId = ?4
+ORDER BY rank ASC;
+```
+
+Guests bind `NULL` for `?4`, so only top rows are returned. Authenticated users outside the top limit are returned by the same query. Aggregation, rank, participant count, top rows, and out-of-top standing therefore cannot drift between statements.
+
+Validate all numeric row fields with the existing repository invariant style.
 
 ## Service and HTTP design
 
-The service owns “current week” resolution so clients cannot request arbitrary historical weeks.
+The service owns current-week resolution; clients cannot pass historical dates.
 
 Add:
 
 ```ts
-weeklyLeaderboard(userId: string | null, limit: number): Promise<WeeklyLeaderboardRead>;
+weeklyLeaderboard(
+  userId: string | null,
+  limit: number,
+): Promise<WeeklyLeaderboardRead>;
 ```
 
-`BlackjackRunServiceImpl.weeklyLeaderboard` calls `getDailyWeekWindow(this.nowSeconds())`, then delegates the resulting date-key range to `repository.listWeeklyLeaderboard(...)`.
+The implementation calls `getDailyWeekWindow(this.nowSeconds())` and delegates its two date boundaries to the repository.
 
 Add one public route:
 
@@ -200,13 +223,12 @@ GET /api/blackjack-daily/weekly-leaderboard?limit=50
 The HTTP handler:
 
 - allows guests;
-- reuses the existing leaderboard limit bounds `1..50`, default `50`;
-- takes no week/date parameter;
-- strips `userId` and `lastSettledAt` from public entries;
-- returns `currentUser` only for authenticated users whose completed Daily rows exist this week;
-- returns `cache-control: no-store`, matching the existing Daily leaderboard response.
+- reuses existing leaderboard limit validation `1..50`, default `50`;
+- accepts no week/date parameter;
+- uses the existing `no-store` JSON response;
+- strips repository-only fields.
 
-Public projection:
+Public types:
 
 ```ts
 export interface WeeklyLeaderboardPublicEntry {
@@ -214,46 +236,158 @@ export interface WeeklyLeaderboardPublicEntry {
   readonly playerName: string;
   readonly weeklyScore: number;
   readonly daysPlayed: number;
-  readonly totalRounds: number;
+}
+
+export interface WeeklyCurrentUserPublicStanding {
+  readonly rank: number;
+  readonly totalEligible: number;
+  readonly weeklyScore: number;
+  readonly daysPlayed: number;
 }
 
 export interface WeeklyLeaderboardPublicView {
   readonly entries: readonly WeeklyLeaderboardPublicEntry[];
-  readonly currentUser: WeeklyCurrentUserStanding | null;
+  readonly currentUser: WeeklyCurrentUserPublicStanding | null;
 }
 ```
 
-The route remains a thin adapter under `src/pages/api/blackjack-daily/`.
+The Astro file remains a thin adapter matching the existing Daily leaderboard route.
 
 ## UI design
 
-Keep the current daily board unchanged and add a second section immediately after it on `/games/daily-challenge`.
-
-Copy shape:
+Keep today's board unchanged and add a second section immediately after it:
 
 - eyebrow: `This Week`;
 - heading: `Weekly Results`;
-- helper text: `Monday–Sunday · UTC`;
-- each row: `#<rank> <playerName> <weeklyScore> pts · <daysPlayed>/7 days`;
-- authenticated current standing: `#<rank> · <weeklyScore> pts · <daysPlayed>/7 days`.
+- helper: `Monday–Sunday · UTC`;
+- row: `#1 Alice 3,450 pts · 3/7 days`;
+- current standing: `#4 of 12 · 2,100 pts · 2/7 days`.
 
-Do not add tabs, a date picker, pagination, week navigation, charts, or a new design component.
+Weekly score is intentionally points rather than `$` chips. Add one formatter beside `formatCurrency`:
 
-Extend `src/lib/blackjack-run/daily-ui.ts` with a separate weekly response parser, `renderWeeklyLeaderboard(...)`, and a weekly-local error renderer. Weekly rows use their own `data-testid="daily-challenge-weekly-leaderboard-row"`, mirroring the existing Daily row test seam.
+```ts
+export function formatPoints(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+```
 
-On page initialization, fetch the existing daily leaderboard and current-week leaderboard independently. A weekly fetch failure shows a visible weekly-unavailable message inside the weekly section without hiding or replacing a successfully loaded daily board or gameplay status.
+Use the same formatter for weekly row and standing copy. Unit tests pin its exact formatting. E2E may reuse it for wiring expectations; formatter correctness remains a unit-test responsibility.
 
-## Error and empty-state behavior
+Weekly rows use:
 
-- Empty week: render no rows and hide authenticated standing if the user has no completed result.
-- Guest: render top weekly rows only.
-- Malformed weekly payload: render `Weekly leaderboard is unavailable — refresh to retry.` in the weekly section.
-- Weekly request failure: same weekly-local message; Daily gameplay and today's board remain usable.
-- No retries, backoff, persistence, or offline cache.
+```text
+data-testid="daily-challenge-weekly-leaderboard-row"
+```
 
-## Files
+### Required DOM contract
 
-Expected implementation surface:
+`createDailyRunRenderer` eagerly resolves required elements through `requireElement`. Weekly nodes are part of the page contract and stay required.
+
+Update the shared `makeRoot(...)` fixture in `daily-ui.test.ts` with:
+
+```text
+daily-challenge-weekly-current-standing
+daily-challenge-weekly-error
+daily-challenge-weekly-leaderboard-rows
+```
+
+Do not make weekly nodes optional merely to preserve old tests.
+
+### Empty and error states
+
+Empty week:
+
+```text
+No results yet this week.
+```
+
+Render that as one list item inside the weekly rows container so the section never looks like a broken empty box.
+
+Weekly malformed payload/request failure:
+
+```text
+Weekly leaderboard is unavailable — refresh to retry.
+```
+
+Show it only in the weekly section. Do not route weekly failures through the general gameplay `renderError` surface.
+
+No retries, backoff, persistence, or offline cache.
+
+## Testing strategy
+
+### Week-window unit tests
+
+Pin:
+
+- Monday boundary;
+- Sunday late UTC;
+- next Monday rollover;
+- `2027-01-01` -> `2026-12-28`..<`2027-01-04`;
+- invalid time values.
+
+### Repository integration tests — authoritative ranking proof
+
+Use the real existing seam:
+
+- `createBlackjackRunTestD1` + `insertTestUser` from `src/server/blackjack-run/test-d1.ts`;
+- local `dailyStartInput(...)` in `repository.integration.test.ts`;
+- `repository.createDailyRun(...)`;
+- `repository.finishRun(...)` with explicit `nowSeconds`.
+
+Do not claim `test-d1.ts` provides Daily creation/finish helpers; it does not.
+
+Repository tests prove:
+
+- multiple users and multiple days;
+- previous-week exclusion;
+- Ranked/non-completed exclusion;
+- score/day/round aggregation;
+- all five tie-breakers;
+- exact remaining tie determinism;
+- top limit;
+- out-of-top current user;
+- `totalEligible` is participant count and comes from the same query.
+
+### Service/HTTP tests
+
+Verify current range derivation, guest access, limit validation, absence of historical parameters, public projection, and authenticated current standing.
+
+### Daily UI tests
+
+Verify:
+
+- `makeRoot` contains all required weekly elements;
+- strict weekly payload parsing;
+- `formatPoints`;
+- weekly rows and current standing;
+- `totalEligible` appears in standing copy;
+- empty-week copy;
+- weekly-local request/payload failure;
+- guest weekly request.
+
+### E2E — real product wiring only
+
+Extend the existing Daily Challenge journey without adding a seed endpoint, direct D1 writer, or weekly `page.route` fake.
+
+Verify:
+
+- guest requests the real weekly endpoint and sees the section;
+- existing Practice/Ranked/today-board journey remains intact;
+- after today's real completion, `currentUser` has `daysPlayed = 1` and `weeklyScore` equal to today's ending bankroll;
+- current-standing DOM shows `1/7 days`;
+- only if `currentUser.rank <= 50`, assert a matching top row. Persistent local D1 data may push the fresh user outside the top 50, so the row is not unconditional.
+
+Multi-day ordering and out-of-top behavior remain repository tests.
+
+## Risks and mitigations
+
+- **Ranking semantics drift:** one D1 statement owns aggregation, ranking, participant count, top rows, and current user.
+- **Wrong test seam:** repository tests use their local `dailyStartInput` plus repository methods; no nonexistent test helper is referenced.
+- **Page/test fixture drift:** weekly DOM elements remain required and `makeRoot` is updated before renderer assertions.
+- **Persistent E2E history:** current standing is authoritative; top-row assertion is conditional on rank <= 50.
+- **Scope creep hidden inside existing files:** final review uses an exact changed-file allowlist plus manual runtime diff inspection; schema/migration files are hard-rejected.
+
+## Expected implementation surface
 
 - `src/lib/blackjack-run/daily.ts`
 - `src/lib/blackjack-run/daily.test.ts`
@@ -263,7 +397,7 @@ Expected implementation surface:
 - `src/server/blackjack-run/service.test.ts`
 - `src/server/blackjack-run/http.ts`
 - `src/server/blackjack-run/http.test.ts`
-- `src/pages/api/blackjack-daily/weekly-leaderboard.ts` (new)
+- `src/pages/api/blackjack-daily/weekly-leaderboard.ts`
 - `src/lib/blackjack-run/daily-ui.ts`
 - `src/lib/blackjack-run/daily-ui.test.ts`
 - `src/pages/games/daily-challenge.astro`
@@ -271,74 +405,9 @@ Expected implementation surface:
 
 No database schema or migration file should change.
 
-## Testing strategy
-
-The proof is deliberately split at the seams the repository already has. Do not invent a Playwright database seed backdoor merely to make one E2E cover SQL aggregation.
-
-### Week window unit tests
-
-Pin UTC boundaries:
-
-- Monday at 00:00 UTC resolves to that Monday through next Monday;
-- Sunday late UTC resolves to the same week;
-- the instant of next Monday resolves to the new week;
-- `2027-01-01` resolves to `weekKey: '2026-W53'` with calendar range `2026-12-28` through `2027-01-04` exclusive;
-- invalid time values follow `getDailyWindow` validation.
-
-### Repository integration tests — authoritative multi-day ranking proof
-
-Use `src/server/blackjack-run/test-d1.ts` helpers to seed completed Daily rows across two weeks and verify:
-
-- only current-range rows aggregate;
-- weekly score sums ending bankrolls;
-- days and rounds sum correctly;
-- non-completed Daily rows and Ranked rows are excluded;
-- order follows score → days → rounds → earlier final settlement → user id;
-- exact final ties are deterministic and ranks remain unique;
-- top limit is honored;
-- authenticated current user is returned even when outside the top limit;
-- total eligible counts weekly participants, not source rows.
-
-Multi-user, multi-day ordering and out-of-top standing stop here; these are repository contracts and do not need a second test-only data path through Playwright.
-
-### Service/HTTP tests
-
-Verify:
-
-- service derives the current range from its injected clock;
-- the public endpoint allows guests;
-- `limit` uses existing `1..50` validation;
-- no historical week parameter exists;
-- internal `userId`/`lastSettledAt` do not cross the HTTP boundary;
-- authenticated current standing is present when eligible.
-
-### Daily UI tests
-
-Verify:
-
-- strict parsing of weekly score/day/round fields;
-- weekly rows use `daily-challenge-weekly-leaderboard-row` and render independently of today's board;
-- weekly current standing renders independently;
-- weekly request failure uses only the weekly-local error surface;
-- guests still issue the public weekly request.
-
-### E2E — real product wiring only
-
-Extend the existing `e2e/daily-challenge.spec.ts` journey without adding D1 seeding, a seed endpoint, or a `page.route` weekly JSON fake.
-
-Verify:
-
-- guest page load issues `GET /api/blackjack-daily/weekly-leaderboard` and renders the weekly section without a weekly error;
-- existing Practice/Ranked/Daily-board behavior remains intact;
-- after the signed-in user completes today's real Daily attempt and reloads, the weekly endpoint returns that user with `daysPlayed = 1`, `weeklyScore` equal to today's ending bankroll, and `totalRounds = 10`;
-- the weekly current-standing DOM displays that score and `1/7 days`;
-- at least one weekly row displays that score and `1/7 days`.
-
-The repository integration test, not Playwright, proves multi-day ranking, previous-week exclusion, and current-user standing outside the top limit.
-
 ## Validation
 
-Focused checks during implementation:
+Focused:
 
 ```bash
 bun test src/lib/blackjack-run/daily.test.ts
@@ -349,7 +418,7 @@ bun test src/lib/blackjack-run/daily-ui.test.ts
 bunx playwright test e2e/daily-challenge.spec.ts --workers=1
 ```
 
-Final checks:
+Final:
 
 ```bash
 bun run test
@@ -358,22 +427,14 @@ bun run format:check
 bun run build
 ```
 
-Because no schema change is intended, final scope validation must confirm the diff contains no `src/db/schema.ts` or migration edits and no test-only production seed path.
+Final scope review must confirm:
+
+- no `src/db/schema.ts` or migration changes;
+- only the planned runtime/test files plus the two HPA-177 planning files changed;
+- no historical period input, generic period framework, cache, scheduled job, reward/wallet mutation, or test seed path appears in the runtime diff.
 
 ## Scope guardrails
 
-Do not add:
+Do not add old Daily adapters, monthly boards, seasons, divisions, rewards, cosmetics, notifications, history UI, week picker, snapshots, cron, caches, compatibility work, generic period infrastructure, production test seed endpoints, direct Playwright D1 writers, or weekly response stubs.
 
-- a generic period/competition/season abstraction;
-- another leaderboard table or snapshot model;
-- scheduled jobs or finalization;
-- historical week APIs or UI;
-- a new route page;
-- rewards or wallet writes;
-- old Daily adapters;
-- monthly periods;
-- new caching/retry infrastructure;
-- compatibility layers;
-- a production E2E seed endpoint, direct Playwright D1 writer, or weekly response stub used to claim SQL aggregation coverage.
-
-If implementation requires more than a bounded aggregate query and a second read-only UI projection, simplify before merge.
+If the implementation needs more than a bounded aggregate query plus a second read-only projection, simplify before merge.

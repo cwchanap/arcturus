@@ -80,6 +80,7 @@ interface ServiceCalls {
 	command: unknown[];
 	currentDaily: unknown[];
 	leaderboard: unknown[];
+	weeklyLeaderboard: unknown[];
 }
 
 function fakeService(
@@ -92,6 +93,7 @@ function fakeService(
 		command: [],
 		currentDaily: [],
 		leaderboard: [],
+		weeklyLeaderboard: [],
 	};
 	return {
 		calls,
@@ -133,6 +135,29 @@ function fakeService(
 						},
 					],
 					currentUser: null,
+				}
+			);
+		},
+		async weeklyLeaderboard(userId, limit) {
+			calls.weeklyLeaderboard.push({ userId, limit });
+			return (
+				overrides.weeklyLeaderboard?.(userId, limit) ?? {
+					entries: [
+						{
+							rank: 1,
+							userId: 'weekly-leaderboard-user',
+							playerName: 'Weekly Leader',
+							weeklyScore: 3200,
+							daysPlayed: 3,
+							totalRounds: 27,
+							lastSettledAt: 1_800_001_000,
+							totalEligible: 2,
+						},
+					],
+					currentUser:
+						userId === null
+							? null
+							: { rank: 2, totalEligible: 2, weeklyScore: 1800, daysPlayed: 2 },
 				}
 			);
 		},
@@ -232,6 +257,84 @@ describe('blackjack run HTTP authentication and strict parsing', () => {
 		expect(leaderboard.status).toBe(200);
 		expect(service.calls.currentDaily).toEqual([{ userId: null }]);
 		expect(service.calls.leaderboard).toEqual([{ periodKey: PERIOD_KEY, userId: null, limit: 50 }]);
+	});
+
+	test('weekly leaderboard is guest-readable, defaults to 50, and ignores week/date parameters', async () => {
+		const service = fakeService();
+		const handlers = createBlackjackRunHttpHandlers({
+			createService: () => service,
+		});
+
+		const response = await handlers.weeklyLeaderboard(
+			context({
+				userId: null,
+				periodKey: 'not-a-period',
+				request: makeRequest(
+					'/api/blackjack-daily/weekly-leaderboard?week=not-a-week&date=not-a-date',
+				),
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(service.calls.weeklyLeaderboard).toEqual([{ userId: null, limit: 50 }]);
+		expect((await json(response)).currentUser).toBeNull();
+	});
+
+	test('weekly leaderboard accepts limit 1 and projects only public entry and standing fields', async () => {
+		const service = fakeService();
+		const handlers = createBlackjackRunHttpHandlers({
+			createService: () => service,
+		});
+
+		const response = await handlers.weeklyLeaderboard(
+			context({
+				request: makeRequest('/api/blackjack-daily/weekly-leaderboard?limit=1'),
+			}),
+		);
+
+		expect(response.status).toBe(200);
+		expect(service.calls.weeklyLeaderboard).toEqual([{ userId: USER_ID, limit: 1 }]);
+		const body = await response.json();
+		expect(body).toEqual({
+			entries: [
+				{
+					rank: 1,
+					playerName: 'Weekly Leader',
+					weeklyScore: 3200,
+					daysPlayed: 3,
+				},
+			],
+			currentUser: {
+				rank: 2,
+				totalEligible: 2,
+				weeklyScore: 1800,
+				daysPlayed: 2,
+			},
+		});
+		const entry = (body as { entries: Record<string, unknown>[] }).entries[0];
+		expect(entry).not.toHaveProperty('userId');
+		expect(entry).not.toHaveProperty('totalRounds');
+		expect(entry).not.toHaveProperty('lastSettledAt');
+	});
+
+	test('weekly leaderboard rejects zero, over-limit, and non-numeric limits', async () => {
+		const service = fakeService();
+		const handlers = createBlackjackRunHttpHandlers({
+			createService: () => service,
+		});
+
+		for (const rawLimit of ['0', '51', 'abc']) {
+			const response = await handlers.weeklyLeaderboard(
+				context({
+					userId: null,
+					request: makeRequest(`/api/blackjack-daily/weekly-leaderboard?limit=${rawLimit}`),
+				}),
+			);
+			expect(response.status).toBe(400);
+			expect(await json(response)).toEqual({ error: 'INVALID_REQUEST' });
+		}
+
+		expect(service.calls.weeklyLeaderboard).toEqual([]);
 	});
 
 	test('leaderboard response strips the internal userId from every entry', async () => {

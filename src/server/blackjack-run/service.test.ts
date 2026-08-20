@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Miniflare } from 'miniflare';
 import type { D1Database } from '@cloudflare/workers-types';
 import { createBlackjackRunTestD1, insertTestUser } from './test-d1';
@@ -1133,5 +1133,32 @@ describe('daily lifecycle', () => {
 		expect(standingB.currentUser).toEqual({ rank: 2, totalEligible: 2, percentile: 50 });
 		expect(await readChipBalance()).toBe(1000);
 		expect(await readChipBalance(SECOND_USER)).toBe(1000);
+	});
+});
+
+describe('weekly leaderboard service', () => {
+	test('derives the current UTC week from the injected clock and passes guest identity through', async () => {
+		const { service, repository, setNow } = makeService(randomBytesOf(seedOf(0)));
+		setNow(Math.trunc(Date.parse('2026-08-18T12:00:00Z') / 1000));
+		spyOn(repository, 'listWeeklyLeaderboard').mockResolvedValue({
+			entries: [],
+			currentUser: null,
+		});
+
+		await service.weeklyLeaderboard(USER_ID, 25);
+		await service.weeklyLeaderboard(null, 25);
+
+		expect(repository.listWeeklyLeaderboard).toHaveBeenCalledWith(
+			'2026-08-17',
+			'2026-08-24',
+			25,
+			USER_ID,
+		);
+		expect(repository.listWeeklyLeaderboard).toHaveBeenCalledWith(
+			'2026-08-17',
+			'2026-08-24',
+			25,
+			null,
+		);
 	});
 });

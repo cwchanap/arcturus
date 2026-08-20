@@ -8,6 +8,7 @@ import {
 import {
 	getDailyPeriodKey,
 	getDailyWindow,
+	getDailyWeekWindow,
 	replayDailyRun,
 	DAILY_RUN_CONFIG,
 	type DailyRunReplay,
@@ -33,6 +34,7 @@ import {
 	type BlackjackRunRecord,
 	type BlackjackRunRepository,
 	type DailyLeaderboardRead,
+	type WeeklyLeaderboardRead,
 } from './repository';
 
 export type BlackjackRunServiceErrorCode =
@@ -88,6 +90,7 @@ export interface BlackjackRunService {
 		userId: string | null,
 		limit: number,
 	): Promise<DailyLeaderboardRead>;
+	weeklyLeaderboard(userId: string | null, limit: number): Promise<WeeklyLeaderboardRead>;
 }
 
 // Base64url helpers for run ids and seeds (the module is self-contained and
@@ -263,6 +266,16 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		limit: number,
 	): Promise<DailyLeaderboardRead> {
 		return this.repository.listDailyLeaderboard(periodKey, limit, userId);
+	}
+
+	async weeklyLeaderboard(userId: string | null, limit: number): Promise<WeeklyLeaderboardRead> {
+		const week = getDailyWeekWindow(this.nowSeconds());
+		return this.repository.listWeeklyLeaderboard(
+			week.startPeriodKey,
+			week.endPeriodKeyExclusive,
+			limit,
+			userId,
+		);
 	}
 
 	// --- ranked lifecycle ---

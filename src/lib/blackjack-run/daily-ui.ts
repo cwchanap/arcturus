@@ -145,9 +145,15 @@ function parseSafeInteger(
 	container: Record<string, unknown>,
 	key: string,
 	minimum: number,
+	maximum?: number,
 ): number {
 	const value = container[key];
-	if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
+	if (
+		typeof value !== 'number' ||
+		!Number.isSafeInteger(value) ||
+		value < minimum ||
+		(maximum !== undefined && value > maximum)
+	) {
 		throw new TypeError(`Daily leaderboard field "${key}" is invalid`);
 	}
 	return value;
@@ -201,7 +207,7 @@ export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardV
 			rank: parseSafeInteger(raw, 'rank', 1),
 			playerName: raw.playerName,
 			weeklyScore: parseSafeInteger(raw, 'weeklyScore', 0),
-			daysPlayed: parseSafeInteger(raw, 'daysPlayed', 0),
+			daysPlayed: parseSafeInteger(raw, 'daysPlayed', 0, 7),
 		};
 	});
 	const rawStanding = payload.currentUser;
@@ -217,7 +223,7 @@ export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardV
 			rank: parseSafeInteger(rawStanding, 'rank', 1),
 			totalEligible: parseSafeInteger(rawStanding, 'totalEligible', 1),
 			weeklyScore: parseSafeInteger(rawStanding, 'weeklyScore', 0),
-			daysPlayed: parseSafeInteger(rawStanding, 'daysPlayed', 0),
+			daysPlayed: parseSafeInteger(rawStanding, 'daysPlayed', 0, 7),
 		},
 	};
 }

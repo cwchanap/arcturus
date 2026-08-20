@@ -3,6 +3,7 @@ import {
 	blackjackRunPublicStateSchema,
 	type BlackjackRunPublicState,
 } from '../src/lib/blackjack-run/protocol';
+import { formatPoints } from '../src/lib/blackjack-run/daily-ui';
 import { createIsolatedPage } from './isolated-page';
 
 /**
@@ -23,6 +24,7 @@ import { createIsolatedPage } from './isolated-page';
 const DAILY_CHALLENGE_PAGE = '/games/daily-challenge';
 const RUNS_BASE = '/api/blackjack-runs';
 const GUEST_CURRENT_PATH = '/api/blackjack-daily/current';
+const WEEKLY_LEADERBOARD_PATH = '/api/blackjack-daily/weekly-leaderboard';
 const ROUND_COUNT = 10;
 const RANKED_WAGER = 10;
 const RUN_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
@@ -76,6 +78,10 @@ function isDailyLeaderboard(url: string, method: string): boolean {
 		/^\/api\/blackjack-daily\/\d{4}-\d{2}-\d{2}\/leaderboard$/.test(pathname(url)) &&
 		method === 'GET'
 	);
+}
+
+function isWeeklyLeaderboard(url: string, method: string): boolean {
+	return pathname(url) === WEEKLY_LEADERBOARD_PATH && method === 'GET';
 }
 
 function isLegacyDailyEndpoint(url: string): boolean {
@@ -211,6 +217,9 @@ test.describe('daily challenge — guest surface and browser-local practice', ()
 		const requestedUrls = recordVisitedUrls(page);
 
 		try {
+			const guestWeeklyResponse = page.waitForResponse((response) =>
+				isWeeklyLeaderboard(response.url(), response.request().method()),
+			);
 			const [guestCurrent, leaderboard] = await Promise.all([
 				page.waitForResponse((response) =>
 					isGuestCurrent(response.url(), response.request().method()),
@@ -220,6 +229,10 @@ test.describe('daily challenge — guest surface and browser-local practice', ()
 				),
 				page.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
 			]);
+
+			expect((await guestWeeklyResponse).ok()).toBe(true);
+			await expect(page.getByTestId('daily-challenge-weekly-leaderboard')).toBeVisible();
+			await expect(page.getByTestId('daily-challenge-weekly-error')).toBeHidden();
 
 			// Proof 1: the Task 5 guest surface answers a definitive 404
 			// RUN_NOT_FOUND, and the leaderboard is guest-readable.
@@ -458,13 +471,18 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 
 			// Proofs 6 + 7: the eligible terminal appears in the leaderboard,
 			// and the current-user standing renders rank/totalEligible/percentile.
-			const leaderboardReload = page.waitForResponse((response) =>
+			const dailyLeaderboardReload = page.waitForResponse((response) =>
 				isDailyLeaderboard(response.url(), response.request().method()),
 			);
+			const weeklyLeaderboardReload = page.waitForResponse((response) =>
+				isWeeklyLeaderboard(response.url(), response.request().method()),
+			);
 			await page.reload({ waitUntil: 'domcontentloaded' });
-			const leaderboardResponse = await leaderboardReload;
-			expect(leaderboardResponse.ok()).toBe(true);
-			const leaderboard = (await leaderboardResponse.json()) as {
+			const dailyLeaderboardResponse = await dailyLeaderboardReload;
+			const weeklyLeaderboardResponse = await weeklyLeaderboardReload;
+			expect(dailyLeaderboardResponse.ok()).toBe(true);
+			expect(weeklyLeaderboardResponse.ok()).toBe(true);
+			const leaderboard = (await dailyLeaderboardResponse.json()) as {
 				entries: Array<{ dailyEndingBankroll: number }>;
 				currentUser: { rank: number; totalEligible: number; percentile: number } | null;
 			};
@@ -491,6 +509,40 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 				.filter({ hasText: formatCurrency(receiptBankroll as number) })
 				.count();
 			expect(matchingRows).toBeGreaterThanOrEqual(1);
+
+			const weekly = (await weeklyLeaderboardResponse.json()) as {
+				entries: Array<{
+					rank: number;
+					playerName: string;
+					weeklyScore: number;
+					daysPlayed: number;
+				}>;
+				currentUser: {
+					rank: number;
+					totalEligible: number;
+					weeklyScore: number;
+					daysPlayed: number;
+				} | null;
+			};
+			expect(weekly.currentUser).not.toBeNull();
+			expect(weekly.currentUser).toMatchObject({
+				weeklyScore: receiptBankroll as number,
+				daysPlayed: 1,
+			});
+
+			const standing = weekly.currentUser!;
+			await expect(page.getByTestId('daily-challenge-weekly-current-standing')).toHaveText(
+				`#${standing.rank} of ${standing.totalEligible} · ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+			);
+			if (standing.rank <= 50) {
+				const matchingRows = await page
+					.getByTestId('daily-challenge-weekly-leaderboard-row')
+					.filter({
+						hasText: `${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+					})
+					.count();
+				expect(matchingRows).toBeGreaterThanOrEqual(1);
+			}
 
 			// Proof 8: the one attempt per period is spent. The UI forbids a
 			// restart and the server returns the same completed run.

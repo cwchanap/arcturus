@@ -143,6 +143,29 @@ export interface DailyLeaderboardRead {
 	currentUser: DailyCurrentUserStanding | null;
 }
 
+export interface WeeklyLeaderboardEntry {
+	readonly rank: number;
+	readonly userId: string;
+	readonly playerName: string;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+	readonly totalRounds: number;
+	readonly lastSettledAt: number;
+	readonly totalEligible: number;
+}
+
+export interface WeeklyCurrentUserStanding {
+	readonly rank: number;
+	readonly totalEligible: number;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+}
+
+export interface WeeklyLeaderboardRead {
+	readonly entries: readonly WeeklyLeaderboardEntry[];
+	readonly currentUser: WeeklyCurrentUserStanding | null;
+}
+
 export interface BlackjackRunRepository {
 	createRankedRunWithStake(
 		input: CreateRankedRunWithStakeInput,
@@ -173,6 +196,12 @@ export interface BlackjackRunRepository {
 		limit: number,
 		userId?: string | null,
 	): Promise<DailyLeaderboardRead>;
+	listWeeklyLeaderboard(
+		startPeriodKey: string,
+		endPeriodKeyExclusive: string,
+		limit: number,
+		userId?: string | null,
+	): Promise<WeeklyLeaderboardRead>;
 }
 
 // Page size for listExpiredPage; callers pass their own limit, bounded here.
@@ -183,6 +212,8 @@ type BlackjackRunRow = Omit<BlackjackRunRecord, 'mode' | 'status' | 'commands'> 
 	status: string;
 	commandsJson: string;
 };
+
+type WeeklyLeaderboardRow = WeeklyLeaderboardEntry;
 
 const blackjackRunCommandLogSchema = z.array(blackjackRunCommandSchema);
 
@@ -315,6 +346,53 @@ const LIST_EXPIRED_FIRST_SQL = `SELECT id, expiresAt
 	WHERE status = 'active' AND expiresAt <= ?
 	ORDER BY expiresAt ASC, id ASC
 	LIMIT ?`;
+
+const WEEKLY_LEADERBOARD_SQL = `WITH weekly AS (
+	SELECT
+		r.userId,
+		u.name AS playerName,
+		SUM(r.dailyEndingBankroll) AS weeklyScore,
+		COUNT(*) AS daysPlayed,
+		SUM(r.dailyRoundsCompleted) AS totalRounds,
+		MAX(r.settledAt) AS lastSettledAt
+	FROM blackjack_run AS r
+	JOIN user AS u ON u.id = r.userId
+	WHERE r.mode = 'daily'
+		AND r.status = 'completed'
+		AND r.periodKey >= ?1
+		AND r.periodKey < ?2
+	GROUP BY r.userId, u.name
+), ranked AS (
+	SELECT
+		userId,
+		playerName,
+		weeklyScore,
+		daysPlayed,
+		totalRounds,
+		lastSettledAt,
+		RANK() OVER (
+			ORDER BY
+				weeklyScore DESC,
+				daysPlayed DESC,
+				totalRounds DESC,
+				lastSettledAt ASC,
+				userId ASC
+		) AS rank,
+		COUNT(*) OVER () AS totalEligible
+	FROM weekly
+)
+SELECT
+	userId,
+	playerName,
+	weeklyScore,
+	daysPlayed,
+	totalRounds,
+	lastSettledAt,
+	rank,
+	totalEligible
+FROM ranked
+WHERE rank <= ?3 OR userId = ?4
+ORDER BY rank ASC`;
 
 const LIST_EXPIRED_CURSOR_SQL = `SELECT id, expiresAt
 	FROM blackjack_run
@@ -767,6 +845,45 @@ export function createBlackjackRunRepository(db: D1Database): BlackjackRunReposi
 			}
 			const percentile = calculateDailyPercentile(totalEligible, rank - 1);
 			return { entries, currentUser: { rank, totalEligible, percentile } };
+		},
+		async listWeeklyLeaderboard(startPeriodKey, endPeriodKeyExclusive, limit, userId) {
+			if (!Number.isSafeInteger(limit) || limit < 1) {
+				return invariant('Invalid blackjack run leaderboard limit');
+			}
+			const rows = await db
+				.prepare(WEEKLY_LEADERBOARD_SQL)
+				.bind(startPeriodKey, endPeriodKeyExclusive, limit, userId ?? null)
+				.all<WeeklyLeaderboardRow>();
+			const parsed = rows.results.map((row) => {
+				assertSafeNonNegativeInteger(row.rank, 'weekly leaderboard rank');
+				if (row.rank < 1) return invariant('Invalid blackjack run weekly leaderboard rank');
+				assertSafeNonNegativeInteger(row.weeklyScore, 'weekly leaderboard score');
+				assertSafeNonNegativeInteger(row.daysPlayed, 'weekly leaderboard days played');
+				if (row.daysPlayed < 1) {
+					return invariant('Invalid blackjack run weekly leaderboard days played');
+				}
+				assertSafeNonNegativeInteger(row.totalRounds, 'weekly leaderboard total rounds');
+				assertSafeNonNegativeInteger(row.lastSettledAt, 'weekly leaderboard last settledAt');
+				assertSafeNonNegativeInteger(row.totalEligible, 'weekly leaderboard total eligible');
+				if (row.totalEligible < 1) {
+					return invariant('Invalid blackjack run weekly leaderboard total eligible');
+				}
+				return row;
+			});
+			const entries = parsed.filter((row) => row.rank <= limit);
+			const own = userId ? (parsed.find((row) => row.userId === userId) ?? null) : null;
+
+			return {
+				entries,
+				currentUser: own
+					? {
+							rank: own.rank,
+							totalEligible: own.totalEligible,
+							weeklyScore: own.weeklyScore,
+							daysPlayed: own.daysPlayed,
+						}
+					: null,
+			};
 		},
 	};
 }

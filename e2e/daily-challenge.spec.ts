@@ -535,11 +535,12 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 				`#${standing.rank} of ${standing.totalEligible} · ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
 			);
 			if (standing.rank <= 50) {
+				// Row text is `#rank playerName score pts · N/7 days`; rank and score
+				// are matched as separate substrings because playerName sits between.
 				const matchingRows = await page
 					.getByTestId('daily-challenge-weekly-leaderboard-row')
-					.filter({
-						hasText: `#${standing.rank} ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
-					})
+					.filter({ hasText: `#${standing.rank} ` })
+					.filter({ hasText: `${formatPoints(standing.weeklyScore)} pts · 1/7 days` })
 					.count();
 				expect(matchingRows).toBeGreaterThanOrEqual(1);
 			}

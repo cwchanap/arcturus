@@ -79,6 +79,41 @@ function dailyStartInput(overrides: Partial<CreateDailyRunInput> = {}): CreateDa
 	};
 }
 
+async function completeDailyRun(input: {
+	userId: string;
+	runSequence: number;
+	periodKey: string;
+	endingBankroll: number;
+	roundsCompleted: number;
+	settledAt: number;
+}): Promise<void> {
+	const id = runId(input.runSequence);
+	expect(
+		await repository.createDailyRun(
+			dailyStartInput({
+				userId: input.userId,
+				id,
+				periodKey: input.periodKey,
+				startRequestId: `request-${id}`,
+			}),
+		),
+	).toEqual({ kind: 'created' });
+
+	expect(
+		await repository.finishRun({
+			userId: input.userId,
+			runId: id,
+			mode: 'daily',
+			expectedSequence: 0,
+			status: 'completed',
+			resultJson: '{}',
+			dailyEndingBankroll: input.endingBankroll,
+			dailyRoundsCompleted: input.roundsCompleted,
+			nowSeconds: input.settledAt,
+		}),
+	).toEqual({ kind: 'applied' });
+}
+
 async function readBalance(userId: string = USER_ID): Promise<{ chipBalance: number }> {
 	const row = await db
 		.prepare('SELECT chipBalance FROM user WHERE id = ?')
@@ -630,6 +665,226 @@ describe('daily leaderboard', () => {
 		const other = await repository.listDailyLeaderboard('2026-10-12', 50, 'leader-a');
 		expect(other.entries).toEqual([]);
 		expect(other.currentUser).toBeNull();
+	});
+});
+
+describe('weekly leaderboard', () => {
+	test('aggregates current-week completed Daily runs and returns an out-of-top current user', async () => {
+		const aliceId = 'weekly-alice';
+		const bobId = 'weekly-bob';
+		const carolId = 'weekly-carol';
+		const daveId = 'weekly-dave';
+		const rankedId = 'weekly-ranked';
+		const incompleteId = 'weekly-incomplete';
+		await insertTestUser(db, { id: aliceId, name: 'Alice' });
+		await insertTestUser(db, { id: bobId, name: 'Bob' });
+		await insertTestUser(db, { id: carolId, name: 'Carol' });
+		await insertTestUser(db, { id: daveId, name: 'Dave' });
+		await insertTestUser(db, { id: rankedId, name: 'Ranked' });
+		await insertTestUser(db, { id: incompleteId, name: 'Incomplete' });
+
+		await completeDailyRun({
+			userId: aliceId,
+			runSequence: 100,
+			periodKey: '2026-08-17',
+			endingBankroll: 1200,
+			roundsCompleted: 10,
+			settledAt: 100,
+		});
+		await completeDailyRun({
+			userId: aliceId,
+			runSequence: 101,
+			periodKey: '2026-08-18',
+			endingBankroll: 900,
+			roundsCompleted: 8,
+			settledAt: 200,
+		});
+		await completeDailyRun({
+			userId: bobId,
+			runSequence: 102,
+			periodKey: '2026-08-17',
+			endingBankroll: 2200,
+			roundsCompleted: 10,
+			settledAt: 150,
+		});
+		await completeDailyRun({
+			userId: carolId,
+			runSequence: 103,
+			periodKey: '2026-08-17',
+			endingBankroll: 1100,
+			roundsCompleted: 7,
+			settledAt: 120,
+		});
+		await completeDailyRun({
+			userId: carolId,
+			runSequence: 104,
+			periodKey: '2026-08-18',
+			endingBankroll: 1000,
+			roundsCompleted: 7,
+			settledAt: 180,
+		});
+		await completeDailyRun({
+			userId: daveId,
+			runSequence: 105,
+			periodKey: '2026-08-16',
+			endingBankroll: 9999,
+			roundsCompleted: 10,
+			settledAt: 90,
+		});
+
+		expect(
+			await repository.createRankedRunWithStake({
+				...rankedStartInput({ userId: rankedId, id: runId(106) }),
+			}),
+		).toEqual({ kind: 'applied' });
+		expect(
+			await repository.createDailyRun(
+				dailyStartInput({
+					userId: incompleteId,
+					id: runId(107),
+					periodKey: '2026-08-19',
+				}),
+			),
+		).toEqual({ kind: 'created' });
+
+		const read = await repository.listWeeklyLeaderboard('2026-08-17', '2026-08-24', 2, carolId);
+
+		expect(
+			read.entries.map((entry) => ({
+				name: entry.playerName,
+				score: entry.weeklyScore,
+				days: entry.daysPlayed,
+			})),
+		).toEqual([
+			{ name: 'Bob', score: 2200, days: 1 },
+			{ name: 'Alice', score: 2100, days: 2 },
+		]);
+
+		expect(read.currentUser).toEqual({
+			rank: 3,
+			totalEligible: 3,
+			weeklyScore: 2100,
+			daysPlayed: 2,
+		});
+		expect(read.entries.every((entry) => entry.totalEligible === 3)).toBe(true);
+	});
+
+	test('orders equal weekly scores by days, rounds, settled time, and user id', async () => {
+		const fixtures = [
+			{
+				id: 'tie-days-more',
+				name: 'Days More',
+				score: 1000,
+				rounds: 3,
+				settledAt: 100,
+				periodKey: '2026-08-17',
+				runSequence: 200,
+			},
+			{
+				id: 'tie-days-more',
+				name: 'Days More',
+				score: 1000,
+				rounds: 3,
+				settledAt: 200,
+				periodKey: '2026-08-18',
+				runSequence: 201,
+			},
+			{
+				id: 'tie-days-fewer',
+				name: 'Days Fewer',
+				score: 2000,
+				rounds: 10,
+				settledAt: 50,
+				periodKey: '2026-08-17',
+				runSequence: 202,
+			},
+			{
+				id: 'tie-rounds-more',
+				name: 'Rounds More',
+				score: 1900,
+				rounds: 10,
+				settledAt: 300,
+				periodKey: '2026-08-17',
+				runSequence: 203,
+			},
+			{
+				id: 'tie-rounds-fewer',
+				name: 'Rounds Fewer',
+				score: 1900,
+				rounds: 8,
+				settledAt: 100,
+				periodKey: '2026-08-17',
+				runSequence: 204,
+			},
+			{
+				id: 'tie-settled-earlier',
+				name: 'Settled Earlier',
+				score: 1800,
+				rounds: 8,
+				settledAt: 400,
+				periodKey: '2026-08-17',
+				runSequence: 205,
+			},
+			{
+				id: 'tie-settled-later',
+				name: 'Settled Later',
+				score: 1800,
+				rounds: 8,
+				settledAt: 500,
+				periodKey: '2026-08-17',
+				runSequence: 206,
+			},
+			{
+				id: 'tie-user-a',
+				name: 'User A',
+				score: 1700,
+				rounds: 8,
+				settledAt: 600,
+				periodKey: '2026-08-17',
+				runSequence: 207,
+			},
+			{
+				id: 'tie-user-b',
+				name: 'User B',
+				score: 1700,
+				rounds: 8,
+				settledAt: 600,
+				periodKey: '2026-08-17',
+				runSequence: 208,
+			},
+		] as const;
+
+		const insertedUserIds = new Set<string>();
+		for (const fixture of fixtures) {
+			if (!insertedUserIds.has(fixture.id)) {
+				await insertTestUser(db, { id: fixture.id, name: fixture.name });
+				insertedUserIds.add(fixture.id);
+			}
+			await completeDailyRun({
+				userId: fixture.id,
+				runSequence: fixture.runSequence,
+				periodKey: fixture.periodKey,
+				endingBankroll: fixture.score,
+				roundsCompleted: fixture.rounds,
+				settledAt: fixture.settledAt,
+			});
+		}
+
+		const first = await repository.listWeeklyLeaderboard('2026-08-17', '2026-08-24', 50);
+		const second = await repository.listWeeklyLeaderboard('2026-08-17', '2026-08-24', 50);
+		const expected = [
+			{ userId: 'tie-days-more', rank: 1 },
+			{ userId: 'tie-days-fewer', rank: 2 },
+			{ userId: 'tie-rounds-more', rank: 3 },
+			{ userId: 'tie-rounds-fewer', rank: 4 },
+			{ userId: 'tie-settled-earlier', rank: 5 },
+			{ userId: 'tie-settled-later', rank: 6 },
+			{ userId: 'tie-user-a', rank: 7 },
+			{ userId: 'tie-user-b', rank: 8 },
+		];
+		expect(first.entries.map(({ userId, rank }) => ({ userId, rank }))).toEqual(expected);
+		expect(second.entries.map(({ userId, rank }) => ({ userId, rank }))).toEqual(expected);
+		expect(new Set(first.entries.map((entry) => entry.rank)).size).toBe(expected.length);
 	});
 });
 

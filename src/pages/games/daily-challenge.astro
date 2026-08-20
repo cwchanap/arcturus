@@ -300,6 +300,32 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 			</ol>
 		</section>
 
+		<section class="mb-10" data-testid="daily-challenge-weekly-leaderboard">
+			<div class="mb-4">
+				<p class="deco-section-eyebrow">This Week</p>
+				<h2 class="deco-section-title text-3xl">Weekly Results</h2>
+				<p class="mt-2 text-sm text-[var(--deco-muted)]">Monday–Sunday · UTC</p>
+			</div>
+			<p
+				data-testid="daily-challenge-weekly-current-standing"
+				class="mb-3 inline-block rounded-lg border border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)]"
+				hidden
+			>
+			</p>
+			<p
+				data-testid="daily-challenge-weekly-error"
+				role="status"
+				class="mb-3 text-sm text-[var(--deco-muted)]"
+				hidden
+			>
+			</p>
+			<ol
+				data-testid="daily-challenge-weekly-leaderboard-rows"
+				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
+			>
+			</ol>
+		</section>
+
 		<noscript>
 			<div class="deco-panel deco-frame mt-10 p-6 text-center text-sm text-[var(--deco-muted)]">
 				The Daily Challenge needs JavaScript to play the local practice scenario, your ranked

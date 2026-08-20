@@ -5,10 +5,15 @@ import { DAILY_RUN_CONFIG, replayDailyRun } from './daily';
 import type { BlackjackAction, BlackjackRunPublicState } from './protocol';
 import {
 	createDailyRunRenderer,
+	DAILY_LEADERBOARD_PATH_PREFIX,
+	DAILY_WEEKLY_LEADERBOARD_PATH,
+	formatPoints,
 	initDailyChallengePage,
+	parseWeeklyLeaderboardView,
 	type DailyLeaderboardView,
 	type DailyRunRenderer,
 	type DailyRunState,
+	type WeeklyLeaderboardView,
 } from './daily-ui';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -128,6 +133,25 @@ const LEADERBOARD_PAYLOAD = {
 
 const EMPTY_LEADERBOARD: DailyLeaderboardView = { entries: [], currentUser: null };
 
+const WEEKLY_LEADERBOARD_PAYLOAD = {
+	entries: [
+		{
+			rank: 1,
+			playerName: 'Alice',
+			weeklyScore: 3450,
+			daysPlayed: 3,
+		},
+	],
+	currentUser: {
+		rank: 4,
+		totalEligible: 12,
+		weeklyScore: 2100,
+		daysPlayed: 2,
+	},
+};
+
+const EMPTY_WEEKLY_LEADERBOARD: WeeklyLeaderboardView = { entries: [], currentUser: null };
+
 // --- DOM fixtures ---
 
 function makeRoot(authenticated: boolean): HTMLElement {
@@ -171,6 +195,9 @@ function makeRoot(authenticated: boolean): HTMLElement {
 		</section>
 		<p data-testid="daily-challenge-current-standing" hidden></p>
 		<ol data-testid="daily-challenge-leaderboard-rows"></ol>
+		<p data-testid="daily-challenge-weekly-current-standing" hidden></p>
+		<p data-testid="daily-challenge-weekly-error" hidden></p>
+		<ol data-testid="daily-challenge-weekly-leaderboard-rows"></ol>
 	`;
 	document.body.appendChild(root);
 	return root;
@@ -199,7 +226,14 @@ interface FetchLog {
 
 let fetchLog: FetchLog[];
 
-function installFetch(leaderboardPayload: unknown = LEADERBOARD_PAYLOAD): void {
+function installFetch(
+	options: {
+		dailyPayload?: unknown;
+		weeklyPayload?: unknown;
+		dailyStatus?: number;
+		weeklyStatus?: number;
+	} = {},
+): void {
 	fetchLog = [];
 	const fetchImpl = mock((input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -212,10 +246,18 @@ function installFetch(leaderboardPayload: unknown = LEADERBOARD_PAYLOAD): void {
 				}),
 			);
 		}
-		if (url.endsWith('/leaderboard')) {
+		if (url === DAILY_WEEKLY_LEADERBOARD_PATH) {
 			return Promise.resolve(
-				new Response(JSON.stringify(leaderboardPayload), {
-					status: 200,
+				new Response(JSON.stringify(options.weeklyPayload ?? WEEKLY_LEADERBOARD_PAYLOAD), {
+					status: options.weeklyStatus ?? 200,
+					headers: { 'content-type': 'application/json' },
+				}),
+			);
+		}
+		if (url === `${DAILY_LEADERBOARD_PATH_PREFIX}/${PERIOD_KEY}/leaderboard`) {
+			return Promise.resolve(
+				new Response(JSON.stringify(options.dailyPayload ?? LEADERBOARD_PAYLOAD), {
+					status: options.dailyStatus ?? 200,
 					headers: { 'content-type': 'application/json' },
 				}),
 			);
@@ -241,6 +283,67 @@ afterEach(() => {
 		element.remove();
 	}
 	happyWindow.localStorage.clear();
+});
+
+describe('weekly leaderboard view model', () => {
+	test('formats points with grouped thousands', () => {
+		expect(formatPoints(3450)).toBe('3,450');
+	});
+
+	test('parses the weekly leaderboard response without totalRounds', () => {
+		expect(parseWeeklyLeaderboardView(WEEKLY_LEADERBOARD_PAYLOAD)).toEqual({
+			entries: [
+				{
+					rank: 1,
+					playerName: 'Alice',
+					weeklyScore: 3450,
+					daysPlayed: 3,
+				},
+			],
+			currentUser: {
+				rank: 4,
+				totalEligible: 12,
+				weeklyScore: 2100,
+				daysPlayed: 2,
+			},
+		});
+	});
+
+	test('rejects malformed and invalid weekly numeric fields', () => {
+		const entry = {
+			rank: 1,
+			playerName: 'Alice',
+			weeklyScore: 3450,
+			daysPlayed: 3,
+		};
+		const standing = {
+			rank: 4,
+			totalEligible: 12,
+			weeklyScore: 2100,
+			daysPlayed: 2,
+		};
+		const invalidPayloads: unknown[] = [
+			null,
+			{ entries: 'not-an-array', currentUser: null },
+			{ entries: [{ ...entry, playerName: 42 }], currentUser: null },
+			{ entries: [{ ...entry, rank: 1.5 }], currentUser: null },
+			{ entries: [{ ...entry, rank: -1 }], currentUser: null },
+			{ entries: [{ ...entry, weeklyScore: 1.5 }], currentUser: null },
+			{ entries: [{ ...entry, weeklyScore: -1 }], currentUser: null },
+			{ entries: [{ ...entry, daysPlayed: 1.5 }], currentUser: null },
+			{ entries: [{ ...entry, daysPlayed: -1 }], currentUser: null },
+			{ entries: [entry], currentUser: 'not-an-object' },
+			{ entries: [entry], currentUser: { ...standing, rank: -1 } },
+			{ entries: [entry], currentUser: { ...standing, totalEligible: 1.5 } },
+			{ entries: [entry], currentUser: { ...standing, totalEligible: -1 } },
+			{ entries: [entry], currentUser: { ...standing, weeklyScore: -1 } },
+			{ entries: [entry], currentUser: { ...standing, daysPlayed: -1 } },
+		];
+
+		for (const payload of invalidPayloads) {
+			expect(() => parseWeeklyLeaderboardView(payload)).toThrow(TypeError);
+		}
+	});
 });
 
 // --- client fixture ---
@@ -325,6 +428,20 @@ describe('daily page — guest bootstrap and local practice', () => {
 		expect(rows[0]?.textContent).toBe(`#1 Alice ${formatCurrency(1200)}`);
 		expect(rows[1]?.textContent).toBe(`#2 Bob ${formatCurrency(980)}`);
 		expect(get(root, 'daily-challenge-current-standing').hidden).toBe(true);
+		const weeklyRows = root.querySelectorAll(
+			'[data-testid="daily-challenge-weekly-leaderboard-row"]',
+		);
+		expect(weeklyRows).toHaveLength(1);
+		expect(weeklyRows[0]?.textContent).toBe('#1 Alice 3,450 pts · 3/7 days');
+		expect(get(root, 'daily-challenge-weekly-current-standing').hidden).toBe(false);
+		expect(get(root, 'daily-challenge-weekly-current-standing').textContent).toBe(
+			'#4 of 12 · 2,100 pts · 2/7 days',
+		);
+		expect(
+			fetchLog.some(
+				(entry) => entry.url === DAILY_WEEKLY_LEADERBOARD_PATH && entry.method === 'GET',
+			),
+		).toBe(true);
 	});
 
 	test('practice plays entirely locally: no run API calls, no localStorage', async () => {
@@ -417,6 +534,11 @@ describe('daily page — guest bootstrap and local practice', () => {
 					new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), { status: 500 }),
 				);
 			}
+			if (url === DAILY_WEEKLY_LEADERBOARD_PATH) {
+				return Promise.resolve(
+					new Response(JSON.stringify(WEEKLY_LEADERBOARD_PAYLOAD), { status: 200 }),
+				);
+			}
 			return Promise.resolve(
 				new Response(JSON.stringify(LEADERBOARD_PAYLOAD), {
 					status: 200,
@@ -446,6 +568,24 @@ describe('daily page — guest bootstrap and local practice', () => {
 		// indistinguishably empty leaderboard.
 		expect(get(root, 'daily-challenge-status').textContent).toBe(
 			'Daily leaderboard is unavailable — refresh to retry.',
+		);
+	});
+
+	test('keeps today rendered when the weekly leaderboard request fails', async () => {
+		installFetch({ weeklyStatus: 503 });
+		const root = makeRoot(false);
+
+		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
+
+		expect(root.querySelectorAll('[data-testid="daily-challenge-leaderboard-row"]')).toHaveLength(
+			2,
+		);
+		expect(get(root, 'daily-challenge-status').textContent).toBe(
+			'Start a round to begin practice.',
+		);
+		expect(get(root, 'daily-challenge-weekly-error').hidden).toBe(false);
+		expect(get(root, 'daily-challenge-weekly-error').textContent).toBe(
+			'Weekly leaderboard is unavailable — refresh to retry.',
 		);
 	});
 
@@ -666,8 +806,10 @@ describe('daily page — authenticated ranked flow', () => {
 
 	test('renders the current-user standing with rank, totalEligible, and percentile', async () => {
 		installFetch({
-			entries: LEADERBOARD_PAYLOAD.entries,
-			currentUser: { rank: 2, totalEligible: 3, percentile: 67 },
+			dailyPayload: {
+				entries: LEADERBOARD_PAYLOAD.entries,
+				currentUser: { rank: 2, totalEligible: 3, percentile: 67 },
+			},
 		});
 		const root = makeRoot(true);
 		const client = createMockClient({ loadCurrent: null });
@@ -768,5 +910,60 @@ describe('daily run renderer — direct DOM behavior', () => {
 		const dealerCards = root.querySelectorAll('[data-testid="daily-challenge-dealer-card"]');
 		expect(dealerCards.length).toBeLessThanOrEqual(1);
 		expect(root.querySelector('[aria-label*="face down" i]')).toBeNull();
+	});
+
+	test('renders weekly rows and the current standing with points and days played', () => {
+		renderer.renderWeeklyLeaderboardError('old weekly error');
+		renderer.renderWeeklyLeaderboard(parseWeeklyLeaderboardView(WEEKLY_LEADERBOARD_PAYLOAD));
+
+		const rows = root.querySelectorAll('[data-testid="daily-challenge-weekly-leaderboard-row"]');
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.textContent).toBe('#1 Alice 3,450 pts · 3/7 days');
+		expect(get(root, 'daily-challenge-weekly-current-standing').hidden).toBe(false);
+		expect(get(root, 'daily-challenge-weekly-current-standing').textContent).toBe(
+			'#4 of 12 · 2,100 pts · 2/7 days',
+		);
+		expect(get(root, 'daily-challenge-weekly-error').hidden).toBe(true);
+		expect(get(root, 'daily-challenge-weekly-error').textContent).toBe('');
+	});
+
+	test('renders exactly one weekly empty-state item when there are no entries', () => {
+		renderer.renderWeeklyLeaderboard(EMPTY_WEEKLY_LEADERBOARD);
+
+		const rows = root.querySelectorAll(
+			'[data-testid="daily-challenge-weekly-leaderboard-rows"] > li',
+		);
+		expect(rows).toHaveLength(1);
+		expect(rows[0]?.dataset.testid).toBe('daily-challenge-weekly-empty');
+		expect(rows[0]?.textContent).toBe('No results yet this week.');
+		expect(get(root, 'daily-challenge-weekly-current-standing').hidden).toBe(true);
+	});
+
+	test('renders weekly errors without changing today status or leaderboard DOM', () => {
+		renderer.renderLeaderboard({
+			entries: [
+				{
+					rank: 1,
+					playerName: 'Today',
+					endingBankroll: 1200,
+					roundsCompleted: 10,
+				},
+			],
+			currentUser: null,
+		});
+		get(root, 'daily-challenge-status').textContent = 'Today status';
+		renderer.renderWeeklyLeaderboard(parseWeeklyLeaderboardView(WEEKLY_LEADERBOARD_PAYLOAD));
+		const todayRows = get(root, 'daily-challenge-leaderboard-rows').textContent;
+		const weeklyRows = get(root, 'daily-challenge-weekly-leaderboard-rows').textContent;
+
+		renderer.renderWeeklyLeaderboardError('Weekly leaderboard is unavailable — refresh to retry.');
+
+		expect(get(root, 'daily-challenge-weekly-error').hidden).toBe(false);
+		expect(get(root, 'daily-challenge-weekly-error').textContent).toBe(
+			'Weekly leaderboard is unavailable — refresh to retry.',
+		);
+		expect(get(root, 'daily-challenge-status').textContent).toBe('Today status');
+		expect(get(root, 'daily-challenge-leaderboard-rows').textContent).toBe(todayRows);
+		expect(get(root, 'daily-challenge-weekly-leaderboard-rows').textContent).toBe(weeklyRows);
 	});
 });

@@ -16,7 +16,7 @@ import {
 	type BlackjackAction,
 	type BlackjackRunCommand,
 } from './protocol';
-import { getDailyPeriodKey } from '../missions/periods';
+import { getDailyPeriodKey, getNextWeeklyReset } from '../missions/periods';
 
 export { getDailyPeriodKey };
 
@@ -81,6 +81,31 @@ export function getDailyWindow(nowSeconds: number): DailyWindow {
 	}
 	const periodKey = getDailyPeriodKey(date);
 	return getDailyWindowForPeriodKey(periodKey);
+}
+
+export interface DailyWeekWindow {
+	readonly startPeriodKey: string;
+	readonly endPeriodKeyExclusive: string;
+}
+
+export function getDailyWeekWindow(nowSeconds: number): DailyWeekWindow {
+	if (!Number.isSafeInteger(nowSeconds) || nowSeconds < 0) {
+		throw new TypeError('Daily time must be a non-negative safe integer');
+	}
+
+	const now = new Date(nowSeconds * 1000);
+	if (Number.isNaN(now.getTime())) {
+		throw new RangeError('Daily time must resolve to a valid date');
+	}
+
+	const nextReset = getNextWeeklyReset(now);
+	const start = new Date(nextReset);
+	start.setUTCDate(start.getUTCDate() - 7);
+
+	return {
+		startPeriodKey: getDailyPeriodKey(start),
+		endPeriodKeyExclusive: getDailyPeriodKey(nextReset),
+	};
 }
 
 // --- Deterministic per-round seed derivation ---

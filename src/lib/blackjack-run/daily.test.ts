@@ -8,6 +8,7 @@ import {
 	getDailyPeriodKey,
 	getDailyWindow,
 	getDailyWindowForPeriodKey,
+	getDailyWeekWindow,
 	replayDailyRun,
 	type DailyScore,
 } from './daily';
@@ -674,4 +675,43 @@ describe('calculateDailyPercentile', () => {
 			expect(() => calculateDailyPercentile(10, playersStrictlyAbove)).toThrow(RangeError);
 		},
 	);
+});
+
+describe('getDailyWeekWindow', () => {
+	test('uses Monday 00:00 UTC through the next Monday', () => {
+		const now = Math.trunc(Date.parse('2026-08-17T00:00:00.000Z') / 1000);
+		expect(getDailyWeekWindow(now)).toEqual({
+			startPeriodKey: '2026-08-17',
+			endPeriodKeyExclusive: '2026-08-24',
+		});
+	});
+
+	test('keeps Sunday night inside the same range', () => {
+		const now = Math.trunc(Date.parse('2026-08-23T23:59:59.000Z') / 1000);
+		expect(getDailyWeekWindow(now)).toEqual({
+			startPeriodKey: '2026-08-17',
+			endPeriodKeyExclusive: '2026-08-24',
+		});
+	});
+
+	test('rolls over exactly at next Monday UTC', () => {
+		const now = Math.trunc(Date.parse('2026-08-24T00:00:00.000Z') / 1000);
+		expect(getDailyWeekWindow(now)).toEqual({
+			startPeriodKey: '2026-08-24',
+			endPeriodKeyExclusive: '2026-08-31',
+		});
+	});
+
+	test('uses calendar date boundaries across ISO week-year rollover', () => {
+		const now = Math.trunc(Date.parse('2027-01-01T12:00:00.000Z') / 1000);
+		expect(getDailyWeekWindow(now)).toEqual({
+			startPeriodKey: '2026-12-28',
+			endPeriodKeyExclusive: '2027-01-04',
+		});
+	});
+
+	test('rejects invalid timestamps', () => {
+		expect(() => getDailyWeekWindow(-1)).toThrow(TypeError);
+		expect(() => getDailyWeekWindow(Number.POSITIVE_INFINITY)).toThrow(TypeError);
+	});
 });

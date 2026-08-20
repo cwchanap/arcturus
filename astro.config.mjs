@@ -26,6 +26,11 @@ export default defineConfig({
 	server: {
 		port: 2000,
 	},
+	// The dev toolbar injects overlay DOM (extra <h1>s, audit panels) that breaks
+	// e2e assertions in CI; keep it for local development only.
+	devToolbar: {
+		enabled: !process.env.CI, // eslint-disable-line no-undef
+	},
 	vite: {
 		plugins: [tailwindcss()],
 		ssr: {

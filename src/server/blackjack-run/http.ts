@@ -12,6 +12,7 @@ import {
 	createBlackjackRunRepository,
 	type DailyCurrentUserStanding,
 	type DailyLeaderboardRead,
+	type WeeklyLeaderboardRead,
 } from './repository';
 import {
 	BlackjackRunServiceError,
@@ -35,6 +36,7 @@ export interface BlackjackRunHttpHandlers {
 	command: APIRoute;
 	currentDaily: APIRoute;
 	leaderboard: APIRoute;
+	weeklyLeaderboard: APIRoute;
 }
 
 export type BlackjackRunHttpErrorCode = BlackjackRunServiceErrorCode | BlackjackRunErrorCode;
@@ -86,6 +88,37 @@ function projectDailyLeaderboard(read: DailyLeaderboardRead): DailyLeaderboardPu
 			dailyEndingBankroll: entry.dailyEndingBankroll,
 			dailyRoundsCompleted: entry.dailyRoundsCompleted,
 			settledAt: entry.settledAt,
+		})),
+		currentUser: read.currentUser,
+	};
+}
+
+export interface WeeklyLeaderboardPublicEntry {
+	readonly rank: number;
+	readonly playerName: string;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+}
+
+export interface WeeklyCurrentUserPublicStanding {
+	readonly rank: number;
+	readonly totalEligible: number;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+}
+
+export interface WeeklyLeaderboardPublicView {
+	readonly entries: readonly WeeklyLeaderboardPublicEntry[];
+	readonly currentUser: WeeklyCurrentUserPublicStanding | null;
+}
+
+function projectWeeklyLeaderboard(read: WeeklyLeaderboardRead): WeeklyLeaderboardPublicView {
+	return {
+		entries: read.entries.map((entry) => ({
+			rank: entry.rank,
+			playerName: entry.playerName,
+			weeklyScore: entry.weeklyScore,
+			daysPlayed: entry.daysPlayed,
 		})),
 		currentUser: read.currentUser,
 	};
@@ -278,7 +311,23 @@ export function createBlackjackRunHttpHandlers(
 		}
 	};
 
-	return { start, current, get, command, currentDaily, leaderboard };
+	const weeklyLeaderboard: APIRoute = async ({ locals, url }) => {
+		try {
+			const userId = optionalUserId(locals);
+			const limit = parseLimit(
+				url.searchParams.get('limit'),
+				LEADERBOARD_MIN_LIMIT,
+				LEADERBOARD_MAX_LIMIT,
+				LEADERBOARD_DEFAULT_LIMIT,
+			);
+			const service = serviceFor(deps, locals);
+			return jsonSuccess(projectWeeklyLeaderboard(await service.weeklyLeaderboard(userId, limit)));
+		} catch (error) {
+			return blackjackRunJsonError(error);
+		}
+	};
+
+	return { start, current, get, command, currentDaily, leaderboard, weeklyLeaderboard };
 }
 
 export const blackjackRunHttpHandlers = createBlackjackRunHttpHandlers({

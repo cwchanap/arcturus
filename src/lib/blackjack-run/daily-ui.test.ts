@@ -332,12 +332,14 @@ describe('weekly leaderboard view model', () => {
 			{ entries: [{ ...entry, weeklyScore: -1 }], currentUser: null },
 			{ entries: [{ ...entry, daysPlayed: 1.5 }], currentUser: null },
 			{ entries: [{ ...entry, daysPlayed: -1 }], currentUser: null },
+			{ entries: [{ ...entry, daysPlayed: 8 }], currentUser: null },
 			{ entries: [entry], currentUser: 'not-an-object' },
 			{ entries: [entry], currentUser: { ...standing, rank: -1 } },
 			{ entries: [entry], currentUser: { ...standing, totalEligible: 1.5 } },
 			{ entries: [entry], currentUser: { ...standing, totalEligible: -1 } },
 			{ entries: [entry], currentUser: { ...standing, weeklyScore: -1 } },
 			{ entries: [entry], currentUser: { ...standing, daysPlayed: -1 } },
+			{ entries: [entry], currentUser: { ...standing, daysPlayed: 8 } },
 		];
 
 		for (const payload of invalidPayloads) {

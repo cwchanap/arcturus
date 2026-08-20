@@ -538,7 +538,7 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 				const matchingRows = await page
 					.getByTestId('daily-challenge-weekly-leaderboard-row')
 					.filter({
-						hasText: `${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+						hasText: `#${standing.rank} ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
 					})
 					.count();
 				expect(matchingRows).toBeGreaterThanOrEqual(1);

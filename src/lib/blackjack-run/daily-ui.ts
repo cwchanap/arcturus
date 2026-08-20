@@ -41,6 +41,7 @@ export type DailyRunMode = 'practice' | 'ranked';
 
 export const DAILY_CURRENT_PATH = '/api/blackjack-daily/current';
 export const DAILY_LEADERBOARD_PATH_PREFIX = '/api/blackjack-daily';
+export const DAILY_WEEKLY_LEADERBOARD_PATH = '/api/blackjack-daily/weekly-leaderboard';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const RUN_NOT_FOUND = 'RUN_NOT_FOUND';
@@ -59,6 +60,12 @@ const CURRENCY = new Intl.NumberFormat('en-US', {
 	minimumFractionDigits: 0,
 	maximumFractionDigits: 0,
 });
+
+const POINTS = new Intl.NumberFormat('en-US');
+
+export function formatPoints(value: number): string {
+	return POINTS.format(value);
+}
 
 function formatCurrency(value: number): string {
 	return CURRENCY.format(value);
@@ -115,6 +122,25 @@ export interface DailyLeaderboardView {
 	readonly currentUser: DailyCurrentUserStandingView | null;
 }
 
+export interface WeeklyLeaderboardEntryView {
+	readonly rank: number;
+	readonly playerName: string;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+}
+
+export interface WeeklyCurrentUserStandingView {
+	readonly rank: number;
+	readonly totalEligible: number;
+	readonly weeklyScore: number;
+	readonly daysPlayed: number;
+}
+
+export interface WeeklyLeaderboardView {
+	readonly entries: readonly WeeklyLeaderboardEntryView[];
+	readonly currentUser: WeeklyCurrentUserStandingView | null;
+}
+
 function parseSafeInteger(
 	container: Record<string, unknown>,
 	key: string,
@@ -163,6 +189,39 @@ export function parseDailyLeaderboardView(payload: unknown): DailyLeaderboardVie
 	};
 }
 
+export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardView {
+	if (!isPlainObject(payload) || !Array.isArray(payload.entries)) {
+		throw new TypeError('Weekly leaderboard response was malformed');
+	}
+	const entries = payload.entries.map((raw): WeeklyLeaderboardEntryView => {
+		if (!isPlainObject(raw) || typeof raw.playerName !== 'string') {
+			throw new TypeError('Weekly leaderboard entry was malformed');
+		}
+		return {
+			rank: parseSafeInteger(raw, 'rank', 1),
+			playerName: raw.playerName,
+			weeklyScore: parseSafeInteger(raw, 'weeklyScore', 0),
+			daysPlayed: parseSafeInteger(raw, 'daysPlayed', 0),
+		};
+	});
+	const rawStanding = payload.currentUser;
+	if (rawStanding === null || rawStanding === undefined) {
+		return { entries, currentUser: null };
+	}
+	if (!isPlainObject(rawStanding)) {
+		throw new TypeError('Weekly leaderboard current user was malformed');
+	}
+	return {
+		entries,
+		currentUser: {
+			rank: parseSafeInteger(rawStanding, 'rank', 1),
+			totalEligible: parseSafeInteger(rawStanding, 'totalEligible', 1),
+			weeklyScore: parseSafeInteger(rawStanding, 'weeklyScore', 0),
+			daysPlayed: parseSafeInteger(rawStanding, 'daysPlayed', 0),
+		},
+	};
+}
+
 // --- renderer ---
 
 export interface DailyRunRendererHandlers {
@@ -180,6 +239,8 @@ export interface DailyRunRenderer {
 	renderPractice(replay: DailyRunReplay): void;
 	renderRanked(state: DailyRunState | null): void;
 	renderLeaderboard(leaderboard: DailyLeaderboardView): void;
+	renderWeeklyLeaderboard(leaderboard: WeeklyLeaderboardView): void;
+	renderWeeklyLeaderboardError(message: string): void;
 	setPending(pending: boolean): void;
 	renderError(message: string): void;
 }
@@ -249,6 +310,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 	const percentileEl = requireElement(root, 'daily-challenge-percentile');
 	const leaderboardRowsEl = requireElement(root, 'daily-challenge-leaderboard-rows');
 	const currentStandingEl = requireElement(root, 'daily-challenge-current-standing');
+	const weeklyStandingEl = requireElement(root, 'daily-challenge-weekly-current-standing');
+	const weeklyErrorEl = requireElement(root, 'daily-challenge-weekly-error');
+	const weeklyRowsEl = requireElement(root, 'daily-challenge-weekly-leaderboard-rows');
 
 	let handlers: DailyRunRendererHandlers | null = null;
 	let mode: DailyRunMode = 'practice';
@@ -462,6 +526,36 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				const { rank, totalEligible, percentile } = leaderboard.currentUser;
 				currentStandingEl.textContent = `#${rank} · ${percentile}% · ${totalEligible} eligible`;
 			}
+		},
+
+		renderWeeklyLeaderboard(leaderboard) {
+			weeklyErrorEl.hidden = true;
+			weeklyErrorEl.textContent = '';
+			if (leaderboard.entries.length === 0) {
+				const empty = document.createElement('li');
+				empty.dataset.testid = 'daily-challenge-weekly-empty';
+				empty.textContent = 'No results yet this week.';
+				weeklyRowsEl.replaceChildren(empty);
+			} else {
+				weeklyRowsEl.replaceChildren(
+					...leaderboard.entries.map((entry) => {
+						const row = document.createElement('li');
+						row.dataset.testid = 'daily-challenge-weekly-leaderboard-row';
+						row.textContent = `#${entry.rank} ${entry.playerName} ${formatPoints(entry.weeklyScore)} pts · ${entry.daysPlayed}/7 days`;
+						return row;
+					}),
+				);
+			}
+			weeklyStandingEl.hidden = leaderboard.currentUser === null;
+			if (leaderboard.currentUser !== null) {
+				const { rank, totalEligible, weeklyScore, daysPlayed } = leaderboard.currentUser;
+				weeklyStandingEl.textContent = `#${rank} of ${totalEligible} · ${formatPoints(weeklyScore)} pts · ${daysPlayed}/7 days`;
+			}
+		},
+
+		renderWeeklyLeaderboardError(message) {
+			weeklyErrorEl.textContent = message;
+			weeklyErrorEl.hidden = false;
 		},
 
 		setPending(next) {
@@ -702,5 +796,20 @@ export async function initDailyChallengePage(
 		// A failed or malformed leaderboard response must be visible as an
 		// error, not indistinguishable from an empty leaderboard.
 		renderer.renderError('Daily leaderboard is unavailable — refresh to retry.');
+	}
+
+	try {
+		const { response, data } = await fetchJsonWithTimeout(
+			DAILY_WEEKLY_LEADERBOARD_PATH,
+			{ method: 'GET' },
+			timeoutMs,
+		);
+		if (!response.ok) {
+			throw new TypeError(`Weekly leaderboard request failed (${response.status})`);
+		}
+		renderer.renderWeeklyLeaderboard(parseWeeklyLeaderboardView(data));
+	} catch (error) {
+		console.error('Weekly leaderboard fetch failed', error);
+		renderer.renderWeeklyLeaderboardError('Weekly leaderboard is unavailable — refresh to retry.');
 	}
 }

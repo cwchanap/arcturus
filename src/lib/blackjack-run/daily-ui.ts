@@ -207,7 +207,7 @@ export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardV
 			rank: parseSafeInteger(raw, 'rank', 1),
 			playerName: raw.playerName,
 			weeklyScore: parseSafeInteger(raw, 'weeklyScore', 0),
-			daysPlayed: parseSafeInteger(raw, 'daysPlayed', 0, 7),
+			daysPlayed: parseSafeInteger(raw, 'daysPlayed', 1, 7),
 		};
 	});
 	const rawStanding = payload.currentUser;
@@ -223,7 +223,7 @@ export function parseWeeklyLeaderboardView(payload: unknown): WeeklyLeaderboardV
 			rank: parseSafeInteger(rawStanding, 'rank', 1),
 			totalEligible: parseSafeInteger(rawStanding, 'totalEligible', 1),
 			weeklyScore: parseSafeInteger(rawStanding, 'weeklyScore', 0),
-			daysPlayed: parseSafeInteger(rawStanding, 'daysPlayed', 0, 7),
+			daysPlayed: parseSafeInteger(rawStanding, 'daysPlayed', 1, 7),
 		},
 	};
 }

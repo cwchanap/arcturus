@@ -140,23 +140,18 @@ Run the locale test again; expected: PASS.
 
 In `src/lib/i18n/translate.ts`, make English define the message key shape. The three other branches must be typed from it. `defineMessages()` is a zero-runtime-cost identity helper; `createTranslator()` only selects the branch and replaces named `{token}` placeholders.
 
-Representative contract:
+Use a signature that infers the key set from `en` first and rejects both missing and extra locale keys, for example via an exact mapped type / `satisfies` helper. The required call-site contract is:
 
 ```ts
-type MessageMap = Record<string, string>;
-type SameMessageKeys<T extends MessageMap> = { [K in keyof T]: string };
-
-export function defineMessages<const T extends MessageMap>(messages: {
-  en: T;
-  'zh-Hant': SameMessageKeys<T>;
-  'zh-Hans': SameMessageKeys<T>;
-  ja: SameMessageKeys<T>;
-}) {
-  return messages;
-}
+const messages = defineMessages({
+  en: { greeting: 'Hello {name}', repeat: '{value} / {value}' },
+  'zh-Hant': { greeting: '你好，{name}', repeat: '{value} / {value}' },
+  'zh-Hans': { greeting: '你好，{name}', repeat: '{value} / {value}' },
+  ja: { greeting: 'こんにちは、{name}', repeat: '{value} / {value}' },
+});
 ```
 
-`src/lib/i18n/translate.test.ts` tests interpolation/repeated placeholders and locale selection. Do not add runtime key-set comparison or generic missing-key fallback logic.
+Deleting `ja.greeting` (or adding a locale-only key) must fail `bun run build` without a runtime parity checker. `src/lib/i18n/translate.test.ts` tests interpolation/repeated placeholders and locale selection only.
 
 Run:
 

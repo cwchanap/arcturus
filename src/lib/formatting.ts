@@ -2,15 +2,20 @@
  * Formatting Utilities
  *
  * Utility functions for formatting values like currency, chip balances, etc.
+ * Numeric presentation is locale-aware; the `Locale` type comes from the i18n
+ * locale model and defaults to English.
  */
 
+import type { Locale } from './i18n/locale';
+
 /**
- * Formats a number as US locale (with commas for thousands)
+ * Formats a number for the given locale (grouping separators, decimals)
  * @param value - The number to format
+ * @param locale - Locale used for number formatting (default: 'en')
  * @returns Formatted string (e.g., "1,234.56")
  */
-export function formatChipBalance(value: number): string {
-	return new Intl.NumberFormat('en-US').format(value);
+export function formatChipBalance(value: number, locale: Locale = 'en'): string {
+	return new Intl.NumberFormat(locale).format(value);
 }
 
 function requireFinite(value: number): number {
@@ -18,20 +23,23 @@ function requireFinite(value: number): number {
 	return value;
 }
 
-export function formatWholeNumber(value: number): string {
+export function formatWholeNumber(value: number, locale: Locale = 'en'): string {
 	if (!Number.isSafeInteger(value)) throw new RangeError('Value must be a safe integer');
-	return new Intl.NumberFormat('en-US').format(value);
+	return new Intl.NumberFormat(locale).format(value);
 }
 
-export function formatPercentage(value: number): string {
-	return `${requireFinite(value).toFixed(1)}%`;
+export function formatPercentage(value: number, locale: Locale = 'en'): string {
+	return `${new Intl.NumberFormat(locale, {
+		minimumFractionDigits: 1,
+		maximumFractionDigits: 1,
+	}).format(requireFinite(value))}%`;
 }
 
-export function formatSignedChipResult(value: number): string {
+export function formatSignedChipResult(value: number, locale: Locale = 'en'): string {
 	const finite = requireFinite(value);
 	if (finite === 0) return '0 chips';
 	const sign = finite > 0 ? '+' : '−';
-	return `${sign}${formatChipBalance(Math.abs(finite))} chips`;
+	return `${sign}${formatChipBalance(Math.abs(finite), locale)} chips`;
 }
 
 const MAX_FRACTION_DIGITS = 100;
@@ -41,12 +49,14 @@ const MAX_FRACTION_DIGITS = 100;
  * @param value - The number to format
  * @param minimumFractionDigits - Minimum decimal places (default: 2)
  * @param maximumFractionDigits - Maximum decimal places (default: 2)
+ * @param locale - Locale used for number formatting (default: 'en')
  * @returns Formatted string (e.g., "1,234.50")
  */
 export function formatChipBalanceWithDecimals(
 	value: number,
 	minimumFractionDigits = 2,
 	maximumFractionDigits = 2,
+	locale: Locale = 'en',
 ): string {
 	// Sanitize inputs to handle NaN values
 	const sanitizedMin = Number.isNaN(minimumFractionDigits) ? 0 : minimumFractionDigits;
@@ -59,7 +69,7 @@ export function formatChipBalanceWithDecimals(
 	// Ensure minimumFractionDigits <= maximumFractionDigits
 	const finalMinDigits = Math.min(minDigits, maxDigits);
 
-	return new Intl.NumberFormat('en-US', {
+	return new Intl.NumberFormat(locale, {
 		minimumFractionDigits: finalMinDigits,
 		maximumFractionDigits: maxDigits,
 	}).format(value);

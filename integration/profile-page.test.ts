@@ -43,12 +43,10 @@ const user = {
 	updatedAt: now,
 };
 
-const locals = {
-	runtime: {
-		env: {
-			DB: dbBinding,
-		},
-	},
+const runtime = { env: { DB: dbBinding } } as App.Locals['runtime'];
+const locals: App.Locals = {
+	runtime,
+	locale: 'en',
 	session: {
 		user,
 		session: {
@@ -61,7 +59,7 @@ const locals = {
 		},
 	},
 	user,
-} as App.Locals;
+};
 
 function normalizedText(element: Element | null): string {
 	return element?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
@@ -93,6 +91,9 @@ describe('profile route statistics failure isolation', () => {
 
 			expect(response.status).toBe(200);
 			expect(getPlayerStatisticsSummary).toHaveBeenCalledOnce();
+			// AppLayout writes the document-level locale once on the root element.
+			expect(window.document.documentElement.getAttribute('lang')).toBe('en');
+			expect(window.document.documentElement.getAttribute('data-locale')).toBe('en');
 			expect(normalizedText(statisticsSection?.querySelector('[role="status"]'))).toBe(
 				'Player statistics are temporarily unavailable.',
 			);

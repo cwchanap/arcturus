@@ -176,6 +176,7 @@ function makeController(
 			failed: 'Settlement failed. Retry or reset before starting another hand.',
 			retrying: 'Retrying settlement...',
 			retryFailed: 'Settlement failed again. Retry or reset the hand.',
+			retryLabel: 'Retry settlement',
 		},
 		render: hooks.render ?? (() => {}),
 		onAdoptBalance: hooks.onAdoptBalance ?? (() => {}),
@@ -385,6 +386,31 @@ describe('createPublicGameSettlementController', () => {
 			expect(settlement.statusMessage).toBe('Settlement failed again. Retry or reset the hand.');
 			expect(recoveryContainer()?.classList.contains('hidden')).toBe(false);
 			expect(retryButton()?.disabled).toBe(false);
+		} finally {
+			root.remove();
+		}
+	});
+
+	test('messages.retryLabel labels the recovery retry button', () => {
+		localStorage.clear();
+		const root = buildRoot({ guestMode: true, initialBalance: 1000 });
+		try {
+			createPublicGameSettlementController({
+				gameKey: GAME_KEY,
+				root,
+				recoveryHost: document.getElementById(`${GAME_KEY}-recovery-host`),
+				resetLabel: 'Reset hand',
+				messages: {
+					failed: 'failed',
+					retrying: 'retrying',
+					retryFailed: 'retry failed',
+					retryLabel: 'Try again',
+				},
+				render: () => {},
+				onAdoptBalance: () => {},
+				onResetRound: () => {},
+			});
+			expect(retryButton()?.textContent).toBe('Try again');
 		} finally {
 			root.remove();
 		}

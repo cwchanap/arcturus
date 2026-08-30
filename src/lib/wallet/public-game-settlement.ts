@@ -1,5 +1,8 @@
 import type { GameType } from '../game-stats/types';
 import { isGuestModeValue, loadGuestBankroll, persistGuestBankroll } from '../public-game-session';
+import { formatChipBalance } from '../formatting';
+import { getDocumentLocale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
 import { createSettlementGate } from './settlement-gate';
 import { ensureSettlementRecoveryControls } from './settlement-recovery';
 import { newSettlementId } from './settlement-id';
@@ -33,6 +36,7 @@ export type PublicGameSettlementMessages = {
 	failed: string;
 	retrying: string;
 	retryFailed: string;
+	retryLabel: string;
 };
 
 export interface PublicGameSettlementController {
@@ -73,18 +77,18 @@ export function createPublicGameSettlementController(options: {
 		retryId: `${options.gameKey}-retry-settlement`,
 		resetId: `${options.gameKey}-reset-settlement`,
 		containerClass: 'hidden mt-4 flex flex-wrap justify-center gap-3',
-		retryLabel: 'Retry settlement',
+		retryLabel: options.messages.retryLabel,
 		resetLabel: options.resetLabel,
 		retryClass: 'deco-btn px-4 py-2 rounded-lg',
 		resetClass: 'deco-btn px-4 py-2 rounded-lg',
 	});
 
 	function syncBalance(balance: number): void {
-		const formatted = balance.toLocaleString('en-US');
+		const locale = getDocumentLocale(options.root.ownerDocument);
 		const primary = document.getElementById('chip-balance');
-		if (primary) primary.textContent = formatted;
+		if (primary) primary.textContent = formatChipBalance(balance, locale);
 		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-			el.textContent = `${formatted} chips`;
+			el.textContent = formatChips(balance, locale);
 		});
 	}
 

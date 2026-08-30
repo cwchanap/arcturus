@@ -10,6 +10,10 @@ import '@fontsource/jost/600.css';
 import UserNav from '../components/UserNav.astro';
 import DecoIcon from '../components/DecoIcon.astro';
 import DecoDivider from '../components/DecoDivider.astro';
+import LanguagePicker from '../components/LanguagePicker.astro';
+import { formatChips, SHELL_MESSAGES } from '../lib/i18n/messages/common';
+import { getGameName } from '../lib/i18n/messages/games';
+import { createTranslator } from '../lib/i18n/translate';
 
 interface Props {
 	title?: string;
@@ -25,6 +29,8 @@ const {
 	footerClass = 'mt-20',
 } = Astro.props as Props;
 const headerSticky = headerStickyProp ?? true;
+const locale = Astro.locals.locale;
+const t = createTranslator(SHELL_MESSAGES, locale);
 const session = Astro.locals.session;
 const user = Astro.locals.user ?? session?.user ?? null;
 const headerPositionClass = headerSticky ? 'sticky top-0 z-50' : '';
@@ -40,11 +46,10 @@ const chipBalance = Number.isFinite(parsedChipBalance)
 	: user
 		? 0
 		: null;
-const formattedChipBalance =
-	chipBalance === null ? null : new Intl.NumberFormat('en-US').format(chipBalance);
+const formattedChipBalance = chipBalance === null ? null : formatChips(chipBalance, locale);
 ---
 
-<html lang="en">
+<html lang={locale} data-locale={locale}>
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width" />
@@ -65,23 +70,24 @@ const formattedChipBalance =
 							<div class="leading-tight">
 								<div class="deco-wordmark text-2xl">ARCTURUS</div>
 								<div class="deco-rule my-1"></div>
-								<div class="deco-eyebrow">Premium Casino</div>
+								<div class="deco-eyebrow">{t('premiumCasino')}</div>
 							</div>
 						</a>
 
 						<nav class="hidden md:flex items-center gap-8">
-							<a href="/missions" class="deco-link">Missions</a>
-							<a href="/games/leaderboard" class="deco-link">Leaderboard</a>
+							<a href="/missions" class="deco-link">{t('missions')}</a>
+							<a href="/games/leaderboard" class="deco-link">{t('leaderboard')}</a>
 						</nav>
 
 						<div class="flex items-center gap-4">
+							<LanguagePicker />
 							{
 								user && (
 									<div class="hidden md:block">
 										<div class="deco-chip-pill">
 											<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
 											<span class="font-body font-medium tabular-nums" data-chip-balance>
-												{formattedChipBalance ? `${formattedChipBalance} chips` : '— chips'}
+												{formattedChipBalance ?? formatChips(0, locale)}
 											</span>
 										</div>
 									</div>
@@ -100,32 +106,40 @@ const formattedChipBalance =
 					<DecoDivider class="mb-10" />
 					<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
 						<div>
-							<h3 class="deco-heading text-lg mb-4">Games</h3>
+							<h3 class="deco-heading text-lg mb-4">{t('games')}</h3>
 							<ul class="space-y-2">
-								<li><a href="/#games" class="deco-footer-link">All Games</a></li>
-								<li><a href="/games/poker" class="deco-footer-link">Poker</a></li>
-								<li><a href="/games/blackjack" class="deco-footer-link">Blackjack</a></li>
+								<li><a href="/#games" class="deco-footer-link">{t('allGames')}</a></li>
+								<li>
+									<a href="/games/poker" class="deco-footer-link">{getGameName(locale, 'poker')}</a>
+								</li>
+								<li>
+									<a href="/games/blackjack" class="deco-footer-link"
+										>{getGameName(locale, 'blackjack')}</a
+									>
+								</li>
 							</ul>
 						</div>
 						<div>
 							<h3 class="deco-heading text-lg mb-4">Arcturus</h3>
 							<ul class="space-y-2">
-								<li><a href="/missions" class="deco-footer-link">Missions</a></li>
-								<li><a href="/games/leaderboard" class="deco-footer-link">Leaderboard</a></li>
-								<li><a href="/profile" class="deco-footer-link">Profile</a></li>
+								<li><a href="/missions" class="deco-footer-link">{t('missions')}</a></li>
+								<li>
+									<a href="/games/leaderboard" class="deco-footer-link">{t('leaderboard')}</a>
+								</li>
+								<li><a href="/profile" class="deco-footer-link">{t('profile')}</a></li>
 							</ul>
 						</div>
 						<div>
-							<h3 class="deco-heading text-lg mb-4">Legal</h3>
+							<h3 class="deco-heading text-lg mb-4">{t('legal')}</h3>
 							<ul class="space-y-2">
-								<li><a href="#" class="deco-footer-link">Responsible Gaming</a></li>
-								<li><a href="#" class="deco-footer-link">18+ Only</a></li>
+								<li><a href="#" class="deco-footer-link">{t('responsibleGaming')}</a></li>
+								<li><a href="#" class="deco-footer-link">{t('adultsOnly')}</a></li>
 							</ul>
 						</div>
 					</div>
 					<div class="deco-rule mt-10 mb-6"></div>
 					<p class="text-center text-sm" style="color: var(--deco-muted)">
-						© {new Date().getFullYear()} Arcturus Casino. All rights reserved. Play responsibly.
+						{t('copyright', { year: new Date().getFullYear() })}
 					</p>
 				</div>
 			</footer>

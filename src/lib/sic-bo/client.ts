@@ -94,6 +94,7 @@ export function initSicBoClient(): void {
 			failed: 'Settlement failed. Retry or reset before rolling again.',
 			retrying: 'Retrying settlement...',
 			retryFailed: 'Settlement failed again. Retry or reset before rolling again.',
+			retryLabel: 'Retry settlement',
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),

@@ -128,6 +128,8 @@ Examples:
 
 Presentation resolves localized names, descriptions, and sentences from those identifiers.
 
+For user-visible failures, prefer stable error/result codes from APIs and translate them in the consuming UI. Do not redesign unrelated APIs solely for i18n; migrate existing English error strings only where they are actually presented to the player.
+
 ### Achievements
 
 Achievement rules should continue to own IDs, categories, icons, thresholds, and unlock logic. Player-facing achievement names/descriptions should come from i18n messages such as `achievement.rising_star.name` and `achievement.rising_star.description`.
@@ -219,14 +221,12 @@ Unit-test:
 - locale-aware formatting helpers
 - translation key completeness
 
-Add one focused Playwright flow that:
+Add one focused Playwright check that presets a supported non-English locale cookie and verifies:
 
-- changes language
-- verifies the locale cookie
-- reloads/navigates
-- verifies persistence
-- verifies `<html lang>`
-- verifies at least one global shell label changes
+- the page renders using that locale even before it is production-selectable
+- `<html lang>` matches
+- at least one global shell label is localized
+- navigation/reload preserves the cookie-driven locale
 
 ### Surface migration tests
 
@@ -237,6 +237,16 @@ For each migrated feature:
 - add a small locale-specific assertion proving the migrated surface resolves localized text
 
 Do not create four copies of every game E2E suite.
+
+### Final activation test
+
+When the three non-English locales are added to `ENABLED_LOCALES`, add one picker E2E flow that:
+
+- changes language through the visible picker
+- verifies the locale cookie
+- reloads/navigates
+- verifies persistence
+- verifies `<html lang>` and a representative localized label
 
 ## Error Handling
 

@@ -115,16 +115,15 @@ Game display names are a cross-feature presentation concept and must have one so
 
 `src/lib/game-stats/constants.ts` already exposes `GAME_TYPES` and `GAME_TYPE_LABELS`, while the home page currently carries another English game-name list. Do not create new copies in `common.ts`, `home.ts`, leaderboard messages, and every game module.
 
-Create one `messages/games.ts` dictionary keyed by:
+Keep `GAME_TYPE_LABELS` as the canonical English map for the existing `GAME_TYPES`. Normalize the current poker label there to `Texas Hold'em Poker` so the app no longer mixes `Poker` with `Texas Hold'em Poker` for the same game.
 
-- every `GAME_TYPES` value;
-- `daily-challenge`;
-- `poker-mp`;
-- `blackjack-ranked`.
+Create one `messages/games.ts` dictionary whose English branch reuses `GAME_TYPE_LABELS` and adds:
 
-Use one canonical English label per key. For the current poker game, use `Texas Hold'em Poker` consistently rather than mixing it with the generic `Poker`. Keep `Multiplayer Poker` as the separate lobby/game label.
+- `daily-challenge` → `Daily Challenge`;
+- `poker-mp` → `Multiplayer Poker`;
+- `blackjack-ranked` → `Ranked Blackjack`.
 
-`GAME_TYPE_LABELS` should become the English projection/wrapper over this canonical game-name source, so existing leaderboard/profile/statistics call sites can migrate without inventing another label map.
+The other three locale branches must cover that same key set. `getGameName(locale, key)` becomes the localized presentation lookup used by home, leaderboard, profile statistics, and game surfaces.
 
 Feature dictionaries may refer to game-name keys, but must not retranslate the game names themselves.
 
@@ -175,12 +174,14 @@ For user-visible failures, prefer stable error/result codes and translate them a
 
 Several current game modules return English strings directly from domain/game code. Their migration PR must move those player-facing results to closed codes/enums rather than merely wrapping the surrounding page:
 
-- wager/bet errors in Pai Gow Poker, Video Poker, Three-Card Showdown, and Sic Bo;
+- wager/bet errors in Pai Gow Poker, Video Poker, Three-Card Showdown, Sic Bo, and Craps;
 - Pai Gow arrangement validation errors;
-- poker/Pai Gow hand/category display names;
+- poker/Pai Gow/Craps hand, category, and bet display labels;
 - comparable player-facing status strings discovered in the migrated game.
 
-The rule is local and incremental: change the domain result to a stable code in the same PR that migrates that game, and translate the code in the existing client/renderer. Do not create a generic error-code framework for all games.
+Reuse the existing shared validator rather than duplicating range logic. `src/lib/bet-validation.ts` should gain a language-neutral `validateBetCode()` result while its current English `validateBet()` wrapper remains temporarily for unmigrated callers. Migrated game engines consume codes and their clients/renderers translate them. Remove the English wrapper only after the final audit proves no production caller remains.
+
+For game-specific validation such as Craps phase/odds restrictions or Pai Gow arrangement errors, use a local closed code union in that game. Do not create a generic cross-game error framework.
 
 Visible card rank glyphs such as `A`, `K`, `Q`, and `J` remain invariant. Accessibility names such as `Jack of hearts` and `Joker` are player-facing and must be localized.
 

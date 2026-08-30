@@ -48,11 +48,18 @@ The language picker uses native labels:
 
 URLs remain unchanged.
 
-The locale resolution order is:
+Keep two explicit locale sets:
 
-1. `arcturus_locale` cookie when it contains a supported locale.
-2. Browser `Accept-Language` on first visit.
+- `SUPPORTED_LOCALES` contains all four locales that can be authored and tested.
+- `ENABLED_LOCALES` contains the locales production request resolution may expose. It starts as `['en']` and expands to all four only after the final completeness pass.
+
+For enabled locales, the locale resolution order is:
+
+1. `arcturus_locale` cookie when it normalizes to an enabled locale.
+2. Browser `Accept-Language` on first visit when its best supported match is enabled.
 3. English fallback.
+
+A supported-but-disabled locale is ignored by production request resolution. This prevents a browser language or stale/manual cookie from exposing a partially migrated UI before the final activation PR.
 
 Browser-language normalization stays deliberately small:
 
@@ -64,7 +71,7 @@ Browser-language normalization stays deliberately small:
 
 Middleware resolves the locale once per request and exposes it through `Astro.locals.locale`. `AppLayout` uses that locale for `<html lang>` and locale-aware formatting.
 
-The language picker writes the locale cookie and reloads the current URL. No redirect or route rewriting is required.
+The language picker renders only enabled locales. When multiple locales are enabled, changing the selection writes the locale cookie and reloads the current URL. No redirect or route rewriting is required.
 
 ## Translation Architecture
 
@@ -171,11 +178,11 @@ The existing display/body fonts can fall back to system CJK fonts. Validate the 
 
 English is the source/authoring locale.
 
-During migration, missing non-English messages may fall back to English internally so development builds remain usable. However, a locale must not become selectable in production until completeness checks prove that its required key set matches English for all migrated player-facing surfaces.
+All four locales may exist in message files and be exercised by unit/component tests during migration, but production request resolution must use only `ENABLED_LOCALES`. Initially that list contains only `en`; `zh-Hant`, `zh-Hans`, and `ja` are added together after the final completeness pass.
 
-Use a simple `ENABLED_LOCALES` list for picker visibility. Initially only `en` is enabled. `zh-Hant`, `zh-Hans`, and `ja` are enabled together after the final completeness pass.
+During development, a missing non-English message may fall back to English so isolated work remains usable. Completeness checks still require every migrated feature dictionary to expose the same keys as English before that feature PR merges.
 
-Do not add environment flags, database flags, or a feature-flag service for locale activation.
+Do not add environment flags, database flags, test-only runtime locale overrides, or a feature-flag service for locale activation.
 
 ## Rollout
 
@@ -216,17 +223,18 @@ Unit-test:
 - cookie precedence
 - supported/unsupported cookie parsing
 - `Accept-Language` normalization
+- disabled-locale exclusion from production request resolution
 - English fallback
 - interpolation
 - locale-aware formatting helpers
 - translation key completeness
 
-Add one focused Playwright check that presets a supported non-English locale cookie and verifies:
+Add one focused Playwright check that verifies the rollout guardrail:
 
-- the page renders using that locale even before it is production-selectable
-- `<html lang>` matches
-- at least one global shell label is localized
-- navigation/reload preserves the cookie-driven locale
+- a supported-but-disabled locale cookie or browser language does not expose that locale
+- `<html lang>` remains `en` while only English is enabled
+- the global shell renders English
+- the picker does not expose disabled locales
 
 ### Surface migration tests
 
@@ -234,7 +242,8 @@ For each migrated feature:
 
 - preserve existing behavioral tests
 - replace fragile English-text selectors with stable test IDs where needed
-- add a small locale-specific assertion proving the migrated surface resolves localized text
+- add a focused unit/component assertion that directly exercises at least one non-English translation for the migrated surface
+- keep production-route E2E assertions in English until final activation
 
 Do not create four copies of every game E2E suite.
 
@@ -247,10 +256,11 @@ When the three non-English locales are added to `ENABLED_LOCALES`, add one picke
 - reloads/navigates
 - verifies persistence
 - verifies `<html lang>` and a representative localized label
+- verifies browser-language detection now selects an enabled non-English locale on first visit
 
 ## Error Handling
 
-Unsupported or malformed locale values fall back to English.
+Unsupported, malformed, or disabled locale values fall back through the enabled-locale resolution path and ultimately to English.
 
 Missing development-time translations may fall back to English, but completeness validation must prevent incomplete locales from being enabled for players.
 
@@ -262,5 +272,5 @@ Translation lookup should stay deterministic and local; localization must never 
 - No route changes.
 - No runtime i18n dependency unless a future requirement exceeds the small translation layer.
 - No translated values in core domain state.
-- No partially translated locale exposed in the production picker.
+- No partially translated locale exposed by the picker, cookie, or automatic browser-language detection.
 - Prefer feature-local dictionaries and small helpers over a generic localization subsystem.

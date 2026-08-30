@@ -123,7 +123,7 @@ Messages are grouped by feature rather than by locale. Each feature module conta
 
 English is the authoring shape. `defineMessages()` is a typed identity helper whose non-English branches are constrained from the English branch at compile time.
 
-A missing Traditional Chinese, Simplified Chinese, or Japanese key must be a TypeScript/build error while the dictionary is being authored. Do not maintain a parallel runtime key-parity checker or a final “import every dictionary and compare keys” test.
+A missing Traditional Chinese, Simplified Chinese, or Japanese key must be a TypeScript/build error while the dictionary is being authored. Locale-only extra keys should also be rejected so every branch has one exact authoring shape. Do not maintain a parallel runtime key-parity checker or a final “import every dictionary and compare keys” test.
 
 `createTranslator()` performs lookup and simple named interpolation such as `{value}`. Because authored dictionaries are statically complete and callers use `Locale`, it does not need a generic runtime missing-key fallback subsystem.
 
@@ -157,7 +157,7 @@ Create `docs/i18n-glossary.md` in the foundation implementation PR with a four-l
 English | 繁體中文 | 简体中文 | 日本語
 ```
 
-Seed it with common casino/UI vocabulary used across features (for example chips, player, dealer/banker, win/loss/push, bet/wager, payout, rank, leaderboard). Each later translation PR adds any newly introduced game-specific canonical terms before or alongside its message dictionary (for example Blackjack insurance/natural, Craps Pass Line/Don't Pass, Baccarat Banker, poker hand names).
+Seed it with common casino/UI vocabulary used across features (for example chips, player, dealer/banker, win/loss/push, bet/wager, payout, rank, leaderboard). Each later translation PR adds newly introduced game-specific canonical terms before or alongside its message dictionary (for example Blackjack action names, Craps Pass Line/Don't Pass, Baccarat Banker, poker hand names).
 
 The glossary does not generate runtime copy and does not replace complete sentence templates. It is only the editorial source for consistent terminology across sequential PRs.
 
@@ -301,7 +301,7 @@ Instead:
 2. the final activation PR performs one broad search for remaining production `toLocaleString` / `toLocaleDateString` / `toLocaleTimeString` / direct `Intl` formatting calls;
 3. after those are removed or intentionally centralized, add a permanent ESLint `no-restricted-syntax` guard for production `src/**` code, excluding `src/lib/formatting.ts`, `src/lib/i18n/**`, and tests.
 
-This gives the reviewer-requested build-time protection without requiring a temporary allowlist for dozens of known legacy call sites.
+This gives build-time protection without requiring a temporary allowlist for dozens of known legacy call sites.
 
 ## Fonts and Visual Validation
 
@@ -362,7 +362,7 @@ Unit-test:
 - locale-aware numeric formatting;
 - localized `formatChips()` including English singular/plural behavior.
 
-Do not add a foundation-only Playwright spec for disabled-locale filtering. The resolver unit tests cover selection, while existing Astro container tests are extended to carry `locale: 'en'` explicitly and assert AppLayout's `<html lang>` / `data-locale` rendering. The final activation flow remains a real browser E2E because cookie mutation/reload/persistence are browser behavior.
+Do not add a foundation-only Playwright spec for disabled-locale filtering. Resolver unit tests cover selection, while existing Astro container tests are extended to carry `locale: 'en'` explicitly and assert AppLayout's `<html lang>` / `data-locale` rendering. The final activation flow remains a real browser E2E because cookie mutation/reload/persistence are browser behavior.
 
 ### Container Fixtures
 

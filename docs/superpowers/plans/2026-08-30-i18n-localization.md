@@ -52,6 +52,10 @@
 - Modify: `src/lib/formatting.test.ts`
 - Modify: `src/lib/wallet/public-game-settlement.ts`
 - Modify: `src/lib/wallet/public-game-settlement.test.ts`
+- Modify mechanically for the new settlement message field: `src/lib/sic-bo/client.ts`
+- Modify mechanically for the new settlement message field: `src/lib/pai-gow-poker/client.ts`
+- Modify mechanically for the new settlement message field: `src/lib/three-card-showdown/client.ts`
+- Modify mechanically for the new settlement message field: `src/lib/video-poker/client.ts`
 
 **Interfaces:**
 - Produces: `Locale`, `SUPPORTED_LOCALES`, `ENABLED_LOCALES`, `LOCALE_COOKIE`.
@@ -59,13 +63,13 @@
 - Produces: `resolveRequestLocale({ cookieLocale, acceptLanguage, enabledLocales? }): Locale`.
 - Produces: `getDocumentLocale(doc?: Document): Locale`.
 - Produces: `defineMessages()` and `createTranslator()`.
-- Produces: shared game-name lookup for all `GAME_TYPES` plus `daily-challenge`, `poker-mp`, and `blackjack-ranked`.
+- Produces: `getGameName(locale, key)` for all `GAME_TYPES` plus `daily-challenge`, `poker-mp`, and `blackjack-ranked`.
 - Extends: locale-sensitive helpers in `src/lib/formatting.ts` with `locale: Locale = 'en'`.
-- Extends: `PublicGameSettlementMessages` with `retryLabel`.
+- Extends: `PublicGameSettlementMessages` with required `retryLabel`.
 
 - [ ] **Step 1: Write failing locale-resolution tests**
 
-Create `src/lib/i18n/locale.test.ts` with the exact contract:
+Create `src/lib/i18n/locale.test.ts` with the contract:
 
 ```ts
 expect(normalizeLocaleTag('zh-TW')).toBe('zh-Hant');
@@ -93,17 +97,11 @@ expect(resolveRequestLocale({
 })).toBe('zh-Hant');
 ```
 
-Also assert cookie precedence over `Accept-Language`, malformed/disabled cookie skipping, q-value ordering, and English fallback when no recognized enabled match exists.
+Also assert cookie precedence, malformed/disabled cookie skipping, q-value ordering, and English fallback when no recognized enabled match exists.
 
-Run:
+Run `bun test src/lib/i18n/locale.test.ts`; expect RED because the module does not exist.
 
-```bash
-bun test src/lib/i18n/locale.test.ts
-```
-
-Expected: FAIL because the module does not exist.
-
-- [ ] **Step 2: Implement the minimal locale module and document handoff helper**
+- [ ] **Step 2: Implement the minimal locale module**
 
 Implement only:
 
@@ -122,15 +120,13 @@ export function resolveRequestLocale(input: {
 export function getDocumentLocale(doc?: Document): Locale;
 ```
 
-`getDocumentLocale()` reads `document.documentElement.dataset.locale ?? document.documentElement.lang`, normalizes it, and returns `en` only when the document value is absent/malformed.
+`getDocumentLocale()` reads `document.documentElement.dataset.locale ?? document.documentElement.lang`, normalizes it, and returns `en` only for an absent/malformed document value. Parse `Accept-Language` locally; add no dependency.
 
-Keep `Accept-Language` parsing local: split ranges, parse optional `q`, sort descending, normalize each tag, select the first enabled match. Add no parser dependency.
+Run the locale test again; expect PASS.
 
-Run the locale test. Expected: PASS.
+- [ ] **Step 3: Write and implement translator tests**
 
-- [ ] **Step 3: Write failing translator tests**
-
-Create `src/lib/i18n/translate.test.ts` proving key parity, English development fallback, and named interpolation:
+`src/lib/i18n/translate.test.ts` proves four-locale key parity, English development fallback, repeated named interpolation, and non-throwing missing interpolation:
 
 ```ts
 const messages = defineMessages({
@@ -142,35 +138,15 @@ const messages = defineMessages({
 
 expect(createTranslator('ja', messages)('greeting', { name: 'Aki' }))
   .toBe('こんにちは、Aki');
-expect(createTranslator('en', messages)('repeat', { value: 3 }))
-  .toBe('3 / 3');
 ```
 
-Missing interpolation values must leave the unresolved token visible rather than throw; this makes incomplete development copy obvious without breaking gameplay.
-
-Run:
-
-```bash
-bun test src/lib/i18n/translate.test.ts
-```
-
-Expected: FAIL before implementation, then PASS after adding only `defineMessages()` and `createTranslator()` in `translate.ts`. Do not add nested paths, ICU syntax, namespaces, or a singleton registry.
+Run RED, implement only `defineMessages()` and `createTranslator()`, then run GREEN. Do not add nested paths, ICU syntax, namespaces, or a singleton registry.
 
 - [ ] **Step 4: Create one canonical game-name dictionary**
 
-In `src/lib/i18n/messages/games.ts`, reuse `GAME_TYPE_LABELS` as the English branch and add the three lobby-only keys. The intended shape is:
+Keep `GAME_TYPE_LABELS` as the canonical English map for `GAME_TYPES`; change `poker` to `Texas Hold'em Poker`.
 
-```ts
-export type GameNameKey =
-  | keyof typeof GAME_TYPE_LABELS
-  | 'daily-challenge'
-  | 'poker-mp'
-  | 'blackjack-ranked';
-
-export function getGameName(locale: Locale, key: GameNameKey): string;
-```
-
-Change `GAME_TYPE_LABELS.poker` in `src/lib/game-stats/constants.ts` to the one canonical English label `Texas Hold'em Poker`. Use these English extras:
+`src/lib/i18n/messages/games.ts` reuses that English map and adds:
 
 ```ts
 'daily-challenge': 'Daily Challenge'
@@ -178,37 +154,28 @@ Change `GAME_TYPE_LABELS.poker` in `src/lib/game-stats/constants.ts` to the one 
 'blackjack-ranked': 'Ranked Blackjack'
 ```
 
-Add a test that every `GAME_TYPES` key plus the extras resolves in all four locales. Home/leaderboard/profile/game modules later call this lookup instead of adding their own translation of `Blackjack`, `Roulette`, etc.
+Export:
+
+```ts
+export type GameNameKey =
+  | keyof typeof GAME_TYPE_LABELS
+  | 'daily-challenge'
+  | 'poker-mp'
+  | 'blackjack-ranked';
+export function getGameName(locale: Locale, key: GameNameKey): string;
+```
+
+Test all `GAME_TYPES` plus extras in all four locales. Later feature dictionaries must reference these keys, not retranslate game names.
 
 - [ ] **Step 5: Extend existing formatting helpers with locale**
 
-Update `src/lib/formatting.ts` instead of adding another formatter. Preserve current validation semantics and add `locale: Locale = 'en'` to locale-sensitive functions such as:
+Add `locale: Locale = 'en'` to locale-sensitive helpers in `src/lib/formatting.ts` while preserving current validation semantics. Keep numeric formatting separate from translated nouns. Task 2 removes/replaces `formatSignedChipResult()` rather than making it an i18n helper.
 
-```ts
-formatChipBalance(value: number, locale: Locale = 'en'): string
-formatWholeNumber(value: number, locale: Locale = 'en'): string
-formatPercentage(value: number, locale: Locale = 'en'): string
-formatChipBalanceWithDecimals(
-  value: number,
-  minimumFractionDigits?: number,
-  maximumFractionDigits?: number,
-  locale?: Locale,
-): string
-```
+Run `bun test src/lib/formatting.test.ts` with new `en`, `zh-Hant`, and `ja` assertions.
 
-Keep numeric formatting separate from translated nouns. Do not turn `formatSignedChipResult()` into an i18n helper; Task 2 removes/replaces that English presentation helper.
+- [ ] **Step 6: Wire locale before middleware early returns**
 
-Add assertions for `en`, `zh-Hant`, and `ja` in `src/lib/formatting.test.ts`.
-
-Run:
-
-```bash
-bun test src/lib/formatting.test.ts
-```
-
-- [ ] **Step 6: Wire locale into middleware before every early return**
-
-At the top of `onRequest` in `src/middleware.ts`, before checking DB/auth bindings:
+At the top of `onRequest`:
 
 ```ts
 context.locals.locale = resolveRequestLocale({
@@ -217,33 +184,23 @@ context.locals.locale = resolveRequestLocale({
 });
 ```
 
-Add `locale: Locale` to `App.Locals` in `src/env.d.ts`. The no-DB path must still receive locale before `next()`.
+Add `locale: Locale` to `App.Locals`. The no-DB/auth path must receive locale before `next()`.
 
-- [ ] **Step 7: Put locale on `<html>` once and migrate the shared shell**
+- [ ] **Step 7: Put locale on `<html>` once and migrate the shell**
 
-Update `src/layouts/AppLayout.astro` to:
+Use:
 
 ```astro
 <html lang={locale} data-locale={locale}>
 ```
 
-Translate the current header/footer/nav/legal/chip phrases using `messages/common.ts`; keep `ARCTURUS` as the brand. Format chip numbers with `formatChipBalance(balance, locale)` and a complete translated chip-count template.
+Translate current header/footer/nav/legal/chip phrases through `messages/common.ts`, use locale-aware number formatting, and update `UserNav.astro`. Do not add locale attributes to game roots.
 
-Update `src/components/UserNav.astro` to localize `Profile`, `Sign In`, and `Join Free` from `Astro.locals.locale`.
+- [ ] **Step 8: Add the language picker**
 
-Do not add locale props/data attributes to child game roots.
+Render only `ENABLED_LOCALES`. When multiple locales are enabled, selecting one writes a one-year `arcturus_locale` cookie with `Path=/; SameSite=Lax` and reloads the current URL. Hide the control while English is the only enabled locale.
 
-- [ ] **Step 8: Add the language picker without a locale endpoint**
-
-`LanguagePicker.astro` renders only `ENABLED_LOCALES`. Once multiple locales are enabled, selecting one writes:
-
-```text
-arcturus_locale=<locale>; Max-Age=31536000; Path=/; SameSite=Lax
-```
-
-then reloads `window.location.href`. Use native labels `English`, `繁體中文`, `简体中文`, `日本語`. With `ENABLED_LOCALES = ['en']`, hide the control rather than render a useless one-option selector.
-
-- [ ] **Step 9: Extend the shared settlement message seam**
+- [ ] **Step 9: Extend the shared settlement message seam and pin all current call sites**
 
 Change:
 
@@ -256,42 +213,23 @@ export type PublicGameSettlementMessages = {
 };
 ```
 
-and pass `options.messages.retryLabel` into `ensureSettlementRecoveryControls()` instead of the hard-coded `Retry settlement` in `public-game-settlement.ts`.
+Use `options.messages.retryLabel` in `public-game-settlement.ts`. Update the four current `createPublicGameSettlementController` clients listed in this task to pass the existing English `Retry settlement` only; their full localization remains in Task 5.
 
-Update existing public-game settlement call sites/tests mechanically to continue supplying the current English `Retry settlement` until their owning game PR migrates them. Do not translate those games in Task 1.
+Change shared balance synchronization to `getDocumentLocale(root.ownerDocument)` + shared formatting/common chip-count copy instead of `toLocaleString('en-US')` / `${formatted} chips`.
 
-Also change shared balance synchronization to read `getDocumentLocale(root.ownerDocument)` and use locale-aware numeric formatting plus `common` chip-count copy rather than `toLocaleString('en-US')` / `${formatted} chips`.
-
-Run:
-
-```bash
-bun test src/lib/wallet/public-game-settlement.test.ts
-```
+Run `bun test src/lib/wallet/public-game-settlement.test.ts` plus the four affected client unit tests.
 
 - [ ] **Step 10: Add the production rollout-guard E2E**
 
-`e2e/i18n-foundation.spec.ts` sets a Japanese cookie and a Japanese `Accept-Language` while only English is enabled and verifies:
+Set a Japanese cookie and Japanese `Accept-Language` while only English is enabled and assert `<html lang="en" data-locale="en">`, English shell copy, and no disabled picker options.
 
-```ts
-await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-await expect(page.locator('html')).toHaveAttribute('data-locale', 'en');
-```
+Run `bunx playwright test e2e/i18n-foundation.spec.ts`.
 
-It also asserts global shell copy remains English and disabled language options are not present.
+- [ ] **Step 11: Local four-locale visual check, then revert activation**
 
-Run:
+Temporarily enable all four locally; inspect `/` plus one authenticated shell page at desktop/narrow widths for wrapping and CJK fallback. Restore `ENABLED_LOCALES = ['en']` before staging.
 
-```bash
-bunx playwright test e2e/i18n-foundation.spec.ts
-```
-
-- [ ] **Step 11: Perform the local four-locale visual check and revert activation**
-
-Temporarily change local `ENABLED_LOCALES` to all four. Inspect `/` plus one authenticated shell page at desktop and narrow mobile widths for nav/footer wrapping and CJK font fallback. Restore `ENABLED_LOCALES = ['en']` before staging files.
-
-- [ ] **Step 12: Verify and commit PR 1**
-
-Run:
+- [ ] **Step 12: Verify PR 1**
 
 ```bash
 bun run test
@@ -301,13 +239,7 @@ bun run build
 bunx playwright test e2e/i18n-foundation.spec.ts
 ```
 
-Suggested commits:
-
-```text
-test: define locale and translation contracts
-feat: add typed i18n foundation and game names
-feat: localize shared shell seams
-```
+Suggested commits: `test: define locale and translation contracts`, `feat: add typed i18n foundation and game names`, `feat: localize shared shell seams`.
 
 ---
 
@@ -348,19 +280,17 @@ feat: localize shared shell seams
 - Test: `e2e/profile-statistics.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 1 `getDocumentLocale()`, translator, formatting helpers, and `getGameName()`.
+- Consumes: Task 1 document locale, translator, formatting, and `getGameName()`.
 - Produces: achievement presentation lookup keyed by `AchievementId`.
-- Changes: settlement `newAchievements` payload/queue entries from `{ id, name, icon }` to `{ id, icon }`.
+- Changes: settlement/toast achievement payload from `{ id, name, icon }` to `{ id, icon }`.
 
-- [ ] **Step 1: Write failing achievement presentation tests**
+- [ ] **Step 1: Add failing achievement presentation tests**
 
-For every `ACHIEVEMENT_IDS` member, assert all four locales resolve `name` and `description`. Include the threshold formatting case for `comeback` so the number is formatted with the requested locale.
+For every `ACHIEVEMENT_IDS` member, assert all four locales resolve name/description. Include localized threshold formatting for the comeback achievement. Keep unlock-rule tests locale-neutral.
 
-Keep unlock-rule assertions independent of locale.
+- [ ] **Step 2: Make achievement definitions language-neutral**
 
-- [ ] **Step 2: Remove player copy from achievement domain definitions**
-
-Change the domain shape to:
+Change:
 
 ```ts
 export interface AchievementDefinition {
@@ -370,62 +300,33 @@ export interface AchievementDefinition {
 }
 ```
 
-Remove `name` and `description` from `ACHIEVEMENTS`. Preserve IDs, categories, icons, thresholds, and grant checks exactly. Change internal logs to use `achievement.id`.
+Remove `name`/`description` from `ACHIEVEMENTS`; preserve IDs, categories, icons, thresholds, checks, and persistence. Logs use the ID.
 
-Update `AchievementWithStatus` and its tests to reflect the language-neutral definition.
+- [ ] **Step 3: Remove achievement English from wallet results**
 
-- [ ] **Step 3: Remove English achievement names from wallet settlement**
+Change `SettleRoundResult.newAchievements` to `Array<{ id: string; icon: string }>` and update `buildFreshResult()` plus wallet tests. No translated achievement name crosses the wallet API.
 
-Change `SettleRoundResult.newAchievements` in `src/lib/wallet/types.ts` to:
+- [ ] **Step 4: Resolve toast names by ID and document locale**
 
-```ts
-newAchievements?: Array<{ id: string; icon: string }>;
-```
+Change `AchievementToastEntry` to `{ id, icon }`. On display, read `getDocumentLocale()` and resolve the localized achievement name. Preserve timing/queue behavior. Test a Japanese document locale while the queued entry carries only ID/icon.
 
-Update `src/lib/wallet/settle.ts` so `buildFreshResult()` maps only `id` and `icon`. Update duplicate/fresh settlement tests to assert the new payload.
+- [ ] **Step 5: Migrate home and `GameCard` without duplicating game names**
 
-No API or DB row stores a translated achievement name.
-
-- [ ] **Step 4: Resolve toast names from achievement IDs at display time**
-
-Change `AchievementToastEntry` to `{ id, icon }`. `initAchievementToast()` obtains the active locale from `getDocumentLocale()` and resolves the visible name from `messages/achievements.ts` when the toast is shown.
-
-Preserve queue timing/disposal behavior. Update `achievement-toast.test.ts` to set `document.documentElement.dataset.locale = 'ja'` and assert a Japanese name while the queued entry carries only the ID/icon.
-
-- [ ] **Step 5: Migrate home and `GameCard` using the shared game-name source**
-
-Replace the `name` strings in `src/pages/index.astro` with stable game-name keys. `GameCard.astro` receives/resolves a translated game name via `getGameName()` and localizes `Featured`, `{count} playing`, `Min {value}`, and `Play`. Replace its `Intl.NumberFormat('en-US')` with `formatWholeNumber(players, locale)`.
-
-Do not create another home-specific translation for `Blackjack`, `Roulette`, `Texas Hold'em Poker`, etc.
+Replace home game-name strings with stable `GameNameKey`s. `GameCard.astro` localizes `Featured`, `{count} playing`, `Min {value}`, and `Play`, and formats player count with active locale. Game titles come only from `getGameName()`.
 
 - [ ] **Step 6: Migrate sign-in/profile Astro copy**
 
-Translate page titles/headings, auth calls to action, verification states, account labels, tips, AI settings labels/status, accessible fallback labels, loading/error shells, and statistics headings.
+Translate page titles/headings, auth calls to action, verification states, account labels, tips, AI settings labels/status, accessibility fallback labels, loading/error shells, and statistics headings. Provider/model identifiers remain unchanged.
 
-Keep provider/model identifiers (`OpenAI`, `Gemini`, `GPT-4o`, etc.) unchanged.
+- [ ] **Step 7: Localize `profile-statistics-renderer.ts` and its client shell**
 
-- [ ] **Step 7: Localize the actual profile-statistics renderer**
+Renderer reads `getDocumentLocale(root.ownerDocument)` and localizes summary labels, empty state, game names, played state, metrics, ranks, `Unranked`, and action links. Pass locale into numeric formatters.
 
-In `src/lib/profile-statistics-renderer.ts`, call `getDocumentLocale(root.ownerDocument)` and translate:
+Replace `formatSignedChipResult()` with neutral signed numeric formatting plus complete translated chip-result templates; delete the English helper when its callers are gone. Preserve `profile-statistics-client.ts` fetch flow; update only player-facing state and tests.
 
-- `No games played yet`;
-- summary labels (`Total Hands`, `Most Played`, `Overall Win Rate`, `Net Profit`);
-- per-game played/not-played state;
-- metric labels (`Hands Played`, `Wins`, `Losses`, `Biggest Win`, ranks);
-- `Unranked`;
-- leaderboard/play action text.
+- [ ] **Step 8: Stabilize and run tests**
 
-Use `getGameName(locale, gameType)` instead of `GAME_TYPE_LABELS` and pass `locale` to numeric formatters.
-
-Remove `formatSignedChipResult()` once all its call sites in this surface are replaced by a neutral signed-number formatter plus a complete translated chip-result template.
-
-`profile-statistics-client.ts` keeps its fetch/control flow unchanged; update only any player-facing state it owns and its tests.
-
-- [ ] **Step 8: Stabilize localization-sensitive tests**
-
-Change English text locators to existing/new `data-testid` selectors only where text is not itself the behavior. Keep English assertions for English default rendering.
-
-Run:
+Use test IDs where English text was only a locator. Run:
 
 ```bash
 bun test src/lib/achievements src/lib/achievement-toast.test.ts src/lib/profile-statistics-renderer.test.ts src/lib/profile-statistics-client.test.ts
@@ -433,33 +334,19 @@ bunx vitest run integration/profile-page.test.ts
 bunx playwright test e2e/auth-ui.spec.ts e2e/profile.spec.ts e2e/profile-statistics.spec.ts
 ```
 
-- [ ] **Step 9: Perform the local four-locale visual check**
+- [ ] **Step 9: Local four-locale visual check**
 
-Temporarily enable all four locales and inspect `/`, `/signin`, `/profile`, and `/profile/statistics`. Check long Japanese/Chinese labels, game-card badges/buttons, profile forms, statistics cards, and toast width. Revert activation before staging.
+Temporarily enable all locales; inspect `/`, `/signin`, `/profile`, `/profile/statistics`, game cards, statistics cards, forms, and an achievement toast. Revert activation.
 
-- [ ] **Step 10: Verify and commit PR 2**
+- [ ] **Step 10: Verify PR 2**
 
-Run:
-
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
-
-Suggested commits:
-
-```text
-refactor: make achievement settlement locale-neutral
-feat: localize home auth profile and statistics
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, and `bun run build`.
 
 ---
 
 ## Task 3 / PR 3: Missions, Leaderboard, and Daily Challenge
 
-**Purpose:** Keep progression/ranking APIs language-neutral while localizing their SSR and browser-rendered presentation.
+**Purpose:** Keep progression/ranking APIs language-neutral while localizing their SSR and browser presentation.
 
 **Files:**
 - Create: `src/lib/i18n/messages/missions.ts`
@@ -480,106 +367,53 @@ feat: localize home auth profile and statistics
 - Test: `e2e/daily-challenge.spec.ts`
 
 **Interfaces:**
-- Consumes: Task 1 document locale, shared game names, translator, and formatting.
-- Changes: `MissionDefinition`/`MissionView` no longer carry English `title`/`description`.
-- Produces: mission display lookup by `missionDefId`.
+- Changes: `MissionDefinition`/`MissionView` no longer carry `title`/`description`.
+- Produces: mission presentation lookup by `missionDefId`.
 
-- [ ] **Step 1: Pin the language-neutral mission types with failing tests**
+- [ ] **Step 1: Pin language-neutral mission types with failing tests**
 
-Change expected `MissionDefinition` to contain only:
+Expected `MissionDefinition` contains only ID, period, metric, target, reward, icon. Expected `MissionView` contains `missionDefId` plus progress/domain values but no copy. Run board/registry tests RED.
 
-```ts
-id, period, metric, target, rewardChips, icon
-```
+- [ ] **Step 2: Remove English from registry and board/API projection**
 
-and expected `MissionView` to contain `missionDefId`, progress/domain values, and icon but no `title`/`description`.
+Delete title/description fields without changing mission IDs, metrics, target values, rewards, rerolls, claims, streaks, or DB queries.
 
-Update `buildMissionView()` tests first and run:
+- [ ] **Step 3: Add mission copy keyed by every current mission ID**
 
-```bash
-bun test src/lib/missions/board.test.ts src/lib/missions/registry.test.ts
-```
-
-Expected: FAIL before domain changes.
-
-- [ ] **Step 2: Remove English text from registry and board/API projection**
-
-Delete `title`/`description` from the mission registry objects and from `buildMissionView()`. Do not alter mission IDs, metrics, target values, rewards, reroll selection, claims, streaks, or DB queries.
-
-The `/api/missions/board` response remains the same except that presentation text is absent.
-
-- [ ] **Step 3: Add four-language mission presentation keyed by mission ID**
-
-`messages/missions.ts` contains title plus complete description template for every current mission ID:
-
-```text
-daily-blackjack-5
-daily-win-3
-daily-slots-20
-daily-craps-3
-daily-baccarat-3
-daily-keno-5
-weekly-games-3
-```
-
-Descriptions use stable domain values and shared game names; they do not duplicate game translations.
+Cover exactly `daily-blackjack-5`, `daily-win-3`, `daily-slots-20`, `daily-craps-3`, `daily-baccarat-3`, `daily-keno-5`, `weekly-games-3`. Use shared game names inside complete sentence templates.
 
 - [ ] **Step 4: Update initial and refreshed mission rendering**
 
-`src/pages/missions/index.astro` resolves copy from `missionDefId` both in initial SSR and in the browser path that re-renders `/api/missions/board` responses. Do not expect title/description from the API after this PR.
-
-Translate streak labels, claim/reroll controls, reset labels, completion state, and errors shown to the player.
+`src/pages/missions/index.astro` resolves title/description from `missionDefId` in both SSR and the JS path that re-renders `/api/missions/board`. Translate streak, claim/reroll, reset, completion, and error copy.
 
 - [ ] **Step 5: Localize leaderboard using shared game names**
 
-Translate overall/game/metric controls, headings, rank labels, empty/error states, row annotations, and accessible labels. Use `getGameName()` for game names rather than defining another game-name branch in `leaderboard.ts`.
+Translate controls, headings, metrics, rank/empty/error states, rows, and accessibility labels. Game names come from `getGameName()`; number/percentage/chip formatting uses locale.
 
-Pass locale into number/percentage/chip formatting.
+- [ ] **Step 6: Localize Daily Challenge and `daily-ui.ts`**
 
-- [ ] **Step 6: Localize Daily Challenge SSR and `daily-ui.ts`**
+Translate rules, status/countdown, result summary, rank, actions, loading/error/retry, and header balance. `daily-ui.ts` reads `getDocumentLocale(root.ownerDocument)`; no game-root locale attribute. Replace hard-coded `en-US` formatting.
 
-Translate challenge intro/rules, status, countdown, result summary, rank labels, actions, loading/error/retry text, and the existing header chip synchronization.
-
-`daily-ui.ts` obtains locale through `getDocumentLocale(root.ownerDocument)`; do not add a `data-locale` attribute to the daily-challenge root.
-
-Replace its hard-coded `toLocaleString('en-US')` with shared formatting.
-
-- [ ] **Step 7: Run targeted tests and E2E**
-
-Add one non-English unit assertion for each of mission rendering, leaderboard presentation, and a dynamic Daily Challenge state.
-
-Run:
+- [ ] **Step 7: Run tests**
 
 ```bash
 bun test src/lib/missions src/lib/blackjack-run/daily-ui.test.ts
 bunx playwright test e2e/missions.spec.ts e2e/leaderboard.spec.ts e2e/daily-challenge.spec.ts
 ```
 
-- [ ] **Step 8: Perform the local four-locale visual check**
+- [ ] **Step 8: Local four-locale visual check**
 
-Temporarily enable all locales and inspect `/missions`, `/games/leaderboard`, and `/games/daily-challenge` at desktop/mobile widths. Pay special attention to tabs, tables, countdown/status pills, and mission cards. Revert activation.
+Temporarily enable all; inspect missions, leaderboard, and Daily Challenge on desktop/mobile, then revert.
 
-- [ ] **Step 9: Verify and commit PR 3**
+- [ ] **Step 9: Verify PR 3**
 
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
-
-Suggested commits:
-
-```text
-refactor: make mission board presentation-neutral
-feat: localize missions leaderboard and daily challenge
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`.
 
 ---
 
 ## Task 4 / PR 4: Blackjack and Ranked Blackjack
 
-**Purpose:** Localize casual/ranked Blackjack as one coherent game family without bundling unrelated games into the review.
+**Purpose:** Localize casual/ranked Blackjack as one coherent game family without bundling unrelated games.
 
 **Files:**
 - Create: `src/lib/i18n/messages/blackjack.ts`
@@ -592,7 +426,7 @@ feat: localize missions leaderboard and daily challenge
 - Modify: `src/lib/blackjack/llmBlackjackStrategy.test.ts`
 - Modify: `src/lib/blackjack/presentation.ts`
 - Modify: `src/lib/blackjack/presentation.test.ts`
-- Modify: `src/lib/blackjack-run/client.ts` only for player-facing ranked/common client copy it owns
+- Modify: `src/lib/blackjack-run/client.ts` for ranked/common player copy it owns
 - Modify: `src/lib/blackjack-run/ranked-ui.ts`
 - Modify: `src/lib/blackjack-run/ranked-ui.test.ts`
 - Test: `e2e/blackjack-settings.spec.ts`
@@ -600,99 +434,46 @@ feat: localize missions leaderboard and daily challenge
 - Test: `e2e/blackjack-llm.spec.ts`
 - Test: `e2e/ranked-blackjack.spec.ts`
 
-**Interfaces:**
-- Consumes: Task 1 `getDocumentLocale()`, formatting, translator, game names.
-- Keeps: Blackjack action/domain enums unchanged.
-- Changes: deterministic/LLM advice presentation accepts the active locale without changing the authoritative move.
-
 - [ ] **Step 1: Add failing Blackjack message tests**
 
-Define message keys for casual/ranked page headings, wager controls, dealer/player labels, actions, outcomes, split-hand summaries, settlement recovery, settings, AI advisor, ranked countdown/status/result labels, and accessibility text.
+Cover page headings, wager controls, dealer/player labels, actions, outcomes, split summaries, recovery, settings, AI advisor, ranked countdown/status/results, and accessibility. Assert Japanese single-hand and Traditional Chinese split-hand dynamic messages.
 
-Test a Japanese single-hand outcome and a Traditional Chinese split-hand summary with interpolation.
+- [ ] **Step 2: Localize casual Blackjack SSR**
 
-- [ ] **Step 2: Localize casual Blackjack SSR markup**
+Translate all static page copy/ARIA/title/rules/settings/payouts; use shared game-name keys for Blackjack/Daily Challenge/ranked link.
 
-Replace the current static English in `blackjack.astro`, including page title, `Back to Games`, casual/ranked/daily links, dealer/player labels, betting/actions/settings/rules/payouts, achievement chrome, titles, and ARIA labels.
+- [ ] **Step 3: Localize `blackjackClient.ts` dynamic copy**
 
-Use `getGameName()` for Blackjack/Daily Challenge rather than retranslating the game names.
+Read document locale once and translate outcome/split summaries, recovery/reset, balance/current bet, settings feedback, AI button/status/failure, and recovery labels. Do not change game/settlement state.
 
-- [ ] **Step 3: Localize `blackjackClient.ts` dynamic messages**
+- [ ] **Step 4: Localize deterministic and provider advice**
 
-Read locale from `getDocumentLocale(root.ownerDocument)` once during initialization and translate:
+Add locale to advice presentation calls while keeping `recommendedAction` unchanged. Local deterministic reasoning uses messages; optional AI prompt requests the locale but may not change the selected move. Test identical decisions across locales.
 
-- outcome messages;
-- `Hand {n}`/overall split summaries;
-- settlement failed/retrying/reset states;
-- retry/reset labels passed into recovery controls;
-- balance/current-bet text;
-- settings feedback;
-- AI advisor button/status/failure copy.
+- [ ] **Step 5: Localize ranked renderer and formatting**
 
-Do not change settlement/game-state semantics.
+Replace ranked `Intl.NumberFormat('en-US')`, `toLocaleString('en-US')`, `${formatted} chips`, status/countdown/result/action/error copy with document locale + shared helpers/messages.
 
-- [ ] **Step 4: Localize deterministic and optional-provider advice**
-
-Add locale to the presentation-facing advice call:
-
-```ts
-getBlackjackStrategyAdvice(context, locale)
-getBlackjackAdvice(context, settings, locale)
-```
-
-Keep `recommendedAction` as the existing enum. Local deterministic reasoning comes from `blackjack.ts`. When an AI provider is configured, the prompt explicitly requests the active language and still instructs the provider not to change the selected move.
-
-Update unit tests so action/confidence remain identical across locales while reasoning changes language.
-
-- [ ] **Step 5: Localize ranked Blackjack renderer and formatting**
-
-`ranked-ui.ts` reads document locale and replaces:
-
-```ts
-new Intl.NumberFormat('en-US')
-nextBalance.toLocaleString('en-US')
-`${formatted} chips`
-```
-
-with shared formatting/common chip-count copy. Translate ranked status/countdown/result/action/error copy using `blackjack.ts`.
-
-Keep protocol/public run state values unchanged.
-
-- [ ] **Step 6: Run the full Blackjack-family verification**
+- [ ] **Step 6: Run Blackjack-family tests**
 
 ```bash
 bun test src/lib/blackjack src/lib/blackjack-run/ranked-ui.test.ts src/lib/blackjack-run/client.test.ts
-bunx playwright test \
-  e2e/blackjack-settings.spec.ts \
-  e2e/blackjack-split.spec.ts \
-  e2e/blackjack-llm.spec.ts \
-  e2e/ranked-blackjack.spec.ts
+bunx playwright test e2e/blackjack-settings.spec.ts e2e/blackjack-split.spec.ts e2e/blackjack-llm.spec.ts e2e/ranked-blackjack.spec.ts
 ```
 
-- [ ] **Step 7: Perform the local four-locale visual check**
+- [ ] **Step 7: Local four-locale visual check**
 
-Temporarily enable all four and inspect casual Blackjack plus ranked Blackjack, including split layout, settings, AI advice, countdown/result panels, and narrow mobile controls. Revert activation.
+Inspect casual/ranked Blackjack including split layout, settings, advice, countdown/result, and narrow controls; revert activation.
 
-- [ ] **Step 8: Verify and commit PR 4**
+- [ ] **Step 8: Verify PR 4**
 
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
-
-Suggested commit:
-
-```text
-feat: localize blackjack and ranked blackjack
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`.
 
 ---
 
 ## Task 5 / PR 5: Small Client-Module Games
 
-**Purpose:** Apply the established game translation pattern to Slots, Sic Bo, Pai Gow Poker, Three-Card Showdown, and Video Poker while converting their player-facing domain validation strings to stable codes.
+**Purpose:** Localize Slots, Sic Bo, Pai Gow Poker, Three-Card Showdown, and Video Poker while converting their player-facing validation strings to stable codes.
 
 **Files:**
 - Create: `src/lib/i18n/messages/slots.ts`
@@ -702,134 +483,60 @@ feat: localize blackjack and ranked blackjack
 - Create: `src/lib/i18n/messages/video-poker.ts`
 - Modify: `src/lib/bet-validation.ts`
 - Modify: `src/lib/bet-validation.test.ts`
-- Modify: `src/pages/games/slots.astro`
-- Modify: `src/lib/slots/slotsClient.ts`
-- Modify: `src/lib/slots/slotsClient.test.ts`
-- Modify: `src/pages/games/sic-bo.astro`
-- Modify: `src/lib/sic-bo/game.ts`
-- Modify: `src/lib/sic-bo/game.test.ts`
-- Modify: `src/lib/sic-bo/client.ts`
-- Modify: `src/lib/sic-bo/client.init.test.ts`
-- Modify: `src/pages/games/pai-gow-poker.astro`
-- Modify: `src/lib/pai-gow-poker/game.ts`
-- Modify: `src/lib/pai-gow-poker/game.test.ts`
-- Modify: `src/lib/pai-gow-poker/rules.ts`
-- Modify: `src/lib/pai-gow-poker/rules.test.ts`
-- Modify: `src/lib/pai-gow-poker/client.ts`
-- Modify: `src/lib/pai-gow-poker/client.init.test.ts`
-- Modify: `src/pages/games/three-card-showdown.astro`
-- Modify: `src/lib/three-card-showdown/game.ts`
-- Modify: `src/lib/three-card-showdown/game.test.ts`
-- Modify: `src/lib/three-card-showdown/client.ts`
-- Modify: `src/lib/three-card-showdown/client.init.test.ts`
-- Modify: `src/pages/games/video-poker.astro`
-- Modify: `src/lib/video-poker/game.ts`
-- Modify: `src/lib/video-poker/game.test.ts`
-- Modify: `src/lib/video-poker/client.ts`
-- Modify: `src/lib/video-poker/client.init.test.ts`
-- Test: `e2e/slots.spec.ts`
-- Test: `e2e/sic-bo.spec.ts`
-- Test: `e2e/pai-gow-poker.spec.ts`
-- Test: `e2e/three-card-showdown.spec.ts`
-- Test: `e2e/video-poker.spec.ts`
+- Modify: `src/pages/games/slots.astro`, `src/lib/slots/slotsClient.ts`, `src/lib/slots/slotsClient.test.ts`
+- Modify: `src/pages/games/sic-bo.astro`, `src/lib/sic-bo/game.ts`, `src/lib/sic-bo/game.test.ts`, `src/lib/sic-bo/client.ts`, `src/lib/sic-bo/client.init.test.ts`
+- Modify: `src/pages/games/pai-gow-poker.astro`, `src/lib/pai-gow-poker/game.ts`, `src/lib/pai-gow-poker/game.test.ts`, `src/lib/pai-gow-poker/rules.ts`, `src/lib/pai-gow-poker/rules.test.ts`, `src/lib/pai-gow-poker/client.ts`, `src/lib/pai-gow-poker/client.init.test.ts`
+- Modify: `src/pages/games/three-card-showdown.astro`, `src/lib/three-card-showdown/game.ts`, `src/lib/three-card-showdown/game.test.ts`, `src/lib/three-card-showdown/client.ts`, `src/lib/three-card-showdown/client.init.test.ts`
+- Modify: `src/pages/games/video-poker.astro`, `src/lib/video-poker/game.ts`, `src/lib/video-poker/game.test.ts`, `src/lib/video-poker/client.ts`, `src/lib/video-poker/client.init.test.ts`
+- Test: `e2e/slots.spec.ts`, `e2e/sic-bo.spec.ts`, `e2e/pai-gow-poker.spec.ts`, `e2e/three-card-showdown.spec.ts`, `e2e/video-poker.spec.ts`
 
 **Interfaces:**
-- Produces temporary shared `validateBetCode()` while preserving the old English `validateBet()` wrapper for unmigrated games.
-- Produces local closed wager/arrangement codes in the migrated engines.
-- Consumes: Task 1 document locale, translators, settlement message seam, formatting, game names.
+- Produces: `validateBetCode()` while preserving existing English `validateBet()` only for unmigrated callers.
+- Produces: local closed wager/arrangement code unions in migrated games.
 
-- [ ] **Step 1: Add a language-neutral bet-validation seam**
+- [ ] **Step 1: Add a language-neutral shared bet-validation result**
 
-In `src/lib/bet-validation.ts`, introduce:
-
-```ts
-export type BetValidationCode =
-  | 'invalid-limits'
-  | 'invalid-range'
-  | 'out-of-range';
-
-export function validateBetCode(
-  amount: number,
-  minBet: number,
-  maxBet: number,
-): BetValidationCode | null;
-```
-
-Refactor existing `validateBet()` to wrap `validateBetCode()` and preserve its current English return strings for games not migrated yet. Do not parse English strings in clients and do not duplicate min/max validation in five engines.
-
-Add tests proving the code result independently of English formatting.
-
-- [ ] **Step 2: Move Sic Bo/Three-Card/Video-Poker wager messages to codes**
-
-For each game, change `getWagerError()` from `string | null` to a local union built from `BetValidationCode` plus any game-specific codes such as:
+Add:
 
 ```ts
-'twhole-number-required'
-'insufficient-balance'
+export type BetValidationCode = 'invalid-limits' | 'invalid-range' | 'out-of-range';
+export function validateBetCode(amount: number, minBet: number, maxBet: number): BetValidationCode | null;
 ```
 
-The client translates the code with that game's dictionary. Internal invariant throws may include the code for diagnostics; they must not be the player-visible presentation source.
+Refactor current `validateBet()` to wrap it and preserve current English strings temporarily. Test codes directly.
 
-Update engine/client tests accordingly.
+- [ ] **Step 2: Convert Sic Bo, Three-Card, and Video Poker wager display errors to codes**
 
-- [ ] **Step 3: Move Pai Gow wager and arrangement errors to codes**
+Each `getWagerError()` returns a local union of `BetValidationCode` plus game-specific `whole-number-required` / `insufficient-balance` codes. Clients translate codes; internal invariant throws may contain codes but do not source UI copy.
 
-Apply the same wager-code rule to `PaiGowPokerGame.getWagerError()`.
+- [ ] **Step 3: Convert Pai Gow wager and arrangement errors to codes**
 
-In `src/lib/pai-gow-poker/rules.ts`, replace player-facing arrangement error strings with a closed `PaiGowArrangementErrorCode`. `client.ts` maps those codes to complete localized messages.
+Apply the wager rule. Replace arrangement error strings in `rules.ts` with `PaiGowArrangementErrorCode`; client maps them to complete localized messages.
 
-Move `CATEGORY_LABELS` out of `client.ts` into the Pai Gow dictionary. Keep rank glyphs `J/Q/K/A` visible as-is, but localize `RANK_NAMES`, suit names, `Joker`, and complete accessible card names.
+Move `CATEGORY_LABELS` into the Pai Gow dictionary. Keep visible rank glyphs; localize `Jack/Queen/King/Ace`, suit names, `Joker`, and complete accessible card names.
 
-- [ ] **Step 4: Localize each game's SSR page and dynamic client copy**
+- [ ] **Step 4: Localize all five SSR/client surfaces**
 
-For Slots, Sic Bo, Pai Gow Poker, Three-Card Showdown, and Video Poker, translate the owned page/client text: title/back link, balance/wager labels, actions, status/outcomes, rules/paytables, settlement failure/retry/reset, settings, and ARIA/title/alt text.
+Translate title/back link, balance/wager labels, actions, status/outcomes, rules/paytables, settlement failure/retry/reset, settings, ARIA/title/alt text. Use `getGameName()`, `getDocumentLocale()`, locale formatting, and localized `retryLabel`. Do not alter payouts/probabilities/evaluators.
 
-Use `getGameName()` for game names and `getDocumentLocale()` for browser locale. Pass localized `retryLabel` through the shared settlement messages bag.
+- [ ] **Step 5: Keep evaluator identities neutral**
 
-Do not alter probability, payout, draw, evaluation, or settlement math.
+Translate hand/category names only where rendered. Evaluator/domain category values remain unchanged.
 
-- [ ] **Step 5: Localize hand/category names only at presentation boundaries**
-
-Keep evaluator categories/ranks as existing domain enums/values. Translate Video Poker/Pai Gow category labels where rendered. Do not change persistence or evaluator return identities to translated strings.
-
-- [ ] **Step 6: Run unit and E2E tests**
+- [ ] **Step 6: Run tests**
 
 ```bash
-bun test \
-  src/lib/bet-validation.test.ts \
-  src/lib/slots \
-  src/lib/sic-bo \
-  src/lib/pai-gow-poker \
-  src/lib/three-card-showdown \
-  src/lib/video-poker
-
-bunx playwright test \
-  e2e/slots.spec.ts \
-  e2e/sic-bo.spec.ts \
-  e2e/pai-gow-poker.spec.ts \
-  e2e/three-card-showdown.spec.ts \
-  e2e/video-poker.spec.ts
+bun test src/lib/bet-validation.test.ts src/lib/slots src/lib/sic-bo src/lib/pai-gow-poker src/lib/three-card-showdown src/lib/video-poker
+bunx playwright test e2e/slots.spec.ts e2e/sic-bo.spec.ts e2e/pai-gow-poker.spec.ts e2e/three-card-showdown.spec.ts e2e/video-poker.spec.ts
 ```
 
-- [ ] **Step 7: Perform the local four-locale visual check**
+- [ ] **Step 7: Local four-locale visual check**
 
-Temporarily enable all locales and inspect all five game pages, especially paytables, action grids, Pai Gow card accessibility/arrangement feedback, and narrow button labels. Revert activation.
+Inspect all five pages, especially paytables, action grids, Pai Gow arrangement/accessibility, and narrow labels; revert activation.
 
-- [ ] **Step 8: Verify and commit PR 5**
+- [ ] **Step 8: Verify PR 5**
 
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
-
-Suggested commits:
-
-```text
-refactor: expose language-neutral bet validation codes
-feat: localize small client-module games
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`.
 
 ---
 
@@ -839,82 +546,63 @@ feat: localize small client-module games
 
 **Files:**
 - Create: `src/lib/i18n/messages/baccarat.ts`
-- Create: `src/lib/i18n/messages/roulette.ts`
-- Create: `src/lib/i18n/messages/keno.ts`
+- Create: `src/lib/baccarat/BaccaratUIRenderer.test.ts`
 - Modify: `src/pages/games/baccarat.astro`
 - Modify: `src/lib/baccarat/BaccaratUIRenderer.ts`
 - Modify: `src/lib/baccarat/llmBaccaratStrategy.ts`
-- Modify: corresponding Baccarat renderer/LLM tests
+- Modify: `src/lib/baccarat/llmBaccaratStrategy.test.ts`
+- Create: `src/lib/i18n/messages/roulette.ts`
 - Modify: `src/pages/games/roulette.astro`
 - Modify: `src/lib/roulette/RouletteUIRenderer.ts`
+- Modify: `src/lib/roulette/RouletteUIRenderer.test.ts`
 - Modify: `src/lib/roulette/rouletteClient.ts`
+- Modify: `src/lib/roulette/rouletteClient.integration.test.ts`
 - Modify: `src/lib/roulette/spin-error-classification.ts`
-- Modify: corresponding Roulette tests
+- Modify: `src/lib/roulette/spin-error-classification.test.ts`
+- Create: `src/lib/i18n/messages/keno.ts`
 - Modify: `src/pages/games/keno.astro`
 - Modify: `src/lib/keno/KenoUIRenderer.ts`
+- Modify: `src/lib/keno/KenoUIRenderer.test.ts`
 - Modify: `src/lib/keno/kenoClient.ts`
-- Modify: corresponding Keno tests
-- Test: `e2e/baccarat.spec.ts`
-- Test: `e2e/roulette.spec.ts`
-- Test: `e2e/keno.spec.ts`
+- Modify: `src/lib/keno/kenoClient.test.ts`
+- Test: `e2e/baccarat.spec.ts`, `e2e/roulette.spec.ts`, `e2e/keno.spec.ts`
 
-**Interfaces:**
-- Consumes: document locale, shared settlement messages, formatting, shared game names, and `validateBetCode()` when these games expose shared validation results.
-- Changes: Roulette code-to-copy mapper becomes locale-aware instead of embedding English.
+- [ ] **Step 1: Add representative non-English renderer tests**
 
-- [ ] **Step 1: Write representative renderer tests in non-English locales**
+Set document locale in the renderer/client tests and assert one dynamic Japanese/Traditional Chinese state for each game before implementation.
 
-Set `document.documentElement.dataset.locale` in renderer/client tests and assert one dynamic Japanese/Traditional Chinese state for Baccarat, Roulette, and Keno before changing implementation.
+- [ ] **Step 2: Localize Baccarat through renderer/advice seams**
 
-- [ ] **Step 2: Localize Baccarat through its renderer seam**
+Translate SSR rules/actions and renderer state/outcomes. Deterministic/LLM advice keeps authoritative recommendation neutral and localizes only explanation. Convert any displayed shared bet validation to `validateBetCode()` + Baccarat messages.
 
-Translate Baccarat SSR page labels/rules/actions and `BaccaratUIRenderer` dynamic state/outcomes. If deterministic/LLM Baccarat advice is visible to the player, keep its authoritative recommendation language-neutral and localize/rewrite only explanation text using the active locale.
+- [ ] **Step 3: Localize Roulette code-to-copy mapping**
 
-Switch any player-facing bet validation to `validateBetCode()` plus Baccarat message lookup rather than exposing `validateBet()` English.
-
-- [ ] **Step 3: Make Roulette rejection classification return localized copy**
-
-Keep `SpinHttpError` status/code semantics unchanged. Change:
+Keep `SpinHttpError` status/code unchanged. Change to:
 
 ```ts
 messageForSpinRejection(err: SpinHttpError, locale: Locale): string
 ```
 
-and resolve `401`, `INSUFFICIENT_BALANCE`, `SETTLEMENT_CONFLICT`, and default rejection through `messages/roulette.ts`.
-
-Translate page/renderer/client status, bet labels, spin result, recovery controls, and accessibility copy. Do not translate server error codes.
+Resolve `401`, `INSUFFICIENT_BALANCE`, `SETTLEMENT_CONFLICT`, and default rejection in Roulette messages. Translate page/renderer/client state, recovery, and accessibility.
 
 - [ ] **Step 4: Localize Keno renderer/client**
 
-Translate Keno page labels, selection guidance, quick-pick/clear/draw controls, draw/result status, payout labels, settlement recovery, errors, and accessibility copy through the existing `KenoUIRenderer`/`kenoClient` seam.
+Translate page, selection guidance, quick-pick/clear/draw, result/status, payouts, recovery, errors, and accessibility using existing renderer/client seams and locale formatting.
 
-Use locale-aware number/chip formatting and shared game name.
-
-- [ ] **Step 5: Run unit and E2E tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 bun test src/lib/baccarat src/lib/roulette src/lib/keno
 bunx playwright test e2e/baccarat.spec.ts e2e/roulette.spec.ts e2e/keno.spec.ts
 ```
 
-- [ ] **Step 6: Perform the local four-locale visual check**
+- [ ] **Step 6: Local four-locale visual check**
 
-Temporarily enable all locales and inspect Baccarat, Roulette, and Keno at desktop/mobile widths, including table/bet layouts and dynamic result panels. Revert activation.
+Inspect all three game layouts and dynamic result panels at desktop/mobile; revert activation.
 
-- [ ] **Step 7: Verify and commit PR 6**
+- [ ] **Step 7: Verify PR 6**
 
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
-
-Suggested commit:
-
-```text
-feat: localize baccarat roulette and keno
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`.
 
 ---
 
@@ -924,12 +612,13 @@ feat: localize baccarat roulette and keno
 
 **Files:**
 - Create: `src/lib/i18n/messages/craps.ts`
-- Create: `src/lib/i18n/messages/poker.ts`
-- Create: `src/lib/i18n/messages/multiplayer-poker.ts`
 - Modify: `src/pages/games/craps.astro`
-- Modify: `src/lib/craps/CrapsGame.ts` only where a player-facing result is currently an English string
+- Modify: `src/lib/craps/constants.ts`
+- Modify: `src/lib/craps/CrapsGame.ts`
+- Modify: `src/lib/craps/CrapsGame.test.ts`
 - Modify: `src/lib/craps/llmCrapsStrategy.ts`
-- Modify: corresponding Craps tests
+- Modify: `src/lib/craps/craps-advice.test.ts`
+- Create: `src/lib/i18n/messages/poker.ts`
 - Modify: `src/pages/games/poker.astro`
 - Modify: `src/lib/poker/constants.ts`
 - Modify: `src/lib/poker/PokerUIRenderer.ts`
@@ -937,47 +626,63 @@ feat: localize baccarat roulette and keno
 - Modify: `src/lib/poker/AIRivalAssistant.ts`
 - Modify: `src/lib/poker/AIRivalAssistant.test.ts`
 - Modify: `src/lib/poker/llmAIStrategy.ts`
-- Modify: corresponding Poker tests
+- Modify: `src/lib/poker/llmAIStrategy.test.ts`
+- Create: `src/lib/i18n/messages/multiplayer-poker.ts`
 - Modify: `src/pages/games/poker-mp/index.astro`
 - Modify: `src/pages/games/poker-mp/[code].astro`
 - Modify: `src/lib/mp-poker/client.ts`
 - Modify: `src/lib/mp-poker/client.test.ts`
-- Test: `e2e/craps.spec.ts`
-- Test: `e2e/poker-turn-flow.spec.ts`
-- Test: `e2e/multiplayer-poker.spec.ts`
+- Test: `e2e/craps.spec.ts`, `e2e/poker-turn-flow.spec.ts`, `e2e/multiplayer-poker.spec.ts`
 
 **Interfaces:**
-- Consumes: all shared i18n primitives and game names.
 - Keeps: `src/lib/mp-poker/protocol.ts` and server room protocol values language-neutral.
-- Changes: poker hand names/category labels become presentation lookups rather than English constants used as UI copy.
+- Produces: `CrapsBetErrorCode` from `CrapsGame.canPlaceBet()` instead of player-facing English.
+- Changes: Craps bet display labels and Poker hand names become presentation lookups.
 
 - [ ] **Step 1: Add failing Craps/Poker/MP presentation tests**
 
-Add one non-English dynamic renderer/advice assertion for each surface. For MP, set document locale and prove a room/lobby status label changes without changing protocol values in the mocked message.
+Add a non-English dynamic assertion for each surface. For MP, prove a localized room/lobby status while mocked protocol values remain unchanged.
 
-- [ ] **Step 2: Localize Craps page and advice/status presentation**
+- [ ] **Step 2: Convert Craps validation and bet labels to presentation-neutral values**
 
-Translate the large Craps table/page labels, bet names/descriptions, status/results, settings, settlement controls, game rules, and accessibility text in `craps.astro` using stable bet/domain values.
+Change `CrapsGame.canPlaceBet()` from `{ ok: boolean; error?: string }` to a closed code result:
 
-Localize deterministic/LLM explanation text in `llmCrapsStrategy.ts` while keeping selected bet/recommendation identities unchanged.
+```ts
+export type CrapsBetErrorCode =
+  | 'invalid-amount'
+  | 'come-out-only'
+  | 'point-only'
+  | 'missing-pass-line'
+  | 'missing-dont-pass'
+  | 'duplicate-pass-line'
+  | 'duplicate-dont-pass'
+  | 'below-minimum'
+  | 'above-maximum'
+  | 'above-max-odds'
+  | 'insufficient-balance';
+```
 
-If `CrapsGame` exposes a player-visible English result, replace only that result with a closed code and translate at the page/client boundary.
+Include structured numeric/context values separately where the translated message needs them (for example min/max/remaining/multiplier), rather than embedding them in an English string.
 
-- [ ] **Step 3: Move Poker hand names to the Poker dictionary**
+Stop using `BET_LABELS` as the player-facing source. `messages/craps.ts` maps `BetType` directly to localized display labels. If `BET_LABELS` is still needed internally only to validate restored bet keys, replace it with a language-neutral key/set structure or rename/retype it so no English display value remains in domain constants.
 
-Keep `HAND_RANKINGS` numeric. Stop treating `HAND_NAMES` in `src/lib/poker/constants.ts` as player-facing English. Renderer/advisor code resolves the hand-ranking/category key through `messages/poker.ts`.
+Update `CrapsGame.test.ts` to assert codes/context, not English sentences.
 
-Translate page actions, table labels, status, settings, AI rival/advice, errors, rules, and accessible card/hand copy. Keep card rank glyphs and game-state enums unchanged.
+- [ ] **Step 3: Localize Craps page and advice**
 
-Optional provider prompts request the active language without allowing the model to change authoritative game decisions.
+Translate table/bet labels/descriptions, status/results, settings, recovery, rules, and accessibility in `craps.astro` from stable bet/domain values. Translate deterministic/LLM explanation text while keeping recommendation identities neutral.
 
-- [ ] **Step 4: Localize multiplayer Poker UI without translating protocol**
+- [ ] **Step 4: Move Poker hand names to the Poker dictionary and localize UI/advice**
 
-Translate lobby/create/join copy in `poker-mp/index.astro` and room/table/action/status/error/accessibility copy in `[code].astro` and `src/lib/mp-poker/client.ts`.
+Keep `HAND_RANKINGS` numeric; stop using English `HAND_NAMES` as UI data. Renderer/advisor resolves hand/category keys through `messages/poker.ts`.
 
-Use existing protocol codes/state to select presentation messages. Do not alter `src/lib/mp-poker/protocol.ts`, room codes, websocket message types, timers, or server room state merely for localization.
+Translate page actions, table labels, status, settings, AI rival/advice, errors, rules, and accessible card/hand copy. Provider prompts request active language but cannot change authoritative decisions.
 
-- [ ] **Step 5: Run targeted test suites**
+- [ ] **Step 5: Localize multiplayer Poker without translating protocol**
+
+Translate lobby/create/join copy and room/table/action/status/error/accessibility in the two Astro pages and `mp-poker/client.ts`. Use existing protocol codes/state as lookup inputs; do not alter protocol message types, room codes, timers, websocket/server state.
+
+- [ ] **Step 6: Run tests**
 
 ```bash
 bun test src/lib/craps src/lib/poker src/lib/mp-poker
@@ -985,28 +690,17 @@ bunx playwright test e2e/craps.spec.ts e2e/poker-turn-flow.spec.ts
 bun run test:e2e:mp
 ```
 
-The regular `multiplayer-poker.spec.ts` path is covered by the dedicated MP configuration/script; do not invent a second MP harness.
+Use the dedicated MP configuration/script; do not invent another harness.
 
-- [ ] **Step 6: Perform the local four-locale visual check**
+- [ ] **Step 7: Local four-locale visual check**
 
-Temporarily enable all locales and inspect Craps, single-player Poker, MP lobby, and an MP room. Pay special attention to Craps table cell sizing, Poker action controls/advice, and room status/action wrapping. Revert activation.
+Inspect Craps, Poker, MP lobby, and an MP room, with special attention to Craps table cell sizing and Poker/MP action/status wrapping. Revert activation.
 
-- [ ] **Step 7: Verify and commit PR 7**
+- [ ] **Step 8: Verify PR 7**
 
-```bash
-bun run test
-bun run lint
-bun run format:check
-bun run build
-```
+Run `bun run test`, `bun run lint`, `bun run format:check`, `bun run build`.
 
-Suggested commit:
-
-```text
-feat: localize craps poker and multiplayer poker
-```
-
-If this PR proves unreviewable during implementation, stop and ask before changing the approved one-ticket/one-PR boundary; do not silently split the ticket.
+If this one PR proves unreviewable during implementation, stop and ask before changing the approved ticket/PR boundary.
 
 ---
 
@@ -1017,88 +711,51 @@ If this PR proves unreviewable during implementation, stop and ask before changi
 **Files:**
 - Modify: `src/lib/i18n/locale.ts`
 - Modify: `src/lib/i18n/locale.test.ts`
-- Modify: `e2e/i18n-foundation.spec.ts` or rename/add `e2e/i18n-activation.spec.ts`
-- Modify: any migrated presentation file where the audit finds a real player-facing gap
-- Modify: `src/lib/bet-validation.ts` only if the English compatibility wrapper has no remaining caller
+- Modify/add: `e2e/i18n-activation.spec.ts`
+- Modify: any already-migrated presentation file only when the explicit audits below find a player-facing gap
+- Modify: `src/lib/bet-validation.ts` if the English compatibility wrapper has no production caller
 
-**Interfaces:**
-- Changes: `ENABLED_LOCALES` from `['en']` to all `SUPPORTED_LOCALES`.
-- Removes: temporary English compatibility presentation paths only when `rg`/tests prove they are unused.
-
-- [ ] **Step 1: Run a hard-coded locale-formatting audit**
-
-From repo root run:
+- [ ] **Step 1: Audit hard-coded locale formatting**
 
 ```bash
-rg -n "Intl\.NumberFormat\(['\"]en-US|toLocaleString\(['\"]en-US|toLocaleDateString\(['\"]en-US" \
-  src/pages src/components src/lib
+rg -n "Intl\.NumberFormat\(['\"]en-US|toLocaleString\(['\"]en-US|toLocaleDateString\(['\"]en-US" src/pages src/components src/lib
 ```
 
-For every match, classify whether it is player-facing. Replace player-facing matches with Task 1 formatting helpers and active document/request locale. Leave non-player protocol/log/test fixtures alone and document the reason in the PR if a match intentionally remains.
+Replace every player-facing match with shared formatting/active locale. Leave only non-player logs/tests/protocol fixtures, with the PR description noting intentional production matches if any remain.
 
-- [ ] **Step 2: Audit known English-bearing presentation/domain seams**
-
-Run:
+- [ ] **Step 2: Audit known English-bearing seams**
 
 ```bash
-rg -n \
-  "Retry settlement|Reset round|Wager must|Bet must be|Wager exceeds|Player wins|Dealer wins|High Card|Royal Flush|Jack|Queen|King|Ace|Joker| chips" \
-  src/pages src/components src/lib
+rg -n "Retry settlement|Reset round|Wager must|Bet must be|Wager exceeds|Player wins|Dealer wins|High Card|Royal Flush|Jack|Queen|King|Ace|Joker| chips" src/pages src/components src/lib
 ```
 
-Inspect each production match. Player-facing display copy must be in a message dictionary or generated from translated complete templates. Invariant exceptions/logs/tests may remain English if they are never shown to players.
-
-Also confirm all `getWagerError`/arrangement errors used by migrated clients return stable codes, not English presentation strings.
+Every player-facing match must move to a message dictionary or translated complete template. Invariant exceptions/logs/tests may remain English if never displayed. Confirm migrated wager/arrangement APIs return codes, not English display strings.
 
 - [ ] **Step 3: Prove dictionary completeness**
 
-Add/extend a unit test that imports every message module and asserts all four locale branches have the English key set. Separately assert `messages/games.ts` covers every `GAME_TYPES` value plus the three extras.
+Unit tests import every message module and assert all four branches have English's key set. Separately assert the games dictionary covers every `GAME_TYPES` member plus three extras.
 
-Run:
-
-```bash
-bun test src/lib/i18n
-```
+Run `bun test src/lib/i18n`.
 
 - [ ] **Step 4: Remove the temporary English `validateBet()` wrapper if unused**
-
-Run:
 
 ```bash
 rg -n "\bvalidateBet\(" src --glob '!src/lib/bet-validation.ts' --glob '!*.test.ts'
 ```
 
-If there are zero production callers, delete the English-string wrapper and retain only `validateBetCode()`. If callers remain, convert the remaining player-facing caller to codes in this PR before removal; do not delete a still-used API.
+If zero production callers remain, delete the English-string wrapper and retain `validateBetCode()`. If a production caller remains, convert that caller to codes in this PR before deletion.
 
 - [ ] **Step 5: Enable all four locales**
 
-Change:
-
-```ts
-export const ENABLED_LOCALES: readonly Locale[] = SUPPORTED_LOCALES;
-```
-
-or the equivalent immutable all-four value. No environment flag or staged percentage rollout is added.
-
-Update locale tests so Japanese/Chinese cookies and `Accept-Language` are now accepted by default production resolution.
+Set `ENABLED_LOCALES` to all `SUPPORTED_LOCALES`. Update default request-resolution tests for enabled Japanese/Chinese cookies and browser languages.
 
 - [ ] **Step 6: Add the one activation E2E path**
 
-The activation spec starts without a locale cookie, verifies browser-language detection, then uses the visible picker and verifies persistence across navigation:
+Start without locale cookie, verify browser-language detection, change language through the visible picker, verify `arcturus_locale`, navigate, then assert persisted `<html lang>`/`data-locale` and representative shell plus game/progression labels. Do not duplicate every E2E suite four times.
 
-```ts
-await expect(page.locator('html')).toHaveAttribute('lang', 'ja');
-// choose 繁體中文
-// assert arcturus_locale=zh-Hant
-// navigate to another translated surface
-await expect(page.locator('html')).toHaveAttribute('lang', 'zh-Hant');
-```
+- [ ] **Step 7: Final four-locale visual QA**
 
-Also verify a representative shell label and one game/progression label change. Do not duplicate every E2E suite four times.
-
-- [ ] **Step 7: Run final four-locale visual QA**
-
-Inspect these representative surfaces in all four locales at desktop and narrow mobile widths:
+Inspect in all four locales at desktop/narrow widths:
 
 ```text
 /
@@ -1123,9 +780,9 @@ Inspect these representative surfaces in all four locales at desktop and narrow 
 /games/poker-mp
 ```
 
-Check clipping, wrapping, button/table sizing, font fallback, accessible labels, and dynamic result/status states. Add a CJK font only if this verification demonstrates a real readability/layout defect that cannot be solved with existing system fallback.
+Check clipping, wrapping, controls/tables, font fallback, accessibility labels, and dynamic status/results. Add a CJK font only if this exposes a real defect not solved by system fallback/layout.
 
-- [ ] **Step 8: Run final verification**
+- [ ] **Step 8: Final verification**
 
 ```bash
 bun run test
@@ -1133,24 +790,12 @@ bun run lint
 bun run format:check
 bun run build
 bun run test:e2e:ci
-```
-
-Run the MP suite separately because it uses its own config:
-
-```bash
 bun run test:e2e:mp
 ```
 
-Expected: all checks PASS with all four locales enabled.
-
 - [ ] **Step 9: Commit PR 8**
 
-Suggested commits:
-
-```text
-fix: close i18n completeness gaps
-feat: enable four-language localization
-```
+Suggested commits: `fix: close i18n completeness gaps`, `feat: enable four-language localization`.
 
 ---
 

@@ -41,7 +41,7 @@ export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {
 	blackjack: 'Blackjack',
 	baccarat: 'Baccarat',
 	craps: 'Craps',
-	poker: 'Poker',
+	poker: "Texas Hold'em Poker",
 	slots: 'Slots',
 	roulette: 'Roulette',
 	keno: 'Keno',

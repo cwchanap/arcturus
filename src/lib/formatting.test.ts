@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { SUPPORTED_LOCALES } from './i18n/locale';
 import {
 	formatChipBalance,
 	formatChipBalanceWithDecimals,
@@ -70,5 +71,22 @@ describe('Player statistics formatting', () => {
 
 	test('rejects non-finite percentages', () => {
 		expect(() => formatPercentage(Number.NaN)).toThrow(RangeError);
+	});
+
+	test('accepts every supported locale while keeping grouping and decimals', () => {
+		for (const locale of SUPPORTED_LOCALES) {
+			expect(formatChipBalance(10000, locale)).toBe('10,000');
+			expect(formatWholeNumber(12345, locale)).toBe('12,345');
+			expect(formatChipBalanceWithDecimals(12345.67, 2, 2, locale)).toBe('12,345.67');
+			expect(formatPercentage(50.83333333333333, locale)).toBe('50.8%');
+			expect(formatSignedChipResult(1200, locale)).toBe('+1,200 chips');
+		}
+	});
+
+	test('locale arguments default to English', () => {
+		expect(formatChipBalance(10000)).toBe('10,000');
+		expect(formatWholeNumber(12345)).toBe('12,345');
+		expect(formatChipBalanceWithDecimals(12345.67)).toBe('12,345.67');
+		expect(formatSignedChipResult(-400)).toBe('−400 chips');
 	});
 });

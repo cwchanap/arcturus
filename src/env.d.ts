@@ -14,6 +14,11 @@ interface Env {
 
 declare namespace App {
 	interface Locals {
+		/**
+		 * Request locale, resolved once by middleware (cookie →
+		 * Accept-Language → English) before any early return.
+		 */
+		locale: import('./lib/i18n/locale').Locale;
 		runtime: {
 			env: Env;
 			cf: CfProperties;

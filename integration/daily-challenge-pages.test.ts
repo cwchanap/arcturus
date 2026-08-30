@@ -24,20 +24,20 @@ const user = {
 };
 
 function guestLocals(): App.Locals {
+	const runtime = { env: { DB: {} } } as App.Locals['runtime'];
 	return {
-		runtime: {
-			env: { DB: {} },
-		},
+		runtime,
+		locale: 'en',
 		session: null,
 		user: null,
-	} as App.Locals;
+	};
 }
 
 function authedLocals(): App.Locals {
+	const runtime = { env: { DB: {} } } as App.Locals['runtime'];
 	return {
-		runtime: {
-			env: { DB: {} },
-		},
+		runtime,
+		locale: 'en',
 		session: {
 			user,
 			session: {
@@ -50,7 +50,7 @@ function authedLocals(): App.Locals {
 			},
 		},
 		user,
-	} as App.Locals;
+	};
 }
 
 describe('daily challenge current page — cache and session behavior', () => {
@@ -68,6 +68,9 @@ describe('daily challenge current page — cache and session behavior', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('cache-control')).toBe(GUEST_CACHE_CONTROL);
 		expect(response.headers.get('vary')).toBe('Cookie');
+		// AppLayout writes the document-level locale once on the root element.
+		expect(window.document.documentElement.getAttribute('lang')).toBe('en');
+		expect(window.document.documentElement.getAttribute('data-locale')).toBe('en');
 
 		const root = window.document.querySelector('#daily-challenge-root');
 		expect(root).not.toBeNull();

@@ -104,6 +104,7 @@ export function initVideoPokerClient(): void {
 			failed: 'Settlement failed. Retry or reset before starting another hand.',
 			retrying: 'Retrying settlement...',
 			retryFailed: 'Settlement failed again. Retry or reset the hand.',
+			retryLabel: 'Retry settlement',
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),

@@ -1,7 +1,10 @@
 ---
 import DecoIcon from './DecoIcon.astro';
+import { SHELL_MESSAGES } from '../lib/i18n/messages/common';
+import { createTranslator } from '../lib/i18n/translate';
 
 const user = Astro.locals.user;
+const t = createTranslator(SHELL_MESSAGES, Astro.locals.locale);
 ---
 
 <div class="flex items-center gap-4">
@@ -27,16 +30,16 @@ const user = Astro.locals.user;
 					{user.name}
 				</span>
 				<a href="/profile" class="deco-link">
-					Profile
+					{t('profile')}
 				</a>
 			</div>
 		) : (
 			<div class="flex items-center gap-3">
 				<a href="/signin" class="deco-link">
-					Sign In
+					{t('signIn')}
 				</a>
 				<a href="/signin" class="deco-btn deco-btn-primary">
-					Join Free
+					{t('joinFree')}
 				</a>
 			</div>
 		)

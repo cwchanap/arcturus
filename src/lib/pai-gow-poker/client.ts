@@ -188,6 +188,7 @@ export function initPaiGowPokerClient(): void {
 			failed: 'Settlement failed. Retry or reset before starting another round.',
 			retrying: 'Retrying settlement...',
 			retryFailed: 'Settlement failed again. Retry or reset before starting another round.',
+			retryLabel: 'Retry settlement',
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),

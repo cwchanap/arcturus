@@ -5,6 +5,8 @@ import { createAuth } from './lib/auth';
 import { createDb } from './lib/db';
 import { user as userTable } from './db/schema';
 
+import { LOCALE_COOKIE, resolveRequestLocale } from './lib/i18n/locale';
+
 let chipBalanceColumnEnsured = false;
 
 async function ensureChipBalanceColumn(db: D1Database) {
@@ -27,6 +29,13 @@ async function ensureChipBalanceColumn(db: D1Database) {
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
+	// Resolve the request locale before any branch can call next(), including
+	// the no-DB/auth path below, so every response has a locale.
+	context.locals.locale = resolveRequestLocale({
+		cookieLocale: context.cookies.get(LOCALE_COOKIE)?.value,
+		acceptLanguage: context.request.headers.get('accept-language'),
+	});
+
 	const runtime = context.locals.runtime;
 	const env = runtime?.env ?? null;
 	const dbBinding = env?.DB ?? null;

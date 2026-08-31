@@ -1,4 +1,5 @@
 import type { Card } from '../cards';
+import type { BetValidationCode } from '../bet-validation';
 
 export interface PaiGowJoker {
 	rank: 'joker';
@@ -57,3 +58,24 @@ export interface PaiGowPokerState {
 	lowIndexes: number[];
 	result: PaiGowRoundResult | null;
 }
+
+/**
+ * Language-neutral wager validation result, translated at the presentation
+ * boundary. The client maps the code through the game message catalog.
+ */
+export type PaiGowWagerErrorCode =
+	| BetValidationCode
+	| 'whole-number-required'
+	| 'insufficient-balance';
+
+/**
+ * Language-neutral arrangement validation result, translated at the
+ * presentation boundary by the client.
+ */
+export type PaiGowArrangementErrorCode =
+	| 'exactly-seven-cards'
+	| 'exactly-two-low-indexes'
+	| 'whole-number-indexes'
+	| 'distinct-indexes'
+	| 'indexes-in-range'
+	| 'high-hand-rank';

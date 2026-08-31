@@ -42,7 +42,7 @@ describe('SicBoGame accounting', () => {
 describe('SicBoGame denomination and clearing', () => {
 	test('empty slip blocks rolling', () => {
 		const game = new SicBoGame(100);
-		expect(game.getRollError()).toContain('bet');
+		expect(game.getRollError()).toBe('no-bets');
 	});
 
 	test('only chip denominations are accepted', () => {
@@ -56,7 +56,7 @@ describe('SicBoGame denomination and clearing', () => {
 	test('aggregate stake above balance is rejected', () => {
 		const game = new SicBoGame(100);
 		game.setBet('big', 100);
-		expect(game.getBetError('small', 1)).toContain('balance');
+		expect(game.getBetError('small', 1)).toBe('insufficient-balance');
 	});
 
 	test('clearBet removes one position', () => {
@@ -93,9 +93,9 @@ describe('SicBoGame retained slip recovery', () => {
 		expect(game.getState().bets).toEqual({ big: 10, small: 5 });
 
 		game.setBalance(5);
-		expect(game.getRollError()).toContain('balance');
+		expect(game.getRollError()).toBe('insufficient-balance');
 		game.clearBet('small'); // stake 10, still above the new balance
-		expect(game.getRollError()).toContain('balance');
+		expect(game.getRollError()).toBe('insufficient-balance');
 	});
 
 	test('clearBets unlocks rolling after adopting a smaller balance', () => {
@@ -105,10 +105,10 @@ describe('SicBoGame retained slip recovery', () => {
 		game.roll();
 		game.resetRound();
 		game.setBalance(5);
-		expect(game.getRollError()).toContain('balance');
+		expect(game.getRollError()).toBe('insufficient-balance');
 		game.clearBets();
 		expect(game.getTotalStake()).toBe(0);
-		expect(game.getRollError()).toContain('bet');
+		expect(game.getRollError()).toBe('no-bets');
 	});
 });
 

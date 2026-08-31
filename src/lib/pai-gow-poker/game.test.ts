@@ -20,15 +20,15 @@ describe('PaiGowPokerGame', () => {
 	test('validates whole-number wagers, limits, and affordability without a divisibility rule', () => {
 		const game = new PaiGowPokerGame(10, () => 0);
 
-		expect(game.getWagerError(5.5)).toBe('Wager must be a whole number of chips');
-		expect(game.getWagerError(4)).toBe('Bet must be between 5 and 100 chips');
-		expect(game.getWagerError(101)).toBe('Bet must be between 5 and 100 chips');
-		expect(game.getWagerError(11)).toBe('Wager exceeds available balance');
+		expect(game.getWagerError(5.5)).toBe('whole-number-required');
+		expect(game.getWagerError(4)).toBe('out-of-range');
+		expect(game.getWagerError(101)).toBe('out-of-range');
+		expect(game.getWagerError(11)).toBe('insufficient-balance');
 		expect(game.getWagerError(7)).toBeNull();
 
 		game.setWager(7);
 		expect(game.getState().wager).toBe(7);
-		expect(() => game.setWager(4)).toThrow('Bet must be between 5 and 100 chips');
+		expect(() => game.setWager(4)).toThrow('out-of-range');
 	});
 
 	test('deals, auto-arranges, resolves the zero-RNG push, and resets the round', () => {

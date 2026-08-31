@@ -45,3 +45,17 @@ export type SicBoState = {
 	bets: Partial<Record<SicBoBetKey, number>>;
 	result: SicBoRoundResult | null;
 };
+
+/**
+ * Language-neutral bet-slip validation result, translated at the
+ * presentation boundary. `getBetError` returns the bet-placement codes and
+ * `getRollError` returns the roll-blocking codes; one closed union covers
+ * both so the client can map any code through a single catalog.
+ */
+export type SicBoBetErrorCode =
+	| 'unsupported-bet'
+	| 'bets-locked'
+	| 'denomination'
+	| 'insufficient-balance'
+	| 'no-bets'
+	| 'new-round-required';

@@ -1,8 +1,8 @@
-import { validateBet } from '../bet-validation';
+import { validateBetCode } from '../bet-validation';
 import { createShuffledDeck, type Card } from '../cards';
 import { evaluateHand } from './evaluator';
 import { calculatePayout, MAX_WAGER, MIN_WAGER } from './paytable';
-import type { VideoPokerRoundResult, VideoPokerState } from './types';
+import type { VideoPokerRoundResult, VideoPokerState, VideoPokerWagerErrorCode } from './types';
 
 function normalizeBalance(balance: number): number {
 	if (!Number.isFinite(balance) || balance < 0) {
@@ -43,11 +43,12 @@ export class VideoPokerGame {
 		};
 	}
 
-	getWagerError(wager: number): string | null {
-		if (!Number.isInteger(wager)) return 'Wager must be a whole number of chips';
-		const rangeError = validateBet(wager, MIN_WAGER, MAX_WAGER);
+	/** Language-neutral validation result; the client translates the code. */
+	getWagerError(wager: number): VideoPokerWagerErrorCode | null {
+		if (!Number.isInteger(wager)) return 'whole-number-required';
+		const rangeError = validateBetCode(wager, MIN_WAGER, MAX_WAGER);
 		if (rangeError) return rangeError;
-		if (wager > this.state.balance) return 'Wager exceeds available balance';
+		if (wager > this.state.balance) return 'insufficient-balance';
 		return null;
 	}
 

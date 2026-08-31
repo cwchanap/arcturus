@@ -12,6 +12,7 @@ import {
 } from '../lib/profile-statistics-loader';
 import { getAchievementDescription, getAchievementName } from '../lib/i18n/messages/achievements';
 import { profileTranslator } from '../lib/i18n/messages/profile';
+import { formatShortDate } from '../lib/formatting';
 
 const locale = Astro.locals.locale;
 const t = profileTranslator(locale);
@@ -445,11 +446,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										{achievement.isUnlocked && achievement.earnedAt && (
 											<p class="deco-accent-dim text-xs mt-1">
 												{t('earnedOn', {
-													date: new Date(achievement.earnedAt).toLocaleDateString(locale, {
-														month: 'short',
-														day: 'numeric',
-														year: 'numeric',
-													}),
+													date: formatShortDate(new Date(achievement.earnedAt), locale),
 												})}
 											</p>
 										)}

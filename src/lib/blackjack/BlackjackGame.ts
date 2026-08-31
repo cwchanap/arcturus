@@ -9,6 +9,19 @@ import { compareHands, isBlackjack, isBust, calculateHandValue } from './handEva
 import { shouldDealerHit } from './dealerStrategy';
 import { BLACKJACK_PAYOUT, WIN_PAYOUT, DEFAULT_MIN_BET, DEFAULT_MAX_BET } from './constants';
 
+/**
+ * Language-neutral reason why an action is unavailable for tooltip display.
+ * Presentation layers translate these codes; no English copy lives in the
+ * domain. `needed` carries the additional wager amount for
+ * `not-enough-chips`.
+ */
+export type BlackjackActionUnavailableReason =
+	| 'not-your-turn'
+	| 'first-two-cards-only'
+	| 'hand-total-9-11-only'
+	| 'not-enough-chips'
+	| 'matching-pairs-only';
+
 export class BlackjackGame {
 	private state: BlackjackGameState;
 	private deck: DeckManager;
@@ -410,35 +423,45 @@ export class BlackjackGame {
 
 	/**
 	 * Get detailed availability info for double-down and split actions.
-	 * Returns reason why an action is unavailable for tooltip display.
+	 * Returns a language-neutral reason code when an action is unavailable.
 	 */
 	public getActionAvailability(): {
-		doubleDown: { available: boolean; reason?: string };
-		split: { available: boolean; reason?: string };
+		doubleDown: { available: boolean; reason?: BlackjackActionUnavailableReason; needed?: number };
+		split: { available: boolean; reason?: BlackjackActionUnavailableReason; needed?: number };
 	} {
 		const result = {
-			doubleDown: { available: false, reason: undefined as string | undefined },
-			split: { available: false, reason: undefined as string | undefined },
+			doubleDown: {
+				available: false,
+				reason: undefined as BlackjackActionUnavailableReason | undefined,
+				needed: undefined as number | undefined,
+			},
+			split: {
+				available: false,
+				reason: undefined as BlackjackActionUnavailableReason | undefined,
+				needed: undefined as number | undefined,
+			},
 		};
 
 		if (this.state.phase !== 'player-turn') {
-			result.doubleDown.reason = 'Not your turn';
-			result.split.reason = 'Not your turn';
+			result.doubleDown.reason = 'not-your-turn';
+			result.split.reason = 'not-your-turn';
 			return result;
 		}
 
 		const activeHand = this.state.playerHands[this.state.activeHandIndex];
 		const hasEnoughChips = activeHand.bet <= this.state.playerBalance;
+		// The additional wager needed is one more full bet (double/split).
 
 		// Check double-down availability
 		if (activeHand.cards.length !== 2) {
-			result.doubleDown.reason = 'Only available on first two cards';
+			result.doubleDown.reason = 'first-two-cards-only';
 		} else {
 			const handValue = calculateHandValue(activeHand.cards);
 			if (handValue.value < 9 || handValue.value > 11) {
-				result.doubleDown.reason = 'Only available on hands totaling 9-11';
+				result.doubleDown.reason = 'hand-total-9-11-only';
 			} else if (!hasEnoughChips) {
-				result.doubleDown.reason = `Not enough chips (need $${activeHand.bet} more)`;
+				result.doubleDown.reason = 'not-enough-chips';
+				result.doubleDown.needed = activeHand.bet;
 			} else {
 				result.doubleDown.available = true;
 			}
@@ -446,11 +469,12 @@ export class BlackjackGame {
 
 		// Check split availability
 		if (activeHand.cards.length !== 2) {
-			result.split.reason = 'Only available on first two cards';
+			result.split.reason = 'first-two-cards-only';
 		} else if (activeHand.cards[0].rank !== activeHand.cards[1].rank) {
-			result.split.reason = 'Only available on matching pairs';
+			result.split.reason = 'matching-pairs-only';
 		} else if (!hasEnoughChips) {
-			result.split.reason = `Not enough chips (need $${activeHand.bet} more)`;
+			result.split.reason = 'not-enough-chips';
+			result.split.needed = activeHand.bet;
 		} else {
 			result.split.available = true;
 		}

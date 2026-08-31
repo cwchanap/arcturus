@@ -13,7 +13,6 @@ function rollResult(overrides: Partial<RollResult> = {}): RollResult {
 		point: null,
 		evaluations: [],
 		netDelta: 0,
-		message: 'Natural 7!',
 		...overrides,
 	};
 }

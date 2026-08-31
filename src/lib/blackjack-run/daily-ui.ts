@@ -2,7 +2,7 @@ import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
 import { dailyChallengeTranslator } from '../i18n/messages/daily-challenge';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
-import { formatWholeNumber } from '../formatting';
+import { formatUsd, formatWholeNumber } from '../formatting';
 import {
 	createBlackjackRunClient,
 	type BlackjackRunClient,
@@ -50,19 +50,6 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const RUN_NOT_FOUND = 'RUN_NOT_FOUND';
 
 const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
-
-export function formatPoints(value: number, locale: Locale = 'en'): string {
-	return new Intl.NumberFormat(locale).format(value);
-}
-
-function formatCurrency(value: number, locale: Locale): string {
-	return new Intl.NumberFormat(locale, {
-		style: 'currency',
-		currency: 'USD',
-		minimumFractionDigits: 0,
-		maximumFractionDigits: 0,
-	}).format(value);
-}
 
 /**
  * Locale-aware ordinal percentile value: English keeps the st/nd/rd/th suffix
@@ -261,7 +248,7 @@ function renderActiveRound(
 	});
 	renderBlackjackPlayerHands(ownerDocument, playerHands, round.playerHands, round.activeHandIndex, {
 		testIdPrefix: 'daily-challenge',
-		formatWager: (wager) => formatCurrency(wager, locale),
+		formatWager: (wager) => formatUsd(wager, locale),
 	});
 }
 
@@ -372,7 +359,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		receiptEl.hidden = false;
 		receiptEligibilityEl.textContent =
 			state.eligible === true ? t('eligibleForRanking') : t('notEligibleForRanking');
-		receiptBankrollEl.textContent = formatCurrency(state.availableBankroll, locale);
+		receiptBankrollEl.textContent = formatUsd(state.availableBankroll, locale);
 		receiptRoundsEl.textContent = t('roundsCompleted', {
 			completed: formatWholeNumber(state.roundsCompleted, locale),
 			total: formatWholeNumber(DAILY_RUN_CONFIG.roundCount, locale),
@@ -397,9 +384,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		if (mode === 'practice') {
 			const replay = practiceReplay;
 			if (replay === null) return;
-			bankrollEl.textContent = formatCurrency(replay.availableBankroll, locale);
+			bankrollEl.textContent = formatUsd(replay.availableBankroll, locale);
 			committedWagerEl.textContent = replay.activeRoundPublic
-				? formatCurrency(replay.activeRoundPublic.committedWager, locale)
+				? formatUsd(replay.activeRoundPublic.committedWager, locale)
 				: '\u2014';
 			roundProgressEl.textContent = roundProgressLabel(replay.roundsCompleted);
 			if (replay.activeRoundPublic) {
@@ -431,9 +418,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			return;
 		}
 
-		bankrollEl.textContent = formatCurrency(state.availableBankroll, locale);
+		bankrollEl.textContent = formatUsd(state.availableBankroll, locale);
 		committedWagerEl.textContent = state.activeRound
-			? formatCurrency(state.activeRound.committedWager, locale)
+			? formatUsd(state.activeRound.committedWager, locale)
 			: '\u2014';
 		roundProgressEl.textContent = roundProgressLabel(state.roundsCompleted);
 		if (state.activeRound) {
@@ -537,7 +524,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 					row.textContent = t('dailyRow', {
 						rank: formatWholeNumber(entry.rank, locale),
 						player: entry.playerName,
-						amount: formatCurrency(entry.endingBankroll, locale),
+						amount: formatUsd(entry.endingBankroll, locale),
 					});
 					return row;
 				}),
@@ -569,7 +556,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 						row.textContent = t('weeklyRow', {
 							rank: formatWholeNumber(entry.rank, locale),
 							player: entry.playerName,
-							points: formatPoints(entry.weeklyScore, locale),
+							points: formatWholeNumber(entry.weeklyScore, locale),
 							days: formatWholeNumber(entry.daysPlayed, locale),
 						});
 						return row;
@@ -582,7 +569,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				weeklyStandingEl.textContent = t('weeklyStanding', {
 					rank: formatWholeNumber(rank, locale),
 					total: formatWholeNumber(totalEligible, locale),
-					points: formatPoints(weeklyScore, locale),
+					points: formatWholeNumber(weeklyScore, locale),
 					days: formatWholeNumber(daysPlayed, locale),
 				});
 			}

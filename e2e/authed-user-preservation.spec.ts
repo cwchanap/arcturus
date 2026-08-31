@@ -100,7 +100,7 @@ test.describe('authed user preservation', () => {
 			await expect(isolated.page.locator('#btn-new-round')).toBeVisible();
 			await expect(isolated.page.locator('#game-status')).toContainText('BLACKJACK');
 			await expect(isolated.page.locator('#player-balance')).toHaveText(
-				`$${settledBalance.toLocaleString('en-US')}`,
+				`${settledBalance.toLocaleString('en-US')} chips`,
 			);
 			await isolated.page.waitForLoadState('networkidle');
 			expect(runRequests).toEqual([]);

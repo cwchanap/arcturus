@@ -589,74 +589,48 @@ export class CrapsGame {
 		// Compute net delta (profit/loss from this roll's resolved bets)
 		const netDelta = computeNetDelta(evaluations);
 
-		// Determine new phase and message
-		const {
-			phase: newPhase,
-			point: newPoint,
-			message,
-		} = this.resolvePhase(total, currentPhase, currentPoint);
+		// Determine new phase and point
+		const { phase: newPhase, point: newPoint } = this.resolvePhase(
+			total,
+			currentPhase,
+			currentPoint,
+		);
 		this.state.phase = newPhase;
 		this.state.point = newPoint;
 
-		return { roll, phase: newPhase, point: newPoint, evaluations, netDelta, message };
+		return { roll, phase: newPhase, point: newPoint, evaluations, netDelta };
 	}
 
 	private resolvePhase(
 		total: number,
 		phase: GamePhase,
 		currentPoint: PointNumber | null,
-	): { phase: GamePhase; point: PointNumber | null; message: string } {
+	): { phase: GamePhase; point: PointNumber | null } {
 		if (phase === 'come-out') {
-			if (total === 7) return { phase: 'come-out', point: null, message: 'Natural 7!' };
-			if (total === 11) return { phase: 'come-out', point: null, message: 'Yo-Eleven!' };
-			if (total === 2) return { phase: 'come-out', point: null, message: 'Snake Eyes! Craps!' };
-			if (total === 3) return { phase: 'come-out', point: null, message: 'Ace Deuce! Craps!' };
-			if (total === 12)
-				return { phase: 'come-out', point: null, message: 'Boxcars! Craps! Bar 12.' };
+			if (total === 7) return { phase: 'come-out', point: null };
+			if (total === 11) return { phase: 'come-out', point: null };
+			if (total === 2) return { phase: 'come-out', point: null };
+			if (total === 3) return { phase: 'come-out', point: null };
+			if (total === 12) return { phase: 'come-out', point: null };
 			if (isPointNumber(total)) {
-				const names: Record<number, string> = {
-					4: '4',
-					5: '5',
-					6: 'Six',
-					8: 'Eight',
-					9: '9',
-					10: '10',
-				};
-				return {
-					phase: 'point',
-					point: total,
-					message: `Point is ${names[total]}! Roll it again!`,
-				};
+				return { phase: 'point', point: total };
 			}
 		}
 
 		if (phase === 'point') {
 			if (total === currentPoint) {
-				const names: Record<number, string> = {
-					4: '4',
-					5: '5',
-					6: 'Six',
-					8: 'Eight',
-					9: '9',
-					10: '10',
-				};
-				return {
-					phase: 'come-out',
-					point: null,
-					message: `${names[total ?? 0]}! Point made!`,
-				};
+				return { phase: 'come-out', point: null };
 			}
 			if (total === 7) {
-				return { phase: 'come-out', point: null, message: 'Seven out!' };
+				return { phase: 'come-out', point: null };
 			}
 			return {
 				phase: 'point',
 				point: currentPoint,
-				message: `Rolled ${total}. Keep shooting!`,
 			};
 		}
 
-		return { phase, point: currentPoint, message: `Rolled ${total}` };
+		return { phase, point: currentPoint };
 	}
 
 	// ─── balance ──────────────────────────────────────────────────────────────

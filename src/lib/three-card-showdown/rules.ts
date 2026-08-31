@@ -14,15 +14,6 @@ const CATEGORY_STRENGTH: Record<ThreeCardHandCategory, number> = {
 	'straight-flush': 5,
 };
 
-const CATEGORY_LABEL: Record<ThreeCardHandCategory, string> = {
-	'high-card': 'High Card',
-	pair: 'Pair',
-	flush: 'Flush',
-	straight: 'Straight',
-	'three-of-kind': 'Three of a Kind',
-	'straight-flush': 'Straight Flush',
-};
-
 function sortedRanks(cards: readonly Card[]): number[] {
 	return cards.map((card) => card.rank).sort((a, b) => b - a);
 }
@@ -69,7 +60,7 @@ export function evaluateThreeCardHand(cards: readonly Card[]): ThreeCardHandEval
 		tieBreakRanks = tieBreakers;
 	}
 
-	return { category, label: CATEGORY_LABEL[category], tieBreakers: tieBreakRanks };
+	return { category, tieBreakers: tieBreakRanks };
 }
 
 export function compareThreeCardHands(

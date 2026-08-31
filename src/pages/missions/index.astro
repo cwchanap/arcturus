@@ -5,12 +5,22 @@ import { createDb } from '../../lib/db';
 import { user } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { getBoardState } from '../../lib/missions';
+import {
+	getMissionDescription,
+	getMissionTitle,
+	missionsTranslator,
+} from '../../lib/i18n/messages/missions';
+import { formatChips } from '../../lib/i18n/messages/common';
+import { formatWholeNumber } from '../../lib/formatting';
 
 const session = Astro.locals.session;
 if (!session || !Astro.locals.runtime?.env?.DB) {
 	if (!session) return Astro.redirect('/signin');
 	return new Response('Service temporarily unavailable', { status: 503 });
 }
+
+const locale = Astro.locals.locale;
+const t = missionsTranslator(locale);
 
 const d1 = Astro.locals.runtime.env.DB;
 const db = createDb(d1);
@@ -21,28 +31,42 @@ const [userRow] = await db
 	.limit(1);
 
 const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalance ?? 0);
+
+function formatProgress(progress: number, target: number): string {
+	return `${formatWholeNumber(progress, locale)}/${formatWholeNumber(target, locale)}`;
+}
 ---
 
-<CasinoLayout title="Missions - Arcturus Casino">
+<CasinoLayout title={t('pageTitle')}>
 	<section class="deco-atmosphere relative overflow-hidden">
 		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<!-- Streak Banner -->
 			<div id="streak-banner" class="deco-panel mb-8 p-6" data-testid="streak-banner">
 				<div class="flex items-center justify-between">
 					<div>
-						<p class="deco-eyebrow-sm">Daily Login Streak</p>
+						<p class="deco-eyebrow-sm">{t('dailyLoginStreak')}</p>
 						<h2 class="deco-section-title text-2xl mt-1">
-							<span data-testid="streak-display">Day {initialBoard.streak.dayOfCycle} of cycle</span
+							<span data-testid="streak-display"
+								>{
+									t('dayOfCycle', {
+										day: formatWholeNumber(initialBoard.streak.dayOfCycle, locale),
+									})
+								}</span
 							>
 						</h2>
 						<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
-							{initialBoard.streak.current}-day streak · Best: {initialBoard.streak.longest}
+							{
+								t('streakSummary', {
+									current: formatWholeNumber(initialBoard.streak.current, locale),
+									longest: formatWholeNumber(initialBoard.streak.longest, locale),
+								})
+							}
 						</p>
 					</div>
 					<div class="text-right">
-						<p class="deco-text-dim text-sm">Today's Reward</p>
+						<p class="deco-text-dim text-sm">{t('todaysReward')}</p>
 						<p class="text-[var(--deco-brass)] font-bold text-xl" data-testid="streak-reward">
-							{initialBoard.streak.rewardPreview.toLocaleString()} chips
+							{formatChips(initialBoard.streak.rewardPreview, locale)}
 						</p>
 						<button
 							id="claim-login-btn"
@@ -50,14 +74,14 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 							data-testid="claim-login-btn"
 							disabled={!initialBoard.streak.claimableToday}
 						>
-							{initialBoard.streak.claimableToday ? 'Claim' : 'Claimed'}
+							{initialBoard.streak.claimableToday ? t('claim') : t('claimed')}
 						</button>
 					</div>
 				</div>
 			</div>
 
 			<!-- Daily Quests -->
-			<h2 class="deco-section-title text-xl mb-4">Daily Quests</h2>
+			<h2 class="deco-section-title text-xl mb-4">{t('dailyQuests')}</h2>
 			<div
 				id="daily-grid"
 				class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
@@ -73,9 +97,11 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 							<div class="flex items-start justify-between mb-2">
 								<div class="flex items-center gap-2">
 									<span class="text-xl">{mission.icon}</span>
-									<h3 class="font-body font-semibold">{mission.title}</h3>
+									<h3 class="font-body font-semibold">
+										{getMissionTitle(locale, mission.missionDefId)}
+									</h3>
 									{mission.isOverride && (
-										<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>
+										<span class="text-xs text-[var(--deco-muted)]">{t('rerolled')}</span>
 									)}
 								</div>
 								<button
@@ -83,12 +109,14 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 									data-reroll-target={mission.missionDefId}
 									data-testid={`reroll-${mission.missionDefId}`}
 									style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
-									aria-label="Reroll mission"
+									aria-label={t('rerollAriaLabel')}
 								>
 									<DecoIcon name="star" size={16} />
 								</button>
 							</div>
-							<p class="deco-text-dim text-sm mb-3">{mission.description}</p>
+							<p class="deco-text-dim text-sm mb-3">
+								{getMissionDescription(locale, mission.missionDefId, mission.target)}
+							</p>
 							<div class="flex items-center gap-2 mb-3">
 								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
 									<div
@@ -101,12 +129,12 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 									class="text-sm tabular-nums"
 									data-testid={`progress-text-${mission.missionDefId}`}
 								>
-									{mission.progress}/{mission.target}
+									{formatProgress(mission.progress, mission.target)}
 								</span>
 							</div>
 							<div class="flex items-center justify-between">
 								<span class="text-[var(--deco-brass)] text-sm font-medium">
-									{mission.rewardChips.toLocaleString()} chips
+									{formatChips(mission.rewardChips, locale)}
 								</span>
 								<button
 									class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
@@ -114,7 +142,11 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 									data-testid={`claim-${mission.missionDefId}`}
 									disabled={!mission.claimable}
 								>
-									{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+									{mission.claimed
+										? t('claimed')
+										: mission.completed
+											? t('claim')
+											: t('inProgress')}
 								</button>
 							</div>
 						</div>
@@ -123,7 +155,7 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			</div>
 
 			<!-- Weekly Goal -->
-			<h2 class="deco-section-title text-xl mb-4">Weekly Goal</h2>
+			<h2 class="deco-section-title text-xl mb-4">{t('weeklyGoal')}</h2>
 			<div id="weekly-section" data-testid="weekly-section">
 				{
 					initialBoard.weekly.map((mission) => (
@@ -135,10 +167,14 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 							<div class="flex items-start justify-between mb-3">
 								<div class="flex items-center gap-2">
 									<span class="text-2xl">{mission.icon}</span>
-									<h3 class="font-body font-semibold text-lg">{mission.title}</h3>
+									<h3 class="font-body font-semibold text-lg">
+										{getMissionTitle(locale, mission.missionDefId)}
+									</h3>
 								</div>
 							</div>
-							<p class="deco-text-dim text-sm mb-4">{mission.description}</p>
+							<p class="deco-text-dim text-sm mb-4">
+								{getMissionDescription(locale, mission.missionDefId, mission.target)}
+							</p>
 							<div class="flex items-center gap-3 mb-4">
 								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
 									<div
@@ -151,12 +187,12 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 									class="text-sm tabular-nums"
 									data-testid={`progress-text-${mission.missionDefId}`}
 								>
-									{mission.progress}/{mission.target}
+									{formatProgress(mission.progress, mission.target)}
 								</span>
 							</div>
 							<div class="flex items-center justify-between">
 								<span class="text-[var(--deco-brass)] text-sm font-medium">
-									{mission.rewardChips.toLocaleString()} chips
+									{formatChips(mission.rewardChips, locale)}
 								</span>
 								<button
 									class="claim-btn btn-gold px-4 py-2 rounded text-sm"
@@ -164,7 +200,11 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 									data-testid={`claim-${mission.missionDefId}`}
 									disabled={!mission.claimable}
 								>
-									{mission.claimed ? 'Claimed' : mission.completed ? 'Claim' : 'In Progress'}
+									{mission.claimed
+										? t('claimed')
+										: mission.completed
+											? t('claim')
+											: t('inProgress')}
 								</button>
 							</div>
 						</div>
@@ -175,10 +215,18 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 	</section>
 
 	<script>
+		import {
+			getMissionDescription,
+			getMissionTitle,
+			missionsTranslator,
+		} from '../../lib/i18n/messages/missions';
+		import { formatChips } from '../../lib/i18n/messages/common';
+		import { formatWholeNumber } from '../../lib/formatting';
+		import { getDocumentLocale } from '../../lib/i18n/locale';
+		import type { MissionId } from '../../lib/missions/types';
+
 		type MissionView = {
-			missionDefId: string;
-			title: string;
-			description: string;
+			missionDefId: MissionId;
 			icon: string;
 			period: 'daily' | 'weekly';
 			progress: number;
@@ -204,6 +252,9 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			chipBalance: number;
 		};
 
+		const locale = getDocumentLocale(document);
+		const t = missionsTranslator(locale);
+
 		function escapeHtml(value: string): string {
 			return value.replace(
 				/[&<>"']/g,
@@ -219,8 +270,8 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 		}
 
 		function claimLabel(mission: MissionView): string {
-			if (mission.claimed) return 'Claimed';
-			return mission.completed ? 'Claim' : 'In Progress';
+			if (mission.claimed) return t('claimed');
+			return mission.completed ? t('claim') : t('inProgress');
 		}
 
 		function renderMissionCard(
@@ -238,30 +289,30 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			const rerollBtn =
 				large || !opts.rerollAvailable || mission.completed
 					? ''
-					: `<button class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors" data-reroll-target="${escapeHtml(mission.missionDefId)}" data-testid="reroll-${escapeHtml(mission.missionDefId)}" aria-label="Reroll mission"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"></path></svg></button>`;
+					: `<button class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors" data-reroll-target="${escapeHtml(mission.missionDefId)}" data-testid="reroll-${escapeHtml(mission.missionDefId)}" aria-label="${escapeHtml(t('rerollAriaLabel'))}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 L14 10 L22 12 L14 14 L12 22 L10 14 L2 12 L10 10 Z"></path></svg></button>`;
 
 			const overrideTag = mission.isOverride
-				? '<span class="text-xs text-[var(--deco-muted)]">(rerolled)</span>'
+				? `<span class="text-xs text-[var(--deco-muted)]">${escapeHtml(t('rerolled'))}</span>`
 				: '';
 
 			return `<div class="deco-panel ${pad} mission-card" data-testid="mission-${escapeHtml(mission.missionDefId)}" data-mission-id="${escapeHtml(mission.missionDefId)}">
 				<div class="flex items-start justify-between ${large ? 'mb-3' : 'mb-2'}">
 					<div class="flex items-center gap-2">
 						<span class="${iconSize}">${escapeHtml(mission.icon)}</span>
-						<h3 class="font-body font-semibold ${titleSize}">${escapeHtml(mission.title)}</h3>
+						<h3 class="font-body font-semibold ${titleSize}">${escapeHtml(getMissionTitle(locale, mission.missionDefId))}</h3>
 						${overrideTag}
 					</div>
 					${rerollBtn}
 				</div>
-				<p class="deco-text-dim text-sm ${large ? 'mb-4' : 'mb-3'}">${escapeHtml(mission.description)}</p>
+				<p class="deco-text-dim text-sm ${large ? 'mb-4' : 'mb-3'}">${escapeHtml(getMissionDescription(locale, mission.missionDefId, mission.target))}</p>
 				<div class="flex items-center ${large ? 'mb-4 gap-3' : 'mb-3 gap-2'}">
 					<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full ${barHeight} overflow-hidden">
 						<div class="bg-[var(--deco-brass)] h-full transition-all" style="width: ${widthPct}%" data-testid="progress-${escapeHtml(mission.missionDefId)}"></div>
 					</div>
-					<span class="text-sm tabular-nums" data-testid="progress-text-${escapeHtml(mission.missionDefId)}">${mission.progress}/${mission.target}</span>
+					<span class="text-sm tabular-nums" data-testid="progress-text-${escapeHtml(mission.missionDefId)}">${formatWholeNumber(mission.progress, locale)}/${formatWholeNumber(mission.target, locale)}</span>
 				</div>
 				<div class="flex items-center justify-between">
-					<span class="text-[var(--deco-brass)] text-sm font-medium">${mission.rewardChips.toLocaleString()} chips</span>
+					<span class="text-[var(--deco-brass)] text-sm font-medium">${escapeHtml(formatChips(mission.rewardChips, locale))}</span>
 					<button class="claim-btn btn-gold ${claimPad} rounded text-sm" data-claim-target="${escapeHtml(mission.missionDefId)}" data-testid="claim-${escapeHtml(mission.missionDefId)}" ${!mission.claimable ? 'disabled' : ''}>${claimLabel(mission)}</button>
 				</div>
 			</div>`;
@@ -270,20 +321,25 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 		function renderStreakBanner(board: BoardState): string {
 			return `<div class="flex items-center justify-between">
 				<div>
-					<p class="deco-eyebrow-sm">Daily Login Streak</p>
+					<p class="deco-eyebrow-sm">${escapeHtml(t('dailyLoginStreak'))}</p>
 					<h2 class="deco-section-title text-2xl mt-1">
-						<span data-testid="streak-display">Day ${board.streak.dayOfCycle} of cycle</span>
+						<span data-testid="streak-display">${escapeHtml(t('dayOfCycle', { day: formatWholeNumber(board.streak.dayOfCycle, locale) }))}</span>
 					</h2>
 					<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
-						${board.streak.current}-day streak · Best: ${board.streak.longest}
+						${escapeHtml(
+							t('streakSummary', {
+								current: formatWholeNumber(board.streak.current, locale),
+								longest: formatWholeNumber(board.streak.longest, locale),
+							}),
+						)}
 					</p>
 				</div>
 				<div class="text-right">
-					<p class="deco-text-dim text-sm">Today's Reward</p>
+					<p class="deco-text-dim text-sm">${escapeHtml(t('todaysReward'))}</p>
 					<p class="text-[var(--deco-brass)] font-bold text-xl" data-testid="streak-reward">
-						${board.streak.rewardPreview.toLocaleString()} chips
+						${escapeHtml(formatChips(board.streak.rewardPreview, locale))}
 					</p>
-					<button id="claim-login-btn" class="btn-gold mt-2 px-4 py-2 rounded" data-testid="claim-login-btn" ${!board.streak.claimableToday ? 'disabled' : ''}>${board.streak.claimableToday ? 'Claim' : 'Claimed'}</button>
+					<button id="claim-login-btn" class="btn-gold mt-2 px-4 py-2 rounded" data-testid="claim-login-btn" ${!board.streak.claimableToday ? 'disabled' : ''}>${board.streak.claimableToday ? t('claim') : t('claimed')}</button>
 				</div>
 			</div>`;
 		}
@@ -313,7 +369,7 @@ const initialBoard = await getBoardState(d1, session.user.id, userRow?.chipBalan
 			// Keep the shared header chip-balance pill(s) in sync with the
 			// latest server value so a claim doesn't leave the header stale.
 			document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-				el.textContent = `${board.chipBalance.toLocaleString()} chips`;
+				el.textContent = formatChips(board.chipBalance, locale);
 			});
 		}
 

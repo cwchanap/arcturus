@@ -9,7 +9,7 @@ import { DEFAULT_DAILY_MISSIONS, getMissionDef } from './registry';
 // DEFAULT_DAILY_MISSIONS. Accepting a reroll-pool id (e.g. `daily-craps-3`)
 // would consume the user's one daily reroll and create an orphan override that
 // `applyOverrides` never reads, leaving the board unchanged.
-const BOARD_DAILY_IDS = new Set(DEFAULT_DAILY_MISSIONS.map((d) => d.id));
+const BOARD_DAILY_IDS: ReadonlySet<string> = new Set(DEFAULT_DAILY_MISSIONS.map((d) => d.id));
 
 export interface RerollResult {
 	status: 'rerolled' | 'reroll-used' | 'already-completed' | 'not-daily' | 'no-replacement';

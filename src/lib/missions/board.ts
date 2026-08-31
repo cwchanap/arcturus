@@ -70,8 +70,6 @@ export function buildMissionView(
 	const claimed = progress.claimedAt !== null;
 	return {
 		missionDefId: def.id,
-		title: def.title,
-		description: def.description,
 		icon: def.icon,
 		period: def.period,
 		progress: clamped,

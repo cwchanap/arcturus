@@ -223,8 +223,6 @@ describe('buildProgressUpsertSQL (mocked D1)', () => {
 	function makeDef(overrides: Partial<MissionDefinition> = {}): MissionDefinition {
 		return {
 			id: 'daily-blackjack-5',
-			title: 'Test',
-			description: '',
 			period: 'daily',
 			metric: { kind: 'handsPlayed', gameType: 'blackjack' },
 			target: 5,
@@ -279,8 +277,6 @@ describe('buildGamesTriedUpsertSQL (mocked D1)', () => {
 	function makeDef(overrides: Partial<MissionDefinition> = {}): MissionDefinition {
 		return {
 			id: 'weekly-games-3',
-			title: 'Variety Seeker',
-			description: '',
 			period: 'weekly',
 			metric: { kind: 'gamesTried' },
 			target: 3,

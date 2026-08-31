@@ -210,7 +210,7 @@ describe('renderBlackjackPlayerHands', () => {
 
 		renderBlackjackPlayerHands(document, playerHands, hands, 0, {
 			testIdPrefix: 'ranked',
-			formatWager: (value) => `$${value}`,
+			formatWager: (value) => `${value} chips`,
 		});
 
 		const sections = playerHands.querySelectorAll('[data-testid="ranked-player-hand"]');
@@ -228,8 +228,8 @@ describe('renderBlackjackPlayerHands', () => {
 		).map((element) => element.textContent);
 		expect(values).toEqual(['Soft 17', 'Bust 23']);
 
-		expect(active.textContent).toContain('Hand 1 · $100');
-		expect(inactive.textContent).toContain('Hand 2 · $100');
+		expect(active.textContent).toContain('Hand 1 · 100 chips');
+		expect(inactive.textContent).toContain('Hand 2 · 100 chips');
 
 		expect(playerHands.querySelectorAll('[data-testid="ranked-player-card"]')).toHaveLength(3);
 	});
@@ -262,7 +262,7 @@ describe('renderBlackjackPlayerHands', () => {
 
 		renderBlackjackPlayerHands(document, playerHands, [], 0, {
 			testIdPrefix: 'ranked',
-			formatWager: (value) => `$${value}`,
+			formatWager: (value) => `${value} chips`,
 		});
 
 		expect(playerHands.children).toHaveLength(0);

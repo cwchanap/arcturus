@@ -93,8 +93,8 @@ describe('blackjack message catalog', () => {
 		expect(t('dealerSpeedFast')).toBe('Fast (0.5s)');
 		expect(t('settingsSaved')).toBe('Settings saved. They will apply to new rounds.');
 		expect(t('settingsReset')).toBe('Settings reset to defaults.');
-		expect(t('betRangeError', { min: '$50', max: '$200' })).toBe(
-			'Bet must be between $50 and $200',
+		expect(t('betRangeError', { min: '50 chips', max: '200 chips' })).toBe(
+			'Bet must be between 50 chips and 200 chips',
 		);
 		expect(t('insufficientBalance')).toBe('Insufficient balance');
 	});
@@ -129,14 +129,14 @@ describe('blackjack message catalog', () => {
 	});
 
 	test('chip amounts render per locale with the shared number helpers', () => {
-		expect(formatBlackjackAmount('en', 742)).toBe('$742');
-		expect(formatBlackjackAmount('en', 1000)).toBe('$1,000');
+		expect(formatBlackjackAmount('en', 742)).toBe('742 chips');
+		expect(formatBlackjackAmount('en', 1000)).toBe('1,000 chips');
 		expect(formatBlackjackAmount('zh-Hant', 742)).toBe('742 籌碼');
 		expect(formatBlackjackAmount('zh-Hans', 10000)).toBe('10,000 筹码');
 		expect(formatBlackjackAmount('ja', 1)).toBe('1 チップ');
-		expect(formatBlackjackNet('en', 100)).toBe('+$100');
-		expect(formatBlackjackNet('en', -100)).toBe('-$100');
-		expect(formatBlackjackNet('en', 0)).toBe('$0');
+		expect(formatBlackjackNet('en', 100)).toBe('+100 chips');
+		expect(formatBlackjackNet('en', -100)).toBe('−100 chips');
+		expect(formatBlackjackNet('en', 0)).toBe('0 chips');
 		expect(formatBlackjackNet('zh-Hant', -50)).toBe('−50 籌碼');
 		expect(formatBlackjackNet('ja', 0)).toBe('0 チップ');
 	});

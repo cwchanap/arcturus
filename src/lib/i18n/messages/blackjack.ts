@@ -3,10 +3,10 @@
  * browser client (outcomes, split summaries, settlement recovery, settings,
  * AI advisor), the deterministic AI reasoning templates, and the Ranked
  * Blackjack page plus ranked renderer. Action names live here once and are
- * interpolated into sentences. The English branch keeps the `$`-prefixed chip
- * amounts the legacy surface and its E2E suite pin; other locales use the
- * glossary chip noun. Amounts are formatted with the shared locale-aware
- * number helpers, never with `$` concatenation in owning code.
+ * interpolated into sentences. Every locale branch, English included, uses
+ * the glossary chip noun (`chips` / `籌碼` / `筹码` / `チップ`) — never
+ * currency. Amounts are formatted with the shared locale-aware number
+ * helpers, never with `$` concatenation in owning code.
  */
 
 import { formatChipBalance } from '../../formatting';
@@ -16,10 +16,10 @@ import { createTranslator, defineMessages } from '../translate';
 export const BLACKJACK_MESSAGES = defineMessages({
 	en: {
 		pageTitle: '{game} - Arcturus Casino',
-		amount: '${amount}',
-		netZero: '$0',
-		netPositive: '+${amount}',
-		netNegative: '-${amount}',
+		amount: '{amount} chips',
+		netZero: '0 chips',
+		netPositive: '+{amount} chips',
+		netNegative: '−{amount} chips',
 		backToGames: 'Back to Games',
 		casual: 'Casual',
 		ranked: 'Ranked',
@@ -621,12 +621,12 @@ export function blackjackTranslator(locale: Locale) {
 	return createTranslator(BLACKJACK_MESSAGES, locale);
 }
 
-/** Localized in-table chip amount ("$742" in English, "742 籌碼" elsewhere). */
+/** Localized in-table chip amount ("742 chips" in English, "742 籌碼" elsewhere). */
 export function formatBlackjackAmount(locale: Locale, value: number): string {
 	return blackjackTranslator(locale)('amount', { amount: formatChipBalance(value, locale) });
 }
 
-/** Signed net chip result ("+$100", "-$100", "$0" in English). */
+/** Signed net chip result ("+100 chips", "−100 chips", "0 chips" in English). */
 export function formatBlackjackNet(locale: Locale, value: number): string {
 	const t = blackjackTranslator(locale);
 	if (value === 0) return t('netZero');

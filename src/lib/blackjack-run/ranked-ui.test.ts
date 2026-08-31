@@ -191,8 +191,10 @@ describe('ranked run renderer', () => {
 		renderer.render(activeState());
 		renderer.renderCountdown(65);
 
-		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('$742');
-		expect(root.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe('$200');
+		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('742 chips');
+		expect(root.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe(
+			'200 chips',
+		);
 		expect(root.querySelector('[data-testid="ranked-countdown"]')?.textContent).toBe('1:05');
 	});
 
@@ -200,7 +202,7 @@ describe('ranked run renderer', () => {
 		renderer.render(activeState());
 
 		// In-table balance after a stake debit.
-		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('$742');
+		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('742 chips');
 		// Shared header pill stays in sync ("N chips" format).
 		expect(root.querySelector<HTMLElement>('[data-chip-balance]')?.textContent).toBe('742 chips');
 	});
@@ -210,10 +212,16 @@ describe('ranked run renderer', () => {
 
 		expect(root.querySelector<HTMLElement>('[data-testid="ranked-result"]')?.hidden).toBe(false);
 		expect(root.querySelector('[data-testid="ranked-result-outcome"]')?.textContent).toBe('Win');
-		expect(root.querySelector('[data-testid="ranked-result-wager"]')?.textContent).toBe('$200');
-		expect(root.querySelector('[data-testid="ranked-result-payout"]')?.textContent).toBe('$300');
-		expect(root.querySelector('[data-testid="ranked-result-net"]')?.textContent).toBe('+$100');
-		expect(root.querySelector('[data-testid="ranked-result-balance"]')?.textContent).toBe('$942');
+		expect(root.querySelector('[data-testid="ranked-result-wager"]')?.textContent).toBe(
+			'200 chips',
+		);
+		expect(root.querySelector('[data-testid="ranked-result-payout"]')?.textContent).toBe(
+			'300 chips',
+		);
+		expect(root.querySelector('[data-testid="ranked-result-net"]')?.textContent).toBe('+100 chips');
+		expect(root.querySelector('[data-testid="ranked-result-balance"]')?.textContent).toBe(
+			'942 chips',
+		);
 		expect(root.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
 			'win · run settled',
 		);
@@ -234,7 +242,9 @@ describe('ranked run renderer', () => {
 			'Run expired · wager forfeited',
 		);
 		expect(root.querySelector<HTMLElement>('[data-testid="ranked-result"]')?.hidden).toBe(false);
-		expect(root.querySelector('[data-testid="ranked-result-balance"]')?.textContent).toBe('$700');
+		expect(root.querySelector('[data-testid="ranked-result-balance"]')?.textContent).toBe(
+			'700 chips',
+		);
 	});
 
 	test('active state hides the result panel and keeps the countdown live', () => {
@@ -296,8 +306,10 @@ describe('ranked run renderer', () => {
 		renderer.render(activeState());
 		renderer.render(null);
 
-		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('$1,000');
-		expect(root.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe('$0');
+		expect(root.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe('1,000 chips');
+		expect(root.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe(
+			'0 chips',
+		);
 		expect(root.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
 			'Choose a wager to begin a ranked run.',
 		);

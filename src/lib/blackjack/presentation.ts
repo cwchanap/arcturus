@@ -39,7 +39,9 @@ export function createBlackjackCardElement(
 	document: Document,
 	card: Card,
 	testId: string,
+	locale: Locale = 'en',
 ): HTMLElement {
+	const t = blackjackTranslator(locale);
 	const element = document.createElement('div');
 	element.dataset.testid = testId;
 	element.className = CARD_BASE_CLASS;
@@ -47,7 +49,7 @@ export function createBlackjackCardElement(
 	// role="img" exposes the aria-label as the card's accessible name consistently across
 	// assistive tech, since a bare div has no implicit role and would not expose the label.
 	element.setAttribute('role', 'img');
-	element.setAttribute('aria-label', `${card.rank} of ${card.suit}`);
+	element.setAttribute('aria-label', t('cardName', { rank: card.rank, suit: card.suit }));
 	element.textContent = `${card.rank}${getSuitSymbol(card.suit)}`;
 	return element;
 }
@@ -62,7 +64,7 @@ export function renderBlackjackDealer(
 	const locale = getDocumentLocale(document);
 	dealerHandContainer.replaceChildren(
 		...dealer.cards.map((card) =>
-			createBlackjackCardElement(document, card, `${options.testIdPrefix}-dealer-card`),
+			createBlackjackCardElement(document, card, `${options.testIdPrefix}-dealer-card`, locale),
 		),
 	);
 	dealerValueContainer.textContent = formatBlackjackHandValue(dealer.value, locale);
@@ -100,7 +102,7 @@ export function renderBlackjackPlayerHands(
 		cards.className = HAND_CARDS_CLASS;
 		cards.replaceChildren(
 			...hand.cards.map((card) =>
-				createBlackjackCardElement(document, card, `${options.testIdPrefix}-player-card`),
+				createBlackjackCardElement(document, card, `${options.testIdPrefix}-player-card`, locale),
 			),
 		);
 

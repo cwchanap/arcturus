@@ -144,10 +144,10 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 				)
 			: '—';
 		resultWager.textContent = formatAmount(state.committedWager);
-		resultPayout.textContent = outcome ? formatAmount(outcome.payout) : t('netZero');
+		resultPayout.textContent = outcome ? formatAmount(outcome.payout) : formatChips(0, locale);
 		resultNet.textContent = outcome
 			? formatBlackjackNet(locale, outcome.gameNetDelta)
-			: t('netZero');
+			: formatChips(0, locale);
 		resultBalance.textContent = formatAmount(state.balance);
 	};
 
@@ -155,7 +155,7 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 		current = state;
 		if (!state) {
 			balance.textContent = formatAmount(Number(root.dataset.initialBalance ?? 0));
-			committedWager.textContent = t('netZero');
+			committedWager.textContent = formatChips(0, locale);
 			status.textContent = t('rankedIdle');
 			countdown.textContent = '—';
 			dealerHand.replaceChildren();

@@ -6,7 +6,7 @@ import SplitHandsContainer from '../../components/SplitHandsContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { blackjackTranslator } from '../../lib/i18n/messages/blackjack';
 import { getGameName } from '../../lib/i18n/messages/games';
-import { formatChipBalance } from '../../lib/formatting';
+import { formatChips } from '../../lib/i18n/messages/common';
 
 const user = Astro.locals.user;
 const locale = Astro.locals.locale;
@@ -76,7 +76,7 @@ const clientUserId = gameSession.clientUserId;
 				>
 					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="player-balance">
-						{t('amount', { amount: formatChipBalance(initialBalance, locale) })}
+						{formatChips(initialBalance, locale)}
 					</div>
 				</div>
 			</div>
@@ -135,7 +135,7 @@ const clientUserId = gameSession.clientUserId;
 					<SplitHandsContainer id="player-cards-split" maxHands={4} maxCardsPerHand={10} />
 					<div class="text-center mt-1">
 						<div id="current-bet" class="text-sm text-[var(--deco-brass)] font-medium">
-							{t('currentBet', { amount: t('amount', { amount: 0 }) })}
+							{t('currentBet', { amount: formatChips(0, locale) })}
 						</div>
 					</div>
 				</div>

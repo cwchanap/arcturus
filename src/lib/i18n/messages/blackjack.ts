@@ -3,23 +3,18 @@
  * browser client (outcomes, split summaries, settlement recovery, settings,
  * AI advisor), the deterministic AI reasoning templates, and the Ranked
  * Blackjack page plus ranked renderer. Action names live here once and are
- * interpolated into sentences. Every locale branch, English included, uses
- * the glossary chip noun (`chips` / `籌碼` / `筹码` / `チップ`) — never
- * currency. Amounts are formatted with the shared locale-aware number
- * helpers, never with `$` concatenation in owning code.
+ * interpolated into sentences. Chip amounts route through the shared
+ * `formatChips()` phrase (`chips` / `籌碼` / `筹码` / `チップ`), never
+ * currency; signed nets are sign templates around that phrase.
  */
 
-import { formatChipBalance } from '../../formatting';
+import { formatChips } from './common';
 import type { Locale } from '../locale';
 import { createTranslator, defineMessages } from '../translate';
 
 export const BLACKJACK_MESSAGES = defineMessages({
 	en: {
 		pageTitle: '{game} - Arcturus Casino',
-		amount: '{amount} chips',
-		netZero: '0 chips',
-		netPositive: '+{amount} chips',
-		netNegative: '−{amount} chips',
 		backToGames: 'Back to Games',
 		casual: 'Casual',
 		ranked: 'Ranked',
@@ -42,6 +37,7 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		splitTip: 'Split your pair into two hands',
 		newRoundButton: 'NEW ROUND',
 		dealer: 'Dealer',
+		cardName: '{rank} of {suit}',
 		yourHand: 'Your Hand',
 		currentBet: 'Current Bet: {amount}',
 		handLabel: 'Hand {number}',
@@ -166,10 +162,6 @@ export const BLACKJACK_MESSAGES = defineMessages({
 	},
 	'zh-Hant': {
 		pageTitle: '{game} - Arcturus Casino',
-		amount: '{amount} 籌碼',
-		netZero: '0 籌碼',
-		netPositive: '+{amount} 籌碼',
-		netNegative: '−{amount} 籌碼',
 		backToGames: '返回遊戲',
 		casual: '休閒',
 		ranked: '排位',
@@ -192,6 +184,7 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		splitTip: '將一對牌分成兩手',
 		newRoundButton: '新一局',
 		dealer: '荷官',
+		cardName: '{suit} {rank}',
 		yourHand: '你的手牌',
 		currentBet: '目前下注：{amount}',
 		handLabel: '第 {number} 手',
@@ -314,10 +307,6 @@ export const BLACKJACK_MESSAGES = defineMessages({
 	},
 	'zh-Hans': {
 		pageTitle: '{game} - Arcturus Casino',
-		amount: '{amount} 筹码',
-		netZero: '0 筹码',
-		netPositive: '+{amount} 筹码',
-		netNegative: '−{amount} 筹码',
 		backToGames: '返回游戏',
 		casual: '休闲',
 		ranked: '排位',
@@ -340,6 +329,7 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		splitTip: '将一对牌分成两手',
 		newRoundButton: '新一局',
 		dealer: '荷官',
+		cardName: '{suit} {rank}',
 		yourHand: '你的手牌',
 		currentBet: '当前下注：{amount}',
 		handLabel: '第 {number} 手',
@@ -462,10 +452,6 @@ export const BLACKJACK_MESSAGES = defineMessages({
 	},
 	ja: {
 		pageTitle: '{game} - Arcturus Casino',
-		amount: '{amount} チップ',
-		netZero: '0 チップ',
-		netPositive: '+{amount} チップ',
-		netNegative: '−{amount} チップ',
 		backToGames: 'ゲームに戻る',
 		casual: 'カジュアル',
 		ranked: 'ランク戦',
@@ -488,6 +474,7 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		splitTip: 'ペアを 2 つのハンドに分ける',
 		newRoundButton: '次のラウンド',
 		dealer: 'ディーラー',
+		cardName: '{suit}の{rank}',
 		yourHand: 'あなたのハンド',
 		currentBet: '現在のベット：{amount}',
 		handLabel: 'ハンド {number}',
@@ -621,16 +608,13 @@ export function blackjackTranslator(locale: Locale) {
 	return createTranslator(BLACKJACK_MESSAGES, locale);
 }
 
-/** Localized in-table chip amount ("742 chips" in English, "742 籌碼" elsewhere). */
+/** Localized chip amount ("1 chip", "742 chips", "742 籌碼" elsewhere). */
 export function formatBlackjackAmount(locale: Locale, value: number): string {
-	return blackjackTranslator(locale)('amount', { amount: formatChipBalance(value, locale) });
+	return formatChips(value, locale);
 }
 
-/** Signed net chip result ("+100 chips", "−100 chips", "0 chips" in English). */
+/** Signed net chip result ("+100 chips", "−100 chips", "0 chips"). */
 export function formatBlackjackNet(locale: Locale, value: number): string {
-	const t = blackjackTranslator(locale);
-	if (value === 0) return t('netZero');
-	return t(value > 0 ? 'netPositive' : 'netNegative', {
-		amount: formatChipBalance(Math.abs(value), locale),
-	});
+	if (value === 0) return formatChips(0, locale);
+	return `${value > 0 ? '+' : '−'}${formatChips(Math.abs(value), locale)}`;
 }

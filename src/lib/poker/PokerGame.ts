@@ -283,9 +283,7 @@ export class PokerGame {
 		});
 	}
 
-	private dispatchEarnedAchievements(
-		achievements?: Array<{ id: string; name: string; icon: string }>,
-	): void {
+	private dispatchEarnedAchievements(achievements?: Array<{ id: string; icon: string }>): void {
 		if (!achievements || achievements.length === 0) return;
 		if (
 			typeof window === 'undefined' ||

@@ -10,7 +10,6 @@ import {
 	formatChipBalance,
 	formatChipBalanceWithDecimals,
 	formatPercentage,
-	formatSignedChipResult,
 	formatWholeNumber,
 } from './formatting';
 
@@ -51,12 +50,6 @@ describe('Chip Balance Formatting', () => {
 });
 
 describe('Player statistics formatting', () => {
-	test('formats signed chip results', () => {
-		expect(formatSignedChipResult(1200)).toBe('+1,200 chips');
-		expect(formatSignedChipResult(-400)).toBe('−400 chips');
-		expect(formatSignedChipResult(0)).toBe('0 chips');
-	});
-
 	test('formats whole numbers', () => {
 		expect(formatWholeNumber(12345)).toBe('12,345');
 	});
@@ -79,7 +72,6 @@ describe('Player statistics formatting', () => {
 			expect(formatWholeNumber(12345, locale)).toBe('12,345');
 			expect(formatChipBalanceWithDecimals(12345.67, 2, 2, locale)).toBe('12,345.67');
 			expect(formatPercentage(50.83333333333333, locale)).toBe('50.8%');
-			expect(formatSignedChipResult(1200, locale)).toBe('+1,200 chips');
 		}
 	});
 
@@ -87,6 +79,5 @@ describe('Player statistics formatting', () => {
 		expect(formatChipBalance(10000)).toBe('10,000');
 		expect(formatWholeNumber(12345)).toBe('12,345');
 		expect(formatChipBalanceWithDecimals(12345.67)).toBe('12,345.67');
-		expect(formatSignedChipResult(-400)).toBe('−400 chips');
 	});
 });

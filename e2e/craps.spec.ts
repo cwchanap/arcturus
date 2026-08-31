@@ -89,7 +89,7 @@ test.describe('Craps — Bet Placement', () => {
 		await page.getByTestId('chip-25').click();
 		await page.click('[data-bet-type="passLine"]');
 
-		await expect(page.getByTestId('total-bet')).toContainText('$25');
+		await expect(page.getByTestId('total-bet')).toContainText('25 chips');
 		await expect(page.getByTestId('roll-button')).toBeEnabled();
 	});
 
@@ -101,7 +101,7 @@ test.describe('Craps — Bet Placement', () => {
 		await page.click('[data-bet-type="passLine"]');
 		await page.click('[data-bet-type="field"]');
 
-		await expect(page.getByTestId('total-bet')).toContainText('$10');
+		await expect(page.getByTestId('total-bet')).toContainText('10 chips');
 	});
 
 	test('Clear Bets removes all bets and resets total', async ({ page }) => {
@@ -112,7 +112,7 @@ test.describe('Craps — Bet Placement', () => {
 		await page.click('[data-bet-type="passLine"]');
 		await page.getByTestId('clear-bets-button').click();
 
-		await expect(page.getByTestId('total-bet')).toContainText('$0');
+		await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 		await expect(page.getByTestId('roll-button')).toBeDisabled();
 	});
 });
@@ -179,7 +179,7 @@ test.describe('Craps — Game Flow', () => {
 		await page.getByTestId('chip-5').click();
 		await page.click('[data-bet-type="passLine"]');
 		await page.click('[data-bet-type="field"]');
-		await expect(page.getByTestId('total-bet')).toContainText('$10');
+		await expect(page.getByTestId('total-bet')).toContainText('10 chips');
 		await page.getByTestId('roll-button').click();
 		await page.waitForTimeout(700);
 
@@ -385,7 +385,7 @@ test.describe('Craps — Game Flow', () => {
 
 			await expect(page.getByTestId('settlement-recovery')).toBeHidden();
 			await expect(page.getByTestId('roll-button')).toBeDisabled();
-			await expect(page.getByTestId('total-bet')).toContainText('$0');
+			await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 			await expect(page.getByTestId('active-bets')).toContainText('No bets placed');
 			expect(
 				await page.evaluate(
@@ -414,9 +414,9 @@ test.describe('Craps — Active Bets Panel', () => {
 		await page.getByTestId('chip-50').click();
 		await page.click('[data-bet-type="passLine"]');
 
-		await expect(page.getByTestId('total-bet')).toContainText('$50');
+		await expect(page.getByTestId('total-bet')).toContainText('50 chips');
 		await expect(page.getByTestId('active-bets')).toContainText('Pass Line');
-		await expect(page.getByTestId('active-bets')).toContainText('$50');
+		await expect(page.getByTestId('active-bets')).toContainText('50 chips');
 	});
 
 	test('balance decreases when bet is placed', async ({ page }) => {
@@ -426,7 +426,7 @@ test.describe('Craps — Active Bets Panel', () => {
 
 		await page.getByTestId('chip-100').click();
 		await page.click('[data-bet-type="passLine"]');
-		await expect(page.getByTestId('total-bet')).toContainText('$100');
+		await expect(page.getByTestId('total-bet')).toContainText('100 chips');
 
 		const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
 

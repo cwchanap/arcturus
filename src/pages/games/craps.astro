@@ -3,17 +3,20 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { formatChips } from '../../lib/i18n/messages/common';
+import { crapsTranslator, getCrapsBetLabel } from '../../lib/i18n/messages/craps';
+import { getGameName } from '../../lib/i18n/messages/games';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
 const locale = Astro.locals.locale;
+const t = crapsTranslator(locale);
 // Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
 // authenticated users. The raw account id is never rendered into the DOM.
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title="Craps - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'craps') })}>
 	<div
 		id="craps-root"
 		data-user-id={clientUserId}
@@ -28,9 +31,9 @@ const clientUserId = gameSession.clientUserId;
 					href="/games"
 					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
-					← Back to Games
+					← {t('backToGames')}
 				</a>
-				<h1 class="deco-section-title text-4xl">Craps</h1>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'craps')}</h1>
 			</div>
 			<div
 				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
@@ -63,7 +66,9 @@ const clientUserId = gameSession.clientUserId;
 							</svg>
 						</div>
 						<div class="text-center">
-							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">Total</div>
+							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
+								{t('totalLabel')}
+							</div>
 							<div class="text-3xl font-bold text-[var(--deco-ivory)]" id="roll-total">—</div>
 						</div>
 					</div>
@@ -74,17 +79,17 @@ const clientUserId = gameSession.clientUserId;
 								id="phase-badge"
 								class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-sapphire)] uppercase tracking-wider"
 							>
-								Come-Out
+								{t('phaseComeOut')}
 							</span>
 							<span
 								id="point-badge"
 								class="hidden px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)]"
 							>
-								Point: —
+								{t('pointLabel', { point: '—' })}
 							</span>
 						</div>
 						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm">
-							Place your bets, then roll!
+							{t('messagePlaceBets')}
 						</div>
 						<div
 							id="settlement-recovery"
@@ -97,7 +102,7 @@ const clientUserId = gameSession.clientUserId;
 								class="btn-gold px-3 py-1 rounded text-xs font-bold"
 								data-testid="retry-settlement"
 							>
-								Retry settlement
+								{t('retrySettlement')}
 							</button>
 							<button
 								id="btn-reset-settlement"
@@ -105,7 +110,7 @@ const clientUserId = gameSession.clientUserId;
 								class="px-3 py-1 rounded text-xs border border-[var(--deco-line)]"
 								data-testid="reset-settlement"
 							>
-								Reset settlement
+								{t('resetSettlement')}
 							</button>
 						</div>
 					</div>
@@ -117,7 +122,7 @@ const clientUserId = gameSession.clientUserId;
 							disabled
 							class="btn-gold px-6 py-3 rounded-xl font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed min-w-[110px]"
 						>
-							ROLL
+							{t('rollButton')}
 						</button>
 					</div>
 				</div>
@@ -131,9 +136,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone pass-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
-								Pass Line
+								{t('betPassLine')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
@@ -141,9 +146,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
-								Don't Pass Bar
+								{t('tableDontPassBar')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1 (Bar 12)</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
@@ -155,9 +160,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
-								Pass Odds
+								{t('betPassLineOdds')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">0% house edge · 2x max</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
@@ -165,9 +170,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
-								Don't Pass Odds
+								{t('betDontPassOdds')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">0% house edge · 2x max</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
@@ -178,13 +183,13 @@ const clientUserId = gameSession.clientUserId;
 							[4, 5, 6, 8, 9, 10].map((n) => (
 								<div class="number-box rounded-lg p-2 text-center" data-number={n}>
 									<div class="text-[var(--deco-ivory)] font-bold text-sm">
-										{n === 6 ? 'SIX' : n === 8 ? 'EIGHT' : n}
+										{n === 6 ? t('numberSix') : n === 8 ? t('numberEight') : n}
 									</div>
 									<div
 										data-bet-type={`place${n}`}
 										class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
 									>
-										<div class="text-[var(--deco-muted)] text-xs">Place</div>
+										<div class="text-[var(--deco-muted)] text-xs">{t('placeNumber')}</div>
 										<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
 									</div>
 									<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
@@ -216,9 +221,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone come-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-sapphire)] font-bold text-sm uppercase tracking-wider">
-								Come
+								{t('betCome')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
@@ -226,9 +231,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone field-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 						>
 							<div class="text-[var(--deco-amethyst)] font-bold text-sm uppercase tracking-wider">
-								Field
+								{t('betField')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">3,4,9,10,11 · 2× on 2 · 3× on 12</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('fieldNote')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
@@ -238,9 +243,9 @@ const clientUserId = gameSession.clientUserId;
 							<div
 								class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider"
 							>
-								Don't Come
+								{t('betDontCome')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1 (Bar 12)</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
@@ -252,9 +257,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 						>
 							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
-								Big 6
+								{t('betBig6')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 						<div
@@ -262,9 +267,9 @@ const clientUserId = gameSession.clientUserId;
 							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 						>
 							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
-								Big 8
+								{t('betBig8')}
 							</div>
-							<div class="text-[var(--deco-muted)] text-xs">Pays 1:1</div>
+							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
 							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
 					</div>
@@ -272,21 +277,23 @@ const clientUserId = gameSession.clientUserId;
 					<!-- Hardways Row -->
 					<div class="border-t border-[var(--deco-line)] pt-3">
 						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
-							Hardways (off during come-out)
+							{t('hardwaysHeading')}
 						</div>
 						<div class="grid grid-cols-4 gap-2">
 							{
 								[
-									{ type: 'hard4', label: 'Hard 4', pays: '7:1' },
-									{ type: 'hard6', label: 'Hard 6', pays: '9:1' },
-									{ type: 'hard8', label: 'Hard 8', pays: '9:1' },
-									{ type: 'hard10', label: 'Hard 10', pays: '7:1' },
+									{ type: 'hard4', pays: '7:1' },
+									{ type: 'hard6', pays: '9:1' },
+									{ type: 'hard8', pays: '9:1' },
+									{ type: 'hard10', pays: '7:1' },
 								].map((h) => (
 									<div
 										data-bet-type={h.type}
 										class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
 									>
-										<div class="text-[var(--deco-brass-bright)] font-bold text-xs">{h.label}</div>
+										<div class="text-[var(--deco-brass-bright)] font-bold text-xs">
+											{getCrapsBetLabel(locale, h.type)}
+										</div>
 										<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
 										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
 									</div>
@@ -298,25 +305,25 @@ const clientUserId = gameSession.clientUserId;
 					<!-- Proposition Bets -->
 					<div class="border-t border-[var(--deco-line)] pt-3">
 						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
-							Proposition Bets (one-roll)
+							{t('propositionHeading')}
 						</div>
 						<div class="grid grid-cols-7 gap-1.5">
 							{
 								[
-									{ type: 'any7', label: 'Any 7', pays: '4:1' },
-									{ type: 'anyCraps', label: 'Any Craps', pays: '7:1' },
-									{ type: 'aces', label: 'Aces (2)', pays: '30:1' },
-									{ type: 'aceDeuce', label: 'Ace-Deuce', pays: '15:1' },
-									{ type: 'yo', label: 'Yo (11)', pays: '15:1' },
-									{ type: 'boxcars', label: 'Boxcars', pays: '30:1' },
-									{ type: 'ce', label: 'C & E', pays: '3/7:1' },
+									{ type: 'any7', pays: '4:1' },
+									{ type: 'anyCraps', pays: '7:1' },
+									{ type: 'aces', pays: '30:1' },
+									{ type: 'aceDeuce', pays: '15:1' },
+									{ type: 'yo', pays: '15:1' },
+									{ type: 'boxcars', pays: '30:1' },
+									{ type: 'ce', pays: '3/7:1' },
 								].map((p) => (
 									<div
 										data-bet-type={p.type}
 										class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
 									>
 										<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
-											{p.label}
+											{getCrapsBetLabel(locale, p.type)}
 										</div>
 										<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
 										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
@@ -354,11 +361,11 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div class="flex items-center gap-3">
 							<div>
-								<span class="text-[var(--deco-muted)] text-sm">Total Bet:</span>
+								<span class="text-[var(--deco-muted)] text-sm">{t('totalBet')}</span>
 								<span
 									id="total-bet"
 									data-testid="total-bet"
-									class="text-[var(--deco-brass)] font-bold ml-1">$0</span
+									class="text-[var(--deco-brass)] font-bold ml-1">{formatChips(0, locale)}</span
 								>
 							</div>
 							<button
@@ -366,7 +373,7 @@ const clientUserId = gameSession.clientUserId;
 								data-testid="clear-bets-button"
 								class="px-3 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg text-sm transition-colors"
 							>
-								Clear Bets
+								{t('clearBets')}
 							</button>
 						</div>
 					</div>
@@ -378,7 +385,7 @@ const clientUserId = gameSession.clientUserId;
 				<!-- Roll History -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Roll History
+						{t('rollHistory')}
 					</h3>
 					<div
 						id="roll-history"
@@ -386,7 +393,7 @@ const clientUserId = gameSession.clientUserId;
 						class="flex flex-wrap gap-1.5 min-h-[40px]"
 					>
 						<span class="roll-history-placeholder text-[var(--deco-muted)] text-xs"
-							>No rolls yet</span
+							>{t('noRollsYet')}</span
 						>
 					</div>
 				</div>
@@ -394,10 +401,10 @@ const clientUserId = gameSession.clientUserId;
 				<!-- Active Bets -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Active Bets
+						{t('activeBets')}
 					</h3>
 					<div id="active-bets" data-testid="active-bets" class="space-y-1.5 min-h-[40px]">
-						<span class="text-[var(--deco-muted)] text-xs">No bets placed</span>
+						<span class="text-[var(--deco-muted)] text-xs">{t('noBetsPlaced')}</span>
 					</div>
 				</div>
 
@@ -408,70 +415,70 @@ const clientUserId = gameSession.clientUserId;
 					class="hidden bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]"
 				>
 					<h3 class="text-xs font-bold text-[var(--deco-sapphire)] uppercase tracking-wider mb-3">
-						Come Bet Odds
+						{t('comeOddsHeading')}
 					</h3>
 					<div id="come-odds-list" data-testid="come-odds-list" class="space-y-2"></div>
-					<p class="text-[var(--deco-muted)] text-xs mt-2">Click to add 2× odds (0% edge)</p>
+					<p class="text-[var(--deco-muted)] text-xs mt-2">{t('comeOddsHint')}</p>
 				</div>
 
 				<!-- Payouts Reference -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Payouts
+						{t('payoutsHeading')}
 					</h3>
 					<div class="space-y-1 text-xs">
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Pass/Come</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPassCome')}</span><span
 								class="text-[var(--deco-muted)]">1:1</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Odds (4/10)</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds410')}</span><span
 								class="text-[var(--deco-muted)]">2:1</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Odds (5/9)</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds59')}</span><span
 								class="text-[var(--deco-muted)]">3:2</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Odds (6/8)</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds68')}</span><span
 								class="text-[var(--deco-muted)]">6:5</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Place 6/8</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace68')}</span><span
 								class="text-[var(--deco-muted)]">7:6</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Place 5/9</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace59')}</span><span
 								class="text-[var(--deco-muted)]">7:5</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Place 4/10</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace410')}</span><span
 								class="text-[var(--deco-muted)]">9:5</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Hard 6/8</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard68')}</span><span
 								class="text-[var(--deco-muted)]">9:1</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Hard 4/10</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard410')}</span><span
 								class="text-[var(--deco-muted)]">7:1</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Any 7</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutAny7')}</span><span
 								class="text-[var(--deco-muted)]">4:1</span
 							>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">Yo (11)</span><span
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutYo11')}</span><span
 								class="text-[var(--deco-muted)]">15:1</span
 							>
 						</div>
@@ -482,7 +489,7 @@ const clientUserId = gameSession.clientUserId;
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<div class="flex items-center justify-between mb-3">
 						<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider">
-							AI Advisor
+							{t('aiAdvisor')}
 						</h3>
 						<button
 							id="llm-advice-btn"
@@ -490,18 +497,14 @@ const clientUserId = gameSession.clientUserId;
 							disabled={gameSession.isGuest}
 							class="px-3 py-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-brass)] rounded text-xs transition-colors border border-[var(--deco-brass-dim)]"
 						>
-							Ask
+							{t('ask')}
 						</button>
 					</div>
 					<div
 						id="llm-advice"
 						class="text-[var(--deco-muted)] text-xs leading-relaxed min-h-[48px]"
 					>
-						{
-							gameSession.isGuest
-								? 'Sign in to use browser-local AI advice.'
-								: 'Configure AI in your profile, then ask for advice.'
-						}
+						{gameSession.isGuest ? t('aiGuestHint') : t('aiConfigureHint')}
 					</div>
 				</div>
 			</div><!-- /sidebar -->
@@ -516,10 +519,10 @@ const clientUserId = gameSession.clientUserId;
 				class="bg-[var(--deco-obsidian-2)] rounded-xl p-8 border border-[var(--deco-oxblood)] max-w-md text-center"
 			>
 				<div class="text-5xl mb-4">💸</div>
-				<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">Insufficient Chips</h2>
-				<p class="text-[var(--deco-muted)] mb-6">You don't have enough chips to continue.</p>
+				<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">{t('insufficientTitle')}</h2>
+				<p class="text-[var(--deco-muted)] mb-6">{t('insufficientBody')}</p>
 				<a href="/games" class="btn-gold px-8 py-3 rounded-lg font-bold inline-block"
-					>Return to Lobby</a
+					>{t('returnToLobby')}</a
 				>
 			</div>
 		</div>
@@ -537,7 +540,7 @@ const clientUserId = gameSession.clientUserId;
 			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
 			<div>
 				<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
-					Achievement Unlocked
+					{t('achievementUnlocked')}
 				</p>
 				<p id="achievement-name" data-testid="achievement-name" class="font-bold text-lg">
 					Achievement Name
@@ -701,10 +704,27 @@ const clientUserId = gameSession.clientUserId;
 	} from '../../lib/craps/settlement';
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
 	import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
-	import { BET_LABELS } from '../../lib/craps/constants';
-	import type { BetType, RollResult, CrapsBet, CrapsGameState } from '../../lib/craps/types';
+	import type {
+		BetType,
+		RollResult,
+		CrapsBet,
+		CrapsBetContext,
+		CrapsBetErrorCode,
+		CrapsGameState,
+		CrapsTableErrorCode,
+		GamePhase,
+	} from '../../lib/craps/types';
 	import { loadAiSettings } from '../../lib/ai';
 	import { initAchievementToast } from '../../lib/achievement-toast';
+	import { getDocumentLocale } from '../../lib/i18n/locale';
+	import { formatChips } from '../../lib/i18n/messages/common';
+	import {
+		crapsTranslator,
+		getCrapsBetLabel,
+		formatCrapsNet,
+		type CRAPS_MESSAGES,
+	} from '../../lib/i18n/messages/craps';
+	import type { MessageKey } from '../../lib/i18n/translate';
 	import {
 		isGuestModeValue,
 		loadGuestBankroll,
@@ -712,6 +732,10 @@ const clientUserId = gameSession.clientUserId;
 		shouldSyncAccountChips,
 	} from '../../lib/public-game-session';
 	import { createSettlementGate, newSettlementId, type SettleRoundResult } from '../../lib/wallet';
+
+	// Browser locale handoff: AppLayout writes data-locale on <html>.
+	const locale = getDocumentLocale(document);
+	const t = crapsTranslator(locale);
 
 	type PersistedCrapsSession = {
 		gameState: Partial<CrapsGameState>;
@@ -875,7 +899,7 @@ const clientUserId = gameSession.clientUserId;
 				result = await settlementGate.settle(command);
 			} catch (error) {
 				console.error('[WALLET_SETTLEMENT] Craps settlement failed:', error);
-				showSettlementRecovery('Settlement failed. Retry or reset before rolling again.');
+				showSettlementRecovery(t('settlementFailed'));
 				return;
 			}
 			// Settlement committed server-side; adopting locally can still fail.
@@ -885,9 +909,7 @@ const clientUserId = gameSession.clientUserId;
 			} catch (error) {
 				settlementBlocked = true;
 				console.error('[WALLET_SETTLEMENT] Craps adoption failed after settlement:', error);
-				showSettlementRecovery(
-					'Settlement committed but local balance could not be applied. Reset to sync your balance.',
-				);
+				showSettlementRecovery(t('settlementAdoptionFailed'));
 			}
 		}
 
@@ -899,13 +921,13 @@ const clientUserId = gameSession.clientUserId;
 				return;
 			}
 			retrySettlementBtn.disabled = true;
-			showMessage('Retrying settlement...', 'info');
+			showMessage(t('retryingSettlement'), 'info');
 			try {
 				const result = await settlementGate.retry();
 				if (result) adoptSettlementResult(result);
 			} catch (error) {
 				console.error('[WALLET_SETTLEMENT] Craps settlement retry failed:', error);
-				showSettlementRecovery('Settlement failed again. Retry or reset before rolling again.');
+				showSettlementRecovery(t('settlementRetryFailed'));
 			} finally {
 				retrySettlementBtn.disabled = false;
 				updateUI({ persist: false });
@@ -931,7 +953,7 @@ const clientUserId = gameSession.clientUserId;
 			game.reset(serverSyncedBalance);
 			hideSettlementRecovery();
 			updateUI();
-			showMessage('Settlement reset. Place your bets, then roll.');
+			showMessage(t('settlementReset'));
 			resetSettlementBtn.disabled = false;
 		});
 
@@ -1051,18 +1073,19 @@ const clientUserId = gameSession.clientUserId;
 				zone.dataset.testid = `bet-${type}`;
 				zone.setAttribute('role', 'button');
 				zone.tabIndex = 0;
-				zone.setAttribute('aria-label', `Place ${BET_LABELS[type] ?? type} bet`);
+				zone.setAttribute('aria-label', t('ariaPlaceBet', { bet: getCrapsBetLabel(locale, type) }));
 			});
 
 			document.querySelectorAll('.number-box').forEach((el) => {
 				const box = el as HTMLElement;
 				const n = box.dataset.number;
-				if (n) box.setAttribute('aria-label', `Number ${n} betting box`);
+				if (n) box.setAttribute('aria-label', t('ariaNumberBox', { number: n }));
 			});
 
 			[4, 5, 6, 8, 9, 10].forEach((n) => {
 				const comeDisplay = document.getElementById(`come-${n}`);
-				if (comeDisplay) comeDisplay.setAttribute('aria-label', `Come bets on ${n}`);
+				if (comeDisplay)
+					comeDisplay.setAttribute('aria-label', t('ariaComeBets', { number: String(n) }));
 			});
 		}
 
@@ -1140,11 +1163,11 @@ const clientUserId = gameSession.clientUserId;
 			const state = game.getState();
 
 			// Balance
-			balanceEl.textContent = `$${state.chipBalance.toLocaleString()}`;
+			balanceEl.textContent = formatChips(state.chipBalance, locale);
 
 			// Total bet
 			const total = game.getTotalAtRisk();
-			totalBetEl.textContent = `$${total}`;
+			totalBetEl.textContent = formatChips(total, locale);
 
 			// An authenticated roll cannot start while its previous resolved wagers
 			// still need wallet settlement. Guests remain local-only and are never gated.
@@ -1155,17 +1178,17 @@ const clientUserId = gameSession.clientUserId;
 
 			// Phase badge
 			if (state.phase === 'come-out') {
-				phaseBadge.textContent = 'Come-Out';
+				phaseBadge.textContent = t('phaseComeOut');
 				phaseBadge.className =
 					'px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-sapphire)] uppercase tracking-wider';
 				pointBadge.classList.add('hidden');
 				oddsRow.classList.add('hidden');
 				oddsRow.style.removeProperty('display');
 			} else {
-				phaseBadge.textContent = 'Point Phase';
+				phaseBadge.textContent = t('phasePoint');
 				phaseBadge.className =
 					'px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)] uppercase tracking-wider';
-				pointBadge.textContent = `Point: ${state.point}`;
+				pointBadge.textContent = t('pointLabel', { point: String(state.point) });
 				pointBadge.classList.remove('hidden');
 				oddsRow.classList.remove('hidden');
 				oddsRow.style.display = 'grid';
@@ -1187,15 +1210,15 @@ const clientUserId = gameSession.clientUserId;
 				if (type === 'passLineOdds') {
 					const lineBet = state.activeBets.find((b) => b.type === 'passLine');
 					const odds = lineBet?.odds ?? 0;
-					amountEl.textContent = odds > 0 ? `$${odds}` : '';
+					amountEl.textContent = odds > 0 ? formatChips(odds, locale) : '';
 				} else if (type === 'dontPassOdds') {
 					const lineBet = state.activeBets.find((b) => b.type === 'dontPass');
 					const odds = lineBet?.odds ?? 0;
-					amountEl.textContent = odds > 0 ? `$${odds}` : '';
+					amountEl.textContent = odds > 0 ? formatChips(odds, locale) : '';
 				} else {
 					const bets = state.activeBets.filter((b) => b.type === type && !b.point);
 					const totalAmount = bets.reduce((sum, b) => sum + b.amount, 0);
-					amountEl.textContent = totalAmount > 0 ? `$${totalAmount}` : '';
+					amountEl.textContent = totalAmount > 0 ? formatChips(totalAmount, locale) : '';
 				}
 
 				// Active glow
@@ -1231,7 +1254,7 @@ const clientUserId = gameSession.clientUserId;
 					container.classList.remove('hidden');
 					const totalAmount = comeBets.reduce((s, b) => s + b.amount + (b.odds ?? 0), 0);
 					const amtEl = container.querySelector('.come-display-amount');
-					if (amtEl) amtEl.textContent = `$${totalAmount}`;
+					if (amtEl) amtEl.textContent = formatChips(totalAmount, locale);
 				} else {
 					container.classList.add('hidden');
 				}
@@ -1279,15 +1302,16 @@ const clientUserId = gameSession.clientUserId;
 
 		function renderActiveBets(bets: CrapsBet[]) {
 			if (bets.length === 0) {
-				activeBetsEl.innerHTML =
-					'<span class="text-[var(--deco-muted)] text-xs">No bets placed</span>';
+				activeBetsEl.innerHTML = `<span class="text-[var(--deco-muted)] text-xs">${t('noBetsPlaced')}</span>`;
 				return;
 			}
 			activeBetsEl.innerHTML = '';
 			for (const bet of bets) {
-				const label = BET_LABELS[bet.type] ?? bet.type;
+				const label = getCrapsBetLabel(locale, bet.type);
 				const pointStr = bet.point ? ` @${bet.point}` : '';
-				const oddsStr = bet.odds ? ` +odds:$${bet.odds}` : '';
+				const oddsStr = bet.odds
+					? ` ${t('betOddsSuffix', { amount: formatChips(bet.odds, locale) })}`
+					: '';
 
 				const row = document.createElement('div');
 				row.className = 'flex items-center justify-between text-xs';
@@ -1296,7 +1320,7 @@ const clientUserId = gameSession.clientUserId;
 				labelSpan.textContent = `${label}${pointStr}`;
 				const amountSpan = document.createElement('span');
 				amountSpan.className = 'text-[var(--deco-brass)] font-bold';
-				amountSpan.textContent = `$${bet.amount}${oddsStr}`;
+				amountSpan.textContent = `${formatChips(bet.amount, locale)}${oddsStr}`;
 				row.appendChild(labelSpan);
 				row.appendChild(amountSpan);
 				activeBetsEl.appendChild(row);
@@ -1309,10 +1333,76 @@ const clientUserId = gameSession.clientUserId;
 			return remaining > 0 ? Math.min(selectedChipAmount, remaining) : 0;
 		}
 
+		const CRAPS_BET_ERROR_KEYS: Record<CrapsBetErrorCode, MessageKey<typeof CRAPS_MESSAGES>> = {
+			'invalid-amount': 'errorInvalidAmount',
+			'come-out-only': 'errorComeOutOnly',
+			'point-only': 'errorPointOnly',
+			'missing-pass-line': 'errorMissingPassLine',
+			'missing-dont-pass': 'errorMissingDontPass',
+			'duplicate-pass-line': 'errorDuplicatePassLine',
+			'duplicate-dont-pass': 'errorDuplicateDontPass',
+			'below-minimum': 'errorBelowMinimum',
+			'above-maximum': 'errorAboveMaximum',
+			'above-max-odds': 'errorAboveMaxOdds',
+			'insufficient-balance': 'errorInsufficientChips',
+		};
+
+		const CRAPS_TABLE_ERROR_KEYS: Record<CrapsTableErrorCode, MessageKey<typeof CRAPS_MESSAGES>> = {
+			'bet-not-found': 'errorBetNotFound',
+			'not-come-bet': 'errorOddsOnComeOnly',
+			'no-come-point': 'errorComePointNotSet',
+			'line-bet-locked': 'errorLineBetLocked',
+			'come-bet-locked': 'errorComeBetLocked',
+		};
+
+		function betPlacementErrorText(
+			code: CrapsBetErrorCode | undefined,
+			context: CrapsBetContext | undefined,
+		): string {
+			if (!code) return t('cannotPlaceBet');
+			switch (code) {
+				case 'come-out-only':
+				case 'point-only':
+					return t(CRAPS_BET_ERROR_KEYS[code], {
+						bet: getCrapsBetLabel(locale, context?.betType ?? 'passLine'),
+					});
+				case 'below-minimum':
+					return t(CRAPS_BET_ERROR_KEYS[code], { min: formatChips(context?.min ?? 0, locale) });
+				case 'above-maximum':
+					return t(CRAPS_BET_ERROR_KEYS[code], {
+						max: formatChips(context?.max ?? 0, locale),
+						remaining: formatChips(context?.remaining ?? 0, locale),
+					});
+				case 'above-max-odds':
+					return t(CRAPS_BET_ERROR_KEYS[code], {
+						multiplier: String(context?.multiplier ?? 1),
+						remaining: formatChips(context?.remaining ?? 0, locale),
+					});
+				default:
+					return t(CRAPS_BET_ERROR_KEYS[code]);
+			}
+		}
+
+		function comeOddsErrorText(
+			code: CrapsBetErrorCode | CrapsTableErrorCode | undefined,
+			context: CrapsBetContext | undefined,
+		): string {
+			if (!code) return t('cannotAddOdds');
+			if (code === 'above-max-odds') {
+				return t('errorAboveComeOdds', {
+					multiplier: String(context?.multiplier ?? 1),
+					remaining: formatChips(context?.remaining ?? 0, locale),
+				});
+			}
+			if (code === 'invalid-amount') return t('errorInvalidAmount');
+			if (code === 'insufficient-balance') return t('errorInsufficientChips');
+			return t(CRAPS_TABLE_ERROR_KEYS[code]);
+		}
+
 		function renderComeOddsButtons(bets: CrapsBet[]) {
 			comeOddsListEl.innerHTML = '';
 			for (const bet of bets) {
-				const label = `${bet.type === 'come' ? 'Come' : "Don't Come"} @${bet.point}`;
+				const label = `${getCrapsBetLabel(locale, bet.type)} @${bet.point}`;
 				const maxOdds = bet.amount * getMaxOddsMultiplier();
 				const currentOdds = bet.odds ?? 0;
 				const remaining = maxOdds - currentOdds;
@@ -1323,12 +1413,12 @@ const clientUserId = gameSession.clientUserId;
 				row.className = 'flex items-center justify-between gap-2';
 				const labelSpan = document.createElement('span');
 				labelSpan.className = 'text-[var(--deco-ivory-dim)] text-xs flex-1';
-				labelSpan.textContent = `${label} ($${currentOdds}/$${maxOdds})`;
+				labelSpan.textContent = `${label} (${formatChips(currentOdds, locale)}/${formatChips(maxOdds, locale)})`;
 				const button = document.createElement('button');
 				button.className =
 					'add-come-odds px-2 py-1 text-xs bg-[var(--deco-emerald-deep)] hover:bg-[var(--deco-emerald)] text-[var(--deco-jade)] border border-[var(--deco-emerald-line)] rounded';
 				button.dataset.betId = String(bet.id);
-				button.textContent = `+$${oddsAmount}`;
+				button.textContent = `+${formatChips(oddsAmount, locale)}`;
 				row.appendChild(labelSpan);
 				row.appendChild(button);
 				comeOddsListEl.appendChild(row);
@@ -1339,19 +1429,19 @@ const clientUserId = gameSession.clientUserId;
 					const betId = (btn as HTMLElement).dataset.betId!;
 					const currentBet = game.getState().activeBets.find((bet) => bet.id === betId);
 					if (!currentBet) {
-						showMessage('Bet not found', 'error');
+						showMessage(t('errorBetNotFound'), 'error');
 						updateUI();
 						return;
 					}
 					const amount = getComeOddsAmount(currentBet);
 					if (amount < 1) {
-						showMessage('Cannot add odds', 'error');
+						showMessage(t('cannotAddOdds'), 'error');
 						updateUI();
 						return;
 					}
 					const r = game.addComeBetOdds(betId, amount);
 					if (!r.success) {
-						showMessage(r.error ?? 'Cannot add odds', 'error');
+						showMessage(comeOddsErrorText(r.error, r.context), 'error');
 						updateUI();
 						return;
 					}
@@ -1389,7 +1479,29 @@ const clientUserId = gameSession.clientUserId;
 
 		// ─── Roll result display ─────────────────────────────────────────────────────
 
-		function showRollResult(result: RollResult) {
+		function rollResultMessage(
+			result: RollResult,
+			prevPhase: GamePhase,
+			prevPoint: number | null,
+		): string {
+			const { total } = result.roll;
+			if (prevPhase === 'come-out') {
+				if (total === 7) return t('messageNaturalSeven');
+				if (total === 11) return t('messageYoEleven');
+				if (total === 2) return t('messageCrapsSnakeEyes');
+				if (total === 3) return t('messageCrapsAceDeuce');
+				if (total === 12) return t('messageCrapsBoxcars');
+				return t('messagePointEstablished', { point: String(total) });
+			}
+			if (prevPhase === 'point') {
+				if (total === prevPoint) return t('messagePointMade', { point: String(total) });
+				if (total === 7) return t('messageSevenOut');
+				return t('messageKeepShooting', { total: String(total) });
+			}
+			return t('messageKeepShooting', { total: String(total) });
+		}
+
+		function showRollResult(result: RollResult, prevPhase: GamePhase, prevPoint: number | null) {
 			// Show outcome in message area based on player's actual result (netDelta)
 			let msgClass = 'text-[var(--deco-ivory-dim)]';
 			if (result.netDelta > 0) {
@@ -1398,14 +1510,13 @@ const clientUserId = gameSession.clientUserId;
 				msgClass = 'text-[var(--deco-oxblood-bright)]';
 			}
 			gameMessageEl.className = `text-sm font-semibold ${msgClass}`;
-			gameMessageEl.textContent = result.message;
+			gameMessageEl.textContent = rollResultMessage(result, prevPhase, prevPoint);
 
 			// Show net delta
 			if (result.netDelta !== 0) {
-				const sign = result.netDelta > 0 ? '+' : '';
 				const deltaEl = document.createElement('span');
 				deltaEl.className = `ml-2 text-xs ${result.netDelta > 0 ? 'text-[var(--deco-jade)]' : 'text-[var(--deco-oxblood-bright)]'}`;
-				deltaEl.textContent = `(${sign}$${result.netDelta})`;
+				deltaEl.textContent = `(${formatCrapsNet(locale, result.netDelta)})`;
 				gameMessageEl.appendChild(deltaEl);
 			}
 		}
@@ -1438,7 +1549,7 @@ const clientUserId = gameSession.clientUserId;
 			if (r.success) {
 				updateUI();
 			} else {
-				showMessage(r.error ?? 'Cannot place bet', 'error');
+				showMessage(betPlacementErrorText(r.error, r.context), 'error');
 			}
 		}
 
@@ -1462,12 +1573,13 @@ const clientUserId = gameSession.clientUserId;
 				shouldSyncAccountChips({ isGuestMode }) &&
 				(settlementGate.isBlocked || settlementBlocked)
 			) {
-				showSettlementRecovery('Settlement is still pending. Retry or reset before rolling again.');
+				showSettlementRecovery(t('settlementPending'));
 				return;
 			}
 			rollButton.disabled = true;
 			try {
 				const prevPhase = game.getState().phase;
+				const prevPoint = game.getState().point;
 
 				// Animate dice first
 				const tempDie1 = Math.ceil(Math.random() * 6);
@@ -1494,7 +1606,7 @@ const clientUserId = gameSession.clientUserId;
 				if (d2Dots) renderDie(d2Dots, result.roll.die2);
 				rollTotalEl.textContent = String(result.roll.total);
 
-				showRollResult(result);
+				showRollResult(result, prevPhase, prevPoint);
 				addRollToHistory(result.roll.total, prevPhase);
 				// Keep the resolved roll out of durable session state until its wallet
 				// settlement succeeds. Guests and unresolved rolls persist below.
@@ -1513,7 +1625,7 @@ const clientUserId = gameSession.clientUserId;
 				}
 			} catch (err) {
 				console.error('[CRAPS] Unexpected error in roll handler:', err);
-				showMessage('An unexpected error occurred. Please try again.', 'error');
+				showMessage(t('errorUnexpected'), 'error');
 			} finally {
 				updateUI({ persist: false });
 			}
@@ -1528,20 +1640,19 @@ const clientUserId = gameSession.clientUserId;
 		// LLM Advisor
 		llmAdviceBtn.addEventListener('click', async () => {
 			if (isGuestMode) {
-				llmAdviceEl.textContent =
-					'Sign in and configure an AI provider in Profile to use provider advice.';
+				llmAdviceEl.textContent = t('aiGuestClick');
 				return;
 			}
 
 			const settings = loadAiSettings();
 			if (!settings) {
-				llmAdviceEl.textContent = 'Configure an AI provider in Profile to use advice.';
+				llmAdviceEl.textContent = t('aiNoSettings');
 				return;
 			}
 
 			llmAdviceBtn.disabled = true;
 			llmAdviceBtn.textContent = '...';
-			llmAdviceEl.textContent = 'Thinking...';
+			llmAdviceEl.textContent = t('aiThinking');
 
 			try {
 				const state = game.getState();
@@ -1552,6 +1663,7 @@ const clientUserId = gameSession.clientUserId;
 						activeBets: state.activeBets,
 						rollHistory: state.rollHistory,
 						chipBalance: state.chipBalance,
+						locale,
 					},
 					settings,
 				);
@@ -1559,20 +1671,20 @@ const clientUserId = gameSession.clientUserId;
 				if (!result.ok) {
 					llmAdviceEl.textContent =
 						result.status === 401
-							? 'Invalid API key. Update your AI settings in Profile.'
+							? t('aiInvalidKey')
 							: result.status === 429
-								? 'AI provider rate limit reached. Please wait a moment.'
-								: 'AI advice is unavailable. You can keep playing normally.';
+								? t('aiRateLimited')
+								: t('aiUnavailable');
 					return;
 				}
 
 				llmAdviceEl.textContent = result.value.advice;
 			} catch (e) {
 				console.error('[CRAPS] Failed to load LLM advice:', e);
-				llmAdviceEl.textContent = 'Could not load advice. Please try again.';
+				llmAdviceEl.textContent = t('aiLoadFailed');
 			} finally {
 				llmAdviceBtn.disabled = false;
-				llmAdviceBtn.textContent = 'Ask';
+				llmAdviceBtn.textContent = t('ask');
 			}
 		});
 
@@ -1591,7 +1703,7 @@ const clientUserId = gameSession.clientUserId;
 
 			window.addEventListener('achievement-earned', (event: Event) => {
 				const { achievements } = (
-					event as CustomEvent<{ achievements: Array<{ id: string; name: string; icon: string }> }>
+					event as CustomEvent<{ achievements: Array<{ id: string; icon: string }> }>
 				).detail;
 				// Validate achievements is an array before calling enqueue
 				if (Array.isArray(achievements)) {

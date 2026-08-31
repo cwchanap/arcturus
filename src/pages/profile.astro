@@ -10,6 +10,11 @@ import {
 	loadProfileStatisticsState,
 	type ProfileStatisticsState,
 } from '../lib/profile-statistics-loader';
+import { getAchievementDescription, getAchievementName } from '../lib/i18n/messages/achievements';
+import { profileTranslator } from '../lib/i18n/messages/profile';
+
+const locale = Astro.locals.locale;
+const t = profileTranslator(locale);
 
 const session = Astro.locals.session;
 
@@ -72,6 +77,7 @@ if (dbBinding) {
 
 const aiModelOptions = AI_MODELS;
 const aiProviderOptions = AI_PROVIDERS;
+// Provider and model names are brand identifiers; they are not translated.
 const providerLabels = {
 	openai: 'OpenAI',
 	gemini: 'Gemini',
@@ -85,7 +91,7 @@ const initialAiProvider = 'openai' as const;
 const initialAiModel = AI_MODELS[initialAiProvider][0];
 ---
 
-<CasinoLayout title="Player Profile - Arcturus Casino">
+<CasinoLayout title={t('pageTitle')}>
 	<section class="deco-atmosphere relative overflow-hidden">
 		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<div class="deco-panel deco-frame">
@@ -101,7 +107,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 									user.image ? (
 										<img
 											src={user.image}
-											alt={user.name ?? user.email ?? 'Player Avatar'}
+											alt={user.name ?? user.email ?? t('playerAvatar')}
 											class="h-20 w-20 rounded-sm object-cover"
 										/>
 									) : (
@@ -110,45 +116,45 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 								}
 							</div>
 							<div>
-								<p class="deco-eyebrow-sm">Player Profile</p>
+								<p class="deco-eyebrow-sm">{t('playerProfile')}</p>
 								<h1 class="deco-section-title mt-2 text-3xl">
-									{user.name ?? 'Casino Adventurer'}
+									{user.name ?? t('defaultPlayerName')}
 								</h1>
 								<p class="deco-text-dim">{user.email}</p>
 							</div>
 						</div>
 						<div class="flex items-center gap-4 self-start md:self-auto">
 							<span class:list={['deco-pill', user.emailVerified && 'deco-pill-success']}>
-								{user.emailVerified ? 'Email Verified' : 'Verification Pending'}
+								{user.emailVerified ? t('emailVerified') : t('verificationPending')}
 							</span>
 							<button id="signout-btn" type="button" class="deco-btn deco-btn-outline">
-								<span>Sign out</span>
+								<span>{t('signOut')}</span>
 							</button>
 						</div>
 					</div>
 
 					<div class="grid grid-cols-1 gap-6 md:grid-cols-2">
 						<div class="deco-panel p-6">
-							<h2 class="deco-section-title text-lg">Account Details</h2>
+							<h2 class="deco-section-title text-lg">{t('accountDetails')}</h2>
 							<dl class="deco-text-dim mt-6 space-y-4 text-sm">
 								<div class="flex items-start justify-between">
-									<dt class="deco-muted-text">Player Name</dt>
-									<dd class="deco-text font-medium">{user.name ?? 'Not set'}</dd>
+									<dt class="deco-muted-text">{t('playerName')}</dt>
+									<dd class="deco-text font-medium">{user.name ?? t('notSet')}</dd>
 								</div>
 								<div class="flex items-start justify-between">
-									<dt class="deco-muted-text">Email Address</dt>
+									<dt class="deco-muted-text">{t('emailAddress')}</dt>
 									<dd class="deco-text font-medium">{user.email}</dd>
 								</div>
 								<div class="flex items-start justify-between">
-									<dt class="deco-muted-text">Email Status</dt>
+									<dt class="deco-muted-text">{t('emailStatus')}</dt>
 									<dd class="deco-text font-medium">
-										{user.emailVerified ? 'Verified' : 'Awaiting verification'}
+										{user.emailVerified ? t('verified') : t('awaitingVerification')}
 									</dd>
 								</div>
 							</dl>
 						</div>
 						<div class="deco-panel p-6">
-							<h2 class="deco-section-title text-lg">Casino Tips</h2>
+							<h2 class="deco-section-title text-lg">{t('casinoTips')}</h2>
 							<ul class="deco-text-dim mt-6 space-y-4 text-sm">
 								<li class="flex items-start gap-3">
 									<DecoIcon
@@ -156,7 +162,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										size={18}
 										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
 									/>
-									<span>Claim your daily chip bonus to keep the games going.</span>
+									<span>{t('tipDailyBonus')}</span>
 								</li>
 								<li class="flex items-start gap-3">
 									<DecoIcon
@@ -164,7 +170,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										size={18}
 										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
 									/>
-									<span>Try a different single-player table to explore another strategy.</span>
+									<span>{t('tipTryTable')}</span>
 								</li>
 								<li class="flex items-start gap-3">
 									<DecoIcon
@@ -172,7 +178,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										size={18}
 										class="mt-0.5 shrink-0 text-[var(--deco-brass)]"
 									/>
-									<span>Create a private poker room and share its code for a casual match.</span>
+									<span>{t('tipPrivateRoom')}</span>
 								</li>
 							</ul>
 						</div>
@@ -185,23 +191,24 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			<div class="deco-panel mt-8 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<h2 class="deco-section-title text-lg">AI Rival Settings</h2>
+						<h2 class="deco-section-title text-lg">{t('aiSettingsTitle')}</h2>
 						<p class="deco-text-dim text-sm">
-							Choose your model provider and store an API key in this browser to enable the Gemini
-							or OpenAI poker rival.
+							{t('aiSettingsDescription')}
 						</p>
 					</div>
 					<p
 						id="ai-settings-feedback"
 						class="deco-muted-text text-right text-xs font-semibold uppercase tracking-widest"
 					>
-						Stored in this browser
+						{t('storedInBrowser')}
 					</p>
 				</div>
 
 				<form id="ai-settings-form" class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
 					<div class="col-span-full sm:col-span-1">
-						<label for="ai-provider" class="deco-label block font-medium"> Model Provider </label>
+						<label for="ai-provider" class="deco-label block font-medium">
+							{t('modelProvider')}
+						</label>
 						<select
 							id="ai-provider"
 							name="provider"
@@ -217,7 +224,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 						</select>
 					</div>
 					<div class="col-span-full sm:col-span-1">
-						<label for="ai-model" class="deco-label block font-medium"> Model Variant </label>
+						<label for="ai-model" class="deco-label block font-medium"> {t('modelVariant')} </label>
 						<select
 							id="ai-model"
 							name="model"
@@ -236,7 +243,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 
 					<div class="col-span-full space-y-2">
 						<label id="api-key-label" for="api-key" class="deco-label block font-medium">
-							{initialAiProvider === 'openai' ? 'OpenAI API Key' : 'Gemini API Key'}
+							{initialAiProvider === 'openai' ? t('openaiApiKey') : t('geminiApiKey')}
 						</label>
 						<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
 							<div class="relative flex-1">
@@ -253,8 +260,8 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										type="button"
 										id="show-api-key"
 										class="deco-icon-btn rounded p-1.5"
-										title="Show API key"
-										aria-label="Show API key"
+										title={t('showApiKey')}
+										aria-label={t('showApiKey')}
 										style="display: none;"
 									>
 										<svg
@@ -278,8 +285,8 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										type="button"
 										id="hide-api-key"
 										class="deco-icon-btn rounded p-1.5"
-										title="Hide API key"
-										aria-label="Hide API key"
+										title={t('hideApiKey')}
+										aria-label={t('hideApiKey')}
 										style="display: none;"
 									>
 										<svg
@@ -309,8 +316,8 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 										type="button"
 										id="copy-api-key"
 										class="deco-icon-btn rounded p-1.5"
-										title="Copy API key"
-										aria-label="Copy API key"
+										title={t('copyApiKey')}
+										aria-label={t('copyApiKey')}
 										style="display: none;"
 									>
 										<svg
@@ -337,7 +344,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 									id="api-key-status"
 									class="deco-muted-text text-xs font-semibold uppercase tracking-widest"
 								>
-									Not saved
+									{t('notSaved')}
 								</span>
 								<button
 									type="button"
@@ -345,22 +352,18 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 									class="text-xs text-[var(--deco-rose)] hover:text-[var(--deco-oxblood-bright)] underline focus:outline-none focus:ring-1 focus:ring-[var(--deco-oxblood-bright)] rounded px-1"
 									style="display: none;"
 								>
-									Clear
+									{t('clear')}
 								</button>
 							</div>
 						</div>
 						<p id="api-key-help" class="deco-muted-text text-xs">
-							{
-								initialAiProvider === 'openai'
-									? 'Required for the GPT-4o rival. The key is stored in this browser only. Switching provider replaces the active record.'
-									: 'Used for Gemini Flash rivals. The key is stored in this browser only. Switching provider replaces the active record.'
-							}
+							{initialAiProvider === 'openai' ? t('openaiKeyHelp') : t('geminiKeyHelp')}
 						</p>
 					</div>
 
 					<div class="col-span-full flex justify-end">
 						<button type="submit" class="deco-btn deco-btn-primary">
-							Save Rival Preferences
+							{t('saveRivalPreferences')}
 						</button>
 					</div>
 				</form>
@@ -370,16 +373,16 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			<div class="deco-panel mt-8 p-6">
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<h2 class="deco-section-title text-lg">Achievements & Badges</h2>
+						<h2 class="deco-section-title text-lg">{t('achievementsTitle')}</h2>
 						<p class="deco-text-dim text-sm">
-							Earn badges by reaching milestones and accomplishing feats across all casino games.
+							{t('achievementsDescription')}
 						</p>
 					</div>
 					<div class="text-right">
 						<p class="deco-stat-value text-2xl tabular-nums">
 							{achievementProgress.unlocked}/{achievementProgress.total}
 						</p>
-						<p class="deco-eyebrow-sm">Unlocked</p>
+						<p class="deco-eyebrow-sm">{t('unlocked')}</p>
 					</div>
 				</div>
 
@@ -387,7 +390,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 				<div
 					class="deco-progress-track mt-4 h-2 w-full rounded-full"
 					role="progressbar"
-					aria-label="Achievement progress"
+					aria-label={t('achievementProgressLabel')}
 					aria-valuemin="0"
 					aria-valuemax="100"
 					aria-valuenow={clampedPercentage()}
@@ -434,16 +437,19 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 											class="font-semibold"
 											style={`color: ${achievement.isUnlocked ? 'var(--deco-ivory)' : 'var(--deco-muted)'}`}
 										>
-											{achievement.name}
+											{getAchievementName(locale, achievement.id)}
 										</h3>
-										<p class="deco-muted-text text-xs mt-0.5">{achievement.description}</p>
+										<p class="deco-muted-text text-xs mt-0.5">
+											{getAchievementDescription(locale, achievement.id)}
+										</p>
 										{achievement.isUnlocked && achievement.earnedAt && (
 											<p class="deco-accent-dim text-xs mt-1">
-												Earned{' '}
-												{new Date(achievement.earnedAt).toLocaleDateString(undefined, {
-													month: 'short',
-													day: 'numeric',
-													year: 'numeric',
+												{t('earnedOn', {
+													date: new Date(achievement.earnedAt).toLocaleDateString(locale, {
+														month: 'short',
+														day: 'numeric',
+														year: 'numeric',
+													}),
 												})}
 											</p>
 										)}
@@ -476,13 +482,11 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 				{
 					achievementsFetchError ? (
 						<div class="mt-6 text-center py-8">
-							<p style="color: var(--deco-rose)">Unable to load achievements — try again</p>
+							<p style="color: var(--deco-rose)">{t('achievementsLoadError')}</p>
 						</div>
 					) : achievements.length === 0 ? (
 						<div class="mt-6 text-center py-8">
-							<p class="deco-text-dim">
-								No achievements available yet. Start playing to earn badges!
-							</p>
+							<p class="deco-text-dim">{t('noAchievementsYet')}</p>
 						</div>
 					) : null
 				}
@@ -511,13 +515,15 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 		>
 			<polyline points="20 6 9 17 4 12"></polyline>
 		</svg>
-		<span id="toast-message">Copied to clipboard!</span>
+		<span id="toast-message">{t('clipboardDefault')}</span>
 	</div>
 </CasinoLayout>
 
 <script>
 	import { authClient } from '../lib/auth-client';
 	import { AI_MODELS, AI_PROVIDERS, loadAiSettings, type AiSettings } from '../lib/ai';
+	import { getDocumentLocale } from '../lib/i18n/locale';
+	import { profileTranslator } from '../lib/i18n/messages/profile';
 	import {
 		clearAiSettingsFromForm,
 		populateModels,
@@ -537,6 +543,9 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			console.error('Sign out error:', error);
 		}
 	});
+
+	const locale = getDocumentLocale();
+	const t = profileTranslator(locale);
 
 	const stored = loadAiSettings();
 	let aiState: AiSettings = stored ?? {
@@ -578,12 +587,10 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 		const isOpenAI = aiState.provider === 'openai';
 
 		if (apiKeyLabel) {
-			apiKeyLabel.textContent = isOpenAI ? 'OpenAI API Key' : 'Gemini API Key';
+			apiKeyLabel.textContent = isOpenAI ? t('openaiApiKey') : t('geminiApiKey');
 		}
 		if (apiKeyHelp) {
-			apiKeyHelp.textContent = isOpenAI
-				? 'Required for the GPT-4o rival. The key is stored in this browser only. Switching provider replaces the active record.'
-				: 'Used for Gemini Flash rivals. The key is stored in this browser only. Switching provider replaces the active record.';
+			apiKeyHelp.textContent = isOpenAI ? t('openaiKeyHelp') : t('geminiKeyHelp');
 		}
 		if (apiKeyInput) {
 			apiKeyInput.placeholder = isOpenAI ? 'sk-...' : 'AIza...';
@@ -592,13 +599,13 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 				apiKeyInput.value = aiState.apiKey;
 			} else if (hasKey) {
 				apiKeyInput.value = '•'.repeat(aiState.apiKey.length || 20);
-				apiKeyInput.placeholder = 'Saved key (masked)';
+				apiKeyInput.placeholder = t('savedKeyMasked');
 			} else {
 				apiKeyInput.value = '';
 			}
 		}
 		if (apiKeyStatus) {
-			apiKeyStatus.textContent = hasKey ? 'Saved' : 'Not saved';
+			apiKeyStatus.textContent = hasKey ? t('saved') : t('notSaved');
 		}
 		if (clearKeyButton) clearKeyButton.style.display = hasKey ? 'inline-block' : 'none';
 		if (showKeyButton) {
@@ -656,16 +663,16 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 	if (copyKeyButton) {
 		copyKeyButton.addEventListener('click', async () => {
 			if (!aiState.apiKey) {
-				showToast(toastEl, toastMessage, 'No API key saved');
+				showToast(toastEl, toastMessage, t('noApiKeySaved'));
 				return;
 			}
 
 			try {
 				await navigator.clipboard.writeText(aiState.apiKey);
-				showToast(toastEl, toastMessage, 'API key copied to clipboard!');
+				showToast(toastEl, toastMessage, t('apiKeyCopied'));
 			} catch (error) {
 				console.error('Failed to copy API key:', error);
-				showToast(toastEl, toastMessage, 'Failed to copy to clipboard');
+				showToast(toastEl, toastMessage, t('clipboardCopyFailed'));
 			}
 		});
 	}
@@ -673,12 +680,12 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 	// Clear API key button
 	if (clearKeyButton) {
 		clearKeyButton.addEventListener('click', () => {
-			if (confirm('Are you sure you want to remove your saved API key?')) {
+			if (confirm(t('removeKeyConfirm'))) {
 				clearAiSettingsFromForm();
 				aiState = { ...aiState, apiKey: '' };
 				isKeyRevealed = false;
 				updateApiKeyUI();
-				setFeedback(feedbackEl, 'API key cleared', 'success');
+				setFeedback(feedbackEl, t('apiKeyCleared'), 'success');
 			}
 		});
 	}
@@ -690,11 +697,11 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 
 		const provider = providerSelect.value as AiSettings['provider'];
 		if (!AI_PROVIDERS.includes(provider)) {
-			setFeedback(feedbackEl, 'Could not save preferences', 'error');
+			setFeedback(feedbackEl, t('couldNotSave'), 'error');
 			return;
 		}
 
-		setFeedback(feedbackEl, 'Saving…', 'neutral');
+		setFeedback(feedbackEl, t('saving'), 'neutral');
 		try {
 			// Prefer the in-memory draft as `previous` so a masked input
 			// recovers the just-edited key rather than the stale stored one.
@@ -708,14 +715,10 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			isKeyRevealed = false;
 			populateModels(modelSelect, aiState.provider, aiState.model, AI_MODELS, modelLabels);
 			updateApiKeyUI();
-			setFeedback(feedbackEl, 'Rival preferences saved', 'success');
+			setFeedback(feedbackEl, t('rivalPreferencesSaved'), 'success');
 		} catch (error) {
 			console.error('Failed to save AI rival settings:', error);
-			setFeedback(
-				feedbackEl,
-				error instanceof Error ? error.message : 'Could not save preferences',
-				'error',
-			);
+			setFeedback(feedbackEl, error instanceof Error ? error.message : t('couldNotSave'), 'error');
 		}
 	});
 

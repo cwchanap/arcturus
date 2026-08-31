@@ -1,11 +1,17 @@
-import { GAME_TYPES, GAME_TYPE_ICONS, GAME_TYPE_LABELS } from './game-stats/constants';
+import { GAME_TYPES, GAME_TYPE_ICONS } from './game-stats/constants';
 import type {
 	PlayerGameStatistics,
 	PlayerStatisticsDashboard,
 } from './game-stats/player-statistics-types';
-import { formatPercentage, formatSignedChipResult, formatWholeNumber } from './formatting';
+import { formatPercentage, formatWholeNumber } from './formatting';
+import type { Locale } from './i18n/locale';
+import { getDocumentLocale } from './i18n/locale';
+import { formatChips } from './i18n/messages/common';
+import { getGameName } from './i18n/messages/games';
+import { formatSignedProfit, profileTranslator } from './i18n/messages/profile';
 
 type GameType = (typeof GAME_TYPES)[number];
+type ProfileTranslator = ReturnType<typeof profileTranslator>;
 
 function element<K extends keyof HTMLElementTagNameMap>(
 	tagName: K,
@@ -50,20 +56,28 @@ function appendMetric(
 	return description;
 }
 
-function renderSummary(container: HTMLElement, dashboard: PlayerStatisticsDashboard): void {
+function renderSummary(
+	container: HTMLElement,
+	dashboard: PlayerStatisticsDashboard,
+	locale: Locale,
+	t: ProfileTranslator,
+): void {
 	const list = element('dl', 'grid grid-cols-2 gap-4 lg:grid-cols-4');
 	const mostPlayed = dashboard.summary.mostPlayedGame
-		? GAME_TYPE_LABELS[dashboard.summary.mostPlayedGame]
-		: 'No games played yet';
+		? getGameName(locale, dashboard.summary.mostPlayedGame)
+		: t('noGamesPlayedYet');
 
-	appendMetric(list, 'Total Hands', formatWholeNumber(dashboard.summary.totalHands), {
+	appendMetric(list, t('totalHands'), formatWholeNumber(dashboard.summary.totalHands, locale), {
 		primary: true,
 	});
-	appendMetric(list, 'Most Played', mostPlayed, { primary: true });
-	appendMetric(list, 'Overall Win Rate', formatPercentage(dashboard.summary.overallWinRate), {
-		primary: true,
-	});
-	appendMetric(list, 'Net Profit', formatSignedChipResult(dashboard.summary.totalNetProfit), {
+	appendMetric(list, t('mostPlayed'), mostPlayed, { primary: true });
+	appendMetric(
+		list,
+		t('overallWinRate'),
+		formatPercentage(dashboard.summary.overallWinRate, locale),
+		{ primary: true },
+	);
+	appendMetric(list, t('netProfit'), formatSignedProfit(dashboard.summary.totalNetProfit, locale), {
 		primary: true,
 	});
 	container.replaceChildren(list);
@@ -75,9 +89,13 @@ function profitResult(value: number): 'positive' | 'negative' | 'neutral' {
 	return 'neutral';
 }
 
-function renderGameCard(game: PlayerGameStatistics): HTMLElement {
+function renderGameCard(
+	game: PlayerGameStatistics,
+	locale: Locale,
+	t: ProfileTranslator,
+): HTMLElement {
 	const gameType: GameType = game.gameType;
-	const label = GAME_TYPE_LABELS[gameType];
+	const label = getGameName(locale, gameType);
 	const card = element('article', 'deco-panel flex min-h-full flex-col p-5 sm:p-6');
 	card.setAttribute('data-testid', `statistics-card-${gameType}`);
 
@@ -89,7 +107,7 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 	const title = textElement('h2', label, 'deco-section-title text-xl break-words');
 	const status = textElement(
 		'p',
-		game.handsPlayed > 0 ? 'Played' : 'Not played yet',
+		game.handsPlayed > 0 ? t('played') : t('notPlayedYet'),
 		'mt-1 text-sm text-[var(--deco-ivory-dim)]',
 	);
 	status.setAttribute('data-statistics-status', '');
@@ -98,12 +116,14 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 	header.append(identity);
 
 	const primary = element('dl', 'mt-6 grid grid-cols-3 gap-3');
-	appendMetric(primary, 'Hands Played', formatWholeNumber(game.handsPlayed), { primary: true });
-	appendMetric(primary, 'Win Rate', formatPercentage(game.winRate), { primary: true });
+	appendMetric(primary, t('handsPlayed'), formatWholeNumber(game.handsPlayed, locale), {
+		primary: true,
+	});
+	appendMetric(primary, t('winRate'), formatPercentage(game.winRate, locale), { primary: true });
 	const netProfitValue = appendMetric(
 		primary,
-		'Net Profit',
-		formatSignedChipResult(game.netProfit),
+		t('netProfit'),
+		formatSignedProfit(game.netProfit, locale),
 		{
 			primary: true,
 		},
@@ -111,21 +131,26 @@ function renderGameCard(game: PlayerGameStatistics): HTMLElement {
 	netProfitValue.setAttribute('data-profit-result', profitResult(game.netProfit));
 
 	const secondary = element('dl', 'mt-5 grid grid-cols-2 gap-x-4 gap-y-3');
-	appendMetric(secondary, 'Wins', formatWholeNumber(game.totalWins));
-	appendMetric(secondary, 'Losses', formatWholeNumber(game.totalLosses));
-	appendMetric(secondary, 'Biggest Win', `${formatWholeNumber(game.biggestWin)} chips`);
-	appendMetric(secondary, 'Wins Rank', game.winsRank === null ? 'Unranked' : `#${game.winsRank}`, {
-		valueAttribute: 'data-statistics-wins-rank',
-	});
+	appendMetric(secondary, t('wins'), formatWholeNumber(game.totalWins, locale));
+	appendMetric(secondary, t('losses'), formatWholeNumber(game.totalLosses, locale));
+	appendMetric(secondary, t('biggestWin'), formatChips(game.biggestWin, locale));
+	appendMetric(
+		secondary,
+		t('winsRank'),
+		game.winsRank === null ? t('unranked') : `#${formatWholeNumber(game.winsRank, locale)}`,
+		{
+			valueAttribute: 'data-statistics-wins-rank',
+		},
+	);
 
 	const actions = element(
 		'div',
 		'mt-auto flex min-w-0 flex-wrap items-center gap-x-5 gap-y-3 pt-6',
 	);
-	const leaderboard = textElement('a', 'View Wins leaderboard', 'deco-link');
+	const leaderboard = textElement('a', t('viewWinsLeaderboard'), 'deco-link');
 	leaderboard.setAttribute('href', `/games/leaderboard?game=${gameType}&metric=wins`);
 	leaderboard.setAttribute('data-statistics-leaderboard', '');
-	const play = textElement('a', `Play ${label}`, 'deco-btn deco-btn-outline');
+	const play = textElement('a', t('playGame', { game: label }), 'deco-btn deco-btn-outline');
 	play.setAttribute('href', `/games/${gameType}`);
 	play.setAttribute('data-statistics-play', '');
 	actions.append(leaderboard, play);
@@ -145,7 +170,10 @@ export function renderPlayerStatisticsDashboard(
 		throw new Error('Player statistics render targets are incomplete');
 	}
 
-	renderSummary(summary, dashboard);
-	games.replaceChildren(...dashboard.games.map(renderGameCard));
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = profileTranslator(locale);
+
+	renderSummary(summary, dashboard, locale, t);
+	games.replaceChildren(...dashboard.games.map((game) => renderGameCard(game, locale, t)));
 	empty.hidden = dashboard.summary.totalHands !== 0;
 }

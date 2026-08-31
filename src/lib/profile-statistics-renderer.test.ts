@@ -143,6 +143,23 @@ describe('player statistics renderer', () => {
 		}
 	});
 
+	test('renders through the document locale when it is not English', () => {
+		document.documentElement.dataset.locale = 'ja';
+		try {
+			renderPlayerStatisticsDashboard(root, createDashboard());
+
+			const blackjack = root.querySelector('[data-testid="statistics-card-blackjack"]')!;
+			expect(blackjack.querySelector('h2')?.textContent).toBe('ブラックジャック');
+			expect(blackjack.querySelector('[data-statistics-status]')?.textContent).toBe('プレイ済み');
+			expect(blackjack.textContent).toContain('−400 チップ');
+			const summary = root.querySelector('[data-statistics-summary]')!;
+			expect(summary.textContent).toContain('総ハンド数');
+			expect(summary.textContent).toContain('+1,200 チップ');
+		} finally {
+			delete document.documentElement.dataset.locale;
+		}
+	});
+
 	test('keeps all cards visible and reveals the invitation when every game is untouched', () => {
 		const dashboard = createDashboard();
 		dashboard.summary = {

@@ -53,7 +53,9 @@ test.describe('Profile Page', () => {
 			'/profile/statistics',
 		);
 
-		const sectionHeadings = await page.locator('main h2').allTextContents();
+		const sectionHeadings = (await page.locator('main h2').allTextContents()).map((text) =>
+			text.trim(),
+		);
 		const casinoTipsIndex = sectionHeadings.indexOf('Casino Tips');
 		const playerPerformanceIndex = sectionHeadings.indexOf('Player Performance');
 		const aiRivalSettingsIndex = sectionHeadings.indexOf('AI Rival Settings');

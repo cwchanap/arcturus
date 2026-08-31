@@ -1,9 +1,13 @@
 ---
 import GameEmblem from './GameEmblem.astro';
 import DecoIcon from './DecoIcon.astro';
+import { formatWholeNumber } from '../lib/formatting';
+import { formatChips } from '../lib/i18n/messages/common';
+import { gameCardTranslator } from '../lib/i18n/messages/home';
+import { getGameName, type GameNameKey } from '../lib/i18n/messages/games';
 
 interface Props {
-	name: string;
+	gameKey: GameNameKey;
 	emblem: 'cards' | 'dice' | 'wheel' | 'spark';
 	players: number;
 	minBet: number;
@@ -12,15 +16,19 @@ interface Props {
 	icon?: string;
 }
 
-const { name, emblem, players, minBet, href, featured = false, icon } = Astro.props;
-const formattedPlayers = new Intl.NumberFormat('en-US').format(players);
+const { gameKey, emblem, players, minBet, href, featured = false, icon } = Astro.props;
+const locale = Astro.locals.locale;
+const t = gameCardTranslator(locale);
+const name = getGameName(locale, gameKey);
+const formattedPlayers = formatWholeNumber(players, locale);
+const formattedMinBet = formatChips(minBet, locale);
 ---
 
 <a href={href} class="deco-card group block">
 	{
 		featured && (
 			<div class="absolute top-3 right-3 z-10">
-				<span class="deco-badge">Featured</span>
+				<span class="deco-badge">{t('featured')}</span>
 			</div>
 		)
 	}
@@ -50,14 +58,14 @@ const formattedPlayers = new Intl.NumberFormat('en-US').format(players);
 		<div class="mb-5 flex items-center gap-5 text-sm" style="color: var(--deco-ivory-dim)">
 			<span class="flex items-center gap-1.5">
 				<DecoIcon name="user" size={15} class="text-[var(--deco-brass)]" />
-				<span class="tabular-nums">{formattedPlayers} playing</span>
+				<span class="tabular-nums">{t('playersPlaying', { count: formattedPlayers })}</span>
 			</span>
 			<span class="flex items-center gap-1.5">
 				<DecoIcon name="chip" size={15} class="text-[var(--deco-brass)]" />
-				<span class="tabular-nums">Min {minBet}</span>
+				<span class="tabular-nums">{t('minBet', { minBet: formattedMinBet })}</span>
 			</span>
 		</div>
 
-		<span class="deco-btn deco-btn-primary w-full">Play</span>
+		<span class="deco-btn deco-btn-primary w-full">{t('play')}</span>
 	</div>
 </a>

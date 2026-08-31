@@ -11,9 +11,9 @@ import type { BetType, RouletteBet } from '../../../lib/roulette/types';
 import {
 	settleWalletRound,
 	WalletSettlementDomainError,
-	type SettleRoundResult,
 	type WalletSettlementErrorCode,
 } from '../../../lib/wallet/settle';
+import type { SettleRoundResult } from '../../../lib/wallet/types';
 
 const VALID_OUTSIDE_BET_TYPES = new Set<BetType>(['red', 'black', 'odd', 'even', 'low', 'high']);
 const VALID_TARGET_BET_TYPES = new Set<BetType>(['straight', 'dozen', 'column']);

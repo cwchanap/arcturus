@@ -1,6 +1,7 @@
 ---
-import { GAME_TYPE_LABELS } from '../../lib/game-stats/constants';
-import { formatPercentage, formatSignedChipResult, formatWholeNumber } from '../../lib/formatting';
+import { formatPercentage, formatWholeNumber } from '../../lib/formatting';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatSignedProfit, profileTranslator } from '../../lib/i18n/messages/profile';
 import type { ProfileStatisticsState } from '../../lib/profile-statistics-loader';
 
 interface Props {
@@ -8,47 +9,51 @@ interface Props {
 }
 
 const { state } = Astro.props;
+const locale = Astro.locals.locale;
+const t = profileTranslator(locale);
 ---
 
 <section class="deco-panel mt-8 p-6" aria-labelledby="player-performance-heading">
 	<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 		<div>
-			<p class="deco-eyebrow-sm">All-time casual play</p>
-			<h2 id="player-performance-heading" class="deco-section-title text-lg">Player Performance</h2>
+			<p class="deco-eyebrow-sm">{t('allTimeCasualPlay')}</p>
+			<h2 id="player-performance-heading" class="deco-section-title text-lg">
+				{t('playerPerformance')}
+			</h2>
 		</div>
-		<a href="/profile/statistics" class="deco-link">View detailed statistics</a>
+		<a href="/profile/statistics" class="deco-link">{t('viewDetailedStatistics')}</a>
 	</div>
 	{
 		state.status === 'error' ? (
 			<p class="mt-6" role="status" style="color: var(--deco-rose)">
-				Player statistics are temporarily unavailable.
+				{t('statisticsUnavailable')}
 			</p>
 		) : (
 			<dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
 				<div>
-					<dt class="deco-eyebrow-sm">Total Hands</dt>
+					<dt class="deco-eyebrow-sm">{t('totalHands')}</dt>
 					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatWholeNumber(state.summary.totalHands)}
+						{formatWholeNumber(state.summary.totalHands, locale)}
 					</dd>
 				</div>
 				<div>
-					<dt class="deco-eyebrow-sm">Most Played</dt>
+					<dt class="deco-eyebrow-sm">{t('mostPlayed')}</dt>
 					<dd class="deco-stat-value mt-1 tabular-nums">
 						{state.summary.mostPlayedGame
-							? GAME_TYPE_LABELS[state.summary.mostPlayedGame]
-							: 'No games played yet'}
+							? getGameName(locale, state.summary.mostPlayedGame)
+							: t('noGamesPlayedYet')}
 					</dd>
 				</div>
 				<div>
-					<dt class="deco-eyebrow-sm">Overall Win Rate</dt>
+					<dt class="deco-eyebrow-sm">{t('overallWinRate')}</dt>
 					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatPercentage(state.summary.overallWinRate)}
+						{formatPercentage(state.summary.overallWinRate, locale)}
 					</dd>
 				</div>
 				<div>
-					<dt class="deco-eyebrow-sm">Net Profit</dt>
+					<dt class="deco-eyebrow-sm">{t('netProfit')}</dt>
 					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatSignedChipResult(state.summary.totalNetProfit)}
+						{formatSignedProfit(state.summary.totalNetProfit, locale)}
 					</dd>
 				</div>
 			</dl>

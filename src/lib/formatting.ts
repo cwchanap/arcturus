@@ -35,13 +35,6 @@ export function formatPercentage(value: number, locale: Locale = 'en'): string {
 	}).format(requireFinite(value))}%`;
 }
 
-export function formatSignedChipResult(value: number, locale: Locale = 'en'): string {
-	const finite = requireFinite(value);
-	if (finite === 0) return '0 chips';
-	const sign = finite > 0 ? '+' : '−';
-	return `${sign}${formatChipBalance(Math.abs(finite), locale)} chips`;
-}
-
 const MAX_FRACTION_DIGITS = 100;
 
 /**

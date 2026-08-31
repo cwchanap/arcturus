@@ -226,15 +226,13 @@ describe('Pai Gow arrangements', () => {
 			card(13, 'clubs'),
 		];
 
-		expect(getArrangementError(cards, [5, 6])).toBe(
-			'High hand must rank at least as high as Low hand',
-		);
+		expect(getArrangementError(cards, [5, 6])).toBe('high-hand-rank');
 		expect(getArrangement(cards, [5, 6])).toBeNull();
 	});
 
 	test('validates the dealt card and Low index shape', () => {
 		const cards = [card(2, 'hearts'), card(3, 'diamonds')];
-		expect(getArrangementError(cards, [0, 1])).toBe('Exactly seven cards are required');
+		expect(getArrangementError(cards, [0, 1])).toBe('exactly-seven-cards');
 
 		const sevenCards = [
 			card(2, 'hearts'),
@@ -245,17 +243,11 @@ describe('Pai Gow arrangements', () => {
 			card(7, 'diamonds'),
 			card(8, 'clubs'),
 		];
-		expect(getArrangementError(sevenCards, [0])).toBe('Exactly two low-hand indexes are required');
-		expect(getArrangementError(sevenCards, [0, 0])).toBe('Low-hand indexes must be distinct');
-		expect(getArrangementError(sevenCards, [0, 7])).toBe(
-			'Low-hand indexes must be between 0 and 6',
-		);
-		expect(getArrangementError(sevenCards, [0, 1.5])).toBe(
-			'Low-hand indexes must be whole numbers',
-		);
-		expect(getArrangementError(sevenCards, [0.5, 1])).toBe(
-			'Low-hand indexes must be whole numbers',
-		);
+		expect(getArrangementError(sevenCards, [0])).toBe('exactly-two-low-indexes');
+		expect(getArrangementError(sevenCards, [0, 0])).toBe('distinct-indexes');
+		expect(getArrangementError(sevenCards, [0, 7])).toBe('indexes-in-range');
+		expect(getArrangementError(sevenCards, [0, 1.5])).toBe('whole-number-indexes');
+		expect(getArrangementError(sevenCards, [0.5, 1])).toBe('whole-number-indexes');
 	});
 });
 

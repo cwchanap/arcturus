@@ -42,19 +42,19 @@ describe('initial state', () => {
 describe('getAnteError', () => {
 	test('rejects non-integer antes first', () => {
 		const game = new ThreeCardShowdownGame(100);
-		expect(game.getAnteError(2.5)).toBe('Ante must be a whole number of chips');
-		expect(game.getAnteError(150.5)).toBe('Ante must be a whole number of chips');
+		expect(game.getAnteError(2.5)).toBe('whole-number-required');
+		expect(game.getAnteError(150.5)).toBe('whole-number-required');
 	});
 
 	test('rejects antes outside the 1-100 range', () => {
 		const game = new ThreeCardShowdownGame(100);
-		expect(game.getAnteError(0)).toBe('Bet must be between 1 and 100 chips');
-		expect(game.getAnteError(101)).toBe('Bet must be between 1 and 100 chips');
+		expect(game.getAnteError(0)).toBe('out-of-range');
+		expect(game.getAnteError(101)).toBe('out-of-range');
 	});
 
 	test('requires ante plus Play wager to fit the balance', () => {
 		const short = new ThreeCardShowdownGame(15);
-		expect(short.getAnteError(10)).toBe('Ante plus Play wager exceeds available balance');
+		expect(short.getAnteError(10)).toBe('insufficient-balance');
 		expect(short.getAnteError(7)).toBeNull();
 	});
 
@@ -73,10 +73,10 @@ describe('setAnte', () => {
 
 	test('throws the exact validation message for invalid antes', () => {
 		const game = new ThreeCardShowdownGame(100);
-		expect(() => game.setAnte(2.5)).toThrow('Ante must be a whole number of chips');
-		expect(() => game.setAnte(101)).toThrow('Bet must be between 1 and 100 chips');
+		expect(() => game.setAnte(2.5)).toThrow('whole-number-required');
+		expect(() => game.setAnte(101)).toThrow('out-of-range');
 		const short = new ThreeCardShowdownGame(15);
-		expect(() => short.setAnte(10)).toThrow('Ante plus Play wager exceeds available balance');
+		expect(() => short.setAnte(10)).toThrow('insufficient-balance');
 		expect(short.getState().ante).toBe(1);
 	});
 
@@ -114,7 +114,7 @@ describe('deal', () => {
 
 	test('is rejected while the selected ante is unaffordable', () => {
 		const game = new ThreeCardShowdownGame(1);
-		expect(() => game.deal()).toThrow('Ante plus Play wager exceeds available balance');
+		expect(() => game.deal()).toThrow('insufficient-balance');
 	});
 
 	test('is rejected outside betting', () => {
@@ -322,6 +322,6 @@ describe('setBalance', () => {
 	test('affects ante affordability checks', () => {
 		const game = new ThreeCardShowdownGame(100);
 		game.setBalance(19);
-		expect(game.getAnteError(10)).toBe('Ante plus Play wager exceeds available balance');
+		expect(game.getAnteError(10)).toBe('insufficient-balance');
 	});
 });

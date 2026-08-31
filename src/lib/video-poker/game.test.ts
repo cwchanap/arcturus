@@ -7,9 +7,9 @@ describe('VideoPokerGame', () => {
 	test('exposes one wager validation rule for the UI and game invariants', () => {
 		const game = new VideoPokerGame(3, () => 0);
 		expect(game.getWagerError(1)).toBeNull();
-		expect(game.getWagerError(2.5)).toContain('whole');
-		expect(game.getWagerError(0)).toContain('between');
-		expect(game.getWagerError(4)).toBe('Wager exceeds available balance');
+		expect(game.getWagerError(2.5)).toBe('whole-number-required');
+		expect(game.getWagerError(0)).toBe('out-of-range');
+		expect(game.getWagerError(4)).toBe('insufficient-balance');
 	});
 
 	test('deals five unique cards and deducts the wager', () => {

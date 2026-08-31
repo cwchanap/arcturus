@@ -1,4 +1,4 @@
-import { validateBet } from '../bet-validation';
+import { validateBetCode } from '../bet-validation';
 import { arrangeHouseWay } from './house-way';
 import { createShuffledPaiGowDeck } from './cards';
 import {
@@ -8,10 +8,12 @@ import {
 } from './rules';
 import type {
 	PaiGowArrangement,
+	PaiGowArrangementErrorCode,
 	PaiGowCard,
 	PaiGowHandRanking,
 	PaiGowPokerState,
 	PaiGowRoundResult,
+	PaiGowWagerErrorCode,
 } from './types';
 
 export const MIN_WAGER = 5;
@@ -76,11 +78,12 @@ export class PaiGowPokerGame {
 		};
 	}
 
-	getWagerError(wager: number): string | null {
-		if (!Number.isInteger(wager)) return 'Wager must be a whole number of chips';
-		const rangeError = validateBet(wager, MIN_WAGER, MAX_WAGER);
+	/** Language-neutral validation result; the client translates the code. */
+	getWagerError(wager: number): PaiGowWagerErrorCode | null {
+		if (!Number.isInteger(wager)) return 'whole-number-required';
+		const rangeError = validateBetCode(wager, MIN_WAGER, MAX_WAGER);
 		if (rangeError) return rangeError;
-		if (wager > this.state.balance) return 'Wager exceeds available balance';
+		if (wager > this.state.balance) return 'insufficient-balance';
 		return null;
 	}
 
@@ -139,7 +142,8 @@ export class PaiGowPokerGame {
 		this.state = { ...this.state, lowIndexes: [] };
 	}
 
-	getArrangementError(): string | null {
+	/** Language-neutral validation result; the client translates the code. */
+	getArrangementError(): PaiGowArrangementErrorCode | null {
 		return getPaiGowArrangementError(this.state.playerCards, this.state.lowIndexes);
 	}
 

@@ -5,6 +5,7 @@ import { isPaiGowJoker } from './cards';
 import type {
 	LowHandIndexes,
 	PaiGowArrangement,
+	PaiGowArrangementErrorCode,
 	PaiGowCard,
 	PaiGowCategory,
 	PaiGowHandRanking,
@@ -148,18 +149,18 @@ function splitArrangementCards(
 export function getArrangementError(
 	cards: readonly PaiGowCard[],
 	lowIndexes: readonly number[],
-): string | null {
-	if (cards.length !== 7) return 'Exactly seven cards are required';
-	if (lowIndexes.length !== 2) return 'Exactly two low-hand indexes are required';
+): PaiGowArrangementErrorCode | null {
+	if (cards.length !== 7) return 'exactly-seven-cards';
+	if (lowIndexes.length !== 2) return 'exactly-two-low-indexes';
 
 	const firstIndex = lowIndexes[0]!;
 	const secondIndex = lowIndexes[1]!;
 	if (!Number.isInteger(firstIndex) || !Number.isInteger(secondIndex)) {
-		return 'Low-hand indexes must be whole numbers';
+		return 'whole-number-indexes';
 	}
-	if (firstIndex === secondIndex) return 'Low-hand indexes must be distinct';
+	if (firstIndex === secondIndex) return 'distinct-indexes';
 	if (firstIndex < 0 || firstIndex > 6 || secondIndex < 0 || secondIndex > 6) {
-		return 'Low-hand indexes must be between 0 and 6';
+		return 'indexes-in-range';
 	}
 
 	const indexes: LowHandIndexes = [firstIndex, secondIndex];
@@ -167,7 +168,7 @@ export function getArrangementError(
 	const highRanking = rankPaiGowFiveCardHand(high);
 	const lowRanking = rankPaiGowTwoCardHand(low);
 	if (comparePaiGowRankings(highRanking, lowRanking) < 0) {
-		return 'High hand must rank at least as high as Low hand';
+		return 'high-hand-rank';
 	}
 	return null;
 }

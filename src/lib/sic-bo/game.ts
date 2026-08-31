@@ -5,7 +5,14 @@
 
 import { rollThreeDice } from './dice';
 import { SIC_BO_CHIP_DENOMINATIONS, isSupportedBetKey, resolveBet } from './rules';
-import type { SicBoBetKey, SicBoPhase, SicBoRoll, SicBoRoundResult, SicBoState } from './types';
+import type {
+	SicBoBetErrorCode,
+	SicBoBetKey,
+	SicBoPhase,
+	SicBoRoll,
+	SicBoRoundResult,
+	SicBoState,
+} from './types';
 
 export class SicBoGame {
 	private phase: SicBoPhase = 'betting';
@@ -32,22 +39,24 @@ export class SicBoGame {
 		return Object.values(this.bets).reduce((sum, amount) => sum + (amount ?? 0), 0);
 	}
 
-	getBetError(key: SicBoBetKey, amount: number): string | null {
-		if (!isSupportedBetKey(key)) return 'Unsupported bet';
-		if (this.phase !== 'betting') return 'Bets can only change before rolling';
+	/** Language-neutral validation result; the client translates the code. */
+	getBetError(key: SicBoBetKey, amount: number): SicBoBetErrorCode | null {
+		if (!isSupportedBetKey(key)) return 'unsupported-bet';
+		if (this.phase !== 'betting') return 'bets-locked';
 		if (!SIC_BO_CHIP_DENOMINATIONS.includes(amount as (typeof SIC_BO_CHIP_DENOMINATIONS)[number])) {
-			return 'Choose a valid chip denomination';
+			return 'denomination';
 		}
 		const otherStake = this.getTotalStake() - (this.bets[key] ?? 0);
-		if (otherStake + amount > this.balance) return 'Selected bets exceed available balance';
+		if (otherStake + amount > this.balance) return 'insufficient-balance';
 		return null;
 	}
 
-	getRollError(): string | null {
-		if (this.phase !== 'betting') return 'Start a new round before rolling again';
+	/** Language-neutral validation result; the client translates the code. */
+	getRollError(): SicBoBetErrorCode | null {
+		if (this.phase !== 'betting') return 'new-round-required';
 		const stake = this.getTotalStake();
-		if (stake === 0) return 'Place at least one bet';
-		if (stake > this.balance) return 'Selected bets exceed available balance';
+		if (stake === 0) return 'no-bets';
+		if (stake > this.balance) return 'insufficient-balance';
 		return null;
 	}
 
@@ -58,17 +67,17 @@ export class SicBoGame {
 	}
 
 	clearBet(key: SicBoBetKey): void {
-		if (this.phase !== 'betting') throw new Error('Bets can only change before rolling');
+		if (this.phase !== 'betting') throw new Error('bets-locked');
 		delete this.bets[key];
 	}
 
 	clearBets(): void {
-		if (this.phase !== 'betting') throw new Error('Bets can only change before rolling');
+		if (this.phase !== 'betting') throw new Error('bets-locked');
 		this.bets = {};
 	}
 
 	roll(): SicBoRoundResult {
-		if (this.phase !== 'betting') throw new Error('Start a new round before rolling again');
+		if (this.phase !== 'betting') throw new Error('new-round-required');
 		const rollError = this.getRollError();
 		if (rollError !== null) throw new Error(rollError);
 

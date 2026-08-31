@@ -1,4 +1,5 @@
 import type { Card } from '../cards';
+import type { BetValidationCode } from '../bet-validation';
 
 export type PayingHandCategory =
 	| 'royal-flush'
@@ -36,3 +37,12 @@ export interface VideoPokerState {
 	heldIndexes: readonly number[];
 	result: VideoPokerRoundResult | null;
 }
+
+/**
+ * Language-neutral wager validation result, translated at the presentation
+ * boundary. The client maps the code through the game message catalog.
+ */
+export type VideoPokerWagerErrorCode =
+	| BetValidationCode
+	| 'whole-number-required'
+	| 'insufficient-balance';

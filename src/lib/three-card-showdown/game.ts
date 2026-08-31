@@ -1,10 +1,11 @@
-import { validateBet } from '../bet-validation';
+import { validateBetCode } from '../bet-validation';
 import { createShuffledDeck } from '../cards';
 import { dealerQualifies, evaluateThreeCardHand, resolvePlayedHand } from './rules';
 import type {
 	ThreeCardHandEvaluation,
 	ThreeCardShowdownRoundResult,
 	ThreeCardShowdownState,
+	ThreeCardWagerErrorCode,
 } from './types';
 
 export const MIN_ANTE = 1;
@@ -59,11 +60,12 @@ export class ThreeCardShowdownGame {
 		};
 	}
 
-	getAnteError(ante: number): string | null {
-		if (!Number.isInteger(ante)) return 'Ante must be a whole number of chips';
-		const rangeError = validateBet(ante, MIN_ANTE, MAX_ANTE);
+	/** Language-neutral validation result; the client translates the code. */
+	getAnteError(ante: number): ThreeCardWagerErrorCode | null {
+		if (!Number.isInteger(ante)) return 'whole-number-required';
+		const rangeError = validateBetCode(ante, MIN_ANTE, MAX_ANTE);
 		if (rangeError) return rangeError;
-		if (ante * 2 > this.state.balance) return 'Ante plus Play wager exceeds available balance';
+		if (ante * 2 > this.state.balance) return 'insufficient-balance';
 		return null;
 	}
 

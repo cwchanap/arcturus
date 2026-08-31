@@ -76,8 +76,12 @@ describe_('Multiplayer Poker', () => {
 			await expect(pageB.locator('[data-testid="log"]')).toContainText('Hand ended', {
 				timeout: 5_000,
 			});
-			await expect(pageA.locator('[data-testid="pot"]')).toHaveText('Pot: 0', { timeout: 5_000 });
-			await expect(pageB.locator('[data-testid="pot"]')).toHaveText('Pot: 0', { timeout: 5_000 });
+			await expect(pageA.locator('[data-testid="pot"]')).toHaveText('Pot: 0 chips', {
+				timeout: 5_000,
+			});
+			await expect(pageB.locator('[data-testid="pot"]')).toHaveText('Pot: 0 chips', {
+				timeout: 5_000,
+			});
 
 			const loserSeat = Number(currentSeat);
 			const winnerSeat = loserSeat === 0 ? 1 : 0;

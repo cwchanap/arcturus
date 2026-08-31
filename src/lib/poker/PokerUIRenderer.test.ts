@@ -1,5 +1,7 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { PokerUIRenderer } from './PokerUIRenderer';
+import { PokerUIRenderer, evaluateHandKey } from './PokerUIRenderer';
+import { HAND_RANKINGS, type PokerHandNameKey } from './constants';
+import { getPokerHandName } from '../i18n/messages/poker';
 import type { Card, Player } from './types';
 
 // Using flexible type for test mocks that need custom behavior
@@ -25,6 +27,7 @@ type MockElement = {
 	dataset?: Record<string, string>;
 	setAttribute?: (name: string, value: string) => void;
 	getAttribute?: (name: string) => string | null;
+	removeAttribute?: (name: string) => void;
 	[key: string]: unknown;
 };
 
@@ -130,6 +133,9 @@ function createMockElement(initialClassName = ''): MockElement {
 			attributes[name] = value;
 		},
 		getAttribute: (name: string) => attributes[name] || null,
+		removeAttribute: (name: string) => {
+			delete attributes[name];
+		},
 		get innerHTML(): string {
 			return serializeMockElement(el);
 		},
@@ -220,6 +226,14 @@ function mockDocument() {
 	};
 
 	return elements;
+}
+
+interface AppendedElement {
+	textContent: string;
+	className: string;
+	parentElement?: unknown;
+	removed?: boolean;
+	remove?: () => void;
 }
 
 // Helper functions
@@ -423,8 +437,8 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateOpponentUI(players);
 
-			expect(chipEl1.textContent).toBe('$350');
-			expect(chipEl2.textContent).toBe('$750');
+			expect(chipEl1.textContent).toBe('350 chips');
+			expect(chipEl2.textContent).toBe('750 chips');
 		});
 
 		test('handles folded opponents', () => {
@@ -467,14 +481,6 @@ describe('PokerUIRenderer', () => {
 			expect(classList.list).toContain('grayscale');
 		});
 	});
-
-	interface AppendedElement {
-		textContent: string;
-		className: string;
-		parentElement?: unknown;
-		removed?: boolean;
-		remove?: () => void;
-	}
 
 	describe('showAIDecision()', () => {
 		test('shows fold decision', () => {
@@ -549,7 +555,7 @@ describe('PokerUIRenderer', () => {
 
 			renderer.showAIDecision(2, 'call', 50);
 
-			expect(appendedElements[0].textContent).toBe('✓ CALL $50');
+			expect(appendedElements[0].textContent).toBe('✓ CALL 50 chips');
 			expect(appendedElements[0].className).toContain('bg-[var(--deco-jade)]');
 		});
 
@@ -574,7 +580,7 @@ describe('PokerUIRenderer', () => {
 
 			renderer.showAIDecision(1, 'raise', 100);
 
-			expect(appendedElements[0].textContent).toBe('↑ RAISE $100');
+			expect(appendedElements[0].textContent).toBe('↑ RAISE 100 chips');
 			expect(appendedElements[0].className).toContain('bg-[var(--deco-brass)]');
 		});
 
@@ -707,8 +713,8 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateUI(150, humanPlayer);
 
-			expect(elements['pot-amount'].textContent).toBe('$150');
-			expect(elements['current-bet'].textContent).toBe('$50');
+			expect(elements['pot-amount'].textContent).toBe('150 chips');
+			expect(elements['current-bet'].textContent).toBe('50 chips');
 		});
 
 		test('updates player balance in header', () => {
@@ -720,7 +726,7 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateUI(0, humanPlayer);
 
-			expect(balanceEl.textContent).toBe('$325');
+			expect(balanceEl.textContent).toBe('325 chips');
 		});
 
 		test('handles zero values correctly', () => {
@@ -729,8 +735,8 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateUI(0, humanPlayer);
 
-			expect(elements['pot-amount'].textContent).toBe('$0');
-			expect(elements['current-bet'].textContent).toBe('$0');
+			expect(elements['pot-amount'].textContent).toBe('0 chips');
+			expect(elements['current-bet'].textContent).toBe('0 chips');
 		});
 
 		test('handles missing DOM elements gracefully', () => {
@@ -759,7 +765,7 @@ describe('PokerUIRenderer', () => {
 		test('formats status with phase and pot info', () => {
 			renderer.updateGameStatus('Your turn!', 'flop', 150);
 
-			expect(elements['game-status'].textContent).toBe('[Flop | Pot: $150] Your turn!');
+			expect(elements['game-status'].textContent).toBe('[Flop | Pot: 150 chips] Your turn!');
 		});
 
 		test('capitalizes phase label', () => {
@@ -777,7 +783,9 @@ describe('PokerUIRenderer', () => {
 		test('handles showdown phase', () => {
 			renderer.updateGameStatus('Player 2 wins!', 'showdown', 500);
 
-			expect(elements['game-status'].textContent).toBe('[Showdown | Pot: $500] Player 2 wins!');
+			expect(elements['game-status'].textContent).toBe(
+				'[Showdown | Pot: 500 chips] Player 2 wins!',
+			);
 		});
 
 		test('handles missing status element gracefully', () => {
@@ -796,6 +804,229 @@ describe('PokerUIRenderer', () => {
 
 			// Should not throw when game-status element is missing
 			expect(() => renderer.updateGameStatus('Test message', 'flop', 100)).not.toThrow();
+		});
+	});
+
+	describe('evaluateHandKey()', () => {
+		test('returns null for fewer than two cards', () => {
+			expect(evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14)]), [])).toBeNull();
+			expect(evaluateHandKey(player(0, 'You', 500), [])).toBeNull();
+		});
+
+		test('classifies pairs, two pair, trips, and quads', () => {
+			expect(
+				evaluateHandKey(
+					player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]),
+					[],
+				),
+			).toBe('PAIR');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]), [
+					card('K', 'hearts', 13),
+					card('K', 'diamonds', 13),
+					card('9', 'clubs', 9),
+					card('2', 'clubs', 2),
+				]),
+			).toBe('TWO_PAIR');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('Q', 'hearts', 12), card('Q', 'spades', 12)]), [
+					card('Q', 'diamonds', 12),
+					card('9', 'clubs', 9),
+					card('2', 'hearts', 2),
+				]),
+			).toBe('THREE_OF_A_KIND');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('J', 'hearts', 11), card('J', 'spades', 11)]), [
+					card('J', 'diamonds', 11),
+					card('J', 'clubs', 11),
+					card('2', 'hearts', 2),
+				]),
+			).toBe('FOUR_OF_A_KIND');
+		});
+
+		test('classifies full house', () => {
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]), [
+					card('A', 'diamonds', 14),
+					card('K', 'clubs', 13),
+					card('K', 'hearts', 13),
+				]),
+			).toBe('FULL_HOUSE');
+		});
+
+		test('classifies straights including the wheel', () => {
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('6', 'hearts', 6), card('7', 'hearts', 7)]), [
+					card('8', 'spades', 8),
+					card('9', 'spades', 9),
+					card('10', 'spades', 10),
+				]),
+			).toBe('STRAIGHT');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'spades', 2)]), [
+					card('3', 'clubs', 3),
+					card('4', 'diamonds', 4),
+					card('5', 'hearts', 5),
+				]),
+			).toBe('STRAIGHT');
+		});
+
+		test('classifies flush, straight flush, and royal flush', () => {
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'hearts', 13)]), [
+					card('Q', 'hearts', 12),
+					card('J', 'hearts', 11),
+					card('10', 'hearts', 10),
+				]),
+			).toBe('ROYAL_FLUSH');
+			expect(
+				evaluateHandKey(
+					player(0, 'You', 500, [card('5', 'diamonds', 5), card('6', 'diamonds', 6)]),
+					[card('7', 'diamonds', 7), card('8', 'diamonds', 8), card('9', 'diamonds', 9)],
+				),
+			).toBe('STRAIGHT_FLUSH');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'clubs', 14), card('K', 'clubs', 13)]), [
+					card('Q', 'clubs', 12),
+					card('9', 'clubs', 9),
+					card('2', 'clubs', 2),
+				]),
+			).toBe('FLUSH');
+			expect(
+				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'spades', 13)]), [
+					card('Q', 'diamonds', 12),
+					card('9', 'clubs', 9),
+					card('2', 'hearts', 2),
+				]),
+			).toBe('HIGH_CARD');
+		});
+
+		test('every hand ranking key maps to a distinct label', () => {
+			const keys = Object.keys(HAND_RANKINGS) as PokerHandNameKey[];
+			expect(keys.length).toBe(10);
+			const labels = keys.map((key) => getPokerHandName('en', key));
+			expect(labels.every((label) => label.length > 0)).toBe(true);
+			expect(new Set(labels).size).toBe(labels.length);
+		});
+	});
+
+	describe('hand strength presentation', () => {
+		test('renderPlayerCards sets the localized hand strength label', () => {
+			const humanPlayer = player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]);
+
+			renderer.renderPlayerCards(humanPlayer, []);
+
+			expect(elements['hand-strength'].textContent).toBe(getPokerHandName('en', 'PAIR'));
+		});
+
+		test('labels a straight as Straight instead of High Card', () => {
+			const humanPlayer = player(0, 'You', 500, [card('6', 'hearts', 6), card('7', 'hearts', 7)]);
+
+			renderer.renderPlayerCards(humanPlayer, [
+				card('8', 'spades', 8),
+				card('9', 'spades', 9),
+				card('10', 'spades', 10),
+			]);
+
+			expect(elements['hand-strength'].textContent).toBe(getPokerHandName('en', 'STRAIGHT'));
+		});
+
+		test('labels a royal flush instead of a generic flush', () => {
+			const humanPlayer = player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'hearts', 13)]);
+
+			renderer.renderPlayerCards(humanPlayer, [
+				card('Q', 'hearts', 12),
+				card('J', 'hearts', 11),
+				card('10', 'hearts', 10),
+			]);
+
+			expect(elements['hand-strength'].textContent).toBe(getPokerHandName('en', 'ROYAL_FLUSH'));
+		});
+
+		test('keeps placeholder for fewer than two cards', () => {
+			renderer.renderPlayerCards(player(0, 'You', 500, [card('A', 'hearts', 14)]), []);
+
+			expect(elements['hand-strength'].textContent).toBe('--');
+		});
+	});
+
+	describe('accessible card names', () => {
+		test('player card slots get localized aria-labels', () => {
+			const humanPlayer = player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'spades', 13)]);
+
+			renderer.renderPlayerCards(humanPlayer, []);
+
+			const slots = elements['player-cards'].querySelectorAll?.('.card-slot') || [];
+			expect(slots[0].getAttribute?.('aria-label')).toBe('Ace of Hearts');
+			expect(slots[1].getAttribute?.('aria-label')).toBe('King of Spades');
+		});
+
+		test('community card slots get localized aria-labels', () => {
+			renderer.renderCommunityCards([card('Q', 'diamonds', 12), card('J', 'clubs', 11)]);
+
+			const slots = elements['community-cards'].querySelectorAll?.('.card-slot') || [];
+			expect(slots[0].getAttribute?.('aria-label')).toBe('Queen of Diamonds');
+			expect(slots[1].getAttribute?.('aria-label')).toBe('Jack of Clubs');
+			expect(slots[2].getAttribute?.('aria-label')).toBeNull();
+		});
+	});
+
+	describe('chip phrase presentation', () => {
+		test('updates pot and current bet displays with chip phrases', () => {
+			const humanPlayer = player(0, 'You', 450);
+			humanPlayer.currentBet = 50;
+
+			renderer.updateUI(150, humanPlayer);
+
+			expect(elements['pot-amount'].textContent).toBe('150 chips');
+			expect(elements['current-bet'].textContent).toBe('50 chips');
+		});
+
+		test('updates player balance with a chip phrase', () => {
+			const humanPlayer = player(0, 'You', 325);
+
+			const balanceEl = { textContent: '$500' };
+			elements['player-balance'] = balanceEl;
+
+			renderer.updateUI(0, humanPlayer);
+
+			expect(balanceEl.textContent).toBe('325 chips');
+		});
+
+		test('formats status with localized phase and pot', () => {
+			renderer.updateGameStatus('Your turn!', 'flop', 150);
+
+			expect(elements['game-status'].textContent).toBe('[Flop | Pot: 150 chips] Your turn!');
+		});
+
+		test('omits pot info when pot is zero', () => {
+			renderer.updateGameStatus('New hand!', 'preflop', 0);
+
+			expect(elements['game-status'].textContent).toBe('[Preflop] New hand!');
+		});
+
+		test('shows call decision badge with a chip phrase', () => {
+			const appendedElements: AppendedElement[] = [];
+
+			const opp2Container = {
+				innerHTML: '',
+				textContent: '',
+				classList: { add: () => {}, remove: () => {} },
+				parentElement: {
+					querySelector: () => null,
+					appendChild: (el: AppendedElement) => appendedElements.push(el),
+					style: {},
+				},
+				querySelector: () => null,
+				appendChild: () => {},
+				remove: () => {},
+			};
+
+			elements['opponent2-cards'] = opp2Container;
+
+			renderer.showAIDecision(2, 'call', 50);
+
+			expect(appendedElements[0].textContent).toBe('✓ CALL 50 chips');
 		});
 	});
 

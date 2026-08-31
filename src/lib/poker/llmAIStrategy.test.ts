@@ -761,6 +761,87 @@ describe('llmAIStrategy', () => {
 		});
 	});
 
+	describe('Locale handling', () => {
+		test('prompt requests the active language', async () => {
+			let capturedPrompt = '';
+			mockFetch(async (url: string, options: Record<string, unknown>) => {
+				if (url.includes('openai')) {
+					const body = JSON.parse(options.body as string);
+					capturedPrompt = body.messages[1].content;
+					return new Response(
+						JSON.stringify({
+							choices: [{ message: { content: '{"action":"raise","amount":40}' } }],
+						}),
+						{ status: 200 },
+					);
+				}
+				throw new Error('Unexpected URL');
+			});
+
+			const llmSettings: AiSettings = {
+				provider: 'openai',
+				apiKey: 'test-key',
+				model: 'gpt-4o',
+			};
+			const context = createContext(
+				player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				[
+					player(0, 1000, 0),
+					player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				],
+			);
+
+			await makeLLMDecision(context, 'tight-aggressive', llmSettings, 'medium', 'ja');
+
+			expect(capturedPrompt).toContain('Respond in 日本語');
+		});
+
+		test('authoritative decisions are identical across locales', async () => {
+			mockFetch(async (url: string) => {
+				if (url.includes('openai')) {
+					return new Response(
+						JSON.stringify({
+							choices: [{ message: { content: '{"action":"raise","amount":40}' } }],
+						}),
+						{ status: 200 },
+					);
+				}
+				throw new Error('Unexpected URL');
+			});
+
+			const llmSettings: AiSettings = {
+				provider: 'openai',
+				apiKey: 'test-key',
+				model: 'gpt-4o',
+			};
+			const context = createContext(
+				player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				[
+					player(0, 1000, 0),
+					player(1, 1000, 0, [card('A', 'hearts', 14), card('K', 'hearts', 13)]),
+				],
+			);
+
+			const enDecision = await makeLLMDecision(
+				context,
+				'tight-aggressive',
+				llmSettings,
+				'medium',
+				'en',
+			);
+			const jaDecision = await makeLLMDecision(
+				context,
+				'tight-aggressive',
+				llmSettings,
+				'medium',
+				'ja',
+			);
+
+			expect(jaDecision.action).toBe(enDecision.action);
+			expect(jaDecision.amount).toBe(enDecision.amount);
+		});
+	});
+
 	describe('Personality integration', () => {
 		test('tight-aggressive personality in prompt', async () => {
 			let capturedPrompt = '';

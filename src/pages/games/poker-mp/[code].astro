@@ -1,15 +1,18 @@
 ---
 import CasinoLayout from '../../../layouts/casino.astro';
 import { isValidRoomCode } from '../../../lib/mp-poker/roomCode';
+import { multiplayerPokerTranslator } from '../../../lib/i18n/messages/multiplayer-poker';
 const user = Astro.locals.user;
 if (!user) return Astro.redirect('/signin');
 const code = Astro.params.code;
 if (!code || !isValidRoomCode(code)) {
 	return new Response('Not found', { status: 404 });
 }
+const locale = Astro.locals.locale;
+const t = multiplayerPokerTranslator(locale);
 ---
 
-<CasinoLayout title={`Poker ${code} — Arcturus`}>
+<CasinoLayout title={t('pageTitle', { game: t('roomTitle', { code }) })}>
 	<div
 		class="max-w-4xl mx-auto p-4 space-y-4"
 		data-room-code={code}
@@ -17,8 +20,8 @@ if (!code || !isValidRoomCode(code)) {
 		data-your-seat=""
 	>
 		<header class="flex justify-between items-center">
-			<h1 class="deco-section-title text-2xl">Room {code}</h1>
-			<span data-testid="connection-status" class="text-[var(--deco-jade)]">Connecting…</span>
+			<h1 class="deco-section-title text-2xl">{t('roomTitle', { code })}</h1>
+			<span data-testid="connection-status" class="text-[var(--deco-jade)]">{t('connecting')}</span>
 		</header>
 
 		<div
@@ -36,73 +39,47 @@ if (!code || !isValidRoomCode(code)) {
 		<div class="flex gap-2 justify-center" data-testid="actions">
 			<button
 				data-action="fold"
-				class="bg-[var(--deco-oxblood-bright)] px-4 py-2 rounded text-white">Fold</button
+				class="bg-[var(--deco-oxblood-bright)] px-4 py-2 rounded text-white">{t('fold')}</button
 			>
 			<button data-action="check" class="bg-[var(--deco-obsidian-3)] px-4 py-2 rounded text-white"
-				>Check</button
+				>{t('check')}</button
 			>
 			<button data-action="call" class="bg-[var(--deco-sapphire)] px-4 py-2 rounded text-white"
-				>Call</button
+				>{t('call')}</button
 			>
 			<input
 				type="number"
 				data-testid="raise-amount"
 				class="bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] p-2 rounded w-32 border border-[var(--deco-line)]"
-				placeholder="Amount"
+				placeholder={t('amount')}
 			/>
 			<button data-action="raise" class="bg-[var(--deco-jade)] px-4 py-2 rounded text-white"
-				>Raise</button
+				>{t('raise')}</button
 			>
 		</div>
 
 		<div class="flex gap-3 justify-center flex-wrap">
-			<button
-				data-testid="take-seat-0"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 0
-			</button>
-			<button
-				data-testid="take-seat-1"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 1
-			</button>
-			<button
-				data-testid="take-seat-2"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 2
-			</button>
-			<button
-				data-testid="take-seat-3"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 3
-			</button>
-			<button
-				data-testid="take-seat-4"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 4
-			</button>
-			<button
-				data-testid="take-seat-5"
-				class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-			>
-				Sit at 5
-			</button>
+			{
+				Array.from({ length: 6 }, (_, seat) => (
+					<button
+						data-testid={`take-seat-${seat}`}
+						class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+					>
+						{t('sitAtSeat', { seat: String(seat) })}
+					</button>
+				))
+			}
 			<button
 				data-testid="start-hand"
 				class="bg-[var(--deco-brass)] px-3 py-1 rounded text-[var(--deco-obsidian)] font-semibold"
 			>
-				Start hand
+				{t('startHand')}
 			</button>
 			<button
 				data-testid="leave-seat"
 				class="bg-[var(--deco-oxblood)] px-3 py-1 rounded text-white"
 			>
-				Leave seat
+				{t('leaveSeat')}
 			</button>
 		</div>
 
@@ -118,11 +95,22 @@ if (!code || !isValidRoomCode(code)) {
 	import { MultiplayerPokerClient } from '../../../lib/mp-poker/client';
 	import { getSuitGlyph, isRedSuit } from '../../../lib/card-format';
 	import type { RoomStateMessage } from '../../../lib/mp-poker/protocol';
+	import { getDocumentLocale, type Locale } from '../../../lib/i18n/locale';
+	import { formatChips } from '../../../lib/i18n/messages/common';
+	import { getPokerCardName } from '../../../lib/i18n/messages/poker';
+	import {
+		getMpErrorLabel,
+		multiplayerPokerTranslator,
+	} from '../../../lib/i18n/messages/multiplayer-poker';
 
 	const root = document.querySelector('[data-room-code]') as HTMLElement;
 	const code = root.dataset.roomCode!;
 	const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 	const client = new MultiplayerPokerClient(`${proto}//${location.host}/api/mp/rooms/${code}/ws`);
+
+	// Browser locale handoff: AppLayout writes data-locale on <html>.
+	const locale: Locale = getDocumentLocale(root.ownerDocument);
+	const t = multiplayerPokerTranslator(locale);
 
 	const statusEl = document.querySelector('[data-testid="connection-status"]') as HTMLElement;
 	const seatsEl = document.querySelector('[data-testid="seats"]') as HTMLElement;
@@ -134,7 +122,7 @@ if (!code || !isValidRoomCode(code)) {
 	let latestRoomState: RoomStateMessage | null = null;
 	let dealerSeat: number | null = null;
 
-	function createCardEl(c: { value: string; suit: string }): HTMLSpanElement {
+	function createCardEl(c: { value: string; suit: string; rank: number }): HTMLSpanElement {
 		const glyph = getSuitGlyph(c.suit);
 		const color = isRedSuit(c.suit)
 			? 'text-[var(--deco-oxblood-bright)]'
@@ -142,6 +130,9 @@ if (!code || !isValidRoomCode(code)) {
 		const span = document.createElement('span');
 		span.className = `inline-block bg-[var(--deco-obsidian-2)] px-2 py-1 rounded ${color}`;
 		span.textContent = `${c.value}${glyph}`;
+		// Accessible card name: rank glyphs stay invariant, the name is localized.
+		span.setAttribute('role', 'img');
+		span.setAttribute('aria-label', getPokerCardName(locale, c));
 		return span;
 	}
 
@@ -166,17 +157,22 @@ if (!code || !isValidRoomCode(code)) {
 			div.dataset.dealerSeat = String(s.seatIndex === dealerSeat);
 			div.dataset.chips = String(s.chips);
 			const labels = [
-				s.seatIndex === msg.yourSeat ? 'You' : null,
-				s.seatIndex === msg.currentSeat ? 'Acting' : null,
-				s.seatIndex === dealerSeat ? 'Dealer' : null,
-				s.folded ? 'Folded' : null,
-				s.allIn ? 'All-in' : null,
-				s.displayName !== null && !s.connected ? 'Disconnected' : null,
+				s.seatIndex === msg.yourSeat ? t('you') : null,
+				s.seatIndex === msg.currentSeat ? t('acting') : null,
+				s.seatIndex === dealerSeat ? t('dealer') : null,
+				s.folded ? t('folded') : null,
+				s.allIn ? t('allIn') : null,
+				s.displayName !== null && !s.connected ? t('disconnected') : null,
 			].filter((label): label is string => label !== null);
 			const labelText = labels.length > 0 ? ` — ${labels.join(' · ')}` : '';
-			div.textContent =
-				`Seat ${s.seatIndex}: ${s.displayName ?? '(empty)'} — ` +
-				`${s.chips.toLocaleString()} chips — ${s.committed.toLocaleString()} committed${labelText}`;
+			div.textContent = t('seatLine', {
+				seatLabel: t('seatLabel'),
+				seat: String(s.seatIndex),
+				name: s.displayName ?? t('emptySeat'),
+				chips: formatChips(s.chips, locale),
+				committed: t('chipsCommitted', { amount: formatChips(s.committed, locale) }),
+				labels: labelText,
+			});
 			seatsEl.appendChild(div);
 		}
 	}
@@ -187,7 +183,7 @@ if (!code || !isValidRoomCode(code)) {
 			root.dataset.currentSeat = msg.currentSeat === null ? '' : String(msg.currentSeat);
 			root.dataset.yourSeat = msg.yourSeat === null ? '' : String(msg.yourSeat);
 			clearAndAppend(boardEl, msg.board.map(createCardEl));
-			potEl.textContent = `Pot: ${msg.pot}`;
+			potEl.textContent = t('potLabel', { amount: formatChips(msg.pot, locale) });
 			// Clear stale hole cards when room is not in an active hand
 			if (msg.phase !== 'in-hand') {
 				holeEl.textContent = '';
@@ -199,18 +195,30 @@ if (!code || !isValidRoomCode(code)) {
 			if (latestRoomState) renderSeats(latestRoomState);
 			clearAndAppend(holeEl, msg.holeCards.map(createCardEl));
 		} else if (msg.type === 'hand_ended') {
-			const w = msg.winners.map((win) => `seat ${win.seatIndex} +${win.amount}`).join(', ');
+			const seatLabel = t('seatLabel');
+			const w = msg.winners
+				.map((win) =>
+					t('winnerSummary', {
+						seatLabel,
+						seat: String(win.seatIndex),
+						amount: formatChips(win.amount, locale),
+					}),
+				)
+				.join(', ');
 			const showdown = msg.showdownCards
-				.map(
-					({ seatIndex, cards }) =>
-						`seat ${seatIndex} ${cards
-							.map((card) => `${card.value}${getSuitGlyph(card.suit)}`)
-							.join(' ')}`,
+				.map(({ seatIndex, cards }) =>
+					t('showdownCards', {
+						seatLabel,
+						seat: String(seatIndex),
+						cards: cards.map((card) => `${card.value}${getSuitGlyph(card.suit)}`).join(' '),
+					}),
 				)
 				.join('; ');
 			const entry = document.createElement('div');
 			entry.setAttribute('data-testid', 'log-entry');
-			entry.textContent = `Hand ended: ${w}${showdown ? ` — Showdown: ${showdown}` : ''}`;
+			entry.textContent = showdown
+				? t('handEndedShowdown', { winners: w, showdown })
+				: t('handEnded', { winners: w });
 			logEl.prepend(entry);
 			dealerSeat = null;
 			// Clear stale hole cards once the hand is over
@@ -218,7 +226,7 @@ if (!code || !isValidRoomCode(code)) {
 		} else if (msg.type === 'error') {
 			const errDiv = document.createElement('div');
 			errDiv.className = 'text-[var(--deco-oxblood-bright)]';
-			errDiv.textContent = `Error: ${msg.message}`;
+			errDiv.textContent = t('errorLine', { label: getMpErrorLabel(locale, msg.code) });
 			logEl.prepend(errDiv);
 		}
 	});
@@ -234,16 +242,16 @@ if (!code || !isValidRoomCode(code)) {
 	}
 
 	client.onDisconnect(() => {
-		setConnectionState('Disconnected', STATUS_TONE_OXBLOOD);
+		setConnectionState(t('disconnected'), STATUS_TONE_OXBLOOD);
 	});
 
 	client
 		.connect()
 		.then(() => {
-			setConnectionState('Connected', STATUS_TONE_JADE);
+			setConnectionState(t('connected'), STATUS_TONE_JADE);
 		})
 		.catch(() => {
-			setConnectionState('Disconnected', STATUS_TONE_OXBLOOD);
+			setConnectionState(t('disconnected'), STATUS_TONE_OXBLOOD);
 		});
 
 	// Expose client for E2E tests to send leave_seat and other messages.

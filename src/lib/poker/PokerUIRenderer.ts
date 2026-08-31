@@ -2,14 +2,116 @@
  * PokerUIRenderer - Handles all DOM manipulation and UI updates
  */
 
-import type { Card, Player } from './types';
+import type { Card, GamePhase, Player } from './types';
+import type { PokerHandNameKey } from './constants';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import {
+	getPokerCardName,
+	getPokerHandName,
+	pokerTranslator,
+	type POKER_MESSAGES,
+} from '../i18n/messages/poker';
+import type { MessageKey } from '../i18n/translate';
+
+type Translator = ReturnType<typeof pokerTranslator>;
+
+const PHASE_KEYS: Record<GamePhase, MessageKey<typeof POKER_MESSAGES>> = {
+	idle: 'phaseIdle',
+	dealing: 'phaseDealing',
+	preflop: 'phasePreflop',
+	flop: 'phaseFlop',
+	turn: 'phaseTurn',
+	river: 'phaseRiver',
+	showdown: 'phaseShowdown',
+	complete: 'phaseComplete',
+};
+
+/**
+ * Presentational hand-strength classification for the human's combined cards.
+ * Returns a closed `PokerHandNameKey` (or null below two cards); display
+ * labels are translated through `messages/poker.ts`, never raw English names.
+ */
+export function evaluateHandKey(
+	humanPlayer: Player,
+	communityCards: Card[],
+): PokerHandNameKey | null {
+	const allCards = [...humanPlayer.hand, ...communityCards];
+	if (allCards.length < 2) return null;
+
+	const values = allCards.map((c) => c.value);
+	const suits = allCards.map((c) => c.suit);
+
+	const valueCounts: Record<string, number> = {};
+	values.forEach((v) => (valueCounts[v] = (valueCounts[v] || 0) + 1));
+
+	const counts = Object.values(valueCounts).sort((a, b) => b - a);
+	const isFlush = suits.every((s) => s === suits[0]) && suits.length >= 5;
+
+	// Straight detection across the combined ranks, including the A-2-3-4-5
+	// wheel where the ace plays low. Simplified presentation heuristic, not an
+	// authoritative ranking — showdowns use `determineShowdownWinners`.
+	const sortedRanks = [...new Set(allCards.map((c) => c.rank))].sort((a, b) => b - a);
+	let straightHigh = 0;
+	if (sortedRanks.length >= 5) {
+		for (let i = 0; i <= sortedRanks.length - 5; i++) {
+			if (sortedRanks[i] - sortedRanks[i + 4] === 4) {
+				straightHigh = sortedRanks[i];
+				break;
+			}
+		}
+		if (
+			straightHigh === 0 &&
+			sortedRanks.includes(14) &&
+			sortedRanks.includes(5) &&
+			sortedRanks.includes(4) &&
+			sortedRanks.includes(3) &&
+			sortedRanks.includes(2)
+		) {
+			straightHigh = 5;
+		}
+	}
+
+	if (isFlush && straightHigh > 0) {
+		return straightHigh === 14 ? 'ROYAL_FLUSH' : 'STRAIGHT_FLUSH';
+	}
+	if (counts[0] === 4) return 'FOUR_OF_A_KIND';
+	if (counts[0] === 3 && counts[1] === 2) return 'FULL_HOUSE';
+	if (isFlush) return 'FLUSH';
+	if (straightHigh > 0) return 'STRAIGHT';
+	if (counts[0] === 3) return 'THREE_OF_A_KIND';
+	if (counts[0] === 2 && counts[1] === 2) return 'TWO_PAIR';
+	if (counts[0] === 2) return 'PAIR';
+	return 'HIGH_CARD';
+}
 
 export class PokerUIRenderer {
+	private readonly locale: Locale;
+	private readonly t: Translator;
+
+	constructor() {
+		// AppLayout writes data-locale on <html>; the renderer reads it so the
+		// browser and SSR share one locale handoff.
+		this.locale = getDocumentLocale();
+		this.t = pokerTranslator(this.locale);
+	}
+
 	public renderPlayerCards(humanPlayer: Player, communityCards: Card[]) {
 		// Convert Card type to CardData format expected by card-slot-utils
 		const cards = humanPlayer.hand.map((card) => ({ rank: card.value, suit: card.suit }));
 		renderCardsToContainer('player-cards', cards, { showPlaceholders: 0 });
+
+		const container = document.getElementById('player-cards');
+		const slots = container?.querySelectorAll('.card-slot');
+		slots?.forEach((slot, index) => {
+			const card = humanPlayer.hand[index];
+			if (card) {
+				this.setCardA11y(slot, card);
+			} else {
+				this.clearCardA11y(slot);
+			}
+		});
 
 		this.evaluateHand(humanPlayer, communityCards);
 	}
@@ -26,8 +128,10 @@ export class PokerUIRenderer {
 		slots.forEach((slot, index) => {
 			if (index < cards.length) {
 				setSlotState(slot, 'card', cards[index]);
+				this.setCardA11y(slot, communityCards[index]);
 			} else {
 				setSlotState(slot, 'placeholder');
+				this.clearCardA11y(slot);
 			}
 		});
 	}
@@ -37,7 +141,7 @@ export class PokerUIRenderer {
 		if (players[1]) {
 			const opponent1Chips = document.getElementById('opponent1-chips');
 			if (opponent1Chips) {
-				opponent1Chips.textContent = `$${players[1].chips.toLocaleString()}`;
+				opponent1Chips.textContent = formatChips(players[1].chips, this.locale);
 			}
 			// Update folded state
 			this.updateFoldedState(1, players[1].folded);
@@ -45,7 +149,7 @@ export class PokerUIRenderer {
 		if (players[2]) {
 			const opponent2Chips = document.getElementById('opponent2-chips');
 			if (opponent2Chips) {
-				opponent2Chips.textContent = `$${players[2].chips.toLocaleString()}`;
+				opponent2Chips.textContent = formatChips(players[2].chips, this.locale);
 			}
 			// Update folded state
 			this.updateFoldedState(2, players[2].folded);
@@ -70,7 +174,7 @@ export class PokerUIRenderer {
 				const badge = document.createElement('div');
 				badge.className =
 					'folded-badge absolute top-0 right-0 bg-[var(--deco-oxblood-bright)] text-white text-xs px-2 py-1 rounded';
-				badge.textContent = 'FOLDED';
+				badge.textContent = this.t('foldedBadge');
 				parent.style.position = 'relative';
 				parent.appendChild(badge);
 			}
@@ -111,19 +215,23 @@ export class PokerUIRenderer {
 		switch (action.toLowerCase()) {
 			case 'fold':
 				badge.className += ' bg-[var(--deco-oxblood-bright)] text-white';
-				badge.textContent = '✕ FOLD';
+				badge.textContent = this.t('badgeFold');
 				break;
 			case 'check':
 				badge.className += ' bg-[var(--deco-sapphire)] text-white';
-				badge.textContent = '✓ CHECK';
+				badge.textContent = this.t('badgeCheck');
 				break;
 			case 'call':
 				badge.className += ' bg-[var(--deco-jade)] text-[var(--deco-obsidian)]';
-				badge.textContent = `✓ CALL $${(amount || 0).toLocaleString()}`;
+				badge.textContent = this.t('badgeCall', {
+					amount: formatChips(amount || 0, this.locale),
+				});
 				break;
 			case 'raise':
 				badge.className += ' bg-[var(--deco-brass)] text-[var(--deco-obsidian)]';
-				badge.textContent = `↑ RAISE $${(amount || 0).toLocaleString()}`;
+				badge.textContent = this.t('badgeRaise', {
+					amount: formatChips(amount || 0, this.locale),
+				});
 				break;
 			default:
 				badge.className += ' bg-[var(--deco-obsidian-3)] text-white';
@@ -151,12 +259,14 @@ export class PokerUIRenderer {
 				slots.forEach((slot, index) => {
 					if (index < cards.length) {
 						setSlotState(slot, 'card', cards[index]);
+						this.setCardA11y(slot, players[1].hand[index]);
 						// Add winner highlight if needed
 						if (isWinner) {
 							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
 						}
 					} else {
 						setSlotState(slot, 'hidden');
+						this.clearCardA11y(slot);
 					}
 				});
 			}
@@ -172,12 +282,14 @@ export class PokerUIRenderer {
 				slots.forEach((slot, index) => {
 					if (index < cards.length) {
 						setSlotState(slot, 'card', cards[index]);
+						this.setCardA11y(slot, players[2].hand[index]);
 						// Add winner highlight if needed
 						if (isWinner) {
 							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
 						}
 					} else {
 						setSlotState(slot, 'hidden');
+						this.clearCardA11y(slot);
 					}
 				});
 			}
@@ -197,40 +309,37 @@ export class PokerUIRenderer {
 				slot.classList.remove('ring-2', 'ring-[var(--deco-brass-bright)]');
 				if (index < 2) {
 					setSlotState(slot, 'facedown');
+					this.setCardA11y(slot, null);
 				} else {
 					setSlotState(slot, 'hidden');
+					this.clearCardA11y(slot);
 				}
 			});
 		});
+	}
+
+	/** Localized accessible name for a shown card; null for a face-down card. */
+	private setCardA11y(slot: Element, card: Card | null): void {
+		if (card) {
+			slot.setAttribute('role', 'img');
+			slot.setAttribute('aria-label', getPokerCardName(this.locale, card));
+		} else {
+			slot.setAttribute('role', 'img');
+			slot.setAttribute('aria-label', this.t('cardFaceDown'));
+		}
+	}
+
+	private clearCardA11y(slot: Element): void {
+		slot.removeAttribute('role');
+		slot.removeAttribute('aria-label');
 	}
 
 	private evaluateHand(humanPlayer: Player, communityCards: Card[]) {
 		const strengthEl = document.getElementById('hand-strength');
 		if (!strengthEl) return;
 
-		const allCards = [...humanPlayer.hand, ...communityCards];
-		if (allCards.length < 2) {
-			strengthEl.textContent = '--';
-			return;
-		}
-
-		// Simplified hand evaluation
-		const values = allCards.map((c) => c.value);
-		const suits = allCards.map((c) => c.suit);
-
-		const valueCounts: Record<string, number> = {};
-		values.forEach((v) => (valueCounts[v] = (valueCounts[v] || 0) + 1));
-
-		const counts = Object.values(valueCounts).sort((a, b) => b - a);
-		const isFlush = suits.every((s) => s === suits[0]) && suits.length >= 5;
-
-		if (counts[0] === 4) strengthEl.textContent = 'Four of a Kind';
-		else if (counts[0] === 3 && counts[1] === 2) strengthEl.textContent = 'Full House';
-		else if (isFlush) strengthEl.textContent = 'Flush';
-		else if (counts[0] === 3) strengthEl.textContent = 'Three of a Kind';
-		else if (counts[0] === 2 && counts[1] === 2) strengthEl.textContent = 'Two Pair';
-		else if (counts[0] === 2) strengthEl.textContent = 'Pair';
-		else strengthEl.textContent = 'High Card';
+		const key = evaluateHandKey(humanPlayer, communityCards);
+		strengthEl.textContent = key ? getPokerHandName(this.locale, key) : '--';
 	}
 
 	public updateUI(pot: number, humanPlayer: Player) {
@@ -238,18 +347,24 @@ export class PokerUIRenderer {
 		const betEl = document.getElementById('current-bet');
 		const balanceEl = document.getElementById('player-balance');
 
-		if (potEl) potEl.textContent = `$${pot.toLocaleString()}`;
-		if (betEl) betEl.textContent = `$${humanPlayer.currentBet.toLocaleString()}`;
-		if (balanceEl) balanceEl.textContent = `$${humanPlayer.chips.toLocaleString()}`;
+		if (potEl) potEl.textContent = formatChips(pot, this.locale);
+		if (betEl) betEl.textContent = formatChips(humanPlayer.currentBet, this.locale);
+		if (balanceEl) balanceEl.textContent = formatChips(humanPlayer.chips, this.locale);
 	}
 
-	public updateGameStatus(message: string, gamePhase: string, pot: number) {
+	public updateGameStatus(message: string, gamePhase: GamePhase, pot: number) {
 		const statusEl = document.getElementById('game-status');
 		if (!statusEl) return;
 
-		// Add phase and pot info to status message
-		const phaseLabel = gamePhase.charAt(0).toUpperCase() + gamePhase.slice(1);
-		const potInfo = pot > 0 ? ` | Pot: $${pot.toLocaleString()}` : '';
-		statusEl.textContent = `[${phaseLabel}${potInfo}] ${message}`;
+		const phaseLabel = this.t(PHASE_KEYS[gamePhase]);
+		if (pot > 0) {
+			statusEl.textContent = this.t('statusWithPot', {
+				phase: phaseLabel,
+				pot: this.t('potLabel', { amount: formatChips(pot, this.locale) }),
+				message,
+			});
+		} else {
+			statusEl.textContent = this.t('statusPlain', { phase: phaseLabel, message });
+		}
 	}
 }

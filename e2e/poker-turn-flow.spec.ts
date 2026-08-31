@@ -37,9 +37,9 @@ test.describe('Poker turn flow smoke test', () => {
 			const checkButton = page.getByRole('button', { name: /check/i });
 			const callButton = page.getByRole('button', { name: /call/i });
 			const nextPhaseOrTerminal =
-				/Flop revealed!|Turn card revealed!|River card revealed!|Showdown|wins \$|Tie!.*split the \$.*pot/i;
+				/Flop revealed!|Turn card revealed!|River card revealed!|Showdown|wins .* chips|Tie!.*split the .* chips pot/i;
 			const playerTurnOrProgress =
-				/Your turn|Flop revealed!|Turn card revealed!|River card revealed!|Showdown|wins \$|Tie!.*split the \$.*pot/i;
+				/Your turn|Flop revealed!|Turn card revealed!|River card revealed!|Showdown|wins .* chips|Tie!.*split the .* chips pot/i;
 
 			for (let humanActions = 0; humanActions < 8; humanActions++) {
 				await expect(status).toHaveText(playerTurnOrProgress, { timeout: 10000 });

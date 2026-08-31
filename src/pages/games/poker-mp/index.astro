@@ -1,31 +1,35 @@
 ---
 import CasinoLayout from '../../../layouts/casino.astro';
+import { getGameName } from '../../../lib/i18n/messages/games';
+import { multiplayerPokerTranslator } from '../../../lib/i18n/messages/multiplayer-poker';
 const user = Astro.locals.user;
 if (!user) return Astro.redirect('/signin');
+const locale = Astro.locals.locale;
+const t = multiplayerPokerTranslator(locale);
 ---
 
-<CasinoLayout title="Multiplayer Poker — Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'poker-mp') })}>
 	<div class="max-w-xl mx-auto p-8 space-y-6">
-		<h1 class="deco-section-title text-3xl">Multiplayer Poker</h1>
+		<h1 class="deco-section-title text-3xl">{getGameName(locale, 'poker-mp')}</h1>
 
 		<section
 			class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4"
 		>
-			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">Create a private room</h2>
+			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">{t('createPrivateRoom')}</h2>
 			<form id="create-form" class="space-y-3">
 				<label class="block text-[var(--deco-ivory-dim)]">
-					Max seats:
+					{t('maxSeats')}
 					<select
 						name="maxSeats"
 						class="ml-2 bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] border border-[var(--deco-line)] p-1 rounded"
 					>
-						<option value="2">2 (heads-up)</option>
+						<option value="2">{t('headsUp')}</option>
 						<option value="4" selected>4</option>
 						<option value="6">6</option>
 					</select>
 				</label>
 				<label class="block text-[var(--deco-ivory-dim)]">
-					Small blind:
+					{t('smallBlind')}
 					<input
 						type="number"
 						name="smallBlind"
@@ -35,7 +39,7 @@ if (!user) return Astro.redirect('/signin');
 					/>
 				</label>
 				<label class="block text-[var(--deco-ivory-dim)]">
-					Big blind:
+					{t('bigBlind')}
 					<input
 						type="number"
 						name="bigBlind"
@@ -49,7 +53,7 @@ if (!user) return Astro.redirect('/signin');
 					data-testid="create-room"
 					class="bg-[var(--deco-jade)] px-4 py-2 rounded text-white font-semibold"
 				>
-					Create room
+					{t('createRoom')}
 				</button>
 			</form>
 		</section>
@@ -57,7 +61,7 @@ if (!user) return Astro.redirect('/signin');
 		<section
 			class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4"
 		>
-			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">Join with code</h2>
+			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">{t('joinWithCode')}</h2>
 			<form id="join-form" class="space-y-3">
 				<input
 					type="text"
@@ -74,7 +78,7 @@ if (!user) return Astro.redirect('/signin');
 					data-testid="join-room"
 					class="bg-[var(--deco-sapphire)] px-4 py-2 rounded text-white font-semibold"
 				>
-					Join
+					{t('join')}
 				</button>
 			</form>
 		</section>
@@ -84,7 +88,20 @@ if (!user) return Astro.redirect('/signin');
 </CasinoLayout>
 
 <script>
+	import { getDocumentLocale } from '../../../lib/i18n/locale';
+	import { multiplayerPokerTranslator } from '../../../lib/i18n/messages/multiplayer-poker';
+
+	const locale = getDocumentLocale(document);
+	const t = multiplayerPokerTranslator(locale);
 	const status = document.getElementById('status') as HTMLElement;
+
+	// Lobby errors from the create-room API arrive as stable codes; map them to
+	// localized copy instead of rendering the server's English text.
+	const CREATE_ERROR_KEYS: Record<string, Parameters<typeof t>[0]> = {
+		INVALID_CONFIG: 'errorInvalidConfig',
+		DO_UNAVAILABLE: 'errorServiceUnavailable',
+		CODE_GENERATION_FAILED: 'errorCodeGeneration',
+	};
 
 	document.getElementById('create-form')!.addEventListener('submit', async (e) => {
 		e.preventDefault();
@@ -92,7 +109,7 @@ if (!user) return Astro.redirect('/signin');
 		const sb = Number(fd.get('smallBlind'));
 		const bb = Number(fd.get('bigBlind'));
 		if (bb < sb * 2) {
-			status.textContent = 'Big blind must be at least 2× the small blind';
+			status.textContent = t('errorBigBlindRatio');
 			return;
 		}
 		let res: Response;
@@ -107,18 +124,21 @@ if (!user) return Astro.redirect('/signin');
 				}),
 			});
 		} catch {
-			status.textContent = 'Network error — please try again';
+			status.textContent = t('errorNetwork');
 			return;
 		}
 		let json: { code?: string; error?: string };
 		try {
 			json = await res.json();
 		} catch {
-			status.textContent = `Unexpected response (${res.status})`;
+			status.textContent = t('errorUnexpectedResponse', { status: String(res.status) });
 			return;
 		}
 		if (res.ok && json.code) location.href = `/games/poker-mp/${json.code}`;
-		else status.textContent = json.error ?? 'Failed';
+		else
+			status.textContent = json.error
+				? t(CREATE_ERROR_KEYS[json.error] ?? 'errorFailed')
+				: t('errorFailed');
 	});
 
 	document.getElementById('join-form')!.addEventListener('submit', (e) => {

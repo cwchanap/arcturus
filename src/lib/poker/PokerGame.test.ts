@@ -757,7 +757,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 		expect(game.players[0].chips).toBe(850);
 		// DOM must be reconciled to the restored stack immediately, not left stale.
-		expect(balanceEl.textContent).toBe('$850');
+		expect(balanceEl.textContent).toBe('850 chips');
 	});
 
 	test('keeps poker non-playable when the server balance is unavailable', async () => {
@@ -1342,10 +1342,10 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		const alice = createPlayer(0, 'Alice', 500);
 		const bob = createPlayer(1, 'Bob', 500);
 		expect(game.formatShowdownMessage([{ amount: 300, winners: [alice] }])).toBe(
-			'Alice wins $300! 🎉',
+			'Alice wins 300 chips! 🎉',
 		);
 		expect(game.formatShowdownMessage([{ amount: 300, winners: [alice, bob] }])).toBe(
-			'Tie! Alice, Bob split the $300 pot 🤝',
+			'Tie! Alice, Bob split the 300 chips pot 🤝',
 		);
 
 		const charlie = createPlayer(2, 'Charlie', 500);
@@ -1354,14 +1354,14 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 				{ amount: 200, winners: [alice] },
 				{ amount: 100, winners: [charlie] },
 			]),
-		).toBe('Main pot: Alice wins $200 | Side pot 1: Charlie wins $100');
+		).toBe('Main pot: Alice wins 200 chips | Side pot 1: Charlie wins 100 chips');
 
 		expect(
 			game.formatShowdownMessage([
 				{ amount: 200, winners: [alice, bob] },
 				{ amount: 100, winners: [charlie] },
 			]),
-		).toBe('Main pot: Alice & Bob split $200 | Side pot 1: Charlie wins $100');
+		).toBe('Main pot: Alice & Bob split 200 chips | Side pot 1: Charlie wins 100 chips');
 	});
 
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
@@ -1954,7 +1954,7 @@ describe('Poker wallet settlement commands', () => {
 				settle: async () => ({
 					balance: 650,
 					duplicate: false,
-					newAchievements: [{ id: 'big-win', name: 'Big Win', icon: '🎉' }],
+					newAchievements: [{ id: 'big-win', icon: '🎉' }],
 				}),
 				retry: async () => null,
 				reset: () => {},
@@ -1973,7 +1973,7 @@ describe('Poker wallet settlement commands', () => {
 			expect(dispatched.some((e) => e.type === 'achievement-earned')).toBe(true);
 			const achEvent = dispatched.find((e) => e.type === 'achievement-earned');
 			expect((achEvent?.detail as { achievements: unknown[] }).achievements).toEqual([
-				{ id: 'big-win', name: 'Big Win', icon: '🎉' },
+				{ id: 'big-win', icon: '🎉' },
 			]);
 		} finally {
 			(globalThis as typeof globalThis & { window: Window }).window.dispatchEvent = origDispatch;

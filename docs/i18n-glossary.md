@@ -83,6 +83,14 @@ message dictionary so terminology stays consistent across sequential PRs.
 | Spades             | 黑桃         | 黑桃         | スペード                     |
 | Ante               | 前注         | 前注         | アンティ                     |
 | Fold               | 棄牌         | 弃牌         | フォールド                   |
+| Check              | 過牌         | 过牌         | チェック                     |
+| Call               | 跟注         | 跟注         | コール                       |
+| Raise              | 加注         | 加注         | レイズ                       |
+| Pot                | 底池         | 底池         | ポット                       |
+| Small Blind        | 小盲         | 小盲         | スモールブラインド           |
+| Big Blind          | 大盲         | 大盲         | ビッグブラインド             |
+| All-in             | 全下         | 全下         | オールイン                   |
+| Showdown           | 攤牌         | 摊牌         | ショーダウン                 |
 | Play               | 跟注         | 跟注         | プレイ                       |
 | Qualify            | 達標         | 达标         | クオリファイ                 |
 | Jacks or Better    | 一對J或以上  | 一对J或以上  | ジャックスオアベター         |

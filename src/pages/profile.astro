@@ -714,7 +714,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 			populateModels(modelSelect, aiState.provider, aiState.model, AI_MODELS, modelLabels);
 			updateApiKeyUI();
 			setFeedback(feedbackEl, t('rivalPreferencesSaved'), 'success');
-		} catch {
+		} catch (error) {
 			console.error('Failed to save AI rival settings:', error);
 			setFeedback(feedbackEl, t('couldNotSave'), 'error');
 		}

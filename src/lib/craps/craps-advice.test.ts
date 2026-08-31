@@ -81,7 +81,7 @@ describe('getCrapsAdvice', () => {
 				messages: Array<{ role: string; content: string }>;
 			};
 			expect(body.model).toBe('gpt-4o');
-			expect(body.messages[1].content).toContain('passLine:$25');
+			expect(body.messages[1].content).toContain('passLine: 25 chips');
 			return new Response(
 				JSON.stringify({
 					choices: [
@@ -121,9 +121,9 @@ describe('getCrapsAdvice', () => {
 			const body = JSON.parse(String(init?.body)) as {
 				messages: Array<{ content: string }>;
 			};
-			expect(body.messages[1].content).toContain('come:$25 @6 +odds:$50');
-			expect(body.messages[1].content).not.toContain('come:$10 @6 +odds:$20');
-			expect(body.messages[1].content).not.toContain('come:$15 @6 +odds:$30');
+			expect(body.messages[1].content).toContain('come: 25 chips @6 +odds:50 chips');
+			expect(body.messages[1].content).not.toContain('come: 10 chips @6 +odds:20 chips');
+			expect(body.messages[1].content).not.toContain('come: 15 chips @6 +odds:30 chips');
 			return new Response(
 				JSON.stringify({ choices: [{ message: { content: '{"advice":"Keep it steady."}' } }] }),
 			);
@@ -144,6 +144,38 @@ describe('getCrapsAdvice', () => {
 			message: 'Provider request failed (401)',
 			status: 401,
 		});
+	});
+
+	test('requests the locale language in the prompt but keeps the recommendation neutral', async () => {
+		globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as {
+				messages: Array<{ content: string }>;
+			};
+			expect(body.messages[1].content).toContain('Respond in Japanese');
+			return new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"advice":"Stay on the pass line and press odds.","suggestedBets":["passLine","place6"],"confidence":"high"}',
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			);
+		}) as typeof fetch;
+
+		const result = await getCrapsAdvice({ ...baseContext, locale: 'ja' }, settings);
+
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			// The authoritative recommendation is locale-independent; only the
+			// explanation prose is requested in the player's language.
+			expect(result.value.suggestedBets).toEqual(['passLine', 'place6']);
+			expect(result.value.confidence).toBe('high');
+		}
 	});
 
 	test('uses the Craps eight-second provider budget', async () => {

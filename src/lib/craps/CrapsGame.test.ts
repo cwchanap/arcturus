@@ -72,13 +72,16 @@ describe('CrapsGame — bet placement', () => {
 		const g = makeGame();
 		const r = g.placeBet('passLine', 3);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/Minimum/i);
+		expect(r.error).toBe('below-minimum');
+		expect(r.context).toEqual({ min: 5 });
 	});
 
 	test('rejects bet above max', () => {
 		const g = makeGame();
 		const r = g.placeBet('passLine', 1000);
 		expect(r.success).toBe(false);
+		expect(r.error).toBe('above-maximum');
+		expect(r.context).toEqual({ max: 500, remaining: 500 });
 	});
 
 	test('rejects when insufficient balance', () => {
@@ -92,7 +95,7 @@ describe('CrapsGame — bet placement', () => {
 		g.placeBet('passLine', 50);
 		const r = g.placeBet('passLine', 50);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/one Pass Line bet/i);
+		expect(r.error).toBe('duplicate-pass-line');
 	});
 
 	test("rejects duplicate Don't Pass bets", () => {
@@ -100,7 +103,7 @@ describe('CrapsGame — bet placement', () => {
 		g.placeBet('dontPass', 50);
 		const r = g.placeBet('dontPass', 50);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/one Don't Pass bet/i);
+		expect(r.error).toBe('duplicate-dont-pass');
 	});
 
 	test('enforces cumulative max bet across multiple bets of same type', () => {
@@ -113,8 +116,8 @@ describe('CrapsGame — bet placement', () => {
 		// 6th bet of $100 would exceed maxBet
 		const r = g.placeBet('field', 100);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/Maximum bet is \$500/);
-		expect(r.error).toMatch(/\$0 remaining/);
+		expect(r.error).toBe('above-maximum');
+		expect(r.context).toEqual({ max: 500, remaining: 0 });
 	});
 
 	test('allows partial bets up to cumulative max', () => {
@@ -127,7 +130,8 @@ describe('CrapsGame — bet placement', () => {
 		// Should reject any more (minimum bet is $5)
 		const r2 = g.placeBet('any7', 5);
 		expect(r2.success).toBe(false);
-		expect(r2.error).toMatch(/\$0 remaining/);
+		expect(r2.error).toBe('above-maximum');
+		expect(r2.context).toEqual({ max: 500, remaining: 0 });
 	});
 
 	test('cumulative max enforcement shows correct remaining amount', () => {
@@ -141,7 +145,8 @@ describe('CrapsGame — bet placement', () => {
 		// Total so far: $450, remaining: $50
 		const r2 = g.placeBet('hard6', 60);
 		expect(r2.success).toBe(false);
-		expect(r2.error).toMatch(/\$50 remaining/);
+		expect(r2.error).toBe('above-maximum');
+		expect(r2.context).toEqual({ max: 500, remaining: 50 });
 	});
 
 	test('cumulative max works for place bets', () => {
@@ -156,8 +161,8 @@ describe('CrapsGame — bet placement', () => {
 		g.placeBet('place8', 200);
 		const r = g.placeBet('place8', 200);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/Maximum bet is \$500/);
-		expect(r.error).toMatch(/\$100 remaining/);
+		expect(r.error).toBe('above-maximum');
+		expect(r.context).toEqual({ max: 500, remaining: 100 });
 
 		mockRoll = setupRoll;
 	});
@@ -200,7 +205,8 @@ describe('CrapsGame — bet placement', () => {
 		// Try to place another Come bet - should fail (limit includes established bets)
 		const r2 = g.placeBet('come', 100);
 		expect(r2.success).toBe(false);
-		expect(r2.error).toMatch(/Maximum bet/i);
+		expect(r2.error).toBe('above-maximum');
+		expect(r2.context).toEqual({ max: 500, remaining: 0 });
 	});
 
 	test('multiple come bets on different points all count against cumulative max', () => {
@@ -233,7 +239,8 @@ describe('CrapsGame — bet placement', () => {
 		// Cannot place a third - would exceed maxBet limit
 		const r3 = g.placeBet('come', 100);
 		expect(r3.success).toBe(false);
-		expect(r3.error).toMatch(/Maximum bet/i);
+		expect(r3.error).toBe('above-maximum');
+		expect(r3.context).toEqual({ max: 500, remaining: 0 });
 	});
 
 	test('come bet limit applies to all come bets including established ones', () => {
@@ -258,7 +265,103 @@ describe('CrapsGame — bet placement', () => {
 		// Cannot place another Come bet as it would exceed cumulative max
 		const r3 = g.placeBet('come', 100);
 		expect(r3.success).toBe(false);
-		expect(r3.error).toMatch(/Maximum bet/i);
+		expect(r3.error).toBe('above-maximum');
+		expect(r3.context).toEqual({ max: 500, remaining: 0 });
+	});
+});
+
+describe('CrapsGame — canPlaceBet codes and context', () => {
+	test('returns invalid-amount for non-integer amounts', () => {
+		const g = makeGame();
+		expect(g.canPlaceBet('passLine', Number.NaN)).toEqual({
+			ok: false,
+			error: 'invalid-amount',
+		});
+		expect(g.canPlaceBet('passLine', 10.5)).toEqual({ ok: false, error: 'invalid-amount' });
+	});
+
+	test('returns come-out-only with betType context during point phase', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3);
+		g.roll();
+		expect(g.canPlaceBet('passLine', 50)).toEqual({
+			ok: false,
+			error: 'come-out-only',
+			context: { betType: 'passLine' },
+		});
+	});
+
+	test('returns point-only with betType context during come-out', () => {
+		const g = makeGame();
+		expect(g.canPlaceBet('come', 50)).toEqual({
+			ok: false,
+			error: 'point-only',
+			context: { betType: 'come' },
+		});
+	});
+
+	test('returns missing-pass-line when no pass line bet exists', () => {
+		const g = makeGame();
+		g.placeBet('dontPass', 50);
+		setRoll(3, 3);
+		g.roll();
+		expect(g.canPlaceBet('passLineOdds', 50)).toEqual({
+			ok: false,
+			error: 'missing-pass-line',
+		});
+	});
+
+	test('returns missing-dont-pass when no dont pass bet exists', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		setRoll(3, 3);
+		g.roll();
+		expect(g.canPlaceBet('dontPassOdds', 50)).toEqual({
+			ok: false,
+			error: 'missing-dont-pass',
+		});
+	});
+
+	test('returns duplicate-pass-line and duplicate-dont-pass', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 50);
+		expect(g.canPlaceBet('passLine', 50)).toEqual({
+			ok: false,
+			error: 'duplicate-pass-line',
+		});
+		g.placeBet('dontPass', 50);
+		expect(g.canPlaceBet('dontPass', 50)).toEqual({
+			ok: false,
+			error: 'duplicate-dont-pass',
+		});
+	});
+
+	test('returns above-max-odds with multiplier and remaining context', () => {
+		const g = makeGame();
+		g.placeBet('passLine', 100);
+		setRoll(3, 3);
+		g.roll();
+		g.placeBet('passLineOdds', 100);
+		// 2x multiplier, 100 odds already placed → 100 remaining
+		expect(g.canPlaceBet('passLineOdds', 101)).toEqual({
+			ok: false,
+			error: 'above-max-odds',
+			context: { multiplier: 2, remaining: 100 },
+		});
+	});
+
+	test('returns insufficient-balance when amount exceeds balance', () => {
+		const g = makeGame(10);
+		expect(g.canPlaceBet('passLine', 50)).toEqual({
+			ok: false,
+			error: 'insufficient-balance',
+		});
+	});
+
+	test('returns ok for a valid bet', () => {
+		const g = makeGame();
+		expect(g.canPlaceBet('passLine', 50)).toEqual({ ok: true });
 	});
 });
 
@@ -299,7 +402,7 @@ describe('CrapsGame — come bet odds', () => {
 		const come = g.placeBet('come', 50);
 		const result = g.addComeBetOdds(come.bet!.id, 50);
 		expect(result.success).toBe(false);
-		expect(result.error).toMatch(/before come point/i);
+		expect(result.error).toBe('no-come-point');
 	});
 
 	test('rejects non-finite and over-limit come odds amounts', () => {
@@ -357,7 +460,8 @@ describe('CrapsGame — pass line odds', () => {
 		// 2x max odds = 200, try to add 201
 		const r = g.placeBet('passLineOdds', 201);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/Max odds/i);
+		expect(r.error).toBe('above-max-odds');
+		expect(r.context).toEqual({ multiplier: 2, remaining: 200 });
 	});
 
 	test('rejects odds without a pass line bet', () => {
@@ -368,7 +472,7 @@ describe('CrapsGame — pass line odds', () => {
 		expect(g.getState().phase).toBe('point');
 		const r = g.placeBet('passLineOdds', 100);
 		expect(r.success).toBe(false);
-		expect(r.error).toMatch(/No Pass Line/i);
+		expect(r.error).toBe('missing-pass-line');
 	});
 });
 

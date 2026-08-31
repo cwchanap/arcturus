@@ -9,15 +9,20 @@
  *   - On push: balance += bet.amount + (bet.odds ?? 0)  (return risk, no profit)
  */
 
-import type {
-	CrapsBet,
-	CrapsGameState,
-	CrapsSettings,
-	DiceRoll,
-	GamePhase,
-	PointNumber,
-	RollResult,
-	BetType,
+import {
+	BET_TYPE_SET,
+	type CrapsBet,
+	type CrapsBetCheckResult,
+	type CrapsBetContext,
+	type CrapsBetErrorCode,
+	type CrapsGameState,
+	type CrapsSettings,
+	type CrapsTableErrorCode,
+	type DiceRoll,
+	type GamePhase,
+	type PointNumber,
+	type RollResult,
+	type BetType,
 } from './types';
 import { rollDice } from './diceRoller';
 import { evaluateBets, computeNetDelta, isPointNumber } from './betEvaluator';
@@ -27,7 +32,6 @@ import {
 	COME_OUT_ONLY_BETS,
 	POINT_PHASE_ONLY_BETS,
 	OFF_DURING_COME_OUT,
-	BET_LABELS,
 	ODDS_ELIGIBLE_BET_TYPES,
 } from './constants';
 
@@ -150,7 +154,7 @@ function sanitizeBet(bet: unknown): CrapsBet | null {
 	if (!bet || typeof bet !== 'object') return null;
 	const candidate = bet as Partial<CrapsBet>;
 	if (typeof candidate.id !== 'string' || !candidate.id) return null;
-	if (typeof candidate.type !== 'string' || !Object.hasOwn(BET_LABELS, candidate.type)) return null;
+	if (typeof candidate.type !== 'string' || !BET_TYPE_SET.has(candidate.type)) return null;
 	// passLineOdds/dontPassOdds are never standalone bets — odds live on the line bet's `odds` field.
 	// Restoring them as standalone records bypasses placeBet() rule checks.
 	if (candidate.type === 'passLineOdds' || candidate.type === 'dontPassOdds') return null;
@@ -293,7 +297,7 @@ export class CrapsGame {
 			.reduce((sum, b) => sum + b.amount, 0);
 	}
 
-	public canPlaceBet(type: BetType, amount: number): { ok: boolean; error?: string } {
+	public canPlaceBet(type: BetType, amount: number): CrapsBetCheckResult {
 		const { phase, settings, chipBalance, activeBets } = this.state;
 		if (
 			!isPositiveInteger(amount) ||
@@ -302,32 +306,32 @@ export class CrapsGame {
 			!isPositiveInteger(settings.maxOddsMultiplier) ||
 			!isNonNegativeInteger(chipBalance)
 		) {
-			return { ok: false, error: 'Invalid bet amount' };
+			return { ok: false, error: 'invalid-amount' };
 		}
 
 		if (COME_OUT_ONLY_BETS.has(type) && phase !== 'come-out') {
-			return { ok: false, error: `${type} can only be placed during come-out` };
+			return { ok: false, error: 'come-out-only', context: { betType: type } };
 		}
 		if (POINT_PHASE_ONLY_BETS.has(type) && phase !== 'point') {
-			return { ok: false, error: `${type} can only be placed during point phase` };
+			return { ok: false, error: 'point-only', context: { betType: type } };
 		}
 		if (type === 'passLineOdds') {
 			const hasPassLine = activeBets.some((b) => b.type === 'passLine');
-			if (!hasPassLine) return { ok: false, error: 'No Pass Line bet to put odds on' };
+			if (!hasPassLine) return { ok: false, error: 'missing-pass-line' };
 		}
 		if (type === 'dontPassOdds') {
 			const hasDontPass = activeBets.some((b) => b.type === 'dontPass');
-			if (!hasDontPass) return { ok: false, error: "No Don't Pass bet to put odds on" };
+			if (!hasDontPass) return { ok: false, error: 'missing-dont-pass' };
 		}
 		// Reject duplicate line bets - standard craps rules allow only one Pass/Don't Pass bet
 		if (type === 'passLine' && activeBets.some((b) => b.type === 'passLine')) {
-			return { ok: false, error: 'You can only have one Pass Line bet' };
+			return { ok: false, error: 'duplicate-pass-line' };
 		}
 		if (type === 'dontPass' && activeBets.some((b) => b.type === 'dontPass')) {
-			return { ok: false, error: "You can only have one Don't Pass bet" };
+			return { ok: false, error: 'duplicate-dont-pass' };
 		}
 		if (amount < settings.minBet) {
-			return { ok: false, error: `Minimum bet is $${settings.minBet}` };
+			return { ok: false, error: 'below-minimum', context: { min: settings.minBet } };
 		}
 
 		// Enforce cumulative max bet: check total existing + new amount against maxBet
@@ -348,7 +352,8 @@ export class CrapsGame {
 			const remaining = settings.maxBet - existingAmount;
 			return {
 				ok: false,
-				error: `Maximum bet is $${settings.maxBet} ($${remaining} remaining on this bet type)`,
+				error: 'above-maximum',
+				context: { max: settings.maxBet, remaining },
 			};
 		}
 		// Check odds limits
@@ -359,19 +364,23 @@ export class CrapsGame {
 				const lineAmount = lineBet.amount;
 				const currentOdds = lineBet.odds ?? 0;
 				if (!isPositiveInteger(lineAmount) || !isNonNegativeInteger(currentOdds)) {
-					return { ok: false, error: 'Invalid bet amount' };
+					return { ok: false, error: 'invalid-amount' };
 				}
 				const maxOdds = lineAmount * settings.maxOddsMultiplier;
 				if (currentOdds + amount > maxOdds) {
 					return {
 						ok: false,
-						error: `Max odds is ${settings.maxOddsMultiplier}x your line bet ($${maxOdds - currentOdds} remaining)`,
+						error: 'above-max-odds',
+						context: {
+							multiplier: settings.maxOddsMultiplier,
+							remaining: maxOdds - currentOdds,
+						},
 					};
 				}
 			}
 		}
 		if (amount > chipBalance) {
-			return { ok: false, error: 'Insufficient chips' };
+			return { ok: false, error: 'insufficient-balance' };
 		}
 		return { ok: true };
 	}
@@ -383,9 +392,14 @@ export class CrapsGame {
 	public placeBet(
 		type: BetType,
 		amount: number,
-	): { success: boolean; error?: string; bet?: CrapsBet } {
+	): {
+		success: boolean;
+		error?: CrapsBetErrorCode;
+		context?: CrapsBetContext;
+		bet?: CrapsBet;
+	} {
 		const check = this.canPlaceBet(type, amount);
-		if (!check.ok) return { success: false, error: check.error };
+		if (!check.ok) return { success: false, error: check.error, context: check.context };
 
 		// Odds bets attach to existing line bet rather than creating a new bet record
 		if (type === 'passLineOdds' || type === 'dontPassOdds') {
@@ -408,36 +422,47 @@ export class CrapsGame {
 	}
 
 	/** Add come-bet odds to an established Come/DontCome bet by id */
-	public addComeBetOdds(betId: string, amount: number): { success: boolean; error?: string } {
+	public addComeBetOdds(
+		betId: string,
+		amount: number,
+	): {
+		success: boolean;
+		error?: CrapsBetErrorCode | CrapsTableErrorCode;
+		context?: CrapsBetContext;
+	} {
 		const idx = this.state.activeBets.findIndex((b) => b.id === betId);
-		if (idx === -1) return { success: false, error: 'Bet not found' };
+		if (idx === -1) return { success: false, error: 'bet-not-found' };
 
 		const bet = this.state.activeBets[idx];
 		if (bet.type !== 'come' && bet.type !== 'dontCome') {
-			return { success: false, error: 'Odds can only be added to Come/DontCome bets' };
+			return { success: false, error: 'not-come-bet' };
 		}
 		if (!bet.point) {
-			return { success: false, error: "Can't add odds before come point is established" };
+			return { success: false, error: 'no-come-point' };
 		}
 		if (
 			!isPositiveInteger(amount) ||
 			!isNonNegativeInteger(this.state.chipBalance) ||
 			!isPositiveInteger(this.state.settings.maxOddsMultiplier)
 		) {
-			return { success: false, error: 'Invalid bet amount' };
+			return { success: false, error: 'invalid-amount' };
 		}
-		if (amount > this.state.chipBalance) return { success: false, error: 'Insufficient chips' };
+		if (amount > this.state.chipBalance) return { success: false, error: 'insufficient-balance' };
 
 		const currentOdds = bet.odds ?? 0;
 		if (!isPositiveInteger(bet.amount) || !isNonNegativeInteger(currentOdds)) {
-			return { success: false, error: 'Invalid bet amount' };
+			return { success: false, error: 'invalid-amount' };
 		}
 
 		const maxOdds = bet.amount * this.state.settings.maxOddsMultiplier;
 		if (currentOdds + amount > maxOdds) {
 			return {
 				success: false,
-				error: `Max odds is ${this.state.settings.maxOddsMultiplier}x ($${maxOdds - currentOdds} remaining)`,
+				error: 'above-max-odds',
+				context: {
+					multiplier: this.state.settings.maxOddsMultiplier,
+					remaining: maxOdds - currentOdds,
+				},
 			};
 		}
 
@@ -451,19 +476,19 @@ export class CrapsGame {
 	 * Pass Line / Don't Pass cannot be removed after the point is established.
 	 * Come / Don't Come cannot be removed after their point is established.
 	 */
-	public removeBet(betId: string): { success: boolean; error?: string } {
+	public removeBet(betId: string): { success: boolean; error?: CrapsTableErrorCode } {
 		const idx = this.state.activeBets.findIndex((b) => b.id === betId);
-		if (idx === -1) return { success: false, error: 'Bet not found' };
+		if (idx === -1) return { success: false, error: 'bet-not-found' };
 
 		const bet = this.state.activeBets[idx];
 
 		// Line bets locked after point established
 		if ((bet.type === 'passLine' || bet.type === 'dontPass') && this.state.phase === 'point') {
-			return { success: false, error: 'Cannot remove line bet after point is established' };
+			return { success: false, error: 'line-bet-locked' };
 		}
 		// Come bets locked once their come point is set
 		if ((bet.type === 'come' || bet.type === 'dontCome') && bet.point) {
-			return { success: false, error: 'Cannot remove Come bet after come point is established' };
+			return { success: false, error: 'come-bet-locked' };
 		}
 
 		// Return the full at-risk amount (bet + odds if any)

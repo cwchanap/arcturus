@@ -813,7 +813,7 @@ export async function initDailyChallengePage(
 				renderer.renderError(
 					code
 						? code.replaceAll('_', ' ').toLowerCase()
-						: `Daily challenge request failed (${response.status})`,
+						: t('requestFailedWithStatus', { status: response.status }),
 				);
 			}
 		} catch (error) {
@@ -838,7 +838,7 @@ export async function initDailyChallengePage(
 		console.error('Daily leaderboard fetch failed', error);
 		// A failed or malformed leaderboard response must be visible as an
 		// error, not indistinguishable from an empty leaderboard.
-		renderer.renderError('Daily leaderboard is unavailable — refresh to retry.');
+		renderer.renderError(t('leaderboardUnavailable'));
 	}
 
 	try {

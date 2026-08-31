@@ -6,6 +6,9 @@
  */
 
 import { generateAiJson, type AiSettings } from '../ai';
+import { formatWholeNumber } from '../formatting';
+import { blackjackTranslator } from '../i18n/messages/blackjack';
+import type { Locale } from '../i18n/locale';
 import { calculateHandValue } from './handEvaluator';
 import type { Card, BlackjackAction, Hand } from './types';
 
@@ -27,32 +30,53 @@ export interface BlackjackAdvice {
 /**
  * Return the authoritative local advice for the current Blackjack state.
  * These are the existing lightweight strategy rules, kept intentionally
- * scoped rather than expanded into a complete strategy-table engine.
+ * scoped rather than expanded into a complete strategy-table engine. The
+ * recommended action is language-neutral; only the explanation is localized.
  */
-export function getBlackjackStrategyAdvice(context: BlackjackAdviceContext): BlackjackAdvice {
+export function getBlackjackStrategyAdvice(
+	context: BlackjackAdviceContext,
+	locale: Locale = 'en',
+): BlackjackAdvice {
 	const { playerHand, dealerUpCard, availableActions } = context;
+	const t = blackjackTranslator(locale);
+	const actionName = (action: BlackjackAction): string => {
+		switch (action) {
+			case 'hit':
+				return t('hit');
+			case 'stand':
+				return t('stand');
+			case 'double-down':
+				return t('doubleDown');
+			case 'split':
+				return t('split');
+			default:
+				return action;
+		}
+	};
 	const handValue = calculateHandValue(playerHand.cards);
 	const dealerValue = ['J', 'Q', 'K'].includes(dealerUpCard.rank)
 		? 10
 		: dealerUpCard.rank === 'A'
 			? 11
 			: Number.parseInt(dealerUpCard.rank, 10);
+	const total = formatWholeNumber(handValue.value, locale);
+	const dealer = formatWholeNumber(dealerValue, locale);
 
 	let action: BlackjackAction = 'stand';
 	let reasoning = '';
 
 	if (handValue.value <= 11) {
 		action = 'hit';
-		reasoning = `With ${handValue.value}, take a card because this total cannot bust on one hit.`;
+		reasoning = t('reasonLow', { total });
 	} else if (handValue.value >= 17) {
 		action = 'stand';
-		reasoning = `With ${handValue.value}, stand rather than take unnecessary bust risk.`;
+		reasoning = t('reasonHigh', { total });
 	} else if (dealerValue >= 7) {
 		action = 'hit';
-		reasoning = `With ${handValue.value} against dealer ${dealerValue}, improve the hand against a strong up-card.`;
+		reasoning = t('reasonStrongDealer', { total, dealer });
 	} else {
 		action = 'stand';
-		reasoning = `With ${handValue.value} against dealer ${dealerValue}, let the dealer take the bust risk.`;
+		reasoning = t('reasonWeakDealer', { total, dealer });
 	}
 
 	if (
@@ -60,14 +84,14 @@ export function getBlackjackStrategyAdvice(context: BlackjackAdviceContext): Bla
 		(handValue.value === 10 || handValue.value === 11)
 	) {
 		action = 'double-down';
-		reasoning = `With ${handValue.value}, double down while the one-card upside is strong.`;
+		reasoning = t('reasonDouble', { total });
 	}
 
 	if (availableActions.includes('split') && playerHand.cards.length === 2) {
 		const [first, second] = playerHand.cards;
 		if (first.rank === second.rank && (first.rank === 'A' || first.rank === '8')) {
 			action = 'split';
-			reasoning = `Split ${first.rank}s according to the current basic-strategy rule.`;
+			reasoning = t('reasonSplit', { rank: first.rank });
 		}
 	}
 
@@ -78,12 +102,12 @@ export function getBlackjackStrategyAdvice(context: BlackjackAdviceContext): Bla
 			: legalActions.includes('stand')
 				? 'stand'
 				: (legalActions[0] ?? 'stand');
-		reasoning = `Preferred move unavailable; falling back to ${action}.`;
+		reasoning = t('reasonFallback', { action: actionName(action) });
 	}
 
 	return {
 		recommendedAction: legalActions.length > 0 ? action : null,
-		reasoning: `${reasoning} (basic strategy)`,
+		reasoning: t('basicStrategyNote', { reasoning }),
 		confidence: 1,
 		raw: '',
 	};
@@ -91,13 +115,16 @@ export function getBlackjackStrategyAdvice(context: BlackjackAdviceContext): Bla
 
 /**
  * Get deterministic advice and, when configured, ask a provider to explain
- * the move without allowing it to change the legal action.
+ * the move without allowing it to change the legal action. The provider
+ * prompt requests the active locale so the explanation is written in the
+ * player's language; the recommended action never depends on it.
  */
 export async function getBlackjackAdvice(
 	context: BlackjackAdviceContext,
 	settings: AiSettings | null,
+	locale: Locale = 'en',
 ): Promise<BlackjackAdvice> {
-	const deterministic = getBlackjackStrategyAdvice(context);
+	const deterministic = getBlackjackStrategyAdvice(context, locale);
 	if (!settings || !deterministic.recommendedAction) return deterministic;
 
 	const result = await generateAiJson(settings, {
@@ -105,6 +132,7 @@ export async function getBlackjackAdvice(
 		prompt: [
 			`Move: ${deterministic.recommendedAction}`,
 			`Base explanation: ${deterministic.reasoning}`,
+			`Language: reply in the language of the locale tag "${locale}".`,
 			'Return {"reasoning":"one concise explanation"}.',
 		].join('\n'),
 		temperature: 0.3,

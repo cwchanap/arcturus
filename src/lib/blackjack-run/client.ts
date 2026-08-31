@@ -1,4 +1,6 @@
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
+import { blackjackTranslator } from '../i18n/messages/blackjack';
+import type { Locale } from '../i18n/locale';
 import {
 	blackjackRunPublicStateSchema,
 	type BlackjackAction,
@@ -41,6 +43,8 @@ export interface BlackjackRunClientDeps {
 	/** Request-id source; must return 16-128 `[A-Za-z0-9_-]` characters. */
 	createRequestId?: () => string;
 	timeoutMs?: number;
+	/** Locale for the client's user-visible error messages (default English). */
+	locale?: Locale;
 }
 
 export interface BlackjackRunClient {
@@ -88,14 +92,18 @@ function responseErrorCode(payload: unknown): string | null {
 	return null;
 }
 
-function responseErrorMessage(response: Response, payload: unknown): string {
+function responseErrorMessage(
+	response: Response,
+	payload: unknown,
+	t: ReturnType<typeof blackjackTranslator>,
+): string {
 	const code = responseErrorCode(payload);
 	if (code) return code.replaceAll('_', ' ').toLowerCase();
-	return `request failed (${response.status})`;
+	return t('clientRequestFailedStatus', { status: response.status });
 }
 
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : 'Blackjack run request failed';
+function errorMessage(error: unknown, t: ReturnType<typeof blackjackTranslator>): string {
+	return error instanceof Error ? error.message : t('requestFailed');
 }
 
 function defaultCreateRequestId(): string {
@@ -117,6 +125,7 @@ function defaultCreateRequestId(): string {
 export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): BlackjackRunClient {
 	const createRequestId = deps.createRequestId ?? defaultCreateRequestId;
 	const timeoutMs = deps.timeoutMs ?? BLACKJACK_RUN_DEFAULT_TIMEOUT_MS;
+	const t = blackjackTranslator(deps.locale ?? 'en');
 
 	let current: BlackjackRunPublicState | null = null;
 	let inFlight = false;
@@ -124,7 +133,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 	/** One in-flight guard shared by every public method. */
 	const guarded = async <T>(operation: () => Promise<T>): Promise<T> => {
 		if (inFlight) {
-			throw new BlackjackRunClientError('A blackjack run request is already in flight');
+			throw new BlackjackRunClientError(t('clientInFlight'));
 		}
 		inFlight = true;
 		try {
@@ -144,7 +153,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 		} catch (error) {
 			// Timeout (AbortError) and network failures surface as uncertain
 			// transport errors; no automatic retry or backoff.
-			throw new BlackjackRunClientError(errorMessage(error));
+			throw new BlackjackRunClientError(errorMessage(error, t));
 		}
 	};
 
@@ -152,7 +161,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 	const parseState = (response: Response, data: unknown): BlackjackRunPublicState => {
 		if (!response.ok) {
 			const code = responseErrorCode(data);
-			throw new BlackjackRunClientError(responseErrorMessage(response, data), {
+			throw new BlackjackRunClientError(responseErrorMessage(response, data, t), {
 				code,
 				status: response.status,
 				retryable: isPlainObject(data) && data.retryable === true,
@@ -164,7 +173,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 		}
 		const parsed = blackjackRunPublicStateSchema.safeParse(data);
 		if (!parsed.success) {
-			throw new BlackjackRunClientError('Blackjack run response was malformed', {
+			throw new BlackjackRunClientError(t('clientMalformed'), {
 				status: response.status,
 			});
 		}
@@ -219,7 +228,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 			// adopt it so the UI resumes instead of failing.
 			const adopted = await loadCurrentUnchecked(mode);
 			if (adopted === null) {
-				throw new BlackjackRunClientError('Active blackjack run disappeared during start recovery');
+				throw new BlackjackRunClientError(t('clientRunDisappeared'));
 			}
 			return adopted;
 		}
@@ -231,7 +240,7 @@ export function createBlackjackRunClient(deps: BlackjackRunClientDeps = {}): Bla
 		command: BlackjackRunClientCommand,
 	): Promise<BlackjackRunPublicState> => {
 		if (!current || current.runId !== runId || current.status !== 'active') {
-			throw new BlackjackRunClientError('No active blackjack run for command');
+			throw new BlackjackRunClientError(t('clientNoActiveRun'));
 		}
 		// Stamp the command with the server-provided sequence from the last
 		// authoritative state (ranked: nextSequence, daily: nextCommandSequence).

@@ -1,4 +1,12 @@
 import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/presentation';
+import { formatWholeNumber } from '../formatting';
+import { formatChips } from '../i18n/messages/common';
+import {
+	blackjackTranslator,
+	formatBlackjackAmount,
+	formatBlackjackNet,
+} from '../i18n/messages/blackjack';
+import { getDocumentLocale } from '../i18n/locale';
 import { MAXIMUM_WAGER, MINIMUM_WAGER } from './ranked';
 import type { BlackjackAction, BlackjackRunPublicState } from './protocol';
 
@@ -30,27 +38,17 @@ export interface RankedRunRenderer {
 
 const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 
-function formatChips(value: number): string {
-	return `$${new Intl.NumberFormat('en-US').format(value)}`;
-}
-
-const PRESENTATION_OPTIONS = {
-	testIdPrefix: 'ranked',
-	formatWager: formatChips,
-} as const;
-
 function requireElement<T extends Element>(root: ParentNode, selector: string): T {
 	const element = root.querySelector<T>(selector);
 	if (!element) throw new Error(`Ranked Blackjack is missing ${selector}`);
 	return element;
 }
 
-function formatSignedChips(value: number): string {
-	if (value === 0) return '$0';
-	return `${value > 0 ? '+' : '-'}${formatChips(Math.abs(value))}`;
-}
-
 export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = blackjackTranslator(locale);
+	const formatAmount = (value: number): string => formatBlackjackAmount(locale, value);
+
 	const wager = requireElement<HTMLInputElement>(root, '[data-testid="ranked-wager"]');
 	const start = requireElement<HTMLButtonElement>(root, '[data-testid="ranked-start"]');
 	const countdown = requireElement<HTMLElement>(root, '[data-testid="ranked-countdown"]');
@@ -76,6 +74,11 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 		]),
 	);
 
+	const presentationOptions = {
+		testIdPrefix: 'ranked',
+		formatWager: formatAmount,
+	} as const;
+
 	let current: RankedRunState | null = null;
 	let pending = false;
 	let handlers: RankedRunRendererHandlers | null = null;
@@ -83,9 +86,8 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 	// Keep the shared AppLayout header balance pill in sync with the server
 	// account balance after an initial/additional stake debit or a payout.
 	const syncHeaderBalance = (nextBalance: number): void => {
-		const formatted = nextBalance.toLocaleString('en-US');
 		root.ownerDocument.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((element) => {
-			element.textContent = `${formatted} chips`;
+			element.textContent = formatChips(nextBalance, locale);
 		});
 	};
 
@@ -106,7 +108,7 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 
 	const renderDealer = (state: RankedRunState): void => {
 		renderBlackjackDealer(root.ownerDocument, dealerHand, dealerValue, state.dealer, {
-			testIdPrefix: PRESENTATION_OPTIONS.testIdPrefix,
+			testIdPrefix: presentationOptions.testIdPrefix,
 		});
 	};
 
@@ -116,7 +118,7 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 			playerHands,
 			state.playerHands,
 			state.activeHandIndex,
-			PRESENTATION_OPTIONS,
+			presentationOptions,
 		);
 	};
 
@@ -133,24 +135,28 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 		}
 		const outcome = state.outcome;
 		resultOutcome.textContent = outcome
-			? outcome.result === 'win'
-				? 'Win'
-				: outcome.result === 'loss'
-					? 'Loss'
-					: 'Push'
+			? t(
+					outcome.result === 'win'
+						? 'resultWin'
+						: outcome.result === 'loss'
+							? 'resultLoss'
+							: 'resultPush',
+				)
 			: '—';
-		resultWager.textContent = formatChips(state.committedWager);
-		resultPayout.textContent = outcome ? formatChips(outcome.payout) : '$0';
-		resultNet.textContent = outcome ? formatSignedChips(outcome.gameNetDelta) : '$0';
-		resultBalance.textContent = formatChips(state.balance);
+		resultWager.textContent = formatAmount(state.committedWager);
+		resultPayout.textContent = outcome ? formatAmount(outcome.payout) : t('netZero');
+		resultNet.textContent = outcome
+			? formatBlackjackNet(locale, outcome.gameNetDelta)
+			: t('netZero');
+		resultBalance.textContent = formatAmount(state.balance);
 	};
 
 	const render = (state: RankedRunState | null): void => {
 		current = state;
 		if (!state) {
-			balance.textContent = formatChips(Number(root.dataset.initialBalance ?? 0));
-			committedWager.textContent = '$0';
-			status.textContent = 'Choose a wager to begin a ranked run.';
+			balance.textContent = formatAmount(Number(root.dataset.initialBalance ?? 0));
+			committedWager.textContent = t('netZero');
+			status.textContent = t('rankedIdle');
 			countdown.textContent = '—';
 			dealerHand.replaceChildren();
 			dealerValue.textContent = '—';
@@ -160,18 +166,31 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 			return;
 		}
 
-		balance.textContent = formatChips(state.balance);
+		balance.textContent = formatAmount(state.balance);
 		syncHeaderBalance(state.balance);
-		committedWager.textContent = formatChips(state.committedWager);
+		committedWager.textContent = formatAmount(state.committedWager);
 		renderDealer(state);
 		renderPlayers(state);
 		renderResult(state);
 		status.textContent =
 			state.status === 'active'
-				? `Your move · hand ${state.activeHandIndex + 1} of ${state.playerHands.length}`
+				? t('yourMoveStatus', {
+						current: formatWholeNumber(state.activeHandIndex + 1, locale),
+						total: formatWholeNumber(state.playerHands.length, locale),
+					})
 				: state.status === 'expired'
-					? 'Run expired · wager forfeited'
-					: `${state.outcome?.result ?? 'complete'} · run settled`;
+					? t('runExpired')
+					: t('runSettled', {
+							outcome: state.outcome
+								? t(
+										state.outcome.result === 'win'
+											? 'wordWin'
+											: state.outcome.result === 'loss'
+												? 'wordLoss'
+												: 'wordPush',
+									)
+								: t('wordComplete'),
+						});
 		if (state.status !== 'active') {
 			countdown.textContent = '—';
 		}
@@ -188,7 +207,10 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 				candidate < MINIMUM_WAGER ||
 				candidate > MAXIMUM_WAGER
 			) {
-				status.textContent = `Wager must be a whole number between ${MINIMUM_WAGER} and ${MAXIMUM_WAGER.toLocaleString('en-US')}.`;
+				status.textContent = t('wagerRange', {
+					min: formatWholeNumber(MINIMUM_WAGER, locale),
+					max: formatWholeNumber(MAXIMUM_WAGER, locale),
+				});
 				return;
 			}
 			handlers?.onStart(candidate);

@@ -1,4 +1,7 @@
 import { getSuitSymbol, isRedSuit } from '../card-format';
+import { formatWholeNumber } from '../formatting';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { blackjackTranslator } from '../i18n/messages/blackjack';
 import type { Card, HandValue } from './types';
 
 export interface BlackjackPresentationOptions {
@@ -25,9 +28,10 @@ const HAND_CARDS_CLASS = 'flex flex-wrap justify-center gap-2';
 const HAND_LABEL_CLASS = 'mb-2 text-sm text-[var(--deco-muted)]';
 const HAND_VALUE_CLASS = 'mb-3 font-bold text-[var(--deco-brass)]';
 
-export function formatBlackjackHandValue(value: HandValue): string {
-	if (value.isBust) return `Bust ${value.value}`;
-	if (value.isSoft) return `Soft ${value.value}`;
+export function formatBlackjackHandValue(value: HandValue, locale: Locale = 'en'): string {
+	const t = blackjackTranslator(locale);
+	if (value.isBust) return t('bust', { value: String(value.value) });
+	if (value.isSoft) return t('soft', { value: String(value.value) });
 	return String(value.value);
 }
 
@@ -55,12 +59,13 @@ export function renderBlackjackDealer(
 	dealer: BlackjackDealerProjection,
 	options: Pick<BlackjackPresentationOptions, 'testIdPrefix'>,
 ): void {
+	const locale = getDocumentLocale(document);
 	dealerHandContainer.replaceChildren(
 		...dealer.cards.map((card) =>
 			createBlackjackCardElement(document, card, `${options.testIdPrefix}-dealer-card`),
 		),
 	);
-	dealerValueContainer.textContent = formatBlackjackHandValue(dealer.value);
+	dealerValueContainer.textContent = formatBlackjackHandValue(dealer.value, locale);
 }
 
 export function renderBlackjackPlayerHands(
@@ -70,6 +75,8 @@ export function renderBlackjackPlayerHands(
 	activeHandIndex: number,
 	options: BlackjackPresentationOptions,
 ): void {
+	const locale = getDocumentLocale(document);
+	const t = blackjackTranslator(locale);
 	const rendered = hands.map((hand, index) => {
 		const isActive = index === activeHandIndex;
 		const section = document.createElement('section');
@@ -79,12 +86,15 @@ export function renderBlackjackPlayerHands(
 
 		const label = document.createElement('p');
 		label.className = HAND_LABEL_CLASS;
-		label.textContent = `Hand ${index + 1} · ${options.formatWager(hand.wager)}`;
+		label.textContent = t('handLabelWithWager', {
+			number: formatWholeNumber(index + 1, locale),
+			wager: options.formatWager(hand.wager),
+		});
 
 		const value = document.createElement('p');
 		value.dataset.testid = `${options.testIdPrefix}-player-value`;
 		value.className = HAND_VALUE_CLASS;
-		value.textContent = formatBlackjackHandValue(hand.value);
+		value.textContent = formatBlackjackHandValue(hand.value, locale);
 
 		const cards = document.createElement('div');
 		cards.className = HAND_CARDS_CLASS;

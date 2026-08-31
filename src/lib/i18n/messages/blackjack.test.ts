@@ -129,6 +129,7 @@ describe('blackjack message catalog', () => {
 	});
 
 	test('chip amounts render per locale with the shared number helpers', () => {
+		expect(formatBlackjackAmount('en', 1)).toBe('1 chip');
 		expect(formatBlackjackAmount('en', 742)).toBe('742 chips');
 		expect(formatBlackjackAmount('en', 1000)).toBe('1,000 chips');
 		expect(formatBlackjackAmount('zh-Hant', 742)).toBe('742 籌碼');

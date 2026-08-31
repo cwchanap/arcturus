@@ -5,13 +5,15 @@ import {
 	getBlackjackStrategyAdvice,
 	type BlackjackAdviceContext,
 } from './llmBlackjackStrategy';
-import { getHandValueDisplay } from './handEvaluator';
+import { calculateHandValue } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
 import { loadAiSettings, type AiSettings } from '../ai';
-import { formatChipBalance, formatWholeNumber } from '../formatting';
+import { formatWholeNumber } from '../formatting';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
 import { blackjackTranslator } from '../i18n/messages/blackjack';
+import { formatChips } from '../i18n/messages/common';
+import { formatBlackjackHandValue } from './presentation';
 import {
 	isGuestModeValue,
 	loadGuestBankroll,
@@ -143,8 +145,7 @@ export function initBlackjackClient(): void {
 	const isGuestMode = isGuestModeValue(rootEl?.dataset?.guestMode);
 	const locale = getDocumentLocale(rootEl?.ownerDocument);
 	const t = blackjackTranslator(locale);
-	const formatAmount = (value: number): string =>
-		t('amount', { amount: formatChipBalance(value, locale) });
+	const formatAmount = (value: number): string => formatChips(value, locale);
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
@@ -720,7 +721,11 @@ export function initBlackjackClient(): void {
 
 						// Update hand value
 						const valueEl = container.querySelector('[data-hand-value]');
-						if (valueEl) valueEl.textContent = getHandValueDisplay(hand.cards);
+						if (valueEl)
+							valueEl.textContent = formatBlackjackHandValue(
+								calculateHandValue(hand.cards),
+								locale,
+							);
 
 						// Update hand bet
 						const betEl = container.querySelector('[data-hand-bet]');
@@ -755,7 +760,10 @@ export function initBlackjackClient(): void {
 
 				const playerHand = state.playerHands[0];
 				renderCardsToContainer('player-cards', playerHand.cards, { showPlaceholders: 2 });
-				playerValueEl.textContent = getHandValueDisplay(playerHand.cards);
+				playerValueEl.textContent = formatBlackjackHandValue(
+					calculateHandValue(playerHand.cards),
+					locale,
+				);
 				currentBetEl.textContent = t('currentBet', { amount: formatAmount(playerHand.bet) });
 			}
 		} else {
@@ -782,7 +790,9 @@ export function initBlackjackClient(): void {
 				showPlaceholders: 2,
 				facedownCount,
 			});
-			dealerValueEl.textContent = hideCard ? '?' : getHandValueDisplay(state.dealerHand.cards);
+			dealerValueEl.textContent = hideCard
+				? '?'
+				: formatBlackjackHandValue(calculateHandValue(state.dealerHand.cards), locale);
 		} else {
 			// Show placeholders when no cards dealt
 			clearCardsContainer('dealer-cards', 2);

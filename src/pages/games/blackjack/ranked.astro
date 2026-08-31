@@ -1,8 +1,9 @@
 ---
 import CasinoLayout from '../../../layouts/casino.astro';
 import { blackjackTranslator } from '../../../lib/i18n/messages/blackjack';
+import { formatChips } from '../../../lib/i18n/messages/common';
 import { getGameName } from '../../../lib/i18n/messages/games';
-import { formatChipBalance, formatWholeNumber } from '../../../lib/formatting';
+import { formatWholeNumber } from '../../../lib/formatting';
 import { MAXIMUM_WAGER, MINIMUM_WAGER } from '../../../lib/blackjack-run/ranked';
 
 const user = Astro.locals.user;
@@ -55,7 +56,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 						data-testid="ranked-balance"
 						class="text-2xl font-bold text-[var(--deco-brass)]"
 					>
-						{t('amount', { amount: formatChipBalance(initialBalance, locale) })}
+						{formatChips(initialBalance, locale)}
 					</p>
 				</div>
 				<div>
@@ -113,7 +114,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 						<p class="text-sm text-[var(--deco-brass)]">
 							{t('committed')}
 							<strong id="ranked-committed-wager" data-testid="ranked-committed-wager"
-								>{t('netZero')}</strong
+								>{formatChips(0, locale)}</strong
 							>
 						</p>
 					</div>
@@ -289,11 +290,10 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 
 	const root = document.getElementById('ranked-blackjack-root');
 	if (root) {
+		const locale = getDocumentLocale(root.ownerDocument);
 		const renderer = createRankedRunRenderer(root);
-		const client = createBlackjackRunClient({
-			locale: getDocumentLocale(root.ownerDocument),
-		});
-		const t = blackjackTranslator(getDocumentLocale(root.ownerDocument));
+		const client = createBlackjackRunClient({ locale });
+		const t = blackjackTranslator(locale);
 		let current: BlackjackRunPublicState | null = null;
 		let countdownHandle: ReturnType<typeof setInterval> | null = null;
 

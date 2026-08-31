@@ -249,7 +249,6 @@ export {
 	GAME_TYPES,
 	RANKING_METRICS,
 	GAME_TYPE_LABELS,
-	RANKING_METRIC_LABELS,
 	GAME_TYPE_ICONS,
 	isValidGameType,
 	isValidRankingMetric,

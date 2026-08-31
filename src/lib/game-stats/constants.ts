@@ -25,16 +25,6 @@ export const GAME_TYPES = [
 export const RANKING_METRICS = ['wins', 'win_rate', 'biggest_win', 'net_profit'] as const;
 
 /**
- * Display names for ranking metrics
- */
-export const RANKING_METRIC_LABELS: Record<(typeof RANKING_METRICS)[number], string> = {
-	wins: 'Total Wins',
-	win_rate: 'Win Rate',
-	biggest_win: 'Biggest Win',
-	net_profit: 'Net Profit',
-};
-
-/**
  * Display names for game types (mirrors GAME_TYPES)
  */
 export const GAME_TYPE_LABELS: Record<(typeof GAME_TYPES)[number], string> = {

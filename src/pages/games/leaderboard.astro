@@ -7,16 +7,20 @@ import {
 	getGameLeaderboardData,
 	GAME_TYPES,
 	RANKING_METRICS,
-	GAME_TYPE_LABELS,
 	GAME_TYPE_ICONS,
-	RANKING_METRIC_LABELS,
 	isValidGameType,
 	isValidRankingMetric,
 	type GameLeaderboardData,
 } from '../../lib/game-stats/game-stats';
+import { getRankingMetricLabel, leaderboardTranslator } from '../../lib/i18n/messages/leaderboard';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChips } from '../../lib/i18n/messages/common';
+import { formatPercentage, formatWholeNumber } from '../../lib/formatting';
 import DecoIcon from '../../components/DecoIcon.astro';
 
 const session = Astro.locals.session;
+const locale = Astro.locals.locale;
+const t = leaderboardTranslator(locale);
 
 // Handle build-time and runtime edge cases (consistent with missions/index.astro)
 if (!session || !Astro.locals.runtime?.env?.DB) {
@@ -64,28 +68,23 @@ try {
 	}
 } catch (error) {
 	console.error('Leaderboard fetch error:', error);
-	errorMessage = 'Failed to load leaderboard. Please try again.';
-}
-
-// Format numbers for display (chips, counts, etc.)
-function formatNumber(amount: number): string {
-	return new Intl.NumberFormat('en-US').format(amount);
+	errorMessage = t('loadFailed');
 }
 
 // Format metric value based on type
 function formatMetricValue(value: number, metric: string): string {
 	if (metric === 'win_rate') {
-		return `${value.toFixed(1)}%`;
+		return formatPercentage(value, locale);
 	}
-	return formatNumber(value);
+	return formatWholeNumber(value, locale);
 }
 
 // Tab configuration
 const tabs = [
-	{ id: 'all', label: 'All Games', icon: '🏆' },
+	{ id: 'all', label: t('allGames'), icon: '🏆' },
 	...GAME_TYPES.map((type) => ({
 		id: type,
-		label: GAME_TYPE_LABELS[type],
+		label: getGameName(locale, type),
 		icon: GAME_TYPE_ICONS[type],
 	})),
 ];
@@ -102,7 +101,7 @@ const currentUserInTop = isGameTab
 	: overallLeaderboardData?.currentUserInTop;
 ---
 
-<CasinoLayout title="Leaderboard - Arcturus Casino">
+<CasinoLayout title={t('pageTitle')}>
 	<section class="deco-atmosphere relative overflow-hidden">
 		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
 			<header class="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-8">
@@ -115,17 +114,17 @@ const currentUserInTop = isGameTab
 								stroke-width="2"
 								d="M15 19l-7-7 7-7"></path>
 						</svg>
-						Back to Lobby
+						{t('backToLobby')}
 					</a>
 					<h1 class="deco-section-title flex items-center gap-3 text-4xl">
 						<DecoIcon name="trophy" size={34} class="text-[var(--deco-brass)]" />
-						<span>Leaderboard</span>
+						<span>{t('leaderboard')}</span>
 					</h1>
 					<p class="deco-text-dim mt-2">
 						{
 							isGameTab
-								? `${GAME_TYPE_LABELS[selectedTab]} rankings`
-								: 'Top players ranked by chip balance'
+								? t('gameRankings', { game: getGameName(locale, selectedTab) })
+								: t('topPlayersByChips')
 						}
 					</p>
 				</div>
@@ -133,10 +132,12 @@ const currentUserInTop = isGameTab
 				{
 					currentUserRank && (
 						<div class="deco-panel deco-frame px-6 py-4 text-center md:text-right">
-							<p class="deco-eyebrow-sm">Your Rank</p>
-							<p class="deco-stat-value mt-1 text-3xl">#{currentUserRank}</p>
+							<p class="deco-eyebrow-sm">{t('yourRank')}</p>
+							<p class="deco-stat-value mt-1 text-3xl">
+								#{formatWholeNumber(currentUserRank, locale)}
+							</p>
 							<p class="deco-muted-text text-xs mt-1">
-								of {formatNumber(totalPlayers ?? 0)} players
+								{t('ofPlayers', { count: formatWholeNumber(totalPlayers ?? 0, locale) })}
 							</p>
 						</div>
 					)
@@ -166,7 +167,7 @@ const currentUserInTop = isGameTab
 			{
 				isGameTab && (
 					<div class="flex items-center gap-3 mb-6">
-						<span class="deco-text-dim text-sm">Rank by:</span>
+						<span class="deco-text-dim text-sm">{t('rankBy')}</span>
 						<div class="flex gap-2" data-testid="metric-selector">
 							{RANKING_METRICS.map((metric) => (
 								<a
@@ -177,7 +178,7 @@ const currentUserInTop = isGameTab
 									]}
 									data-testid={`metric-${metric}`}
 								>
-									{RANKING_METRIC_LABELS[metric]}
+									{getRankingMetricLabel(locale, metric)}
 								</a>
 							))}
 						</div>
@@ -195,7 +196,7 @@ const currentUserInTop = isGameTab
 							{errorMessage}
 						</p>
 						<button id="leaderboard-retry" class="deco-btn deco-btn-outline mt-4">
-							Try Again
+							{t('tryAgain')}
 						</button>
 					</div>
 				)
@@ -212,10 +213,10 @@ const currentUserInTop = isGameTab
 								<table class="w-full" data-testid="leaderboard-table">
 									<thead class="deco-table-head">
 										<tr>
-											<th class="deco-th px-6 py-4 text-left">Rank</th>
-											<th class="deco-th px-6 py-4 text-left">Player</th>
-											<th class="deco-th px-6 py-4 text-left">Badges</th>
-											<th class="deco-th px-6 py-4 text-right">Chip Balance</th>
+											<th class="deco-th px-6 py-4 text-left">{t('rank')}</th>
+											<th class="deco-th px-6 py-4 text-left">{t('player')}</th>
+											<th class="deco-th px-6 py-4 text-left">{t('badges')}</th>
+											<th class="deco-th px-6 py-4 text-right">{t('chipBalance')}</th>
 										</tr>
 									</thead>
 									<tbody style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 12%, transparent)">
@@ -238,7 +239,7 @@ const currentUserInTop = isGameTab
 													<td class="px-6 py-4 whitespace-nowrap">
 														<span class="deco-text-dim font-semibold flex items-center gap-2">
 															{rankEmoji && <span class="text-xl">{rankEmoji}</span>}
-															<span>#{entry.rank}</span>
+															<span>#{formatWholeNumber(entry.rank, locale)}</span>
 														</span>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap">
@@ -249,9 +250,9 @@ const currentUserInTop = isGameTab
 																	entry.isCurrentUser ? 'deco-accent' : 'deco-text',
 																]}
 															>
-																{entry.playerName || 'Anonymous'}
+																{entry.playerName || t('anonymous')}
 															</span>
-															{entry.isCurrentUser && <span class="deco-tag">You</span>}
+															{entry.isCurrentUser && <span class="deco-tag">{t('you')}</span>}
 														</div>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
@@ -266,9 +267,8 @@ const currentUserInTop = isGameTab
 																entry.isCurrentUser ? 'deco-accent' : 'deco-text',
 															]}
 														>
-															{formatNumber(entry.chipBalance)}
+															{formatChips(entry.chipBalance, locale)}
 														</span>
-														<span class="deco-muted-text text-sm ml-1">chips</span>
 													</td>
 												</tr>
 											);
@@ -283,9 +283,7 @@ const currentUserInTop = isGameTab
 									style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 20%, transparent); background: rgba(12,51,38,0.3)"
 								>
 									<p class="deco-text-dim text-sm">
-										You're ranked
-										<span class="deco-accent font-bold">#{currentUserRank}</span>. Keep playing to
-										reach the top 50!
+										{t('youAreRanked', { rank: formatWholeNumber(currentUserRank, locale) })}
 									</p>
 								</div>
 							)}
@@ -304,13 +302,13 @@ const currentUserInTop = isGameTab
 								<table class="w-full" data-testid="game-leaderboard-table">
 									<thead class="deco-table-head">
 										<tr>
-											<th class="deco-th px-6 py-4 text-left">Rank</th>
-											<th class="deco-th px-6 py-4 text-left">Player</th>
-											<th class="deco-th px-6 py-4 text-left">Badges</th>
+											<th class="deco-th px-6 py-4 text-left">{t('rank')}</th>
+											<th class="deco-th px-6 py-4 text-left">{t('player')}</th>
+											<th class="deco-th px-6 py-4 text-left">{t('badges')}</th>
 											<th class="deco-th px-6 py-4 text-right">
-												{RANKING_METRIC_LABELS[validMetric]}
+												{getRankingMetricLabel(locale, validMetric)}
 											</th>
-											<th class="deco-th px-6 py-4 text-right">Stats</th>
+											<th class="deco-th px-6 py-4 text-right">{t('stats')}</th>
 										</tr>
 									</thead>
 									<tbody style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 12%, transparent)">
@@ -333,7 +331,7 @@ const currentUserInTop = isGameTab
 													<td class="px-6 py-4 whitespace-nowrap">
 														<span class="deco-text-dim font-semibold flex items-center gap-2">
 															{rankEmoji && <span class="text-xl">{rankEmoji}</span>}
-															<span>#{entry.rank}</span>
+															<span>#{formatWholeNumber(entry.rank, locale)}</span>
 														</span>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap">
@@ -344,9 +342,9 @@ const currentUserInTop = isGameTab
 																	entry.isCurrentUser ? 'deco-accent' : 'deco-text',
 																]}
 															>
-																{entry.playerName || 'Anonymous'}
+																{entry.playerName || t('anonymous')}
 															</span>
-															{entry.isCurrentUser && <span class="deco-tag">You</span>}
+															{entry.isCurrentUser && <span class="deco-tag">{t('you')}</span>}
 														</div>
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap" data-testid="badges-cell">
@@ -366,8 +364,16 @@ const currentUserInTop = isGameTab
 													</td>
 													<td class="px-6 py-4 whitespace-nowrap text-right">
 														<div class="deco-muted-text text-xs">
-															<div>{entry.totalWins} wins</div>
-															<div>{entry.handsPlayed} hands</div>
+															<div>
+																{t('winsCount', {
+																	count: formatWholeNumber(entry.totalWins, locale),
+																})}
+															</div>
+															<div>
+																{t('handsCount', {
+																	count: formatWholeNumber(entry.handsPlayed, locale),
+																})}
+															</div>
 														</div>
 													</td>
 												</tr>
@@ -383,9 +389,10 @@ const currentUserInTop = isGameTab
 									style="border-top: 1px solid color-mix(in srgb, var(--deco-brass) 20%, transparent); background: rgba(12,51,38,0.3)"
 								>
 									<p class="deco-text-dim text-sm">
-										You're ranked
-										<span class="deco-accent font-bold">#{currentUserRank}</span> in{' '}
-										{GAME_TYPE_LABELS[selectedTab]}. Keep playing to reach the top 50!
+										{t('youAreRankedIn', {
+											rank: formatWholeNumber(currentUserRank, locale),
+											game: getGameName(locale, selectedTab),
+										})}
 									</p>
 								</div>
 							)}
@@ -402,11 +409,11 @@ const currentUserInTop = isGameTab
 							(overallLeaderboardData == null || overallLeaderboardData.entries.length === 0))) && (
 						<div class="deco-panel deco-frame p-12 text-center">
 							<div class="text-6xl mb-4">{isGameTab ? GAME_TYPE_ICONS[selectedTab] : '🏆'}</div>
-							<p class="deco-text-dim text-lg">No players found</p>
+							<p class="deco-text-dim text-lg">{t('noPlayersFound')}</p>
 							<p class="deco-muted-text text-sm mt-2">
 								{isGameTab
-									? `Be the first to play ${GAME_TYPE_LABELS[selectedTab]} and claim the top spot!`
-									: 'Be the first to claim the top spot!'}
+									? t('beFirstToPlay', { game: getGameName(locale, selectedTab) })
+									: t('beFirstOverall')}
 							</p>
 						</div>
 					)
@@ -415,7 +422,7 @@ const currentUserInTop = isGameTab
 			<div class="deco-panel mt-8 p-6">
 				<h3 class="deco-section-title mb-3 flex items-center gap-2 text-lg">
 					<DecoIcon name="star" size={18} class="text-[var(--deco-brass)]" />
-					<span>How Rankings Work</span>
+					<span>{t('howRankingsWork')}</span>
 				</h3>
 				<ul class="deco-text-dim space-y-2 text-sm">
 					{
@@ -423,42 +430,37 @@ const currentUserInTop = isGameTab
 							<>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>
-										Game leaderboards track your performance in {GAME_TYPE_LABELS[selectedTab]}
-									</span>
+									<span>{t('explainGameTracks', { game: getGameName(locale, selectedTab) })}</span>
 								</li>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>Rank by Total Wins, Win Rate, Biggest Win, or Net Profit</span>
+									<span>{t('explainRankBy')}</span>
 								</li>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>
-										Win Rate requires at least 10 decided games (wins or losses) to appear on the
-										leaderboard
-									</span>
+									<span>{t('explainWinRate')}</span>
 								</li>
 							</>
 						) : (
 							<>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>Players are ranked by total chip balance (highest first)</span>
+									<span>{t('explainOverallChips')}</span>
 								</li>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>Only the top 50 players are displayed on this leaderboard</span>
+									<span>{t('explainTop50')}</span>
 								</li>
 								<li class="flex items-start gap-2">
 									<span class="deco-accent-dim">&bull;</span>
-									<span>Earn chips by playing games and completing daily missions</span>
+									<span>{t('explainEarnChips')}</span>
 								</li>
 							</>
 						)
 					}
 					<li class="flex items-start gap-2">
 						<span class="deco-accent-dim">&bull;</span>
-						<span>Rankings update automatically as you play</span>
+						<span>{t('explainUpdates')}</span>
 					</li>
 				</ul>
 			</div>

@@ -40,6 +40,37 @@ export default tseslint.config(
 		},
 	},
 
+	// Production locale-formatting guard: ad-hoc `toLocale*` calls and direct
+	// `Intl` formatting constructors are rejected outside the shared formatting
+	// module and the i18n layer, so presentation stays locale-aware forever.
+	{
+		files: ['src/**/*.{ts,tsx,astro}'],
+		ignores: ['src/lib/formatting.ts', 'src/lib/i18n/**', '**/*.test.ts'],
+		rules: {
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector:
+						'CallExpression[callee.type="MemberExpression"][callee.property.name=/^(toLocaleString|toLocaleDateString|toLocaleTimeString)$/]',
+					message:
+						'Use shared locale formatting from src/lib/formatting.ts or src/lib/i18n/ instead of ad-hoc toLocale* calls.',
+				},
+				{
+					selector:
+						'NewExpression[callee.type="MemberExpression"][callee.object.name="Intl"][callee.property.name=/^(NumberFormat|DateTimeFormat|RelativeTimeFormat|ListFormat)$/]',
+					message:
+						'Use shared locale formatting from src/lib/formatting.ts or src/lib/i18n/ instead of direct Intl formatting constructors.',
+				},
+				{
+					selector:
+						'CallExpression[callee.type="MemberExpression"][callee.object.name="Intl"][callee.property.name=/^(NumberFormat|DateTimeFormat|RelativeTimeFormat|ListFormat)$/]',
+					message:
+						'Use shared locale formatting from src/lib/formatting.ts or src/lib/i18n/ instead of direct Intl formatting calls.',
+				},
+			],
+		},
+	},
+
 	// Astro files specific rules
 	{
 		files: ['**/*.astro'],

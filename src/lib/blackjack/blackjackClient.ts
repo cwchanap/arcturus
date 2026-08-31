@@ -9,6 +9,9 @@ import { getHandValueDisplay } from './handEvaluator';
 import type { RoundOutcome, RoundResult } from './types';
 import { renderCardsToContainer, clearCardsContainer, setSlotState } from '../card-slot-utils';
 import { loadAiSettings, type AiSettings } from '../ai';
+import { formatChipBalance, formatWholeNumber } from '../formatting';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { blackjackTranslator } from '../i18n/messages/blackjack';
 import {
 	isGuestModeValue,
 	loadGuestBankroll,
@@ -19,6 +22,7 @@ import {
 	createSettlementGate,
 	ensureSettlementRecoveryControls,
 	newSettlementId,
+	type PublicGameSettlementMessages,
 	type SettlementGate,
 	type SettleRoundCommand,
 	type SettleRoundResult,
@@ -73,38 +77,43 @@ export function retryBlackjackSettlement(
 /**
  * Format outcome message for display, handling split hands.
  * Shows individual results for each hand when split, or single result otherwise.
+ * The outcome words are localized; the result is one complete sentence.
  */
-function formatOutcomeMessage(outcomes: RoundOutcome[]): string {
+export function formatBlackjackOutcomeMessage(
+	outcomes: readonly RoundOutcome[],
+	locale: Locale = 'en',
+): string {
+	const t = blackjackTranslator(locale);
 	if (outcomes.length === 1) {
 		// Single hand - use simple message
 		switch (outcomes[0].result) {
 			case 'blackjack':
-				return '🎉 BLACKJACK! You win!';
+				return t('outcomeBlackjack');
 			case 'win':
-				return '✓ You win!';
+				return t('outcomeWin');
 			case 'loss':
-				return '✗ Dealer wins';
+				return t('outcomeLoss');
 			case 'push':
-				return '🤝 Push (Tie)';
+				return t('outcomePush');
 		}
 	}
 
-	// Multiple hands (split) - show each hand's result
-	const resultEmoji: Record<RoundResult, string> = {
-		blackjack: '🎉',
-		win: '✓',
-		loss: '✗',
-		push: '🤝',
-	};
+	// Multiple hands (split) - show each hand's result. The per-result
+	// templates carry their own language-neutral marker.
 	const resultText: Record<RoundResult, string> = {
-		blackjack: 'Blackjack',
-		win: 'Win',
-		loss: 'Loss',
-		push: 'Push',
+		blackjack: t('splitBlackjack'),
+		win: t('splitWin'),
+		loss: t('splitLoss'),
+		push: t('splitPush'),
 	};
 
 	const handResults = outcomes
-		.map((o, i) => `Hand ${i + 1}: ${resultEmoji[o.result]} ${resultText[o.result]}`)
+		.map((o, i) =>
+			t('splitHandResult', {
+				number: formatWholeNumber(i + 1, locale),
+				result: resultText[o.result],
+			}),
+		)
 		.join(' | ');
 
 	// Determine overall result based on wins vs losses
@@ -113,14 +122,14 @@ function formatOutcomeMessage(outcomes: RoundOutcome[]): string {
 
 	let summary = '';
 	if (wins > losses) {
-		summary = ' — Overall: You win! 🎉';
+		summary = t('overallWin');
 	} else if (losses > wins) {
-		summary = ' — Overall: Dealer wins';
+		summary = t('overallLoss');
 	} else {
-		summary = ' — Overall: Split result';
+		summary = t('overallSplit');
 	}
 
-	return handResults + summary;
+	return t('splitSummary', { hands: handResults, summary });
 }
 
 /**
@@ -132,6 +141,10 @@ export function initBlackjackClient(): void {
 	const rootEl = document.getElementById('blackjack-root');
 	const userId = rootEl?.getAttribute('data-user-id') ?? 'anonymous';
 	const isGuestMode = isGuestModeValue(rootEl?.dataset?.guestMode);
+	const locale = getDocumentLocale(rootEl?.ownerDocument);
+	const t = blackjackTranslator(locale);
+	const formatAmount = (value: number): string =>
+		t('amount', { amount: formatChipBalance(value, locale) });
 	const settingsManager = new GameSettingsManager(userId);
 	let settings = settingsManager.getSettings();
 	let dealerDelay = settingsManager.getDealerDelay();
@@ -191,12 +204,18 @@ export function initBlackjackClient(): void {
 	// Recovery controls stay hidden during normal play and are revealed only when
 	// a settlement fails. Keeping them out of the static page markup preserves
 	// the existing game DOM until the user actually needs Retry/Reset.
+	const settlementMessages: PublicGameSettlementMessages = {
+		failed: t('settlementFailed'),
+		retrying: t('retryingSettlement'),
+		retryFailed: t('settlementRetryFailed'),
+		retryLabel: t('retrySettlement'),
+	};
 	const settlementRecovery = ensureSettlementRecoveryControls({
 		containerClass: 'hidden mt-3 flex flex-wrap justify-center gap-2',
 		retryClass: 'deco-btn deco-btn-outline',
-		retryLabel: 'Retry settlement',
+		retryLabel: settlementMessages.retryLabel,
 		resetClass: 'deco-btn deco-btn-outline',
-		resetLabel: 'Reset round',
+		resetLabel: t('resetRound'),
 		attachTo: statusEl.parentElement,
 	});
 
@@ -228,21 +247,19 @@ export function initBlackjackClient(): void {
 			adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Blackjack settlement failed:', error);
-			showSettlementRecovery('Settlement failed. Retry or reset before starting another round.');
+			showSettlementRecovery(settlementMessages.failed);
 		}
 	};
 
 	settlementRecovery.retry?.addEventListener('click', async () => {
 		if (!settlementGate.pending) return;
-		statusEl.textContent = 'Retrying settlement...';
+		statusEl.textContent = settlementMessages.retrying;
 		try {
 			const result = await retryBlackjackSettlement(settlementGate);
 			if (result) adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Blackjack settlement retry failed:', error);
-			showSettlementRecovery(
-				'Settlement failed again. Retry or reset before starting another round.',
-			);
+			showSettlementRecovery(settlementMessages.retryFailed);
 		}
 	});
 
@@ -251,7 +268,7 @@ export function initBlackjackClient(): void {
 		game.setBalance(serverSyncedBalance);
 		hideSettlementRecovery();
 		renderGame();
-		statusEl.textContent = 'Settlement reset. Place your bet to start.';
+		statusEl.textContent = t('settlementReset');
 	});
 
 	// Settings panel elements (optional - may not exist on page)
@@ -313,7 +330,7 @@ export function initBlackjackClient(): void {
 				| 'fast';
 
 			if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
-				statusEl.textContent = 'Starting chips must be a positive number.';
+				statusEl.textContent = t('settingsStartingChipsError');
 				return;
 			}
 
@@ -324,7 +341,7 @@ export function initBlackjackClient(): void {
 				newMaxBet <= 0 ||
 				newMinBet >= newMaxBet
 			) {
-				statusEl.textContent = 'Minimum bet must be less than maximum bet and both positive.';
+				statusEl.textContent = t('settingsBetLimitsError');
 				return;
 			}
 
@@ -357,7 +374,7 @@ export function initBlackjackClient(): void {
 
 			applyBetConstraints();
 			renderSettingsForm();
-			statusEl.textContent = 'Settings saved. They will apply to new rounds.';
+			statusEl.textContent = t('settingsSaved');
 		});
 	}
 
@@ -374,7 +391,7 @@ export function initBlackjackClient(): void {
 			applyBetConstraints();
 			renderSettingsForm();
 
-			statusEl.textContent = 'Settings reset to defaults.';
+			statusEl.textContent = t('settingsReset');
 		});
 	}
 
@@ -395,12 +412,15 @@ export function initBlackjackClient(): void {
 	btnDeal.addEventListener('click', () => {
 		const betAmount = parseInt(betAmountInput.value);
 		if (Number.isNaN(betAmount) || betAmount < settings.minBet || betAmount > settings.maxBet) {
-			statusEl.textContent = `Bet must be between $${settings.minBet} and $${settings.maxBet}`;
+			statusEl.textContent = t('betRangeError', {
+				min: formatAmount(settings.minBet),
+				max: formatAmount(settings.maxBet),
+			});
 			return;
 		}
 
 		if (betAmount > game.getBalance()) {
-			statusEl.textContent = 'Insufficient balance';
+			statusEl.textContent = t('insufficientBalance');
 			return;
 		}
 
@@ -413,7 +433,7 @@ export function initBlackjackClient(): void {
 			renderGame();
 			bettingControls.classList.add('hidden');
 			gameControls.classList.remove('hidden');
-			statusEl.textContent = 'Your turn - Hit or Stand?';
+			statusEl.textContent = t('yourTurn', { hit: t('hit'), stand: t('stand') });
 
 			const state = game.getState();
 			if (state.phase === 'complete') {
@@ -452,11 +472,14 @@ export function initBlackjackClient(): void {
 			// Check if we moved to the next split hand or to dealer turn
 			if (stateAfter.phase === 'player-turn') {
 				// Still in player turn means there's another hand to play
-				statusEl.textContent = `Playing hand ${stateAfter.activeHandIndex + 1} of ${stateAfter.playerHands.length}...`;
+				statusEl.textContent = t('playingHand', {
+					current: formatWholeNumber(stateAfter.activeHandIndex + 1, locale),
+					total: formatWholeNumber(stateAfter.playerHands.length, locale),
+				});
 				renderGame();
 			} else {
 				// All hands complete, play dealer turn
-				statusEl.textContent = 'Dealer playing...';
+				statusEl.textContent = t('dealerPlaying');
 				renderGame();
 
 				// Play dealer turn with delay for animation based on settings
@@ -483,7 +506,10 @@ export function initBlackjackClient(): void {
 			// Check what phase we're in after double down
 			if (stateAfter.phase === 'player-turn') {
 				// Still in player turn means there's another split hand to play
-				statusEl.textContent = `Playing hand ${stateAfter.activeHandIndex + 1} of ${stateAfter.playerHands.length}...`;
+				statusEl.textContent = t('playingHand', {
+					current: formatWholeNumber(stateAfter.activeHandIndex + 1, locale),
+					total: formatWholeNumber(stateAfter.playerHands.length, locale),
+				});
 				renderGame();
 			} else if (stateAfter.phase === 'complete') {
 				// Busted on last hand - go straight to round complete
@@ -493,7 +519,7 @@ export function initBlackjackClient(): void {
 				}, dealerDelay);
 			} else {
 				// Dealer turn - play dealer
-				statusEl.textContent = 'Dealer playing...';
+				statusEl.textContent = t('dealerPlaying');
 				renderGame();
 
 				// Play dealer turn with delay for animation based on settings
@@ -515,7 +541,7 @@ export function initBlackjackClient(): void {
 		try {
 			game.split();
 			persistGuestBalance();
-			statusEl.textContent = 'Playing hand 1...';
+			statusEl.textContent = t('playingHandOne');
 			renderGame();
 		} catch (error) {
 			statusEl.textContent = (error as Error).message;
@@ -525,9 +551,7 @@ export function initBlackjackClient(): void {
 	// New round button
 	btnNewRound.addEventListener('click', () => {
 		if (!canStartBlackjackRound({ isGuestMode, gate: settlementGate })) {
-			showSettlementRecovery(
-				'Settlement is still pending. Retry or reset before starting another round.',
-			);
+			showSettlementRecovery(t('settlementPending'));
 			return;
 		}
 
@@ -548,7 +572,7 @@ export function initBlackjackClient(): void {
 		clearCardsContainer('player-cards', 2);
 		clearCardsContainer('dealer-cards', 2);
 
-		statusEl.textContent = 'Place your bet to start';
+		statusEl.textContent = t('placeBet');
 	});
 
 	// AI Rival button
@@ -574,11 +598,11 @@ export function initBlackjackClient(): void {
 
 		// 1. Render the deterministic recommendation synchronously so the user
 		//    never waits on the provider for an answer that is already known.
-		const deterministic = getBlackjackStrategyAdvice(context);
+		const deterministic = getBlackjackStrategyAdvice(context, locale);
 		aiAdviceBox.classList.remove('hidden');
 		aiAdviceAction.textContent = deterministic.recommendedAction
-			? `Recommended: ${deterministic.recommendedAction.toUpperCase()}`
-			: 'No legal recommendation';
+			? t('aiRecommended', { action: localizedActionName(deterministic.recommendedAction) })
+			: t('noLegalRecommendation');
 		aiAdviceReasoning.textContent = deterministic.reasoning;
 		highlightRecommendedAction(deterministic.recommendedAction);
 
@@ -594,9 +618,9 @@ export function initBlackjackClient(): void {
 			.join(',')}`;
 
 		btnAiRival.disabled = true;
-		btnAiRivalText.textContent = 'Thinking...';
+		btnAiRivalText.textContent = t('aiThinking');
 		try {
-			const advice = await getBlackjackAdvice(context, providerSettings);
+			const advice = await getBlackjackAdvice(context, providerSettings, locale);
 			const current = game.getState();
 			const currentHand = current.playerHands[current.activeHandIndex];
 			const currentSignature = `${current.activeHandIndex}:${currentHand?.cards
@@ -609,7 +633,7 @@ export function initBlackjackClient(): void {
 			// Deterministic advice is already shown; leave it in place.
 		} finally {
 			btnAiRival.disabled = false;
-			btnAiRivalText.textContent = 'Ask AI Rival';
+			btnAiRivalText.textContent = t('askAiRival');
 		}
 	});
 
@@ -634,6 +658,22 @@ export function initBlackjackClient(): void {
 			targetBtn.classList.add('ring-2', 'ring-offset-2', 'ring-[var(--deco-brass-bright)]');
 		}
 	}
+
+	// Localized action name for advice copy (action keys are language-neutral).
+	const localizedActionName = (action: string): string => {
+		switch (action) {
+			case 'hit':
+				return t('hit');
+			case 'stand':
+				return t('stand');
+			case 'double-down':
+				return t('doubleDown');
+			case 'split':
+				return t('split');
+			default:
+				return action;
+		}
+	};
 
 	// Render game state
 	function renderGame() {
@@ -672,7 +712,11 @@ export function initBlackjackClient(): void {
 
 						// Update hand label
 						const labelEl = container.querySelector('[data-hand-label]');
-						if (labelEl) labelEl.textContent = `Hand ${index + 1}`;
+						if (labelEl) {
+							labelEl.textContent = t('handLabel', {
+								number: formatWholeNumber(index + 1, locale),
+							});
+						}
 
 						// Update hand value
 						const valueEl = container.querySelector('[data-hand-value]');
@@ -680,7 +724,7 @@ export function initBlackjackClient(): void {
 
 						// Update hand bet
 						const betEl = container.querySelector('[data-hand-bet]');
-						if (betEl) betEl.textContent = `$${hand.bet}`;
+						if (betEl) betEl.textContent = formatAmount(hand.bet);
 
 						// Render cards to this hand's slots
 						const cardSlots = container.querySelectorAll('.card-slot');
@@ -699,7 +743,10 @@ export function initBlackjackClient(): void {
 
 				playerValueEl.textContent = '';
 				const activeHand = state.playerHands[state.activeHandIndex];
-				currentBetEl.textContent = `Hand ${state.activeHandIndex + 1} Bet: $${activeHand.bet}`;
+				currentBetEl.textContent = t('handBet', {
+					number: formatWholeNumber(state.activeHandIndex + 1, locale),
+					amount: formatAmount(activeHand.bet),
+				});
 			} else {
 				// Single hand - show single container, hide split
 				singleHandContainer?.classList.remove('hidden');
@@ -709,7 +756,7 @@ export function initBlackjackClient(): void {
 				const playerHand = state.playerHands[0];
 				renderCardsToContainer('player-cards', playerHand.cards, { showPlaceholders: 2 });
 				playerValueEl.textContent = getHandValueDisplay(playerHand.cards);
-				currentBetEl.textContent = `Current Bet: $${playerHand.bet}`;
+				currentBetEl.textContent = t('currentBet', { amount: formatAmount(playerHand.bet) });
 			}
 		} else {
 			// Show placeholders when no cards dealt
@@ -718,7 +765,7 @@ export function initBlackjackClient(): void {
 			splitHandsContainer?.classList.remove('flex');
 			clearCardsContainer('player-cards', 2);
 			playerValueEl.textContent = '-';
-			currentBetEl.textContent = 'Current Bet: $0';
+			currentBetEl.textContent = t('currentBet', { amount: formatAmount(0) });
 		}
 
 		// Render dealer hand
@@ -743,7 +790,7 @@ export function initBlackjackClient(): void {
 		}
 
 		// Update balance
-		balanceDisplay.textContent = `$${game.getBalance().toLocaleString()}`;
+		balanceDisplay.textContent = formatAmount(game.getBalance());
 
 		// Update button states with dynamic tooltips
 		const actions = game.getAvailableActions();
@@ -755,7 +802,7 @@ export function initBlackjackClient(): void {
 		// Double-down button with explanatory tooltip
 		btnDouble.disabled = !actions.includes('double-down');
 		if (actionInfo.doubleDown.available) {
-			btnDouble.title = 'Double your bet and receive one card';
+			btnDouble.title = t('doubleTip');
 		} else if (actionInfo.doubleDown.reason) {
 			btnDouble.title = actionInfo.doubleDown.reason;
 		}
@@ -763,7 +810,7 @@ export function initBlackjackClient(): void {
 		// Split button with explanatory tooltip
 		btnSplit.disabled = !actions.includes('split');
 		if (actionInfo.split.available) {
-			btnSplit.title = 'Split your pair into two hands';
+			btnSplit.title = t('splitTip');
 		} else if (actionInfo.split.reason) {
 			btnSplit.title = actionInfo.split.reason;
 		}
@@ -776,7 +823,7 @@ export function initBlackjackClient(): void {
 		const outcomes = game.settleRound();
 
 		// Aggregate outcomes for split hands
-		const message = formatOutcomeMessage(outcomes);
+		const message = formatBlackjackOutcomeMessage(outcomes, locale);
 		statusEl.textContent = message;
 
 		// Hide advice box and clear highlights

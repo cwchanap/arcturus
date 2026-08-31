@@ -4,8 +4,13 @@ import PokerChip from '../../components/PokerChip.astro';
 import CardContainer from '../../components/CardContainer.astro';
 import SplitHandsContainer from '../../components/SplitHandsContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { blackjackTranslator } from '../../lib/i18n/messages/blackjack';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChipBalance } from '../../lib/formatting';
 
 const user = Astro.locals.user;
+const locale = Astro.locals.locale;
+const t = blackjackTranslator(locale);
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
 // Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
@@ -13,7 +18,7 @@ const initialBalance = gameSession.initialBalance;
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title="Blackjack - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'blackjack') })}>
 	<div
 		id="blackjack-root"
 		data-user-id={clientUserId}
@@ -28,14 +33,14 @@ const clientUserId = gameSession.clientUserId;
 					href="/games"
 					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
-					← Back to Games
+					← {t('backToGames')}
 				</a>
 				<div class="flex flex-wrap items-center gap-3">
-					<h1 class="deco-section-title text-4xl">Blackjack</h1>
+					<h1 class="deco-section-title text-4xl">{getGameName(locale, 'blackjack')}</h1>
 					<span
 						class="rounded-full border border-[var(--deco-line)] bg-[var(--deco-obsidian-3)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-muted)]"
 					>
-						Casual
+						{t('casual')}
 					</span>
 				</div>
 				{
@@ -45,7 +50,7 @@ const clientUserId = gameSession.clientUserId;
 							data-testid="ranked-blackjack-link"
 							class="mt-3 inline-flex items-center rounded-lg border border-[var(--deco-brass-dim)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)] transition-colors hover:border-[var(--deco-brass)] hover:text-[var(--deco-brass-bright)]"
 						>
-							Play server-verified Ranked Blackjack →
+							{t('playRanked', { game: getGameName(locale, 'blackjack-ranked') })}
 						</a>
 					) : (
 						<a
@@ -53,7 +58,7 @@ const clientUserId = gameSession.clientUserId;
 							data-testid="ranked-blackjack-signin"
 							class="mt-3 inline-flex items-center rounded-lg border border-[var(--deco-line)] px-4 py-2 text-sm text-[var(--deco-muted)] transition-colors hover:border-[var(--deco-brass-dim)] hover:text-[var(--deco-brass)]"
 						>
-							Ranked Blackjack requires an account — sign in
+							{t('rankedRequiresAccount', { game: getGameName(locale, 'blackjack-ranked') })}
 						</a>
 					)
 				}
@@ -62,7 +67,7 @@ const clientUserId = gameSession.clientUserId;
 					data-testid="daily-challenge-link"
 					class="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-[var(--deco-brass)] transition-colors hover:text-[var(--deco-brass-bright)]"
 				>
-					Try today&rsquo;s Daily Challenge →
+					{t('tryDailyChallenge')}
 				</a>
 			</div>
 			<div class="flex items-center gap-4">
@@ -71,7 +76,7 @@ const clientUserId = gameSession.clientUserId;
 				>
 					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="player-balance">
-						{`$${initialBalance.toLocaleString()}`}
+						{t('amount', { amount: formatChipBalance(initialBalance, locale) })}
 					</div>
 				</div>
 			</div>
@@ -87,7 +92,7 @@ const clientUserId = gameSession.clientUserId;
 					id="game-status"
 					class="text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] backdrop-blur-sm px-8 py-3 rounded-full border-2 border-[var(--deco-brass)] shadow-lg"
 				>
-					Place your bet to start
+					{t('placeBet')}
 				</div>
 			</div>
 
@@ -97,7 +102,9 @@ const clientUserId = gameSession.clientUserId;
 					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm p-3 rounded-2xl border border-[var(--deco-line)]"
 				>
 					<div class="text-center mb-1">
-						<div class="text-xs text-[var(--deco-muted)] uppercase tracking-wider">Dealer</div>
+						<div class="text-xs text-[var(--deco-muted)] uppercase tracking-wider">
+							{t('dealer')}
+						</div>
 						<div
 							id="dealer-value"
 							class="inline-block text-lg font-bold text-[var(--deco-ivory)] bg-[var(--deco-obsidian)] px-3 py-0.5 rounded-full"
@@ -115,7 +122,9 @@ const clientUserId = gameSession.clientUserId;
 					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm p-3 rounded-2xl border-2 border-[var(--deco-brass-dim)]"
 				>
 					<div class="text-center mb-1">
-						<div class="text-xs text-[var(--deco-muted)] uppercase tracking-wider">Your Hand</div>
+						<div class="text-xs text-[var(--deco-muted)] uppercase tracking-wider">
+							{t('yourHand')}
+						</div>
 						<div id="player-value" class="text-xl font-bold text-[var(--deco-brass)]">-</div>
 					</div>
 					<!-- Single hand container -->
@@ -126,7 +135,7 @@ const clientUserId = gameSession.clientUserId;
 					<SplitHandsContainer id="player-cards-split" maxHands={4} maxCardsPerHand={10} />
 					<div class="text-center mt-1">
 						<div id="current-bet" class="text-sm text-[var(--deco-brass)] font-medium">
-							Current Bet: $0
+							{t('currentBet', { amount: t('amount', { amount: 0 }) })}
 						</div>
 					</div>
 				</div>
@@ -139,12 +148,12 @@ const clientUserId = gameSession.clientUserId;
 				<!-- Betting Controls -->
 				<div id="betting-controls">
 					<h3 class="text-lg font-bold text-[var(--deco-ivory)] mb-4 text-center">
-						Place Your Bet
+						{t('placeYourBet')}
 					</h3>
 					<div class="space-y-4">
 						<div>
 							<label for="bet-amount" class="block text-sm text-[var(--deco-muted)] mb-2"
-								>Bet Amount</label
+								>{t('betAmount')}</label
 							>
 							<input
 								type="number"
@@ -185,15 +194,17 @@ const clientUserId = gameSession.clientUserId;
 						<button
 							id="btn-deal"
 							class="w-full btn-gold py-4 rounded-lg font-bold text-lg"
-							aria-label="Deal"
+							aria-label={t('dealAriaLabel')}
 						>
-							DEAL CARDS
+							{t('dealButton')}
 						</button>
 					</div>
 				</div>
 				<!-- Game Controls (Hidden Initially) -->
 				<div id="game-controls" class="hidden">
-					<h3 class="text-lg font-bold text-[var(--deco-ivory)] mb-4 text-center">Your Move</h3>
+					<h3 class="text-lg font-bold text-[var(--deco-ivory)] mb-4 text-center">
+						{t('yourMove')}
+					</h3>
 					<div class="space-y-3">
 						<div class="grid grid-cols-2 gap-3">
 							<button
@@ -201,31 +212,31 @@ const clientUserId = gameSession.clientUserId;
 								class="bg-[var(--deco-sapphire)] text-white font-bold py-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
 							>
 								<span class="text-xl">👆</span>
-								<span>HIT</span>
+								<span>{t('hitButton')}</span>
 							</button>
 							<button
 								id="btn-stand"
 								class="bg-[var(--deco-jade)] text-white font-bold py-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
 							>
 								<span class="text-xl">✋</span>
-								<span>STAND</span>
+								<span>{t('standButton')}</span>
 							</button>
 							<button
 								id="btn-double"
 								class="bg-[var(--deco-amethyst)] text-white font-bold py-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
-								title="Double your bet and receive one card"
-								aria-label="Double Down"
+								title={t('doubleTip')}
+								aria-label={t('doubleAriaLabel')}
 							>
 								<span class="text-xl">💰</span>
-								<span>DOUBLE</span>
+								<span>{t('doubleButton')}</span>
 							</button>
 							<button
 								id="btn-split"
 								class="bg-[var(--deco-brass-dim)] text-white font-bold py-4 rounded-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2"
-								title="Split your pair into two hands"
+								title={t('splitTip')}
 							>
 								<span class="text-xl">✌️</span>
-								<span>SPLIT</span>
+								<span>{t('splitButton')}</span>
 							</button>
 						</div>
 
@@ -233,7 +244,7 @@ const clientUserId = gameSession.clientUserId;
 							id="btn-new-round"
 							class="hidden w-full btn-gold py-4 rounded-lg font-bold text-lg mt-4"
 						>
-							NEW ROUND
+							{t('newRoundButton')}
 						</button>
 					</div>
 				</div>
@@ -244,18 +255,18 @@ const clientUserId = gameSession.clientUserId;
 				<div class="bg-[var(--deco-obsidian)] rounded-lg border border-[var(--deco-line)] p-4">
 					<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 						<div>
-							<div class="text-sm text-[var(--deco-muted)] mb-1">AI Strategy Advisor</div>
+							<div class="text-sm text-[var(--deco-muted)] mb-1">{t('aiAdvisor')}</div>
 							<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-								Local strategy advice is available in every mode.
+								{t('aiAdvisorHint')}
 							</div>
 						</div>
 						<button
 							id="btn-ai-rival"
 							class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-jade)] to-[var(--deco-emerald)] px-5 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-							title="Get AI strategy advice"
+							title={t('aiAdvisorTitle')}
 						>
 							<span>🤖</span>
-							<span id="btn-ai-rival-text">Ask AI Rival</span>
+							<span id="btn-ai-rival-text">{t('askAiRival')}</span>
 						</button>
 					</div>
 					<div
@@ -277,33 +288,31 @@ const clientUserId = gameSession.clientUserId;
 		<!-- Game Info -->
 		<div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">🎯 Game Rules</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('gameRules')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• Beat the dealer by getting closer to 21</li>
-					<li>• Face cards are worth 10</li>
-					<li>• Aces are worth 1 or 11</li>
-					<li>• Going over 21 means you bust</li>
+					<li>{t('ruleBeatDealer')}</li>
+					<li>{t('ruleFaceCards')}</li>
+					<li>{t('ruleAces')}</li>
+					<li>{t('ruleBust')}</li>
 				</ul>
 			</div>
 
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">🃏 Actions</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('actions')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• <span class="text-[var(--deco-sapphire)]">Hit</span> - Take another card</li>
-					<li>• <span class="text-[var(--deco-jade)]">Stand</span> - Keep your hand</li>
-					<li>• <span class="text-[var(--deco-amethyst)]">Double</span> - Double bet, one card</li>
-					<li>
-						• <span class="text-[var(--deco-brass-bright)]">Split</span> - Split matching cards
-					</li>
+					<li>{t('actionHitLine', { action: t('hit') })}</li>
+					<li>{t('actionStandLine', { action: t('stand') })}</li>
+					<li>{t('actionDoubleLine', { action: t('doubleDown') })}</li>
+					<li>{t('actionSplitLine', { action: t('split') })}</li>
 				</ul>
 			</div>
 
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">💰 Payouts</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('payouts')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• Blackjack pays 3:2</li>
-					<li>• Regular win pays 1:1</li>
-					<li>• Push returns your bet</li>
+					<li>{t('payoutBlackjack')}</li>
+					<li>{t('payoutWin')}</li>
+					<li>{t('payoutPush')}</li>
 				</ul>
 			</div>
 		</div>
@@ -315,24 +324,24 @@ const clientUserId = gameSession.clientUserId;
 				class="w-full bg-[var(--deco-obsidian-2)] hover:bg-[var(--deco-obsidian-3)] text-[var(--deco-ivory-dim)] font-semibold py-3 px-6 rounded-lg transition-colors border border-[var(--deco-line)] flex items-center justify-center gap-2"
 			>
 				<span>⚙️</span>
-				<span>Game Settings</span>
+				<span>{t('gameSettings')}</span>
 			</button>
 
 			<div
 				id="settings-panel"
 				class="hidden mt-4 bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]"
 			>
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">⚙️ Game Settings</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('gameSettings')}</h3>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 					<!-- Betting Limits -->
 					<div class="space-y-4">
 						<h4 class="text-sm font-semibold text-[var(--deco-muted)] uppercase tracking-wide">
-							Betting Limits
+							{t('bettingLimits')}
 						</h4>
 						<div>
 							<label
 								for="setting-starting-chips"
-								class="block text-sm text-[var(--deco-muted)] mb-1">Starting Chips</label
+								class="block text-sm text-[var(--deco-muted)] mb-1">{t('startingChips')}</label
 							>
 							<input
 								type="number"
@@ -345,7 +354,7 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div>
 							<label for="setting-min-bet" class="block text-sm text-[var(--deco-muted)] mb-1"
-								>Minimum Bet</label
+								>{t('minimumBet')}</label
 							>
 							<input
 								type="number"
@@ -358,7 +367,7 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div>
 							<label for="setting-max-bet" class="block text-sm text-[var(--deco-muted)] mb-1"
-								>Maximum Bet</label
+								>{t('maximumBet')}</label
 							>
 							<input
 								type="number"
@@ -374,19 +383,19 @@ const clientUserId = gameSession.clientUserId;
 					<!-- Game Options -->
 					<div class="space-y-4">
 						<h4 class="text-sm font-semibold text-[var(--deco-muted)] uppercase tracking-wide">
-							Game Options
+							{t('gameOptions')}
 						</h4>
 						<div>
 							<label for="setting-dealer-speed" class="block text-sm text-[var(--deco-muted)] mb-1"
-								>Dealer Speed</label
+								>{t('dealerSpeed')}</label
 							>
 							<select
 								id="setting-dealer-speed"
 								class="w-full bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded-lg px-4 py-2 text-[var(--deco-ivory)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="slow">Slow (1.5s)</option>
-								<option value="normal" selected>Normal (1s)</option>
-								<option value="fast">Fast (0.5s)</option>
+								<option value="slow">{t('dealerSpeedSlow')}</option>
+								<option value="normal" selected>{t('dealerSpeedNormal')}</option>
+								<option value="fast">{t('dealerSpeedFast')}</option>
 							</select>
 						</div>
 					</div>
@@ -398,13 +407,13 @@ const clientUserId = gameSession.clientUserId;
 						id="btn-save-settings"
 						class="flex-1 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] font-bold py-3 px-6 rounded-lg transition-all"
 					>
-						Save Settings
+						{t('saveSettings')}
 					</button>
 					<button
 						id="btn-reset-settings"
 						class="flex-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] font-bold py-3 px-6 rounded-lg transition-colors border border-[var(--deco-line)]"
 					>
-						Reset to Defaults
+						{t('resetToDefaults')}
 					</button>
 				</div>
 			</div>
@@ -422,7 +431,9 @@ const clientUserId = gameSession.clientUserId;
 	>
 		<span id="achievement-icon" class="text-3xl">🏆</span>
 		<div>
-			<p class="text-xs font-semibold uppercase tracking-wider opacity-80">Achievement Unlocked</p>
+			<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
+				{t('achievementUnlocked')}
+			</p>
 			<p id="achievement-name" class="font-bold text-lg">Achievement Name</p>
 		</div>
 	</div>
@@ -603,7 +614,7 @@ const clientUserId = gameSession.clientUserId;
 	const achievementIcon = document.getElementById('achievement-icon');
 	const achievementName = document.getElementById('achievement-name');
 
-	let enqueue: (achievements: Array<{ id: string; name: string; icon: string }>) => void;
+	let enqueue: (achievements: Array<{ id: string; icon: string }>) => void;
 
 	if (achievementToast && achievementIcon && achievementName) {
 		const controller = initAchievementToast(() => ({
@@ -619,7 +630,7 @@ const clientUserId = gameSession.clientUserId;
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{
-			achievements: Array<{ id: string; name: string; icon: string }>;
+			achievements: Array<{ id: string; icon: string }>;
 		}>;
 		const { achievements } = customEvent.detail;
 		// Validate achievements is an array before calling enqueue

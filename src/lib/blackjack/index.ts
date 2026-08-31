@@ -53,7 +53,6 @@ export {
 } from './handEvaluator';
 export { shouldDealerHit, shouldDealerStand } from './dealerStrategy';
 export { BlackjackGame } from './BlackjackGame';
-export { BlackjackUIRenderer } from './BlackjackUIRenderer';
 
 // LLM Strategy
 export {

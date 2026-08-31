@@ -67,3 +67,26 @@ export function formatChipBalanceWithDecimals(
 		maximumFractionDigits: maxDigits,
 	}).format(value);
 }
+
+/**
+ * Whole-dollar US presentation used by the Daily Challenge bankroll surface.
+ * Named explicitly so callers opt in; virtual chip amounts must keep using
+ * `formatChips()` / `formatChipBalance()` instead.
+ */
+export function formatUsd(value: number, locale: Locale = 'en'): string {
+	return new Intl.NumberFormat(locale, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 0,
+	}).format(value);
+}
+
+/** Locale-aware short date, e.g. "Jan 5, 2026" (en). */
+export function formatShortDate(value: Date, locale: Locale = 'en'): string {
+	return new Intl.DateTimeFormat(locale, {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+	}).format(value);
+}

@@ -7,7 +7,6 @@ import {
 	createDailyRunRenderer,
 	DAILY_LEADERBOARD_PATH_PREFIX,
 	DAILY_WEEKLY_LEADERBOARD_PATH,
-	formatPoints,
 	initDailyChallengePage,
 	parseWeeklyLeaderboardView,
 	type DailyLeaderboardView,
@@ -15,6 +14,7 @@ import {
 	type DailyRunState,
 	type WeeklyLeaderboardView,
 } from './daily-ui';
+import { formatUsd } from '../formatting';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -47,16 +47,7 @@ const RUN_ID = 'abcdefghijklmnopqrstuv';
 const SEED_A = new Uint8Array(32).fill(0x11);
 const SEED_B = new Uint8Array(32).fill(0x22);
 
-const CURRENCY = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 0,
-	maximumFractionDigits: 0,
-});
-
-function formatCurrency(value: number): string {
-	return CURRENCY.format(value);
-}
+const formatCurrency = (value: number): string => formatUsd(value);
 
 function roundLabel(roundsCompleted: number): string {
 	const roundCount = DAILY_RUN_CONFIG.roundCount;
@@ -286,10 +277,6 @@ afterEach(() => {
 });
 
 describe('weekly leaderboard view model', () => {
-	test('formats points with grouped thousands', () => {
-		expect(formatPoints(3450)).toBe('3,450');
-	});
-
 	test('parses the weekly leaderboard response without totalRounds', () => {
 		expect(parseWeeklyLeaderboardView(WEEKLY_LEADERBOARD_PAYLOAD)).toEqual({
 			entries: [

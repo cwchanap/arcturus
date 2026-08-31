@@ -11,7 +11,6 @@ export type ThreeCardHandCategory =
 
 export interface ThreeCardHandEvaluation {
 	category: ThreeCardHandCategory;
-	label: string;
 	tieBreakers: readonly number[];
 }
 

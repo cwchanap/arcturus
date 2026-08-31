@@ -43,21 +43,3 @@ export function validateBetCode(
 	}
 	return null;
 }
-
-/**
- * Legacy English wrapper kept only for unmigrated callers. Migrated games use
- * {@link validateBetCode} and translate the code themselves; delete this
- * function once every caller has migrated.
- *
- * @param amount - The bet amount to validate
- * @param minBet - The minimum allowed bet
- * @param maxBet - The maximum allowed bet
- * @returns Error message if invalid, null if valid
- */
-export function validateBet(amount: number, minBet: number, maxBet: number): string | null {
-	const code = validateBetCode(amount, minBet, maxBet);
-	if (code === 'invalid-limits') return 'Invalid bet limits';
-	if (code === 'invalid-range') return 'Invalid bet range';
-	if (code === 'out-of-range') return `Bet must be between ${minBet} and ${maxBet} chips`;
-	return null;
-}

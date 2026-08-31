@@ -3,7 +3,7 @@ import {
 	blackjackRunPublicStateSchema,
 	type BlackjackRunPublicState,
 } from '../src/lib/blackjack-run/protocol';
-import { formatPoints } from '../src/lib/blackjack-run/daily-ui';
+import { formatWholeNumber } from '../src/lib/formatting';
 import { createIsolatedPage } from './isolated-page';
 
 /**
@@ -532,7 +532,7 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 
 			const standing = weekly.currentUser!;
 			await expect(page.getByTestId('daily-challenge-weekly-current-standing')).toHaveText(
-				`#${standing.rank} of ${standing.totalEligible} · ${formatPoints(standing.weeklyScore)} pts · 1/7 days`,
+				`#${standing.rank} of ${standing.totalEligible} · ${formatWholeNumber(standing.weeklyScore)} pts · 1/7 days`,
 			);
 			if (standing.rank <= 50) {
 				// Row text is `#rank playerName score pts · N/7 days`; rank and score
@@ -540,7 +540,7 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 				const matchingRows = await page
 					.getByTestId('daily-challenge-weekly-leaderboard-row')
 					.filter({ hasText: `#${standing.rank} ` })
-					.filter({ hasText: `${formatPoints(standing.weeklyScore)} pts · 1/7 days` })
+					.filter({ hasText: `${formatWholeNumber(standing.weeklyScore)} pts · 1/7 days` })
 					.count();
 				expect(matchingRows).toBeGreaterThanOrEqual(1);
 			}

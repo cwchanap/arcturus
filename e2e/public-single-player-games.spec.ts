@@ -93,7 +93,7 @@ test.describe('public single-player games', () => {
 			await expect(page).toHaveURL(new RegExp(`${game.path}$`));
 			await expect(page.getByRole('heading', { name: game.heading })).toBeVisible();
 			await expect(page.locator(game.rootSelector)).toHaveAttribute('data-guest-mode', 'true');
-			await expect(page.locator(game.balanceSelector)).toContainText('$1,000');
+			await expect(page.locator(game.balanceSelector)).toContainText('1,000 chips');
 			await expect(page.getByText('Guest Balance')).toBeVisible();
 
 			if (game.metadataTarget === 'balance') {
@@ -227,11 +227,11 @@ test.describe('public single-player games', () => {
 
 		await expect(page.locator('#btn-new-round')).toBeVisible({ timeout: 10000 });
 		await expect(page.locator('#game-status')).toContainText('BLACKJACK');
-		// Assert a valid currency string rather than an exact balance — the
-		// exact dollar value is incidental to the deterministic shuffle and
+		// Assert a valid chip-amount string rather than an exact balance — the
+		// exact chip value is incidental to the deterministic shuffle and
 		// would break on any shuffle refactor. The meaningful invariants are
 		// the BLACKJACK outcome above and the no-wallet-settlement assertion below.
-		await expect(page.locator('#player-balance')).toHaveText(/\$\d[\d,]*/);
+		await expect(page.locator('#player-balance')).toHaveText(/\d[\d,]* chips/);
 		// Deterministically wait for network to settle before asserting no wallet
 		// settlement requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
@@ -280,7 +280,7 @@ test.describe('public single-player games', () => {
 		await page.goto('/games/craps', { waitUntil: 'domcontentloaded' });
 
 		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.locator('#chip-balance')).toHaveText('$1,025');
+		await expect(page.locator('#chip-balance')).toHaveText('1,025 chips');
 		// Deterministically wait for network to settle before asserting no chip
 		// sync requests fire, instead of a fixed sleep.
 		await page.waitForLoadState('networkidle');
@@ -305,7 +305,7 @@ test.describe('public single-player games', () => {
 		await page.goto('/games/craps', { waitUntil: 'domcontentloaded' });
 
 		await expect(page.locator('#craps-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.locator('#chip-balance')).toHaveText('$850');
+		await expect(page.locator('#chip-balance')).toHaveText('850 chips');
 		await page.waitForLoadState('networkidle');
 		expect(settlementRequests).toEqual([]);
 	});

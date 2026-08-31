@@ -92,7 +92,6 @@ export interface RollResult {
 	point: PointNumber | null; // Game point AFTER this roll
 	evaluations: BetEvaluation[];
 	netDelta: number; // Total chips won (+) or lost (-) from resolved bets this roll
-	message: string; // Human-readable description of what happened
 }
 
 export interface CrapsSettings {

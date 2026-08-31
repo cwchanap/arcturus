@@ -1,4 +1,4 @@
-import { BlackjackGame } from './BlackjackGame';
+import { BlackjackGame, type BlackjackActionUnavailableReason } from './BlackjackGame';
 import { GameSettingsManager } from './GameSettingsManager';
 import {
 	getBlackjackAdvice,
@@ -802,9 +802,30 @@ export function initBlackjackClient(): void {
 		// Update balance
 		balanceDisplay.textContent = formatAmount(game.getBalance());
 
-		// Update button states with dynamic tooltips
+		// Update button states with dynamic tooltips. The domain reports
+		// unavailability as language-neutral reason codes; translate them here
+		// at the presentation boundary.
 		const actions = game.getAvailableActions();
 		const actionInfo = game.getActionAvailability();
+		const unavailableLabel = (
+			reason: BlackjackActionUnavailableReason | undefined,
+			needed: number | undefined,
+		): string => {
+			switch (reason) {
+				case 'not-your-turn':
+					return t('tooltipNotYourTurn');
+				case 'first-two-cards-only':
+					return t('tooltipFirstTwoCards');
+				case 'hand-total-9-11-only':
+					return t('tooltipHandTotalNineToEleven');
+				case 'not-enough-chips':
+					return t('tooltipNotEnoughChips', { amount: formatAmount(needed ?? 0) });
+				case 'matching-pairs-only':
+					return t('tooltipMatchingPairs');
+				default:
+					return '';
+			}
+		};
 
 		btnHit.disabled = !actions.includes('hit');
 		btnStand.disabled = !actions.includes('stand');
@@ -813,16 +834,19 @@ export function initBlackjackClient(): void {
 		btnDouble.disabled = !actions.includes('double-down');
 		if (actionInfo.doubleDown.available) {
 			btnDouble.title = t('doubleTip');
-		} else if (actionInfo.doubleDown.reason) {
-			btnDouble.title = actionInfo.doubleDown.reason;
+		} else {
+			btnDouble.title = unavailableLabel(
+				actionInfo.doubleDown.reason,
+				actionInfo.doubleDown.needed,
+			);
 		}
 
 		// Split button with explanatory tooltip
 		btnSplit.disabled = !actions.includes('split');
 		if (actionInfo.split.available) {
 			btnSplit.title = t('splitTip');
-		} else if (actionInfo.split.reason) {
-			btnSplit.title = actionInfo.split.reason;
+		} else {
+			btnSplit.title = unavailableLabel(actionInfo.split.reason, actionInfo.split.needed);
 		}
 	}
 

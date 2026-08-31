@@ -697,9 +697,9 @@ describe('BlackjackGame', () => {
 			// Before deal - in betting phase
 			const info = game.getActionAvailability();
 			expect(info.doubleDown.available).toBe(false);
-			expect(info.doubleDown.reason).toBe('Not your turn');
+			expect(info.doubleDown.reason).toBe('not-your-turn');
 			expect(info.split.available).toBe(false);
-			expect(info.split.reason).toBe('Not your turn');
+			expect(info.split.reason).toBe('not-your-turn');
 		});
 
 		it('should indicate insufficient chips for double-down', () => {
@@ -712,8 +712,8 @@ describe('BlackjackGame', () => {
 			if (state.phase === 'player-turn') {
 				const info = lowBalanceGame.getActionAvailability();
 				// If double-down is not available due to chips, should show chip reason
-				if (!info.doubleDown.available && info.doubleDown.reason?.includes('chips')) {
-					expect(info.doubleDown.reason).toContain('Not enough chips');
+				if (!info.doubleDown.available && info.doubleDown.reason === 'not-enough-chips') {
+					expect(info.doubleDown.needed).toBeGreaterThan(0);
 				}
 			}
 		});
@@ -733,7 +733,8 @@ describe('BlackjackGame', () => {
 						// Found a pair - check that split is disabled due to chips
 						const info = lowBalanceGame.getActionAvailability();
 						expect(info.split.available).toBe(false);
-						expect(info.split.reason).toContain('Not enough chips');
+						expect(info.split.reason).toBe('not-enough-chips');
+						expect(info.split.needed).toBeGreaterThan(0);
 						return; // Test passed
 					}
 				}
@@ -754,11 +755,11 @@ describe('BlackjackGame', () => {
 				const stateAfter = game.getState();
 				if (stateAfter.phase === 'player-turn') {
 					const info = game.getActionAvailability();
-					// Both should show "only available on first two cards"
+					// Both should show the first-two-cards-only reason code
 					expect(info.doubleDown.available).toBe(false);
-					expect(info.doubleDown.reason).toContain('first two cards');
+					expect(info.doubleDown.reason).toBe('first-two-cards-only');
 					expect(info.split.available).toBe(false);
-					expect(info.split.reason).toContain('first two cards');
+					expect(info.split.reason).toBe('first-two-cards-only');
 				}
 			}
 		});

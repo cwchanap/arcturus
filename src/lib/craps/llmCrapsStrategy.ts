@@ -1,11 +1,22 @@
 /**
  * LLM-powered Craps strategy advisor
- * Provides colorful commentary and betting suggestions based on game state
+ * Provides colorful commentary and betting suggestions based on game state.
+ * The suggested-bet recommendation is language-neutral; only the explanation
+ * prose is requested in the player's locale.
  */
 
 import { generateAiJson, type AiResult, type AiSettings } from '../ai';
-import { BET_LABELS } from './constants';
+import { BET_TYPE_SET } from './types';
+import type { Locale } from '../i18n/locale';
 import type { CrapsAdvice, CrapsAdviceContext, BetType, CrapsBet, DiceRoll } from './types';
+
+/** Language hint the prompt passes to the provider. */
+const LOCALE_LANGUAGE: Record<Locale, string> = {
+	en: 'English',
+	'zh-Hant': 'Traditional Chinese',
+	'zh-Hans': 'Simplified Chinese',
+	ja: 'Japanese',
+};
 
 /**
  * Aggregate repeated bets into one entry for the provider prompt.
@@ -78,24 +89,25 @@ function buildPrompt(ctx: CrapsAdviceContext): string {
 		ctx.activeBets.length > 0
 			? ctx.activeBets
 					.map((b) => {
-						const odds = b.odds ? ` +odds:$${b.odds}` : '';
+						const odds = b.odds ? ` +odds:${b.odds} chips` : '';
 						const pt = b.point ? ` @${b.point}` : '';
-						return `${b.type}:$${b.amount}${pt}${odds}`;
+						return `${b.type}: ${b.amount} chips${pt}${odds}`;
 					})
 					.join(', ')
 			: 'None';
 
 	const query = ctx.query ?? 'What should I do next?';
+	const language = ctx.locale ? LOCALE_LANGUAGE[ctx.locale] : 'English';
 
 	return `Craps Session:
 Phase: ${phaseStr}
-Balance: $${ctx.chipBalance}
+Balance: ${ctx.chipBalance} chips
 Active bets: ${betsStr}
 Recent rolls: ${formatRollHistory(ctx.rollHistory)}
 
 Player asks: ${query}
 
-Reply in JSON:
+Respond in ${language}. Reply in JSON:
 {"advice":"<2-3 sentences>","suggestedBets":["passLine"|"come"|"place6"|"place8"|...],"confidence":"low|medium|high"}`;
 }
 
@@ -104,7 +116,7 @@ function parsePayload(payload: Record<string, unknown>): CrapsAdvice {
 	const confidence = payload.confidence;
 	const suggestedBets = Array.isArray(payload.suggestedBets)
 		? payload.suggestedBets.filter(
-				(value): value is BetType => typeof value === 'string' && Object.hasOwn(BET_LABELS, value),
+				(value): value is BetType => typeof value === 'string' && BET_TYPE_SET.has(value),
 			)
 		: [];
 

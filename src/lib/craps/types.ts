@@ -2,6 +2,8 @@
  * Craps game type definitions
  */
 
+import type { Locale } from '../i18n/locale';
+
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
 export type DiceTotal = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
 export type PointNumber = 4 | 5 | 6 | 8 | 9 | 10;
@@ -14,56 +16,57 @@ export interface DiceRoll {
 
 export type GamePhase = 'come-out' | 'point';
 
-// All bet types
-export type BetType =
-	// Line bets (come-out phase only)
-	| 'passLine'
-	| 'dontPass'
-	// Odds bets (point phase only, behind line bets)
-	| 'passLineOdds'
-	| 'dontPassOdds'
-	// Come bets (point phase only)
-	| 'come'
-	| 'dontCome'
-	// Place bets (always available, off during come-out)
-	| 'place4'
-	| 'place5'
-	| 'place6'
-	| 'place8'
-	| 'place9'
-	| 'place10'
-	// Field (always working)
-	| 'field'
-	// Big 6/8 (always working)
-	| 'big6'
-	| 'big8'
-	// Buy bets (off during come-out)
-	| 'buy4'
-	| 'buy5'
-	| 'buy6'
-	| 'buy8'
-	| 'buy9'
-	| 'buy10'
-	// Lay bets (off during come-out)
-	| 'lay4'
-	| 'lay5'
-	| 'lay6'
-	| 'lay8'
-	| 'lay9'
-	| 'lay10'
-	// Hardways (off during come-out)
-	| 'hard4'
-	| 'hard6'
-	| 'hard8'
-	| 'hard10'
-	// Proposition bets (one-roll, always working)
-	| 'any7'
-	| 'anyCraps'
-	| 'aceDeuce'
-	| 'aces'
-	| 'boxcars'
-	| 'yo'
-	| 'ce';
+/**
+ * The complete runtime key source for Craps bet identity. `BetType` is
+ * derived from this list; the handwritten union is gone. These neutral keys
+ * are also the persisted-state vocabulary, so restored bets validate against
+ * this list/set rather than any display labels.
+ */
+export const BET_TYPES = [
+	'passLine',
+	'dontPass',
+	'passLineOdds',
+	'dontPassOdds',
+	'come',
+	'dontCome',
+	'place4',
+	'place5',
+	'place6',
+	'place8',
+	'place9',
+	'place10',
+	'field',
+	'big6',
+	'big8',
+	'buy4',
+	'buy5',
+	'buy6',
+	'buy8',
+	'buy9',
+	'buy10',
+	'lay4',
+	'lay5',
+	'lay6',
+	'lay8',
+	'lay9',
+	'lay10',
+	'hard4',
+	'hard6',
+	'hard8',
+	'hard10',
+	'any7',
+	'anyCraps',
+	'aceDeuce',
+	'aces',
+	'boxcars',
+	'yo',
+	'ce',
+] as const;
+
+export type BetType = (typeof BET_TYPES)[number];
+
+/** Neutral membership set used to validate restored bet types. */
+export const BET_TYPE_SET: ReadonlySet<string> = new Set(BET_TYPES);
 
 export interface CrapsBet {
 	id: string;
@@ -121,6 +124,47 @@ export type CrapsErrorCode =
 	| 'ODDS_BET_REQUIRES_LINE_BET'
 	| 'ODDS_EXCEEDS_LIMIT';
 
+/**
+ * Language-neutral bet placement failure codes. The presentation boundary
+ * translates these; numeric/structured context travels separately in
+ * `CrapsBetContext` (min/max/remaining/multiplier/betType) instead of being
+ * embedded in English sentences.
+ */
+export type CrapsBetErrorCode =
+	| 'invalid-amount'
+	| 'come-out-only'
+	| 'point-only'
+	| 'missing-pass-line'
+	| 'missing-dont-pass'
+	| 'duplicate-pass-line'
+	| 'duplicate-dont-pass'
+	| 'below-minimum'
+	| 'above-maximum'
+	| 'above-max-odds'
+	| 'insufficient-balance';
+
+/** Structured, locale-neutral context for a bet placement failure. */
+export interface CrapsBetContext {
+	min?: number;
+	max?: number;
+	remaining?: number;
+	multiplier?: number;
+	betType?: BetType;
+}
+
+/** Closed result of {@link CrapsGame.canPlaceBet}. */
+export type CrapsBetCheckResult =
+	| { ok: true }
+	| { ok: false; error: CrapsBetErrorCode; context?: CrapsBetContext };
+
+/** Table-operation failures (add come odds / remove bet), beyond placement. */
+export type CrapsTableErrorCode =
+	| 'bet-not-found'
+	| 'not-come-bet'
+	| 'no-come-point'
+	| 'line-bet-locked'
+	| 'come-bet-locked';
+
 export interface CrapsError {
 	code: CrapsErrorCode;
 	message: string;
@@ -134,6 +178,8 @@ export interface CrapsAdviceContext {
 	rollHistory: DiceRoll[];
 	chipBalance: number;
 	query?: string;
+	/** Locale for the explanation prose; the recommendation stays language-neutral. */
+	locale?: Locale;
 }
 
 export interface CrapsAdvice {

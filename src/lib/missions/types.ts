@@ -1,3 +1,20 @@
+/**
+ * Closed mission definition ID set: every mission the product ships. Adding a
+ * mission means adding its ID here first — the registry definitions, the
+ * mission message dictionaries, and the missions page all key off this union.
+ */
+export const MISSION_IDS = [
+	'daily-blackjack-5',
+	'daily-win-3',
+	'daily-slots-20',
+	'daily-craps-3',
+	'daily-baccarat-3',
+	'daily-keno-5',
+	'weekly-games-3',
+] as const;
+
+export type MissionId = (typeof MISSION_IDS)[number];
+
 export type MissionMetric =
 	| { kind: 'handsPlayed'; gameType?: string }
 	| { kind: 'roundsWon'; gameType?: string }
@@ -5,9 +22,7 @@ export type MissionMetric =
 	| { kind: 'gamesTried' };
 
 export interface MissionDefinition {
-	id: string;
-	title: string;
-	description: string;
+	id: MissionId;
 	period: 'daily' | 'weekly';
 	metric: MissionMetric;
 	target: number;
@@ -25,9 +40,7 @@ export interface MissionGameEvent {
 }
 
 export interface MissionView {
-	missionDefId: string;
-	title: string;
-	description: string;
+	missionDefId: MissionId;
 	icon: string;
 	period: 'daily' | 'weekly';
 	progress: number;

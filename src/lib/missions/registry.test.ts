@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MISSION_IDS } from './types';
 import {
 	DEFAULT_DAILY_MISSIONS,
 	REROLL_POOL_DAILY,
@@ -56,6 +57,18 @@ describe('mission registry', () => {
 		const defaultIds = new Set(DEFAULT_DAILY_MISSIONS.map((m) => m.id));
 		for (const m of REROLL_POOL_DAILY) {
 			expect(defaultIds.has(m.id)).toBe(false);
+		}
+	});
+
+	test('every registry definition ID belongs to MISSION_IDS', () => {
+		for (const m of [...ALL_DAILY_DEFINITIONS, ...DEFAULT_WEEKLY_MISSIONS]) {
+			expect(MISSION_IDS).toContain(m.id);
+		}
+	});
+
+	test('every MISSION_IDS value resolves to a definition', () => {
+		for (const id of MISSION_IDS) {
+			expect(getMissionDef(id)).toBeDefined();
 		}
 	});
 

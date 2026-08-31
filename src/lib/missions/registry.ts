@@ -3,8 +3,6 @@ import type { MissionDefinition } from './types';
 export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 	{
 		id: 'daily-blackjack-5',
-		title: 'Blackjack Streak',
-		description: 'Play 5 Blackjack hands',
 		period: 'daily',
 		metric: { kind: 'handsPlayed', gameType: 'blackjack' },
 		target: 5,
@@ -13,8 +11,6 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 	},
 	{
 		id: 'daily-win-3',
-		title: 'Three Wins',
-		description: 'Win 3 rounds in any game',
 		period: 'daily',
 		metric: { kind: 'roundsWon' },
 		target: 3,
@@ -23,8 +19,6 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 	},
 	{
 		id: 'daily-slots-20',
-		title: 'Spin to Win',
-		description: 'Complete 20 slot spins',
 		period: 'daily',
 		metric: { kind: 'spinsCompleted' },
 		target: 20,
@@ -36,8 +30,6 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 export const REROLL_POOL_DAILY: MissionDefinition[] = [
 	{
 		id: 'daily-craps-3',
-		title: 'Dice Roller',
-		description: 'Play 3 Craps rounds',
 		period: 'daily',
 		metric: { kind: 'handsPlayed', gameType: 'craps' },
 		target: 3,
@@ -46,8 +38,6 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 	},
 	{
 		id: 'daily-baccarat-3',
-		title: 'Baccarat Round',
-		description: 'Play 3 Baccarat hands',
 		period: 'daily',
 		metric: { kind: 'handsPlayed', gameType: 'baccarat' },
 		target: 3,
@@ -56,8 +46,6 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 	},
 	{
 		id: 'daily-keno-5',
-		title: 'Lucky Numbers',
-		description: 'Play 5 Keno draws',
 		period: 'daily',
 		metric: { kind: 'handsPlayed', gameType: 'keno' },
 		target: 5,
@@ -69,8 +57,6 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 export const DEFAULT_WEEKLY_MISSIONS: MissionDefinition[] = [
 	{
 		id: 'weekly-games-3',
-		title: 'Variety Seeker',
-		description: 'Play 3 different game modes this week',
 		period: 'weekly',
 		metric: { kind: 'gamesTried' },
 		target: 3,

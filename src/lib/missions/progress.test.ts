@@ -13,9 +13,7 @@ import type { WalletSettlementGate } from '../wallet/types';
 
 function makeDef(id: string, metric: MissionDefinition['metric'], target = 5): MissionDefinition {
 	return {
-		id,
-		title: id,
-		description: '',
+		id: id as MissionDefinition['id'],
 		period: 'daily',
 		metric,
 		target,
@@ -251,9 +249,7 @@ describe('receipt-gated mission progress', () => {
 			fakeD1 as never,
 			'user-id',
 			{
-				id: 'mission',
-				title: 'mission',
-				description: '',
+				id: 'mission' as MissionDefinition['id'],
 				period: 'daily',
 				metric: { kind: 'handsPlayed' },
 				target: 5,

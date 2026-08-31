@@ -1,8 +1,27 @@
 import { setSlotState } from '../card-slot-utils';
 import { createPublicGameSettlementController } from '../wallet';
 import type { Card } from '../cards';
-import { ThreeCardShowdownGame } from './game';
-import type { ThreeCardShowdownRoundResult } from './types';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import {
+	threeCardShowdownTranslator,
+	formatThreeCardShowdownNet,
+	type THREE_CARD_SHOWDOWN_MESSAGES,
+} from '../i18n/messages/three-card-showdown';
+import { formatChips } from '../i18n/messages/common';
+import type { MessageKey } from '../i18n/translate';
+import { ThreeCardShowdownGame, MAX_ANTE, MIN_ANTE } from './game';
+import type { ThreeCardShowdownRoundResult, ThreeCardWagerErrorCode } from './types';
+
+const ANTE_ERROR_KEYS: Record<
+	ThreeCardWagerErrorCode,
+	MessageKey<typeof THREE_CARD_SHOWDOWN_MESSAGES>
+> = {
+	'invalid-limits': 'errorInvalidLimits',
+	'invalid-range': 'errorInvalidRange',
+	'out-of-range': 'errorOutOfRange',
+	'whole-number-required': 'errorWholeNumber',
+	'insufficient-balance': 'errorInsufficientBalance',
+};
 
 function rankLabel(rank: Card['rank']): string {
 	if (rank === 11) return 'J';
@@ -12,19 +31,43 @@ function rankLabel(rank: Card['rank']): string {
 	return String(rank);
 }
 
-function resultText(result: ThreeCardShowdownRoundResult): string {
+function resultText(
+	t: ReturnType<typeof threeCardShowdownTranslator>,
+	locale: Locale,
+	result: ThreeCardShowdownRoundResult,
+): string {
 	switch (result.outcome) {
 		case 'fold':
-			return `Fold · -${result.ante} net`;
+			return t('resultFold', { net: formatThreeCardShowdownNet(locale, -result.ante) });
 		case 'dealer-not-qualified':
-			return `Dealer does not qualify · +${result.ante} net`;
+			return t('resultDealerNotQualified', {
+				net: formatThreeCardShowdownNet(locale, result.ante),
+			});
 		case 'player-win':
-			return `Player wins · +${result.netDelta} net`;
+			return t('resultPlayerWin', {
+				net: formatThreeCardShowdownNet(locale, result.netDelta),
+			});
 		case 'tie':
-			return `Tie · 0 net`;
+			return t('resultTie', { net: formatThreeCardShowdownNet(locale, 0) });
 		case 'dealer-win':
-			return `Dealer wins · ${result.netDelta} net`;
+			return t('resultDealerWin', {
+				net: formatThreeCardShowdownNet(locale, result.netDelta),
+			});
 	}
+}
+
+function anteErrorText(
+	t: ReturnType<typeof threeCardShowdownTranslator>,
+	locale: Locale,
+	code: ThreeCardWagerErrorCode,
+): string {
+	if (code === 'out-of-range') {
+		return t('errorOutOfRange', {
+			min: formatChips(MIN_ANTE, locale),
+			max: formatChips(MAX_ANTE, locale),
+		});
+	}
+	return t(ANTE_ERROR_KEYS[code]);
 }
 
 /**
@@ -37,6 +80,9 @@ export function initThreeCardShowdownClient(): void {
 	if (typeof window === 'undefined') return;
 	const root = document.getElementById('three-card-showdown-root');
 	if (!root) return;
+
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = threeCardShowdownTranslator(locale);
 
 	const statusEl = document.getElementById('three-card-showdown-status');
 	const resultEl = document.getElementById('three-card-showdown-result');
@@ -98,7 +144,7 @@ export function initThreeCardShowdownClient(): void {
 		}
 
 		if (resultEl) {
-			resultEl.textContent = state.result ? resultText(state.result) : '';
+			resultEl.textContent = state.result ? resultText(t, locale, state.result) : '';
 		}
 
 		if (statusEl) {
@@ -107,11 +153,11 @@ export function initThreeCardShowdownClient(): void {
 			} else if (anteMessage) {
 				statusEl.textContent = anteMessage;
 			} else if (state.phase === 'betting') {
-				statusEl.textContent = 'Choose an ante, then deal.';
+				statusEl.textContent = t('chooseAnte');
 			} else if (state.phase === 'decision') {
-				statusEl.textContent = 'Dealt. Fold or play your hand.';
+				statusEl.textContent = t('dealt');
 			} else {
-				statusEl.textContent = 'Round complete. Start a new round when ready.';
+				statusEl.textContent = t('roundComplete');
 			}
 		}
 	}
@@ -120,12 +166,12 @@ export function initThreeCardShowdownClient(): void {
 		gameKey: 'three-card-showdown',
 		root,
 		recoveryHost,
-		resetLabel: 'Reset round',
+		resetLabel: t('resetRound'),
 		messages: {
-			failed: 'Settlement failed. Retry or reset before starting another round.',
-			retrying: 'Retrying settlement...',
-			retryFailed: 'Settlement failed again. Retry or reset before starting another round.',
-			retryLabel: 'Retry settlement',
+			failed: t('settlementFailed'),
+			retrying: t('retryingSettlement'),
+			retryFailed: t('settlementRetryFailed'),
+			retryLabel: t('retrySettlement'),
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),
@@ -143,7 +189,7 @@ export function initThreeCardShowdownClient(): void {
 			const ante = Number(button.dataset.ante);
 			const error = game.getAnteError(ante);
 			if (error) {
-				anteMessage = error;
+				anteMessage = anteErrorText(t, locale, error);
 				render();
 				return;
 			}
@@ -157,7 +203,7 @@ export function initThreeCardShowdownClient(): void {
 		if (game.getState().phase !== 'betting') return;
 		const error = game.getAnteError(game.getState().ante);
 		if (error) {
-			anteMessage = error;
+			anteMessage = anteErrorText(t, locale, error);
 			render();
 			return;
 		}

@@ -77,7 +77,7 @@ test.describe('Video Poker guest', () => {
 
 		await expect(page.locator('#video-poker-action')).toHaveText('New Round');
 		await expect(page.locator('#video-poker-result')).toHaveText(
-			'Straight Flush: 100 chips (+98 net)',
+			'Straight Flush: 100 chips (+98 chips)',
 		);
 		await expect(page.getByTestId('chip-balance')).toContainText('1,098');
 
@@ -106,7 +106,7 @@ test.describe('Video Poker guest', () => {
 		await page.locator('#video-poker-action').click(); // Draw
 
 		await expect(page.locator('#video-poker-action')).toHaveText('New Round');
-		await expect(page.locator('#video-poker-result')).toHaveText('No Win: 0 chips (-2 net)');
+		await expect(page.locator('#video-poker-result')).toHaveText('No Win: 0 chips (−2 chips)');
 		await expect(page.getByTestId('chip-balance')).toContainText('998');
 
 		await page.locator('#video-poker-action').click(); // New Round

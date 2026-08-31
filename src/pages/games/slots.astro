@@ -1,15 +1,21 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChipBalance } from '../../lib/formatting';
+import { slotsTranslator, getSlotsSymbolLabel } from '../../lib/i18n/messages/slots';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChips } from '../../lib/i18n/messages/common';
 import { BET_INCREMENTS, PAYTABLE, SYMBOL_ORDER, SYMBOLS } from '../../lib/slots/constants';
 
+const locale = Astro.locals.locale;
+const t = slotsTranslator(locale);
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title="Slots - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'slots') })}>
 	<div
 		id="slots-root"
 		data-testid="slots-root"
@@ -25,11 +31,11 @@ const clientUserId = gameSession.clientUserId;
 					href="/games"
 					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
-					← Back to Games
+					← {t('backToGames')}
 				</a>
-				<h1 class="deco-section-title text-4xl">Slots</h1>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'slots')}</h1>
 				<p class="text-[var(--deco-muted)] text-sm mt-1">
-					100% free virtual chips — no real money.
+					{t('freeChips')}
 				</p>
 			</div>
 			<div
@@ -41,7 +47,7 @@ const clientUserId = gameSession.clientUserId;
 					id="chip-balance"
 					data-testid="chip-balance"
 				>
-					{initialBalance.toLocaleString()}
+					{formatChipBalance(initialBalance, locale)}
 				</div>
 			</div>
 		</div>
@@ -55,7 +61,7 @@ const clientUserId = gameSession.clientUserId;
 						data-testid="game-status"
 						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] px-6 py-2 rounded-full border border-[var(--deco-brass)] z-10"
 					>
-						Place your bet
+						{t('placeYourBet')}
 					</div>
 
 					<div
@@ -65,7 +71,7 @@ const clientUserId = gameSession.clientUserId;
 						aria-live="polite"
 						class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6"
 					>
-						Spin to play
+						{t('spinToPlay')}
 					</div>
 
 					<!-- Reel window -->
@@ -106,11 +112,11 @@ const clientUserId = gameSession.clientUserId;
 					class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 sm:p-6 border border-[var(--deco-line)]"
 				>
 					<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-						<span class="text-[var(--deco-muted)] text-sm">Bet per spin</span>
+						<span class="text-[var(--deco-muted)] text-sm">{t('betPerSpin')}</span>
 						<span
 							class="text-xl font-bold text-[var(--deco-brass)]"
 							id="current-bet"
-							data-testid="current-bet">1</span
+							data-testid="current-bet">{formatChips(BET_INCREMENTS[0], locale)}</span
 						>
 					</div>
 					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips" data-testid="bet-chips">
@@ -122,7 +128,7 @@ const clientUserId = gameSession.clientUserId;
 									data-bet={amount}
 									aria-pressed={i === 0 ? 'true' : 'false'}
 								>
-									{amount}
+									{formatChips(amount, locale)}
 								</button>
 							))
 						}
@@ -133,7 +139,7 @@ const clientUserId = gameSession.clientUserId;
 						data-testid="btn-spin"
 						class="btn-gold w-full py-4 text-lg font-bold rounded-xl"
 					>
-						Spin
+						{t('spin')}
 					</button>
 				</div>
 			</div>
@@ -141,7 +147,7 @@ const clientUserId = gameSession.clientUserId;
 			<!-- Sidebar: recent spins + toggles -->
 			<div class="lg:col-span-1 space-y-4">
 				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
-					<div class="text-sm text-[var(--deco-muted)] mb-2">Recent spins</div>
+					<div class="text-sm text-[var(--deco-muted)] mb-2">{t('recentSpins')}</div>
 					<div
 						id="recent-spins"
 						data-testid="recent-spins"
@@ -156,7 +162,7 @@ const clientUserId = gameSession.clientUserId;
 						data-testid="btn-paytable"
 						class="deco-btn flex-1 py-2 rounded-lg text-sm"
 					>
-						Paytable
+						{t('paytable')}
 					</button>
 					<button
 						type="button"
@@ -164,7 +170,7 @@ const clientUserId = gameSession.clientUserId;
 						data-testid="btn-settings"
 						class="deco-btn flex-1 py-2 rounded-lg text-sm"
 					>
-						Settings
+						{t('settings')}
 					</button>
 				</div>
 			</div>
@@ -176,29 +182,29 @@ const clientUserId = gameSession.clientUserId;
 			data-testid="paytable-panel"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Paytable"
+			aria-label={t('paytable')}
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div
 				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto"
 			>
 				<div class="flex items-center justify-between mb-4">
-					<h2 class="deco-section-title text-2xl">Paytable</h2>
+					<h2 class="deco-section-title text-2xl">{t('paytable')}</h2>
 					<button
 						type="button"
 						class="btn-paytable-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
-						aria-label="Close paytable"
+						aria-label={t('closePaytable')}
 					>
 						✕
 					</button>
 				</div>
 				<p class="text-[var(--deco-muted)] text-sm mb-4">
-					Payouts are per active line, left-to-right. 5 paylines: middle, top, bottom, V, Λ.
+					{t('paytableIntro')}
 				</p>
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="text-[var(--deco-muted)]">
-							<th class="text-left py-2">Symbol</th>
+							<th class="text-left py-2">{t('symbol')}</th>
 							<th class="text-right py-2">3</th>
 							<th class="text-right py-2">4</th>
 							<th class="text-right py-2">5</th>
@@ -210,7 +216,9 @@ const clientUserId = gameSession.clientUserId;
 								<tr class="border-t border-[var(--deco-line)]">
 									<td class="py-2">
 										<span class="text-2xl mr-2">{SYMBOLS[id].glyph}</span>
-										<span class="text-[var(--deco-ivory-dim)]">{SYMBOLS[id].label}</span>
+										<span class="text-[var(--deco-ivory-dim)]">
+											{getSlotsSymbolLabel(locale, id)}
+										</span>
 									</td>
 									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][3]}</td>
 									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][4]}</td>
@@ -221,7 +229,7 @@ const clientUserId = gameSession.clientUserId;
 					</tbody>
 				</table>
 				<p class="text-[var(--deco-muted)] text-xs mt-4">
-					Multipliers are per-line. Chip payout = multiplier × bet ÷ 5.
+					{t('paytableFootnote')}
 				</p>
 			</div>
 		</div>
@@ -232,39 +240,39 @@ const clientUserId = gameSession.clientUserId;
 			data-testid="settings-panel"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Settings"
+			aria-label={t('settings')}
 			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
 		>
 			<div
 				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-sm w-full p-6"
 			>
 				<div class="flex items-center justify-between mb-4">
-					<h2 class="deco-section-title text-2xl">Settings</h2>
+					<h2 class="deco-section-title text-2xl">{t('settings')}</h2>
 					<button
 						type="button"
 						class="btn-settings-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
-						aria-label="Close settings"
+						aria-label={t('closeSettings')}
 					>
 						✕
 					</button>
 				</div>
 				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">Spin speed</span>
+					<span class="text-[var(--deco-ivory-dim)]">{t('spinSpeed')}</span>
 					<select
 						id="setting-spin-speed"
 						class="bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded px-2 py-1"
 					>
-						<option value="slow">Slow</option>
-						<option value="normal" selected>Normal</option>
-						<option value="fast">Fast</option>
+						<option value="slow">{t('speedSlow')}</option>
+						<option value="normal" selected>{t('speedNormal')}</option>
+						<option value="fast">{t('speedFast')}</option>
 					</select>
 				</label>
 				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">Sound</span>
+					<span class="text-[var(--deco-ivory-dim)]">{t('sound')}</span>
 					<input type="checkbox" id="setting-sound" checked />
 				</label>
 				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">Quick spin</span>
+					<span class="text-[var(--deco-ivory-dim)]">{t('quickSpin')}</span>
 					<input type="checkbox" id="setting-quick" />
 				</label>
 			</div>

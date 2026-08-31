@@ -32,7 +32,7 @@ test.describe('Slots game', () => {
 		try {
 			const balanceBefore = await page.locator('#chip-balance').textContent();
 			await page.locator('.bet-chip[data-bet="1"]').click();
-			await expect(page.locator('#current-bet')).toHaveText('1');
+			await expect(page.locator('#current-bet')).toHaveText('1 chip');
 			await page.locator('#btn-spin').click();
 			// Balance should change (deduct or win) without a navigation.
 			// Poll because the reveal (and the optimistic balance update) happens
@@ -50,7 +50,7 @@ test.describe('Slots game', () => {
 		// Cannot force a tiny balance without auth manipulation; instead verify
 		// the max-bet chip selects 100 and the spin button remains enabled.
 		await page.locator('.bet-chip[data-bet="100"]').click();
-		await expect(page.locator('#current-bet')).toHaveText('100');
+		await expect(page.locator('#current-bet')).toHaveText('100 chips');
 		await expect(page.locator('#btn-spin')).toBeEnabled();
 	});
 

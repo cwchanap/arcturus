@@ -1,25 +1,48 @@
 import { setSlotState } from '../card-slot-utils';
 import { createPublicGameSettlementController } from '../wallet';
 import type { Card } from '../cards';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import {
+	paiGowPokerTranslator,
+	getPaiGowCategoryLabel,
+	getPaiGowCardName,
+	formatPaiGowNet,
+	type PAI_GOW_POKER_MESSAGES,
+} from '../i18n/messages/pai-gow-poker';
+import type { MessageKey } from '../i18n/translate';
 import { isPaiGowJoker } from './cards';
-import { PaiGowPokerGame } from './game';
+import { PaiGowPokerGame, MAX_WAGER, MIN_WAGER } from './game';
 import { getArrangement } from './rules';
-import type { PaiGowCard, PaiGowCategory, PaiGowRoundResult } from './types';
+import type {
+	PaiGowArrangementErrorCode,
+	PaiGowCard,
+	PaiGowRoundResult,
+	PaiGowWagerErrorCode,
+} from './types';
 
-const CATEGORY_LABELS: Record<PaiGowCategory, string> = {
-	'five-aces': 'Five Aces',
-	'royal-flush': 'Royal Flush',
-	'straight-flush': 'Straight Flush',
-	'four-of-kind': 'Four of a Kind',
-	'full-house': 'Full House',
-	flush: 'Flush',
-	straight: 'Straight',
-	'three-of-kind': 'Three of a Kind',
-	'two-pair': 'Two Pair',
-	pair: 'Pair',
-	'high-card': 'High Card',
+const WAGER_ERROR_KEYS: Record<PaiGowWagerErrorCode, MessageKey<typeof PAI_GOW_POKER_MESSAGES>> = {
+	'invalid-limits': 'errorInvalidLimits',
+	'invalid-range': 'errorInvalidRange',
+	'out-of-range': 'errorOutOfRange',
+	'whole-number-required': 'errorWholeNumber',
+	'insufficient-balance': 'errorInsufficientBalance',
 };
 
+const ARRANGEMENT_ERROR_KEYS: Record<
+	PaiGowArrangementErrorCode,
+	MessageKey<typeof PAI_GOW_POKER_MESSAGES>
+> = {
+	'exactly-seven-cards': 'errorExactlySevenCards',
+	'exactly-two-low-indexes': 'errorExactlyTwoLowIndexes',
+	'whole-number-indexes': 'errorWholeNumberIndexes',
+	'distinct-indexes': 'errorDistinctIndexes',
+	'indexes-in-range': 'errorIndexesInRange',
+	'high-hand-rank': 'errorHighHandRank',
+};
+
+// Visible rank glyphs stay invariant; the full rank name is localized for
+// accessibility through getPaiGowCardName.
 function rankLabel(rank: Card['rank']): string {
 	if (rank === 11) return 'J';
 	if (rank === 12) return 'Q';
@@ -33,32 +56,32 @@ function displayCard(card: PaiGowCard): { rank: string; suit: string } {
 	return { rank: rankLabel(card.rank), suit: card.suit };
 }
 
-const RANK_NAMES: Record<Card['rank'], string> = {
-	2: '2',
-	3: '3',
-	4: '4',
-	5: '5',
-	6: '6',
-	7: '7',
-	8: '8',
-	9: '9',
-	10: '10',
-	11: 'Jack',
-	12: 'Queen',
-	13: 'King',
-	14: 'Ace',
-};
-
-function accessibleCardName(card: PaiGowCard): string {
-	if (isPaiGowJoker(card)) return 'Joker';
-	return `${RANK_NAMES[card.rank]} of ${card.suit}`;
+function wagerErrorText(
+	t: ReturnType<typeof paiGowPokerTranslator>,
+	locale: Locale,
+	code: PaiGowWagerErrorCode,
+): string {
+	if (code === 'out-of-range') {
+		return t('errorOutOfRange', {
+			min: formatChips(MIN_WAGER, locale),
+			max: formatChips(MAX_WAGER, locale),
+		});
+	}
+	return t(WAGER_ERROR_KEYS[code]);
 }
 
-function resultText(result: PaiGowRoundResult): string {
-	const outcome =
-		result.outcome === 'win' ? 'Player wins' : result.outcome === 'loss' ? 'Loss' : 'Push';
-	const delta = result.netDelta > 0 ? `+${result.netDelta}` : String(result.netDelta);
-	return `${outcome} · ${delta} net`;
+function resultText(
+	t: ReturnType<typeof paiGowPokerTranslator>,
+	locale: Locale,
+	result: PaiGowRoundResult,
+): string {
+	const key =
+		result.outcome === 'win'
+			? 'resultWin'
+			: result.outcome === 'loss'
+				? 'resultLoss'
+				: 'resultPush';
+	return t(key, { net: formatPaiGowNet(locale, result.netDelta) });
 }
 
 export function initPaiGowPokerClient(): void {
@@ -66,6 +89,9 @@ export function initPaiGowPokerClient(): void {
 
 	const root = document.getElementById('pai-gow-root');
 	if (!root) return;
+
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = paiGowPokerTranslator(locale);
 
 	const statusEl = root.querySelector<HTMLElement>('#pai-gow-status');
 	const recoveryHost = root.querySelector<HTMLElement>('#pai-gow-recovery-host');
@@ -123,7 +149,12 @@ export function initPaiGowPokerClient(): void {
 			button.disabled = state.phase !== 'arranging';
 			button.setAttribute(
 				'aria-label',
-				card ? `Card ${index + 1}: ${accessibleCardName(card)}` : `Card ${index + 1}`,
+				card
+					? t('cardAriaWithCard', {
+							number: String(index + 1),
+							card: getPaiGowCardName(locale, card),
+						})
+					: t('cardAria', { number: String(index + 1) }),
 			);
 		}
 
@@ -162,19 +193,22 @@ export function initPaiGowPokerClient(): void {
 			} else if (wagerMessage) {
 				statusEl.textContent = wagerMessage;
 			} else if (state.phase === 'betting') {
-				statusEl.textContent = 'Choose a wager, then deal.';
+				statusEl.textContent = t('chooseWager');
 			} else if (state.phase === 'complete' && state.result) {
-				statusEl.textContent = resultText(state.result);
+				statusEl.textContent = resultText(t, locale, state.result);
 			} else if (state.lowIndexes.length < 2) {
-				statusEl.textContent = 'Choose two cards for the Low hand.';
+				statusEl.textContent = t('chooseLowCards');
 			} else {
 				const arrangement = getArrangement(state.playerCards, state.lowIndexes);
 				const error = game.getArrangementError();
 				statusEl.textContent = error
-					? error
+					? t(ARRANGEMENT_ERROR_KEYS[error])
 					: arrangement
-						? `High: ${CATEGORY_LABELS[arrangement.highRanking.category]} · Low: ${CATEGORY_LABELS[arrangement.lowRanking.category]}`
-						: 'Choose two cards for the Low hand.';
+						? t('arrangementStatus', {
+								high: getPaiGowCategoryLabel(locale, arrangement.highRanking.category),
+								low: getPaiGowCategoryLabel(locale, arrangement.lowRanking.category),
+							})
+						: t('chooseLowCards');
 			}
 		}
 	}
@@ -183,12 +217,12 @@ export function initPaiGowPokerClient(): void {
 		gameKey: 'pai-gow-poker',
 		root,
 		recoveryHost,
-		resetLabel: 'Reset round',
+		resetLabel: t('resetRound'),
 		messages: {
-			failed: 'Settlement failed. Retry or reset before starting another round.',
-			retrying: 'Retrying settlement...',
-			retryFailed: 'Settlement failed again. Retry or reset before starting another round.',
-			retryLabel: 'Retry settlement',
+			failed: t('settlementFailed'),
+			retrying: t('retryingSettlement'),
+			retryFailed: t('settlementRetryFailed'),
+			retryLabel: t('retrySettlement'),
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),
@@ -205,7 +239,7 @@ export function initPaiGowPokerClient(): void {
 			const wager = Number(button.dataset.wager);
 			const error = game.getWagerError(wager);
 			if (error) {
-				wagerMessage = error;
+				wagerMessage = wagerErrorText(t, locale, error);
 				render();
 				return;
 			}
@@ -227,7 +261,7 @@ export function initPaiGowPokerClient(): void {
 		if (game.getState().phase !== 'betting' || settlement.isBlocked) return;
 		const error = game.getWagerError(game.getState().wager);
 		if (error) {
-			wagerMessage = error;
+			wagerMessage = wagerErrorText(t, locale, error);
 			render();
 			return;
 		}

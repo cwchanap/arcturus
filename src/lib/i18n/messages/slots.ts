@@ -1,0 +1,212 @@
+/**
+ * Slots presentation messages: the Slots page shell, paytable, settings
+ * panel, and browser client copy (spin outcomes, recent-spin deltas, and
+ * settlement recovery). Symbol display names live here once and are keyed by
+ * the domain `SymbolId`; the glyphs themselves stay invariant. Chip amounts
+ * route through the shared `formatChips()` phrase, never currency.
+ */
+
+import type { SymbolId } from '../../slots/types';
+import { formatChips } from './common';
+import type { Locale } from '../locale';
+import { createTranslator, defineMessages, type MessageKey } from '../translate';
+
+export const SLOTS_MESSAGES = defineMessages({
+	en: {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: 'Back to Games',
+		freeChips: '100% free virtual chips — no real money.',
+		placeYourBet: 'Place your bet',
+		spinToPlay: 'Spin to play',
+		betPerSpin: 'Bet per spin',
+		spin: 'Spin',
+		spinning: 'Spinning…',
+		insufficientChips: 'Insufficient chips',
+		recentSpins: 'Recent spins',
+		paytable: 'Paytable',
+		settings: 'Settings',
+		closePaytable: 'Close paytable',
+		closeSettings: 'Close settings',
+		paytableIntro:
+			'Payouts are per active line, left-to-right. 5 paylines: middle, top, bottom, V, Λ.',
+		symbol: 'Symbol',
+		paytableFootnote: 'Multipliers are per-line. Chip payout = multiplier × bet ÷ 5.',
+		symbolSeven: 'Seven',
+		symbolBell: 'Bell',
+		symbolBar: 'BAR',
+		symbolMelon: 'Watermelon',
+		symbolGrapes: 'Grapes',
+		symbolLemon: 'Lemon',
+		symbolCherry: 'Cherry',
+		spinSpeed: 'Spin speed',
+		speedSlow: 'Slow',
+		speedNormal: 'Normal',
+		speedFast: 'Fast',
+		sound: 'Sound',
+		quickSpin: 'Quick spin',
+		lineResult: '{symbol} ×{count} on line {line}',
+		noWin: 'No win',
+		winAmount: 'WIN +{amount}',
+		retrySettlement: 'Retry settlement',
+		resetRound: 'Reset round',
+		settlementFailed: 'Settlement failed. Retry or reset before starting another spin.',
+		retryingSettlement: 'Retrying settlement...',
+		settlementRetryFailed: 'Settlement failed again. Retry or reset before starting another spin.',
+		settlementReset: 'Settlement reset. Place your bet to start.',
+		settlementPending: 'Settlement is still pending. Retry or reset before starting another spin.',
+	},
+	'zh-Hant': {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: '返回遊戲',
+		freeChips: '100% 免費虛擬籌碼 — 絕非真實金錢。',
+		placeYourBet: '請下注',
+		spinToPlay: '轉動以開始遊玩',
+		betPerSpin: '每次轉動下注',
+		spin: '轉動',
+		spinning: '轉動中…',
+		insufficientChips: '籌碼不足',
+		recentSpins: '最近轉動',
+		paytable: '派彩表',
+		settings: '設定',
+		closePaytable: '關閉派彩表',
+		closeSettings: '關閉設定',
+		paytableIntro: '派彩按每條有效線從左至右計算。5 條派彩線：中間、上、下、V、Λ。',
+		symbol: '符號',
+		paytableFootnote: '倍率按線計算。籌碼派彩 = 倍率 × 下注 ÷ 5。',
+		symbolSeven: '數字七',
+		symbolBell: '鈴鐺',
+		symbolBar: 'BAR',
+		symbolMelon: '西瓜',
+		symbolGrapes: '葡萄',
+		symbolLemon: '檸檬',
+		symbolCherry: '櫻桃',
+		spinSpeed: '轉動速度',
+		speedSlow: '慢速',
+		speedNormal: '正常',
+		speedFast: '快速',
+		sound: '音效',
+		quickSpin: '快速轉動',
+		lineResult: '{symbol} ×{count} 第 {line} 線',
+		noWin: '未中獎',
+		winAmount: '贏得 +{amount}',
+		retrySettlement: '重試結算',
+		resetRound: '重設本局',
+		settlementFailed: '結算失敗。請重試或重設後再開始另一次轉動。',
+		retryingSettlement: '正在重試結算…',
+		settlementRetryFailed: '結算再次失敗。請重試或重設後再開始另一次轉動。',
+		settlementReset: '結算已重設。請下注以開始。',
+		settlementPending: '結算仍在處理中。請重試或重設後再開始另一次轉動。',
+	},
+	'zh-Hans': {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: '返回游戏',
+		freeChips: '100% 免费虚拟筹码 — 绝非真实金钱。',
+		placeYourBet: '请下注',
+		spinToPlay: '转动以开始游玩',
+		betPerSpin: '每次转动下注',
+		spin: '转动',
+		spinning: '转动中…',
+		insufficientChips: '筹码不足',
+		recentSpins: '最近转动',
+		paytable: '派彩表',
+		settings: '设置',
+		closePaytable: '关闭派彩表',
+		closeSettings: '关闭设置',
+		paytableIntro: '派彩按每条有效线从左至右计算。5 条派彩线：中间、上、下、V、Λ。',
+		symbol: '符号',
+		paytableFootnote: '倍率按线计算。筹码派彩 = 倍率 × 下注 ÷ 5。',
+		symbolSeven: '数字七',
+		symbolBell: '铃铛',
+		symbolBar: 'BAR',
+		symbolMelon: '西瓜',
+		symbolGrapes: '葡萄',
+		symbolLemon: '柠檬',
+		symbolCherry: '樱桃',
+		spinSpeed: '转动速度',
+		speedSlow: '慢速',
+		speedNormal: '正常',
+		speedFast: '快速',
+		sound: '音效',
+		quickSpin: '快速转动',
+		lineResult: '{symbol} ×{count} 第 {line} 线',
+		noWin: '未中奖',
+		winAmount: '赢得 +{amount}',
+		retrySettlement: '重试结算',
+		resetRound: '重置本局',
+		settlementFailed: '结算失败。请重试或重置后再开始另一次转动。',
+		retryingSettlement: '正在重试结算…',
+		settlementRetryFailed: '结算再次失败。请重试或重置后再开始另一次转动。',
+		settlementReset: '结算已重置。请下注以开始。',
+		settlementPending: '结算仍在处理中。请重试或重置后再开始另一次转动。',
+	},
+	ja: {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: 'ゲームに戻る',
+		freeChips: '100% 無料の仮想チップ — 実際の現金ではありません。',
+		placeYourBet: 'ベットしてください',
+		spinToPlay: 'スピンしてプレイ',
+		betPerSpin: 'スピンごとのベット',
+		spin: 'スピン',
+		spinning: 'スピン中…',
+		insufficientChips: 'チップが不足しています',
+		recentSpins: '最近のスピン',
+		paytable: '配当表',
+		settings: '設定',
+		closePaytable: '配当表を閉じる',
+		closeSettings: '設定を閉じる',
+		paytableIntro: '配当は有効ラインごとに左から右へ計算されます。5 ライン：中央、上、下、V、Λ。',
+		symbol: 'シンボル',
+		paytableFootnote: '倍率はラインごとです。チップ配当 = 倍率 × ベット ÷ 5。',
+		symbolSeven: 'セブン',
+		symbolBell: 'ベル',
+		symbolBar: 'BAR',
+		symbolMelon: 'スイカ',
+		symbolGrapes: 'ブドウ',
+		symbolLemon: 'レモン',
+		symbolCherry: 'チェリー',
+		spinSpeed: 'スピン速度',
+		speedSlow: '遅い',
+		speedNormal: '普通',
+		speedFast: '速い',
+		sound: 'サウンド',
+		quickSpin: 'クイックスピン',
+		lineResult: '{symbol} ×{count}（{line} ライン目）',
+		noWin: 'ハズレ',
+		winAmount: '勝利 +{amount}',
+		retrySettlement: '決済を再試行',
+		resetRound: 'ラウンドをリセット',
+		settlementFailed:
+			'決済に失敗しました。別のスピンを開始する前に再試行またはリセットしてください。',
+		retryingSettlement: '決済を再試行中…',
+		settlementRetryFailed:
+			'決済が再び失敗しました。別のスピンを開始する前に再試行またはリセットしてください。',
+		settlementReset: '決済をリセットしました。ベットして開始してください。',
+		settlementPending:
+			'決済はまだ処理中です。別のスピンを開始する前に再試行またはリセットしてください。',
+	},
+});
+
+const SLOT_SYMBOL_KEYS: Record<SymbolId, MessageKey<typeof SLOTS_MESSAGES>> = {
+	seven: 'symbolSeven',
+	bell: 'symbolBell',
+	bar: 'symbolBar',
+	melon: 'symbolMelon',
+	grapes: 'symbolGrapes',
+	lemon: 'symbolLemon',
+	cherry: 'symbolCherry',
+};
+
+export function slotsTranslator(locale: Locale) {
+	return createTranslator(SLOTS_MESSAGES, locale);
+}
+
+/** Localized symbol display name ("Seven", "數字七", "セブン"). */
+export function getSlotsSymbolLabel(locale: Locale, id: SymbolId): string {
+	return createTranslator(SLOTS_MESSAGES, locale)(SLOT_SYMBOL_KEYS[id]);
+}
+
+/** Signed net chip result ("+50 chips", "−30 chips", "0 chips"). */
+export function formatSlotsNet(locale: Locale, value: number): string {
+	if (value === 0) return formatChips(0, locale);
+	return `${value > 0 ? '+' : '−'}${formatChips(Math.abs(value), locale)}`;
+}

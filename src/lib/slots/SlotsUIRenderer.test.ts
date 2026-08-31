@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { formatChipBalance } from '../formatting';
 import { SlotsUIRenderer } from './SlotsUIRenderer';
 import {
 	MAX_HISTORY,
@@ -292,13 +293,13 @@ describe('SlotsUIRenderer', () => {
 	test('renderBalance formats the balance with locale separators', () => {
 		const r = new SlotsUIRenderer();
 		r.renderBalance(1234567);
-		expect(fx.balance.textContent).toBe((1234567).toLocaleString());
+		expect(fx.balance.textContent).toBe(formatChipBalance(1234567, 'en'));
 	});
 
 	test('renderBet updates the bet label, selects the matching chip, and sets aria-pressed', () => {
 		const r = new SlotsUIRenderer();
 		r.renderBet(10);
-		expect(fx.bet.textContent).toBe('10');
+		expect(fx.bet.textContent).toBe('10 chips');
 		const selected = fx.betChips.find((c) => c.dataset.bet === '10')!;
 		const other = fx.betChips.find((c) => c.dataset.bet === '1')!;
 		expect(selected.hasClass('selected')).toBe(true);
@@ -402,7 +403,7 @@ describe('SlotsUIRenderer', () => {
 		});
 		r.renderResult(result);
 		expect(fx.lastResult.textContent).toBe('Seven ×5 on line 1');
-		expect(fx.lastWin.textContent).toBe('WIN +250');
+		expect(fx.lastWin.textContent).toBe('WIN +250 chips');
 		expect(fx.lastWin.style.color).toBe('var(--deco-jade)');
 	});
 
@@ -423,11 +424,11 @@ describe('SlotsUIRenderer', () => {
 		];
 		r.renderRecent(history);
 		expect(fx.recent.children).toHaveLength(3);
-		expect(fx.recent.children[0].textContent).toBe('+50');
+		expect(fx.recent.children[0].textContent).toBe('+50 chips');
 		expect(fx.recent.children[0].style.color).toBe('var(--deco-jade)');
-		expect(fx.recent.children[1].textContent).toBe('-30');
+		expect(fx.recent.children[1].textContent).toBe('−30 chips');
 		expect(fx.recent.children[1].style.color).toBe('var(--deco-oxblood-bright)');
-		expect(fx.recent.children[2].textContent).toBe('0');
+		expect(fx.recent.children[2].textContent).toBe('0 chips');
 		expect(fx.recent.children[2].style.color).toBe('var(--deco-muted)');
 	});
 
@@ -445,7 +446,7 @@ describe('SlotsUIRenderer', () => {
 		expect(fx.recent.children).toHaveLength(1);
 		r.renderRecent([makeResult({ netDelta: 2 }), makeResult({ netDelta: 3 })]);
 		expect(fx.recent.children).toHaveLength(2);
-		expect(fx.recent.children[0].textContent).toBe('+2');
+		expect(fx.recent.children[0].textContent).toBe('+2 chips');
 	});
 
 	test('getSpinDurationMs delegates to constants for each speed', () => {

@@ -1,7 +1,20 @@
 import { createPublicGameSettlementController } from '../wallet';
+import { getDocumentLocale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { sicBoTranslator, formatSicBoNet, type SIC_BO_MESSAGES } from '../i18n/messages/sic-bo';
+import type { MessageKey } from '../i18n/translate';
 import { SicBoGame } from './game';
 import { SIC_BO_CHIP_DENOMINATIONS } from './rules';
-import type { SicBoBetKey, SicBoRoundResult } from './types';
+import type { SicBoBetErrorCode, SicBoBetKey, SicBoRoundResult } from './types';
+
+const BET_ERROR_KEYS: Record<SicBoBetErrorCode, MessageKey<typeof SIC_BO_MESSAGES>> = {
+	'unsupported-bet': 'errorUnsupportedBet',
+	'bets-locked': 'errorBetsLocked',
+	denomination: 'errorDenomination',
+	'insufficient-balance': 'errorInsufficientBalance',
+	'no-bets': 'errorNoBets',
+	'new-round-required': 'errorNewRoundRequired',
+};
 
 /**
  * Browser composition for the Sic Bo route: owns the game instance, the bet
@@ -12,6 +25,9 @@ export function initSicBoClient(): void {
 	if (typeof window === 'undefined') return;
 	const root = document.getElementById('sic-bo-root');
 	if (!root) return;
+
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = sicBoTranslator(locale);
 
 	const statusEl = document.getElementById('sic-bo-status');
 	const totalStakeEl = document.getElementById('sic-bo-total-stake');
@@ -30,12 +46,16 @@ export function initSicBoClient(): void {
 	function render(): void {
 		const state = game.getState();
 		settlement.syncBalance(state.balance);
-		if (totalStakeEl) totalStakeEl.textContent = `Total stake: ${game.getTotalStake()}`;
+		if (totalStakeEl) {
+			totalStakeEl.textContent = t('totalStake', {
+				amount: formatChips(game.getTotalStake(), locale),
+			});
+		}
 
 		document.querySelectorAll<HTMLElement>('[data-bet-amount]').forEach((el) => {
 			const key = el.closest('[data-bet-key]')?.getAttribute('data-bet-key') as SicBoBetKey | null;
 			const amount = key ? state.bets[key] : undefined;
-			el.textContent = amount ? String(amount) : '';
+			el.textContent = amount ? formatChips(amount, locale) : '';
 		});
 
 		document.querySelectorAll<HTMLButtonElement>('[data-denomination]').forEach((btn) => {
@@ -64,7 +84,11 @@ export function initSicBoClient(): void {
 			if (state.result) {
 				const delta = state.result.netDelta;
 				resultEl.textContent =
-					delta > 0 ? `Won +${delta}` : delta < 0 ? `Lost ${Math.abs(delta)}` : 'Push';
+					delta > 0
+						? t('won', { net: formatSicBoNet(locale, delta) })
+						: delta < 0
+							? t('lost', { net: formatSicBoNet(locale, delta) })
+							: t('push');
 			} else {
 				resultEl.textContent = '';
 			}
@@ -73,13 +97,14 @@ export function initSicBoClient(): void {
 		if (settlement.statusMessage) {
 			setStatus(settlement.statusMessage);
 		} else if (state.phase === 'betting') {
-			setStatus(game.getRollError() ?? 'Place your bets, then roll.');
+			const rollError = game.getRollError();
+			setStatus(rollError ? t(BET_ERROR_KEYS[rollError]) : t('placeBetsThenRoll'));
 		} else {
-			setStatus('Round complete. Start a new round when ready.');
+			setStatus(t('roundComplete'));
 		}
 
 		if (action) {
-			action.textContent = state.phase === 'betting' ? 'Roll' : 'New Round';
+			action.textContent = state.phase === 'betting' ? t('roll') : t('newRound');
 			action.disabled =
 				(state.phase === 'betting' && game.getRollError() !== null) || settlement.isBlocked;
 		}
@@ -89,12 +114,12 @@ export function initSicBoClient(): void {
 		gameKey: 'sic-bo',
 		root,
 		recoveryHost,
-		resetLabel: 'Reset round',
+		resetLabel: t('resetRound'),
 		messages: {
-			failed: 'Settlement failed. Retry or reset before rolling again.',
-			retrying: 'Retrying settlement...',
-			retryFailed: 'Settlement failed again. Retry or reset before rolling again.',
-			retryLabel: 'Retry settlement',
+			failed: t('settlementFailed'),
+			retrying: t('retryingSettlement'),
+			retryFailed: t('settlementRetryFailed'),
+			retryLabel: t('retrySettlement'),
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),
@@ -117,13 +142,15 @@ export function initSicBoClient(): void {
 			const key = btn.dataset.betKey as SicBoBetKey | undefined;
 			if (!key || game.getState().phase !== 'betting') return;
 			const current = game.getState().bets[key];
-			try {
-				if (current === selectedDenomination) game.clearBet(key);
-				else game.setBet(key, selectedDenomination);
-			} catch (error) {
-				setStatus(error instanceof Error ? error.message : 'Cannot place that bet');
+			// Check the code before mutating so the slip stays clean and the
+			// translated message comes from the catalog, not an exception.
+			const error = game.getBetError(key, selectedDenomination);
+			if (error) {
+				setStatus(t(BET_ERROR_KEYS[error]));
 				return;
 			}
+			if (current === selectedDenomination) game.clearBet(key);
+			else game.setBet(key, selectedDenomination);
 			render();
 		});
 	});
@@ -139,11 +166,16 @@ export function initSicBoClient(): void {
 
 		if (state.phase === 'betting') {
 			if (settlement.isBlocked) return;
+			const rollError = game.getRollError();
+			if (rollError) {
+				setStatus(t(BET_ERROR_KEYS[rollError]));
+				return;
+			}
 			let result: SicBoRoundResult;
 			try {
 				result = game.roll();
-			} catch (error) {
-				setStatus(error instanceof Error ? error.message : 'Cannot roll');
+			} catch (_error) {
+				setStatus(t('cannotRoll'));
 				return;
 			}
 			render();
@@ -155,8 +187,8 @@ export function initSicBoClient(): void {
 		if (settlement.isBlocked) return;
 		try {
 			game.resetRound();
-		} catch (error) {
-			setStatus(error instanceof Error ? error.message : 'Cannot start a new round');
+		} catch (_error) {
+			setStatus(t('cannotStartNewRound'));
 			return;
 		}
 		render();

@@ -4,6 +4,8 @@ import {
 	persistGuestBankroll,
 	shouldSyncAccountChips,
 } from '../public-game-session';
+import { getDocumentLocale } from '../i18n/locale';
+import { slotsTranslator } from '../i18n/messages/slots';
 import { MAX_BET, MIN_BET } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { SlotsGame } from './SlotsGame';
@@ -59,6 +61,9 @@ export function initSlotsClient(): void {
 	const root = document.getElementById('slots-root');
 	if (!root) return;
 
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = slotsTranslator(locale);
+
 	const clientUserId = root.dataset.userId ?? 'anonymous';
 	const isGuest = isGuestModeValue(root.dataset.guestMode ?? 'false');
 	const syncToServer = shouldSyncAccountChips({ isGuestMode: isGuest });
@@ -79,8 +84,11 @@ export function initSlotsClient(): void {
 			if (typeof updateSpinEnabled === 'function') updateSpinEnabled();
 		},
 		onRoundComplete: (result) => handleRoundCompleteSafe(result),
-		onError: (err) => {
-			renderer.showStatus(err.message);
+		onError: (_err) => {
+			// The game only reports invariant failures here (the UI guards every
+			// reachable state), so surface the translated generic message rather
+			// than English exception copy.
+			renderer.showStatus(t('insufficientChips'));
 			updateSpinEnabled();
 		},
 	});
@@ -91,9 +99,9 @@ export function initSlotsClient(): void {
 	const settlementRecovery = ensureSettlementRecoveryControls({
 		containerClass: 'hidden mt-3 flex flex-wrap justify-center gap-2',
 		retryClass: 'btn-gold px-4 py-2 rounded-lg font-bold',
-		retryLabel: 'Retry settlement',
+		retryLabel: t('retrySettlement'),
 		resetClass: 'px-4 py-2 rounded-lg border border-[var(--deco-line)]',
-		resetLabel: 'Reset round',
+		resetLabel: t('resetRound'),
 		attachTo: document.getElementById('game-status')?.parentElement ?? null,
 	});
 
@@ -124,22 +132,20 @@ export function initSlotsClient(): void {
 			adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Slots settlement failed:', error);
-			showSettlementRecovery('Settlement failed. Retry or reset before starting another spin.');
+			showSettlementRecovery(t('settlementFailed'));
 		}
 	};
 
 	settlementRecovery.retry?.addEventListener('click', async () => {
 		if (!settlementGate.pending) return;
 		if (settlementRecovery.retry) settlementRecovery.retry.disabled = true;
-		renderer.showStatus('Retrying settlement...');
+		renderer.showStatus(t('retryingSettlement'));
 		try {
 			const result = await retrySlotsSettlement(settlementGate);
 			if (result) adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Slots settlement retry failed:', error);
-			showSettlementRecovery(
-				'Settlement failed again. Retry or reset before starting another spin.',
-			);
+			showSettlementRecovery(t('settlementRetryFailed'));
 		} finally {
 			if (settlementRecovery.retry) settlementRecovery.retry.disabled = false;
 		}
@@ -149,7 +155,7 @@ export function initSlotsClient(): void {
 		settlementGate.reset();
 		game.setBalance(serverSyncedBalance);
 		hideSettlementRecovery();
-		renderer.showStatus('Settlement reset. Place your bet to start.');
+		renderer.showStatus(t('settlementReset'));
 		updateSpinEnabled();
 	});
 
@@ -190,24 +196,22 @@ export function initSlotsClient(): void {
 
 	function doSpin(): void {
 		if (spinInFlight) {
-			renderer.showStatus('Spinning…');
+			renderer.showStatus(t('spinning'));
 			return;
 		}
 		if (!canStartSlotsSpin({ isGuestMode: isGuest, gate: settlementGate })) {
-			showSettlementRecovery(
-				'Settlement is still pending. Retry or reset before starting another spin.',
-			);
+			showSettlementRecovery(t('settlementPending'));
 			return;
 		}
 		if (!game.canSpin()) {
-			renderer.showStatus('Insufficient chips');
+			renderer.showStatus(t('insufficientChips'));
 			return;
 		}
 		spinInFlight = true;
 		const settlementId = newSettlementId('slots');
 		renderer.setSpinEnabled(false);
 		renderer.clearHighlight();
-		renderer.showStatus('Spinning…');
+		renderer.showStatus(t('spinning'));
 		renderer.setSpinning(true);
 
 		const quickSpin = settingsMgr.getSettings().quickSpin;

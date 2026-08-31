@@ -54,7 +54,7 @@ function authedLocals(): App.Locals {
 }
 
 describe('daily challenge current page — cache and session behavior', () => {
-	test('a guest gets a publicly cacheable shell with Vary: Cookie and a guest surrogate user id', async () => {
+	test('a guest gets a publicly cacheable shell with Vary: Cookie, Accept-Language and a guest surrogate user id', async () => {
 		const container = await AstroContainer.create();
 		const response = await container.renderToResponse(DailyChallengePage, {
 			locals: guestLocals(),
@@ -67,7 +67,9 @@ describe('daily challenge current page — cache and session behavior', () => {
 
 		expect(response.status).toBe(200);
 		expect(response.headers.get('cache-control')).toBe(GUEST_CACHE_CONTROL);
-		expect(response.headers.get('vary')).toBe('Cookie');
+		// Automatic browser-language detection (Accept-Language) varies the
+		// cached shell so one CDN copy can never leak the wrong locale.
+		expect(response.headers.get('vary')).toBe('Cookie, Accept-Language');
 		// AppLayout writes the document-level locale once on the root element.
 		expect(window.document.documentElement.getAttribute('lang')).toBe('en');
 		expect(window.document.documentElement.getAttribute('data-locale')).toBe('en');

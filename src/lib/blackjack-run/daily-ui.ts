@@ -1,5 +1,8 @@
 import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/presentation';
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
+import { dailyChallengeTranslator } from '../i18n/messages/daily-challenge';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatWholeNumber } from '../formatting';
 import {
 	createBlackjackRunClient,
 	type BlackjackRunClient,
@@ -48,30 +51,27 @@ const RUN_NOT_FOUND = 'RUN_NOT_FOUND';
 
 const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 
-const PRACTICE_READY_STATUS = 'Start a round to begin practice.';
-const PRACTICE_COMPLETE_STATUS = 'Practice complete.';
-const PRACTICE_FORFEITED_STATUS = 'Practice forfeited.';
-const PRACTICE_OVER_STATUS = 'Practice is over — restart to play a new scenario.';
-const RANKED_IDLE_STATUS = 'Start your ranked attempt to begin.';
-
-const CURRENCY = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 0,
-	maximumFractionDigits: 0,
-});
-
-const POINTS = new Intl.NumberFormat('en-US');
-
-export function formatPoints(value: number): string {
-	return POINTS.format(value);
+export function formatPoints(value: number, locale: Locale = 'en'): string {
+	return new Intl.NumberFormat(locale).format(value);
 }
 
-function formatCurrency(value: number): string {
-	return CURRENCY.format(value);
+function formatCurrency(value: number, locale: Locale): string {
+	return new Intl.NumberFormat(locale, {
+		style: 'currency',
+		currency: 'USD',
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 0,
+	}).format(value);
 }
 
-function formatPercentile(value: number): string {
+/**
+ * Locale-aware ordinal percentile value: English keeps the st/nd/rd/th suffix
+ * the receipt shows today; other locales present the plain formatted number
+ * inside their own percentile template.
+ */
+function formatPercentile(value: number, locale: Locale): string {
+	const formatted = formatWholeNumber(value, locale);
+	if (locale !== 'en') return formatted;
 	const suffix =
 		value % 100 >= 11 && value % 100 <= 13
 			? 'th'
@@ -82,16 +82,7 @@ function formatPercentile(value: number): string {
 					: value % 10 === 3
 						? 'rd'
 						: 'th';
-	return `${value}${suffix}`;
-}
-
-function roundProgressLabel(roundsCompleted: number): string {
-	const roundCount = DAILY_RUN_CONFIG.roundCount;
-	return `Round ${Math.min(roundsCompleted + 1, roundCount)} of ${roundCount}`;
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : 'Daily challenge request failed';
+	return `${formatted}${suffix}`;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -263,18 +254,28 @@ function renderActiveRound(
 	dealerHand: HTMLElement,
 	dealerValue: HTMLElement,
 	playerHands: HTMLElement,
+	locale: Locale,
 ): void {
 	renderBlackjackDealer(ownerDocument, dealerHand, dealerValue, round.dealer, {
 		testIdPrefix: 'daily-challenge',
 	});
 	renderBlackjackPlayerHands(ownerDocument, playerHands, round.playerHands, round.activeHandIndex, {
 		testIdPrefix: 'daily-challenge',
-		formatWager: formatCurrency,
+		formatWager: (wager) => formatCurrency(wager, locale),
 	});
 }
 
 export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 	const authenticated = root.dataset.userId !== undefined && root.dataset.userId !== 'guest';
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = dailyChallengeTranslator(locale);
+	const roundProgressLabel = (roundsCompleted: number): string => {
+		const roundCount = DAILY_RUN_CONFIG.roundCount;
+		return t('roundProgress', {
+			current: formatWholeNumber(Math.min(roundsCompleted + 1, roundCount), locale),
+			total: formatWholeNumber(roundCount, locale),
+		});
+	};
 
 	const practiceModeEl = requireElement<HTMLButtonElement>(root, 'daily-challenge-mode-practice');
 	const rankedModeEl = requireElement<HTMLButtonElement>(root, 'daily-challenge-mode-ranked');
@@ -370,14 +371,19 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 	const renderReceipt = (state: DailyRunState): void => {
 		receiptEl.hidden = false;
 		receiptEligibilityEl.textContent =
-			state.eligible === true ? 'Eligible for ranking' : 'Not eligible for ranking';
-		receiptBankrollEl.textContent = formatCurrency(state.availableBankroll);
-		receiptRoundsEl.textContent = `${state.roundsCompleted} of ${DAILY_RUN_CONFIG.roundCount} rounds`;
+			state.eligible === true ? t('eligibleForRanking') : t('notEligibleForRanking');
+		receiptBankrollEl.textContent = formatCurrency(state.availableBankroll, locale);
+		receiptRoundsEl.textContent = t('roundsCompleted', {
+			completed: formatWholeNumber(state.roundsCompleted, locale),
+			total: formatWholeNumber(DAILY_RUN_CONFIG.roundCount, locale),
+		});
 		rankEl.hidden = state.rank === null;
-		rankEl.textContent = state.rank === null ? '' : `#${state.rank}`;
+		rankEl.textContent = state.rank === null ? '' : `#${formatWholeNumber(state.rank, locale)}`;
 		percentileEl.hidden = state.percentile === null;
 		percentileEl.textContent =
-			state.percentile === null ? '' : `${formatPercentile(state.percentile)} percentile`;
+			state.percentile === null
+				? ''
+				: t('percentileLabel', { value: formatPercentile(state.percentile, locale) });
 	};
 
 	const renderCurrentView = (): void => {
@@ -391,9 +397,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		if (mode === 'practice') {
 			const replay = practiceReplay;
 			if (replay === null) return;
-			bankrollEl.textContent = formatCurrency(replay.availableBankroll);
+			bankrollEl.textContent = formatCurrency(replay.availableBankroll, locale);
 			committedWagerEl.textContent = replay.activeRoundPublic
-				? formatCurrency(replay.activeRoundPublic.committedWager)
+				? formatCurrency(replay.activeRoundPublic.committedWager, locale)
 				: '\u2014';
 			roundProgressEl.textContent = roundProgressLabel(replay.roundsCompleted);
 			if (replay.activeRoundPublic) {
@@ -403,14 +409,15 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 					dealerHandEl,
 					dealerValueEl,
 					playerHandsEl,
+					locale,
 				);
 				statusEl.textContent = '';
 			} else if (replay.status === 'completed') {
-				statusEl.textContent = PRACTICE_COMPLETE_STATUS;
+				statusEl.textContent = t('practiceComplete');
 			} else if (replay.status === 'forfeited') {
-				statusEl.textContent = PRACTICE_FORFEITED_STATUS;
+				statusEl.textContent = t('practiceForfeited');
 			} else {
-				statusEl.textContent = PRACTICE_READY_STATUS;
+				statusEl.textContent = t('practiceReady');
 			}
 			return;
 		}
@@ -420,13 +427,13 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			bankrollEl.textContent = '\u2014';
 			committedWagerEl.textContent = '\u2014';
 			roundProgressEl.textContent = '';
-			statusEl.textContent = RANKED_IDLE_STATUS;
+			statusEl.textContent = t('rankedIdle');
 			return;
 		}
 
-		bankrollEl.textContent = formatCurrency(state.availableBankroll);
+		bankrollEl.textContent = formatCurrency(state.availableBankroll, locale);
 		committedWagerEl.textContent = state.activeRound
-			? formatCurrency(state.activeRound.committedWager)
+			? formatCurrency(state.activeRound.committedWager, locale)
 			: '\u2014';
 		roundProgressEl.textContent = roundProgressLabel(state.roundsCompleted);
 		if (state.activeRound) {
@@ -436,6 +443,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				dealerHandEl,
 				dealerValueEl,
 				playerHandsEl,
+				locale,
 			);
 			statusEl.textContent = '';
 		}
@@ -458,7 +466,10 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			parsed < DAILY_RUN_CONFIG.minimumWager ||
 			parsed > DAILY_RUN_CONFIG.maximumWager
 		) {
-			statusEl.textContent = `Wager must be a whole number between ${DAILY_RUN_CONFIG.minimumWager} and ${DAILY_RUN_CONFIG.maximumWager.toLocaleString('en-US')}.`;
+			statusEl.textContent = t('wagerRange', {
+				min: formatWholeNumber(DAILY_RUN_CONFIG.minimumWager, locale),
+				max: formatWholeNumber(DAILY_RUN_CONFIG.maximumWager, locale),
+			});
 			return;
 		}
 		handlers?.onStartRound(parsed);
@@ -523,14 +534,22 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				...leaderboard.entries.map((entry) => {
 					const row = document.createElement('li');
 					row.dataset.testid = 'daily-challenge-leaderboard-row';
-					row.textContent = `#${entry.rank} ${entry.playerName} ${formatCurrency(entry.endingBankroll)}`;
+					row.textContent = t('dailyRow', {
+						rank: formatWholeNumber(entry.rank, locale),
+						player: entry.playerName,
+						amount: formatCurrency(entry.endingBankroll, locale),
+					});
 					return row;
 				}),
 			);
 			currentStandingEl.hidden = leaderboard.currentUser === null;
 			if (leaderboard.currentUser !== null) {
 				const { rank, totalEligible, percentile } = leaderboard.currentUser;
-				currentStandingEl.textContent = `#${rank} · ${percentile}% · ${totalEligible} eligible`;
+				currentStandingEl.textContent = t('dailyStanding', {
+					rank: formatWholeNumber(rank, locale),
+					percentile: formatWholeNumber(percentile, locale),
+					eligible: formatWholeNumber(totalEligible, locale),
+				});
 			}
 		},
 
@@ -540,14 +559,19 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			if (leaderboard.entries.length === 0) {
 				const empty = document.createElement('li');
 				empty.dataset.testid = 'daily-challenge-weekly-empty';
-				empty.textContent = 'No results yet this week.';
+				empty.textContent = t('weeklyEmpty');
 				weeklyRowsEl.replaceChildren(empty);
 			} else {
 				weeklyRowsEl.replaceChildren(
 					...leaderboard.entries.map((entry) => {
 						const row = document.createElement('li');
 						row.dataset.testid = 'daily-challenge-weekly-leaderboard-row';
-						row.textContent = `#${entry.rank} ${entry.playerName} ${formatPoints(entry.weeklyScore)} pts · ${entry.daysPlayed}/7 days`;
+						row.textContent = t('weeklyRow', {
+							rank: formatWholeNumber(entry.rank, locale),
+							player: entry.playerName,
+							points: formatPoints(entry.weeklyScore, locale),
+							days: formatWholeNumber(entry.daysPlayed, locale),
+						});
 						return row;
 					}),
 				);
@@ -555,7 +579,12 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			weeklyStandingEl.hidden = leaderboard.currentUser === null;
 			if (leaderboard.currentUser !== null) {
 				const { rank, totalEligible, weeklyScore, daysPlayed } = leaderboard.currentUser;
-				weeklyStandingEl.textContent = `#${rank} of ${totalEligible} · ${formatPoints(weeklyScore)} pts · ${daysPlayed}/7 days`;
+				weeklyStandingEl.textContent = t('weeklyStanding', {
+					rank: formatWholeNumber(rank, locale),
+					total: formatWholeNumber(totalEligible, locale),
+					points: formatPoints(weeklyScore, locale),
+					days: formatWholeNumber(daysPlayed, locale),
+				});
 			}
 		},
 
@@ -581,6 +610,8 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 export interface DailyPracticeControllerDeps {
 	/** Seed factory; defaults to a fresh 32-byte `crypto.getRandomValues` draw. */
 	createSeed?: () => Uint8Array;
+	/** Document locale; defaults to English for isolated callers. */
+	locale?: Locale;
 	render(replay: DailyRunReplay): void;
 	renderError(message: string): void;
 }
@@ -602,6 +633,7 @@ export function createDailyPracticeController(
 	deps: DailyPracticeControllerDeps,
 ): DailyPracticeController {
 	const createSeed = deps.createSeed ?? createDailyPracticeSeed;
+	const t = dailyChallengeTranslator(deps.locale ?? 'en');
 	let seed = createSeed();
 	let commands: BlackjackRunCommand[] = [];
 
@@ -616,10 +648,10 @@ export function createDailyPracticeController(
 			deps.render(replay);
 		} catch (error) {
 			if (error instanceof BlackjackRunError && error.code === 'ATTEMPT_COMPLETE') {
-				deps.renderError(PRACTICE_OVER_STATUS);
+				deps.renderError(t('practiceOver'));
 				return;
 			}
-			deps.renderError(errorMessage(error));
+			deps.renderError(error instanceof Error ? error.message : t('dailyRequestFailed'));
 		}
 	};
 
@@ -664,6 +696,10 @@ export async function initDailyChallengePage(
 	}
 	const periodKey = periodKeyRaw;
 	const authenticated = root.dataset.userId !== undefined && root.dataset.userId !== 'guest';
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = dailyChallengeTranslator(locale);
+	const errorMessage = (error: unknown): string =>
+		error instanceof Error ? error.message : t('dailyRequestFailed');
 	const renderer = (deps.createRenderer ?? createDailyRunRenderer)(root);
 	const client = deps.client ?? createBlackjackRunClient();
 	const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -673,6 +709,7 @@ export async function initDailyChallengePage(
 
 	const practice = createDailyPracticeController({
 		createSeed: deps.createSeed,
+		locale,
 		render: (replay) => renderer.renderPractice(replay),
 		renderError: (message) => renderer.renderError(message),
 	});
@@ -816,6 +853,6 @@ export async function initDailyChallengePage(
 		renderer.renderWeeklyLeaderboard(parseWeeklyLeaderboardView(data));
 	} catch (error) {
 		console.error('Weekly leaderboard fetch failed', error);
-		renderer.renderWeeklyLeaderboardError('Weekly leaderboard is unavailable — refresh to retry.');
+		renderer.renderWeeklyLeaderboardError(t('weeklyLeaderboardUnavailable'));
 	}
 }

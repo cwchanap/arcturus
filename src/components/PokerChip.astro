@@ -1,10 +1,14 @@
 ---
+import { formatWholeNumber } from '../lib/formatting';
+import type { Locale } from '../lib/i18n/locale';
+
 interface Props {
 	value: number;
 	color?: 'red' | 'blue' | 'green' | 'black' | 'gold';
+	locale?: Locale;
 }
 
-const { value, color = 'red' } = Astro.props;
+const { value, color = 'red', locale = 'en' } = Astro.props;
 
 const chipColors = {
 	red: 'bg-red-600 border-white',
@@ -16,5 +20,5 @@ const chipColors = {
 ---
 
 <div class={`poker-chip ${chipColors[color]} text-white text-xs font-bold chip-stack`}>
-	${value}
+	{formatWholeNumber(value, locale)}
 </div>

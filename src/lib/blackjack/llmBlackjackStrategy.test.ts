@@ -4,6 +4,7 @@ import {
 	getBlackjackStrategyAdvice,
 	type BlackjackAdviceContext,
 } from './llmBlackjackStrategy';
+import { SUPPORTED_LOCALES } from '../i18n/locale';
 import type { AiSettings } from '../ai';
 import type { Card, Hand } from './types';
 
@@ -189,5 +190,59 @@ describe('Blackjack strategy advice', () => {
 		const local = getBlackjackStrategyAdvice(context);
 
 		expect(await getBlackjackAdvice(context, settings)).toEqual(local);
+	});
+
+	test('recommends the identical action in every supported locale', () => {
+		const context = createContext([card('6', 'hearts'), card('5', 'spades')], card('6', 'clubs'), [
+			'hit',
+			'stand',
+			'double-down',
+		]);
+
+		const actions = SUPPORTED_LOCALES.map((locale) =>
+			getBlackjackStrategyAdvice(context, locale),
+		).map((advice) => advice.recommendedAction);
+
+		expect(new Set(actions)).toEqual(new Set(['double-down']));
+	});
+
+	test('localizes deterministic reasoning without changing the move', () => {
+		const context = createContext(
+			[card('10', 'hearts'), card('6', 'spades')],
+			card('10', 'clubs'),
+			['hit', 'stand'],
+		);
+
+		const en = getBlackjackStrategyAdvice(context, 'en');
+		const zhHant = getBlackjackStrategyAdvice(context, 'zh-Hant');
+		const ja = getBlackjackStrategyAdvice(context, 'ja');
+
+		expect(en.recommendedAction).toBe('hit');
+		expect(zhHant.recommendedAction).toBe('hit');
+		expect(ja.recommendedAction).toBe('hit');
+		expect(en.reasoning).toContain('(basic strategy)');
+		expect(zhHant.reasoning).toContain('基本策略');
+		expect(ja.reasoning).toContain('ベーシックストラテジー');
+	});
+
+	test('the provider prompt requests the active locale but cannot change the action', async () => {
+		let body = '';
+		mockFetch(async (_url, init) => {
+			body = typeof init.body === 'string' ? init.body : '';
+			return new Response(
+				JSON.stringify({ choices: [{ message: { content: '{"reasoning":"中文說明。"}' } }] }),
+			);
+		});
+
+		const context = createContext(
+			[card('10', 'hearts'), card('6', 'spades')],
+			card('10', 'clubs'),
+			['hit', 'stand'],
+		);
+		const advice = await getBlackjackAdvice(context, settings, 'zh-Hant');
+
+		expect(advice.recommendedAction).toBe('hit');
+		expect(body).toContain('zh-Hant');
+		expect(advice.reasoning).toBe('中文說明。');
 	});
 });

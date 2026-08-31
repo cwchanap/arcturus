@@ -35,6 +35,14 @@ message dictionary so terminology stays consistent across sequential PRs.
 | Ranked (attempt) | 排位         | 排位         | ランク戦           |
 | Forfeit          | 放棄         | 放弃         | フォーフェイト     |
 | Bankroll         | 資金         | 资金         | バンクロール       |
+| Blackjack        | 二十一點     | 二十一点     | ブラックジャック   |
+| Hit              | 要牌         | 要牌         | ヒット             |
+| Stand            | 停牌         | 停牌         | スタンド           |
+| Double Down      | 加倍         | 加倍         | ダブルダウン       |
+| Split            | 分牌         | 分牌         | スプリット         |
+| Natural          | 天成二十一點 | 天成二十一点 | ナチュラル         |
+| Dealer Hand      | 莊家手牌     | 庄家手牌     | ディーラーのハンド |
+| Player Hand      | 玩家手牌     | 玩家手牌     | プレイヤーのハンド |
 
 Conventions:
 

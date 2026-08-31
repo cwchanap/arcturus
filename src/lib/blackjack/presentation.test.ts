@@ -49,6 +49,12 @@ describe('formatBlackjackHandValue', () => {
 	test('renders a hard total as a bare number', () => {
 		expect(formatBlackjackHandValue(HARD_17)).toBe('17');
 	});
+
+	test('localizes bust and soft labels through the locale argument', () => {
+		expect(formatBlackjackHandValue(BUST_23, 'zh-Hant')).toBe('爆牌 23');
+		expect(formatBlackjackHandValue(SOFT_17, 'ja')).toBe('ソフト 17');
+		expect(formatBlackjackHandValue(HARD_17, 'zh-Hant')).toBe('17');
+	});
 });
 
 describe('createBlackjackCardElement', () => {

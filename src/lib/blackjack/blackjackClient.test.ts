@@ -3,6 +3,7 @@ import type { RoundOutcome } from './types';
 import {
 	buildBlackjackSettlementCommand,
 	canStartBlackjackRound,
+	formatBlackjackOutcomeMessage,
 	retryBlackjackSettlement,
 } from './blackjackClient';
 import type { SettlementGate } from '../wallet';
@@ -63,5 +64,47 @@ describe('Blackjack wallet settlement client', () => {
 
 		expect(retryCalls).toBe(1);
 		expect(result).toEqual({ balance: 1_025, duplicate: false });
+	});
+});
+
+describe('formatBlackjackOutcomeMessage', () => {
+	test('renders single-hand outcomes in English', () => {
+		expect(formatBlackjackOutcomeMessage([{ handIndex: 0, result: 'blackjack', payout: 75 }])).toBe(
+			'🎉 BLACKJACK! You win!',
+		);
+		expect(formatBlackjackOutcomeMessage([{ handIndex: 0, result: 'win', payout: 100 }])).toBe(
+			'✓ You win!',
+		);
+		expect(formatBlackjackOutcomeMessage([{ handIndex: 0, result: 'loss', payout: 0 }])).toBe(
+			'✗ Dealer wins',
+		);
+		expect(formatBlackjackOutcomeMessage([{ handIndex: 0, result: 'push', payout: 50 }])).toBe(
+			'🤝 Push (Tie)',
+		);
+	});
+
+	test('renders split hands with an overall summary', () => {
+		const outcomes: RoundOutcome[] = [
+			{ handIndex: 0, result: 'win', payout: 100 },
+			{ handIndex: 1, result: 'loss', payout: 0 },
+		];
+
+		expect(formatBlackjackOutcomeMessage(outcomes)).toBe(
+			'Hand 1: ✓ Win | Hand 2: ✗ Loss — Overall: Split result',
+		);
+	});
+
+	test('localizes split summaries per locale', () => {
+		const outcomes: RoundOutcome[] = [
+			{ handIndex: 0, result: 'win', payout: 100 },
+			{ handIndex: 1, result: 'win', payout: 100 },
+		];
+
+		expect(formatBlackjackOutcomeMessage(outcomes, 'zh-Hant')).toBe(
+			'第 1 手：✓ 贏 | 第 2 手：✓ 贏 — 整體：你贏了！🎉',
+		);
+		expect(formatBlackjackOutcomeMessage(outcomes, 'ja')).toBe(
+			'ハンド 1：✓ 勝ち | ハンド 2：✓ 勝ち — 総合：あなたの勝ち！🎉',
+		);
 	});
 });

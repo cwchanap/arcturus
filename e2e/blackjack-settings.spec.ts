@@ -90,7 +90,9 @@ test.describe('Blackjack Game Settings', () => {
 			// Invalid low bet should be rejected with clear status message
 			await page.fill('#bet-amount', '10');
 			await page.getByRole('button', { name: 'Deal' }).click();
-			await expect(page.locator('#game-status')).toContainText('Bet must be between $50 and $200');
+			await expect(page.locator('#game-status')).toContainText(
+				'Bet must be between 50 chips and 200 chips',
+			);
 
 			// Valid bet within limits should start the round
 			await page.fill('#bet-amount', '100');

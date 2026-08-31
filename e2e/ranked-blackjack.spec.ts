@@ -39,10 +39,6 @@ function parseRankedState(text: string): RankedState {
 }
 
 function formatChips(value: number): string {
-	return `$${value.toLocaleString('en-US')}`;
-}
-
-function formatChipsPill(value: number): string {
 	return `${value.toLocaleString('en-US')} chips`;
 }
 
@@ -177,12 +173,12 @@ test.describe('ranked blackjack run', () => {
 
 			// …and the header pill + in-table balance reflect it immediately.
 			await expect(isolated.page.locator('[data-chip-balance]').first()).toHaveText(
-				formatChipsPill(state.balance),
+				formatChips(state.balance),
 			);
 			await expect(isolated.page.getByTestId('ranked-balance')).toHaveText(
 				formatChips(state.balance),
 			);
-			await expect(isolated.page.getByTestId('ranked-committed-wager')).toHaveText('$10');
+			await expect(isolated.page.getByTestId('ranked-committed-wager')).toHaveText('10 chips');
 
 			// The active opening shows only the server-projected dealer card.
 			await expect(
@@ -236,14 +232,14 @@ test.describe('ranked blackjack run', () => {
 			);
 			const expectedNet =
 				outcome.gameNetDelta === 0
-					? '$0'
-					: `${outcome.gameNetDelta > 0 ? '+' : '-'}${formatChips(Math.abs(outcome.gameNetDelta))}`;
+					? '0 chips'
+					: `${outcome.gameNetDelta > 0 ? '+' : '−'}${formatChips(Math.abs(outcome.gameNetDelta))}`;
 			await expect(isolated.page.getByTestId('ranked-result-net')).toHaveText(expectedNet);
 			await expect(isolated.page.getByTestId('ranked-result-balance')).toHaveText(
 				formatChips(terminal.balance),
 			);
 			await expect(isolated.page.locator('[data-chip-balance]').first()).toHaveText(
-				formatChipsPill(terminal.balance),
+				formatChips(terminal.balance),
 			);
 			// Terminal releases the start control.
 			await expect(isolated.page.getByTestId('ranked-start')).toBeEnabled();
@@ -278,7 +274,7 @@ test.describe('ranked blackjack run', () => {
 				formatChips(resumed.balance),
 			);
 			await expect(isolated.page.locator('[data-chip-balance]').first()).toHaveText(
-				formatChipsPill(resumed.balance),
+				formatChips(resumed.balance),
 			);
 			await expect(
 				isolated.page.locator('[data-testid="ranked-dealer-hand"] > .playing-card'),
@@ -344,7 +340,7 @@ test.describe('ranked blackjack run', () => {
 					);
 				}
 				await expect(isolated.page.locator('[data-chip-balance]').first()).toHaveText(
-					formatChipsPill(after.balance),
+					formatChips(after.balance),
 				);
 				await expect(isolated.page.getByTestId('ranked-balance')).toHaveText(
 					formatChips(after.balance),
@@ -415,7 +411,7 @@ test.describe('ranked blackjack run', () => {
 			// natural also credits its payout on top of the same debit).
 			expect(second.balance).toBe(terminal.balance - RANKED_WAGER + (second.outcome?.payout ?? 0));
 			await expect(isolated.page.locator('[data-chip-balance]').first()).toHaveText(
-				formatChipsPill(second.balance),
+				formatChips(second.balance),
 			);
 
 			// Old receipt/hash/localStorage behavior is absent.

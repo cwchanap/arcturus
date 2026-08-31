@@ -34,7 +34,7 @@ export class BlackjackUIRenderer {
 
 		const betDiv = document.createElement('div');
 		betDiv.className = 'hand-bet';
-		betDiv.textContent = `Bet: $${hand.bet}`;
+		betDiv.textContent = `Bet: ${hand.bet} chips`;
 
 		clearChildren(container);
 		container.appendChild(cardsDiv);
@@ -95,7 +95,7 @@ export class BlackjackUIRenderer {
 	public updateBalance(balance: number, containerSelector: string): void {
 		const container = document.querySelector(containerSelector);
 		if (container) {
-			container.textContent = `$${balance}`;
+			container.textContent = `${balance} chips`;
 		}
 	}
 
@@ -105,7 +105,7 @@ export class BlackjackUIRenderer {
 	public updatePot(pot: number, containerSelector: string): void {
 		const container = document.querySelector(containerSelector);
 		if (container) {
-			container.textContent = `Pot: $${pot}`;
+			container.textContent = `Pot: ${pot} chips`;
 		}
 	}
 
@@ -222,7 +222,7 @@ export class BlackjackUIRenderer {
 
 					const betDiv = document.createElement('div');
 					betDiv.className = 'hand-bet';
-					betDiv.textContent = `Bet: $${hand.bet}`;
+					betDiv.textContent = `Bet: ${hand.bet} chips`;
 
 					handDiv.appendChild(labelDiv);
 					handDiv.appendChild(cardsDiv);

@@ -163,7 +163,7 @@ function makeSplitHandsContainer(
 		const bet = document.createElement('div');
 		bet.className = 'hand-bet';
 		bet.setAttribute('data-hand-bet', '');
-		bet.textContent = '$0';
+		bet.textContent = '0 chips';
 		handContainer.appendChild(bet);
 
 		container.appendChild(handContainer);
@@ -225,7 +225,7 @@ function buildBlackjackDOM(options: {
 	const balanceWrapper = document.createElement('div');
 	const balanceEl = document.createElement('div');
 	balanceEl.id = 'player-balance';
-	balanceEl.textContent = `$${(options.initialBalance ?? 1000).toLocaleString()}`;
+	balanceEl.textContent = `${(options.initialBalance ?? 1000).toLocaleString()} chips`;
 	balanceWrapper.appendChild(balanceEl);
 	root.appendChild(balanceWrapper);
 
@@ -259,7 +259,7 @@ function buildBlackjackDOM(options: {
 
 	const currentBet = document.createElement('div');
 	currentBet.id = 'current-bet';
-	currentBet.textContent = 'Current Bet: $0';
+	currentBet.textContent = 'Current Bet: 0 chips';
 	root.appendChild(currentBet);
 
 	// Betting controls

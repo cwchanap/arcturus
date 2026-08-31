@@ -23,18 +23,11 @@ export const HAND_RANKINGS = {
 	ROYAL_FLUSH: 9,
 } as const;
 
-export const HAND_NAMES = [
-	'High Card',
-	'Pair',
-	'Two Pair',
-	'Three of a Kind',
-	'Straight',
-	'Flush',
-	'Full House',
-	'Four of a Kind',
-	'Straight Flush',
-	'Royal Flush',
-] as const;
+/**
+ * Closed presentation key for poker hand categories. Neutral ranking source
+ * is `HAND_RANKINGS`; display labels come from `messages/poker.ts`.
+ */
+export type PokerHandNameKey = keyof typeof HAND_RANKINGS;
 
 export const CARD_VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
 

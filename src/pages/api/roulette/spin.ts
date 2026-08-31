@@ -11,6 +11,7 @@ import type { BetType, RouletteBet } from '../../../lib/roulette/types';
 import {
 	settleWalletRound,
 	WalletSettlementDomainError,
+	type SettleRoundResult,
 	type WalletSettlementErrorCode,
 } from '../../../lib/wallet/settle';
 
@@ -205,6 +206,12 @@ async function handleSpinRequest(
 		return Response.json({ duplicate: true, newBalance: walletResult.balance });
 	}
 
+	// The success payload must carry the wallet's language-neutral achievement
+	// shape ({ id, icon }); names resolve client-side from the document locale.
+	const newAchievements: SettleRoundResult['newAchievements'] = walletResult.newAchievements?.length
+		? walletResult.newAchievements
+		: undefined;
+
 	return Response.json({
 		winningNumber,
 		newBalance: walletResult.balance,
@@ -212,9 +219,7 @@ async function handleSpinRequest(
 		netDelta,
 		results,
 		syncId,
-		...(walletResult.newAchievements?.length
-			? { newAchievements: walletResult.newAchievements }
-			: {}),
+		...(newAchievements ? { newAchievements } : {}),
 	});
 }
 

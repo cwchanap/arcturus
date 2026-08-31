@@ -32,41 +32,32 @@ export const ACHIEVEMENT_THRESHOLDS = {
 } as const;
 
 /**
- * All achievement definitions
+ * All achievement definitions (language-neutral; names live in the i18n
+ * presentation catalog under src/lib/i18n/messages/achievements.ts)
  */
 export const ACHIEVEMENTS: AchievementDefinition[] = [
 	{
 		id: 'rising_star',
-		name: 'Rising Star',
-		description: `Enter the top ${ACHIEVEMENT_THRESHOLDS.RISING_STAR_RANK} leaderboard`,
 		category: 'leaderboard',
 		icon: '🌟',
 	},
 	{
 		id: 'high_roller',
-		name: 'High Roller',
-		description: `Reach the top ${ACHIEVEMENT_THRESHOLDS.HIGH_ROLLER_RANK} on the leaderboard`,
 		category: 'leaderboard',
 		icon: '💎',
 	},
 	{
 		id: 'champion',
-		name: 'Champion',
-		description: 'Reach #1 position on the leaderboard',
 		category: 'leaderboard',
 		icon: '🏆',
 	},
 	{
 		id: 'consistent',
-		name: 'Consistent Winner',
-		description: `Win ${ACHIEVEMENT_THRESHOLDS.CONSISTENT_WINS} hands across all games`,
 		category: 'milestone',
 		icon: '🎯',
 	},
 	{
 		id: 'comeback',
-		name: 'Comeback King',
-		description: `Win after dropping below ${new Intl.NumberFormat('en-US').format(ACHIEVEMENT_THRESHOLDS.COMEBACK_LOW_BALANCE)} chips`,
 		category: 'gameplay',
 		icon: '🔥',
 	},

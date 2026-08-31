@@ -137,7 +137,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 					if (granted) {
 						newlyGranted.push(achievement);
 						console.warn(
-							`[ACHIEVEMENT] Achievement unlocked for ${redactUserId(userId)}: ${achievement.name}`,
+							`[ACHIEVEMENT] Achievement unlocked for ${redactUserId(userId)}: ${achievement.id}`,
 						);
 					}
 				}

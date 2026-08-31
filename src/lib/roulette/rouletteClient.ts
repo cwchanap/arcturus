@@ -2,6 +2,7 @@ import { RouletteGame } from './RouletteGame';
 import { RouletteUIRenderer } from './RouletteUIRenderer';
 import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
 import type { BetType, RouletteBet, RouletteGameState, SpinResult } from './types';
+import type { AchievementId } from '../achievements/types';
 import { initAchievementToast } from '../achievement-toast';
 import {
 	GUEST_CLIENT_USER_ID,
@@ -25,7 +26,7 @@ type SpinResponse = {
 	winningNumber?: number;
 	netDelta?: number;
 	results?: SpinResult['results'];
-	newAchievements?: Array<{ id: string; name: string; icon: string }>;
+	newAchievements?: Array<{ id: AchievementId; icon: string }>;
 };
 
 /** Wire the authoritative Roulette route to the browser UI. */

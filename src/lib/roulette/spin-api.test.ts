@@ -223,12 +223,12 @@ describe('POST /api/roulette/spin', () => {
 		}
 	});
 
-	test('includes newAchievements when wallet returns them', async () => {
+	test('includes language-neutral newAchievements when wallet returns them', async () => {
 		const { handler } = createHandler({
 			settle: async () => ({
 				balance: 1_350,
 				duplicate: false,
-				newAchievements: [{ id: 'rising_star', name: 'Rising Star', icon: 'star' }],
+				newAchievements: [{ id: 'rising_star', icon: 'star' }],
 			}),
 		});
 		const response = await handler(
@@ -236,9 +236,7 @@ describe('POST /api/roulette/spin', () => {
 		);
 		const body = await json(response);
 		expect(response.status).toBe(200);
-		expect(body.newAchievements).toEqual([
-			{ id: 'rising_star', name: 'Rising Star', icon: 'star' },
-		]);
+		expect(body.newAchievements).toEqual([{ id: 'rising_star', icon: 'star' }]);
 	});
 
 	test('wraps unexpected (non-domain) errors in a 500 INTERNAL_ERROR response', async () => {

@@ -134,8 +134,6 @@ describe('achievements orchestration', () => {
 			consistentAchievement!,
 			{
 				id: 'missing_check' as AchievementDefinition['id'],
-				name: 'Missing',
-				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
 			},
@@ -236,8 +234,6 @@ describe('achievements orchestration', () => {
 			...ACHIEVEMENTS.filter((achievement) => achievement.id === 'consistent'),
 			{
 				id: 'missing_check' as AchievementDefinition['id'],
-				name: 'Missing',
-				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
 			},
@@ -289,8 +285,6 @@ describe('achievements orchestration', () => {
 			...ACHIEVEMENTS.filter((achievement) => achievement.id === 'consistent'),
 			{
 				id: 'missing_check' as AchievementDefinition['id'],
-				name: 'Missing',
-				description: 'missing',
 				category: 'leaderboard',
 				icon: '⭐',
 			},

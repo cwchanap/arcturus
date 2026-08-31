@@ -1,7 +1,6 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChipBalance } from '../../lib/formatting';
 import { slotsTranslator, getSlotsSymbolLabel } from '../../lib/i18n/messages/slots';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { formatChips } from '../../lib/i18n/messages/common';
@@ -47,7 +46,7 @@ const clientUserId = gameSession.clientUserId;
 					id="chip-balance"
 					data-testid="chip-balance"
 				>
-					{formatChipBalance(initialBalance, locale)}
+					{formatChips(initialBalance, locale)}
 				</div>
 			</div>
 		</div>

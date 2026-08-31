@@ -314,7 +314,7 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			});
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			expect(balanceEl().textContent).toBe('1,024');
+			expect(balanceEl().textContent).toBe('1,024 chips');
 			expect(root.querySelector<HTMLElement>('[data-chip-balance]')?.textContent).toBe(
 				'1,024 chips',
 			);
@@ -377,7 +377,7 @@ describe('initSicBoClient — guest round flow', () => {
 		const root = makeSicBoRoot({ guestMode: true, initialBalance: 1000 });
 		try {
 			initSicBoClient();
-			expect(balanceEl().textContent).toBe('400');
+			expect(balanceEl().textContent).toBe('400 chips');
 		} finally {
 			root.remove();
 		}
@@ -398,7 +398,7 @@ describe('initSicBoClient — guest round flow', () => {
 			actionButton().click();
 
 			// Gross return 25 on a 1-chip any-triple → net +24.
-			expect(balanceEl().textContent).toBe('1,024');
+			expect(balanceEl().textContent).toBe('1,024 chips');
 			expect(localStorage.getItem(`sic-bo-bankroll:${USER_ID}`)).toBe('1024');
 			expect(calls).toHaveLength(0);
 		} finally {

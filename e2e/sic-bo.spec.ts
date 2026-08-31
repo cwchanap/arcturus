@@ -39,7 +39,7 @@ test.describe('Sic Bo guest', () => {
 
 		// 1. Loads in guest mode with the default bankroll.
 		await expect(page.getByTestId('sic-bo-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 
 		// 2. Choose denomination 5 and Big.
 		await placeBigBet(page);
@@ -54,7 +54,7 @@ test.describe('Sic Bo guest', () => {
 
 		// 4. Big wins: balance increases by 5.
 		await expect(page.getByTestId('sic-bo-result')).toHaveText('Won +5 chips');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,005');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,005 chips');
 
 		// 5. Action becomes enabled New Round.
 		await expect(page.getByTestId('sic-bo-action')).toHaveText('New Round');
@@ -100,7 +100,7 @@ test.describe('Sic Bo wallet', () => {
 			expect(commands[0].settlementId).toMatch(/^sic-bo-/);
 
 			// The known balance is adopted before New Round is enabled.
-			await expect(page.getByTestId('chip-balance')).toHaveText('4,242');
+			await expect(page.getByTestId('chip-balance')).toHaveText('4,242 chips');
 			await expect(page.getByTestId('sic-bo-action')).toHaveText('New Round');
 			await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
 		} finally {
@@ -151,7 +151,7 @@ test.describe('Sic Bo wallet', () => {
 			expect(commands[1]).toEqual(commands[0]);
 
 			// The authoritative balance is adopted and New Round becomes enabled.
-			await expect(page.getByTestId('chip-balance')).toHaveText('4,242');
+			await expect(page.getByTestId('chip-balance')).toHaveText('4,242 chips');
 			await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
 		} finally {
 			await context.close();

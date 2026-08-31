@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { formatChipBalance } from '../formatting';
+import { formatChips } from '../i18n/messages/common';
 import { SlotsUIRenderer } from './SlotsUIRenderer';
 import {
 	MAX_HISTORY,
@@ -293,7 +293,7 @@ describe('SlotsUIRenderer', () => {
 	test('renderBalance formats the balance with locale separators', () => {
 		const r = new SlotsUIRenderer();
 		r.renderBalance(1234567);
-		expect(fx.balance.textContent).toBe(formatChipBalance(1234567, 'en'));
+		expect(fx.balance.textContent).toBe(formatChips(1234567, 'en'));
 	});
 
 	test('renderBet updates the bet label, selects the matching chip, and sets aria-pressed', () => {

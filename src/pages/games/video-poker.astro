@@ -2,7 +2,6 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChipBalance } from '../../lib/formatting';
 import {
 	videoPokerTranslator,
 	type VIDEO_POKER_MESSAGES,
@@ -64,7 +63,7 @@ const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] =
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{formatChipBalance(gameSession.initialBalance, locale)}
+					{formatChips(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>

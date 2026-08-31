@@ -106,7 +106,9 @@ test.describe('Three-Card Showdown wallet recovery', () => {
 
 			// Both the local balance and the shared header balance adopt the authoritative value.
 			const expectedBalance = startingBalance + Number(commands[1].delta ?? 0);
-			await expect(page.getByTestId('chip-balance')).toHaveText(expectedBalance.toLocaleString());
+			await expect(page.getByTestId('chip-balance')).toHaveText(
+				`${expectedBalance.toLocaleString()} chips`,
+			);
 			await expect(page.locator('[data-chip-balance]').first()).toHaveText(
 				`${expectedBalance.toLocaleString()} chips`,
 			);

@@ -3,10 +3,12 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import BaccaratCardContainer from '../../components/BaccaratCardContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChips } from '../../lib/i18n/messages/common';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
+const locale = Astro.locals.locale;
 // Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
 // authenticated users. The raw account id is never rendered into the DOM.
 const clientUserId = gameSession.clientUserId;
@@ -43,7 +45,7 @@ const clientUserId = gameSession.clientUserId;
 				>
 					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
-						{`$${initialBalance.toLocaleString()}`}
+						{formatChips(initialBalance, locale)}
 					</div>
 				</div>
 			</div>

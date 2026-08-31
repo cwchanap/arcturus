@@ -321,7 +321,7 @@ describe('initVideoPokerClient — guest round flow', () => {
 		try {
 			initVideoPokerClient();
 			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
-			expect(balanceEl.textContent).toBe('500');
+			expect(balanceEl.textContent).toBe('500 chips');
 		} finally {
 			root.remove();
 		}
@@ -344,10 +344,10 @@ describe('initVideoPokerClient — guest round flow', () => {
 			// Dealing after the wager change deducts 3 chips.
 			actionButton().click();
 			await waitFor(
-				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '997',
+				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '997 chips',
 			);
 			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
-			expect(balanceEl.textContent).toBe('997');
+			expect(balanceEl.textContent).toBe('997 chips');
 		} finally {
 			root.remove();
 		}
@@ -500,11 +500,12 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 			await waitFor(() => actionButton().textContent === 'Draw');
 			actionButton().click();
 			await waitFor(
-				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '1,234',
+				() =>
+					(document.getElementById('chip-balance') as HTMLElement).textContent === '1,234 chips',
 			);
 
 			const balanceEl = document.getElementById('chip-balance') as HTMLElement;
-			expect(balanceEl.textContent).toBe('1,234');
+			expect(balanceEl.textContent).toBe('1,234 chips');
 
 			const recoveryContainer = document.getElementById('video-poker-settlement-recovery');
 			expect(recoveryContainer?.classList.contains('hidden')).toBe(true);

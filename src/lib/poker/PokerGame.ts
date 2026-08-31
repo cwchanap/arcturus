@@ -34,6 +34,7 @@ import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager, isAIPersonality, isAISpeed } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 import { loadAiSettings, type AiSettings } from '../ai';
+import { formatWholeNumber } from '../formatting';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { pokerTranslator } from '../i18n/messages/poker';
@@ -1370,10 +1371,11 @@ export class PokerGame {
 			const amount = Math.round(minBet * multipliers[index]);
 			(btn as HTMLElement).dataset.amount = amount.toString();
 
-			// Update chip display text (PokerChip renders a div.poker-chip)
+			// Update chip display text (PokerChip renders a div.poker-chip); the
+			// face is a bare locale-formatted number, matching PokerChip SSR.
 			const chipDisplay = btn.querySelector('.poker-chip');
 			if (chipDisplay) {
-				chipDisplay.textContent = `$${amount}`;
+				chipDisplay.textContent = formatWholeNumber(amount, this.locale);
 			}
 		});
 	}

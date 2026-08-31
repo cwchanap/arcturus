@@ -342,7 +342,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 										data-testid={`chip-${amount}`}
 										aria-pressed={amount === 5 ? 'true' : 'false'}
 									>
-										<PokerChip value={amount} color={chipColors[i]} />
+										<PokerChip value={amount} color={chipColors[i]} locale={locale} />
 									</button>
 								))
 							}

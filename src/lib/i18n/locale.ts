@@ -9,10 +9,10 @@ export const SUPPORTED_LOCALES = ['en', 'zh-Hant', 'zh-Hans', 'ja'] as const;
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
 /**
- * Locales production request resolution may expose. Only `en` until the final
- * completeness pass; expanded together with the activation PR.
+ * Locales production request resolution may expose. All four supported
+ * locales are enabled for the final rollout.
  */
-export const ENABLED_LOCALES: readonly Locale[] = ['en'];
+export const ENABLED_LOCALES: readonly Locale[] = SUPPORTED_LOCALES;
 
 export const LOCALE_COOKIE = 'arcturus_locale';
 

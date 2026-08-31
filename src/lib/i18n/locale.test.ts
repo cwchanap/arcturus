@@ -14,8 +14,8 @@ describe('locale constants', () => {
 		expect([...SUPPORTED_LOCALES]).toEqual(['en', 'zh-Hant', 'zh-Hans', 'ja']);
 	});
 
-	test('ENABLED_LOCALES starts as English only', () => {
-		expect([...ENABLED_LOCALES]).toEqual(['en']);
+	test('ENABLED_LOCALES exposes all four supported locales', () => {
+		expect([...ENABLED_LOCALES]).toEqual([...SUPPORTED_LOCALES]);
 	});
 
 	test('LOCALE_COOKIE is the persisted preference cookie name', () => {
@@ -174,8 +174,30 @@ describe('resolveRequestLocale', () => {
 	});
 
 	test('defaults to the committed ENABLED_LOCALES when not overridden', () => {
-		expect(resolveRequestLocale({ cookieLocale: 'ja', acceptLanguage: 'ja-JP' })).toBe('en');
+		expect(resolveRequestLocale({ cookieLocale: 'ja', acceptLanguage: 'ja-JP' })).toBe('ja');
 		expect(resolveRequestLocale({ cookieLocale: null, acceptLanguage: 'en-US' })).toBe('en');
+	});
+
+	test('resolves enabled Japanese cookies and browser languages', () => {
+		expect(resolveRequestLocale({ cookieLocale: 'ja', acceptLanguage: 'en-US' })).toBe('ja');
+		expect(
+			resolveRequestLocale({ cookieLocale: null, acceptLanguage: 'ja-JP,ja;q=0.9,en;q=0.8' }),
+		).toBe('ja');
+	});
+
+	test('resolves enabled Chinese cookies and browser languages', () => {
+		expect(resolveRequestLocale({ cookieLocale: 'zh-Hant', acceptLanguage: 'en-US' })).toBe(
+			'zh-Hant',
+		);
+		expect(
+			resolveRequestLocale({ cookieLocale: null, acceptLanguage: 'zh-TW,zh;q=0.9,en;q=0.8' }),
+		).toBe('zh-Hant');
+		expect(
+			resolveRequestLocale({ cookieLocale: null, acceptLanguage: 'zh-CN,zh;q=0.9,en;q=0.8' }),
+		).toBe('zh-Hans');
+		expect(resolveRequestLocale({ cookieLocale: 'zh-Hans', acceptLanguage: 'ja-JP' })).toBe(
+			'zh-Hans',
+		);
 	});
 });
 

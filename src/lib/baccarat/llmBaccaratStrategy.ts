@@ -5,6 +5,15 @@
 
 import type { RoundOutcome, BetType } from './types';
 import { generateAiJson, type AiSettings } from '../ai';
+import type { Locale } from '../i18n/locale';
+
+/** Language hint the prompt passes to the provider. */
+const LOCALE_LANGUAGE: Record<Locale, string> = {
+	en: 'English',
+	'zh-Hant': 'Traditional Chinese',
+	'zh-Hans': 'Simplified Chinese',
+	ja: 'Japanese',
+};
 
 export interface BaccaratAdviceContext {
 	roundHistory: RoundOutcome[];
@@ -12,6 +21,8 @@ export interface BaccaratAdviceContext {
 	chipBalance: number;
 	shoeCardsRemaining: number;
 	query?: string;
+	/** Locale for the explanation prose; the recommendation stays language-neutral. */
+	locale?: Locale;
 }
 
 export interface BaccaratAdvice {
@@ -96,14 +107,17 @@ Provide practical, responsible betting advice. Be concise and clear.`;
  * Build user prompt for Baccarat advice
  */
 function buildPrompt(context: BaccaratAdviceContext): string {
-	const { roundHistory, currentBets, chipBalance, shoeCardsRemaining, query } = context;
+	const { roundHistory, currentBets, chipBalance, shoeCardsRemaining, query, locale } = context;
 
 	const historyStr = formatHistory(roundHistory);
 	const streakInfo = analyzeStreaks(roundHistory);
 	const betsStr =
-		currentBets.length > 0 ? currentBets.map((b) => `${b.type}: $${b.amount}`).join(', ') : 'None';
+		currentBets.length > 0
+			? currentBets.map((b) => `${b.type}: ${b.amount} chips`).join(', ')
+			: 'None';
 
 	const userQuery = query || 'What bet would you recommend for the next round?';
+	const language = locale ? LOCALE_LANGUAGE[locale] : 'English';
 
 	return `Current Baccarat Session:
 
@@ -114,12 +128,12 @@ Pattern Analysis: ${streakInfo}
 
 Current State:
 - Your Bets: ${betsStr}
-- Chip Balance: $${chipBalance}
+- Chip Balance: ${chipBalance} chips
 - Cards Remaining in Shoe: ${shoeCardsRemaining}
 
 Player Question: ${userQuery}
 
-Provide advice in this JSON format:
+Respond in ${language}. Provide advice in this JSON format:
 {"advice":"your concise advice","suggestedBets":["player"|"banker"|"tie"|"playerPair"|"bankerPair"],"confidence":"low|medium|high"}`;
 }
 
@@ -174,6 +188,7 @@ export function buildAdviceContext(
 	chipBalance: number,
 	shoeCardsRemaining: number,
 	query?: string,
+	locale?: Locale,
 ): BaccaratAdviceContext {
 	return {
 		roundHistory,
@@ -181,5 +196,6 @@ export function buildAdviceContext(
 		chipBalance,
 		shoeCardsRemaining,
 		query,
+		locale,
 	};
 }

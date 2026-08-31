@@ -1,0 +1,261 @@
+/**
+ * Keno presentation messages: the page shell, selection guidance, draw
+ * status/result sentences, paytable labels, settlement recovery, and
+ * game-error copy. Chip amounts route through the shared `formatChips()`
+ * phrase; signed nets are sign templates around that phrase.
+ */
+
+import type { KenoErrorCode } from '../../keno/types';
+import { formatChips } from './common';
+import type { Locale } from '../locale';
+import { createTranslator, defineMessages, type MessageKey } from '../translate';
+
+export const KENO_MESSAGES = defineMessages({
+	en: {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: 'Back to Games',
+		subtitle: 'Pick 1–10. House draws 20. 100% free virtual chips.',
+		paytableButton: 'Paytable',
+		settingsButton: 'Settings',
+		statusPickNumbers: 'Pick 1–10 numbers',
+		lastResultIdle: 'Tap Draw to play',
+		spots: 'Spots:',
+		bet: 'Bet:',
+		quickPick: 'Quick Pick',
+		clear: 'Clear',
+		repeat: 'Repeat',
+		draws: 'Draws:',
+		comingSoon: 'Coming soon',
+		draw: 'Draw',
+		recentTickets: 'Recent tickets',
+		paytableCurrentSpots: 'Paytable (current spots)',
+		settingsTitle: 'Settings',
+		closeSettings: 'Close settings',
+		animationSpeed: 'Animation speed',
+		speedSlow: 'Slow',
+		speedNormal: 'Normal',
+		speedFast: 'Fast',
+		paytableTitle: 'Paytable',
+		closePaytable: 'Close paytable',
+		catchLabel: 'Catch {count}',
+		lastResultWin: '{hits} of {spots} won {amount}',
+		lastResultLoss: '{hits} of {spots} lost {amount}',
+		lastResultPush: '{hits} of {spots} — pushed (bet returned)',
+		recentTicket: '{spots}p {hitCount}hit {net}',
+		drawing: 'Drawing…',
+		roundCompleteWin: 'Round complete — win!',
+		roundComplete: 'Round complete',
+		settlementAttention: 'Settlement needs attention.',
+		settlementFailed: 'Settlement failed. Retry or reset before starting another draw.',
+		retryingSettlement: 'Retrying settlement...',
+		settlementRetryFailed: 'Settlement failed again. Retry or reset before starting another draw.',
+		settlementReset: 'Settlement reset. Pick numbers to start.',
+		settlementPending: 'Settlement is still pending. Retry or reset before starting another draw.',
+		resetRound: 'Reset round',
+		retrySettlement: 'Retry Settlement',
+		errorBelowMin: 'Minimum bet is {min}',
+		errorAboveMax: 'Maximum bet is {max}',
+		errorInvalidBet: 'Bet must be a whole number of chips',
+		errorInvalidSelection: 'Invalid selection',
+		errorInvalidDrawSelection: 'Select between 1 and {max} numbers',
+		errorInsufficientBalance: 'Not enough chips to draw',
+		errorInvalidSyncId: 'Invalid draw identifier',
+		errorUnknown: 'Something went wrong',
+	},
+	'zh-Hant': {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: '返回遊戲',
+		subtitle: '選 1–10 個號碼。莊家開出 20 個。100% 免費虛擬籌碼。',
+		paytableButton: '派彩表',
+		settingsButton: '設定',
+		statusPickNumbers: '請選 1–10 個號碼',
+		lastResultIdle: '點擊開獎以開始',
+		spots: '號碼數：',
+		bet: '下注：',
+		quickPick: '快速選號',
+		clear: '清除',
+		repeat: '重複上局',
+		draws: '開獎次數：',
+		comingSoon: '即將推出',
+		draw: '開獎',
+		recentTickets: '近期彩券',
+		paytableCurrentSpots: '派彩表（目前號碼數）',
+		settingsTitle: '設定',
+		closeSettings: '關閉設定',
+		animationSpeed: '動畫速度',
+		speedSlow: '慢',
+		speedNormal: '正常',
+		speedFast: '快',
+		paytableTitle: '派彩表',
+		closePaytable: '關閉派彩表',
+		catchLabel: '命中 {count} 個',
+		lastResultWin: '{hits} / {spots} 命中，贏得 {amount}',
+		lastResultLoss: '{hits} / {spots} 命中，輸掉 {amount}',
+		lastResultPush: '{hits} / {spots} 命中 — 和局（退還下注）',
+		recentTicket: '{spots}個 {hitCount}中 {net}',
+		drawing: '開獎中…',
+		roundCompleteWin: '本局完成 — 勝利！',
+		roundComplete: '本局完成',
+		settlementAttention: '結算需要處理。',
+		settlementFailed: '結算失敗。請重試或重設後再開始新一局。',
+		retryingSettlement: '正在重試結算…',
+		settlementRetryFailed: '結算再次失敗。請重試或重設後再開始新一局。',
+		settlementReset: '結算已重設。請選號碼以開始。',
+		settlementPending: '結算仍在處理中。請重試或重設後再開始新一局。',
+		resetRound: '重設本局',
+		retrySettlement: '重試結算',
+		errorBelowMin: '最低下注為 {min}',
+		errorAboveMax: '最高下注為 {max}',
+		errorInvalidBet: '下注必須是整數個籌碼',
+		errorInvalidSelection: '無效的選擇',
+		errorInvalidDrawSelection: '請選擇 1 至 {max} 個號碼',
+		errorInsufficientBalance: '籌碼不足，無法開獎',
+		errorInvalidSyncId: '無效的開獎識別碼',
+		errorUnknown: '發生錯誤',
+	},
+	'zh-Hans': {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: '返回游戏',
+		subtitle: '选 1–10 个号码。庄家开出 20 个。100% 免费虚拟筹码。',
+		paytableButton: '派彩表',
+		settingsButton: '设置',
+		statusPickNumbers: '请选 1–10 个号码',
+		lastResultIdle: '点击开奖以开始',
+		spots: '号码数：',
+		bet: '下注：',
+		quickPick: '快速选号',
+		clear: '清除',
+		repeat: '重复上局',
+		draws: '开奖次数：',
+		comingSoon: '即将推出',
+		draw: '开奖',
+		recentTickets: '近期彩票',
+		paytableCurrentSpots: '派彩表（当前号码数）',
+		settingsTitle: '设置',
+		closeSettings: '关闭设置',
+		animationSpeed: '动画速度',
+		speedSlow: '慢',
+		speedNormal: '正常',
+		speedFast: '快',
+		paytableTitle: '派彩表',
+		closePaytable: '关闭派彩表',
+		catchLabel: '命中 {count} 个',
+		lastResultWin: '{hits} / {spots} 命中，赢得 {amount}',
+		lastResultLoss: '{hits} / {spots} 命中，输掉 {amount}',
+		lastResultPush: '{hits} / {spots} 命中 — 和局（退还下注）',
+		recentTicket: '{spots}个 {hitCount}中 {net}',
+		drawing: '开奖中…',
+		roundCompleteWin: '本局完成 — 胜利！',
+		roundComplete: '本局完成',
+		settlementAttention: '结算需要处理。',
+		settlementFailed: '结算失败。请重试或重置后再开始新一局。',
+		retryingSettlement: '正在重试结算…',
+		settlementRetryFailed: '结算再次失败。请重试或重置后再开始新一局。',
+		settlementReset: '结算已重置。请选号码以开始。',
+		settlementPending: '结算仍在处理中。请重试或重置后再开始新一局。',
+		resetRound: '重置本局',
+		retrySettlement: '重试结算',
+		errorBelowMin: '最低下注为 {min}',
+		errorAboveMax: '最高下注为 {max}',
+		errorInvalidBet: '下注必须是整数个筹码',
+		errorInvalidSelection: '无效的选择',
+		errorInvalidDrawSelection: '请选择 1 至 {max} 个号码',
+		errorInsufficientBalance: '筹码不足，无法开奖',
+		errorInvalidSyncId: '无效的开奖标识符',
+		errorUnknown: '发生错误',
+	},
+	ja: {
+		pageTitle: '{game} - Arcturus Casino',
+		backToGames: 'ゲームに戻る',
+		subtitle: '1〜10 を選択。ハウスが 20 個抽選。100% 無料バーチャルチップ。',
+		paytableButton: '配当表',
+		settingsButton: '設定',
+		statusPickNumbers: '1〜10 の番号を選択',
+		lastResultIdle: 'ドローをタップして開始',
+		spots: 'スポット：',
+		bet: 'ベット：',
+		quickPick: 'クイックピック',
+		clear: 'クリア',
+		repeat: 'リピート',
+		draws: 'ドロー回数：',
+		comingSoon: '近日公開',
+		draw: 'ドロー',
+		recentTickets: '最近のチケット',
+		paytableCurrentSpots: '配当表（現在のスポット数）',
+		settingsTitle: '設定',
+		closeSettings: '設定を閉じる',
+		animationSpeed: 'アニメーション速度',
+		speedSlow: '遅い',
+		speedNormal: '普通',
+		speedFast: '速い',
+		paytableTitle: '配当表',
+		closePaytable: '配当表を閉じる',
+		catchLabel: '{count} ヒット',
+		lastResultWin: '{hits} / {spots} ヒット、{amount} 獲得',
+		lastResultLoss: '{hits} / {spots} ヒット、{amount} 損失',
+		lastResultPush: '{hits} / {spots} ヒット — 引き分け（ベット返還）',
+		recentTicket: '{spots}スポット {hitCount}ヒット {net}',
+		drawing: '抽選中…',
+		roundCompleteWin: 'ラウンド完了 — 勝利！',
+		roundComplete: 'ラウンド完了',
+		settlementAttention: '決済の対応が必要です。',
+		settlementFailed:
+			'決済に失敗しました。別のドローを開始する前に再試行またはリセットしてください。',
+		retryingSettlement: '決済を再試行中…',
+		settlementRetryFailed:
+			'決済が再び失敗しました。別のドローを開始する前に再試行またはリセットしてください。',
+		settlementReset: '決済をリセットしました。番号を選んで開始してください。',
+		settlementPending:
+			'決済はまだ処理中です。別のドローを開始する前に再試行またはリセットしてください。',
+		resetRound: 'ラウンドをリセット',
+		retrySettlement: '決済を再試行',
+		errorBelowMin: '最低ベットは {min} です',
+		errorAboveMax: '最高ベットは {max} です',
+		errorInvalidBet: 'ベットは整数のチップで指定してください',
+		errorInvalidSelection: '無効な選択',
+		errorInvalidDrawSelection: '1 から {max} までの番号を選択してください',
+		errorInsufficientBalance: 'ドローするチップが不足しています',
+		errorInvalidSyncId: '無効なドロー識別子',
+		errorUnknown: '問題が発生しました',
+	},
+});
+
+export function kenoTranslator(locale: Locale) {
+	return createTranslator(KENO_MESSAGES, locale);
+}
+
+const KENO_ERROR_KEYS: Record<KenoErrorCode, MessageKey<typeof KENO_MESSAGES>> = {
+	BET_BELOW_MIN: 'errorBelowMin',
+	BET_ABOVE_MAX: 'errorAboveMax',
+	INVALID_BET: 'errorInvalidBet',
+	INVALID_SELECTION: 'errorInvalidSelection',
+	INVALID_DRAW_SELECTION: 'errorInvalidDrawSelection',
+	INSUFFICIENT_BALANCE: 'errorInsufficientBalance',
+	INVALID_SYNC_ID: 'errorInvalidSyncId',
+};
+
+/** Localized message for a Keno error code; unknown codes fall back generically. */
+export function getKenoErrorText(
+	locale: Locale,
+	code: KenoErrorCode,
+	options: { minBet?: number; maxBet?: number; maxSpots?: number } = {},
+): string {
+	const t = kenoTranslator(locale);
+	const key = KENO_ERROR_KEYS[code] ?? 'errorUnknown';
+	if (code === 'BET_BELOW_MIN' && options.minBet !== undefined) {
+		return t('errorBelowMin', { min: formatChips(options.minBet, locale) });
+	}
+	if (code === 'BET_ABOVE_MAX' && options.maxBet !== undefined) {
+		return t('errorAboveMax', { max: formatChips(options.maxBet, locale) });
+	}
+	if (code === 'INVALID_DRAW_SELECTION' && options.maxSpots !== undefined) {
+		return t('errorInvalidDrawSelection', { max: String(options.maxSpots) });
+	}
+	return t(key);
+}
+
+/** Signed net chip result ("+220 chips", "−5 chips", "0 chips"). */
+export function formatKenoNet(locale: Locale, value: number): string {
+	if (value === 0) return formatChips(0, locale);
+	return `${value > 0 ? '+' : '−'}${formatChips(Math.abs(value), locale)}`;
+}

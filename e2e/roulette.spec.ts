@@ -85,7 +85,7 @@ test.describe('Roulette — Initial State', () => {
 		await expect(page.locator('#chip-balance')).toBeVisible();
 		await expect(page.getByTestId('spin-button')).toBeVisible();
 		await expect(page.getByTestId('spin-button')).toBeDisabled();
-		await expect(page.getByTestId('total-bet')).toContainText('$0');
+		await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 		await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
 		await expect(page.locator('#wheel-result')).toContainText('—');
 	});
@@ -133,17 +133,17 @@ test.describe('Roulette — Bet Placement', () => {
 		await page.getByTestId('chip-25').click();
 		await page.locator('[data-bet-type="red"]').click();
 
-		await expect(page.getByTestId('total-bet')).toContainText('$25');
+		await expect(page.getByTestId('total-bet')).toContainText('25 chips');
 		await expect(page.getByTestId('spin-button')).toBeEnabled();
 		await expect(page.getByTestId('active-bets')).toContainText('Red');
-		await expect(page.getByTestId('active-bets')).toContainText('$25');
+		await expect(page.getByTestId('active-bets')).toContainText('25 chips');
 	});
 
 	test('places a straight-up bet on a number', async ({ page }) => {
 		await page.getByTestId('chip-25').click();
 		await page.locator('[data-bet-type="straight"][data-bet-target="17"]').click();
 
-		await expect(page.getByTestId('total-bet')).toContainText('$25');
+		await expect(page.getByTestId('total-bet')).toContainText('25 chips');
 		await expect(page.getByTestId('active-bets')).toContainText('Straight 17');
 	});
 
@@ -152,7 +152,7 @@ test.describe('Roulette — Bet Placement', () => {
 		await page.locator('[data-bet-type="red"]').click();
 		await page.locator('[data-bet-type="black"]').click();
 
-		await expect(page.getByTestId('total-bet')).toContainText('$50');
+		await expect(page.getByTestId('total-bet')).toContainText('50 chips');
 	});
 
 	test('balance decreases when bet is placed', async ({ page }) => {
@@ -161,7 +161,7 @@ test.describe('Roulette — Bet Placement', () => {
 
 		await page.getByTestId('chip-100').click();
 		await page.locator('[data-bet-type="red"]').click();
-		await expect(page.getByTestId('total-bet')).toContainText('$100');
+		await expect(page.getByTestId('total-bet')).toContainText('100 chips');
 
 		const balanceAfter = parseBalance(await page.locator('#chip-balance').innerText());
 		expect(balanceAfter).toBe(balanceBefore - 100);
@@ -174,11 +174,11 @@ test.describe('Roulette — Bet Placement', () => {
 		await page.getByTestId('chip-25').click();
 		await page.locator('[data-bet-type="red"]').click();
 		await page.locator('[data-bet-type="black"]').click();
-		await expect(page.getByTestId('total-bet')).toContainText('$50');
+		await expect(page.getByTestId('total-bet')).toContainText('50 chips');
 
 		await page.getByTestId('clear-bets-button').click();
 
-		await expect(page.getByTestId('total-bet')).toContainText('$0');
+		await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 		await expect(page.getByTestId('spin-button')).toBeDisabled();
 
 		const balanceAfterClear = parseBalance(await page.locator('#chip-balance').innerText());
@@ -217,7 +217,7 @@ test.describe('Roulette — Game Flow', () => {
 			await page.getByTestId('new-round-button').click();
 
 			await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
-			await expect(page.getByTestId('total-bet')).toContainText('$0');
+			await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 			await expect(page.getByTestId('spin-button')).toBeDisabled();
 			await expect(page.getByTestId('new-round-button')).toBeHidden();
 		} finally {
@@ -288,7 +288,7 @@ test.describe('Roulette — Game Flow', () => {
 
 		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
 		await expect(page.locator('#wheel-result')).toContainText('2');
-		await expect(page.locator('#net-delta')).toContainText('-');
+		await expect(page.locator('#net-delta')).toContainText('−');
 		await expect(page.getByTestId('bet-results')).toContainText('Red');
 	});
 
@@ -398,7 +398,7 @@ test.describe('Roulette — Clear Bets Sync', () => {
 			await page.getByTestId('chip-25').click();
 			await page.locator('[data-bet-type="red"]').click();
 			await page.locator('[data-bet-type="black"]').click();
-			await expect(page.getByTestId('total-bet')).toContainText('$50');
+			await expect(page.getByTestId('total-bet')).toContainText('50 chips');
 
 			await page.getByTestId('clear-bets-button').click();
 

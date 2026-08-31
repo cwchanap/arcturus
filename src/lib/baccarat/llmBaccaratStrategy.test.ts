@@ -76,4 +76,54 @@ describe('getBaccaratAdvice', () => {
 
 		expect(result.suggestedBets).toEqual(['banker']);
 	});
+
+	test('keeps the recommendation identical across locales — only the explanation language changes', async () => {
+		globalThis.fetch = (async () =>
+			new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"advice":"Banker has the lowest house edge.","suggestedBets":["banker"],"confidence":"high"}',
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			)) as unknown as typeof fetch;
+
+		const jaResult = await getBaccaratAdvice({ ...context, locale: 'ja' }, settings);
+		const enResult = await getBaccaratAdvice({ ...context, locale: 'en' }, settings);
+
+		// The authoritative recommendation never changes with the locale.
+		expect(jaResult.suggestedBets).toEqual(enResult.suggestedBets);
+		expect(jaResult.confidence).toBe(enResult.confidence);
+		// The locale only steers the prose language (the provider response).
+		expect(jaResult.advice).toBe('Banker has the lowest house edge.');
+	});
+
+	test('passes the requested language into the provider prompt', async () => {
+		let promptBody = '';
+		globalThis.fetch = (async (_url, init) => {
+			promptBody = String(init?.body);
+			return new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"advice":"バンカーが最良です。","suggestedBets":["banker"],"confidence":"high"}',
+							},
+						},
+					],
+				}),
+				{ status: 200, headers: { 'content-type': 'application/json' } },
+			);
+		}) as typeof fetch;
+
+		await getBaccaratAdvice({ ...context, locale: 'ja' }, settings);
+
+		expect(promptBody).toContain('Respond in Japanese.');
+	});
 });

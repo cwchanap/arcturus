@@ -315,7 +315,7 @@ describe('Keno wallet settlement client', () => {
 				body: {
 					balance: 1100,
 					duplicate: false,
-					newAchievements: [{ id: 'keno-win', name: 'Keno Master', icon: '🎯' }],
+					newAchievements: [{ id: 'keno-win', icon: '🎯' }],
 				},
 			},
 		]);
@@ -335,7 +335,7 @@ describe('Keno wallet settlement client', () => {
 			await flush(10);
 
 			expect(events).toHaveLength(1);
-			expect(events[0].achievements).toEqual([{ id: 'keno-win', name: 'Keno Master', icon: '🎯' }]);
+			expect(events[0].achievements).toEqual([{ id: 'keno-win', icon: '🎯' }]);
 		} finally {
 			window.removeEventListener('achievement-earned', handler);
 			r.remove();
@@ -519,7 +519,7 @@ describe('kenoClient gameplay coverage', () => {
 			const chip5 = document.querySelector<HTMLButtonElement>('.bet-chip[data-bet="5"]')!;
 			chip5.click();
 			expect(document.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe(
-				'5',
+				'5 chips',
 			);
 		});
 
@@ -531,7 +531,7 @@ describe('kenoClient gameplay coverage', () => {
 			const chip5 = document.querySelector<HTMLButtonElement>('.bet-chip[data-bet="5"]')!;
 			chip5.click();
 			expect(document.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe(
-				'1',
+				'1 chip',
 			);
 			await flush(5);
 		});

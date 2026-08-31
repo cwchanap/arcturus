@@ -201,18 +201,35 @@ describe('KenoUIRenderer', () => {
 		test('updates the chip-balance element and all [data-chip-balance] nodes', () => {
 			renderer.renderBalance(12345);
 			expect(root.querySelector<HTMLElement>('[data-testid="chip-balance"]')?.textContent).toBe(
-				'12,345',
+				'12,345 chips',
 			);
 			expect(root.querySelector<HTMLElement>('[data-chip-balance]')?.textContent).toBe(
 				'12,345 chips',
 			);
+		});
+
+		test('renders the balance as a Traditional Chinese chip phrase when the document locale is zh-Hant', () => {
+			document.documentElement.dataset.locale = 'zh-Hant';
+			try {
+				const localizedRoot = makeRoot();
+				const localized = new KenoUIRenderer(localizedRoot);
+				localized.renderBalance(12345);
+				expect(
+					localizedRoot.querySelector<HTMLElement>('[data-testid="chip-balance"]')?.textContent,
+				).toBe('12,345 籌碼');
+				localizedRoot.remove();
+			} finally {
+				delete document.documentElement.dataset.locale;
+			}
 		});
 	});
 
 	describe('renderBet', () => {
 		test('updates current-bet text and toggles .selected on matching bet-chip', () => {
 			renderer.renderBet(2);
-			expect(root.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe('2');
+			expect(root.querySelector<HTMLElement>('[data-testid="current-bet"]')?.textContent).toBe(
+				'2 chips',
+			);
 			const chips = root.querySelectorAll<HTMLButtonElement>('.bet-chip');
 			expect(chips[0].classList.contains('selected')).toBe(false);
 			expect(chips[1].classList.contains('selected')).toBe(true);
@@ -291,7 +308,7 @@ describe('KenoUIRenderer', () => {
 				makeResult({ outcome: 'win', netDelta: 220, hitCount: 3, spots: 3 }),
 			);
 			expect(root.querySelector<HTMLElement>('[data-testid="last-result"]')?.textContent).toBe(
-				'3 of 3 won 220',
+				'3 of 3 won 220 chips',
 			);
 		});
 		test('loss outcome uses "lost" and bet amount', () => {
@@ -299,7 +316,7 @@ describe('KenoUIRenderer', () => {
 				makeResult({ outcome: 'loss', netDelta: -5, bet: 5, hitCount: 0, spots: 3 }),
 			);
 			expect(root.querySelector<HTMLElement>('[data-testid="last-result"]')?.textContent).toBe(
-				'0 of 3 lost 5',
+				'0 of 3 lost 5 chips',
 			);
 		});
 		test('push outcome uses "pushed" with bet-returned note', () => {
@@ -361,8 +378,8 @@ describe('KenoUIRenderer', () => {
 			renderer.renderRecent(history);
 			const rows = root.querySelectorAll('.recent-ticket');
 			expect(rows).toHaveLength(2);
-			expect(rows[0].textContent).toBe('3p 3hit +220');
-			expect(rows[1].textContent).toBe('4p 0hit -5');
+			expect(rows[0].textContent).toBe('3p 3hit +220 chips');
+			expect(rows[1].textContent).toBe('4p 0hit −5 chips');
 		});
 		test('slices to the most recent 10', () => {
 			const history = Array.from({ length: 15 }, (_, i) =>

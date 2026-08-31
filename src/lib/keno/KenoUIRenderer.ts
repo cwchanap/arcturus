@@ -1,8 +1,15 @@
 // src/lib/keno/KenoUIRenderer.ts
-import { KENO_POOL, PAYTABLE } from './constants';
+import { KENO_POOL, MAX_SPOTS, PAYTABLE } from './constants';
 import type { DrawResult } from './types';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { kenoTranslator, formatKenoNet, type KENO_MESSAGES } from '../i18n/messages/keno';
+import type { MessageKey } from '../i18n/translate';
 
 type El = HTMLElement;
+type Translator = ReturnType<typeof kenoTranslator>;
+
+const CATCH_LABEL_KEY: MessageKey<typeof KENO_MESSAGES> = 'catchLabel';
 
 export class KenoUIRenderer {
 	private readonly root: El;
@@ -33,9 +40,15 @@ export class KenoUIRenderer {
 	private boundSettingsKeydown: ((e: KeyboardEvent) => void) | null = null;
 	private paytableFocusBefore: HTMLElement | null = null;
 	private boundPaytableKeydown: ((e: KeyboardEvent) => void) | null = null;
+	private readonly locale: Locale;
+	private readonly t: Translator;
 
 	constructor(root: El) {
 		this.root = root;
+		// AppLayout writes data-locale on <html>; the renderer reads it so the
+		// browser and SSR share one locale handoff.
+		this.locale = getDocumentLocale(root.ownerDocument);
+		this.t = kenoTranslator(this.locale);
 		this.grid = req<El>(root, 'keno-grid');
 		this.balanceEl = req<El>(root, 'chip-balance');
 		this.betEl = req<El>(root, 'current-bet');
@@ -229,13 +242,13 @@ export class KenoUIRenderer {
 	}
 
 	renderBalance(balance: number): void {
-		this.balanceEl.textContent = balance.toLocaleString();
+		this.balanceEl.textContent = formatChips(balance, this.locale);
 		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-			el.textContent = `${balance.toLocaleString()} chips`;
+			el.textContent = formatChips(balance, this.locale);
 		});
 	}
 	renderBet(bet: number): void {
-		this.betEl.textContent = String(bet);
+		this.betEl.textContent = formatChips(bet, this.locale);
 		this.root.querySelectorAll<HTMLButtonElement>('.bet-chip').forEach((b) => {
 			const active = Number(b.dataset.bet) === bet;
 			b.classList.toggle('selected', active);
@@ -253,7 +266,7 @@ export class KenoUIRenderer {
 			if (set.has(n) && badge) badge.textContent = String(order);
 			else if (badge) badge.textContent = '';
 		});
-		this.spotCountEl.textContent = `${picks.length}/10`;
+		this.spotCountEl.textContent = `${picks.length}/${MAX_SPOTS}`;
 	}
 	renderCanDraw(can: boolean): void {
 		this.drawBtn.disabled = !can;
@@ -271,12 +284,21 @@ export class KenoUIRenderer {
 		return this.retrySettlementBtn;
 	}
 	renderLastResult(r: DrawResult): void {
-		const verb = r.outcome === 'win' ? 'won' : r.outcome === 'push' ? 'pushed' : 'lost';
-		const amt = r.outcome === 'win' ? r.netDelta : r.outcome === 'loss' ? r.bet : null;
-		this.lastResultEl.textContent =
-			amt === null
-				? `${r.hitCount} of ${r.spots} — ${verb} (bet returned)`
-				: `${r.hitCount} of ${r.spots} ${verb} ${amt.toLocaleString()}`;
+		if (r.outcome === 'push') {
+			this.lastResultEl.textContent = this.t('lastResultPush', {
+				hits: String(r.hitCount),
+				spots: String(r.spots),
+			});
+			return;
+		}
+		const key = r.outcome === 'win' ? 'lastResultWin' : 'lastResultLoss';
+		const amount =
+			r.outcome === 'win' ? formatChips(r.netDelta, this.locale) : formatChips(r.bet, this.locale);
+		this.lastResultEl.textContent = this.t(key, {
+			hits: String(r.hitCount),
+			spots: String(r.spots),
+			amount,
+		});
 	}
 	highlightDrawn(drawn: number[], hits: number[], staggerMs = 60): void {
 		const hitSet = new Set(hits);
@@ -302,8 +324,11 @@ export class KenoUIRenderer {
 		history.slice(0, 10).forEach((r) => {
 			const row = document.createElement('div');
 			row.className = 'recent-ticket';
-			const sign = r.netDelta > 0 ? '+' : '';
-			row.textContent = `${r.spots}p ${r.hitCount}hit ${sign}${r.netDelta}`;
+			row.textContent = this.t('recentTicket', {
+				spots: String(r.spots),
+				hitCount: String(r.hitCount),
+				net: formatKenoNet(this.locale, r.netDelta),
+			});
 			this.recentEl.appendChild(row);
 		});
 	}
@@ -316,7 +341,7 @@ export class KenoUIRenderer {
 			const tr = document.createElement('tr');
 			const tdLabel = document.createElement('td');
 			tdLabel.className = 'py-2';
-			tdLabel.textContent = `Catch ${k}`;
+			tdLabel.textContent = this.t(CATCH_LABEL_KEY, { count: k });
 			const tdMult = document.createElement('td');
 			tdMult.className = 'text-right py-2 text-[var(--deco-brass)]';
 			tdMult.textContent = `×${v}`;

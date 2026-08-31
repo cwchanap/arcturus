@@ -42,9 +42,10 @@ export function createScoreboardDot(winner: 'player' | 'banker' | 'tie'): HTMLSp
 }
 
 /**
- * Create a bet chip display element
+ * Create a bet chip display element. The amount text is pre-formatted by the
+ * caller (localized chip phrase) so this shared helper stays locale-free.
  */
-export function createBetChip(typeLabel: string, amount: number): HTMLDivElement {
+export function createBetChip(typeLabel: string, amountText: string): HTMLDivElement {
 	const chip = document.createElement('div');
 	chip.className = 'bet-chip';
 
@@ -53,7 +54,7 @@ export function createBetChip(typeLabel: string, amount: number): HTMLDivElement
 
 	const amountSpan = document.createElement('span');
 	amountSpan.className = 'text-yellow-400';
-	amountSpan.textContent = `$${amount}`;
+	amountSpan.textContent = amountText;
 
 	chip.appendChild(labelSpan);
 	chip.appendChild(amountSpan);
@@ -61,20 +62,22 @@ export function createBetChip(typeLabel: string, amount: number): HTMLDivElement
 }
 
 /**
- * Create a bet result element for baccarat
+ * Create a bet result element for baccarat. Outcome word and payout text are
+ * pre-formatted by the caller (localized); the outcome code still selects the
+ * result color.
  */
 export function createBetResult(
 	typeLabel: string,
-	outcome: 'win' | 'lose' | 'push',
-	payout: number,
+	outcomeCode: 'win' | 'lose' | 'push',
+	outcomeText: string,
+	payoutText: string,
 ): HTMLDivElement {
 	const outcomeClassMap = {
 		win: 'text-green-400',
 		lose: 'text-red-400',
 		push: 'text-yellow-400',
 	};
-	const outcomeClass = outcomeClassMap[outcome];
-	const payoutPrefix = payout >= 0 ? '+' : '-';
+	const outcomeClass = outcomeClassMap[outcomeCode];
 
 	const result = document.createElement('div');
 	result.className = 'bet-result';
@@ -84,11 +87,11 @@ export function createBetResult(
 
 	const outcomeSpan = document.createElement('span');
 	outcomeSpan.className = outcomeClass;
-	outcomeSpan.textContent = outcome.toUpperCase();
+	outcomeSpan.textContent = outcomeText;
 
 	const payoutSpan = document.createElement('span');
 	payoutSpan.className = outcomeClass;
-	payoutSpan.textContent = `${payoutPrefix}$${Math.abs(payout)}`;
+	payoutSpan.textContent = payoutText;
 
 	result.appendChild(typeSpan);
 	result.appendChild(outcomeSpan);

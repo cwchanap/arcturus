@@ -11,11 +11,13 @@ import {
 	type SettleRoundCommand,
 	type SettleRoundResult,
 } from '../wallet';
-import { MAX_SPOTS, MIN_SPOTS } from './constants';
+import { MAX_BET, MAX_SPOTS, MIN_BET, MIN_SPOTS } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { KenoGame } from './KenoGame';
 import { KenoUIRenderer } from './KenoUIRenderer';
 import type { DrawResult } from './types';
+import { getDocumentLocale } from '../i18n/locale';
+import { kenoTranslator, getKenoErrorText } from '../i18n/messages/keno';
 
 const GAME_KEY = 'keno';
 
@@ -64,6 +66,9 @@ export function initKenoClient(): void {
 	const isGuestMode = isGuestModeValue(root.dataset.guestMode ?? 'false');
 	const initialBalance = Number(root.dataset.initialBalance ?? '1000');
 	const syncChips = shouldSyncAccountChips({ isGuestMode });
+	// Browser locale handoff: AppLayout writes data-locale on <html>.
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = kenoTranslator(locale);
 	const settings = new GameSettingsManager(clientUserId);
 	const renderer = new KenoUIRenderer(root);
 	const settlementGate = createSettlementGate();
@@ -88,7 +93,10 @@ export function initKenoClient(): void {
 			else renderer.clearPaytable();
 			renderer.renderCanDraw(canDrawNow());
 		},
-		onError: (e) => toast(e.message),
+		onError: (e) =>
+			toast(
+				getKenoErrorText(locale, e.code, { minBet: MIN_BET, maxBet: MAX_BET, maxSpots: MAX_SPOTS }),
+			),
 		onRoundComplete: () => {
 			/* no-op: settlement happens after the reveal animation */
 		},
@@ -103,14 +111,14 @@ export function initKenoClient(): void {
 		if (!container || !retry) return { container: null, retry: null, reset: null };
 
 		const message = container.querySelector('p');
-		if (message) message.textContent = 'Settlement needs attention.';
+		if (message) message.textContent = t('settlementAttention');
 		let reset = document.getElementById('btn-reset-settlement') as HTMLButtonElement | null;
 		if (!reset && typeof document.createElement === 'function') {
 			reset = document.createElement('button');
 			reset.id = 'btn-reset-settlement';
 			reset.type = 'button';
 			reset.className = 'deco-btn px-4 py-2 text-sm font-bold rounded-lg';
-			reset.textContent = 'Reset round';
+			reset.textContent = t('resetRound');
 			container.appendChild(reset);
 		}
 		return { container, retry, reset };
@@ -145,22 +153,20 @@ export function initKenoClient(): void {
 			adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Keno settlement failed:', error);
-			showSettlementRecovery('Settlement failed. Retry or reset before starting another draw.');
+			showSettlementRecovery(t('settlementFailed'));
 		}
 	};
 
 	settlementRecovery.retry?.addEventListener('click', async () => {
 		if (!settlementGate.pending) return;
 		if (settlementRecovery.retry) settlementRecovery.retry.disabled = true;
-		renderer.setStatus('Retrying settlement...');
+		renderer.setStatus(t('retryingSettlement'));
 		try {
 			const result = await retryKenoSettlement(settlementGate);
 			if (result) adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Keno settlement retry failed:', error);
-			showSettlementRecovery(
-				'Settlement failed again. Retry or reset before starting another draw.',
-			);
+			showSettlementRecovery(t('settlementRetryFailed'));
 		} finally {
 			if (settlementRecovery.retry) settlementRecovery.retry.disabled = false;
 		}
@@ -170,7 +176,7 @@ export function initKenoClient(): void {
 		settlementGate.reset();
 		game.setBalance(serverSyncedBalance);
 		hideSettlementRecovery();
-		renderer.setStatus('Settlement reset. Pick numbers to start.');
+		renderer.setStatus(t('settlementReset'));
 		renderer.renderCanDraw(canDrawNow());
 	});
 
@@ -271,15 +277,13 @@ export function initKenoClient(): void {
 		if (drawInFlight) return;
 		if (!canDrawNow()) {
 			if (!canStartKenoDraw({ isGuestMode, gate: settlementGate })) {
-				showSettlementRecovery(
-					'Settlement is still pending. Retry or reset before starting another draw.',
-				);
+				showSettlementRecovery(t('settlementPending'));
 			}
 			return;
 		}
 		drawInFlight = true;
 		renderer.getDrawButton().disabled = true;
-		renderer.setStatus('Drawing…');
+		renderer.setStatus(t('drawing'));
 		renderer.clearDrawnHighlight();
 		try {
 			const settlementId = newSettlementId('keno');
@@ -290,7 +294,7 @@ export function initKenoClient(): void {
 			await sleep(settings.getAnimationDelay());
 			renderer.renderLastResult(result);
 			renderer.renderRecent(game.getHistory());
-			renderer.setStatus(result.outcome === 'win' ? 'Round complete — win!' : 'Round complete');
+			renderer.setStatus(result.outcome === 'win' ? t('roundCompleteWin') : t('roundComplete'));
 
 			if (syncChips) {
 				await settleAuthenticatedDraw(result);

@@ -4,11 +4,14 @@ import PokerChip from '../../components/PokerChip.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { WHEEL_ORDER, RED_NUMBERS, CHIP_DENOMINATIONS } from '../../lib/roulette/constants';
 import { formatChips } from '../../lib/i18n/messages/common';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { rouletteTranslator } from '../../lib/i18n/messages/roulette';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
 const locale = Astro.locals.locale;
+const t = rouletteTranslator(locale);
 const clientUserId = gameSession.clientUserId;
 
 // ─── Wheel SVG generation ───────────────────────────────────────────────────
@@ -66,7 +69,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 ];
 ---
 
-<CasinoLayout title="Roulette - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'roulette') })}>
 	<div
 		id="roulette-root"
 		data-testid="roulette-root"
@@ -82,12 +85,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 					href="/games"
 					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
-					← Back to Games
+					← {t('backToGames')}
 				</a>
-				<h1 class="deco-section-title text-4xl">Roulette</h1>
-				<p class="text-[var(--deco-muted)] text-sm mt-1">
-					European single-zero · 100% free virtual chips.
-				</p>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'roulette')}</h1>
+				<p class="text-[var(--deco-muted)] text-sm mt-1">{t('subtitle')}</p>
 			</div>
 			<div
 				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
@@ -147,13 +148,13 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								id="game-phase"
 								class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)] uppercase tracking-wider"
 							>
-								Place Your Bets
+								{t('phasePlaceBets')}
 							</span>
 						</div>
 						<div class="flex items-baseline gap-4 mb-2">
 							<div>
 								<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
-									Winning Number
+									{t('winningNumber')}
 								</div>
 								<div
 									id="wheel-result"
@@ -165,19 +166,21 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								</div>
 							</div>
 							<div>
-								<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">Net</div>
+								<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
+									{t('net')}
+								</div>
 								<div
 									id="net-delta"
 									data-testid="net-delta"
 									aria-live="polite"
 									class="text-2xl font-bold text-[var(--deco-muted)]"
 								>
-									0
+									{formatChips(0, locale)}
 								</div>
 							</div>
 						</div>
 						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm min-h-[20px]">
-							Select a chip, place your bets, then spin!
+							{t('messageHint')}
 						</div>
 						<div
 							id="bet-results"
@@ -236,7 +239,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 										style="background-color: rgba(255,255,255,0.05);"
 									>
 										<span class="text-[10px] text-[var(--deco-muted)]">
-											{['3rd', '2nd', '1st'][ci]}
+											{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}
 										</span>
 										<span>2:1</span>
 									</div>
@@ -249,9 +252,9 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 					<div class="grid grid-cols-3 gap-1">
 						{
 							[
-								{ target: '0', label: '1st 12' },
-								{ target: '1', label: '2nd 12' },
-								{ target: '2', label: '3rd 12' },
+								{ target: '0', ordinal: 'ordinal1st' },
+								{ target: '1', ordinal: 'ordinal2nd' },
+								{ target: '2', ordinal: 'ordinal3rd' },
 							].map((d) => (
 								<div
 									data-bet-type="dozen"
@@ -261,7 +264,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 									class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 									style="background-color: rgba(255,255,255,0.04);"
 								>
-									{d.label}
+									{t('betDozen', { ordinal: t(d.ordinal as 'ordinal1st') })}
 								</div>
 							))
 						}
@@ -276,7 +279,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
-							1-18
+							{t('betLow')}
 						</div>
 						<div
 							data-bet-type="even"
@@ -285,7 +288,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
-							EVEN
+							{t('tableEven')}
 						</div>
 						<div
 							data-bet-type="red"
@@ -294,7 +297,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
 							style="background-color: #b91c1c;"
 						>
-							RED
+							{t('tableRed')}
 						</div>
 						<div
 							data-bet-type="black"
@@ -303,7 +306,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
 							style="background-color: #171717;"
 						>
-							BLACK
+							{t('tableBlack')}
 						</div>
 						<div
 							data-bet-type="odd"
@@ -312,7 +315,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
-							ODD
+							{t('tableOdd')}
 						</div>
 						<div
 							data-bet-type="high"
@@ -321,7 +324,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
 							style="background-color: rgba(255,255,255,0.04);"
 						>
-							19-36
+							{t('betHigh')}
 						</div>
 					</div>
 				</div>
@@ -346,11 +349,11 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						</div>
 						<div class="flex items-center gap-3">
 							<div>
-								<span class="text-[var(--deco-muted)] text-sm">Total Bet:</span>
+								<span class="text-[var(--deco-muted)] text-sm">{t('totalBet')}</span>
 								<span
 									id="total-bet"
 									data-testid="total-bet"
-									class="text-[var(--deco-brass)] font-bold ml-1">$0</span
+									class="text-[var(--deco-brass)] font-bold ml-1">{formatChips(0, locale)}</span
 								>
 							</div>
 							<button
@@ -358,7 +361,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								data-testid="clear-bets-button"
 								class="px-3 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg text-sm transition-colors"
 							>
-								Clear
+								{t('clear')}
 							</button>
 							<button
 								id="spin-button"
@@ -366,7 +369,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								disabled
 								class="btn-gold px-6 py-2 rounded-xl font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
 							>
-								SPIN
+								{t('spinButton')}
 							</button>
 							<button
 								id="new-round-button"
@@ -374,7 +377,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								hidden
 								class="btn-gold px-6 py-2 rounded-xl font-bold text-sm"
 							>
-								NEW ROUND
+								{t('newRoundButton')}
 							</button>
 						</div>
 					</div>
@@ -387,25 +390,25 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 				<!-- Active Bets -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Active Bets
+						{t('activeBets')}
 					</h3>
 					<div id="active-bets" data-testid="active-bets" class="space-y-1 min-h-[40px]">
-						<span class="text-[var(--deco-muted)] text-xs">No bets placed</span>
+						<span class="text-[var(--deco-muted)] text-xs">{t('noBetsPlaced')}</span>
 					</div>
-					<p class="text-[var(--deco-muted)] text-xs mt-2">Click a bet to remove it.</p>
+					<p class="text-[var(--deco-muted)] text-xs mt-2">{t('removeBetHint')}</p>
 				</div>
 
 				<!-- Round History -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						Round History
+						{t('roundHistory')}
 					</h3>
 					<div
 						id="round-history"
 						data-testid="round-history"
 						class="flex flex-wrap gap-1.5 min-h-[32px]"
 					>
-						<span class="text-[var(--deco-muted)] text-xs">No rounds yet</span>
+						<span class="text-[var(--deco-muted)] text-xs">{t('noRoundsYet')}</span>
 					</div>
 				</div>
 
@@ -419,39 +422,37 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						aria-controls="rules-panel"
 						class="flex w-full items-center justify-between text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider"
 					>
-						<span>Payouts</span>
+						<span>{t('payouts')}</span>
 						<span id="rules-toggle-icon" aria-hidden="true">▸</span>
 					</button>
 					<div id="rules-panel" hidden class="mt-3">
 						<div class="space-y-1 text-xs">
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">Straight (single)</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutStraight')}</span>
 								<span class="text-[var(--deco-muted)]">35:1</span>
 							</div>
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">Red / Black</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutRedBlack')}</span>
 								<span class="text-[var(--deco-muted)]">1:1</span>
 							</div>
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">Odd / Even</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutOddEven')}</span>
 								<span class="text-[var(--deco-muted)]">1:1</span>
 							</div>
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">1-18 / 19-36</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutLowHigh')}</span>
 								<span class="text-[var(--deco-muted)]">1:1</span>
 							</div>
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">Dozens</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutDozens')}</span>
 								<span class="text-[var(--deco-muted)]">2:1</span>
 							</div>
 							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">Columns</span>
+								<span class="text-[var(--deco-ivory-dim)]">{t('payoutColumns')}</span>
 								<span class="text-[var(--deco-muted)]">2:1</span>
 							</div>
 						</div>
-						<p class="text-[var(--deco-muted)] text-xs mt-3">
-							Single-zero wheel · house edge 2.7%.
-						</p>
+						<p class="text-[var(--deco-muted)] text-xs mt-3">{t('houseEdge')}</p>
 					</div>
 				</div>
 			</div>
@@ -472,7 +473,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
 			<div>
 				<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
-					Achievement Unlocked
+					{t('achievementUnlocked')}
 				</p>
 				<p id="achievement-name" data-testid="achievement-name" class="font-bold text-lg">
 					Achievement Name

@@ -1,5 +1,15 @@
 import type { RouletteGameState, SpinResult, RouletteBet } from './types';
 import { WHEEL_ORDER, RED_NUMBERS } from './constants';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import {
+	rouletteTranslator,
+	getRouletteBetLabel,
+	getRouletteColorLabel,
+	formatRouletteNet,
+} from '../i18n/messages/roulette';
+
+type Translator = ReturnType<typeof rouletteTranslator>;
 
 export class RouletteUIRenderer {
 	private wheelEl: HTMLElement;
@@ -12,9 +22,15 @@ export class RouletteUIRenderer {
 	private clearBtn: HTMLButtonElement;
 	private newRoundBtn: HTMLButtonElement;
 	private phaseEl: HTMLElement;
+	private readonly locale: Locale;
+	private readonly t: Translator;
 	private wheelRotation = 0;
 
 	constructor() {
+		// AppLayout writes data-locale on <html>; the renderer reads it so the
+		// browser and SSR share one locale handoff.
+		this.locale = getDocumentLocale();
+		this.t = rouletteTranslator(this.locale);
 		this.wheelEl = document.getElementById('roulette-wheel')!;
 		this.resultEl = document.getElementById('wheel-result')!;
 		this.balanceEl = document.getElementById('chip-balance')!;
@@ -28,16 +44,16 @@ export class RouletteUIRenderer {
 	}
 
 	update(state: RouletteGameState): void {
-		this.balanceEl.textContent = `$${state.chipBalance.toLocaleString()}`;
-		// Keep the shared AppLayout header balance pill(s) in sync. The
-		// roulette page's #chip-balance uses "$X,XXX" format while the
-		// header [data-chip-balance] uses "X,XXX chips" — update both so
-		// a win/loss doesn't leave the header stale until page reload.
+		this.balanceEl.textContent = formatChips(state.chipBalance, this.locale);
+		// Keep the shared AppLayout header balance pill(s) in sync. Both this
+		// page's #chip-balance and the header [data-chip-balance] use the one
+		// chip phrase, so a win/loss can't leave the header stale or formatted
+		// differently from the SSR text.
 		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
-			el.textContent = `${state.chipBalance.toLocaleString()} chips`;
+			el.textContent = formatChips(state.chipBalance, this.locale);
 		});
 		const totalBet = state.activeBets.reduce((s, b) => s + b.amount, 0);
-		this.totalBetEl.textContent = `$${totalBet.toLocaleString()}`;
+		this.totalBetEl.textContent = formatChips(totalBet, this.locale);
 
 		this.renderActiveBets(state.activeBets);
 		this.renderRoundHistory(state.roundHistory);
@@ -56,11 +72,11 @@ export class RouletteUIRenderer {
 
 		this.phaseEl.textContent =
 			state.phase === 'betting'
-				? 'Place Your Bets'
+				? this.t('phasePlaceBets')
 				: state.phase === 'spinning'
-					? 'No More Bets'
+					? this.t('phaseNoMoreBets')
 					: state.phase === 'settled'
-						? 'Round Complete'
+						? this.t('phaseRoundComplete')
 						: '';
 
 		if (state.phase === 'spinning') {
@@ -73,7 +89,7 @@ export class RouletteUIRenderer {
 		if (bets.length === 0) {
 			const placeholder = document.createElement('span');
 			placeholder.className = 'text-[var(--deco-muted)] text-xs';
-			placeholder.textContent = 'No bets placed';
+			placeholder.textContent = this.t('noBetsPlaced');
 			this.activeBetsEl.appendChild(placeholder);
 			return;
 		}
@@ -86,7 +102,7 @@ export class RouletteUIRenderer {
 			labelSpan.textContent = label;
 			const amountSpan = document.createElement('span');
 			amountSpan.className = 'text-[var(--deco-brass)]';
-			amountSpan.textContent = `$${bet.amount}`;
+			amountSpan.textContent = formatChips(bet.amount, this.locale);
 			div.appendChild(labelSpan);
 			div.appendChild(amountSpan);
 			this.activeBetsEl.appendChild(div);
@@ -98,7 +114,7 @@ export class RouletteUIRenderer {
 		if (history.length === 0) {
 			const placeholder = document.createElement('span');
 			placeholder.className = 'text-[var(--deco-muted)] text-xs';
-			placeholder.textContent = 'No rounds yet';
+			placeholder.textContent = this.t('noRoundsYet');
 			this.roundHistoryEl.appendChild(placeholder);
 			return;
 		}
@@ -114,28 +130,7 @@ export class RouletteUIRenderer {
 	}
 
 	private betLabel(bet: RouletteBet): string {
-		switch (bet.type) {
-			case 'straight':
-				return `Straight ${bet.target}`;
-			case 'red':
-				return 'Red';
-			case 'black':
-				return 'Black';
-			case 'odd':
-				return 'Odd';
-			case 'even':
-				return 'Even';
-			case 'low':
-				return '1–18';
-			case 'high':
-				return '19–36';
-			case 'dozen':
-				return `${['1st', '2nd', '3rd'][bet.target ?? 0]} 12`;
-			case 'column':
-				// target 0 = top row (3,6,…,36) = 3rd column;
-				// target 2 = bottom row (1,4,…,34) = 1st column.
-				return `Column ${3 - (bet.target ?? 0)}`;
-		}
+		return getRouletteBetLabel(this.locale, bet);
 	}
 
 	animateWheel(winningNumber: number): void {
@@ -151,9 +146,12 @@ export class RouletteUIRenderer {
 
 	showResult(spinResult: SpinResult): void {
 		const n = spinResult.winningNumber;
-		const color = n === 0 ? 'Green' : RED_NUMBERS.has(n) ? 'Red' : 'Black';
-		this.resultEl.textContent = `${n} ${color}`;
-		this.resultEl.setAttribute('aria-label', `Winning number: ${n} ${color}`);
+		const color = getRouletteColorLabel(this.locale, n);
+		this.resultEl.textContent = this.t('resultColor', { number: String(n), color });
+		this.resultEl.setAttribute(
+			'aria-label',
+			this.t('winningNumberAria', { number: String(n), color }),
+		);
 
 		this.renderNetDelta(spinResult.netDelta);
 		this.renderBetResults(spinResult.results);
@@ -174,14 +172,12 @@ export class RouletteUIRenderer {
 	private renderNetDelta(netDelta: number): void {
 		const el = document.getElementById('net-delta');
 		if (!el) return;
+		el.textContent = formatRouletteNet(this.locale, netDelta);
 		if (netDelta > 0) {
-			el.textContent = `+${netDelta.toLocaleString()}`;
 			el.style.color = 'var(--deco-jade)';
 		} else if (netDelta < 0) {
-			el.textContent = netDelta.toLocaleString();
 			el.style.color = 'var(--deco-oxblood-bright)';
 		} else {
-			el.textContent = '0';
 			el.style.color = 'var(--deco-muted)';
 		}
 	}
@@ -199,11 +195,11 @@ export class RouletteUIRenderer {
 			const valueSpan = document.createElement('span');
 			if (r.won) {
 				valueSpan.style.color = 'var(--deco-jade)';
-				valueSpan.textContent = `+${r.payout.toLocaleString()}`;
+				valueSpan.textContent = formatRouletteNet(this.locale, r.payout);
 			} else {
 				labelSpan.className = 'opacity-60';
 				valueSpan.style.color = 'var(--deco-oxblood-bright)';
-				valueSpan.textContent = `-${r.bet.amount.toLocaleString()}`;
+				valueSpan.textContent = formatRouletteNet(this.locale, -r.bet.amount);
 			}
 			row.appendChild(labelSpan);
 			row.appendChild(valueSpan);

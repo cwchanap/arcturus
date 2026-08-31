@@ -186,6 +186,7 @@ export interface MockDocument {
 	querySelectorAll(selector: string): MockElement[];
 	createElement(tagName: string): MockElement;
 	readonly body: MockElement;
+	readonly documentElement: MockElement;
 }
 
 export interface MockDocumentSetup {
@@ -202,6 +203,9 @@ export interface MockDocumentSetup {
 export function installMockDocument(ids: string[] = []): MockDocumentSetup {
 	const elements: Record<string, MockElement> = {};
 	const body = new MockElement('body');
+	// Mirrors the real document root: `getDocumentLocale()` reads
+	// documentElement.dataset.locale (set by AppLayout).
+	const documentElement = new MockElement('html');
 
 	const ensure = (id: string): MockElement => {
 		if (!elements[id]) {
@@ -220,6 +224,7 @@ export function installMockDocument(ids: string[] = []): MockDocumentSetup {
 		querySelectorAll: (selector: string) => body.querySelectorAll(selector),
 		createElement: (tagName: string) => new MockElement(tagName),
 		body,
+		documentElement,
 	};
 
 	(globalThis as unknown as { document: MockDocument }).document = document;

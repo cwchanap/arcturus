@@ -97,3 +97,33 @@ Conventions:
   (`A`, `K`, `Q`, `J`), and payout ratios such as `3:2` stay language-neutral.
 - Game display names come only from `src/lib/i18n/messages/games.ts`.
 - Chip amounts always use `formatChips(value, locale)` — chips, never currency.
+  | Baccarat (game) | 百家樂 | 百家乐 | バカラ |
+  | Roulette (game) | 輪盤 | 轮盘 | ルーレット |
+  | Keno (game) | 基諾 | 基诺 | キノ |
+  | Shoe | 牌靴 | 牌靴 | シュー |
+  | Natural | 天生贏家 | 天生赢家 | ナチュラル |
+  | Player Pair | 玩家對子 | 玩家对子 | プレイヤーペア |
+  | Banker Pair | 莊家對子 | 庄家对子 | バンカーペア |
+  | Tie | 和局 | 和局 | タイ |
+  | History (Baccarat) | 歷史紀錄 | 历史纪录 | 履歴 |
+  | Wheel | 輪盤 | 轮盘 | ホイール |
+  | Spin | 轉動 | 转动 | スピン |
+  | Straight (bet) | 直注 | 直注 | ストレート |
+  | Red (bet) | 紅 | 红 | 赤 |
+  | Black (bet) | 黑 | 黑 | 黒 |
+  | Odd (bet) | 單 | 单 | 奇数 |
+  | Even (bet) | 雙 | 双 | 偶数 |
+  | Dozen | 十二號組 | 十二号组 | ダズン |
+  | Column (bet) | 縱列 | 纵列 | コラム |
+  | House Edge | 莊家優勢 | 庄家优势 | ハウスエッジ |
+  | Spot (Keno) | 號碼數 | 号码数 | スポット |
+  | Draw (Keno) | 開獎 | 开奖 | ドロー |
+  | Quick Pick | 快速選號 | 快速选号 | クイックピック |
+  | Catch (Keno) | 命中 | 命中 | ヒット |
+  | Recent Tickets | 近期彩券 | 近期彩票 | 最近のチケット |
+  | Paytable | 派彩表 | 派彩表 | 配当表 |
+  | Animation Speed | 動畫速度 | 动画速度 | アニメーション速度 |
+  | Settlement | 結算 | 结算 | 決済 |
+  | Retry | 重試 | 重试 | 再試行 |
+  | Reset | 重設 | 重置 | リセット |
+  | Insufficient Chips | 籌碼不足 | 筹码不足 | チップ不足 |

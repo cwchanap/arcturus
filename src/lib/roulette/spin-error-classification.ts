@@ -1,3 +1,7 @@
+import { ROULETTE_MESSAGES, rouletteTranslator } from '../i18n/messages/roulette';
+import type { Locale } from '../i18n/locale';
+import type { MessageKey } from '../i18n/translate';
+
 /** Preserve the HTTP status and server error code for current-page handling. */
 export class SpinHttpError extends Error {
 	readonly status: number;
@@ -21,14 +25,24 @@ export function isNonCommittedSpinRejection(err: unknown): err is SpinHttpError 
 	return err.status === 409 && NON_COMMITTED_CODES.has(err.message);
 }
 
-export function messageForSpinRejection(err: SpinHttpError): string {
-	if (err.status === 401) return 'Session expired — please sign in again.';
+const REJECTION_KEYS: Partial<Record<number, MessageKey<typeof ROULETTE_MESSAGES>>> = {
+	401: 'rejectSessionExpired',
+};
+
+/**
+ * Resolve a rejected spin to localized copy. The wire status/code stay
+ * language-neutral; only this presentation mapping reads the locale.
+ */
+export function messageForSpinRejection(err: SpinHttpError, locale: Locale): string {
+	const t = rouletteTranslator(locale);
+	const statusKey = REJECTION_KEYS[err.status];
+	if (statusKey) return t(statusKey);
 	switch (err.message) {
 		case 'INSUFFICIENT_BALANCE':
-			return 'Insufficient chips for this spin.';
+			return t('rejectInsufficientBalance');
 		case 'SETTLEMENT_CONFLICT':
-			return 'Spin settlement conflicted — please try again.';
+			return t('rejectSettlementConflict');
 		default:
-			return 'Spin request rejected — please try again.';
+			return t('rejectDefault');
 	}
 }

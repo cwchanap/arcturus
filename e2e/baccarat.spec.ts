@@ -48,7 +48,7 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await playerBetArea.click();
 
 		// Check bet is placed with the selected chip amount
-		await expect(page.locator('#total-bet')).toContainText('$10');
+		await expect(page.locator('#total-bet')).toContainText('10 chips');
 
 		// Check deal button is enabled
 		const dealButton = page.locator('#deal-button');
@@ -111,8 +111,8 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		await expect(page.locator('[data-bet-type="player"]')).toHaveClass(/bet-area-active/);
 		await expect(page.locator('[data-bet-type="tie"]')).toHaveClass(/bet-area-active/);
 
-		// Total bet should be $100 (50 + 50)
-		await expect(page.locator('#total-bet')).toContainText('$100');
+		// Total bet should be 100 chips (50 + 50)
+		await expect(page.locator('#total-bet')).toContainText('100 chips');
 	});
 
 	test('should clear bets when clear button is clicked', async ({ page }) => {
@@ -121,13 +121,13 @@ test.describe('Baccarat Game - Basic Round Flow', () => {
 		// Place a bet (select chip first to avoid flakiness)
 		await page.click('.chip-select[data-amount="10"]');
 		await page.click('[data-bet-type="player"]');
-		await expect(page.locator('#total-bet')).not.toContainText('$0');
+		await expect(page.locator('#total-bet')).not.toContainText(/\b0 chips/);
 
 		// Click clear button
 		await page.click('#clear-bets-button');
 
 		// Check bets are cleared
-		await expect(page.locator('#total-bet')).toContainText('$0');
+		await expect(page.locator('#total-bet')).toContainText('0 chips');
 		await expect(page.locator('#deal-button')).toBeDisabled();
 	});
 

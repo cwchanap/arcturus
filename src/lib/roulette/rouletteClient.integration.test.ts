@@ -71,6 +71,8 @@ interface SetupOptions {
 	userId?: string;
 	guestMode?: boolean;
 	guestBankroll?: number;
+	/** Document locale set before the client initializes (default: en). */
+	locale?: string;
 	session?: Record<string, unknown>;
 	fetchImpl?: (url: string, init?: RequestInit) => unknown;
 }
@@ -104,6 +106,7 @@ function setup(options: SetupOptions = {}): SetupResult {
 		},
 	});
 	const doc = installMockDocument(ALL_IDS);
+	if (options.locale) doc.document.documentElement.dataset.locale = options.locale;
 	const root = doc.elements['roulette-root'];
 	root.dataset.initialBalance = String(initialBalance);
 	root.dataset.userId = userId;
@@ -150,6 +153,12 @@ describe('roulette client guest flow', () => {
 		expect(s.fetchMock.calls).toHaveLength(0);
 		expect(s.gamePhase.textContent).toBe('Round Complete');
 		expect(s.storage.getItem('roulette-bankroll:guest-1')).toBe('495');
+	});
+
+	it('renders the chip balance phrase in Japanese for a ja document locale', () => {
+		const s = setup({ guestMode: true, userId: 'guest-ja', guestBankroll: 1000, locale: 'ja' });
+		expect(s.balanceEl.textContent).toBe('1,000 チップ');
+		expect(s.gamePhase.textContent).toBe('ベットしてください');
 	});
 
 	it('keeps chip selection and betting interactions live', () => {

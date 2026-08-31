@@ -2,6 +2,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { PAYTABLE } from '../src/lib/keno/constants';
+import { formatChips } from '../src/lib/i18n/messages/common';
 
 async function useCryptoBytes(page: Page, values: number[]): Promise<void> {
 	await page.evaluate((sequence) => {
@@ -33,7 +34,7 @@ function expectedResultText(spots: number, hitCount: number, bet: number): strin
 	const netDelta = payout - bet;
 	const verb = netDelta > 0 ? 'won' : netDelta < 0 ? 'lost' : 'pushed';
 	const amount = netDelta > 0 ? netDelta : netDelta < 0 ? bet : 0;
-	return `${hitCount} of ${spots} ${verb} ${amount.toLocaleString()}`;
+	return `${hitCount} of ${spots} ${verb} ${formatChips(amount, 'en')}`;
 }
 
 test.describe('Keno game', () => {
@@ -56,7 +57,7 @@ test.describe('Keno game', () => {
 
 		const bet = 5;
 		await page.locator(`.bet-chip[data-bet="${bet}"]`).click();
-		await expect(page.getByTestId('current-bet')).toHaveText(String(bet));
+		await expect(page.getByTestId('current-bet')).toContainText('5 chips');
 		await page.getByTestId('btn-draw').click();
 
 		await expect(page.getByTestId('game-status')).toContainText('Round complete — win!');

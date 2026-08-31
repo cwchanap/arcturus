@@ -16,6 +16,9 @@ import {
 	messageForSpinRejection,
 	SpinHttpError,
 } from './spin-error-classification';
+import { getDocumentLocale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { rouletteTranslator } from '../i18n/messages/roulette';
 
 const SPIN_FETCH_TIMEOUT_MS = 15_000;
 const BALANCE_FETCH_TIMEOUT_MS = 15_000;
@@ -33,6 +36,10 @@ type SpinResponse = {
 export function initRouletteClient(): void {
 	const root = document.getElementById('roulette-root');
 	if (!root) throw new Error('roulette-root not found');
+
+	// Browser locale handoff: AppLayout writes data-locale on <html>.
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = rouletteTranslator(locale);
 
 	const initialBalance = Number(root.dataset.initialBalance ?? 1000);
 	const userId = root.dataset.userId ?? GUEST_CLIENT_USER_ID;
@@ -146,7 +153,7 @@ export function initRouletteClient(): void {
 		ui.clearResult();
 		ui.update(game.getState());
 		persistSession();
-		showMessage('Spin already settled — balance synced.');
+		showMessage(t('duplicateBalance'));
 	}
 
 	async function handleUncertainSpin(): Promise<void> {
@@ -159,11 +166,7 @@ export function initRouletteClient(): void {
 		ui.clearResult();
 		ui.update(game.getState());
 		persistSession();
-		showMessage(
-			serverBalance === null
-				? 'Spin result unavailable — refresh to verify your balance.'
-				: 'Spin result unavailable — balance synced.',
-		);
+		showMessage(serverBalance === null ? t('unavailableRefresh') : t('unavailableSynced'));
 	}
 
 	async function handleRejectedSpin(error: SpinHttpError): Promise<void> {
@@ -176,7 +179,7 @@ export function initRouletteClient(): void {
 		}
 		ui.update(game.getState());
 		persistSession();
-		showMessage(messageForSpinRejection(error));
+		showMessage(messageForSpinRejection(error, locale));
 	}
 
 	// Chip selection — sync UI and game state, then persist the preference.
@@ -189,14 +192,32 @@ export function initRouletteClient(): void {
 		});
 	});
 
-	// Betting table — click and keyboard activation.
+	// Betting table — click and keyboard activation. The domain reports
+	// placement failures as stable English strings; translate them here at the
+	// presentation boundary (the wire/domain values stay language-neutral).
+	const betPlacementErrorText = (error: string | undefined): string => {
+		if (!error) return t('cannotPlaceBet');
+		if (error === 'Insufficient chips') return t('errorInsufficientChips');
+		const perPosition = error.match(/^Max (\d+) per position/);
+		if (perPosition) return t('errorMaxPerPosition', { max: perPosition[1] });
+		const maxBets = error.match(/^Max (\d+) bets per spin$/);
+		if (maxBets) return t('errorMaxBets', { max: maxBets[1] });
+		const maxTotal = error.match(/^Max total bet is (\d+)$/);
+		if (maxTotal) {
+			return t('errorMaxTotal', {
+				max: formatChips(Number(maxTotal[1]), locale),
+			});
+		}
+		return t('cannotPlaceBet');
+	};
+
 	document.querySelectorAll<HTMLElement>('[data-bet-type]').forEach((el) => {
 		const placeBetFromCell = () => {
 			if (game.getState().phase !== 'betting') return;
 			const type = el.dataset.betType as BetType;
 			const target = el.dataset.betTarget !== undefined ? Number(el.dataset.betTarget) : undefined;
 			const result = game.placeBet(type, ui.getSelectedChipAmount(), target);
-			if (!result.success) showMessage(result.error ?? 'Cannot place bet');
+			if (!result.success) showMessage(betPlacementErrorText(result.error));
 			updateAndPersist();
 		};
 		el.addEventListener('click', placeBetFromCell);
@@ -315,7 +336,7 @@ export function initRouletteClient(): void {
 		});
 	}
 
-	if (betsDroppedOnRefresh) showMessage('Bets cleared on refresh — please re-place your bets.');
+	if (betsDroppedOnRefresh) showMessage(t('betsClearedOnRefresh'));
 }
 
 async function fetchSpin(

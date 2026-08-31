@@ -156,7 +156,7 @@ describe('dom-utils', () => {
 
 	describe('createBetChip', () => {
 		test('should create bet chip with amount', () => {
-			const chip = createBetChip('Player', 100);
+			const chip = createBetChip('Player', '100 chips');
 
 			expect(chip.tagName).toBe('DIV');
 			expect(chip.className).toBe('bet-chip');
@@ -167,28 +167,28 @@ describe('dom-utils', () => {
 			expect(spans[0].textContent).toBe('Player');
 			expect(spans[0].className).toBe('');
 
-			expect(spans[1].textContent).toBe('$100');
+			expect(spans[1].textContent).toBe('100 chips');
 			expect(spans[1].className).toBe('text-yellow-400');
 		});
 
 		test('should handle zero amount', () => {
-			const chip = createBetChip('Banker', 0);
+			const chip = createBetChip('Banker', '0 chips');
 
 			const amountSpan = chip.querySelector('span:nth-child(2)') as HTMLSpanElement;
-			expect(amountSpan.textContent).toBe('$0');
+			expect(amountSpan.textContent).toBe('0 chips');
 		});
 
 		test('should handle large amount', () => {
-			const chip = createBetChip('Tie', 1000000);
+			const chip = createBetChip('Tie', '1,000,000 chips');
 
 			const amountSpan = chip.querySelector('span:nth-child(2)') as HTMLSpanElement;
-			expect(amountSpan.textContent).toBe('$1000000');
+			expect(amountSpan.textContent).toBe('1,000,000 chips');
 		});
 	});
 
 	describe('createBetResult', () => {
 		test('should create win result', () => {
-			const result = createBetResult('Player', 'win', 200);
+			const result = createBetResult('Player', 'win', 'WIN', '+200 chips');
 
 			expect(result.tagName).toBe('DIV');
 			expect(result.className).toBe('bet-result');
@@ -202,12 +202,12 @@ describe('dom-utils', () => {
 			expect(spans[1].textContent).toBe('WIN');
 			expect(spans[1].className).toBe('text-green-400');
 
-			expect(spans[2].textContent).toBe('+$200');
+			expect(spans[2].textContent).toBe('+200 chips');
 			expect(spans[2].className).toBe('text-green-400');
 		});
 
 		test('should create lose result', () => {
-			const result = createBetResult('Banker', 'lose', -100);
+			const result = createBetResult('Banker', 'lose', 'LOSE', '−100 chips');
 
 			const spans = result.querySelectorAll('span');
 
@@ -215,12 +215,12 @@ describe('dom-utils', () => {
 			expect(spans[1].textContent).toBe('LOSE');
 			expect(spans[1].className).toBe('text-red-400');
 
-			expect(spans[2].textContent).toBe('-$100');
+			expect(spans[2].textContent).toBe('−100 chips');
 			expect(spans[2].className).toBe('text-red-400');
 		});
 
 		test('should create push result', () => {
-			const result = createBetResult('Tie', 'push', 0);
+			const result = createBetResult('Tie', 'push', 'PUSH', '0 chips');
 
 			const spans = result.querySelectorAll('span');
 
@@ -228,38 +228,38 @@ describe('dom-utils', () => {
 			expect(spans[1].textContent).toBe('PUSH');
 			expect(spans[1].className).toBe('text-yellow-400');
 
-			expect(spans[2].textContent).toBe('+$0');
+			expect(spans[2].textContent).toBe('0 chips');
 			expect(spans[2].className).toBe('text-yellow-400');
 		});
 
 		test('should handle negative payout for win (edge case)', () => {
-			const result = createBetResult('Player', 'win', -50);
+			const result = createBetResult('Player', 'win', 'WIN', '−50 chips');
 
 			const spans = result.querySelectorAll('span');
-			expect(spans[2].textContent).toBe('-$50');
+			expect(spans[2].textContent).toBe('−50 chips');
 			expect(spans[2].className).toBe('text-green-400');
 		});
 
 		test('should handle positive payout for lose (edge case)', () => {
-			const result = createBetResult('Banker', 'lose', 50);
+			const result = createBetResult('Banker', 'lose', 'LOSE', '+50 chips');
 
 			const spans = result.querySelectorAll('span');
-			expect(spans[2].textContent).toBe('+$50');
+			expect(spans[2].textContent).toBe('+50 chips');
 			expect(spans[2].className).toBe('text-red-400');
 		});
 
 		test('should handle large payout amounts', () => {
-			const result = createBetResult('Player', 'win', 500000);
+			const result = createBetResult('Player', 'win', 'WIN', '+500,000 chips');
 
 			const spans = result.querySelectorAll('span');
-			expect(spans[2].textContent).toBe('+$500000');
+			expect(spans[2].textContent).toBe('+500,000 chips');
 		});
 
 		test('should handle decimal payout amounts', () => {
-			const result = createBetResult('Banker', 'win', 95.5);
+			const result = createBetResult('Banker', 'win', 'WIN', '+95.5 chips');
 
 			const spans = result.querySelectorAll('span');
-			expect(spans[2].textContent).toBe('+$95.5');
+			expect(spans[2].textContent).toBe('+95.5 chips');
 		});
 	});
 });

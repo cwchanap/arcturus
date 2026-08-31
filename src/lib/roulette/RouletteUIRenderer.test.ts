@@ -71,18 +71,26 @@ describe('RouletteUIRenderer — update', () => {
 		const bet = makeBet('red', 1250);
 		renderer.update(makeState({ chipBalance: 12345, activeBets: [bet] }));
 
-		expect(setup.elements['chip-balance'].textContent).toBe('$12,345');
-		expect(setup.elements['total-bet'].textContent).toBe('$1,250');
+		expect(setup.elements['chip-balance'].textContent).toBe('12,345 chips');
+		expect(setup.elements['total-bet'].textContent).toBe('1,250 chips');
 	});
 
-	it('syncs the shared header [data-chip-balance] pill in "N chips" format', () => {
+	it('renders the balance as a Japanese chip phrase when the document locale is ja', () => {
+		setup.document.documentElement.dataset.locale = 'ja';
+		const renderer = new RouletteUIRenderer();
+		renderer.update(makeState({ chipBalance: 12345 }));
+
+		expect(setup.elements['chip-balance'].textContent).toBe('12,345 チップ');
+	});
+
+	it('syncs the shared header [data-chip-balance] pill in the chip phrase', () => {
 		const headerPill = new MockElement('span');
 		headerPill.dataset.chipBalance = '';
 		attachToBody(headerPill);
 		const renderer = new RouletteUIRenderer();
 		renderer.update(makeState({ chipBalance: 7500 }));
 
-		expect(setup.elements['chip-balance'].textContent).toBe('$7,500');
+		expect(setup.elements['chip-balance'].textContent).toBe('7,500 chips');
 		expect(headerPill.textContent).toBe('7,500 chips');
 	});
 
@@ -147,7 +155,7 @@ describe('RouletteUIRenderer — renderActiveBets', () => {
 		expect(list.children[0].id).toBe('active-bet-a');
 		// First child span = label, second = amount
 		expect(list.children[0].children[0].textContent).toBe('Red');
-		expect(list.children[0].children[1].textContent).toBe('$50');
+		expect(list.children[0].children[1].textContent).toBe('50 chips');
 		expect(list.children[1].children[0].textContent).toBe('Straight 17');
 	});
 });
@@ -235,11 +243,11 @@ describe('RouletteUIRenderer — showResult / clearResult', () => {
 		setup.registerElement('net-delta');
 		renderer.showResult(makeSpin(1, 350, []));
 		const netEl = setup.elements['net-delta'];
-		expect(netEl.textContent).toBe('+350');
+		expect(netEl.textContent).toBe('+350 chips');
 		expect(netEl.style.color).toBe('var(--deco-jade)');
 
 		renderer.showResult(makeSpin(1, -100, []));
-		expect(netEl.textContent).toBe('-100');
+		expect(netEl.textContent).toBe('−100 chips');
 		expect(netEl.style.color).toBe('var(--deco-oxblood-bright)');
 	});
 
@@ -248,7 +256,7 @@ describe('RouletteUIRenderer — showResult / clearResult', () => {
 		setup.registerElement('net-delta');
 		renderer.showResult(makeSpin(1, 0, []));
 		const netEl = setup.elements['net-delta'];
-		expect(netEl.textContent).toBe('0');
+		expect(netEl.textContent).toBe('0 chips');
 		expect(netEl.style.color).toBe('var(--deco-muted)');
 	});
 
@@ -263,10 +271,10 @@ describe('RouletteUIRenderer — showResult / clearResult', () => {
 		const el = setup.elements['bet-results'];
 		expect(el.children).toHaveLength(2);
 		// Win row
-		expect(el.children[0].children[1].textContent).toBe('+100');
+		expect(el.children[0].children[1].textContent).toBe('+100 chips');
 		expect(el.children[0].children[1].style.color).toBe('var(--deco-jade)');
 		// Loss row
-		expect(el.children[1].children[1].textContent).toBe('-30');
+		expect(el.children[1].children[1].textContent).toBe('−30 chips');
 		expect(el.children[1].children[1].style.color).toBe('var(--deco-oxblood-bright)');
 		expect(el.children[1].children[0].classList.contains('opacity-60')).toBe(true);
 	});

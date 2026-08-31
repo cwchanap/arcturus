@@ -15,9 +15,37 @@ import {
 	createScoreboardDot,
 } from '../dom-utils';
 import { setSlotState } from '../card-slot-utils';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatWholeNumber } from '../formatting';
+import { formatChips } from '../i18n/messages/common';
+import {
+	baccaratTranslator,
+	getBaccaratBetTypeLabel,
+	getBaccaratWinnerLabel,
+	getBaccaratOutcomeLabel,
+	formatBaccaratNet,
+	type BACCARAT_MESSAGES,
+} from '../i18n/messages/baccarat';
+import type { MessageKey } from '../i18n/translate';
+
+type Translator = ReturnType<typeof baccaratTranslator>;
+
+const PAIR_KEYS: Record<'playerPair' | 'bankerPair', MessageKey<typeof BACCARAT_MESSAGES>> = {
+	playerPair: 'playerPair',
+	bankerPair: 'bankerPair',
+};
 
 export class BaccaratUIRenderer {
 	private animationSpeed: number = ANIMATION_SPEED_NORMAL;
+	private readonly locale: Locale;
+	private readonly t: Translator;
+
+	constructor() {
+		// AppLayout writes data-locale on <html>; the renderer reads it so the
+		// browser and SSR share one locale handoff.
+		this.locale = getDocumentLocale();
+		this.t = baccaratTranslator(this.locale);
+	}
 
 	/**
 	 * Set animation speed
@@ -132,12 +160,15 @@ export class BaccaratUIRenderer {
 		clearChildren(container);
 
 		if (bets.length === 0) {
-			container.appendChild(createTextSpan('No bets placed', 'text-[var(--deco-muted)]'));
+			container.appendChild(createTextSpan(this.t('noBetsPlaced'), 'text-[var(--deco-muted)]'));
 			return;
 		}
 
 		bets.forEach((bet) => {
-			const chip = createBetChip(this.formatBetType(bet.type), bet.amount);
+			const chip = createBetChip(
+				getBaccaratBetTypeLabel(this.locale, bet.type),
+				formatChips(bet.amount, this.locale),
+			);
 			chip.dataset.type = bet.type;
 			container.appendChild(chip);
 		});
@@ -164,8 +195,8 @@ export class BaccaratUIRenderer {
 		const container = document.querySelector(containerSelector);
 		if (!container) return;
 
-		const winnerText = this.formatWinner(outcome.winner);
-		const naturalText = outcome.isNatural ? ' (Natural!)' : '';
+		const winnerText = getBaccaratWinnerLabel(this.locale, outcome.winner);
+		const naturalText = outcome.isNatural ? this.t('naturalSuffix') : '';
 		const pairText = this.formatPairs(outcome.playerPair, outcome.bankerPair);
 
 		// Build DOM structure
@@ -175,13 +206,21 @@ export class BaccaratUIRenderer {
 
 		const scoresDiv = document.createElement('div');
 		scoresDiv.className = 'result-scores';
-		scoresDiv.textContent = `Player: ${outcome.playerValue} | Banker: ${outcome.bankerValue}`;
+		scoresDiv.textContent = this.t('scoresLine', {
+			player: String(outcome.playerValue),
+			banker: String(outcome.bankerValue),
+		});
 
 		const betsDiv = document.createElement('div');
 		betsDiv.className = 'result-bets';
 		outcome.betResults.forEach((result) => {
 			betsDiv.appendChild(
-				createBetResult(this.formatBetType(result.bet.type), result.outcome, result.payout),
+				createBetResult(
+					getBaccaratBetTypeLabel(this.locale, result.bet.type),
+					result.outcome,
+					getBaccaratOutcomeLabel(this.locale, result.outcome),
+					formatBaccaratNet(this.locale, result.payout),
+				),
 			);
 		});
 
@@ -216,7 +255,7 @@ export class BaccaratUIRenderer {
 	public updateBalance(balance: number, containerSelector: string): void {
 		const container = document.querySelector(containerSelector);
 		if (container) {
-			container.textContent = `$${balance.toLocaleString()}`;
+			container.textContent = formatChips(balance, this.locale);
 		}
 	}
 
@@ -226,7 +265,9 @@ export class BaccaratUIRenderer {
 	public updateShoeCount(remaining: number, containerSelector: string): void {
 		const container = document.querySelector(containerSelector);
 		if (container) {
-			container.textContent = `${remaining} cards`;
+			container.textContent = this.t('shoeCount', {
+				count: formatWholeNumber(remaining, this.locale),
+			});
 		}
 	}
 
@@ -240,13 +281,13 @@ export class BaccaratUIRenderer {
 		clearChildren(container);
 
 		if (history.length === 0) {
-			container.appendChild(createTextSpan('No history yet', 'text-[var(--deco-muted)]'));
+			container.appendChild(createTextSpan(this.t('noHistoryYet'), 'text-[var(--deco-muted)]'));
 			return;
 		}
 
 		history.forEach((round) => {
 			const dot = createScoreboardDot(round.winner);
-			dot.title = this.formatWinner(round.winner);
+			dot.title = getBaccaratWinnerLabel(this.locale, round.winner);
 			container.appendChild(dot);
 		});
 	}
@@ -312,25 +353,10 @@ export class BaccaratUIRenderer {
 
 	// ===== Private Helpers =====
 
-	private formatBetType(type: BetType): string {
-		const labels: Record<BetType, string> = {
-			player: 'Player',
-			banker: 'Banker',
-			tie: 'Tie',
-			playerPair: 'P. Pair',
-			bankerPair: 'B. Pair',
-		};
-		return labels[type] || type;
-	}
-
-	private formatWinner(winner: string): string {
-		return winner.charAt(0).toUpperCase() + winner.slice(1) + ' Wins!';
-	}
-
 	private formatPairs(playerPair: boolean, bankerPair: boolean): string {
 		const pairs = [];
-		if (playerPair) pairs.push('Player Pair');
-		if (bankerPair) pairs.push('Banker Pair');
+		if (playerPair) pairs.push(this.t(PAIR_KEYS.playerPair));
+		if (bankerPair) pairs.push(this.t(PAIR_KEYS.bankerPair));
 		return pairs.join(' | ');
 	}
 

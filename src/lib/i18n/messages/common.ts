@@ -31,6 +31,7 @@ export function formatChips(value: number, locale: Locale): string {
 export const SHELL_MESSAGES = defineMessages({
 	en: {
 		premiumCasino: 'Premium Casino',
+		language: 'Language',
 		missions: 'Missions',
 		leaderboard: 'Leaderboard',
 		profile: 'Profile',
@@ -45,6 +46,7 @@ export const SHELL_MESSAGES = defineMessages({
 	},
 	'zh-Hant': {
 		premiumCasino: '頂級賭場',
+		language: '語言',
 		missions: '任務',
 		leaderboard: '排行榜',
 		profile: '個人檔案',
@@ -59,6 +61,7 @@ export const SHELL_MESSAGES = defineMessages({
 	},
 	'zh-Hans': {
 		premiumCasino: '顶级赌场',
+		language: '语言',
 		missions: '任务',
 		leaderboard: '排行榜',
 		profile: '个人档案',
@@ -73,6 +76,7 @@ export const SHELL_MESSAGES = defineMessages({
 	},
 	ja: {
 		premiumCasino: 'プレミアムカジノ',
+		language: '言語',
 		missions: 'ミッション',
 		leaderboard: 'ランキング',
 		profile: 'プロフィール',

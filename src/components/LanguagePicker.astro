@@ -2,10 +2,14 @@
 /**
  * Language picker over ENABLED_LOCALES. Hidden while only English is enabled;
  * when several locales are enabled, selecting one writes the locale cookie and
- * reloads the current URL. The module script ships always but no-ops while the
- * picker control is not rendered (Astro hoists scripts out of conditionals).
+ * reloads the current URL. The current document locale is marked `selected`
+ * and the control's aria-label is localized. The module script ships always
+ * but no-ops while the picker control is not rendered (Astro hoists scripts
+ * out of conditionals).
  */
 import { ENABLED_LOCALES, type Locale } from '../lib/i18n/locale';
+import { SHELL_MESSAGES } from '../lib/i18n/messages/common';
+import { createTranslator } from '../lib/i18n/translate';
 
 const LOCALE_LABELS: Record<Locale, string> = {
 	en: 'English',
@@ -14,6 +18,8 @@ const LOCALE_LABELS: Record<Locale, string> = {
 	ja: '日本語',
 };
 
+const locale: Locale = Astro.locals.locale ?? 'en';
+const t = createTranslator(SHELL_MESSAGES, locale);
 const visibleLocales = [...ENABLED_LOCALES];
 ---
 
@@ -22,10 +28,12 @@ const visibleLocales = [...ENABLED_LOCALES];
 		<select
 			class="rounded-md border border-[var(--deco-brass)] bg-transparent px-2 py-1 text-sm font-body"
 			data-locale-picker
-			aria-label="Language"
+			aria-label={t('language')}
 		>
-			{visibleLocales.map((locale) => (
-				<option value={locale}>{LOCALE_LABELS[locale]}</option>
+			{visibleLocales.map((optionLocale) => (
+				<option value={optionLocale} selected={optionLocale === locale}>
+					{LOCALE_LABELS[optionLocale]}
+				</option>
 			))}
 		</select>
 	)

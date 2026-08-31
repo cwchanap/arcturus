@@ -1,6 +1,7 @@
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
-import { blackjackTranslator } from '../i18n/messages/blackjack';
+import { BLACKJACK_MESSAGES, blackjackTranslator } from '../i18n/messages/blackjack';
 import type { Locale } from '../i18n/locale';
+import type { MessageKey } from '../i18n/translate';
 import {
 	blackjackRunPublicStateSchema,
 	type BlackjackAction,
@@ -98,12 +99,37 @@ function responseErrorMessage(
 	t: ReturnType<typeof blackjackTranslator>,
 ): string {
 	const code = responseErrorCode(payload);
-	if (code) return code.replaceAll('_', ' ').toLowerCase();
+	if (code) {
+		const key = BLACKJACK_RUN_CODE_KEYS[code];
+		if (key) return t(key);
+	}
 	return t('clientRequestFailedStatus', { status: response.status });
 }
 
+/**
+ * Stable server codes surfaced to the UI resolve to localized copy here; the
+ * wire code itself is never rendered. Codes the client swallows internally
+ * (RUN_NOT_FOUND, ACTIVE_RUN_EXISTS, SEQUENCE_MISMATCH) need no entry.
+ */
+const BLACKJACK_RUN_CODE_KEYS: Partial<Record<string, MessageKey<typeof BLACKJACK_MESSAGES>>> = {
+	INVALID_ACTION: 'codeInvalidAction',
+	INVALID_COMMAND: 'codeInvalidCommand',
+	INVALID_WAGER: 'codeInvalidWager',
+	ATTEMPT_COMPLETE: 'codeAttemptComplete',
+	INSUFFICIENT_CHALLENGE_BANKROLL: 'codeInsufficientChallengeBankroll',
+	INSUFFICIENT_BALANCE: 'codeInsufficientBalance',
+	INVALID_REQUEST: 'codeInvalidRequest',
+	SETTLEMENT_CONFLICT: 'codeSettlementConflict',
+	INTERNAL_ERROR: 'codeInternalError',
+	UNAUTHORIZED: 'codeUnauthorized',
+	IDENTIFIER_REUSE_MISMATCH: 'codeIdentifierReuseMismatch',
+	RUN_NOT_FOUND: 'codeRunNotFound',
+};
+
 function errorMessage(error: unknown, t: ReturnType<typeof blackjackTranslator>): string {
-	return error instanceof Error ? error.message : t('requestFailed');
+	// Client errors already carry localized copy; anything else is a transport
+	// or programming error whose English text must never reach the UI.
+	return error instanceof BlackjackRunClientError ? error.message : t('requestFailed');
 }
 
 function defaultCreateRequestId(): string {

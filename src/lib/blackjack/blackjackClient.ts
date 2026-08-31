@@ -441,8 +441,10 @@ export function initBlackjackClient(): void {
 				// Immediate blackjack or push
 				void handleRoundComplete();
 			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
+		} catch {
+			// Invariant/validation throws carry English text; the player sees a
+			// localized generic fallback instead of raw exception copy.
+			statusEl.textContent = t('actionUnavailable');
 		}
 	});
 
@@ -459,8 +461,8 @@ export function initBlackjackClient(): void {
 					void handleRoundComplete();
 				}, 500);
 			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
+		} catch {
+			statusEl.textContent = t('actionUnavailable');
 		}
 	});
 
@@ -492,8 +494,8 @@ export function initBlackjackClient(): void {
 					}, dealerDelay);
 				}, dealerDelay);
 			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
+		} catch {
+			statusEl.textContent = t('actionUnavailable');
 		}
 	});
 
@@ -532,8 +534,8 @@ export function initBlackjackClient(): void {
 					}, dealerDelay);
 				}, dealerDelay);
 			}
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
+		} catch {
+			statusEl.textContent = t('actionUnavailable');
 		}
 	});
 
@@ -544,8 +546,8 @@ export function initBlackjackClient(): void {
 			persistGuestBalance();
 			statusEl.textContent = t('playingHandOne');
 			renderGame();
-		} catch (error) {
-			statusEl.textContent = (error as Error).message;
+		} catch {
+			statusEl.textContent = t('actionUnavailable');
 		}
 	});
 

@@ -9,42 +9,61 @@
 import type { MissionId } from '../../missions/types';
 import { formatWholeNumber } from '../../formatting';
 import type { Locale } from '../locale';
-import { createTranslator, defineMessages } from '../translate';
+import { createTranslator, defineMessages, type MessageTokens } from '../translate';
+import { getGameName, type GameNameKey } from './games';
+
+/**
+ * Canonical game name per mission. Templates carry a `{game}` token where a
+ * game name appears; the helpers below fill it from `getGameName()` so the
+ * copy never re-translates a game name itself.
+ */
+const MISSION_GAME_KEYS: Partial<Record<MissionId, GameNameKey>> = {
+	'daily-blackjack-5': 'blackjack',
+	'daily-slots-20': 'slots',
+	'daily-craps-3': 'craps',
+	'daily-baccarat-3': 'baccarat',
+	'daily-keno-5': 'keno',
+};
+
+function missionGameToken(locale: Locale, id: MissionId): MessageTokens | undefined {
+	const key = MISSION_GAME_KEYS[id];
+	return key ? { game: getGameName(locale, key) } : undefined;
+}
 
 const MISSION_TITLES = defineMessages({
 	en: {
-		'daily-blackjack-5': 'Blackjack Streak',
+		'daily-blackjack-5': '{game} Streak',
 		'daily-win-3': 'Three Wins',
 		'daily-slots-20': 'Spin to Win',
 		'daily-craps-3': 'Dice Roller',
-		'daily-baccarat-3': 'Baccarat Round',
+		'daily-baccarat-3': '{game} Round',
 		'daily-keno-5': 'Lucky Numbers',
 		'weekly-games-3': 'Variety Seeker',
 	} satisfies Record<MissionId, string>,
 	'zh-Hant': {
-		'daily-blackjack-5': '二十一點連勝',
+		'daily-blackjack-5': '{game}連勝',
 		'daily-win-3': '三連勝',
 		'daily-slots-20': '轉出好運',
 		'daily-craps-3': '骰子滾動',
-		'daily-baccarat-3': '百家樂回合',
+		'daily-baccarat-3': '{game}回合',
 		'daily-keno-5': '幸運號碼',
 		'weekly-games-3': '多元探索者',
 	},
 	'zh-Hans': {
-		'daily-blackjack-5': '二十一点连胜',
+		'daily-blackjack-5': '{game}连胜',
 		'daily-win-3': '三连胜',
 		'daily-slots-20': '转出好运',
 		'daily-craps-3': '骰子滚动',
-		'daily-baccarat-3': '百家乐回合',
+		'daily-baccarat-3': '{game}回合',
 		'daily-keno-5': '幸运号码',
 		'weekly-games-3': '多元探索者',
 	},
 	ja: {
-		'daily-blackjack-5': 'ブラックジャック連勝',
+		'daily-blackjack-5': '{game}連勝',
 		'daily-win-3': 'スリーピース',
 		'daily-slots-20': 'スピンで勝利',
 		'daily-craps-3': 'ダイスローラー',
-		'daily-baccarat-3': 'バカララウンド',
+		'daily-baccarat-3': '{game}ラウンド',
 		'daily-keno-5': 'ラッキーナンバー',
 		'weekly-games-3': 'バラエティシーカー',
 	},
@@ -52,39 +71,39 @@ const MISSION_TITLES = defineMessages({
 
 const MISSION_DESCRIPTIONS = defineMessages({
 	en: {
-		'daily-blackjack-5': 'Play {count} Blackjack hands',
+		'daily-blackjack-5': 'Play {count} {game} hands',
 		'daily-win-3': 'Win {count} rounds in any game',
-		'daily-slots-20': 'Complete {count} slot spins',
-		'daily-craps-3': 'Play {count} Craps rounds',
-		'daily-baccarat-3': 'Play {count} Baccarat hands',
-		'daily-keno-5': 'Play {count} Keno draws',
+		'daily-slots-20': 'Complete {count} {game} spins',
+		'daily-craps-3': 'Play {count} {game} rounds',
+		'daily-baccarat-3': 'Play {count} {game} hands',
+		'daily-keno-5': 'Play {count} {game} draws',
 		'weekly-games-3': 'Play {count} different game modes this week',
 	} satisfies Record<MissionId, string>,
 	'zh-Hant': {
-		'daily-blackjack-5': '玩 {count} 手二十一點',
+		'daily-blackjack-5': '玩 {count} 手{game}',
 		'daily-win-3': '在任何遊戲中贏得 {count} 回合',
-		'daily-slots-20': '完成 {count} 次老虎機轉動',
-		'daily-craps-3': '玩 {count} 局雙骰子',
-		'daily-baccarat-3': '玩 {count} 手百家樂',
-		'daily-keno-5': '玩 {count} 局基諾',
+		'daily-slots-20': '完成 {count} 次{game}轉動',
+		'daily-craps-3': '玩 {count} 局{game}',
+		'daily-baccarat-3': '玩 {count} 手{game}',
+		'daily-keno-5': '玩 {count} 局{game}',
 		'weekly-games-3': '本週遊玩 {count} 種不同遊戲模式',
 	},
 	'zh-Hans': {
-		'daily-blackjack-5': '玩 {count} 手二十一点',
+		'daily-blackjack-5': '玩 {count} 手{game}',
 		'daily-win-3': '在任何游戏中赢得 {count} 回合',
-		'daily-slots-20': '完成 {count} 次老虎机转动',
-		'daily-craps-3': '玩 {count} 局双骰子',
-		'daily-baccarat-3': '玩 {count} 手百家乐',
-		'daily-keno-5': '玩 {count} 局基诺',
+		'daily-slots-20': '完成 {count} 次{game}转动',
+		'daily-craps-3': '玩 {count} 局{game}',
+		'daily-baccarat-3': '玩 {count} 手{game}',
+		'daily-keno-5': '玩 {count} 局{game}',
 		'weekly-games-3': '本周游玩 {count} 种不同游戏模式',
 	},
 	ja: {
-		'daily-blackjack-5': 'ブラックジャックを {count} ハンドプレイ',
+		'daily-blackjack-5': '{game}を {count} ハンドプレイ',
 		'daily-win-3': '任意のゲームで {count} ラウンド勝利',
-		'daily-slots-20': 'スロットを {count} 回スピンする',
-		'daily-craps-3': 'クラップスを {count} ラウンドプレイ',
-		'daily-baccarat-3': 'バカラを {count} ハンドプレイ',
-		'daily-keno-5': 'キノを {count} 回プレイ',
+		'daily-slots-20': '{game}を {count} 回スピンする',
+		'daily-craps-3': '{game}を {count} ラウンドプレイ',
+		'daily-baccarat-3': '{game}を {count} ハンドプレイ',
+		'daily-keno-5': '{game}を {count} 回プレイ',
 		'weekly-games-3': '今週 {count} 種類の異なるゲームモードをプレイ',
 	},
 });
@@ -150,12 +169,13 @@ export const MISSIONS_MESSAGES = defineMessages({
 });
 
 export function getMissionTitle(locale: Locale, id: MissionId): string {
-	return createTranslator(MISSION_TITLES, locale)(id);
+	return createTranslator(MISSION_TITLES, locale)(id, missionGameToken(locale, id));
 }
 
 export function getMissionDescription(locale: Locale, id: MissionId, count: number): string {
 	return createTranslator(MISSION_DESCRIPTIONS, locale)(id, {
 		count: formatWholeNumber(count, locale),
+		...missionGameToken(locale, id),
 	});
 }
 

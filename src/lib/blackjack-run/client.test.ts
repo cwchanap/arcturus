@@ -156,7 +156,9 @@ describe('blackjack-run client', () => {
 		fetchImpl.mockImplementation(() => Promise.resolve(errorResponse('INTERNAL_ERROR', 500)));
 
 		const client = createClient();
-		await expect(client.loadCurrent('ranked')).rejects.toThrow('internal error');
+		await expect(client.loadCurrent('ranked')).rejects.toThrow(
+			'Something went wrong — refresh and retry.',
+		);
 		await expect(client.loadCurrent('ranked')).rejects.toMatchObject({
 			name: 'BlackjackRunClientError',
 			code: 'INTERNAL_ERROR',
@@ -324,7 +326,9 @@ describe('blackjack-run client', () => {
 		fetchImpl.mockRejectedValue(new TypeError('Failed to fetch'));
 
 		const client = createClient();
-		await expect(client.loadCurrent('ranked')).rejects.toThrow('Failed to fetch');
+		// Transport failures surface the localized generic message, never the
+		// raw exception text.
+		await expect(client.loadCurrent('ranked')).rejects.toThrow('Blackjack run request failed');
 		expect(fetchImpl.mock.calls).toHaveLength(1);
 
 		fetchImpl.mockImplementation(() => Promise.resolve(jsonResponse(activeState())));

@@ -464,7 +464,7 @@ const clientUserId = gameSession.clientUserId;
 	import { setSlotState } from '../../lib/card-slot-utils';
 	import { getDocumentLocale } from '../../lib/i18n/locale';
 	import { formatChips } from '../../lib/i18n/messages/common';
-	import { formatWholeNumber } from '../../lib/formatting';
+	import { formatPercentage, formatWholeNumber } from '../../lib/formatting';
 	import { validateBetCode } from '../../lib/bet-validation';
 	import {
 		baccaratTranslator,
@@ -965,9 +965,9 @@ const clientUserId = gameSession.clientUserId;
 		const getPercent = (count: number) =>
 			totalRounds > 0 ? Math.round((count / totalRounds) * 100) : 0;
 
-		statPlayerEl.textContent = `${getPercent(stats.player)}%`;
-		statTieEl.textContent = `${getPercent(stats.tie)}%`;
-		statBankerEl.textContent = `${getPercent(stats.banker)}%`;
+		statPlayerEl.textContent = formatPercentage(getPercent(stats.player), locale);
+		statTieEl.textContent = formatPercentage(getPercent(stats.tie), locale);
+		statBankerEl.textContent = formatPercentage(getPercent(stats.banker), locale);
 	}
 
 	function showStatus(message: string) {

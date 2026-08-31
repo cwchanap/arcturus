@@ -316,4 +316,54 @@ describe('ranked run renderer', () => {
 			'Something went wrong',
 		);
 	});
+
+	test('renders status, amounts, and results through the document locale', () => {
+		document.documentElement.dataset.locale = 'ja';
+		try {
+			const jaRoot = makeRoot();
+			const jaRenderer = createRankedRunRenderer(jaRoot);
+
+			jaRenderer.render(activeState());
+			expect(jaRoot.querySelector('[data-testid="ranked-balance"]')?.textContent).toBe(
+				'742 チップ',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-committed-wager"]')?.textContent).toBe(
+				'200 チップ',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
+				'あなたの番 · ハンド 1 / 2',
+			);
+			// Hand labels and values flow through the localized presentation.
+			expect(jaRoot.querySelector('[data-testid="ranked-player-hand"]')?.textContent).toContain(
+				'ハンド 1 · 100 チップ',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-player-value"]')?.textContent).toBe(
+				'ソフト 17',
+			);
+			// Header pill keeps the shared chips phrase.
+			expect(jaRoot.querySelector('[data-chip-balance]')?.textContent).toBe('742 チップ');
+
+			jaRenderer.render(terminalState());
+			expect(jaRoot.querySelector('[data-testid="ranked-result-outcome"]')?.textContent).toBe(
+				'勝ち',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-result-wager"]')?.textContent).toBe(
+				'200 チップ',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-result-net"]')?.textContent).toBe(
+				'+100 チップ',
+			);
+			expect(jaRoot.querySelector('[data-testid="ranked-result-balance"]')?.textContent).toBe(
+				'942 チップ',
+			);
+
+			jaRenderer.render(null);
+			expect(jaRoot.querySelector('[data-testid="ranked-status"]')?.textContent).toBe(
+				'賭け金を選んでランク戦を開始してください。',
+			);
+			jaRoot.remove();
+		} finally {
+			delete document.documentElement.dataset.locale;
+		}
+	});
 });

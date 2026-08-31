@@ -635,7 +635,7 @@ describe('Blackjack client initialization and settlement flow', () => {
 			settlement: makeResponse(200, {
 				balance: 1050,
 				duplicate: false,
-				newAchievements: [{ id: 'bj-win', name: 'Blackjack Master', icon: '🃏' }],
+				newAchievements: [{ id: 'bj-win', icon: '🃏' }],
 			}),
 		});
 		const root = buildBlackjackDOM({ guestMode: false, userId: 'auth-6', initialBalance: 1000 });
@@ -657,9 +657,7 @@ describe('Blackjack client initialization and settlement flow', () => {
 			await flush(15);
 
 			expect(events).toHaveLength(1);
-			expect(events[0].achievements).toEqual([
-				{ id: 'bj-win', name: 'Blackjack Master', icon: '🃏' },
-			]);
+			expect(events[0].achievements).toEqual([{ id: 'bj-win', icon: '🃏' }]);
 		} finally {
 			window.removeEventListener('achievement-earned', handler);
 			root.remove();
@@ -772,5 +770,34 @@ describe('Blackjack client initialization and settlement flow', () => {
 		expect(statusEl.textContent).toContain('Bet must be between');
 
 		root.remove();
+	});
+
+	test('localizes balance, status, and settings copy through the document locale', async () => {
+		installFetch();
+		const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-zh', initialBalance: 1000 });
+		document.documentElement.dataset.locale = 'zh-Hant';
+		try {
+			initBlackjackClient();
+			await flush(5);
+
+			// Balance uses the localized amount template.
+			expect(document.getElementById('player-balance')?.textContent).toBe('1,000 籌碼');
+
+			// Settings status messages are localized.
+			(document.getElementById('btn-reset-settings') as HTMLButtonElement).click();
+			expect(document.getElementById('game-status')?.textContent).toBe('設定已重設為預設值。');
+
+			// Betting validation shows the localized range sentence.
+			const betAmountInput = document.getElementById('bet-amount') as HTMLInputElement;
+			betAmountInput.value = '5';
+			clickDeal();
+			await flush(2);
+			expect(document.getElementById('game-status')?.textContent).toBe(
+				'下注必須介於 10 籌碼 與 1,000 籌碼 之間',
+			);
+		} finally {
+			delete document.documentElement.dataset.locale;
+			root.remove();
+		}
 	});
 });

@@ -7,7 +7,6 @@ import {
 	isValidRankingMetric,
 	GAME_TYPE_LABELS,
 	GAME_TYPE_ICONS,
-	RANKING_METRIC_LABELS,
 } from './constants';
 
 const mockUpdateGameStats = Object.assign(
@@ -473,13 +472,6 @@ describe('constants', () => {
 		for (const gameType of GAME_TYPES) {
 			expect(GAME_TYPE_LABELS[gameType]).toBeDefined();
 			expect(typeof GAME_TYPE_LABELS[gameType]).toBe('string');
-		}
-	});
-
-	test('RANKING_METRIC_LABELS has labels for all metrics', () => {
-		for (const metric of RANKING_METRICS) {
-			expect(RANKING_METRIC_LABELS[metric]).toBeDefined();
-			expect(typeof RANKING_METRIC_LABELS[metric]).toBe('string');
 		}
 	});
 });

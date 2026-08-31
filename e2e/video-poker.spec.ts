@@ -219,7 +219,9 @@ test.describe('Video Poker wallet recovery', () => {
 			expect(commands).toHaveLength(2);
 			expect(commands[1]).toEqual(commands[0]);
 			const expectedBalance = startingBalance + Number(commands[1].delta ?? 0);
-			await expect(page.getByTestId('chip-balance')).toHaveText(expectedBalance.toLocaleString());
+			await expect(page.getByTestId('chip-balance')).toHaveText(
+				`${expectedBalance.toLocaleString()} chips`,
+			);
 			await expect(page.locator('[data-chip-balance]').first()).toHaveText(
 				`${expectedBalance.toLocaleString()} chips`,
 			);

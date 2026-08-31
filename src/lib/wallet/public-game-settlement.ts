@@ -1,6 +1,5 @@
 import type { GameType } from '../game-stats/types';
 import { isGuestModeValue, loadGuestBankroll, persistGuestBankroll } from '../public-game-session';
-import { formatChipBalance } from '../formatting';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { createSettlementGate } from './settlement-gate';
@@ -86,7 +85,7 @@ export function createPublicGameSettlementController(options: {
 	function syncBalance(balance: number): void {
 		const locale = getDocumentLocale(options.root.ownerDocument);
 		const primary = document.getElementById('chip-balance');
-		if (primary) primary.textContent = formatChipBalance(balance, locale);
+		if (primary) primary.textContent = formatChips(balance, locale);
 		document.querySelectorAll<HTMLElement>('[data-chip-balance]').forEach((el) => {
 			el.textContent = formatChips(balance, locale);
 		});

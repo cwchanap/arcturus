@@ -3,10 +3,12 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { WHEEL_ORDER, RED_NUMBERS, CHIP_DENOMINATIONS } from '../../lib/roulette/constants';
+import { formatChips } from '../../lib/i18n/messages/common';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
+const locale = Astro.locals.locale;
 const clientUserId = gameSession.clientUserId;
 
 // ─── Wheel SVG generation ───────────────────────────────────────────────────
@@ -96,7 +98,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 					id="chip-balance"
 					data-testid="chip-balance"
 				>
-					{'$' + initialBalance.toLocaleString()}
+					{formatChips(initialBalance, locale)}
 				</div>
 			</div>
 		</div>

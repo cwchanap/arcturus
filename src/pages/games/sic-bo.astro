@@ -1,7 +1,6 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChipBalance } from '../../lib/formatting';
 import { sicBoTranslator, type SIC_BO_MESSAGES } from '../../lib/i18n/messages/sic-bo';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { formatChips } from '../../lib/i18n/messages/common';
@@ -71,7 +70,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{formatChipBalance(gameSession.initialBalance, locale)}
+					{formatChips(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>

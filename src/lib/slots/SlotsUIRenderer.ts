@@ -1,4 +1,3 @@
-import { formatChipBalance } from '../formatting';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { slotsTranslator, getSlotsSymbolLabel, formatSlotsNet } from '../i18n/messages/slots';
@@ -24,7 +23,7 @@ export class SlotsUIRenderer {
 
 	renderBalance(balance: number): void {
 		const el = document.getElementById('chip-balance');
-		if (el) el.textContent = formatChipBalance(balance, this.locale);
+		if (el) el.textContent = formatChips(balance, this.locale);
 	}
 
 	renderBet(bet: number): void {

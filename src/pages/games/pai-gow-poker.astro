@@ -2,7 +2,6 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChipBalance } from '../../lib/formatting';
 import { paiGowPokerTranslator } from '../../lib/i18n/messages/pai-gow-poker';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { formatChips } from '../../lib/i18n/messages/common';
@@ -39,7 +38,7 @@ const gameSession = createPublicGameSession(user);
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{formatChipBalance(gameSession.initialBalance, locale)}
+					{formatChips(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>

@@ -224,7 +224,9 @@ describe('createPublicGameSettlementController', () => {
 		try {
 			const settlement = makeController(root);
 			settlement.syncBalance(990);
-			expect((document.getElementById('chip-balance') as HTMLElement).textContent).toBe('990');
+			expect((document.getElementById('chip-balance') as HTMLElement).textContent).toBe(
+				'990 chips',
+			);
 			const mirror = root.querySelector<HTMLElement>('[data-chip-balance]');
 			expect(mirror?.textContent).toBe('990 chips');
 		} finally {

@@ -278,7 +278,7 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 			initThreeCardShowdownClient();
 
 			// Before Deal: balance 1000, ante 1 pressed, all slots placeholders.
-			expect(balanceEl().textContent).toBe('1,000');
+			expect(balanceEl().textContent).toBe('1,000 chips');
 			expect(anteButton(1).getAttribute('aria-pressed')).toBe('true');
 			expect(slotStates('dealer')).toEqual(['placeholder', 'placeholder', 'placeholder']);
 			expect(slotStates('player')).toEqual(['placeholder', 'placeholder', 'placeholder']);
@@ -288,7 +288,7 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 			expect(anteButton(10).getAttribute('aria-pressed')).toBe('true');
 			expect(anteButton(1).getAttribute('aria-pressed')).toBe('false');
 			dealButton().click();
-			expect(balanceEl().textContent).toBe('990');
+			expect(balanceEl().textContent).toBe('990 chips');
 			expect(slotStates('player')).toEqual(['card', 'card', 'card']);
 			expect(slotStates('dealer')).toEqual(['facedown', 'facedown', 'facedown']);
 			expect(statusEl().textContent).toBe('Dealt. Fold or play your hand.');
@@ -296,7 +296,7 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 			// Play: dealer wins both wagers, dealer revealed, balance 980.
 			playButton().click();
 			expect(resultEl().textContent).toBe('Dealer wins · −20 chips');
-			expect(balanceEl().textContent).toBe('980');
+			expect(balanceEl().textContent).toBe('980 chips');
 			expect(slotStates('dealer')).toEqual(['card', 'card', 'card']);
 			expect(dealerRank(0)).toBe('6');
 			expect(dealerRank(1)).toBe('7');
@@ -328,12 +328,12 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 
 			anteButton(10).click();
 			dealButton().click();
-			expect(balanceEl().textContent).toBe('990');
+			expect(balanceEl().textContent).toBe('990 chips');
 
 			// Fold: only the ante is lost, the dealer hand is revealed at complete.
 			foldButton().click();
 			expect(resultEl().textContent).toBe('Fold · −10 chips');
-			expect(balanceEl().textContent).toBe('990');
+			expect(balanceEl().textContent).toBe('990 chips');
 			expect(slotStates('dealer')).toEqual(['card', 'card', 'card']);
 			expect(slotStates('player')).toEqual(['card', 'card', 'card']);
 			expect(localStorage.getItem('three-card-showdown-bankroll:anonymous')).toBe('990');

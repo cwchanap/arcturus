@@ -15,11 +15,11 @@ test.describe('Pai Gow Poker guest', () => {
 		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
 
 		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 
 		await page.locator('[data-wager="20"]').click();
 		await page.getByTestId('deal-button').click();
-		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980 chips');
 		await expect(page.locator('[id^="pai-gow-player-slot-"][data-slot-state="card"]')).toHaveCount(
 			7,
 		);
@@ -45,7 +45,7 @@ test.describe('Pai Gow Poker guest', () => {
 
 		await page.getByTestId('confirm-button').click();
 		await expect(page.getByTestId('pai-gow-status')).toContainText('Push');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 		await expect(
 			page.locator('[id^="pai-gow-dealer-high-slot-"][data-slot-state="card"]'),
 		).toHaveCount(5);
@@ -67,7 +67,7 @@ test.describe('Pai Gow Poker guest', () => {
 		await page.getByTestId('new-round-button').click();
 		await expect(page.getByTestId('new-round-button')).toBeHidden();
 		await expect(page.getByTestId('pai-gow-status')).toHaveText('Choose a wager, then deal.');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 		await page.waitForLoadState('networkidle');
 		expect(walletRequests).toEqual([]);
 	});
@@ -84,21 +84,21 @@ test.describe('Pai Gow Poker guest', () => {
 		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
 
 		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 
 		await page.locator('[data-wager="20"]').click();
 		await page.getByTestId('deal-button').click();
-		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980 chips');
 
 		await page.getByTestId('auto-arrange-button').click();
 		await page.getByTestId('confirm-button').click();
 
 		await expect(page.getByTestId('pai-gow-status')).toContainText('Player wins');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,019');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,019 chips');
 
 		await page.getByTestId('new-round-button').click();
 		await expect(page.getByTestId('new-round-button')).toBeHidden();
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,019');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,019 chips');
 		await page.waitForLoadState('networkidle');
 		expect(walletRequests).toEqual([]);
 	});
@@ -115,21 +115,21 @@ test.describe('Pai Gow Poker guest', () => {
 		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
 
 		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
-		await expect(page.getByTestId('chip-balance')).toHaveText('1,000');
+		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 
 		await page.locator('[data-wager="20"]').click();
 		await page.getByTestId('deal-button').click();
-		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980 chips');
 
 		await page.getByTestId('auto-arrange-button').click();
 		await page.getByTestId('confirm-button').click();
 
 		await expect(page.getByTestId('pai-gow-status')).toContainText('Loss');
-		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980 chips');
 
 		await page.getByTestId('new-round-button').click();
 		await expect(page.getByTestId('new-round-button')).toBeHidden();
-		await expect(page.getByTestId('chip-balance')).toHaveText('980');
+		await expect(page.getByTestId('chip-balance')).toHaveText('980 chips');
 		await page.waitForLoadState('networkidle');
 		expect(walletRequests).toEqual([]);
 	});

@@ -29,15 +29,11 @@ const ROUND_COUNT = 10;
 const RANKED_WAGER = 10;
 const RUN_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
-const CURRENCY = new Intl.NumberFormat('en-US', {
-	style: 'currency',
-	currency: 'USD',
-	minimumFractionDigits: 0,
-	maximumFractionDigits: 0,
-});
+const CURRENCY = new Intl.NumberFormat('en-US');
 
+/** English chip phrase, mirroring `formatChips` (the daily surface shows chips, not USD). */
 function formatCurrency(value: number): string {
-	return CURRENCY.format(value);
+	return `${CURRENCY.format(value)} ${value === 1 ? 'chip' : 'chips'}`;
 }
 
 function parseCurrency(text: string | null): number | null {
@@ -282,7 +278,7 @@ test.describe('daily challenge — guest surface and browser-local practice', ()
 			const rows = page.getByTestId('daily-challenge-leaderboard-row');
 			const rowCount = await rows.count();
 			for (let index = 0; index < rowCount; index += 1) {
-				await expect(rows.nth(index)).toHaveText(/^#\d+ .+ \$[\d,]+$/);
+				await expect(rows.nth(index)).toHaveText(/^#\d+ .+ [\d,]+ chips$/);
 			}
 			await expect(page.getByTestId('daily-challenge-current-standing')).toBeHidden();
 

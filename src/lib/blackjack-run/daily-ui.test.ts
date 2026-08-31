@@ -14,7 +14,7 @@ import {
 	type DailyRunState,
 	type WeeklyLeaderboardView,
 } from './daily-ui';
-import { formatUsd } from '../formatting';
+import { formatChips } from '../i18n/messages/common';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -47,7 +47,7 @@ const RUN_ID = 'abcdefghijklmnopqrstuv';
 const SEED_A = new Uint8Array(32).fill(0x11);
 const SEED_B = new Uint8Array(32).fill(0x22);
 
-const formatCurrency = (value: number): string => formatUsd(value);
+const formatCurrency = (value: number): string => formatChips(value, 'en');
 
 function roundLabel(roundsCompleted: number): string {
 	const roundCount = DAILY_RUN_CONFIG.roundCount;
@@ -540,7 +540,9 @@ describe('daily page — guest bootstrap and local practice', () => {
 
 		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
 
-		expect(get(root, 'daily-challenge-status').textContent).toContain('internal error');
+		expect(get(root, 'daily-challenge-status').textContent).toContain(
+			'Daily challenge request failed',
+		);
 		// Practice remains playable offline.
 		expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
 			formatCurrency(DAILY_RUN_CONFIG.startingBankroll),

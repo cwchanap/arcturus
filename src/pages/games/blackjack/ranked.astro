@@ -282,7 +282,10 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 </CasinoLayout>
 
 <script>
-	import { createBlackjackRunClient } from '../../../lib/blackjack-run/client';
+	import {
+		BlackjackRunClientError,
+		createBlackjackRunClient,
+	} from '../../../lib/blackjack-run/client';
 	import { createRankedRunRenderer } from '../../../lib/blackjack-run/ranked-ui';
 	import { blackjackTranslator } from '../../../lib/i18n/messages/blackjack';
 	import { getDocumentLocale } from '../../../lib/i18n/locale';
@@ -336,7 +339,11 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 		};
 
 		const fail = (error: unknown): void => {
-			renderer.renderError(error instanceof Error ? error.message : t('requestFailed'));
+			// Client errors already carry localized copy; anything else is an
+			// unexpected failure whose raw text must never reach the player.
+			renderer.renderError(
+				error instanceof BlackjackRunClientError ? error.message : t('requestFailed'),
+			);
 		};
 
 		/**

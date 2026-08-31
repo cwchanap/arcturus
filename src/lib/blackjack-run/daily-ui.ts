@@ -1,10 +1,16 @@
 import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/presentation';
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
-import { dailyChallengeTranslator } from '../i18n/messages/daily-challenge';
+import { formatWholeNumber } from '../formatting';
+import {
+	DAILY_CHALLENGE_MESSAGES,
+	dailyChallengeTranslator,
+} from '../i18n/messages/daily-challenge';
+import { formatChips } from '../i18n/messages/common';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
-import { formatUsd, formatWholeNumber } from '../formatting';
+import type { MessageKey } from '../i18n/translate';
 import {
 	createBlackjackRunClient,
+	BlackjackRunClientError,
 	type BlackjackRunClient,
 	type BlackjackRunClientCommand,
 } from './client';
@@ -79,6 +85,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function errorCode(payload: unknown): string | null {
 	return isPlainObject(payload) && typeof payload.error === 'string' ? payload.error : null;
 }
+
+/**
+ * Stable server/domain codes resolve to localized copy from this dictionary;
+ * the raw code text is never rendered. Unknown codes fall back to a
+ * localized status-based message.
+ */
+const DAILY_CODE_KEYS: Partial<Record<string, MessageKey<typeof DAILY_CHALLENGE_MESSAGES>>> = {
+	INVALID_ACTION: 'codeInvalidAction',
+	INVALID_COMMAND: 'codeInvalidCommand',
+	INVALID_WAGER: 'codeInvalidWager',
+	INSUFFICIENT_CHALLENGE_BANKROLL: 'codeInsufficientChallengeBankroll',
+	SEQUENCE_MISMATCH: 'codeSequenceMismatch',
+	INTERNAL_ERROR: 'codeInternalError',
+	UNAUTHORIZED: 'codeUnauthorized',
+	INVALID_REQUEST: 'codeInvalidRequest',
+	INSUFFICIENT_BALANCE: 'codeInsufficientBalance',
+	SETTLEMENT_CONFLICT: 'codeSettlementConflict',
+};
 
 // --- leaderboard view model ---
 
@@ -248,7 +272,7 @@ function renderActiveRound(
 	});
 	renderBlackjackPlayerHands(ownerDocument, playerHands, round.playerHands, round.activeHandIndex, {
 		testIdPrefix: 'daily-challenge',
-		formatWager: (wager) => formatUsd(wager, locale),
+		formatWager: (wager) => formatChips(wager, locale),
 	});
 }
 
@@ -359,7 +383,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		receiptEl.hidden = false;
 		receiptEligibilityEl.textContent =
 			state.eligible === true ? t('eligibleForRanking') : t('notEligibleForRanking');
-		receiptBankrollEl.textContent = formatUsd(state.availableBankroll, locale);
+		receiptBankrollEl.textContent = formatChips(state.availableBankroll, locale);
 		receiptRoundsEl.textContent = t('roundsCompleted', {
 			completed: formatWholeNumber(state.roundsCompleted, locale),
 			total: formatWholeNumber(DAILY_RUN_CONFIG.roundCount, locale),
@@ -384,9 +408,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		if (mode === 'practice') {
 			const replay = practiceReplay;
 			if (replay === null) return;
-			bankrollEl.textContent = formatUsd(replay.availableBankroll, locale);
+			bankrollEl.textContent = formatChips(replay.availableBankroll, locale);
 			committedWagerEl.textContent = replay.activeRoundPublic
-				? formatUsd(replay.activeRoundPublic.committedWager, locale)
+				? formatChips(replay.activeRoundPublic.committedWager, locale)
 				: '\u2014';
 			roundProgressEl.textContent = roundProgressLabel(replay.roundsCompleted);
 			if (replay.activeRoundPublic) {
@@ -418,9 +442,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			return;
 		}
 
-		bankrollEl.textContent = formatUsd(state.availableBankroll, locale);
+		bankrollEl.textContent = formatChips(state.availableBankroll, locale);
 		committedWagerEl.textContent = state.activeRound
-			? formatUsd(state.activeRound.committedWager, locale)
+			? formatChips(state.activeRound.committedWager, locale)
 			: '\u2014';
 		roundProgressEl.textContent = roundProgressLabel(state.roundsCompleted);
 		if (state.activeRound) {
@@ -524,7 +548,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 					row.textContent = t('dailyRow', {
 						rank: formatWholeNumber(entry.rank, locale),
 						player: entry.playerName,
-						amount: formatUsd(entry.endingBankroll, locale),
+						amount: formatChips(entry.endingBankroll, locale),
 					});
 					return row;
 				}),
@@ -634,11 +658,15 @@ export function createDailyPracticeController(
 			commands = candidate;
 			deps.render(replay);
 		} catch (error) {
-			if (error instanceof BlackjackRunError && error.code === 'ATTEMPT_COMPLETE') {
-				deps.renderError(t('practiceOver'));
+			if (error instanceof BlackjackRunError) {
+				if (error.code === 'ATTEMPT_COMPLETE') {
+					deps.renderError(t('practiceOver'));
+					return;
+				}
+				deps.renderError(t(DAILY_CODE_KEYS[error.code] ?? 'dailyRequestFailed'));
 				return;
 			}
-			deps.renderError(error instanceof Error ? error.message : t('dailyRequestFailed'));
+			deps.renderError(t('dailyRequestFailed'));
 		}
 	};
 
@@ -686,9 +714,9 @@ export async function initDailyChallengePage(
 	const locale = getDocumentLocale(root.ownerDocument);
 	const t = dailyChallengeTranslator(locale);
 	const errorMessage = (error: unknown): string =>
-		error instanceof Error ? error.message : t('dailyRequestFailed');
+		error instanceof BlackjackRunClientError ? error.message : t('dailyRequestFailed');
 	const renderer = (deps.createRenderer ?? createDailyRunRenderer)(root);
-	const client = deps.client ?? createBlackjackRunClient();
+	const client = deps.client ?? createBlackjackRunClient({ locale });
 	const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
 	let mode: DailyRunMode = 'practice';
@@ -798,8 +826,8 @@ export async function initDailyChallengePage(
 			if (!(response.status === 404 && errorCode(data) === RUN_NOT_FOUND)) {
 				const code = errorCode(data);
 				renderer.renderError(
-					code
-						? code.replaceAll('_', ' ').toLowerCase()
+					code && DAILY_CODE_KEYS[code]
+						? t(DAILY_CODE_KEYS[code])
 						: t('requestFailedWithStatus', { status: response.status }),
 				);
 			}

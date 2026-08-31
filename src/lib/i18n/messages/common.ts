@@ -87,6 +87,6 @@ export const SHELL_MESSAGES = defineMessages({
 		legal: '法的情報',
 		responsibleGaming: '責任あるギャンブル',
 		adultsOnly: '18歳以上限定',
-		copyright: '© {year} Arcturus Casino. All rights reserved. 責任あるプレイを心がけてください。',
+		copyright: '© {year} Arcturus Casino。全著作権所有。責任あるプレイを心がけてください。',
 	},
 });

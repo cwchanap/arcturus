@@ -9,6 +9,8 @@ import { makeAIDecision as makeRuleBasedDecision, createAIConfig } from './aiStr
 import { DEFAULT_AI_DIFFICULTY, type AIDifficulty } from './aiDifficulty';
 import { getHighestBet, getCallAmount } from './player';
 import { generateAiJson, type AiSettings } from '../ai';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { getPokerLanguageName } from '../i18n/messages/poker';
 
 /**
  * Cache for LLM decisions to reduce API calls
@@ -67,9 +69,11 @@ function formatCard(card: Card): string {
 }
 
 /**
- * Build LLM prompt for poker decision
+ * Build LLM prompt for poker decision. The prompt requests the active UI
+ * language but every decision-relevant value stays language-neutral, so the
+ * model's authoritative action cannot differ across locales.
  */
-function buildLLMPrompt(context: GameContext, personality: AIPersonality): string {
+function buildLLMPrompt(context: GameContext, personality: AIPersonality, locale: Locale): string {
 	const { player, players, communityCards, pot, phase } = context;
 
 	const handStr = player.hand.map(formatCard).join(', ');
@@ -106,7 +110,7 @@ ${callAmount > 0 ? `- CALL $${callAmount} (match current bet)` : ''}
 - FOLD (give up this hand)
 - RAISE (increase the bet)
 
-Respond with ONLY a JSON object in this exact format:
+Respond in ${getPokerLanguageName(locale)}. Respond with ONLY a JSON object in this exact format:
 {"action":"fold|check|call|raise","amount":number}
 
 If raising, "amount" should be the RAISE amount (not total bet), between $10 and $${Math.min(player.chips, 200)}.
@@ -163,6 +167,7 @@ export async function makeLLMDecision(
 	personality: AIPersonality,
 	llmSettings: AiSettings | null,
 	difficulty: AIDifficulty = DEFAULT_AI_DIFFICULTY,
+	locale: Locale = getDocumentLocale(),
 ): Promise<AIDecision> {
 	// Check cache first
 	const cached = decisionCache.get(context);
@@ -178,7 +183,7 @@ export async function makeLLMDecision(
 	try {
 		const result = await generateAiJson(llmSettings, {
 			system: 'You are an expert poker AI. Respond only with valid JSON.',
-			prompt: buildLLMPrompt(context, personality),
+			prompt: buildLLMPrompt(context, personality, locale),
 			temperature: 0.7,
 			maxOutputTokens: 100,
 		});

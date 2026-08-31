@@ -34,6 +34,9 @@ import { AIRivalAssistant } from './AIRivalAssistant';
 import { GameSettingsManager, isAIPersonality, isAISpeed } from './GameSettingsManager';
 import { makeLLMDecision, clearLLMCache } from './llmAIStrategy';
 import { loadAiSettings, type AiSettings } from '../ai';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { pokerTranslator } from '../i18n/messages/poker';
 import {
 	DEFAULT_GUEST_GAME_BALANCE,
 	isGuestModeValue,
@@ -106,11 +109,17 @@ export class PokerGame {
 	private turnTransitionToken = 0;
 	private isGuestMode = false;
 	private clientUserId = '';
+	private readonly locale: Locale;
+	private readonly t: ReturnType<typeof pokerTranslator>;
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
 	constructor(aiRandom?: () => number, settlementGate?: SettlementGate) {
 		this.aiRandom = aiRandom;
 		this.settlementGate = settlementGate ?? createSettlementGate();
+		// AppLayout writes data-locale on <html>; the game reads it so browser
+		// and SSR share one locale handoff for status/phase/pot copy.
+		this.locale = getDocumentLocale();
+		this.t = pokerTranslator(this.locale);
 		this.deck = new DeckManager();
 		this.ui = new PokerUIRenderer();
 		this.aiRival = new AIRivalAssistant();
@@ -164,7 +173,7 @@ export class PokerGame {
 			if (dealButton) {
 				dealButton.disabled = true;
 			}
-			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+			this.updateGameStatus(this.t('errorBalanceUnavailable'));
 		}
 
 		// On load, if LLM AI is enabled but no key is configured, show overlay immediately
@@ -252,9 +261,7 @@ export class PokerGame {
 		const llmSettings = await this.getLLMSettings();
 		if (!llmSettings) {
 			// Inform via status and show the overlay card
-			this.updateGameStatus(
-				'LLM AI is enabled but no valid API key is configured. Update your profile settings or disable LLM in Game Settings.',
-			);
+			this.updateGameStatus(this.t('errorLlmNoKey'));
 			const overlay = document.getElementById('llm-overlay');
 			if (overlay) {
 				overlay.classList.remove('hidden');
@@ -276,9 +283,9 @@ export class PokerGame {
 		ensureSettlementRecoveryControls({
 			containerClass: 'hidden mt-2 flex flex-wrap justify-center gap-2',
 			retryClass: 'deco-btn deco-btn-outline',
-			retryLabel: 'Retry settlement',
+			retryLabel: this.t('retrySettlement'),
 			resetClass: 'deco-btn deco-btn-outline',
-			resetLabel: 'Reset round',
+			resetLabel: this.t('resetRound'),
 			attachTo: document.getElementById('game-status')?.parentElement ?? null,
 		});
 	}
@@ -355,7 +362,7 @@ export class PokerGame {
 			this.adoptSettlementResult(result);
 		} catch (error) {
 			console.error('[WALLET_SETTLEMENT] Poker settlement failed:', error);
-			this.showSettlementRecovery('Settlement failed. Retry or reset before dealing another hand.');
+			this.showSettlementRecovery(this.t('settlementFailed'));
 		}
 	}
 
@@ -363,15 +370,13 @@ export class PokerGame {
 		const controls = this.getSettlementRecoveryControls();
 		controls.retry?.addEventListener('click', async () => {
 			if (!this.settlementGate.pending) return;
-			this.updateGameStatus('Retrying settlement...');
+			this.updateGameStatus(this.t('retryingSettlement'));
 			try {
 				const result = await this.settlementGate.retry();
 				if (result) this.adoptSettlementResult(result);
 			} catch (error) {
 				console.error('[WALLET_SETTLEMENT] Poker settlement retry failed:', error);
-				this.showSettlementRecovery(
-					'Settlement failed again. Retry or reset before dealing another hand.',
-				);
+				this.showSettlementRecovery(this.t('settlementRetryFailed'));
 			}
 		});
 		controls.reset?.addEventListener('click', () => {
@@ -380,7 +385,7 @@ export class PokerGame {
 			this.humanChipsBefore = 0;
 			this.hideSettlementRecovery();
 			this.ui.updateUI(this.pot, this.players[0]);
-			this.updateGameStatus('Settlement reset. Deal a new hand when ready.');
+			this.updateGameStatus(this.t('settlementReset'));
 		});
 	}
 
@@ -441,9 +446,7 @@ export class PokerGame {
 		if (settings.useLLMAI && !this.isGuestMode) {
 			const llmSettings = await this.getLLMSettings();
 			if (!llmSettings) {
-				this.updateGameStatus(
-					'LLM AI is enabled but no valid API key is configured. Update your profile settings to start a new game.',
-				);
+				this.updateGameStatus(this.t('errorLlmNoKeyNewGame'));
 
 				// Show non-intrusive overlay on the table instead of using a popup
 				const overlay = document.getElementById('llm-overlay');
@@ -456,22 +459,18 @@ export class PokerGame {
 		}
 
 		if (!this.hasServerSyncedBalance) {
-			this.updateGameStatus('Unable to load your chip balance. Refresh the page to try again.');
+			this.updateGameStatus(this.t('errorBalanceUnavailable'));
 			return;
 		}
 
 		if (!this.isGuestMode && this.settlementGate.isBlocked) {
-			this.showSettlementRecovery(
-				'Settlement is still pending. Retry or reset before dealing another hand.',
-			);
+			this.showSettlementRecovery(this.t('settlementPending'));
 			return;
 		}
 
 		this.finalizeActiveHandBeforeDeal();
 		if (!this.isGuestMode && this.settlementGate.isBlocked) {
-			this.showSettlementRecovery(
-				'Settlement is still pending. Retry or reset before dealing another hand.',
-			);
+			this.showSettlementRecovery(this.t('settlementPending'));
 			return;
 		}
 
@@ -486,7 +485,7 @@ export class PokerGame {
 					: { ...p, chips: settings.startingChips },
 			);
 			this.pendingChipReset = false;
-			this.updateGameStatus(`Chip stacks reset for new game`);
+			this.updateGameStatus(this.t('statusChipReset'));
 		}
 
 		const eliminatedPlayers = this.players.filter((p) => p.chips === 0);
@@ -495,7 +494,7 @@ export class PokerGame {
 			for (const player of eliminatedPlayers) {
 				if (player.id === 0) {
 					if (effectiveServerBalance <= 0) {
-						this.updateGameStatus('Game Over - You ran out of chips!');
+						this.updateGameStatus(this.t('statusGameOver'));
 						// Rebuy is guest-only; authed balances live on the server and
 						// must be topped up through missions or other server flows.
 						if (this.isGuestMode) {
@@ -507,7 +506,12 @@ export class PokerGame {
 				} else {
 					// AI player eliminated - auto rebuy
 					this.players[player.id] = { ...this.players[player.id], chips: settings.startingChips };
-					this.updateGameStatus(`${player.name} rebuys for $${settings.startingChips}`);
+					this.updateGameStatus(
+						this.t('statusRebuys', {
+							name: player.name,
+							amount: formatChips(settings.startingChips, this.locale),
+						}),
+					);
 				}
 			}
 		}
@@ -570,10 +574,19 @@ export class PokerGame {
 		this.hideRebuyButton();
 
 		if (this.currentPlayerIndex === 0) {
-			this.updateGameStatus('Your turn! Check, Call, Raise, or Fold');
+			this.updateGameStatus(
+				this.t('statusYourTurnFull', {
+					check: this.t('check'),
+					call: this.t('call'),
+					raise: this.t('raise'),
+					fold: this.t('fold'),
+				}),
+			);
 			this.updateActionButtons();
 		} else {
-			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateGameStatus(
+				this.t('statusWaitingFor', { name: this.players[this.currentPlayerIndex].name }),
+			);
 			this.updateActionButtons();
 			this.processAITurn();
 		}
@@ -603,10 +616,10 @@ export class PokerGame {
 			const highestBet = getHighestBet(this.players);
 			const callAmount = getCallAmount(currentPlayer, highestBet);
 			if (callAmount === 0) {
-				this.updateGameStatus(`${currentPlayer.name} checks`);
+				this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
 			} else {
 				this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
-				this.updateGameStatus(`${currentPlayer.name} folds`);
+				this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
 			}
 			this.advanceTurn();
 			return;
@@ -642,6 +655,7 @@ export class PokerGame {
 				aiConfig.personality,
 				llmSettings,
 				aiConfig.difficulty,
+				this.locale,
 			);
 			if (turnTransitionToken !== this.turnTransitionToken) return;
 		} else {
@@ -671,13 +685,13 @@ export class PokerGame {
 		switch (decision.action) {
 			case 'fold':
 				this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
-				this.updateGameStatus(`${currentPlayer.name} folds`);
+				this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
 				this.ui.showAIDecision(currentPlayer.id, 'fold');
 				break;
 
 			case 'check':
 				this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
-				this.updateGameStatus(`${currentPlayer.name} checks`);
+				this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
 				this.ui.showAIDecision(currentPlayer.id, 'check');
 				break;
 
@@ -688,15 +702,20 @@ export class PokerGame {
 					const actualCall = Math.min(callAmount, currentPlayer.chips);
 					this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 					this.pot = calculatePot(this.players);
-					const allInNote = this.players[this.currentPlayerIndex].isAllIn ? ' (all-in)' : '';
-					this.updateGameStatus(`${currentPlayer.name} calls $${actualCall}${allInNote}`);
+					const allInNote = this.players[this.currentPlayerIndex].isAllIn;
+					this.updateGameStatus(
+						this.t(allInNote ? 'statusPlayerCallsAllIn' : 'statusPlayerCalls', {
+							name: currentPlayer.name,
+							amount: formatChips(actualCall, this.locale),
+						}),
+					);
 					this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
 					// No bet to call - treat as a check
 					this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
-					this.updateGameStatus(`${currentPlayer.name} checks`);
+					this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
 					this.ui.showAIDecision(currentPlayer.id, 'check');
 				}
 				break;
@@ -711,7 +730,12 @@ export class PokerGame {
 					this.lastRaiseAmount = raiseAmount;
 					this.minimumBet = raiseAmount;
 					this.pot = calculatePot(this.players);
-					this.updateGameStatus(`${currentPlayer.name} raises $${raiseAmount}`);
+					this.updateGameStatus(
+						this.t('statusPlayerRaises', {
+							name: currentPlayer.name,
+							amount: formatChips(raiseAmount, this.locale),
+						}),
+					);
 					this.ui.showAIDecision(currentPlayer.id, 'raise', raiseAmount);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
@@ -721,14 +745,19 @@ export class PokerGame {
 						const actualCall = Math.min(callAmount, currentPlayer.chips);
 						this.players[this.currentPlayerIndex] = placeBet(currentPlayer, callAmount);
 						this.pot = calculatePot(this.players);
-						const allInNote = this.players[this.currentPlayerIndex].isAllIn ? ' (all-in)' : '';
-						this.updateGameStatus(`${currentPlayer.name} calls $${actualCall}${allInNote}`);
+						const allInNote = this.players[this.currentPlayerIndex].isAllIn;
+						this.updateGameStatus(
+							this.t(allInNote ? 'statusPlayerCallsAllIn' : 'statusPlayerCalls', {
+								name: currentPlayer.name,
+								amount: formatChips(actualCall, this.locale),
+							}),
+						);
 						this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
 						this.ui.updateUI(this.pot, this.players[0]);
 						this.ui.updateOpponentUI(this.players);
 					} else {
 						this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
-						this.updateGameStatus(`${currentPlayer.name} folds`);
+						this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
 						this.ui.showAIDecision(currentPlayer.id, 'fold');
 					}
 				}
@@ -754,10 +783,12 @@ export class PokerGame {
 		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.currentPlayerIndex);
 
 		if (this.currentPlayerIndex === 0) {
-			this.updateGameStatus('Your turn!');
+			this.updateGameStatus(this.t('statusYourTurn'));
 			this.updateActionButtons();
 		} else {
-			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateGameStatus(
+				this.t('statusWaitingFor', { name: this.players[this.currentPlayerIndex].name }),
+			);
 			this.updateActionButtons();
 			this.processAITurn();
 		}
@@ -827,23 +858,35 @@ export class PokerGame {
 	 * wins side), and reports each tier's amount instead of the total pot.
 	 */
 	private formatShowdownMessage(tierResults: TierResult[]): string {
-		if (tierResults.length === 0) return 'Showdown complete.';
+		if (tierResults.length === 0) return this.t('statusShowdownComplete');
 		if (tierResults.length === 1) {
 			const { amount, winners } = tierResults[0];
 			if (winners.length === 1) {
-				return `${winners[0].name} wins $${amount}! 🎉`;
+				return this.t('statusPlayerWins', {
+					name: winners[0].name,
+					amount: formatChips(amount, this.locale),
+				});
 			}
 			const names = winners.map((w) => w.name).join(', ');
-			return `Tie! ${names} split the $${amount} pot 🤝`;
+			return this.t('statusTieSplit', {
+				names,
+				amount: formatChips(amount, this.locale),
+			});
 		}
 		// Multiple tiers: label main vs side pots and list each tier's winner(s).
 		const parts = tierResults.map((tier, i) => {
-			const label = i === 0 ? 'Main pot' : `Side pot ${i}`;
+			const label =
+				i === 0 ? this.t('statusMainPot') : this.t('statusSidePot', { number: String(i) });
+			const amount = formatChips(tier.amount, this.locale);
 			if (tier.winners.length === 1) {
-				return `${label}: ${tier.winners[0].name} wins $${tier.amount}`;
+				return this.t('statusTierWins', {
+					label,
+					name: tier.winners[0].name,
+					amount,
+				});
 			}
 			const names = tier.winners.map((w) => w.name).join(' & ');
-			return `${label}: ${names} split $${tier.amount}`;
+			return this.t('statusTierSplit', { label, names, amount });
 		});
 		return parts.join(' | ');
 	}
@@ -854,7 +897,12 @@ export class PokerGame {
 		if (activePlayers.length === 1) {
 			const winner = activePlayers[0];
 			this.players[winner.id] = awardChips(winner, this.pot);
-			this.updateGameStatus(`${winner.name} wins $${this.pot}! (Everyone else folded) 🎉`);
+			this.updateGameStatus(
+				this.t('statusPlayerWinsWalkover', {
+					name: winner.name,
+					amount: formatChips(this.pot, this.locale),
+				}),
+			);
 			this.pot = 0;
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.ui.updateOpponentUI(this.players);
@@ -873,17 +921,17 @@ export class PokerGame {
 			this.gamePhase = 'flop';
 			this.bettingRound = 'flop';
 			this.communityCards.push(this.deck.drawCard(), this.deck.drawCard(), this.deck.drawCard());
-			this.updateGameStatus('Flop revealed!');
+			this.updateGameStatus(this.t('statusFlopRevealed'));
 		} else if (this.gamePhase === 'flop') {
 			this.gamePhase = 'turn';
 			this.bettingRound = 'turn';
 			this.communityCards.push(this.deck.drawCard());
-			this.updateGameStatus('Turn card revealed!');
+			this.updateGameStatus(this.t('statusTurnRevealed'));
 		} else if (this.gamePhase === 'turn') {
 			this.gamePhase = 'river';
 			this.bettingRound = 'river';
 			this.communityCards.push(this.deck.drawCard());
-			this.updateGameStatus('River card revealed!');
+			this.updateGameStatus(this.t('statusRiverRevealed'));
 		} else if (this.gamePhase === 'river') {
 			this.gamePhase = 'showdown';
 			this.bettingRound = null;
@@ -893,7 +941,12 @@ export class PokerGame {
 				// Only one player left - they win by default (folded on river)
 				const winner = activePlayers[0];
 				this.players[winner.id] = awardChips(winner, this.pot);
-				this.updateGameStatus(`${winner.name} wins $${this.pot}! 🎉`);
+				this.updateGameStatus(
+					this.t('statusPlayerWins', {
+						name: winner.name,
+						amount: formatChips(this.pot, this.locale),
+					}),
+				);
 				if (winner.id === 0) {
 					this.settleHand('win');
 				}
@@ -947,10 +1000,12 @@ export class PokerGame {
 		this.ui.updateUI(this.pot, this.players[0]);
 
 		if (this.currentPlayerIndex === 0) {
-			this.updateGameStatus('Your turn!');
+			this.updateGameStatus(this.t('statusYourTurn'));
 			this.updateActionButtons();
 		} else {
-			this.updateGameStatus(`Waiting for ${this.players[this.currentPlayerIndex].name}...`);
+			this.updateGameStatus(
+				this.t('statusWaitingFor', { name: this.players[this.currentPlayerIndex].name }),
+			);
 			this.updateActionButtons();
 			this.processAITurn();
 		}
@@ -1005,7 +1060,7 @@ export class PokerGame {
 			try {
 				this.players[0] = foldPlayer(this.players[0]);
 				this.ui.updateUI(this.pot, this.players[0]);
-				this.updateGameStatus('You folded');
+				this.updateGameStatus(this.t('statusYouFolded'));
 				// Sync immediately — human chip count is now locked in for this hand
 				this.settleHand('loss');
 			} finally {
@@ -1027,7 +1082,7 @@ export class PokerGame {
 			this.updateActionButtons();
 			try {
 				this.players[0] = { ...this.players[0], hasActed: true };
-				this.updateGameStatus('You checked');
+				this.updateGameStatus(this.t('statusYouChecked'));
 			} finally {
 				this.scheduleTurnTransition(200, () => {
 					this.isProcessingAction = false;
@@ -1053,8 +1108,12 @@ export class PokerGame {
 				this.players[0] = placeBet(this.players[0], callAmount);
 				this.pot = calculatePot(this.players);
 				this.ui.updateUI(this.pot, this.players[0]);
-				const allInNote = this.players[0].isAllIn ? ' (all-in)' : '';
-				this.updateGameStatus(`You called $${actualCall}${allInNote}`);
+				const allInNote = this.players[0].isAllIn;
+				this.updateGameStatus(
+					this.t(allInNote ? 'statusYouCalledAllIn' : 'statusYouCalled', {
+						amount: formatChips(actualCall, this.locale),
+					}),
+				);
 			} finally {
 				this.isProcessingAction = false;
 			}
@@ -1078,7 +1137,9 @@ export class PokerGame {
 				this.minimumBet = raiseAmount;
 				this.pot = calculatePot(this.players);
 				this.ui.updateUI(this.pot, this.players[0]);
-				this.updateGameStatus(`You raised $${raiseAmount}`);
+				this.updateGameStatus(
+					this.t('statusYouRaised', { amount: formatChips(raiseAmount, this.locale) }),
+				);
 			} finally {
 				this.isProcessingAction = false;
 			}
@@ -1089,7 +1150,7 @@ export class PokerGame {
 		const betAmount = document.getElementById('bet-amount');
 		betSlider?.addEventListener('input', (e) => {
 			const value = (e.target as HTMLInputElement).value;
-			if (betAmount) betAmount.textContent = `$${value}`;
+			if (betAmount) betAmount.textContent = formatChips(Number(value), this.locale);
 		});
 
 		// Quick bet chips
@@ -1098,7 +1159,7 @@ export class PokerGame {
 				const amount = (e.currentTarget as HTMLElement).dataset.amount;
 				if (amount && betSlider) {
 					betSlider.value = amount;
-					if (betAmount) betAmount.textContent = `$${amount}`;
+					if (betAmount) betAmount.textContent = formatChips(Number(amount), this.locale);
 				}
 			});
 		});
@@ -1161,7 +1222,7 @@ export class PokerGame {
 				!useLLMAIEl
 			) {
 				console.error('Settings form is missing required elements');
-				this.updateGameStatus('Error: Settings form is incomplete. Please refresh the page.');
+				this.updateGameStatus(this.t('errorSettingsIncomplete'));
 				return;
 			}
 
@@ -1210,7 +1271,7 @@ export class PokerGame {
 			this.updateBetControls();
 
 			// Notify user
-			this.updateGameStatus('Settings saved! Start a new hand to apply changes.');
+			this.updateGameStatus(this.t('statusSettingsSaved'));
 
 			// Hide settings panel
 			document.getElementById('settings-panel')?.classList.add('hidden');
@@ -1232,7 +1293,7 @@ export class PokerGame {
 			// Update bet controls to reflect reset minimum bet
 			this.updateBetControls();
 
-			this.updateGameStatus('Settings reset to defaults');
+			this.updateGameStatus(this.t('statusSettingsReset'));
 		});
 	}
 
@@ -1276,14 +1337,10 @@ export class PokerGame {
 		if (useLLMAICheckbox) {
 			useLLMAICheckbox.checked = this.isGuestMode ? false : settings.useLLMAI;
 			useLLMAICheckbox.disabled = this.isGuestMode;
-			useLLMAICheckbox.title = this.isGuestMode
-				? 'Sign in to use profile-backed LLM AI opponents.'
-				: '';
+			useLLMAICheckbox.title = this.isGuestMode ? this.t('aiLlmTitleGuest') : '';
 			const llmHelpText = useLLMAICheckbox.parentElement?.querySelector('.text-xs');
 			if (llmHelpText) {
-				llmHelpText.textContent = this.isGuestMode
-					? 'Sign in to use profile-backed OpenAI/Gemini opponents.'
-					: 'Enable OpenAI/Gemini for smarter, more human-like AI play. Requires API key configured in profile.';
+				llmHelpText.textContent = this.isGuestMode ? this.t('aiLlmHelpGuest') : this.t('aiLlmHelp');
 			}
 		}
 	}
@@ -1302,7 +1359,7 @@ export class PokerGame {
 			// Update bet amount display
 			const betAmount = document.getElementById('bet-amount');
 			if (betAmount) {
-				betAmount.textContent = `$${minBet * 2}`;
+				betAmount.textContent = formatChips(minBet * 2, this.locale);
 			}
 		}
 

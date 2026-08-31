@@ -132,6 +132,16 @@ describe('AIRivalAssistant - Prompt Building', () => {
 		expect(prompt).toContain('$10'); // call amount
 	});
 
+	test('prompt requests the active language', () => {
+		const humanPlayer = player(0, 500, 0, [card('A', 'hearts', 14), card('K', 'spades', 13)]);
+		const players = [humanPlayer, player(1, 500, 10), player(2, 500, 5)];
+
+		const buildPrompt = (assistant as any).buildPrompt.bind(assistant);
+		const prompt = buildPrompt('preflop', humanPlayer, [], 15, players);
+
+		expect(prompt).toContain('Respond in English');
+	});
+
 	test('builds correct prompt for flop with community cards', () => {
 		const humanPlayer = player(0, 500, 0, [card('Q', 'diamonds', 12), card('J', 'diamonds', 11)]);
 		const communityCards = [

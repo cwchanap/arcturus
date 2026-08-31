@@ -3,20 +3,26 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import PokerCardContainer from '../../components/PokerCardContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChips } from '../../lib/i18n/messages/common';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { getPokerHandName, pokerTranslator } from '../../lib/i18n/messages/poker';
+import { MAX_BET, MIN_BET } from '../../lib/poker/constants';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 const initialBalance = gameSession.initialBalance;
 const hasInitialBalance = gameSession.balanceAvailableValue === 'true';
+const locale = Astro.locals.locale;
+const t = pokerTranslator(locale);
 const initialBalanceLabel = hasInitialBalance
-	? `$${initialBalance.toLocaleString()}`
-	: 'Unavailable';
+	? formatChips(initialBalance, locale)
+	: t('unavailable');
 // Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
 // authenticated users. The raw account id is never rendered into the DOM.
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title="Texas Hold'em Poker - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'poker') })}>
 	<div
 		id="poker-root"
 		data-guest-mode={gameSession.guestModeValue}
@@ -29,9 +35,9 @@ const clientUserId = gameSession.clientUserId;
 					href="/#games"
 					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
 				>
-					← Back to Games
+					← {t('backToGames')}
 				</a>
-				<h1 class="deco-section-title text-4xl">Texas Hold'em Poker</h1>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'poker')}</h1>
 			</div>
 			<div class="flex items-center gap-4">
 				<div
@@ -60,8 +66,10 @@ const clientUserId = gameSession.clientUserId;
 				<div
 					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm px-5 py-2.5 rounded-full border-2 border-[var(--deco-brass)] shadow-lg"
 				>
-					<div class="text-xs text-[var(--deco-muted)] text-center mb-0.5">POT</div>
-					<div class="text-xl font-bold text-[var(--deco-brass)]" id="pot-amount">$0</div>
+					<div class="text-xs text-[var(--deco-muted)] text-center mb-0.5">{t('pot')}</div>
+					<div class="text-xl font-bold text-[var(--deco-brass)]" id="pot-amount">
+						{formatChips(0, locale)}
+					</div>
 				</div>
 			</div>
 
@@ -92,30 +100,25 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div>
 							<h2 class="text-lg font-semibold text-[var(--deco-ivory)]">
-								LLM Poker Rival not configured
+								{t('llmOverlayTitle')}
 							</h2>
-							<p class="text-xs text-[var(--deco-muted)]">
-								LLM-powered AI is enabled in your game settings, but no API key is configured.
-							</p>
+							<p class="text-xs text-[var(--deco-muted)]">{t('llmOverlaySubtitle')}</p>
 						</div>
 					</div>
-					<p class="text-sm text-[var(--deco-ivory-dim)]">
-						Add an OpenAI or Gemini API key in your profile to unlock AI-powered poker rivals. You
-						can also disable the LLM option in Game Settings to play with built-in AI only.
-					</p>
+					<p class="text-sm text-[var(--deco-ivory-dim)]">{t('llmOverlayBody')}</p>
 					<div class="flex flex-wrap gap-2 mt-2">
 						<a
 							href="/profile"
 							class="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--deco-brass)] px-4 py-2 text-sm font-semibold text-[var(--deco-obsidian)] hover:bg-[var(--deco-brass-bright)] transition"
 						>
-							Configure API Key
+							{t('llmOverlayConfigure')}
 						</a>
 						<button
 							id="llm-overlay-close"
 							type="button"
 							class="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--deco-obsidian-2)] px-4 py-2 text-xs font-semibold text-[var(--deco-ivory-dim)] hover:bg-[var(--deco-obsidian-3)] border border-[var(--deco-line)] transition"
 						>
-							Play without LLM
+							{t('llmOverlayPlayWithout')}
 						</button>
 					</div>
 				</div>
@@ -135,7 +138,7 @@ const clientUserId = gameSession.clientUserId;
 						showPlaceholders={false}
 					/>
 					<div class="text-xs text-[var(--deco-brass)] font-semibold" id="opponent1-chips">
-						$500
+						{formatChips(500, locale)}
 					</div>
 				</div>
 			</div>
@@ -153,7 +156,7 @@ const clientUserId = gameSession.clientUserId;
 						showPlaceholders={false}
 					/>
 					<div class="text-xs text-[var(--deco-brass)] font-semibold" id="opponent2-chips">
-						$750
+						{formatChips(500, locale)}
 					</div>
 				</div>
 			</div>
@@ -165,7 +168,7 @@ const clientUserId = gameSession.clientUserId;
 				>
 					<!-- Hand Display -->
 					<div class="text-center mb-3">
-						<div class="text-xs text-[var(--deco-muted)] mb-0.5">Your Hand</div>
+						<div class="text-xs text-[var(--deco-muted)] mb-0.5">{t('yourHand')}</div>
 						<div class="text-base md:text-lg font-bold text-[var(--deco-brass)]" id="hand-strength">
 							--
 						</div>
@@ -187,25 +190,25 @@ const clientUserId = gameSession.clientUserId;
 								id="btn-fold"
 								class="action-btn bg-[var(--deco-oxblood-bright)] text-[var(--deco-ivory)]"
 							>
-								Fold
+								{t('fold')}
 							</button>
 							<button
 								id="btn-check"
 								class="action-btn bg-[var(--deco-sapphire)] text-[var(--deco-ivory)]"
 							>
-								Check
+								{t('check')}
 							</button>
 							<button
 								id="btn-call"
 								class="action-btn bg-[var(--deco-jade)] text-[var(--deco-ivory)]"
 							>
-								Call
+								{t('call')}
 							</button>
 							<button
 								id="btn-raise"
 								class="action-btn bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)]"
 							>
-								Raise
+								{t('raise')}
 							</button>
 						</div>
 
@@ -222,7 +225,8 @@ const clientUserId = gameSession.clientUserId;
 							/>
 							<span
 								id="bet-amount"
-								class="text-[var(--deco-brass)] font-bold min-w-[60px] text-right text-sm">$50</span
+								class="text-[var(--deco-brass)] font-bold min-w-[60px] text-right text-sm"
+								>{formatChips(50, locale)}</span
 							>
 						</div>
 
@@ -244,7 +248,8 @@ const clientUserId = gameSession.clientUserId;
 
 						<!-- Current Bet Display -->
 						<div class="text-center text-sm text-[var(--deco-brass)]">
-							Your Bet: <span id="current-bet" class="font-semibold">$0</span>
+							{t('yourBet')}
+							<span id="current-bet" class="font-semibold">{formatChips(0, locale)}</span>
 						</div>
 					</div>
 				</div>
@@ -259,7 +264,7 @@ const clientUserId = gameSession.clientUserId;
 					id="btn-deal"
 					class="btn-gold py-3 px-8 rounded-lg font-bold text-lg md:w-auto w-full"
 				>
-					DEAL NEW HAND
+					{t('dealNewHand')}
 				</button>
 				<button
 					id="btn-rebuy"
@@ -267,14 +272,14 @@ const clientUserId = gameSession.clientUserId;
 					hidden
 					class="bg-[var(--deco-jade)] hover:bg-[var(--deco-emerald)] text-[var(--deco-ivory)] py-3 px-8 rounded-lg font-bold text-lg md:w-auto w-full transition"
 				>
-					REBUY CHIPS
+					{t('rebuyChips')}
 				</button>
 				<div
 					class="flex-1 p-3 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]"
 				>
-					<div class="text-xs text-[var(--deco-muted)] mb-0.5">Game Status</div>
+					<div class="text-xs text-[var(--deco-muted)] mb-0.5">{t('gameStatus')}</div>
 					<div id="game-status" class="text-base font-semibold text-[var(--deco-brass)]">
-						Click "DEAL NEW HAND" to start
+						{t('startHint', { deal: t('dealNewHand') })}
 					</div>
 				</div>
 			</div>
@@ -282,13 +287,9 @@ const clientUserId = gameSession.clientUserId;
 			<div class="mt-6 p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<div class="text-sm text-[var(--deco-muted)] mb-1">AI Rival</div>
+						<div class="text-sm text-[var(--deco-muted)] mb-1">{t('aiRival')}</div>
 						<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-							{
-								gameSession.isGuest
-									? 'Sign in to use profile-backed AI rivals.'
-									: 'Loading rival settings…'
-							}
+							{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}
 						</div>
 					</div>
 					<button
@@ -296,23 +297,18 @@ const clientUserId = gameSession.clientUserId;
 						disabled={gameSession.isGuest}
 						class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-sapphire)] to-[var(--deco-emerald)] px-4 py-2 text-sm font-semibold text-[var(--deco-ivory)] transition disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						Ask AI Rival
+						{t('askAiRival')}
 					</button>
 				</div>
 				<p class="mt-3 text-xs text-[var(--deco-muted)]">
-					{
-						gameSession.isGuest
-							? 'Sign in to configure profile-backed Gemini or OpenAI rivals.'
-							: 'Configure API keys in your'
-					}
+					{gameSession.isGuest ? t('aiGuestHint2') : `${t('aiProfileHint')} `}
 					{
 						!gameSession.isGuest && (
 							<>
-								{' '}
 								<a href="/profile" class="text-[var(--deco-brass)] hover:underline">
-									profile settings
+									{t('aiProfileSettings')}
 								</a>{' '}
-								to enable Gemini or OpenAI rivals.
+								{t('aiProfileHintEnd')}
 							</>
 						)
 					}
@@ -322,12 +318,12 @@ const clientUserId = gameSession.clientUserId;
 			<!-- Game Settings -->
 			<div class="mt-6 p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
 				<div class="flex items-center justify-between mb-3">
-					<div class="text-sm text-[var(--deco-muted)]">Game Settings</div>
+					<div class="text-sm text-[var(--deco-muted)]">{t('gameSettings')}</div>
 					<button
 						id="btn-toggle-settings"
 						class="text-xs bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] px-3 py-1 rounded transition"
 					>
-						⚙️ Configure
+						{t('configure')}
 					</button>
 				</div>
 
@@ -336,7 +332,8 @@ const clientUserId = gameSession.clientUserId;
 					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<!-- Starting Chips -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Starting Chips</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('startingChips')}</label
+							>
 							<input
 								type="number"
 								id="setting-starting-chips"
@@ -349,7 +346,7 @@ const clientUserId = gameSession.clientUserId;
 
 						<!-- Small Blind -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Small Blind</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('smallBlind')}</label>
 							<input
 								type="number"
 								id="setting-small-blind"
@@ -362,7 +359,7 @@ const clientUserId = gameSession.clientUserId;
 
 						<!-- Big Blind -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Big Blind</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('bigBlind')}</label>
 							<input
 								type="number"
 								id="setting-big-blind"
@@ -375,68 +372,72 @@ const clientUserId = gameSession.clientUserId;
 
 						<!-- AI Speed -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">AI Speed</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('aiSpeed')}</label>
 							<select
 								id="setting-ai-speed"
 								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="slow">Slow (1.5-2.5s)</option>
-								<option value="normal">Normal (0.8-1.5s)</option>
-								<option value="fast">Fast (0.3-0.6s)</option>
+								<option value="slow">{t('speedSlow')}</option>
+								<option value="normal">{t('speedNormal')}</option>
+								<option value="fast">{t('speedFast')}</option>
 							</select>
 						</div>
 
 						<!-- AI Player 2 Difficulty -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Player 2 Difficulty</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1"
+								>{t('player2Difficulty')}</label
+							>
 							<select
 								id="setting-ai-difficulty-1"
 								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="easy">Easy</option>
-								<option value="medium">Medium</option>
-								<option value="hard">Hard</option>
+								<option value="easy">{t('difficultyEasy')}</option>
+								<option value="medium">{t('difficultyMedium')}</option>
+								<option value="hard">{t('difficultyHard')}</option>
 							</select>
 						</div>
 
 						<!-- AI Player 3 Difficulty -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Player 3 Difficulty</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1"
+								>{t('player3Difficulty')}</label
+							>
 							<select
 								id="setting-ai-difficulty-2"
 								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="easy">Easy</option>
-								<option value="medium">Medium</option>
-								<option value="hard">Hard</option>
+								<option value="easy">{t('difficultyEasy')}</option>
+								<option value="medium">{t('difficultyMedium')}</option>
+								<option value="hard">{t('difficultyHard')}</option>
 							</select>
 						</div>
 
 						<!-- AI Player 2 Personality -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Player 2 Style</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('player2Style')}</label>
 							<select
 								id="setting-ai-personality-1"
 								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="tight-aggressive">Tight-Aggressive</option>
-								<option value="loose-aggressive">Loose-Aggressive</option>
-								<option value="tight-passive">Tight-Passive</option>
-								<option value="loose-passive">Loose-Passive</option>
+								<option value="tight-aggressive">{t('styleTightAggressive')}</option>
+								<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
+								<option value="tight-passive">{t('styleTightPassive')}</option>
+								<option value="loose-passive">{t('styleLoosePassive')}</option>
 							</select>
 						</div>
 
 						<!-- AI Player 3 Personality -->
 						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">Player 3 Style</label>
+							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('player3Style')}</label>
 							<select
 								id="setting-ai-personality-2"
 								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
 							>
-								<option value="tight-aggressive">Tight-Aggressive</option>
-								<option value="loose-aggressive">Loose-Aggressive</option>
-								<option value="tight-passive">Tight-Passive</option>
-								<option value="loose-passive">Loose-Passive</option>
+								<option value="tight-aggressive">{t('styleTightAggressive')}</option>
+								<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
+								<option value="tight-passive">{t('styleTightPassive')}</option>
+								<option value="loose-passive">{t('styleLoosePassive')}</option>
 							</select>
 						</div>
 					</div>
@@ -450,13 +451,8 @@ const clientUserId = gameSession.clientUserId;
 								class="w-5 h-5 bg-[var(--deco-obsidian-2)] border-[var(--deco-line)] rounded text-[var(--deco-brass)] focus:ring-2 focus:ring-[var(--deco-brass)]"
 							/>
 							<label for="setting-use-llm-ai" class="flex-1">
-								<div class="text-sm text-[var(--deco-ivory)] font-semibold">
-									Use LLM-Powered AI Opponents
-								</div>
-								<div class="text-xs text-[var(--deco-muted)] mt-1">
-									Enable OpenAI/Gemini for smarter, more human-like AI play. Requires API key
-									configured in profile.
-								</div>
+								<div class="text-sm text-[var(--deco-ivory)] font-semibold">{t('useLlmAi')}</div>
+								<div class="text-xs text-[var(--deco-muted)] mt-1">{t('useLlmAiHint')}</div>
 							</label>
 						</div>
 					</div>
@@ -467,19 +463,17 @@ const clientUserId = gameSession.clientUserId;
 							id="btn-save-settings"
 							class="flex-1 bg-[var(--deco-brass)] hover:bg-[var(--deco-brass-bright)] text-[var(--deco-obsidian)] px-4 py-2 rounded font-semibold transition"
 						>
-							Save Settings
+							{t('saveSettings')}
 						</button>
 						<button
 							id="btn-reset-settings"
 							class="bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] px-4 py-2 rounded transition"
 						>
-							Reset
+							{t('resetSettings')}
 						</button>
 					</div>
 
-					<p class="text-xs text-[var(--deco-muted)]">
-						⚠️ Settings apply to new hands only. Start a new hand after saving.
-					</p>
+					<p class="text-xs text-[var(--deco-muted)]">{t('settingsApplyHint')}</p>
 				</div>
 			</div>
 		</div>
@@ -487,33 +481,33 @@ const clientUserId = gameSession.clientUserId;
 		<!-- Game Info -->
 		<div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">🎯 Game Rules</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('gameRules')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• Each player gets 2 hole cards</li>
-					<li>• 5 community cards revealed in stages</li>
-					<li>• Make the best 5-card hand</li>
-					<li>• Highest hand wins the pot</li>
+					<li>{t('ruleHoleCards')}</li>
+					<li>{t('ruleCommunityCards')}</li>
+					<li>{t('ruleBestHand')}</li>
+					<li>{t('ruleHighestWins')}</li>
 				</ul>
 			</div>
 
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">🏆 Hand Rankings</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('handRankings')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• Royal Flush</li>
-					<li>• Straight Flush</li>
-					<li>• Four of a Kind</li>
-					<li>• Full House</li>
-					<li>• Flush</li>
+					<li>• {getPokerHandName(locale, 'ROYAL_FLUSH')}</li>
+					<li>• {getPokerHandName(locale, 'STRAIGHT_FLUSH')}</li>
+					<li>• {getPokerHandName(locale, 'FOUR_OF_A_KIND')}</li>
+					<li>• {getPokerHandName(locale, 'FULL_HOUSE')}</li>
+					<li>• {getPokerHandName(locale, 'FLUSH')}</li>
 				</ul>
 			</div>
 
 			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">💰 Betting</h3>
+				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('betting')}</h3>
 				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• Minimum bet: $10</li>
-					<li>• Maximum bet: $1,000</li>
-					<li>• Fold to quit round</li>
-					<li>• Check to pass</li>
+					<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li>
+					<li>{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}</li>
+					<li>{t('betFoldRule')}</li>
+					<li>{t('betCheckRule')}</li>
 				</ul>
 			</div>
 		</div>

@@ -8,6 +8,9 @@ import { getCallAmount, getHighestBet } from './index';
 import { getSuitSymbol } from '../card-format';
 import { generateAiJson, loadAiSettings, type AiSettings } from '../ai';
 import { isGuestModeValue } from '../public-game-session';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { getPokerLanguageName, pokerTranslator } from '../i18n/messages/poker';
 
 export type AiMoveType = 'fold' | 'check' | 'call' | 'raise';
 export type AiMove = {
@@ -18,11 +21,17 @@ export type AiMove = {
 
 export class AIRivalAssistant {
 	private aiSettings: AiSettings | null = null;
+	private readonly locale: Locale;
+	private readonly t: ReturnType<typeof pokerTranslator>;
 
 	constructor() {
+		// AppLayout writes data-locale on <html>; the assistant reads it so the
+		// browser and SSR share one locale handoff for advice copy.
+		this.locale = getDocumentLocale();
+		this.t = pokerTranslator(this.locale);
 		if (this.isGuestMode()) {
 			this.setButtonState({ disabled: true });
-			this.updateStatus('Sign in to use browser-local AI rivals.', 'neutral');
+			this.updateStatus(this.t('aiRivalGuestStatus'), 'neutral');
 			return;
 		}
 		this.hydrateFromLocalSettings();
@@ -59,7 +68,7 @@ export class AIRivalAssistant {
 		}
 
 		if (!htmlButton.dataset.originalLabel) {
-			htmlButton.dataset.originalLabel = htmlButton.textContent ?? 'Ask AI Rival';
+			htmlButton.dataset.originalLabel = htmlButton.textContent ?? this.t('askAiRival');
 		}
 
 		if (typeof options.disabled === 'boolean') {
@@ -67,10 +76,10 @@ export class AIRivalAssistant {
 		}
 
 		if (options.loading) {
-			htmlButton.textContent = 'Thinking…';
+			htmlButton.textContent = this.t('aiRivalThinking');
 			htmlButton.classList.add('animate-pulse');
 		} else {
-			htmlButton.textContent = htmlButton.dataset.originalLabel ?? 'Ask AI Rival';
+			htmlButton.textContent = htmlButton.dataset.originalLabel ?? this.t('askAiRival');
 			htmlButton.classList.remove('animate-pulse');
 		}
 	}
@@ -84,7 +93,7 @@ export class AIRivalAssistant {
 
 		if (!text) {
 			if (!this.aiSettings) {
-				text = 'AI rival not configured.';
+				text = this.t('aiRivalNotConfigured');
 				resolvedTone = 'error';
 			} else {
 				const providerLabel =
@@ -93,10 +102,12 @@ export class AIRivalAssistant {
 						: `Gemini ${this.aiSettings.model}`;
 				const hasKey = Boolean(this.getAiKey(this.aiSettings));
 				if (hasKey) {
-					text = `Ready with ${providerLabel}`;
+					text = this.t('aiRivalReady', { provider: providerLabel });
 					resolvedTone = 'success';
 				} else {
-					text = `Missing ${this.aiSettings.provider === 'openai' ? 'OpenAI' : 'Gemini'} API key`;
+					text = this.t('aiRivalMissingKey', {
+						provider: this.aiSettings.provider === 'openai' ? 'OpenAI' : 'Gemini',
+					});
 					resolvedTone = 'error';
 				}
 			}
@@ -163,7 +174,7 @@ Community cards: ${communityCardsStr}
 Pot size: $${pot}
 Current bet to match: $${callAmount}
 
-Respond with a JSON object describing your recommended move.
+Respond in ${getPokerLanguageName(this.locale)}. Respond with a JSON object describing your recommended move.
 Use the shape {"move":"fold|check|call|raise","amount":number?}. Amount is required only for raises.
 Keep the JSON as the only output.`;
 	}
@@ -237,11 +248,11 @@ Keep the JSON as the only output.`;
 
 		let description = '';
 		if (move.move === 'fold') {
-			description = 'fold';
+			description = this.t('aiMoveFold');
 		} else if (move.move === 'check') {
-			description = 'check';
+			description = this.t('aiMoveCheck');
 		} else if (move.move === 'call') {
-			description = 'call';
+			description = this.t('aiMoveCall');
 		} else if (move.move === 'raise') {
 			const raise = this.clampRaise(move.amount);
 			if (raise !== null) {
@@ -251,16 +262,16 @@ Keep the JSON as the only output.`;
 					slider.value = String(raise);
 				}
 				if (betLabel) {
-					betLabel.textContent = `$${raise}`;
+					betLabel.textContent = formatChips(raise, this.locale);
 				}
-				description = `raise $${raise}`;
+				description = this.t('aiMoveRaiseAmount', { amount: formatChips(raise, this.locale) });
 			} else {
-				description = 'raise';
+				description = this.t('aiMoveRaise');
 			}
 		}
 
-		this.updateStatus(`Suggested move: ${description.toUpperCase()}`, 'success');
-		updateGameStatusCallback(`AI rival recommends you ${description || move.move}.`);
+		this.updateStatus(this.t('aiRivalSuggested', { move: description }), 'success');
+		updateGameStatusCallback(this.t('aiRivalRecommends', { move: description }));
 	}
 
 	// === Public API ===
@@ -276,13 +287,13 @@ Keep the JSON as the only output.`;
 		const settings = this.aiSettings;
 		const apiKey = this.getAiKey(settings);
 		if (!settings || !apiKey) {
-			this.updateStatus('AI rival not ready. Check your profile settings.', 'error');
+			this.updateStatus(this.t('aiRivalNotReady'), 'error');
 			this.setButtonState({ disabled: true });
 			return;
 		}
 
 		this.setButtonState({ loading: true, disabled: true });
-		this.updateStatus('Consulting the rival…', 'neutral');
+		this.updateStatus(this.t('aiRivalConsulting'), 'neutral');
 
 		try {
 			const prompt = this.buildPrompt(gamePhase, humanPlayer, communityCards, pot, players);
@@ -302,7 +313,7 @@ Keep the JSON as the only output.`;
 			this.setButtonState({ loading: false, disabled: !stillHasKey });
 		} catch (error) {
 			console.error('AI rival failed to respond:', error);
-			this.updateStatus('Rival could not decide. Try again.', 'error');
+			this.updateStatus(this.t('aiRivalError'), 'error');
 			const stillHasKey = Boolean(this.getAiKey(this.aiSettings));
 			this.setButtonState({ loading: false, disabled: !stillHasKey });
 		}

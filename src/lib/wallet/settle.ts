@@ -121,7 +121,7 @@ async function buildFreshResult(
 	// return the successful settlement. Achievements are re-evaluated naturally
 	// on the user's next completed round because checkAndGrantAchievements
 	// reads current state each time.
-	let newAchievements: Array<{ id: string; name: string; icon: string }> = [];
+	let newAchievements: SettleRoundResult['newAchievements'] = [];
 	try {
 		const earned = await checkAndGrantAchievements(createDb(d1), userId, nextBalance, {
 			recentWinAmount: command.stats.biggestWin > 0 ? command.stats.biggestWin : undefined,
@@ -129,7 +129,6 @@ async function buildFreshResult(
 		});
 		newAchievements = earned.map((achievement) => ({
 			id: achievement.id,
-			name: achievement.name,
 			icon: achievement.icon,
 		}));
 	} catch (error) {

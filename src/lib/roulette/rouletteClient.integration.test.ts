@@ -172,7 +172,7 @@ describe('roulette client authenticated flow', () => {
 							netDelta: -5,
 							results: [{ bet: { id: 'b', type: 'red', amount: 5 }, won: false, payout: 0 }],
 							newBalance: 995,
-							newAchievements: [{ id: 'a1', name: 'Winner', icon: '🏆' }],
+							newAchievements: [{ id: 'high_roller', icon: '🏆' }],
 						})
 					: makeFetchResponse(404, {}),
 		});

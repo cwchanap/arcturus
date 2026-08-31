@@ -1,3 +1,4 @@
+import type { AchievementId } from '../achievements/types';
 import type { GameType } from '../game-stats/types';
 
 export interface RoundStats {
@@ -25,7 +26,8 @@ export interface SettleRoundCommand {
 export interface SettleRoundResult {
 	balance: number;
 	duplicate: boolean;
-	newAchievements?: Array<{ id: string; name: string; icon: string }>;
+	/** Language-neutral payload; names resolve at the presentation boundary. */
+	newAchievements?: Array<{ id: AchievementId; icon: string }>;
 }
 
 export interface WalletSettlementGate {

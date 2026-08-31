@@ -1,6 +1,9 @@
+import type { AchievementId } from './achievements/types';
+import { getDocumentLocale } from './i18n/locale';
+import { getAchievementName } from './i18n/messages/achievements';
+
 export type AchievementToastEntry = {
-	id: string;
-	name: string;
+	id: AchievementId;
 	icon: string;
 };
 
@@ -63,7 +66,7 @@ export function initAchievementToast(
 		isShowing = true;
 
 		icon.textContent = achievement.icon;
-		name.textContent = achievement.name;
+		name.textContent = getAchievementName(getDocumentLocale(), achievement.id);
 
 		toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
 		toast.classList.add('opacity-100', 'translate-y-0');

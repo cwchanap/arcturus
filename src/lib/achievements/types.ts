@@ -23,11 +23,12 @@ export type AchievementCategory = 'leaderboard' | 'gameplay' | 'milestone';
 
 /**
  * Achievement definition (static configuration)
+ *
+ * Language-neutral by design: display names and descriptions resolve at the
+ * presentation boundary via `src/lib/i18n/messages/achievements.ts`.
  */
 export interface AchievementDefinition {
 	id: AchievementId;
-	name: string;
-	description: string;
 	category: AchievementCategory;
 	icon: string; // emoji
 }

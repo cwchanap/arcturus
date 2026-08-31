@@ -2,13 +2,19 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChipBalance } from '../../lib/formatting';
+import { threeCardShowdownTranslator } from '../../lib/i18n/messages/three-card-showdown';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChips } from '../../lib/i18n/messages/common';
 import { ANTE_OPTIONS } from '../../lib/three-card-showdown';
 
+const locale = Astro.locals.locale;
+const t = threeCardShowdownTranslator(locale);
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
 ---
 
-<CasinoLayout title="Three-Card Showdown - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'three-card-showdown') })}>
 	<main
 		id="three-card-showdown-root"
 		data-testid="three-card-showdown-root"
@@ -19,10 +25,12 @@ const gameSession = createPublicGameSession(user);
 	>
 		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
-				<h1 class="deco-section-title text-4xl">Three-Card Showdown</h1>
+				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
+				<h1 class="deco-section-title text-4xl">
+					{getGameName(locale, 'three-card-showdown')}
+				</h1>
 				<p class="text-[var(--deco-muted)]">
-					Ante + Play against a qualifying dealer hand. Fold and lose only the ante.
+					{t('subtitle')}
 				</p>
 			</div>
 			<div class="deco-panel px-5 py-3">
@@ -32,7 +40,7 @@ const gameSession = createPublicGameSession(user);
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{gameSession.initialBalance.toLocaleString()}
+					{formatChipBalance(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>
@@ -45,11 +53,11 @@ const gameSession = createPublicGameSession(user);
 				aria-live="polite"
 				class="mb-4 text-center"
 			>
-				Choose an ante, then deal.
+				{t('chooseAnte')}
 			</div>
 
 			<div class="mb-6">
-				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Dealer</div>
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">{t('dealer')}</div>
 				<div class="flex justify-center gap-3">
 					{
 						[0, 1, 2].map((i) => (
@@ -64,7 +72,7 @@ const gameSession = createPublicGameSession(user);
 			</div>
 
 			<div>
-				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">Player</div>
+				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">{t('player')}</div>
 				<div class="flex justify-center gap-3">
 					{
 						[0, 1, 2].map((i) => (
@@ -87,7 +95,7 @@ const gameSession = createPublicGameSession(user);
 			>
 			</div>
 
-			<div class="mt-5 text-center text-sm text-[var(--deco-muted)]">Ante</div>
+			<div class="mt-5 text-center text-sm text-[var(--deco-muted)]">{t('ante')}</div>
 			<div class="mt-2 flex flex-wrap justify-center gap-2">
 				{
 					ANTE_OPTIONS.map((ante) => (
@@ -97,7 +105,7 @@ const gameSession = createPublicGameSession(user);
 							aria-pressed={ante === ANTE_OPTIONS[0] ? 'true' : 'false'}
 							class="deco-btn rounded-lg px-4 py-2"
 						>
-							{ante}
+							{formatChips(ante, locale)}
 						</button>
 					))
 				}
@@ -110,7 +118,7 @@ const gameSession = createPublicGameSession(user);
 					type="button"
 					class="btn-gold rounded-lg px-8 py-3"
 				>
-					Deal
+					{t('deal')}
 				</button>
 				<button
 					id="three-card-showdown-fold"
@@ -119,7 +127,7 @@ const gameSession = createPublicGameSession(user);
 					class="deco-btn rounded-lg px-6 py-3"
 					hidden
 				>
-					Fold
+					{t('fold')}
 				</button>
 				<button
 					id="three-card-showdown-play"
@@ -128,7 +136,7 @@ const gameSession = createPublicGameSession(user);
 					class="btn-gold rounded-lg px-8 py-3"
 					hidden
 				>
-					Play
+					{t('play')}
 				</button>
 				<button
 					id="three-card-showdown-new-round"
@@ -137,19 +145,16 @@ const gameSession = createPublicGameSession(user);
 					class="deco-btn rounded-lg px-8 py-3"
 					hidden
 				>
-					New Round
+					{t('newRound')}
 				</button>
 			</div>
 			<div id="three-card-showdown-recovery-host" class="mt-4 flex justify-center"></div>
 		</section>
 
 		<aside class="deco-panel mt-6 p-5">
-			<h2 class="deco-section-title text-2xl">How to Play</h2>
+			<h2 class="deco-section-title text-2xl">{t('howToPlay')}</h2>
 			<p class="mt-1 text-xs text-[var(--deco-muted)]">
-				Ante to receive three cards; the dealer takes three cards face down. Fold to lose only the
-				ante, or Play a second wager equal to the ante. The dealer must hold Queen-high or better to
-				qualify — if the dealer does not qualify, your Play wager is returned and the ante is paid
-				1:1. Otherwise the best three-card hand wins; a tie pushes.
+				{t('howToPlayBody')}
 			</p>
 		</aside>
 	</main>

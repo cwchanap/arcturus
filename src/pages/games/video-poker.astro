@@ -2,12 +2,47 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChipBalance } from '../../lib/formatting';
+import {
+	videoPokerTranslator,
+	type VIDEO_POKER_MESSAGES,
+} from '../../lib/i18n/messages/video-poker';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChips } from '../../lib/i18n/messages/common';
+import type { MessageKey } from '../../lib/i18n/translate';
 import { PAYTABLE_ROWS, WAGER_OPTIONS } from '../../lib/video-poker';
 
+const locale = Astro.locals.locale;
+const t = videoPokerTranslator(locale);
 const gameSession = createPublicGameSession(Astro.locals.user);
+
+// Paytable row copy keyed in the same order as the domain PAYTABLE_ROWS so
+// the English shape stays in lockstep with the evaluator's categories.
+const PAYTABLE_LABEL_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] = [
+	'categoryRoyalFlush',
+	'categoryStraightFlush',
+	'categoryFourOfKind',
+	'categoryFullHouse',
+	'categoryFlush',
+	'categoryStraight',
+	'categoryThreeOfKind',
+	'categoryTwoPair',
+	'categoryJacksOrBetter',
+];
+const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] = [
+	'paytableRoyalFlushPayout',
+	'paytableStraightFlushPayout',
+	'paytableFourOfKindPayout',
+	'paytableFullHousePayout',
+	'paytableFlushPayout',
+	'paytableStraightPayout',
+	'paytableThreeOfKindPayout',
+	'paytableTwoPairPayout',
+	'paytableJacksOrBetterPayout',
+];
 ---
 
-<CasinoLayout title="Video Poker - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'video-poker') })}>
 	<main
 		id="video-poker-root"
 		data-testid="video-poker-root"
@@ -18,9 +53,9 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 	>
 		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
-				<h1 class="deco-section-title text-4xl">Video Poker</h1>
-				<p class="text-[var(--deco-muted)]">Jacks or Better · 9/6 paytable</p>
+				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'video-poker')}</h1>
+				<p class="text-[var(--deco-muted)]">{t('subtitle')}</p>
 			</div>
 			<div class="deco-panel px-5 py-3">
 				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
@@ -29,14 +64,14 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{gameSession.initialBalance.toLocaleString()}
+					{formatChipBalance(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>
 
 		<section class="felt-table rounded-3xl p-6">
 			<div id="video-poker-status" role="status" aria-live="polite" class="mb-4 text-center">
-				Choose a wager and deal
+				{t('chooseWagerDeal')}
 			</div>
 
 			<div class="flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center">
@@ -48,7 +83,7 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 								type="button"
 								data-card-index={index}
 								data-card-id=""
-								aria-label={`Card ${index + 1}`}
+								aria-label={t('cardAria', { number: String(index + 1) })}
 								aria-pressed="false"
 								disabled
 								class="card-hold-toggle absolute inset-0 rounded-xl border-2 border-transparent"
@@ -75,7 +110,7 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 							aria-pressed={wager === 1 ? 'true' : 'false'}
 							class="deco-btn rounded-lg px-4 py-2"
 						>
-							{wager}
+							{formatChips(wager, locale)}
 						</button>
 					))
 				}
@@ -83,21 +118,21 @@ const gameSession = createPublicGameSession(Astro.locals.user);
 
 			<div class="mt-5 flex justify-center">
 				<button id="video-poker-action" type="button" class="deco-btn rounded-lg px-8 py-3">
-					Deal
+					{t('deal')}
 				</button>
 			</div>
 			<div id="video-poker-recovery-host"></div>
 		</section>
 
 		<aside class="deco-panel mt-6 p-5">
-			<h2 class="deco-section-title text-2xl">Paytable</h2>
+			<h2 class="deco-section-title text-2xl">{t('paytable')}</h2>
 			<div class="mt-3 grid gap-2">
 				{
-					PAYTABLE_ROWS.map(([label, payout]) => (
+					PAYTABLE_ROWS.map((_row, index) => (
 						<div class="flex justify-between gap-4">
 							<>
-								<span>{label}</span>
-								<span>{payout}</span>
+								<span>{t(PAYTABLE_LABEL_KEYS[index]!)}</span>
+								<span>{t(PAYTABLE_PAYOUT_KEYS[index]!)}</span>
 							</>
 						</div>
 					))

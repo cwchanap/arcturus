@@ -1,17 +1,35 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
+import { formatChipBalance } from '../../lib/formatting';
+import { sicBoTranslator, type SIC_BO_MESSAGES } from '../../lib/i18n/messages/sic-bo';
+import { getGameName } from '../../lib/i18n/messages/games';
+import { formatChips } from '../../lib/i18n/messages/common';
+import type { MessageKey } from '../../lib/i18n/translate';
 import { SIC_BO_CHIP_DENOMINATIONS, TOTAL_ODDS } from '../../lib/sic-bo';
 import type { SicBoBetKey } from '../../lib/sic-bo';
 
+const locale = Astro.locals.locale;
+const t = sicBoTranslator(locale);
 const gameSession = createPublicGameSession(Astro.locals.user);
 
-const primaryBets: Array<{ key: SicBoBetKey; label: string; odds: string }> = [
-	{ key: 'big', label: 'Big', odds: '1:1' },
-	{ key: 'small', label: 'Small', odds: '1:1' },
-	{ key: 'odd', label: 'Odd', odds: '1:1' },
-	{ key: 'even', label: 'Even', odds: '1:1' },
-	{ key: 'any-triple', label: 'Any Triple', odds: '24:1' },
+const PRIMARY_BET_LABEL_KEYS: Record<
+	'big' | 'small' | 'odd' | 'even' | 'any-triple',
+	MessageKey<typeof SIC_BO_MESSAGES>
+> = {
+	big: 'betBig',
+	small: 'betSmall',
+	odd: 'betOdd',
+	even: 'betEven',
+	'any-triple': 'betAnyTriple',
+};
+
+const primaryBets: Array<{ key: 'big' | 'small' | 'odd' | 'even' | 'any-triple'; odds: string }> = [
+	{ key: 'big', odds: '1:1' },
+	{ key: 'small', odds: '1:1' },
+	{ key: 'odd', odds: '1:1' },
+	{ key: 'even', odds: '1:1' },
+	{ key: 'any-triple', odds: '24:1' },
 ];
 
 const totalBets: Array<{ key: SicBoBetKey; label: string; odds: string }> = Object.entries(
@@ -29,7 +47,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 }));
 ---
 
-<CasinoLayout title="Sic Bo - Arcturus Casino">
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'sic-bo') })}>
 	<main
 		id="sic-bo-root"
 		data-testid="sic-bo-root"
@@ -40,10 +58,10 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 	>
 		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← Back to Games</a>
-				<h1 class="deco-section-title text-4xl">Sic Bo</h1>
+				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
+				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'sic-bo')}</h1>
 				<p class="text-[var(--deco-muted)]">
-					Three dice · Big, Small, Odd, Even, totals 4–17, Any Triple
+					{t('subtitle')}
 				</p>
 			</div>
 			<div class="deco-panel px-5 py-3">
@@ -53,7 +71,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					data-testid="chip-balance"
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 				>
-					{gameSession.initialBalance.toLocaleString()}
+					{formatChipBalance(gameSession.initialBalance, locale)}
 				</div>
 			</div>
 		</header>
@@ -81,7 +99,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 				aria-live="polite"
 				class="mt-4 text-center text-[var(--deco-ivory-dim)]"
 			>
-				Choose a denomination, then place bets.
+				{t('chooseDenomination')}
 			</div>
 			<div
 				id="sic-bo-result"
@@ -96,7 +114,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 				{
 					primaryBets.map((bet) => (
 						<button type="button" data-bet-key={bet.key} class="sic-bo-bet-button">
-							<span class="sic-bo-bet-label">{bet.label}</span>
+							<span class="sic-bo-bet-label">{t(PRIMARY_BET_LABEL_KEYS[bet.key])}</span>
 							<span class="sic-bo-bet-odds">{bet.odds}</span>
 							<span class="sic-bo-bet-amount" data-bet-amount />
 						</button>
@@ -125,7 +143,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 							aria-pressed="false"
 							class="deco-btn rounded-lg px-4 py-2"
 						>
-							${amount}
+							{formatChips(amount, locale)}
 						</button>
 					))
 				}
@@ -133,7 +151,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 
 			<div class="mt-6 flex flex-wrap items-center justify-center gap-4">
 				<span id="sic-bo-total-stake" data-testid="sic-bo-total-stake" class="text-sm">
-					Total stake: 0
+					{t('totalStake', { amount: formatChips(0, locale) })}
 				</span>
 				<button
 					type="button"
@@ -141,7 +159,7 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					data-testid="sic-bo-clear-bets"
 					class="deco-btn rounded-lg px-4 py-2"
 				>
-					Clear bets
+					{t('clearBets')}
 				</button>
 				<button
 					type="button"
@@ -150,30 +168,30 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					class="btn-gold rounded-lg px-8 py-3"
 					disabled
 				>
-					Roll
+					{t('roll')}
 				</button>
 			</div>
 			<div id="sic-bo-recovery-host" class="mt-4 flex justify-center"></div>
 		</section>
 
 		<aside class="deco-panel mt-6 p-5">
-			<h2 class="deco-section-title text-2xl">Paytable A</h2>
+			<h2 class="deco-section-title text-2xl">{t('paytableA')}</h2>
 			<p class="mt-1 text-xs text-[var(--deco-muted)]">
-				Big, Small, Odd, and Even lose on every triple. Totals 9–12 pay 6:1.
+				{t('paytableNote')}
 			</p>
 			<div class="mt-3 grid gap-2 text-sm">
 				<div class="flex justify-between gap-4">
-					<span>Big / Small / Odd / Even</span>
+					<span>{t('paytablePrimary')}</span>
 					<span>1:1</span>
 				</div>
 				<div class="flex justify-between gap-4">
-					<span>Any Triple</span>
+					<span>{t('paytableAnyTriple')}</span>
 					<span>24:1</span>
 				</div>
 				{
 					paytableTotalRows.map((row) => (
 						<div class="flex justify-between gap-4">
-							<span>Total {row.label}</span>
+							<span>{t('paytableTotal', { value: row.label })}</span>
 							<span>{row.odds}</span>
 						</div>
 					))

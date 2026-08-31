@@ -295,7 +295,7 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 
 			// Play: dealer wins both wagers, dealer revealed, balance 980.
 			playButton().click();
-			expect(resultEl().textContent).toBe('Dealer wins · -20 net');
+			expect(resultEl().textContent).toBe('Dealer wins · −20 chips');
 			expect(balanceEl().textContent).toBe('980');
 			expect(slotStates('dealer')).toEqual(['card', 'card', 'card']);
 			expect(dealerRank(0)).toBe('6');
@@ -332,7 +332,7 @@ describe('initThreeCardShowdownClient — guest round flow', () => {
 
 			// Fold: only the ante is lost, the dealer hand is revealed at complete.
 			foldButton().click();
-			expect(resultEl().textContent).toBe('Fold · -10 net');
+			expect(resultEl().textContent).toBe('Fold · −10 chips');
 			expect(balanceEl().textContent).toBe('990');
 			expect(slotStates('dealer')).toEqual(['card', 'card', 'card']);
 			expect(slotStates('player')).toEqual(['card', 'card', 'card']);

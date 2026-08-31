@@ -45,7 +45,7 @@ test.describe('Three-Card Showdown guest', () => {
 
 		await page.locator('#three-card-showdown-play').click();
 
-		await expect(page.locator('#three-card-showdown-result')).toHaveText('Dealer wins · -20 net');
+		await expect(page.locator('#three-card-showdown-result')).toHaveText('Dealer wins · −20 chips');
 		await expect(page.getByTestId('chip-balance')).toContainText('980');
 		await expect(
 			page.locator('[id^="three-card-showdown-dealer-slot-"][data-slot-state="card"]'),

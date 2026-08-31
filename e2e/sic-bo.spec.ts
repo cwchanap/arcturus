@@ -17,7 +17,7 @@ async function placeBigBet(page: Page): Promise<void> {
 	await page.locator('[data-denomination="5"]').click();
 	await expect(page.locator('[data-denomination="5"]')).toHaveAttribute('aria-pressed', 'true');
 	await page.locator('[data-bet-key="big"]').click();
-	await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('5');
+	await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('5 chips');
 }
 
 test.describe('Sic Bo guest', () => {
@@ -43,7 +43,7 @@ test.describe('Sic Bo guest', () => {
 
 		// 2. Choose denomination 5 and Big.
 		await placeBigBet(page);
-		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 5');
+		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 5 chips');
 
 		// 3. Roll shows dice 1, 4, 6.
 		await page.getByTestId('sic-bo-action').click();
@@ -53,7 +53,7 @@ test.describe('Sic Bo guest', () => {
 		}
 
 		// 4. Big wins: balance increases by 5.
-		await expect(page.getByTestId('sic-bo-result')).toHaveText('Won +5');
+		await expect(page.getByTestId('sic-bo-result')).toHaveText('Won +5 chips');
 		await expect(page.getByTestId('chip-balance')).toHaveText('1,005');
 
 		// 5. Action becomes enabled New Round.
@@ -63,8 +63,8 @@ test.describe('Sic Bo guest', () => {
 		// 6. New Round returns to betting with the retained Big wager.
 		await page.getByTestId('sic-bo-action').click();
 		await expect(page.getByTestId('sic-bo-action')).toHaveText('Roll');
-		await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('5');
-		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 5');
+		await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('5 chips');
+		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 5 chips');
 		await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
 
 		// 7. No wallet request was made.

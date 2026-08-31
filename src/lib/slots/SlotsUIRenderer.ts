@@ -1,3 +1,8 @@
+import { formatChipBalance } from '../formatting';
+import { getDocumentLocale } from '../i18n/locale';
+import { formatChips } from '../i18n/messages/common';
+import { slotsTranslator, getSlotsSymbolLabel, formatSlotsNet } from '../i18n/messages/slots';
+import { formatWholeNumber } from '../formatting';
 import {
 	MAX_HISTORY,
 	NUM_REELS,
@@ -9,6 +14,8 @@ import {
 import type { LineWin, ReelGrid, SpinResult, SlotSettings } from './types';
 
 export class SlotsUIRenderer {
+	private readonly locale = getDocumentLocale();
+	private readonly t = slotsTranslator(this.locale);
 	private achievementHideTimer: ReturnType<typeof setTimeout> | null = null;
 	setSpinEnabled(enabled: boolean): void {
 		const btn = document.getElementById('btn-spin') as HTMLButtonElement | null;
@@ -17,12 +24,12 @@ export class SlotsUIRenderer {
 
 	renderBalance(balance: number): void {
 		const el = document.getElementById('chip-balance');
-		if (el) el.textContent = balance.toLocaleString();
+		if (el) el.textContent = formatChipBalance(balance, this.locale);
 	}
 
 	renderBet(bet: number): void {
 		const el = document.getElementById('current-bet');
-		if (el) el.textContent = String(bet);
+		if (el) el.textContent = formatChips(bet, this.locale);
 		document.querySelectorAll<HTMLButtonElement>('.bet-chip').forEach((chip) => {
 			const active = Number(chip.dataset.bet) === bet;
 			chip.classList.toggle('selected', active);
@@ -82,14 +89,21 @@ export class SlotsUIRenderer {
 		const lastWin = document.getElementById('last-win');
 		if (result.lineWins.length > 0) {
 			const top = result.lineWins.reduce((a, b) => (a.multiplier > b.multiplier ? a : b));
-			if (lastResult)
-				lastResult.textContent = `${SYMBOLS[top.symbol].label} ×${top.count} on line ${top.paylineIndex + 1}`;
+			if (lastResult) {
+				lastResult.textContent = this.t('lineResult', {
+					symbol: getSlotsSymbolLabel(this.locale, top.symbol),
+					count: formatWholeNumber(top.count, this.locale),
+					line: formatWholeNumber(top.paylineIndex + 1, this.locale),
+				});
+			}
 			if (lastWin) {
-				lastWin.textContent = `WIN +${result.payout.toLocaleString()}`;
+				lastWin.textContent = this.t('winAmount', {
+					amount: formatChips(result.payout, this.locale),
+				});
 				lastWin.style.color = 'var(--deco-jade)';
 			}
 		} else {
-			if (lastResult) lastResult.textContent = 'No win';
+			if (lastResult) lastResult.textContent = this.t('noWin');
 			if (lastWin) {
 				lastWin.textContent = '';
 			}
@@ -104,15 +118,13 @@ export class SlotsUIRenderer {
 		for (const h of recent) {
 			const dot = document.createElement('span');
 			dot.className = 'px-2 py-1 rounded text-xs font-semibold';
+			dot.textContent = formatSlotsNet(this.locale, h.netDelta);
 			if (h.netDelta > 0) {
 				dot.style.color = 'var(--deco-jade)';
-				dot.textContent = `+${h.netDelta}`;
 			} else if (h.netDelta < 0) {
 				dot.style.color = 'var(--deco-oxblood-bright)';
-				dot.textContent = `${h.netDelta}`;
 			} else {
 				dot.style.color = 'var(--deco-muted)';
-				dot.textContent = '0';
 			}
 			el.appendChild(dot);
 		}

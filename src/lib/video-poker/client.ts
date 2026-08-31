@@ -1,9 +1,36 @@
 import { setSlotState } from '../card-slot-utils';
 import { createPublicGameSettlementController } from '../wallet';
 import { VideoPokerGame } from './game';
-import { MIN_WAGER } from './paytable';
+import { MIN_WAGER, MAX_WAGER } from './paytable';
 import type { Card } from '../cards';
-import type { VideoPokerRoundResult } from './types';
+import { getDocumentLocale, type Locale } from '../i18n/locale';
+import {
+	videoPokerTranslator,
+	getVideoPokerHandLabel,
+	formatVideoPokerNet,
+	type VIDEO_POKER_MESSAGES,
+} from '../i18n/messages/video-poker';
+import { formatChips } from '../i18n/messages/common';
+import type { MessageKey } from '../i18n/translate';
+import type { VideoPokerRoundResult, VideoPokerWagerErrorCode } from './types';
+
+const WAGER_ERROR_KEYS: Record<
+	VideoPokerWagerErrorCode,
+	MessageKey<typeof VIDEO_POKER_MESSAGES>
+> = {
+	'invalid-limits': 'errorInvalidLimits',
+	'invalid-range': 'errorInvalidRange',
+	'out-of-range': 'errorOutOfRange',
+	'whole-number-required': 'errorWholeNumber',
+	'insufficient-balance': 'errorInsufficientBalance',
+};
+
+const SUIT_NAME_KEYS: Record<Card['suit'], MessageKey<typeof VIDEO_POKER_MESSAGES>> = {
+	hearts: 'suitHearts',
+	diamonds: 'suitDiamonds',
+	clubs: 'suitClubs',
+	spades: 'suitSpades',
+};
 
 function rankLabel(rank: Card['rank']): string {
 	if (rank === 11) return 'J';
@@ -13,11 +40,28 @@ function rankLabel(rank: Card['rank']): string {
 	return String(rank);
 }
 
+function wagerErrorText(
+	t: ReturnType<typeof videoPokerTranslator>,
+	locale: Locale,
+	code: VideoPokerWagerErrorCode,
+): string {
+	if (code === 'out-of-range') {
+		return t('errorOutOfRange', {
+			min: formatChips(MIN_WAGER, locale),
+			max: formatChips(MAX_WAGER, locale),
+		});
+	}
+	return t(WAGER_ERROR_KEYS[code]);
+}
+
 export function initVideoPokerClient(): void {
 	if (typeof window === 'undefined') return;
 
 	const root = document.getElementById('video-poker-root');
 	if (!root) return;
+
+	const locale = getDocumentLocale(root.ownerDocument);
+	const t = videoPokerTranslator(locale);
 
 	const statusEl = document.getElementById('video-poker-status');
 	const resultEl = document.getElementById('video-poker-result');
@@ -40,11 +84,15 @@ export function initVideoPokerClient(): void {
 			if (!card) {
 				setSlotState(slot, 'placeholder');
 				button.dataset.cardId = '';
-				button.setAttribute('aria-label', `Card ${index + 1}`);
+				button.setAttribute('aria-label', t('cardAria', { number: String(index + 1) }));
 			} else {
 				setSlotState(slot, 'card', { rank: rankLabel(card.rank), suit: card.suit });
 				button.dataset.cardId = `${card.rank}-${card.suit}`;
-				button.setAttribute('aria-label', `Hold ${rankLabel(card.rank)} of ${card.suit}`);
+				// Rank glyphs stay invariant; the suit noun is localized.
+				button.setAttribute(
+					'aria-label',
+					t('holdCardAria', { rank: rankLabel(card.rank), suit: t(SUIT_NAME_KEYS[card.suit]) }),
+				);
 			}
 
 			button.setAttribute('aria-pressed', String(held));
@@ -64,13 +112,17 @@ export function initVideoPokerClient(): void {
 
 		if (resultEl) {
 			resultEl.textContent = state.result
-				? `${state.result.evaluation.label}: ${state.result.payout} chips (${state.result.netDelta >= 0 ? '+' : ''}${state.result.netDelta} net)`
+				? t('result', {
+						label: getVideoPokerHandLabel(locale, state.result.evaluation.category),
+						payout: formatChips(state.result.payout, locale),
+						net: formatVideoPokerNet(locale, state.result.netDelta),
+					})
 				: '';
 		}
 
 		if (action) {
 			action.textContent =
-				state.phase === 'ready' ? 'Deal' : state.phase === 'holding' ? 'Draw' : 'New Round';
+				state.phase === 'ready' ? t('deal') : state.phase === 'holding' ? t('draw') : t('newRound');
 			action.disabled =
 				(state.phase === 'ready' && game.getWagerError(state.wager) !== null) ||
 				(state.phase === 'ready' && settlement.isBlocked) ||
@@ -79,7 +131,7 @@ export function initVideoPokerClient(): void {
 
 		if (statusEl) {
 			if (state.phase === 'ready' && state.balance < MIN_WAGER) {
-				statusEl.textContent = `Not enough chips to deal.${settlement.isGuestMode ? ' Sign in to get more chips.' : ''}`;
+				statusEl.textContent = `${t('notEnoughChips')}${settlement.isGuestMode ? ` ${t('signInForChips')}` : ''}`;
 			} else if (settlement.statusMessage) {
 				statusEl.textContent = settlement.statusMessage;
 			} else if (wagerMessage) {
@@ -87,10 +139,10 @@ export function initVideoPokerClient(): void {
 			} else {
 				statusEl.textContent =
 					state.phase === 'ready'
-						? 'Choose a wager, then deal.'
+						? t('chooseWagerDeal')
 						: state.phase === 'holding'
-							? 'Hold any cards, then draw.'
-							: 'Round complete. Start a new round when ready.';
+							? t('holdCards')
+							: t('roundComplete');
 			}
 		}
 	}
@@ -99,12 +151,12 @@ export function initVideoPokerClient(): void {
 		gameKey: 'video-poker',
 		root,
 		recoveryHost,
-		resetLabel: 'Reset hand',
+		resetLabel: t('resetHand'),
 		messages: {
-			failed: 'Settlement failed. Retry or reset before starting another hand.',
-			retrying: 'Retrying settlement...',
-			retryFailed: 'Settlement failed again. Retry or reset the hand.',
-			retryLabel: 'Retry settlement',
+			failed: t('settlementFailed'),
+			retrying: t('retryingSettlement'),
+			retryFailed: t('settlementRetryFailed'),
+			retryLabel: t('retrySettlement'),
 		},
 		render,
 		onAdoptBalance: (balance) => game.setBalance(balance),
@@ -121,7 +173,7 @@ export function initVideoPokerClient(): void {
 			const wager = Number(button.dataset.wager);
 			const error = game.getWagerError(wager);
 			if (error) {
-				wagerMessage = error;
+				wagerMessage = wagerErrorText(t, locale, error);
 				render();
 				return;
 			}
@@ -137,8 +189,8 @@ export function initVideoPokerClient(): void {
 			try {
 				game.toggleHold(Number(button.dataset.cardIndex));
 				render();
-			} catch (error) {
-				wagerMessage = error instanceof Error ? error.message : 'Unable to hold card';
+			} catch (_error) {
+				wagerMessage = t('unableToHold');
 				render();
 			}
 		});
@@ -150,7 +202,7 @@ export function initVideoPokerClient(): void {
 		if (state.phase === 'ready') {
 			const wagerError = game.getWagerError(state.wager);
 			if (wagerError) {
-				wagerMessage = wagerError;
+				wagerMessage = wagerErrorText(t, locale, wagerError);
 				render();
 				return;
 			}
@@ -159,8 +211,8 @@ export function initVideoPokerClient(): void {
 				game.deal();
 				wagerMessage = null;
 				render();
-			} catch (error) {
-				wagerMessage = error instanceof Error ? error.message : 'Unable to deal';
+			} catch (_error) {
+				wagerMessage = t('unableToDeal');
 				render();
 			}
 			return;
@@ -171,8 +223,8 @@ export function initVideoPokerClient(): void {
 			try {
 				round = game.draw();
 				render();
-			} catch (error) {
-				wagerMessage = error instanceof Error ? error.message : 'Unable to draw';
+			} catch (_error) {
+				wagerMessage = t('unableToDraw');
 				render();
 				return;
 			}
@@ -186,8 +238,8 @@ export function initVideoPokerClient(): void {
 			game.resetRound();
 			wagerMessage = null;
 			render();
-		} catch (error) {
-			wagerMessage = error instanceof Error ? error.message : 'Unable to start a new hand';
+		} catch (_error) {
+			wagerMessage = t('unableToNewHand');
 			render();
 		}
 	}

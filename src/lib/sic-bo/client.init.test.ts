@@ -209,27 +209,27 @@ describe('initSicBoClient — guest bet slip wiring', () => {
 
 			denomButton(5).click();
 			betButton('big').click();
-			expect(betAmount('big').textContent).toBe('5');
-			expect(totalStakeEl().textContent).toBe('Total stake: 5');
+			expect(betAmount('big').textContent).toBe('5 chips');
+			expect(totalStakeEl().textContent).toBe('Total stake: 5 chips');
 
 			// Re-clicking the same denomination clears that position only.
 			betButton('big').click();
 			expect(betAmount('big').textContent).toBe('');
-			expect(totalStakeEl().textContent).toBe('Total stake: 0');
+			expect(totalStakeEl().textContent).toBe('Total stake: 0 chips');
 
 			// A different denomination replaces the position amount.
 			betButton('big').click();
 			denomButton(10).click();
 			betButton('big').click();
-			expect(betAmount('big').textContent).toBe('10');
+			expect(betAmount('big').textContent).toBe('10 chips');
 
 			// Clear bets removes the whole slip.
 			betButton('small').click();
 			betButton('any-triple').click();
-			expect(betAmount('small').textContent).toBe('10');
-			expect(betAmount('any-triple').textContent).toBe('10');
+			expect(betAmount('small').textContent).toBe('10 chips');
+			expect(betAmount('any-triple').textContent).toBe('10 chips');
 			betButton('total:4').click();
-			expect(betAmount('total:4').textContent).toBe('10');
+			expect(betAmount('total:4').textContent).toBe('10 chips');
 
 			betButton('small').click(); // clear small (same denomination re-click)
 			expect(betAmount('small').textContent).toBe('');
@@ -239,7 +239,7 @@ describe('initSicBoClient — guest bet slip wiring', () => {
 			expect(betAmount('big').textContent).toBe('');
 			expect(betAmount('any-triple').textContent).toBe('');
 			expect(betAmount('total:4').textContent).toBe('');
-			expect(totalStakeEl().textContent).toBe('Total stake: 0');
+			expect(totalStakeEl().textContent).toBe('Total stake: 0 chips');
 		} finally {
 			root.remove();
 		}
@@ -304,7 +304,7 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			// In-flight window: New Round is painted but disabled.
 			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(true);
-			expect(document.getElementById('sic-bo-result')!.textContent).toBe('Won +24');
+			expect(document.getElementById('sic-bo-result')!.textContent).toBe('Won +24 chips');
 
 			// Server adopts the balance; the button unlocks.
 			resolveFetch({
@@ -424,7 +424,7 @@ describe('initSicBoClient — guest round flow', () => {
 			for (let i = 0; i < 3; i++) {
 				expect(document.getElementById(`sic-bo-die-${i}`)!.getAttribute('data-value')).toBe('1');
 			}
-			expect(document.getElementById('sic-bo-result')!.textContent).toBe('Won +24');
+			expect(document.getElementById('sic-bo-result')!.textContent).toBe('Won +24 chips');
 			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(false);
 
@@ -432,7 +432,7 @@ describe('initSicBoClient — guest round flow', () => {
 			actionButton().click();
 			expect(actionButton().textContent).toBe('Roll');
 			expect(actionButton().disabled).toBe(false);
-			expect(betAmount('any-triple').textContent).toBe('1');
+			expect(betAmount('any-triple').textContent).toBe('1 chip');
 		} finally {
 			Math.random = origRandom;
 			root.remove();
@@ -456,7 +456,7 @@ describe('initSicBoClient — bet and roll error handling', () => {
 
 			// Default denomination is 1 — place big (uses entire balance).
 			betButton('big').click();
-			expect(betAmount('big').textContent).toBe('1');
+			expect(betAmount('big').textContent).toBe('1 chip');
 
 			// Try small — 1 (big) + 1 (small) = 2 > balance 1 → setBet throws.
 			betButton('small').click();

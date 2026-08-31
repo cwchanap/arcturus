@@ -6,7 +6,10 @@ import {
 	getAchievementById,
 	getAchievementsByCategory,
 } from './achievement-rules';
+import { ACHIEVEMENT_IDS } from './types';
 import type { AchievementCheckContext } from './types';
+import { SUPPORTED_LOCALES } from '../i18n/locale';
+import { getAchievementDescription, getAchievementName } from '../i18n/messages/achievements';
 
 function createContext(overrides: Partial<AchievementCheckContext> = {}): AchievementCheckContext {
 	return {
@@ -47,8 +50,6 @@ describe('ACHIEVEMENTS', () => {
 	test('all achievements have required properties', () => {
 		for (const achievement of ACHIEVEMENTS) {
 			expect(achievement.id).toBeDefined();
-			expect(achievement.name).toBeDefined();
-			expect(achievement.description).toBeDefined();
 			expect(achievement.category).toBeDefined();
 			expect(achievement.icon).toBeDefined();
 		}
@@ -66,7 +67,7 @@ describe('getAchievementById', () => {
 	test('returns achievement when found', () => {
 		const achievement = getAchievementById('rising_star');
 		expect(achievement).toBeDefined();
-		expect(achievement?.name).toBe('Rising Star');
+		expect(achievement?.id).toBe('rising_star');
 	});
 
 	test('returns undefined when not found', () => {
@@ -97,6 +98,45 @@ describe('getAchievementsByCategory', () => {
 	test('returns empty array for unknown category', () => {
 		const unknownAchievements = getAchievementsByCategory('unknown' as 'leaderboard');
 		expect(unknownAchievements).toEqual([]);
+	});
+});
+
+describe('achievement presentation catalog', () => {
+	test('resolves a name and description for every achievement in every locale', () => {
+		expect([...ACHIEVEMENT_IDS].sort()).toEqual([...ACHIEVEMENTS.map((a) => a.id)].sort());
+		for (const locale of SUPPORTED_LOCALES) {
+			for (const id of ACHIEVEMENT_IDS) {
+				expect(getAchievementName(locale, id).length).toBeGreaterThan(0);
+				expect(getAchievementDescription(locale, id).length).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	test('English keeps the authored catalog names and descriptions', () => {
+		expect(getAchievementName('en', 'rising_star')).toBe('Rising Star');
+		expect(getAchievementName('en', 'high_roller')).toBe('High Roller');
+		expect(getAchievementName('en', 'champion')).toBe('Champion');
+		expect(getAchievementName('en', 'consistent')).toBe('Consistent Winner');
+		expect(getAchievementName('en', 'comeback')).toBe('Comeback King');
+
+		expect(getAchievementDescription('en', 'rising_star')).toBe('Enter the top 50 leaderboard');
+		expect(getAchievementDescription('en', 'high_roller')).toBe(
+			'Reach the top 10 on the leaderboard',
+		);
+		expect(getAchievementDescription('en', 'champion')).toBe(
+			'Reach #1 position on the leaderboard',
+		);
+		expect(getAchievementDescription('en', 'consistent')).toBe('Win 100 hands across all games');
+		expect(getAchievementDescription('en', 'comeback')).toBe(
+			'Win after dropping below 1,000 chips',
+		);
+	});
+
+	test('descriptions interpolate thresholds with locale-aware formatting', () => {
+		expect(getAchievementDescription('zh-Hant', 'rising_star')).toBe('進入排行榜前 50 名');
+		expect(getAchievementDescription('zh-Hans', 'high_roller')).toBe('登上排行榜前 10 名');
+		expect(getAchievementDescription('ja', 'consistent')).toBe('全ゲームで合計 100 回勝利');
+		expect(getAchievementDescription('ja', 'comeback')).toBe('1,000 チップを下回った後に勝利する');
 	});
 });
 

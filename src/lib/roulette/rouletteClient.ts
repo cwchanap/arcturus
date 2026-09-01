@@ -198,8 +198,9 @@ export function initRouletteClient(): void {
 	const betPlacementErrorText = (error: string | undefined): string => {
 		if (!error) return t('cannotPlaceBet');
 		if (error === 'Insufficient chips') return t('errorInsufficientChips');
-		const perPosition = error.match(/^Max (\d+) per position/);
-		if (perPosition) return t('errorMaxPerPosition', { max: perPosition[1] });
+		const perPosition = error.match(/^Max (\d+) per position \((\d+) remaining\)/);
+		if (perPosition)
+			return t('errorMaxPerPosition', { max: perPosition[1], remaining: perPosition[2] });
 		const maxBets = error.match(/^Max (\d+) bets per spin$/);
 		if (maxBets) return t('errorMaxBets', { max: maxBets[1] });
 		const maxTotal = error.match(/^Max total bet is (\d+)$/);

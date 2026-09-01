@@ -461,7 +461,7 @@ export class BlackjackGame {
 				result.doubleDown.reason = 'hand-total-9-11-only';
 			} else if (!hasEnoughChips) {
 				result.doubleDown.reason = 'not-enough-chips';
-				result.doubleDown.needed = activeHand.bet;
+				result.doubleDown.needed = activeHand.bet - this.state.playerBalance;
 			} else {
 				result.doubleDown.available = true;
 			}
@@ -474,7 +474,7 @@ export class BlackjackGame {
 			result.split.reason = 'matching-pairs-only';
 		} else if (!hasEnoughChips) {
 			result.split.reason = 'not-enough-chips';
-			result.split.needed = activeHand.bet;
+			result.split.needed = activeHand.bet - this.state.playerBalance;
 		} else {
 			result.split.available = true;
 		}

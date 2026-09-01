@@ -3,7 +3,7 @@ import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { slotsTranslator, getSlotsSymbolLabel } from '../../lib/i18n/messages/slots';
 import { getGameName } from '../../lib/i18n/messages/games';
-import { formatChips } from '../../lib/i18n/messages/common';
+import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { BET_INCREMENTS, PAYTABLE, SYMBOL_ORDER, SYMBOLS } from '../../lib/slots/constants';
 
 const locale = Astro.locals.locale;
@@ -40,7 +40,9 @@ const clientUserId = gameSession.clientUserId;
 			<div
 				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+				<div class="text-xs text-[var(--deco-muted)] mb-1">
+					{getBalanceLabel(locale, gameSession.isGuest)}
+				</div>
 				<div
 					class="text-2xl font-bold text-[var(--deco-brass)]"
 					id="chip-balance"

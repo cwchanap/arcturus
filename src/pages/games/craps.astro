@@ -2,7 +2,7 @@
 import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChips } from '../../lib/i18n/messages/common';
+import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { crapsTranslator, getCrapsBetLabel } from '../../lib/i18n/messages/craps';
 import { getGameName } from '../../lib/i18n/messages/games';
 
@@ -38,7 +38,9 @@ const clientUserId = gameSession.clientUserId;
 			<div
 				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+				<div class="text-xs text-[var(--deco-muted)] mb-1">
+					{getBalanceLabel(locale, gameSession.isGuest)}
+				</div>
 				<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
 					{formatChips(initialBalance, locale)}
 				</div>
@@ -281,12 +283,14 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div class="grid grid-cols-4 gap-2">
 							{
-								[
-									{ type: 'hard4', pays: '7:1' },
-									{ type: 'hard6', pays: '9:1' },
-									{ type: 'hard8', pays: '9:1' },
-									{ type: 'hard10', pays: '7:1' },
-								].map((h) => (
+								(
+									[
+										{ type: 'hard4', pays: '7:1' },
+										{ type: 'hard6', pays: '9:1' },
+										{ type: 'hard8', pays: '9:1' },
+										{ type: 'hard10', pays: '7:1' },
+									] as const
+								).map((h) => (
 									<div
 										data-bet-type={h.type}
 										class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
@@ -309,15 +313,17 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 						<div class="grid grid-cols-7 gap-1.5">
 							{
-								[
-									{ type: 'any7', pays: '4:1' },
-									{ type: 'anyCraps', pays: '7:1' },
-									{ type: 'aces', pays: '30:1' },
-									{ type: 'aceDeuce', pays: '15:1' },
-									{ type: 'yo', pays: '15:1' },
-									{ type: 'boxcars', pays: '30:1' },
-									{ type: 'ce', pays: '3/7:1' },
-								].map((p) => (
+								(
+									[
+										{ type: 'any7', pays: '4:1' },
+										{ type: 'anyCraps', pays: '7:1' },
+										{ type: 'aces', pays: '30:1' },
+										{ type: 'aceDeuce', pays: '15:1' },
+										{ type: 'yo', pays: '15:1' },
+										{ type: 'boxcars', pays: '30:1' },
+										{ type: 'ce', pays: '3/7:1' },
+									] as const
+								).map((p) => (
 									<div
 										data-bet-type={p.type}
 										class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
@@ -1397,7 +1403,10 @@ const clientUserId = gameSession.clientUserId;
 			}
 			if (code === 'invalid-amount') return t('errorInvalidAmount');
 			if (code === 'insufficient-balance') return t('errorInsufficientChips');
-			return t(CRAPS_TABLE_ERROR_KEYS[code]);
+			if (code in CRAPS_TABLE_ERROR_KEYS) {
+				return t(CRAPS_TABLE_ERROR_KEYS[code as CrapsTableErrorCode]);
+			}
+			return t(CRAPS_BET_ERROR_KEYS[code as CrapsBetErrorCode]);
 		}
 
 		function renderComeOddsButtons(bets: CrapsBet[]) {

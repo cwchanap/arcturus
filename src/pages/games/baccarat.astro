@@ -3,7 +3,7 @@ import CasinoLayout from '../../layouts/casino.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import BaccaratCardContainer from '../../components/BaccaratCardContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { formatChips } from '../../lib/i18n/messages/common';
+import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { baccaratTranslator } from '../../lib/i18n/messages/baccarat';
 import { formatWholeNumber } from '../../lib/formatting';
@@ -49,7 +49,9 @@ const clientUserId = gameSession.clientUserId;
 				<div
 					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 				>
-					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">
+						{getBalanceLabel(locale, gameSession.isGuest)}
+					</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
 						{formatChips(initialBalance, locale)}
 					</div>
@@ -763,9 +765,7 @@ const clientUserId = gameSession.clientUserId;
 	// New round
 	newRoundButton.addEventListener('click', () => {
 		if (shouldSyncAccountChips({ isGuestMode }) && settlementGate.isBlocked) {
-			showSettlementRecovery(
-				'Settlement is still pending. Retry or reset before starting another round.',
-			);
+			showSettlementRecovery(t('settlementPending'));
 			return;
 		}
 		game.newRound();

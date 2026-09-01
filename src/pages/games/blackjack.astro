@@ -74,7 +74,9 @@ const clientUserId = gameSession.clientUserId;
 				<div
 					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
 				>
-					<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
+					<div class="text-xs text-[var(--deco-muted)] mb-1">
+						{gameSession.isGuest ? t('guestBalance') : t('yourBalance')}
+					</div>
 					<div class="text-2xl font-bold text-[var(--deco-brass)]" id="player-balance">
 						{formatChips(initialBalance, locale)}
 					</div>

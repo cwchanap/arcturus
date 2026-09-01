@@ -1,6 +1,6 @@
 import { renderBlackjackDealer, renderBlackjackPlayerHands } from '../blackjack/presentation';
 import { fetchJsonWithTimeout } from '../fetch-with-timeout';
-import { formatWholeNumber } from '../formatting';
+import { formatDecimal, formatWholeNumber } from '../formatting';
 import {
 	DAILY_CHALLENGE_MESSAGES,
 	dailyChallengeTranslator,
@@ -63,7 +63,7 @@ const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'spl
  * inside their own percentile template.
  */
 function formatPercentile(value: number, locale: Locale): string {
-	const formatted = formatWholeNumber(value, locale);
+	const formatted = formatDecimal(value, locale);
 	if (locale !== 'en') return formatted;
 	const suffix =
 		value % 100 >= 11 && value % 100 <= 13
@@ -558,7 +558,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				const { rank, totalEligible, percentile } = leaderboard.currentUser;
 				currentStandingEl.textContent = t('dailyStanding', {
 					rank: formatWholeNumber(rank, locale),
-					percentile: formatWholeNumber(percentile, locale),
+					percentile: formatDecimal(percentile, locale),
 					eligible: formatWholeNumber(totalEligible, locale),
 				});
 			}

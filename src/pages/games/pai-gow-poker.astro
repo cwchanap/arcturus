@@ -4,7 +4,7 @@ import CardSlot from '../../components/CardSlot.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { paiGowPokerTranslator } from '../../lib/i18n/messages/pai-gow-poker';
 import { getGameName } from '../../lib/i18n/messages/games';
-import { formatChips } from '../../lib/i18n/messages/common';
+import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { WAGER_OPTIONS } from '../../lib/pai-gow-poker';
 
 const locale = Astro.locals.locale;
@@ -32,7 +32,9 @@ const gameSession = createPublicGameSession(user);
 				</p>
 			</div>
 			<div class="deco-panel px-5 py-3">
-				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
+				<div class="text-xs text-[var(--deco-muted)]">
+					{getBalanceLabel(locale, gameSession.isGuest)}
+				</div>
 				<div
 					id="chip-balance"
 					data-testid="chip-balance"

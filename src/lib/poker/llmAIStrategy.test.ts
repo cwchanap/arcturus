@@ -797,8 +797,10 @@ describe('llmAIStrategy', () => {
 		});
 
 		test('authoritative decisions are identical across locales', async () => {
+			let fetchCalls = 0;
 			mockFetch(async (url: string) => {
 				if (url.includes('openai')) {
+					fetchCalls++;
 					return new Response(
 						JSON.stringify({
 							choices: [{ message: { content: '{"action":"raise","amount":40}' } }],
@@ -829,6 +831,7 @@ describe('llmAIStrategy', () => {
 				'medium',
 				'en',
 			);
+			clearLLMCache();
 			const jaDecision = await makeLLMDecision(
 				context,
 				'tight-aggressive',
@@ -837,6 +840,7 @@ describe('llmAIStrategy', () => {
 				'ja',
 			);
 
+			expect(fetchCalls).toBe(2);
 			expect(jaDecision.action).toBe(enDecision.action);
 			expect(jaDecision.amount).toBe(enDecision.amount);
 		});

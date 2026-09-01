@@ -40,14 +40,16 @@ export function evaluateHandKey(
 	const allCards = [...humanPlayer.hand, ...communityCards];
 	if (allCards.length < 2) return null;
 
-	const values = allCards.map((c) => c.value);
-	const suits = allCards.map((c) => c.suit);
-
-	const valueCounts: Record<string, number> = {};
-	values.forEach((v) => (valueCounts[v] = (valueCounts[v] || 0) + 1));
+	const valueCounts: Record<number, number> = {};
+	const suitCounts: Record<string, number> = {};
+	for (const card of allCards) {
+		valueCounts[card.rank] = (valueCounts[card.rank] || 0) + 1;
+		suitCounts[card.suit] = (suitCounts[card.suit] || 0) + 1;
+	}
 
 	const counts = Object.values(valueCounts).sort((a, b) => b - a);
-	const isFlush = suits.every((s) => s === suits[0]) && suits.length >= 5;
+	const maxSuitCount = Math.max(...Object.values(suitCounts));
+	const hasFlush = maxSuitCount >= 5;
 
 	// Straight detection across the combined ranks, including the A-2-3-4-5
 	// wheel where the ace plays low. Simplified presentation heuristic, not an
@@ -73,12 +75,40 @@ export function evaluateHandKey(
 		}
 	}
 
-	if (isFlush && straightHigh > 0) {
-		return straightHigh === 14 ? 'ROYAL_FLUSH' : 'STRAIGHT_FLUSH';
+	// A straight flush requires the straight to be in the flush suit.
+	// hasFlush && straightHigh can both be true when the flush and straight
+	// use different cards, so verify the flush-suit ranks contain a straight.
+	let straightFlushHigh = 0;
+	if (hasFlush && straightHigh > 0) {
+		const flushSuit = Object.entries(suitCounts).find(([, count]) => count >= 5)?.[0];
+		if (flushSuit) {
+			const flushRanks = allCards.filter((c) => c.suit === flushSuit).map((c) => c.rank);
+			const sortedFlushRanks = [...new Set(flushRanks)].sort((a, b) => b - a);
+			for (let i = 0; i <= sortedFlushRanks.length - 5; i++) {
+				if (sortedFlushRanks[i] - sortedFlushRanks[i + 4] === 4) {
+					straightFlushHigh = sortedFlushRanks[i];
+					break;
+				}
+			}
+			if (
+				straightFlushHigh === 0 &&
+				sortedFlushRanks.includes(14) &&
+				sortedFlushRanks.includes(5) &&
+				sortedFlushRanks.includes(4) &&
+				sortedFlushRanks.includes(3) &&
+				sortedFlushRanks.includes(2)
+			) {
+				straightFlushHigh = 5;
+			}
+		}
+	}
+
+	if (straightFlushHigh > 0) {
+		return straightFlushHigh === 14 ? 'ROYAL_FLUSH' : 'STRAIGHT_FLUSH';
 	}
 	if (counts[0] === 4) return 'FOUR_OF_A_KIND';
-	if (counts[0] === 3 && counts[1] === 2) return 'FULL_HOUSE';
-	if (isFlush) return 'FLUSH';
+	if (counts[0] === 3 && counts[1] >= 2) return 'FULL_HOUSE';
+	if (hasFlush) return 'FLUSH';
 	if (straightHigh > 0) return 'STRAIGHT';
 	if (counts[0] === 3) return 'THREE_OF_A_KIND';
 	if (counts[0] === 2 && counts[1] === 2) return 'TWO_PAIR';

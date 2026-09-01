@@ -27,6 +27,22 @@ export function formatChips(value: number, locale: Locale): string {
 	});
 }
 
+const BALANCE_LABELS = defineMessages({
+	en: { guest: 'Guest Balance', user: 'Your Balance' },
+	'zh-Hant': { guest: '訪客餘額', user: '你的餘額' },
+	'zh-Hans': { guest: '访客余额', user: '你的余额' },
+	ja: { guest: 'ゲスト残高', user: 'あなたの残高' },
+});
+
+/**
+ * Localized balance-label heading for game pages, distinguishing guest vs
+ * authenticated sessions. Replaces the hardcoded English `balanceLabel`
+ * on `PublicGameSession`.
+ */
+export function getBalanceLabel(locale: Locale, isGuest: boolean): string {
+	return createTranslator(BALANCE_LABELS, locale)(isGuest ? 'guest' : 'user');
+}
+
 /** Copy for the global shell: header, footer, and user navigation. */
 export const SHELL_MESSAGES = defineMessages({
 	en: {

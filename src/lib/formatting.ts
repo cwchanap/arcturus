@@ -28,6 +28,15 @@ export function formatWholeNumber(value: number, locale: Locale = 'en'): string 
 	return new Intl.NumberFormat(locale).format(value);
 }
 
+/**
+ * Formats a finite number (including decimals) for the given locale. Unlike
+ * {@link formatWholeNumber}, this accepts fractional values such as 12.5
+ * without throwing, while still rejecting NaN/Infinity.
+ */
+export function formatDecimal(value: number, locale: Locale = 'en'): string {
+	return new Intl.NumberFormat(locale).format(requireFinite(value));
+}
+
 export function formatPercentage(value: number, locale: Locale = 'en'): string {
 	return `${new Intl.NumberFormat(locale, {
 		minimumFractionDigits: 1,

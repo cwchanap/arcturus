@@ -199,6 +199,24 @@ describe('resolveRequestLocale', () => {
 			'zh-Hans',
 		);
 	});
+
+	test('a language with q=0 is not acceptable and is skipped', () => {
+		expect(
+			resolveRequestLocale({
+				cookieLocale: null,
+				acceptLanguage: 'ja;q=0,en;q=0.8',
+				enabledLocales: ['en', 'ja'],
+			}),
+		).toBe('en');
+
+		expect(
+			resolveRequestLocale({
+				cookieLocale: null,
+				acceptLanguage: 'ja;q=0',
+				enabledLocales: ['en', 'ja'],
+			}),
+		).toBe('en');
+	});
 });
 
 describe('getDocumentLocale', () => {

@@ -60,7 +60,7 @@ const MISSION_TITLES = defineMessages({
 	},
 	ja: {
 		'daily-blackjack-5': '{game}連勝',
-		'daily-win-3': 'スリーピース',
+		'daily-win-3': '3勝',
 		'daily-slots-20': 'スピンで勝利',
 		'daily-craps-3': 'ダイスローラー',
 		'daily-baccarat-3': '{game}ラウンド',

@@ -75,7 +75,7 @@ function parseAcceptLanguage(header: string | null | undefined): string[] {
 			}
 			return { tag: (tag ?? '').trim(), q };
 		})
-		.filter((entry) => entry.tag !== '')
+		.filter((entry) => entry.tag !== '' && entry.q > 0)
 		.sort((a, b) => b.q - a.q)
 		.map((entry) => entry.tag);
 }

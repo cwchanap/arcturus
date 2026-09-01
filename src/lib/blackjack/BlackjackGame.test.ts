@@ -718,6 +718,29 @@ describe('BlackjackGame', () => {
 			}
 		});
 
+		it('should report the balance deficit, not the full bet, when chips are short', () => {
+			// Balance 150, bet 100 -> after placeBet, playerBalance is 50.
+			// Double-down needs one more full bet (100) but the player only
+			// lacks 50, so `needed` should be the deficit (50), not the bet (100).
+			let attempts = 0;
+			while (attempts < 30) {
+				const partialBalanceGame = new BlackjackGame(150, 10, 100);
+				partialBalanceGame.placeBet(100);
+				partialBalanceGame.deal();
+
+				const state = partialBalanceGame.getState();
+				if (state.phase === 'player-turn') {
+					const info = partialBalanceGame.getActionAvailability();
+					if (!info.doubleDown.available && info.doubleDown.reason === 'not-enough-chips') {
+						expect(info.doubleDown.needed).toBe(50);
+						return;
+					}
+				}
+				attempts++;
+			}
+			// Could not reproduce the not-enough-chips path in 30 attempts; skip gracefully.
+		});
+
 		it('should indicate insufficient chips for split', () => {
 			// Create game and keep trying until we get a pair with low balance
 			let attempts = 0;

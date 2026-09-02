@@ -14,13 +14,12 @@ import { formatChips } from '../../lib/i18n/messages/common';
 import { formatWholeNumber } from '../../lib/formatting';
 
 const session = Astro.locals.session;
-if (!session || !Astro.locals.runtime?.env?.DB) {
-	if (!session) return Astro.redirect('/signin');
-	return new Response('Service temporarily unavailable', { status: 503 });
-}
-
 const locale = Astro.locals.locale;
 const t = missionsTranslator(locale);
+if (!session || !Astro.locals.runtime?.env?.DB) {
+	if (!session) return Astro.redirect('/signin');
+	return new Response(t('serviceUnavailable'), { status: 503 });
+}
 
 const d1 = Astro.locals.runtime.env.DB;
 const db = createDb(d1);

@@ -61,6 +61,7 @@ export const MULTIPLAYER_POKER_MESSAGES = defineMessages({
 		errorInvalidAction: 'Invalid action',
 		errorNotEnoughPlayers: 'Not enough players',
 		errorUnknown: 'Unknown error',
+		notFound: 'Room not found',
 	},
 	'zh-Hant': {
 		pageTitle: '{game} - Arcturus Casino',
@@ -112,6 +113,7 @@ export const MULTIPLAYER_POKER_MESSAGES = defineMessages({
 		errorInvalidAction: '無效的動作',
 		errorNotEnoughPlayers: '玩家人數不足',
 		errorUnknown: '未知錯誤',
+		notFound: '找不到房間',
 	},
 	'zh-Hans': {
 		pageTitle: '{game} - Arcturus Casino',
@@ -163,6 +165,7 @@ export const MULTIPLAYER_POKER_MESSAGES = defineMessages({
 		errorInvalidAction: '无效的动作',
 		errorNotEnoughPlayers: '玩家人数不足',
 		errorUnknown: '未知错误',
+		notFound: '找不到房间',
 	},
 	ja: {
 		pageTitle: '{game} - Arcturus Casino',
@@ -214,6 +217,7 @@ export const MULTIPLAYER_POKER_MESSAGES = defineMessages({
 		errorInvalidAction: '無効なアクション',
 		errorNotEnoughPlayers: 'プレイヤーが不足しています',
 		errorUnknown: '不明なエラー',
+		notFound: 'ルームが見つかりません',
 	},
 });
 

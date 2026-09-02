@@ -4,12 +4,12 @@ import { isValidRoomCode } from '../../../lib/mp-poker/roomCode';
 import { multiplayerPokerTranslator } from '../../../lib/i18n/messages/multiplayer-poker';
 const user = Astro.locals.user;
 if (!user) return Astro.redirect('/signin');
-const code = Astro.params.code;
-if (!code || !isValidRoomCode(code)) {
-	return new Response('Not found', { status: 404 });
-}
 const locale = Astro.locals.locale;
 const t = multiplayerPokerTranslator(locale);
+const code = Astro.params.code;
+if (!code || !isValidRoomCode(code)) {
+	return new Response(t('notFound'), { status: 404 });
+}
 ---
 
 <CasinoLayout title={t('pageTitle', { game: t('roomTitle', { code }) })}>

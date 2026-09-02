@@ -123,6 +123,7 @@ export const MISSIONS_MESSAGES = defineMessages({
 		weeklyGoal: 'Weekly Goal',
 		rerolled: '(rerolled)',
 		rerollAriaLabel: 'Reroll mission',
+		serviceUnavailable: 'Service temporarily unavailable',
 	},
 	'zh-Hant': {
 		pageTitle: '任務 - Arcturus Casino',
@@ -137,6 +138,7 @@ export const MISSIONS_MESSAGES = defineMessages({
 		weeklyGoal: '每週目標',
 		rerolled: '（已重擲）',
 		rerollAriaLabel: '重擲任務',
+		serviceUnavailable: '服務暫時無法使用',
 	},
 	'zh-Hans': {
 		pageTitle: '任务 - Arcturus Casino',
@@ -151,6 +153,7 @@ export const MISSIONS_MESSAGES = defineMessages({
 		weeklyGoal: '每周目标',
 		rerolled: '（已重掷）',
 		rerollAriaLabel: '重掷任务',
+		serviceUnavailable: '服务暂时无法使用',
 	},
 	ja: {
 		pageTitle: 'ミッション - Arcturus Casino',
@@ -165,6 +168,7 @@ export const MISSIONS_MESSAGES = defineMessages({
 		weeklyGoal: 'ウィークリーゴール',
 		rerolled: '（再ロール済み）',
 		rerollAriaLabel: 'ミッションを再ロール',
+		serviceUnavailable: 'サービスは一時的に利用できません',
 	},
 });
 

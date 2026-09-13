@@ -20,6 +20,7 @@ type MockElement = {
 	querySelector?: (selector?: string) => unknown;
 	querySelectorAll?: (selector?: string) => MockElement[];
 	appendChild?: (el: MockElement) => void;
+	insertBefore?: (el: MockElement) => void;
 	remove?: () => void;
 	replaceChildren?: () => void;
 	innerHTML?: string;
@@ -94,6 +95,16 @@ function createMockElement(initialClassName = ''): MockElement {
 			},
 		},
 		parentElement: null,
+		get firstElementChild() {
+			return children[0] ?? null;
+		},
+		get lastElementChild() {
+			return children.at(-1) ?? null;
+		},
+		insertBefore: (child) => {
+			children.unshift(child);
+			child.parentElement = el;
+		},
 		querySelector: (selector?: string) => {
 			if (!selector) return null;
 			// Simple selector matching for tests
@@ -437,8 +448,8 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateOpponentUI(players);
 
-			expect(chipEl1.textContent).toBe('350 chips');
-			expect(chipEl2.textContent).toBe('750 chips');
+			expect(chipEl1.textContent).toBe('350');
+			expect(chipEl2.textContent).toBe('750');
 		});
 
 		test('handles folded opponents', () => {
@@ -713,7 +724,7 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateUI(150, humanPlayer);
 
-			expect(elements['pot-amount'].textContent).toBe('150 chips');
+			expect(elements['pot-amount'].textContent).toBe('150');
 			expect(elements['current-bet'].textContent).toBe('50 chips');
 		});
 
@@ -735,7 +746,7 @@ describe('PokerUIRenderer', () => {
 
 			renderer.updateUI(0, humanPlayer);
 
-			expect(elements['pot-amount'].textContent).toBe('0 chips');
+			expect(elements['pot-amount'].textContent).toBe('0');
 			expect(elements['current-bet'].textContent).toBe('0 chips');
 		});
 
@@ -972,13 +983,13 @@ describe('PokerUIRenderer', () => {
 	});
 
 	describe('chip phrase presentation', () => {
-		test('updates pot and current bet displays with chip phrases', () => {
+		test('uses a compact pot number and a labeled current bet', () => {
 			const humanPlayer = player(0, 'You', 450);
 			humanPlayer.currentBet = 50;
 
 			renderer.updateUI(150, humanPlayer);
 
-			expect(elements['pot-amount'].textContent).toBe('150 chips');
+			expect(elements['pot-amount'].textContent).toBe('150');
 			expect(elements['current-bet'].textContent).toBe('50 chips');
 		});
 
@@ -1048,5 +1059,37 @@ describe('PokerUIRenderer', () => {
 			const slots2 = elements['player-cards'].querySelectorAll?.('.card-slot') || [];
 			expect(slots2.length).toBeGreaterThanOrEqual(2);
 		});
+	});
+});
+
+describe('Poker six-max presentation', () => {
+	test('updates and reveals the fifth opponent, preserving folded-card privacy and reset', () => {
+		const elements = mockDocument();
+		for (let id = 0; id < 6; id++) {
+			elements[`poker-seat-${id}`] = createMockElement();
+			if (id > 0) elements[`opponent${id}-cards`] = createMockContainerWithSlots(2);
+		}
+		const players = Array.from({ length: 6 }, (_, id) =>
+			player(id, `P${id + 1}`, 500, [card('A', 'spades', 14), card('K', 'hearts', 13)]),
+		);
+		players[4].folded = true;
+		players[5].chips = 420;
+		const renderer = new PokerUIRenderer();
+		renderer.hideOpponentHands();
+		renderer.updateTableState(players, 2, 5, true);
+		expect(elements['opponent5-chips'].textContent).toBe('420');
+		expect(elements['poker-seat-5'].dataset?.turn).toBe('true');
+		expect(elements['poker-seat-4'].dataset?.folded).toBe('true');
+		expect(elements['position-5'].textContent).toBe('UTG');
+		expect(elements['opponent5-action'].textContent).toBe('Thinking');
+		renderer.revealOpponentHands(players, [players[5]]);
+		const fifth = elements['opponent5-cards'].children![0];
+		const folded = elements['opponent4-cards'].children![0];
+		expect(fifth.getAttribute?.('data-slot-state')).toBe('card');
+		expect(fifth.getAttribute?.('aria-label')).toBe('Ace of Spades');
+		expect(folded.getAttribute?.('data-slot-state')).toBe('facedown');
+		renderer.hideOpponentHands();
+		expect(fifth.getAttribute?.('data-slot-state')).toBe('facedown');
+		expect(fifth.getAttribute?.('aria-label')).toBe('Face-down card');
 	});
 });

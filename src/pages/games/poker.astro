@@ -1,12 +1,14 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
-import PokerChip from '../../components/PokerChip.astro';
+import DecoIcon from '../../components/DecoIcon.astro';
+import '../../styles/poker.css';
+import { formatWholeNumber } from '../../lib/formatting';
 import PokerCardContainer from '../../components/PokerCardContainer.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { getPokerHandName, pokerTranslator } from '../../lib/i18n/messages/poker';
-import { MAX_BET, MIN_BET } from '../../lib/poker/constants';
+import { MAX_BET, MIN_BET, NUM_PLAYERS, HAND_RANKINGS } from '../../lib/poker/constants';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
@@ -25,508 +27,489 @@ const initialBalanceLabel = hasInitialBalance
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'poker') })}>
-	<div
-		id="poker-root"
-		data-guest-mode={gameSession.guestModeValue}
-		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
-	>
-		<!-- Game Header -->
-		<div class="flex items-center justify-between mb-8">
-			<div>
-				<a
-					href="/#games"
-					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'poker') })} footerClass="hidden">
+	<div id="poker-root" class="poker-room" data-guest-mode={gameSession.guestModeValue}>
+		<div class="poker-frame">
+			<header class="poker-toolbar">
+				<a href="/#games" class="poker-utility poker-back"
+					><span aria-hidden="true">‹</span><span>{t('backToGames')}</span></a
 				>
-					← {t('backToGames')}
-				</a>
-				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'poker')}</h1>
-			</div>
-			<div class="flex items-center gap-4">
-				<div
-					class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
-				>
-					<div class="text-xs text-[var(--deco-muted)] mb-1">
-						{getBalanceLabel(locale, gameSession.isGuest)}
+				<div class="poker-title">
+					<span class="poker-emblem"><DecoIcon name="star" size={20} /></span><h1>Hold’em</h1><span
+						class="poker-format">{NUM_PLAYERS}-Max</span
+					>
+				</div>
+				<div class="poker-tools">
+					<div class="poker-blinds">
+						<span>{t('blinds')}</span><strong id="table-blinds">5 / 10</strong>
 					</div>
-					<div
-						class="text-2xl font-bold text-[var(--deco-brass)]"
+					<button
+						class="poker-utility"
+						data-open-panel="history-panel"
+						aria-label={t('handHistory')}
+						title={t('handHistory')}><DecoIcon name="menu" size={17} /></button
+					>
+					<button
+						class="poker-utility"
+						data-open-panel="rules-panel"
+						aria-label={t('handRankings')}
+						title={t('handRankings')}><span aria-hidden="true">?</span></button
+					>
+					<button
+						id="btn-toggle-settings"
+						class="poker-utility"
+						data-open-panel="settings-panel"
+						aria-label={t('configure')}
+						title={t('configure')}
+						><svg
+							width="18"
+							height="18"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							aria-hidden="true"
+							><path d="M4 7h16M4 17h16"></path><circle cx="9" cy="7" r="3" fill="#070b09"
+							></circle><circle cx="15" cy="17" r="3" fill="#070b09"></circle></svg
+						></button
+					>
+				</div>
+			</header>
+			<div class="poker-table" aria-label={getGameName(locale, 'poker')}>
+				{
+					Array.from({ length: NUM_PLAYERS - 1 }, (_, i) => i + 1).map((id) => (
+						<section
+							id={`poker-seat-${id}`}
+							class={`poker-seat poker-seat-${id}`}
+							aria-label={t('playerName', { number: String(id + 1) })}
+						>
+							<div class="poker-portrait" aria-hidden="true">
+								<>
+									<span class="poker-portrait-suit">{['♠', '♦', '♣', '♥', '♠'][id - 1]}</span>
+									<span class="poker-player-monogram">P{id + 1}</span>
+									<span class="poker-portrait-rule" />
+								</>
+							</div>
+							<div class="poker-seat-meta">
+								<>
+									<span class="poker-position" id={`position-${id}`}>
+										—
+									</span>
+									<span id={`opponent${id}-chips`}>{formatWholeNumber(500, locale)}</span>
+								</>
+							</div>
+							<div class="poker-seat-hand">
+								<>
+									<PokerCardContainer
+										id={`opponent${id}-cards`}
+										maxCards={2}
+										size="small"
+										placeholderText=""
+									/>
+									<span id={`opponent${id}-action`} class="poker-seat-action">
+										—
+									</span>
+								</>
+							</div>
+						</section>
+					))
+				}
+				<div class="poker-board">
+					<div class="poker-pot" aria-label={t('pot')}>
+						<DecoIcon name="chip" size={20} /><span id="pot-amount">0</span>
+					</div>
+					<div class="poker-board-tray">
+						<PokerCardContainer
+							id="community-cards"
+							maxCards={5}
+							size="community"
+							placeholderText=""
+							detailed
+						/>
+					</div>
+					<ol class="poker-streets" aria-label={t('gameStatus')}>
+						{
+							(
+								['phasePreflop', 'phaseFlop', 'phaseTurn', 'phaseRiver', 'phaseShowdown'] as const
+							).map((key, index) => (
+								<li data-street={index} title={t(key)}>
+									<span class="sr-only">{t(key)}</span>
+								</li>
+							))
+						}
+					</ol>
+					<span id="poker-phase" class="poker-phase">{t('phaseIdle')}</span>
+				</div>
+			</div>
+			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
+				<div class="poker-bankroll">
+					<span class="poker-small-label">{getBalanceLabel(locale, gameSession.isGuest)}</span
+					><strong
 						id="player-balance"
 						data-testid="player-balance"
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={gameSession.balanceAvailableValue}
 						data-guest-mode={gameSession.guestModeValue}
-						data-user-id={clientUserId}
+						data-user-id={clientUserId}>{initialBalanceLabel}</strong
+					><span class="poker-your-bet"
+						>{t('yourBet')} <span id="current-bet">{formatChips(0, locale)}</span></span
 					>
-						{initialBalanceLabel}
+				</div>
+				<div class="poker-hole">
+					<span id="position-0" class="poker-position">BTN</span><PokerCardContainer
+						id="player-cards"
+						maxCards={2}
+						size="normal"
+						placeholderText=""
+						detailed
+					/>
+				</div>
+				<div class="poker-hand-strength">
+					<span id="hand-strength">—</span><div class="poker-strength-bars" aria-hidden="true">
+						{Array.from({ length: 5 }, () => <span />)}
 					</div>
+				</div>
+			</section>
+			<div class="poker-controls">
+				<div class="poker-divider" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+				<div class="poker-actions">
+					<button id="btn-fold" class="poker-action poker-fold" disabled
+						><span aria-hidden="true">×</span><span>{t('fold')}</span></button
+					>
+					<button id="btn-check" class="poker-action" disabled
+						><span aria-hidden="true">✓</span><span>{t('check')}</span></button
+					>
+					<button id="btn-call" class="poker-action" disabled hidden
+						><span aria-hidden="true">✓</span><span>{t('call')} <span id="call-amount"></span></span
+						></button
+					>
+					<button id="btn-raise" class="poker-action poker-gold" disabled
+						><span aria-hidden="true">↑</span><span
+							>{t('raise')} <span id="bet-amount">20</span></span
+						></button
+					>
+					<button id="btn-deal" class="poker-action poker-gold">{t('dealNewHand')}</button>
+					<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden
+						>{t('rebuyChips')}</button
+					>
+				</div>
+				<div class="poker-bet-picker">
+					{
+						(['halfPot', 'twoThirdsPot', 'fullPot', 'maxRaise'] as const).map((key, index) => (
+							<button
+								class="quick-bet-chip poker-preset"
+								data-preset={index}
+								title={t(key)}
+								aria-label={t(key)}
+								aria-pressed="false"
+							>
+								<span data-preset-amount>—</span>
+							</button>
+						))
+					}
+					<label class="poker-custom"
+						><DecoIcon name="chip" size={16} /><span class="sr-only">{t('customRaise')}</span><input
+							id="bet-input"
+							type="number"
+							min="10"
+							max="1000"
+							step="1"
+							value="20"
+							inputmode="numeric"
+						/></label
+					>
+					<button id="btn-max-bet" class="poker-preset">{t('max')}</button>
+					<input
+						id="bet-slider"
+						aria-label={t('customRaise')}
+						type="range"
+						min="10"
+						max="1000"
+						step="1"
+						value="20"
+					/>
+				</div>
+				<div id="game-status" class="poker-status" role="status" aria-live="polite">
+					{t('startHint', { deal: t('dealNewHand') })}
+				</div>
+			</div>
+			<div id="llm-overlay" class="hidden poker-llm-overlay">
+				<div>
+					<h2>{t('llmOverlayTitle')}</h2><p>{t('llmOverlaySubtitle')}</p><p>
+						{t('llmOverlayBody')}
+					</p><a class="poker-action poker-gold" href="/profile">{t('llmOverlayConfigure')}</a
+					><button id="llm-overlay-close" class="poker-action">{t('llmOverlayPlayWithout')}</button>
 				</div>
 			</div>
 		</div>
-
-		<!-- Poker Table -->
-		<div class="felt-table p-6 md:p-8 mb-6 relative" style="min-height: 580px;">
-			<!-- Pot Display - Top Center -->
-			<div class="absolute top-6 left-1/2 -translate-x-1/2 z-10">
-				<div
-					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm px-5 py-2.5 rounded-full border-2 border-[var(--deco-brass)] shadow-lg"
+		<dialog id="history-panel" class="poker-drawer" aria-labelledby="history-title">
+			<header>
+				<h2 id="history-title">{t('handHistory')}</h2><button
+					data-close-panel
+					aria-label={t('close')}
+					class="poker-utility">×</button
 				>
-					<div class="text-xs text-[var(--deco-muted)] text-center mb-0.5">{t('pot')}</div>
-					<div class="text-xl font-bold text-[var(--deco-brass)]" id="pot-amount">
-						{formatChips(0, locale)}
-					</div>
-				</div>
+			</header><div class="poker-drawer-body">
+				<p id="poker-history-empty">{t('historyEmpty')}</p><ol id="poker-history"></ol>
 			</div>
-
-			<!-- Community Cards - Center -->
-			<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -mt-4">
-				<PokerCardContainer
-					id="community-cards"
-					maxCards={5}
-					size="community"
-					showPlaceholders={true}
-					placeholderText="?"
-				/>
-			</div>
-
-			<!-- LLM Configuration Overlay -->
-			<div
-				id="llm-overlay"
-				class="hidden absolute inset-0 z-40 bg-[var(--deco-obsidian)] backdrop-blur-sm flex items-center justify-center rounded-[50%/38%]"
-			>
-				<div
-					class="max-w-md w-full mx-4 bg-[var(--deco-obsidian-2)] border border-[var(--deco-line)] rounded-2xl p-6 shadow-2xl flex flex-col gap-3"
+		</dialog>
+		<dialog id="rules-panel" class="poker-drawer" aria-labelledby="rules-title">
+			<header>
+				<h2 id="rules-title">{t('handRankings')}</h2><button
+					data-close-panel
+					aria-label={t('close')}
+					class="poker-utility">×</button
 				>
-					<div class="flex items-center gap-3">
-						<div
-							class="h-10 w-10 flex items-center justify-center rounded-xl bg-[var(--deco-obsidian-2)] text-[var(--deco-brass)]"
+			</header><div class="poker-drawer-body">
+				<ol class="poker-rankings">
+					{
+						Object.keys(HAND_RANKINGS)
+							.reverse()
+							.map((key) => (
+								<li>
+									<>
+										<span>{getPokerHandName(locale, key as keyof typeof HAND_RANKINGS)}</span>
+										<span aria-hidden="true">
+											{
+												{
+													ROYAL_FLUSH: 'A K Q J 10 ♠',
+													STRAIGHT_FLUSH: '9 8 7 6 5 ♥',
+													FOUR_OF_A_KIND: 'Q Q Q Q 3',
+													FULL_HOUSE: 'J J J 8 8',
+													FLUSH: 'A 10 8 6 3 ♦',
+													STRAIGHT: '9 8 7 6 5',
+													THREE_OF_A_KIND: '7 7 7 K 2',
+													TWO_PAIR: 'K K 6 6 9',
+													PAIR: 'A A Q 8 3',
+													HIGH_CARD: 'A J 9 5 2',
+												}[key]
+											}
+										</span>
+									</>
+								</li>
+							))
+					}
+				</ol><h3>{t('gameRules')}</h3><ul class="poker-rules">
+					{
+						(
+							[
+								'ruleHoleCards',
+								'ruleCommunityCards',
+								'ruleBestHand',
+								'ruleHighestWins',
+								'betFoldRule',
+								'betCheckRule',
+							] as const
+						).map((key) => <li>{t(key)}</li>)
+					}<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li><li>
+						{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}
+					</li>
+				</ul>
+			</div>
+		</dialog>
+		<dialog id="settings-panel" class="poker-drawer" aria-labelledby="settings-title">
+			<header>
+				<h2 id="settings-title">{t('gameSettings')}</h2><button
+					data-close-panel
+					aria-label={t('close')}
+					class="poker-utility">×</button
+				>
+			</header><div class="poker-drawer-body">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+					<!-- Starting Chips -->
+					<div>
+						<label for="setting-starting-chips" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('startingChips')}</label
 						>
-							⚠️
-						</div>
-						<div>
-							<h2 class="text-lg font-semibold text-[var(--deco-ivory)]">
-								{t('llmOverlayTitle')}
-							</h2>
-							<p class="text-xs text-[var(--deco-muted)]">{t('llmOverlaySubtitle')}</p>
-						</div>
-					</div>
-					<p class="text-sm text-[var(--deco-ivory-dim)]">{t('llmOverlayBody')}</p>
-					<div class="flex flex-wrap gap-2 mt-2">
-						<a
-							href="/profile"
-							class="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--deco-brass)] px-4 py-2 text-sm font-semibold text-[var(--deco-obsidian)] hover:bg-[var(--deco-brass-bright)] transition"
-						>
-							{t('llmOverlayConfigure')}
-						</a>
-						<button
-							id="llm-overlay-close"
-							type="button"
-							class="inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--deco-obsidian-2)] px-4 py-2 text-xs font-semibold text-[var(--deco-ivory-dim)] hover:bg-[var(--deco-obsidian-3)] border border-[var(--deco-line)] transition"
-						>
-							{t('llmOverlayPlayWithout')}
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<!-- Opponents - Arc positioning around oval table -->
-			<!-- Opponent 1: Top-Left (10 o'clock position) -->
-			<div class="absolute top-16 left-6 md:left-12">
-				<div
-					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-[var(--deco-line)] shadow-lg"
-				>
-					<div class="text-xs text-[var(--deco-ivory-dim)] mb-1.5 font-medium">Player 2</div>
-					<PokerCardContainer
-						id="opponent1-cards"
-						maxCards={2}
-						size="small"
-						showPlaceholders={false}
-					/>
-					<div class="text-xs text-[var(--deco-brass)] font-semibold" id="opponent1-chips">
-						{formatChips(500, locale)}
-					</div>
-				</div>
-			</div>
-
-			<!-- Opponent 2: Top-Right (2 o'clock position) -->
-			<div class="absolute top-16 right-6 md:right-12">
-				<div
-					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm p-2.5 md:p-3 rounded-lg border border-[var(--deco-line)] shadow-lg"
-				>
-					<div class="text-xs text-[var(--deco-ivory-dim)] mb-1.5 font-medium">Player 3</div>
-					<PokerCardContainer
-						id="opponent2-cards"
-						maxCards={2}
-						size="small"
-						showPlaceholders={false}
-					/>
-					<div class="text-xs text-[var(--deco-brass)] font-semibold" id="opponent2-chips">
-						{formatChips(750, locale)}
-					</div>
-				</div>
-			</div>
-
-			<!-- Player's Hand with Integrated Controls -->
-			<div class="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 w-full max-w-xl px-3">
-				<div
-					class="bg-[var(--deco-obsidian-2)] backdrop-blur-sm p-4 md:p-5 rounded-xl border-2 border-[var(--deco-brass-dim)] player-area-glow"
-				>
-					<!-- Hand Display -->
-					<div class="text-center mb-3">
-						<div class="text-xs text-[var(--deco-muted)] mb-0.5">{t('yourHand')}</div>
-						<div class="text-base md:text-lg font-bold text-[var(--deco-brass)]" id="hand-strength">
-							--
-						</div>
-					</div>
-					<div class="flex gap-2 md:gap-3 justify-center mb-3">
-						<PokerCardContainer
-							id="player-cards"
-							maxCards={2}
-							size="normal"
-							showPlaceholders={false}
+						<input
+							type="number"
+							id="setting-starting-chips"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+							min="100"
+							max="10000"
+							step="100"
 						/>
 					</div>
 
-					<!-- Integrated Betting Controls -->
-					<div class="border-t border-[var(--deco-line)] pt-3 space-y-2.5">
-						<!-- Action Buttons Row -->
-						<div class="grid grid-cols-4 gap-1.5 md:gap-2">
-							<button
-								id="btn-fold"
-								class="action-btn bg-[var(--deco-oxblood-bright)] text-[var(--deco-ivory)]"
-							>
-								{t('fold')}
-							</button>
-							<button
-								id="btn-check"
-								class="action-btn bg-[var(--deco-sapphire)] text-[var(--deco-ivory)]"
-							>
-								{t('check')}
-							</button>
-							<button
-								id="btn-call"
-								class="action-btn bg-[var(--deco-jade)] text-[var(--deco-ivory)]"
-							>
-								{t('call')}
-							</button>
-							<button
-								id="btn-raise"
-								class="action-btn bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)]"
-							>
-								{t('raise')}
-							</button>
-						</div>
-
-						<!-- Bet Slider Row -->
-						<div class="flex gap-2 items-center px-1">
-							<input
-								type="range"
-								id="bet-slider"
-								min="10"
-								max="1000"
-								step="10"
-								value="50"
-								class="flex-1 h-2 bg-[var(--deco-obsidian-3)] rounded-lg appearance-none cursor-pointer accent-[var(--deco-brass)]"
-							/>
-							<span
-								id="bet-amount"
-								class="text-[var(--deco-brass)] font-bold min-w-[60px] text-right text-sm"
-								>{formatChips(50, locale)}</span
-							>
-						</div>
-
-						<!-- Quick Bet Chips Row -->
-						<div class="flex justify-center gap-2 md:gap-3">
-							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="10">
-								<PokerChip value={10} color="red" locale={locale} />
-							</button>
-							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="25">
-								<PokerChip value={25} color="blue" locale={locale} />
-							</button>
-							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="50">
-								<PokerChip value={50} color="green" locale={locale} />
-							</button>
-							<button class="quick-bet-chip hover:scale-110 transition-transform" data-amount="100">
-								<PokerChip value={100} color="black" locale={locale} />
-							</button>
-						</div>
-
-						<!-- Current Bet Display -->
-						<div class="text-center text-sm text-[var(--deco-brass)]">
-							{t('yourBet')}
-							<span id="current-bet" class="font-semibold">{formatChips(0, locale)}</span>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<!-- Game Controls - Simplified (main controls now in table) -->
-		<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-5 border border-[var(--deco-line)]">
-			<!-- Deal Button + Game Status -->
-			<div class="flex flex-col md:flex-row md:items-center gap-4 mb-5">
-				<button
-					id="btn-deal"
-					class="btn-gold py-3 px-8 rounded-lg font-bold text-lg md:w-auto w-full"
-				>
-					{t('dealNewHand')}
-				</button>
-				<button
-					id="btn-rebuy"
-					data-testid="btn-rebuy"
-					hidden
-					class="bg-[var(--deco-jade)] hover:bg-[var(--deco-emerald)] text-[var(--deco-ivory)] py-3 px-8 rounded-lg font-bold text-lg md:w-auto w-full transition"
-				>
-					{t('rebuyChips')}
-				</button>
-				<div
-					class="flex-1 p-3 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]"
-				>
-					<div class="text-xs text-[var(--deco-muted)] mb-0.5">{t('gameStatus')}</div>
-					<div id="game-status" class="text-base font-semibold text-[var(--deco-brass)]">
-						{t('startHint', { deal: t('dealNewHand') })}
-					</div>
-				</div>
-			</div>
-
-			<div class="mt-6 p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
-				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+					<!-- Small Blind -->
 					<div>
-						<div class="text-sm text-[var(--deco-muted)] mb-1">{t('aiRival')}</div>
-						<div id="ai-rival-status" class="text-sm text-[var(--deco-ivory-dim)]">
-							{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}
-						</div>
+						<label for="setting-small-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('smallBlind')}</label
+						>
+						<input
+							type="number"
+							id="setting-small-blind"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+							min="1"
+							max="100"
+							step="1"
+						/>
 					</div>
+
+					<!-- Big Blind -->
+					<div>
+						<label for="setting-big-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('bigBlind')}</label
+						>
+						<input
+							type="number"
+							id="setting-big-blind"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+							min="2"
+							max="200"
+							step="1"
+						/>
+					</div>
+
+					<!-- AI Speed -->
+					<div>
+						<label for="setting-ai-speed" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('aiSpeed')}</label
+						>
+						<select
+							id="setting-ai-speed"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+						>
+							<option value="slow">{t('speedSlow')}</option>
+							<option value="normal">{t('speedNormal')}</option>
+							<option value="fast">{t('speedFast')}</option>
+						</select>
+					</div>
+
+					<!-- AI Player 2 Difficulty -->
+					<div>
+						<label for="setting-ai-difficulty-1" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('player2Difficulty')}</label
+						>
+						<select
+							id="setting-ai-difficulty-1"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+						>
+							<option value="easy">{t('difficultyEasy')}</option>
+							<option value="medium">{t('difficultyMedium')}</option>
+							<option value="hard">{t('difficultyHard')}</option>
+						</select>
+					</div>
+
+					<!-- AI Player 3 Difficulty -->
+					<div>
+						<label for="setting-ai-difficulty-2" class="block text-xs text-[var(--deco-muted)] mb-1"
+							>{t('player3Difficulty')}</label
+						>
+						<select
+							id="setting-ai-difficulty-2"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+						>
+							<option value="easy">{t('difficultyEasy')}</option>
+							<option value="medium">{t('difficultyMedium')}</option>
+							<option value="hard">{t('difficultyHard')}</option>
+						</select>
+					</div>
+
+					<!-- AI Player 2 Personality -->
+					<div>
+						<label
+							for="setting-ai-personality-1"
+							class="block text-xs text-[var(--deco-muted)] mb-1">{t('player2Style')}</label
+						>
+						<select
+							id="setting-ai-personality-1"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+						>
+							<option value="tight-aggressive">{t('styleTightAggressive')}</option>
+							<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
+							<option value="tight-passive">{t('styleTightPassive')}</option>
+							<option value="loose-passive">{t('styleLoosePassive')}</option>
+						</select>
+					</div>
+
+					<!-- AI Player 3 Personality -->
+					<div>
+						<label
+							for="setting-ai-personality-2"
+							class="block text-xs text-[var(--deco-muted)] mb-1">{t('player3Style')}</label
+						>
+						<select
+							id="setting-ai-personality-2"
+							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
+						>
+							<option value="tight-aggressive">{t('styleTightAggressive')}</option>
+							<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
+							<option value="tight-passive">{t('styleTightPassive')}</option>
+							<option value="loose-passive">{t('styleLoosePassive')}</option>
+						</select>
+					</div>
+				</div>
+
+				<!-- LLM AI Toggle -->
+				<div class="p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
+					<div class="flex items-center gap-3">
+						<input
+							type="checkbox"
+							id="setting-use-llm-ai"
+							class="w-5 h-5 bg-[var(--deco-obsidian-2)] border-[var(--deco-line)] rounded text-[var(--deco-brass)] focus:ring-2 focus:ring-[var(--deco-brass)]"
+						/>
+						<label for="setting-use-llm-ai" class="flex-1">
+							<div class="text-sm text-[var(--deco-ivory)] font-semibold">{t('useLlmAi')}</div>
+							<div class="text-xs text-[var(--deco-muted)] mt-1">{t('useLlmAiHint')}</div>
+						</label>
+					</div>
+				</div>
+
+				<!-- Action Buttons -->
+				<div class="flex gap-2 pt-2">
 					<button
-						id="btn-ai-move"
-						disabled={gameSession.isGuest}
-						class="inline-flex items-center justify-center gap-2 rounded-lg bg-linear-to-r from-[var(--deco-sapphire)] to-[var(--deco-emerald)] px-4 py-2 text-sm font-semibold text-[var(--deco-ivory)] transition disabled:cursor-not-allowed disabled:opacity-60"
+						id="btn-save-settings"
+						class="flex-1 bg-[var(--deco-brass)] hover:bg-[var(--deco-brass-bright)] text-[var(--deco-obsidian)] px-4 py-2 rounded font-semibold transition"
 					>
-						{t('askAiRival')}
+						{t('saveSettings')}
+					</button>
+					<button
+						id="btn-reset-settings"
+						class="bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] px-4 py-2 rounded transition"
+					>
+						{t('resetSettings')}
 					</button>
 				</div>
-				<p class="mt-3 text-xs text-[var(--deco-muted)]">
-					{
-						gameSession.isGuest ? (
-							t('aiGuestHint2')
-						) : (
-							<>
-								{aiProfileHintParts[0]}
-								<a href="/profile" class="text-[var(--deco-brass)] hover:underline">
-									{t('aiProfileSettings')}
-								</a>
-								{aiProfileHintParts[1]}
-							</>
-						)
-					}
-				</p>
+
+				<p class="text-xs text-[var(--deco-muted)]">{t('settingsApplyHint')}</p>
+				<p>{t('opponentDefaults')}</p><section class="poker-ai-settings">
+					<h3>{t('aiRival')}</h3><p id="ai-rival-status">
+						{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}
+					</p><button id="btn-ai-move" class="poker-action" disabled={gameSession.isGuest}
+						>{t('askAiRival')}</button
+					><p>
+						{
+							gameSession.isGuest ? (
+								t('aiGuestHint2')
+							) : (
+								<>
+									{aiProfileHintParts[0]}
+									<a href="/profile">{t('aiProfileSettings')}</a>
+									{aiProfileHintParts[1]}
+								</>
+							)
+						}
+					</p>
+				</section>
 			</div>
-
-			<!-- Game Settings -->
-			<div class="mt-6 p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
-				<div class="flex items-center justify-between mb-3">
-					<div class="text-sm text-[var(--deco-muted)]">{t('gameSettings')}</div>
-					<button
-						id="btn-toggle-settings"
-						class="text-xs bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] px-3 py-1 rounded transition"
-					>
-						{t('configure')}
-					</button>
-				</div>
-
-				<!-- Collapsible Settings Panel -->
-				<div id="settings-panel" class="hidden mt-4 space-y-4">
-					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<!-- Starting Chips -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('startingChips')}</label
-							>
-							<input
-								type="number"
-								id="setting-starting-chips"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-								min="100"
-								max="10000"
-								step="100"
-							/>
-						</div>
-
-						<!-- Small Blind -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('smallBlind')}</label>
-							<input
-								type="number"
-								id="setting-small-blind"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-								min="1"
-								max="100"
-								step="1"
-							/>
-						</div>
-
-						<!-- Big Blind -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('bigBlind')}</label>
-							<input
-								type="number"
-								id="setting-big-blind"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-								min="2"
-								max="200"
-								step="1"
-							/>
-						</div>
-
-						<!-- AI Speed -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('aiSpeed')}</label>
-							<select
-								id="setting-ai-speed"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-							>
-								<option value="slow">{t('speedSlow')}</option>
-								<option value="normal">{t('speedNormal')}</option>
-								<option value="fast">{t('speedFast')}</option>
-							</select>
-						</div>
-
-						<!-- AI Player 2 Difficulty -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1"
-								>{t('player2Difficulty')}</label
-							>
-							<select
-								id="setting-ai-difficulty-1"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-							>
-								<option value="easy">{t('difficultyEasy')}</option>
-								<option value="medium">{t('difficultyMedium')}</option>
-								<option value="hard">{t('difficultyHard')}</option>
-							</select>
-						</div>
-
-						<!-- AI Player 3 Difficulty -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1"
-								>{t('player3Difficulty')}</label
-							>
-							<select
-								id="setting-ai-difficulty-2"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-							>
-								<option value="easy">{t('difficultyEasy')}</option>
-								<option value="medium">{t('difficultyMedium')}</option>
-								<option value="hard">{t('difficultyHard')}</option>
-							</select>
-						</div>
-
-						<!-- AI Player 2 Personality -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('player2Style')}</label>
-							<select
-								id="setting-ai-personality-1"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-							>
-								<option value="tight-aggressive">{t('styleTightAggressive')}</option>
-								<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
-								<option value="tight-passive">{t('styleTightPassive')}</option>
-								<option value="loose-passive">{t('styleLoosePassive')}</option>
-							</select>
-						</div>
-
-						<!-- AI Player 3 Personality -->
-						<div>
-							<label class="block text-xs text-[var(--deco-muted)] mb-1">{t('player3Style')}</label>
-							<select
-								id="setting-ai-personality-2"
-								class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
-							>
-								<option value="tight-aggressive">{t('styleTightAggressive')}</option>
-								<option value="loose-aggressive">{t('styleLooseAggressive')}</option>
-								<option value="tight-passive">{t('styleTightPassive')}</option>
-								<option value="loose-passive">{t('styleLoosePassive')}</option>
-							</select>
-						</div>
-					</div>
-
-					<!-- LLM AI Toggle -->
-					<div class="p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
-						<div class="flex items-center gap-3">
-							<input
-								type="checkbox"
-								id="setting-use-llm-ai"
-								class="w-5 h-5 bg-[var(--deco-obsidian-2)] border-[var(--deco-line)] rounded text-[var(--deco-brass)] focus:ring-2 focus:ring-[var(--deco-brass)]"
-							/>
-							<label for="setting-use-llm-ai" class="flex-1">
-								<div class="text-sm text-[var(--deco-ivory)] font-semibold">{t('useLlmAi')}</div>
-								<div class="text-xs text-[var(--deco-muted)] mt-1">{t('useLlmAiHint')}</div>
-							</label>
-						</div>
-					</div>
-
-					<!-- Action Buttons -->
-					<div class="flex gap-2 pt-2">
-						<button
-							id="btn-save-settings"
-							class="flex-1 bg-[var(--deco-brass)] hover:bg-[var(--deco-brass-bright)] text-[var(--deco-obsidian)] px-4 py-2 rounded font-semibold transition"
-						>
-							{t('saveSettings')}
-						</button>
-						<button
-							id="btn-reset-settings"
-							class="bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory-dim)] px-4 py-2 rounded transition"
-						>
-							{t('resetSettings')}
-						</button>
-					</div>
-
-					<p class="text-xs text-[var(--deco-muted)]">{t('settingsApplyHint')}</p>
-				</div>
-			</div>
-		</div>
-
-		<!-- Game Info -->
-		<div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('gameRules')}</h3>
-				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>{t('ruleHoleCards')}</li>
-					<li>{t('ruleCommunityCards')}</li>
-					<li>{t('ruleBestHand')}</li>
-					<li>{t('ruleHighestWins')}</li>
-				</ul>
-			</div>
-
-			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('handRankings')}</h3>
-				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>• {getPokerHandName(locale, 'ROYAL_FLUSH')}</li>
-					<li>• {getPokerHandName(locale, 'STRAIGHT_FLUSH')}</li>
-					<li>• {getPokerHandName(locale, 'FOUR_OF_A_KIND')}</li>
-					<li>• {getPokerHandName(locale, 'FULL_HOUSE')}</li>
-					<li>• {getPokerHandName(locale, 'FLUSH')}</li>
-				</ul>
-			</div>
-
-			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-6 border border-[var(--deco-line)]">
-				<h3 class="text-xl font-bold text-[var(--deco-brass)] mb-4">{t('betting')}</h3>
-				<ul class="space-y-2 text-sm text-[var(--deco-ivory-dim)]">
-					<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li>
-					<li>{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}</li>
-					<li>{t('betFoldRule')}</li>
-					<li>{t('betCheckRule')}</li>
-				</ul>
-			</div>
-		</div>
+		</dialog>
 	</div>
 </CasinoLayout>
-
 <script>
-	// Poker game logic
 	import { PokerGame } from '../../lib/poker/PokerGame';
-
-	// Initialize game when DOM is loaded
-	if (typeof window !== 'undefined') {
-		new PokerGame();
+	new PokerGame();
+	for (const button of document.querySelectorAll<HTMLButtonElement>('[data-open-panel]')) {
+		button.addEventListener('click', () => {
+			const dialog = document.getElementById(button.dataset.openPanel!) as HTMLDialogElement;
+			dialog.showModal();
+		});
+	}
+	for (const dialog of document.querySelectorAll<HTMLDialogElement>('.poker-drawer')) {
+		dialog.querySelector('[data-close-panel]')?.addEventListener('click', () => dialog.close());
+		dialog.addEventListener('click', (event) => {
+			if (event.target === dialog && event.clientX < dialog.getBoundingClientRect().left)
+				dialog.close();
+		});
 	}
 </script>

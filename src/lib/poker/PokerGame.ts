@@ -28,6 +28,8 @@ import {
 	isAIDifficulty,
 	makeAIDecision,
 } from './index';
+import { NUM_PLAYERS, MAX_BET } from './constants';
+import { DEFAULT_SETTINGS } from './types';
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
 import { AIRivalAssistant } from './AIRivalAssistant';
@@ -166,7 +168,8 @@ export class PokerGame {
 		this.wireSettlementRecoveryControls();
 		this.attachSettingsListeners();
 		this.renderSettingsPanel();
-		this.updateBetControls(); // Initialize bet controls based on settings
+		this.updateBetControls(true);
+		this.updateActionButtons();
 		this.aiRival.highlightSuggestedMove(null);
 
 		if (!this.hasServerSyncedBalance) {
@@ -409,12 +412,29 @@ export class PokerGame {
 			createPlayer(0, 'You', this.getEffectiveServerBalance(), false),
 			createAIPlayer(1, 'Player 2', settings.startingChips),
 			createAIPlayer(2, 'Player 3', settings.startingChips),
+			...Array.from({ length: NUM_PLAYERS - 3 }, (_, i) =>
+				createAIPlayer(
+					i + 3,
+					this.t('playerName', { number: String(i + 4) }),
+					settings.startingChips,
+				),
+			),
 		];
 		this.players[this.dealerIndex].isDealer = true;
 
 		// Assign AI personalities and difficulties from settings
 		this.aiConfigs.set(1, this.buildAIConfig(settings.aiPersonality1, settings.aiDifficulty1));
 		this.aiConfigs.set(2, this.buildAIConfig(settings.aiPersonality2, settings.aiDifficulty2));
+
+		for (const player of this.players.slice(3)) {
+			this.aiConfigs.set(
+				player.id,
+				this.buildAIConfig(
+					['tight-passive', 'loose-passive', 'tight-aggressive'][player.id - 3] as AIPersonality,
+					DEFAULT_SETTINGS.aiDifficulty1,
+				),
+			);
+		}
 
 		// Update blinds from settings
 		this.minimumBet = settings.bigBlind;
@@ -775,8 +795,13 @@ export class PokerGame {
 	private advanceTurn() {
 		// Check if betting round is complete
 		if (isBettingRoundComplete(this.players)) {
+			this.isProcessingAction = true;
+			this.updateActionButtons();
 			// Move to next phase
-			this.scheduleTurnTransition(1000, () => this.nextPhase());
+			this.scheduleTurnTransition(1000, () => {
+				this.isProcessingAction = false;
+				this.nextPhase();
+			});
 			return;
 		}
 
@@ -813,43 +838,54 @@ export class PokerGame {
 
 	private updateGameStatus(message: string) {
 		this.ui.updateGameStatus(message, this.gamePhase, this.pot);
+		this.ui.updateTableState(
+			this.players,
+			this.dealerIndex,
+			this.currentPlayerIndex,
+			this.bettingRound !== null,
+		);
 	}
 
 	private updateActionButtons() {
-		const btnFold = document.getElementById('btn-fold') as HTMLButtonElement | null;
-		const btnCheck = document.getElementById('btn-check') as HTMLButtonElement | null;
-		const btnCall = document.getElementById('btn-call') as HTMLButtonElement | null;
-		const btnRaise = document.getElementById('btn-raise') as HTMLButtonElement | null;
-
-		if (!btnFold || !btnCheck || !btnCall || !btnRaise) return;
-
-		const humanPlayer = this.players[0];
-		const isHumanTurn = this.currentPlayerIndex === 0;
-
-		if (
-			!humanPlayer ||
-			this.isProcessingAction ||
-			!isHumanTurn ||
-			humanPlayer.folded ||
-			humanPlayer.isAllIn
-		) {
-			btnFold.disabled = true;
-			btnCheck.disabled = true;
-			btnCall.disabled = true;
-			btnRaise.disabled = true;
-			return;
+		const human = this.players[0];
+		const active = this.bettingRound !== null;
+		const canAct =
+			active &&
+			this.currentPlayerIndex === 0 &&
+			!this.isProcessingAction &&
+			!human.folded &&
+			!human.isAllIn;
+		const call = getCallAmount(human, getHighestBet(this.players));
+		const minRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		const enabled = {
+			fold: canAct,
+			check: canAct && call === 0,
+			call: canAct && call > 0 && human.chips > 0,
+			raise: canAct && human.chips - call >= minRaise,
+		};
+		for (const [action, allowed] of Object.entries(enabled)) {
+			const button = document.getElementById(`btn-${action}`) as HTMLButtonElement | null;
+			if (!button) continue;
+			button.disabled = !allowed;
+			button.hidden =
+				!active || (action === 'call' && call === 0) || (action === 'check' && call > 0);
 		}
-
-		const highestBet = getHighestBet(this.players);
-		const callAmount = getCallAmount(humanPlayer, highestBet);
-
-		btnFold.disabled = false;
-		btnCheck.disabled = callAmount > 0;
-		// Keep Call enabled when the human has chips even if callAmount exceeds
-		// their stack: placeBet() clamps to remaining chips and marks the player
-		// all-in, so a short stack can still call off their stack through the UI.
-		btnCall.disabled = callAmount <= 0 || humanPlayer.chips <= 0;
-		btnRaise.disabled = humanPlayer.chips <= 0;
+		const callLabel = document.getElementById('call-amount');
+		if (callLabel)
+			callLabel.textContent = formatWholeNumber(Math.min(call, human.chips), this.locale);
+		const deal = document.getElementById('btn-deal') as HTMLButtonElement | null;
+		if (deal) {
+			deal.hidden = active;
+			deal.disabled =
+				!this.hasServerSyncedBalance || (!this.isGuestMode && this.settlementGate.isBlocked);
+		}
+		this.updateBetControls();
+		this.ui.updateTableState(
+			this.players,
+			this.dealerIndex,
+			this.currentPlayerIndex,
+			active && !this.isProcessingAction,
+		);
 	}
 
 	/**
@@ -896,6 +932,7 @@ export class PokerGame {
 		// Check if only one player remains (everyone else folded)
 		const activePlayers = getActivePlayers(this.players);
 		if (activePlayers.length === 1) {
+			this.bettingRound = null;
 			const winner = activePlayers[0];
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(
@@ -911,6 +948,7 @@ export class PokerGame {
 			if (winner.id === 0) {
 				this.settleHand('win');
 			}
+			this.updateActionButtons();
 			this.scheduleAutoDeal(3000);
 			return;
 		}
@@ -989,6 +1027,7 @@ export class PokerGame {
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.ui.updateOpponentUI(this.players);
 			// Auto-deal new hand after 3 seconds
+			this.updateActionButtons();
 			this.scheduleAutoDeal(3000);
 			return;
 		}
@@ -1122,18 +1161,28 @@ export class PokerGame {
 		});
 
 		document.getElementById('btn-raise')?.addEventListener('click', () => {
-			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
+			const human = this.players[0];
+			if (
+				this.isProcessingAction ||
+				this.currentPlayerIndex !== 0 ||
+				this.bettingRound === null ||
+				human.folded ||
+				human.isAllIn
+			)
+				return;
+			const raiseAmount = Number((document.getElementById('bet-slider') as HTMLInputElement).value);
+			const call = getCallAmount(human, getHighestBet(this.players));
+			const minRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+			if (
+				!Number.isInteger(raiseAmount) ||
+				raiseAmount < minRaise ||
+				raiseAmount > Math.min(MAX_BET, human.chips - call)
+			)
+				return;
 			this.isProcessingAction = true;
 			this.updateActionButtons();
-
 			try {
-				const raiseAmount = parseInt(
-					(document.getElementById('bet-slider') as HTMLInputElement).value,
-				);
-				const highestBet = getHighestBet(this.players);
-				const totalBet = highestBet + raiseAmount;
-				const amountToAdd = totalBet - this.players[0].currentBet;
-				this.players[0] = placeBet(this.players[0], amountToAdd);
+				this.players[0] = placeBet(human, call + raiseAmount);
 				this.lastRaiseAmount = raiseAmount;
 				this.minimumBet = raiseAmount;
 				this.pot = calculatePot(this.players);
@@ -1147,23 +1196,28 @@ export class PokerGame {
 			this.advanceTurn();
 		});
 
-		const betSlider = document.getElementById('bet-slider') as HTMLInputElement;
-		const betAmount = document.getElementById('bet-amount');
-		betSlider?.addEventListener('input', (e) => {
-			const value = (e.target as HTMLInputElement).value;
-			if (betAmount) betAmount.textContent = formatChips(Number(value), this.locale);
+		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
+		const input = document.getElementById('bet-input') as HTMLInputElement | null;
+		slider?.addEventListener('input', () => this.setRaiseAmount(Number(slider.value)));
+		input?.addEventListener('input', () => {
+			if (input.value !== '' && input.validity.valid) {
+				this.setRaiseAmount(Number(input.value));
+				this.updateActionButtons();
+			} else {
+				const raise = document.getElementById('btn-raise') as HTMLButtonElement | null;
+				if (raise) raise.disabled = true;
+			}
 		});
-
-		// Quick bet chips
-		document.querySelectorAll('.quick-bet-chip').forEach((btn) => {
-			btn.addEventListener('click', (e) => {
-				const amount = (e.currentTarget as HTMLElement).dataset.amount;
-				if (amount && betSlider) {
-					betSlider.value = amount;
-					if (betAmount) betAmount.textContent = formatChips(Number(amount), this.locale);
-				}
-			});
+		input?.addEventListener('change', () => {
+			this.setRaiseAmount(Number(input.value));
+			this.updateActionButtons();
 		});
+		document.querySelectorAll<HTMLButtonElement>('.quick-bet-chip').forEach((button) => {
+			button.addEventListener('click', () => this.setRaiseAmount(Number(button.dataset.amount)));
+		});
+		document
+			.getElementById('btn-max-bet')
+			?.addEventListener('click', () => this.setRaiseAmount(Number(slider?.max)));
 
 		document.getElementById('btn-ai-move')?.addEventListener('click', () => {
 			void this.aiRival.requestAiMove(
@@ -1178,14 +1232,6 @@ export class PokerGame {
 	}
 
 	private attachSettingsListeners() {
-		// Toggle settings panel
-		document.getElementById('btn-toggle-settings')?.addEventListener('click', () => {
-			const panel = document.getElementById('settings-panel');
-			if (panel) {
-				panel.classList.toggle('hidden');
-			}
-		});
-
 		// Save settings
 		document.getElementById('btn-save-settings')?.addEventListener('click', () => {
 			const startingChipsEl = document.getElementById(
@@ -1275,7 +1321,7 @@ export class PokerGame {
 			this.updateGameStatus(this.t('statusSettingsSaved'));
 
 			// Hide settings panel
-			document.getElementById('settings-panel')?.classList.add('hidden');
+			(document.getElementById('settings-panel') as HTMLDialogElement | null)?.close();
 		});
 
 		// Reset settings
@@ -1346,37 +1392,49 @@ export class PokerGame {
 		}
 	}
 
-	private updateBetControls() {
-		const settings = this.settingsManager.getSettings();
-		const minBet = settings.bigBlind;
-
-		// Update bet slider to use minimum bet from settings
-		const betSlider = document.getElementById('bet-slider') as HTMLInputElement | null;
-		if (betSlider) {
-			betSlider.min = minBet.toString();
-			betSlider.step = minBet.toString();
-			betSlider.value = (minBet * 2).toString(); // Default to 2x big blind
-
-			// Update bet amount display
-			const betAmount = document.getElementById('bet-amount');
-			if (betAmount) {
-				betAmount.textContent = formatChips(minBet * 2, this.locale);
-			}
-		}
-
-		// Update quick-bet chips based on big blind
-		const quickBetButtons = document.querySelectorAll('.quick-bet-chip');
-		const multipliers = [1, 2.5, 5, 10]; // Multiples of big blind
-		quickBetButtons.forEach((btn, index) => {
-			const amount = Math.round(minBet * multipliers[index]);
-			(btn as HTMLElement).dataset.amount = amount.toString();
-
-			// Update chip display text (PokerChip renders a div.poker-chip); the
-			// face is a bare locale-formatted number, matching PokerChip SSR.
-			const chipDisplay = btn.querySelector('.poker-chip');
-			if (chipDisplay) {
-				chipDisplay.textContent = formatWholeNumber(amount, this.locale);
-			}
+	private setRaiseAmount(amount: number) {
+		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
+		if (!slider || !Number.isFinite(amount)) return;
+		const value = Math.max(Number(slider.min), Math.min(Number(slider.max), Math.round(amount)));
+		slider.value = String(value);
+		const input = document.getElementById('bet-input') as HTMLInputElement | null;
+		if (input) input.value = String(value);
+		const label = document.getElementById('bet-amount');
+		if (label) label.textContent = formatWholeNumber(value, this.locale);
+		document.querySelectorAll<HTMLElement>('.quick-bet-chip').forEach((button) => {
+			button.setAttribute('aria-pressed', String(Number(button.dataset.amount) === value));
 		});
+	}
+
+	private updateBetControls(reset = false) {
+		const settings = this.settingsManager.getSettings();
+		const human = this.players[0];
+		const call = getCallAmount(human, getHighestBet(this.players));
+		const min = Math.max(settings.bigBlind, this.minimumBet);
+		const max = Math.max(0, Math.min(MAX_BET, human.chips - call));
+		const disabled = this.bettingRound === null || human.folded || human.isAllIn || max < min;
+		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
+		const input = document.getElementById('bet-input') as HTMLInputElement | null;
+		for (const control of [slider, input]) {
+			if (!control) continue;
+			control.min = String(Math.min(min, max));
+			control.max = String(max);
+			control.step = '1';
+			control.disabled = disabled;
+		}
+		const presets = [Math.round(this.pot / 2), Math.round((this.pot * 2) / 3), this.pot, max];
+		document.querySelectorAll<HTMLButtonElement>('.quick-bet-chip').forEach((button, index) => {
+			const amount = Math.min(max, Math.max(min, presets[index]));
+			button.dataset.amount = String(amount);
+			button.disabled = disabled;
+			const label = button.querySelector('[data-preset-amount]');
+			if (label) label.textContent = formatWholeNumber(amount, this.locale);
+		});
+		const maxButton = document.getElementById('btn-max-bet') as HTMLButtonElement | null;
+		if (maxButton) maxButton.disabled = disabled;
+		const blinds = document.getElementById('table-blinds');
+		if (blinds)
+			blinds.textContent = `${formatWholeNumber(settings.smallBlind, this.locale)} / ${formatWholeNumber(settings.bigBlind, this.locale)}`;
+		this.setRaiseAmount(reset ? settings.bigBlind * 2 : Number(slider?.value ?? min));
 	}
 }

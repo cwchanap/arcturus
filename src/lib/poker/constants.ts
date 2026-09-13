@@ -8,7 +8,7 @@ export const BIG_BLIND = 10;
 export const MIN_BET = 10;
 export const MAX_BET = 1000;
 
-export const NUM_PLAYERS = 3; // 1 human + 2 AI
+export const NUM_PLAYERS = 6; // 1 human + 5 AI
 
 export const HAND_RANKINGS = {
 	HIGH_CARD: 0,

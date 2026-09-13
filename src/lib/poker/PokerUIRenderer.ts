@@ -3,7 +3,9 @@
  */
 
 import type { Card, GamePhase, Player } from './types';
-import type { PokerHandNameKey } from './constants';
+import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
+import { getSuitSymbol } from '../card-format';
+import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
@@ -167,22 +169,10 @@ export class PokerUIRenderer {
 	}
 
 	public updateOpponentUI(players: Player[]) {
-		// Update opponent chip counts using direct ID selectors
-		if (players[1]) {
-			const opponent1Chips = document.getElementById('opponent1-chips');
-			if (opponent1Chips) {
-				opponent1Chips.textContent = formatChips(players[1].chips, this.locale);
-			}
-			// Update folded state
-			this.updateFoldedState(1, players[1].folded);
-		}
-		if (players[2]) {
-			const opponent2Chips = document.getElementById('opponent2-chips');
-			if (opponent2Chips) {
-				opponent2Chips.textContent = formatChips(players[2].chips, this.locale);
-			}
-			// Update folded state
-			this.updateFoldedState(2, players[2].folded);
+		for (const player of players.slice(1)) {
+			const chips = document.getElementById(`opponent${player.id}-chips`);
+			if (chips) chips.textContent = formatWholeNumber(player.chips, this.locale);
+			this.updateFoldedState(player.id, player.folded);
 		}
 	}
 
@@ -190,7 +180,7 @@ export class PokerUIRenderer {
 	 * Update folded state indicator for opponent
 	 */
 	private updateFoldedState(playerIndex: number, folded: boolean) {
-		const container = document.getElementById(`opponent${playerIndex === 1 ? '1' : '2'}-cards`);
+		const container = document.getElementById(`opponent${playerIndex}-cards`);
 		if (!container) return;
 
 		const parent = container.parentElement;
@@ -223,7 +213,7 @@ export class PokerUIRenderer {
 	 * Show AI decision next to opponent badge
 	 */
 	public showAIDecision(playerIndex: number, action: string, amount?: number) {
-		const container = document.getElementById(`opponent${playerIndex === 1 ? '1' : '2'}-cards`);
+		const container = document.getElementById(`opponent${playerIndex}-cards`);
 		if (!container) return;
 
 		const parent = container.parentElement;
@@ -279,59 +269,30 @@ export class PokerUIRenderer {
 	}
 
 	public revealOpponentHands(players: Player[], winners: Player[]) {
-		// Reveal Player 2's hand
-		if (players[1] && !players[1].folded) {
-			const opponent1Container = document.getElementById('opponent1-cards');
-			if (opponent1Container) {
-				const isWinner = winners.some((w) => w.id === players[1].id);
-				const cards = players[1].hand.map((card) => ({ rank: card.value, suit: card.suit }));
-				const slots = opponent1Container.querySelectorAll('.card-slot');
-				slots.forEach((slot, index) => {
-					if (index < cards.length) {
-						setSlotState(slot, 'card', cards[index]);
-						this.setCardA11y(slot, players[1].hand[index]);
-						// Add winner highlight if needed
-						if (isWinner) {
-							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
-						}
-					} else {
-						setSlotState(slot, 'hidden');
-						this.clearCardA11y(slot);
-					}
-				});
-			}
-		}
-
-		// Reveal Player 3's hand
-		if (players[2] && !players[2].folded) {
-			const opponent2Container = document.getElementById('opponent2-cards');
-			if (opponent2Container) {
-				const isWinner = winners.some((w) => w.id === players[2].id);
-				const cards = players[2].hand.map((card) => ({ rank: card.value, suit: card.suit }));
-				const slots = opponent2Container.querySelectorAll('.card-slot');
-				slots.forEach((slot, index) => {
-					if (index < cards.length) {
-						setSlotState(slot, 'card', cards[index]);
-						this.setCardA11y(slot, players[2].hand[index]);
-						// Add winner highlight if needed
-						if (isWinner) {
-							slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
-						}
-					} else {
-						setSlotState(slot, 'hidden');
-						this.clearCardA11y(slot);
-					}
-				});
-			}
+		for (const player of players.slice(1)) {
+			if (player.folded) continue;
+			const container = document.getElementById(`opponent${player.id}-cards`);
+			const isWinner = winners.some((winner) => winner.id === player.id);
+			container?.querySelectorAll('.card-slot').forEach((slot, index) => {
+				const card = player.hand[index];
+				if (card) {
+					setSlotState(slot, 'card', { rank: card.value, suit: card.suit });
+					this.setCardA11y(slot, card);
+					if (isWinner) slot.classList.add('ring-2', 'ring-[var(--deco-brass-bright)]');
+				} else {
+					setSlotState(slot, 'hidden');
+					this.clearCardA11y(slot);
+				}
+			});
 		}
 	}
 
 	public hideOpponentHands() {
 		// Reset to face-down cards for opponents
-		const opponent1Container = document.getElementById('opponent1-cards');
-		const opponent2Container = document.getElementById('opponent2-cards');
-
-		[opponent1Container, opponent2Container].forEach((container) => {
+		Array.from({ length: NUM_PLAYERS - 1 }, (_, i) =>
+			document.getElementById(`opponent${i + 1}-cards`),
+		).forEach((container) => {
+			container?.parentElement?.querySelector('.ai-decision-badge')?.remove();
 			if (!container) return;
 			const slots = container.querySelectorAll('.card-slot');
 			slots.forEach((slot, index) => {
@@ -351,6 +312,93 @@ export class PokerUIRenderer {
 	/** Localized accessible name for a shown card; null for a face-down card. */
 	private setCardA11y(slot: Element, card: Card | null): void {
 		if (card) {
+			const detail = slot.querySelector<HTMLElement>('[data-card-detail]');
+			if (detail) {
+				detail.replaceChildren();
+				const face = slot.querySelector<HTMLElement>('[data-face-detail]');
+				face?.classList.toggle('hidden', card.rank >= 2 && card.rank <= 10);
+				const positions: Record<number, number[][]> = {
+					2: [
+						[50, 0],
+						[50, 100],
+					],
+					3: [
+						[50, 0],
+						[50, 50],
+						[50, 100],
+					],
+					4: [
+						[0, 0],
+						[100, 0],
+						[0, 100],
+						[100, 100],
+					],
+					5: [
+						[0, 0],
+						[100, 0],
+						[50, 50],
+						[0, 100],
+						[100, 100],
+					],
+					6: [
+						[0, 0],
+						[100, 0],
+						[0, 50],
+						[100, 50],
+						[0, 100],
+						[100, 100],
+					],
+					7: [
+						[0, 0],
+						[100, 0],
+						[50, 25],
+						[0, 50],
+						[100, 50],
+						[0, 100],
+						[100, 100],
+					],
+					8: [
+						[0, 0],
+						[100, 0],
+						[50, 25],
+						[0, 50],
+						[100, 50],
+						[50, 75],
+						[0, 100],
+						[100, 100],
+					],
+					9: [
+						[0, 0],
+						[100, 0],
+						[0, 33],
+						[100, 33],
+						[50, 50],
+						[0, 67],
+						[100, 67],
+						[0, 100],
+						[100, 100],
+					],
+					10: [
+						[0, 0],
+						[100, 0],
+						[50, 20],
+						[0, 33],
+						[100, 33],
+						[0, 67],
+						[100, 67],
+						[50, 80],
+						[0, 100],
+						[100, 100],
+					],
+				};
+				for (const [x, y] of positions[card.rank] ?? []) {
+					const pip = document.createElement('span');
+					pip.textContent = getSuitSymbol(card.suit);
+					pip.style.left = `${x}%`;
+					pip.style.top = `${y}%`;
+					detail.appendChild(pip);
+				}
+			}
 			slot.setAttribute('role', 'img');
 			slot.setAttribute('aria-label', getPokerCardName(this.locale, card));
 		} else {
@@ -370,6 +418,9 @@ export class PokerUIRenderer {
 
 		const key = evaluateHandKey(humanPlayer, communityCards);
 		strengthEl.textContent = key ? getPokerHandName(this.locale, key) : '--';
+		document.querySelectorAll<HTMLElement>('.poker-strength-bars span').forEach((bar, index) => {
+			bar.dataset.lit = String(key !== null && index < Math.ceil((HAND_RANKINGS[key] + 1) / 2));
+		});
 	}
 
 	public updateUI(pot: number, humanPlayer: Player) {
@@ -377,9 +428,42 @@ export class PokerUIRenderer {
 		const betEl = document.getElementById('current-bet');
 		const balanceEl = document.getElementById('player-balance');
 
-		if (potEl) potEl.textContent = formatChips(pot, this.locale);
+		if (potEl) potEl.textContent = formatWholeNumber(pot, this.locale);
 		if (betEl) betEl.textContent = formatChips(humanPlayer.currentBet, this.locale);
 		if (balanceEl) balanceEl.textContent = formatChips(humanPlayer.chips, this.locale);
+	}
+
+	public updateTableState(
+		players: Player[],
+		dealerIndex: number,
+		currentPlayerIndex: number,
+		active: boolean,
+	) {
+		for (const player of players) {
+			const seat = document.getElementById(`poker-seat-${player.id}`);
+			if (!seat) continue;
+			const isTurn =
+				active && player.id === currentPlayerIndex && !player.folded && !player.isAllIn;
+			seat.dataset.turn = String(isTurn);
+			seat.dataset.folded = String(player.folded);
+			const position = document.getElementById(`position-${player.id}`);
+			if (position)
+				position.textContent = ['BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'][
+					(player.id - dealerIndex + players.length) % players.length
+				];
+			const action = document.getElementById(`opponent${player.id}-action`);
+			if (action)
+				action.textContent = player.folded
+					? this.t('foldedBadge')
+					: player.isAllIn
+						? this.t('allIn')
+						: isTurn
+							? this.t('thinking')
+							: player.currentBet > 0
+								? formatWholeNumber(player.currentBet, this.locale)
+								: '—';
+		}
+		this.updateOpponentUI(players);
 	}
 
 	public updateGameStatus(message: string, gamePhase: GamePhase, pot: number) {
@@ -387,6 +471,24 @@ export class PokerUIRenderer {
 		if (!statusEl) return;
 
 		const phaseLabel = this.t(PHASE_KEYS[gamePhase]);
+		const phase = document.getElementById('poker-phase');
+		if (phase) phase.textContent = phaseLabel;
+		const phaseIndex = ['preflop', 'flop', 'turn', 'river', 'showdown'].indexOf(gamePhase);
+		document.querySelectorAll<HTMLElement>('[data-street]').forEach((street, index) => {
+			street.dataset.reached = String(index <= phaseIndex);
+			if (index === phaseIndex) street.setAttribute('aria-current', 'step');
+			else street.removeAttribute('aria-current');
+		});
+		const history = document.getElementById('poker-history');
+		if (history && history.firstElementChild?.textContent !== `[${phaseLabel}] ${message}`) {
+			const entry = document.createElement('li');
+			entry.textContent = `[${phaseLabel}] ${message}`;
+			history.insertBefore(entry, history.firstChild);
+			// ponytail: retain 100 session events; persist hands only if saved history is needed.
+			while (history.children.length > 100) history.lastElementChild?.remove();
+			const empty = document.getElementById('poker-history-empty');
+			if (empty) empty.hidden = true;
+		}
 		if (pot > 0) {
 			statusEl.textContent = this.t('statusWithPot', {
 				phase: phaseLabel,

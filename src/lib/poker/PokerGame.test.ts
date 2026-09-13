@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import type { Card, Player } from './types';
 import {
 	createPlayer,
@@ -23,6 +23,7 @@ function mockPokerGameDOM() {
 	interface MockElement {
 		addEventListener: (event: string, handler?: () => void) => void;
 		click: () => void;
+		close?: () => void;
 		dataset?: Record<string, string>;
 		innerHTML?: string;
 		textContent?: string;
@@ -40,6 +41,7 @@ function mockPokerGameDOM() {
 
 	(global as unknown as { document: unknown }).document = {
 		getElementById: (id: string) => {
+			if (id === 'poker-history' || id.startsWith('poker-seat-')) return null;
 			if (!elements[id]) {
 				const listeners: Record<string, (() => void) | undefined> = {};
 				elements[id] = {
@@ -49,6 +51,7 @@ function mockPokerGameDOM() {
 					click: () => {
 						listeners['click']?.();
 					},
+					close: () => {},
 					dataset: {},
 					innerHTML: '',
 					textContent: '',
@@ -818,7 +821,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		await game.dealNewHand();
 
 		expect(game.humanChipsBefore).toBe(75);
-		expect(game.players[0].chips).toBe(65);
+		expect(game.players[0].chips).toBe(75); // Human is no longer the big blind in six-max.
 	});
 
 	test('does not restore a busted human player to free starting chips', async () => {
@@ -1025,8 +1028,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			game.humanChipsBefore = 500;
 			game.pot = 150;
 			game.players[0] = { ...game.players[0], chips: 350, folded: false };
-			game.players[1] = { ...game.players[1], folded: true };
-			game.players[2] = { ...game.players[2], folded: true };
+			game.players = game.players.map((player) => ({ ...player, folded: player.id !== 0 }));
 
 			game.nextPhase();
 			await Promise.resolve();
@@ -1149,7 +1151,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			await Promise.resolve();
 			await Promise.resolve();
 
-			expect(game.currentPlayerIndex).toBe(1);
+			expect(game.currentPlayerIndex).toBe(4);
 			expect(game.players[1].hasActed).toBe(false);
 			expect(game.players[1].folded).toBe(false);
 
@@ -1157,7 +1159,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			await Promise.resolve();
 			await Promise.resolve();
 
-			expect(game.currentPlayerIndex).toBe(1);
+			expect(game.currentPlayerIndex).toBe(4);
 			expect(game.players[1].hasActed).toBe(false);
 			expect(game.players[1].folded).toBe(false);
 		} finally {
@@ -1381,7 +1383,8 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			getPlayerPosition: (player: Player) => 'early' | 'middle' | 'late';
 		};
 
-		// 3 players, dealer at index 0.
+		// Exercise the retained 3-handed position branch.
+		game.players = game.players.slice(0, 3);
 		game.dealerIndex = 0;
 		expect(game.getPlayerPosition(game.players[0])).toBe('late');
 		expect(game.getPlayerPosition(game.players[1])).toBe('early');
@@ -1978,5 +1981,111 @@ describe('Poker wallet settlement commands', () => {
 		} finally {
 			(globalThis as typeof globalThis & { window: Window }).window.dispatchEvent = origDispatch;
 		}
+	});
+});
+
+// The mockup's six seats must play real hands, and custom amounts must remain legal.
+describe('Poker six-max table controls', () => {
+	let restoreGlobals: () => void;
+	beforeEach(() => {
+		const originals = {
+			document: globalThis.document,
+			window: globalThis.window,
+			localStorage: globalThis.localStorage,
+			HTMLButtonElement: globalThis.HTMLButtonElement,
+			CustomEvent: globalThis.CustomEvent,
+		};
+		restoreGlobals = () => {
+			Object.assign(globalThis, originals);
+		};
+	});
+	afterEach(() => restoreGlobals());
+	function setupTable() {
+		const elements = mockPokerGameDOM();
+		const balance = document.getElementById('player-balance')!;
+		balance.dataset.balance = '1000';
+		balance.dataset.guestMode = 'true';
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			pot: number;
+			aiConfigs: Map<number, unknown>;
+			currentPlayerIndex: number;
+			bettingRound: string | null;
+			minimumBet: number;
+			isProcessingAction: boolean;
+			processAITurn: () => Promise<void>;
+			advanceTurn: () => void;
+			dealNewHand: () => Promise<void>;
+			updateActionButtons: () => void;
+		};
+		game.processAITurn = async () => {};
+		return { game, elements };
+	}
+
+	test('deals twelve distinct hole cards, funds all five AI seats, and conserves chips', async () => {
+		const { game, elements } = setupTable();
+		expect(elements['btn-fold'].disabled).toBe(true);
+		expect(elements['btn-deal'].hidden).toBe(false);
+		await game.dealNewHand();
+		expect(game.players).toHaveLength(6);
+		expect(game.aiConfigs.size).toBe(5);
+		const cards = game.players.flatMap((player) =>
+			player.hand.map((card) => `${card.suit}-${card.rank}`),
+		);
+		expect(cards).toHaveLength(12);
+		expect(new Set(cards).size).toBe(12);
+		expect(game.players.reduce((sum, player) => sum + player.chips, game.pot)).toBe(3500);
+		expect(game.currentPlayerIndex).toBe(4);
+		expect(elements['btn-deal'].hidden).toBe(true);
+		expect(elements['btn-fold'].disabled).toBe(true);
+	});
+
+	test('reserves the call amount, rejects malformed raises, and permits the affordable maximum', () => {
+		const { game, elements } = setupTable();
+		game.players[0] = { ...game.players[0], chips: 125, currentBet: 5 };
+		game.players[1].currentBet = 25;
+		game.bettingRound = 'preflop';
+		game.minimumBet = 30;
+		game.advanceTurn = () => {};
+		game.updateActionButtons();
+		const slider = document.getElementById('bet-slider') as HTMLInputElement;
+		expect(slider.min).toBe('30');
+		expect(slider.max).toBe('105');
+		for (const value of ['NaN', '0', '29', '106', '30.5']) {
+			slider.value = value;
+			elements['btn-raise'].click();
+			expect(game.players[0].chips).toBe(125);
+			expect(game.pot).toBe(0);
+		}
+		slider.value = '105';
+		elements['btn-raise'].click();
+		expect(game.players[0].chips).toBe(0);
+		expect(game.players[0].currentBet).toBe(130);
+		expect(game.players[0].isAllIn).toBe(true);
+	});
+
+	test('shows Call for a short stack and locks actions after the hand', () => {
+		const { game, elements } = setupTable();
+		game.players[0].chips = 7;
+		game.players[1].currentBet = 20;
+		game.bettingRound = 'preflop';
+		game.updateActionButtons();
+		expect(elements['btn-call'].hidden).toBe(false);
+		expect(elements['btn-call'].disabled).toBe(false);
+		expect(elements['call-amount'].textContent).toBe('7');
+		expect(elements['btn-check'].hidden).toBe(true);
+		expect(elements['btn-raise'].disabled).toBe(true);
+		game.bettingRound = null;
+		game.updateActionButtons();
+		expect(elements['btn-call'].disabled).toBe(true);
+		expect(elements['btn-deal'].hidden).toBe(false);
 	});
 });

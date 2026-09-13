@@ -20,7 +20,10 @@ test.describe('Poker turn flow smoke test', () => {
 			await expect(page.locator('#setting-ai-difficulty-2')).toBeVisible();
 			await expect(page.locator('#setting-ai-difficulty-1')).toHaveValue('medium');
 			await expect(page.locator('#setting-ai-difficulty-2')).toHaveValue('medium');
-			await page.getByRole('button', { name: /configure/i }).click();
+			await page
+				.getByRole('dialog', { name: 'Game Settings' })
+				.getByRole('button', { name: 'Close', exact: true })
+				.click();
 
 			const dealButton = page.getByRole('button', { name: 'DEAL NEW HAND' });
 			await dealButton.click();

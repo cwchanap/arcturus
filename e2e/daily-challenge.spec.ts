@@ -304,21 +304,29 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 		baseURL,
 	}) => {
 		test.setTimeout(120_000);
+		// The waitForResponse must be registered inside `navigate` so it captures
+		// the page's own initial `current` fetch; registering it after load and
+		// reloading can instead match the stale pre-reload in-flight response,
+		// whose body is torn down once the navigation commits.
+		let initialCurrent: ReturnType<Page['waitForResponse']> | undefined;
 		const { context, page } = await createIsolatedPage(browser, baseURL, {
 			emailPrefix: 'dc-ranked',
 			namePrefix: 'Daily Challenge E2E',
-			navigate: (candidate) =>
-				candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' }),
+			navigate: (candidate) => {
+				initialCurrent = candidate.waitForResponse((response) =>
+					isRunCurrentDaily(response.url(), response.request().method()),
+				);
+				return candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' });
+			},
 		});
 		const requestedUrls = recordVisitedUrls(page);
 
 		try {
 			// A fresh user has no daily run: the shared client's current load
 			// resolves the definitive 404 and the page shows the idle start form.
-			const initialCurrent = page.waitForResponse((response) =>
-				isRunCurrentDaily(response.url(), response.request().method()),
-			);
-			await page.reload({ waitUntil: 'domcontentloaded' });
+			if (!initialCurrent) {
+				throw new Error('createIsolatedPage did not invoke the navigate hook');
+			}
 			const initialCurrentResponse = await initialCurrent;
 			expect(initialCurrentResponse.status()).toBe(404);
 			expect(await initialCurrentResponse.json()).toEqual({ error: 'RUN_NOT_FOUND' });

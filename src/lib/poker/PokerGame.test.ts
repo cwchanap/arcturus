@@ -13,6 +13,8 @@ import {
 	foldPlayer,
 } from './index';
 import { PokerGame, buildPokerSettlementCommand } from './PokerGame';
+import { clearLLMCache } from './llmAIStrategy';
+import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
 import { DEFAULT_SETTINGS } from './types';
 import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
@@ -2104,6 +2106,7 @@ describe('Poker betting control regressions', () => {
 		minimumBet: number;
 		lastRaiseAmount: number;
 		aiRival: AIRivalAssistant;
+		settingsManager: GameSettingsManager;
 		processAITurn: () => Promise<void>;
 		advanceTurn: () => void;
 		nextPhase: () => void;
@@ -2356,5 +2359,43 @@ describe('Poker betting control regressions', () => {
 		expect(document.getElementById('ai-rival-status')?.textContent).toContain(`${actual} chips`);
 		button('raise').click();
 		expect(game.players[0].chips).toBe(1000 - 200 - actual);
+	});
+
+	test('checks instead of folding when an LLM raise outruns a short stack with no bet to call', async () => {
+		const originalFetch = globalThis.fetch;
+		localStorage.setItem(
+			'arcturus-ai-settings',
+			JSON.stringify({ provider: 'openai', model: 'gpt-4o', apiKey: 'sk-test' }),
+		);
+		game.settingsManager.updateSettings({ useLLMAI: true });
+		const fetchMock = mock(
+			async () =>
+				({
+					ok: true,
+					status: 200,
+					json: async () => ({
+						choices: [{ message: { content: '{"action":"raise","amount":50}' } }],
+					}),
+				}) as Response,
+		);
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch =
+			fetchMock as unknown as typeof fetch;
+		try {
+			clearLLMCache();
+			// The clamped LLM raise (minRaise 10) outruns the 5-chip stack; with
+			// nothing to call, checking is free — folding this hand was the bug.
+			game.players[1].chips = 5;
+			game.currentPlayerIndex = 1;
+			game.waitForTurnTransition = async () => true;
+			await runAITurn();
+			expect(fetchMock).toHaveBeenCalled();
+			expect(game.players[1].folded).toBe(false);
+			expect(game.players[1].hasActed).toBe(true);
+			expect(game.players[1].chips).toBe(5);
+			expect(document.getElementById('game-status')?.textContent).toContain('checks');
+		} finally {
+			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			localStorage.removeItem('arcturus-ai-settings');
+		}
 	});
 });

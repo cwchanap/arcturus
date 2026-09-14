@@ -1,6 +1,7 @@
 import type { GameContext } from './types';
 import type { AIDifficultyProfile } from './aiDifficulty';
 import { clamp } from './aiMath';
+import { MAX_BET } from './constants';
 
 export interface BetSizingInput {
 	context: GameContext;
@@ -18,8 +19,12 @@ export function chooseRaiseAmount(input: BetSizingInput): number | null {
 	const highestBet = Math.max(...context.players.map((player) => player.currentBet), 0);
 	const callAmount = Math.max(0, highestBet - context.player.currentBet);
 	const affordableRaise = context.player.chips - callAmount;
+	// The table caps a single raise at MAX_BET — the same ceiling the human's
+	// raise controls enforce — so the effective ceiling is the smaller of the
+	// two. When the cap binds below the minimum raise there is no legal raise.
+	const maxRaise = Math.min(affordableRaise, MAX_BET);
 
-	if (affordableRaise < context.minimumBet) {
+	if (maxRaise < context.minimumBet) {
 		return null;
 	}
 
@@ -34,8 +39,8 @@ export function chooseRaiseAmount(input: BetSizingInput): number | null {
 	const rawRaise = Math.max(context.minimumBet, Math.min(blindBased, potBased));
 	const rounded = roundToStep(rawRaise, context.minimumBet);
 
-	// Capping to affordableRaise may yield a value below the step size when
+	// Capping to maxRaise may yield a value below the step size when
 	// short-stacked — this is intentional (a player can bet up to their whole
 	// stack even if it isn't a clean multiple of the blind).
-	return Math.min(rounded, affordableRaise);
+	return Math.min(rounded, maxRaise);
 }

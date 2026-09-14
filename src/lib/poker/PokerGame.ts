@@ -390,6 +390,7 @@ export class PokerGame {
 			this.hideSettlementRecovery();
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.updateGameStatus(this.t('settlementReset'));
+			this.updateActionButtons();
 		});
 	}
 
@@ -702,6 +703,9 @@ export class PokerGame {
 				reasoning: `${decision.reasoning} (illegal check converted)`,
 			};
 		}
+		if (decision.action === 'raise' && !this.hasRaiseRights(currentPlayer)) {
+			decision = { ...decision, action: callAmount > 0 ? 'call' : 'check' };
+		}
 
 		switch (decision.action) {
 			case 'fold':
@@ -855,13 +859,12 @@ export class PokerGame {
 			!this.isProcessingAction &&
 			!human.folded &&
 			!human.isAllIn;
-		const call = getCallAmount(human, getHighestBet(this.players));
-		const minRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		const { call, canRaise } = this.getRaiseBounds();
 		const enabled = {
 			fold: canAct,
 			check: canAct && call === 0,
 			call: canAct && call > 0 && human.chips > 0,
-			raise: canAct && human.chips - call >= minRaise,
+			raise: canAct && canRaise,
 		};
 		for (const [action, allowed] of Object.entries(enabled)) {
 			const button = document.getElementById(`btn-${action}`) as HTMLButtonElement | null;
@@ -1032,6 +1035,10 @@ export class PokerGame {
 			return;
 		}
 
+		// Each street starts with a fresh minimum opening bet.
+		this.minimumBet = this.settingsManager.getSettings().bigBlind;
+		this.lastRaiseAmount = this.minimumBet;
+
 		// Start new betting round from dealer
 		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.dealerIndex);
 
@@ -1171,20 +1178,18 @@ export class PokerGame {
 			)
 				return;
 			const raiseAmount = Number((document.getElementById('bet-slider') as HTMLInputElement).value);
-			const call = getCallAmount(human, getHighestBet(this.players));
-			const minRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
-			if (
-				!Number.isInteger(raiseAmount) ||
-				raiseAmount < minRaise ||
-				raiseAmount > Math.min(MAX_BET, human.chips - call)
-			)
+			const { call, min, max, minimumRaise, canRaise } = this.getRaiseBounds();
+			if (!canRaise || !Number.isInteger(raiseAmount) || raiseAmount < min || raiseAmount > max)
 				return;
 			this.isProcessingAction = true;
 			this.updateActionButtons();
 			try {
 				this.players[0] = placeBet(human, call + raiseAmount);
-				this.lastRaiseAmount = raiseAmount;
-				this.minimumBet = raiseAmount;
+				// A short all-in does not reduce the next full raise's minimum.
+				if (raiseAmount >= minimumRaise) {
+					this.lastRaiseAmount = raiseAmount;
+					this.minimumBet = raiseAmount;
+				}
 				this.pot = calculatePot(this.players);
 				this.ui.updateUI(this.pot, this.players[0]);
 				this.updateGameStatus(
@@ -1198,7 +1203,10 @@ export class PokerGame {
 
 		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
 		const input = document.getElementById('bet-input') as HTMLInputElement | null;
-		slider?.addEventListener('input', () => this.setRaiseAmount(Number(slider.value)));
+		slider?.addEventListener('input', () => {
+			this.setRaiseAmount(Number(slider.value));
+			this.updateActionButtons();
+		});
 		input?.addEventListener('input', () => {
 			if (input.value !== '' && input.validity.valid) {
 				this.setRaiseAmount(Number(input.value));
@@ -1392,6 +1400,30 @@ export class PokerGame {
 		}
 	}
 
+	private hasRaiseRights(player: Player): boolean {
+		const minimumRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		// Only a full increase since this player's last action reopens their betting.
+		// Comparing commitments also handles cumulative short all-ins per player.
+		return !player.hasActed || getCallAmount(player, getHighestBet(this.players)) >= minimumRaise;
+	}
+
+	private getRaiseBounds() {
+		const human = this.players[0];
+		const call = getCallAmount(human, getHighestBet(this.players));
+		const minimumRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		const available = Math.max(0, human.chips - call);
+		// Below a full raise, only an all-in for the entire remaining stack is legal.
+		const min = Math.min(minimumRaise, available);
+		const max = Math.min(MAX_BET, available);
+		return {
+			call,
+			minimumRaise,
+			min,
+			max,
+			canRaise: max > 0 && max >= min && this.hasRaiseRights(human),
+		};
+	}
+
 	private setRaiseAmount(amount: number) {
 		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
 		if (!slider || !Number.isFinite(amount)) return;
@@ -1409,10 +1441,8 @@ export class PokerGame {
 	private updateBetControls(reset = false) {
 		const settings = this.settingsManager.getSettings();
 		const human = this.players[0];
-		const call = getCallAmount(human, getHighestBet(this.players));
-		const min = Math.max(settings.bigBlind, this.minimumBet);
-		const max = Math.max(0, Math.min(MAX_BET, human.chips - call));
-		const disabled = this.bettingRound === null || human.folded || human.isAllIn || max < min;
+		const { min, max, canRaise } = this.getRaiseBounds();
+		const disabled = this.bettingRound === null || human.folded || human.isAllIn || !canRaise;
 		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
 		const input = document.getElementById('bet-input') as HTMLInputElement | null;
 		for (const control of [slider, input]) {

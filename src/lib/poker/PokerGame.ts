@@ -28,7 +28,7 @@ import {
 	isAIDifficulty,
 	makeAIDecision,
 } from './index';
-import { NUM_PLAYERS, MAX_BET } from './constants';
+import { NUM_PLAYERS, MAX_BET, SMALL_BLIND } from './constants';
 import { DEFAULT_SETTINGS } from './types';
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
@@ -97,6 +97,10 @@ export class PokerGame {
 	private bigBlindIndex = 2;
 	private minimumBet = BIG_BLIND;
 	private lastRaiseAmount = BIG_BLIND;
+	// Blinds posted for the current hand. Settings saves apply to the next
+	// deal, so raise legality and the toolbar read this stable baseline.
+	private handSmallBlind = SMALL_BLIND;
+	private handBigBlind = BIG_BLIND;
 	private isProcessingAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
 	private aiRandom?: () => number;
@@ -440,6 +444,8 @@ export class PokerGame {
 		// Update blinds from settings
 		this.minimumBet = settings.bigBlind;
 		this.lastRaiseAmount = settings.bigBlind;
+		this.handSmallBlind = settings.smallBlind;
+		this.handBigBlind = settings.bigBlind;
 	}
 
 	/**
@@ -582,6 +588,8 @@ export class PokerGame {
 		this.bettingRound = 'preflop';
 		this.minimumBet = settings.bigBlind;
 		this.lastRaiseAmount = settings.bigBlind;
+		this.handSmallBlind = settings.smallBlind;
+		this.handBigBlind = settings.bigBlind;
 
 		// Start with player after big blind
 		this.currentPlayerIndex = (this.bigBlindIndex + 1) % this.players.length;
@@ -1036,7 +1044,7 @@ export class PokerGame {
 		}
 
 		// Each street starts with a fresh minimum opening bet.
-		this.minimumBet = this.settingsManager.getSettings().bigBlind;
+		this.minimumBet = this.handBigBlind;
 		this.lastRaiseAmount = this.minimumBet;
 
 		// Start new betting round from dealer
@@ -1401,7 +1409,7 @@ export class PokerGame {
 	}
 
 	private hasRaiseRights(player: Player): boolean {
-		const minimumRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		const minimumRaise = Math.max(this.handBigBlind, this.minimumBet);
 		// Only a full increase since this player's last action reopens their betting.
 		// Comparing commitments also handles cumulative short all-ins per player.
 		return !player.hasActed || getCallAmount(player, getHighestBet(this.players)) >= minimumRaise;
@@ -1410,7 +1418,7 @@ export class PokerGame {
 	private getRaiseBounds() {
 		const human = this.players[0];
 		const call = getCallAmount(human, getHighestBet(this.players));
-		const minimumRaise = Math.max(this.settingsManager.getSettings().bigBlind, this.minimumBet);
+		const minimumRaise = Math.max(this.handBigBlind, this.minimumBet);
 		const available = Math.max(0, human.chips - call);
 		// Below a full raise, only an all-in for the entire remaining stack is legal.
 		const min = Math.min(minimumRaise, available);
@@ -1439,9 +1447,8 @@ export class PokerGame {
 	}
 
 	private updateBetControls(reset = false) {
-		const settings = this.settingsManager.getSettings();
 		const human = this.players[0];
-		const { min, max, canRaise } = this.getRaiseBounds();
+		const { call, min, max, canRaise } = this.getRaiseBounds();
 		const disabled = this.bettingRound === null || human.folded || human.isAllIn || !canRaise;
 		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;
 		const input = document.getElementById('bet-input') as HTMLInputElement | null;
@@ -1452,7 +1459,15 @@ export class PokerGame {
 			control.step = '1';
 			control.disabled = disabled;
 		}
-		const presets = [Math.round(this.pot / 2), Math.round((this.pot * 2) / 3), this.pot, max];
+		// A raise amount is added on top of the call, so pot-sized presets are
+		// measured against the pot after calling.
+		const potAfterCall = this.pot + call;
+		const presets = [
+			Math.round(potAfterCall / 2),
+			Math.round((potAfterCall * 2) / 3),
+			potAfterCall,
+			max,
+		];
 		document.querySelectorAll<HTMLButtonElement>('.quick-bet-chip').forEach((button, index) => {
 			const amount = Math.min(max, Math.max(min, presets[index]));
 			button.dataset.amount = String(amount);
@@ -1464,7 +1479,7 @@ export class PokerGame {
 		if (maxButton) maxButton.disabled = disabled;
 		const blinds = document.getElementById('table-blinds');
 		if (blinds)
-			blinds.textContent = `${formatWholeNumber(settings.smallBlind, this.locale)} / ${formatWholeNumber(settings.bigBlind, this.locale)}`;
-		this.setRaiseAmount(reset ? settings.bigBlind * 2 : Number(slider?.value ?? min));
+			blinds.textContent = `${formatWholeNumber(this.handSmallBlind, this.locale)} / ${formatWholeNumber(this.handBigBlind, this.locale)}`;
+		this.setRaiseAmount(reset ? this.handBigBlind * 2 : Number(slider?.value ?? min));
 	}
 }

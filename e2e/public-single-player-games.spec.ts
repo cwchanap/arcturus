@@ -37,7 +37,7 @@ test.describe('public single-player games', () => {
 			path: '/games/poker',
 			rootSelector: '#poker-root',
 			balanceSelector: '#player-balance',
-			heading: 'Hold’em',
+			heading: "Texas Hold'em Poker",
 			metadataTarget: 'balance',
 			accountOnlyButtonSelector: '#btn-ai-move',
 			aiStatusSelector: '#ai-rival-status',

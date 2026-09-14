@@ -35,9 +35,9 @@ const clientUserId = gameSession.clientUserId;
 					><span aria-hidden="true">‹</span><span>{t('backToGames')}</span></a
 				>
 				<div class="poker-title">
-					<span class="poker-emblem"><DecoIcon name="star" size={20} /></span><h1>Hold’em</h1><span
-						class="poker-format">{NUM_PLAYERS}-Max</span
-					>
+					<span class="poker-emblem"><DecoIcon name="star" size={20} /></span><h1>
+						{getGameName(locale, 'poker')}
+					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
 				</div>
 				<div class="poker-tools">
 					<div class="poker-blinds">

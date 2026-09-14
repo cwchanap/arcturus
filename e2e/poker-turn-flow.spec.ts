@@ -13,6 +13,8 @@ const createIsolatedPokerPage = (browser: Browser, baseURL?: string) =>
 
 test.describe('Poker turn flow smoke test', () => {
 	test('deal, human action, AI acts, next phase continues', async ({ browser, baseURL }) => {
+		// A 6-max hand runs several AI orbits per street; allow time for a full hand.
+		test.setTimeout(60000);
 		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
 		try {
 			await page.getByRole('button', { name: /configure/i }).click();
@@ -20,9 +22,12 @@ test.describe('Poker turn flow smoke test', () => {
 			await expect(page.locator('#setting-ai-difficulty-2')).toBeVisible();
 			await expect(page.locator('#setting-ai-difficulty-1')).toHaveValue('medium');
 			await expect(page.locator('#setting-ai-difficulty-2')).toHaveValue('medium');
+			// Fast AI (300-600ms/action) keeps a full 6-max hand inside the test
+			// budget; saving applies the speed and closes the drawer.
+			await page.locator('#setting-ai-speed').selectOption('fast');
 			await page
 				.getByRole('dialog', { name: 'Game Settings' })
-				.getByRole('button', { name: 'Close', exact: true })
+				.getByRole('button', { name: 'Save Settings' })
 				.click();
 
 			const dealButton = page.getByRole('button', { name: 'DEAL NEW HAND' });
@@ -37,8 +42,11 @@ test.describe('Poker turn flow smoke test', () => {
 			);
 
 			const status = page.locator('#game-status');
-			const checkButton = page.getByRole('button', { name: /check/i });
-			const callButton = page.getByRole('button', { name: /call/i });
+			// Action buttons hide/show per betting state, so getByRole (which skips
+			// hidden elements) can leave these locators unresolved — probe by id
+			// and let `disabled` report legality.
+			const checkButton = page.locator('#btn-check');
+			const callButton = page.locator('#btn-call');
 			const nextPhaseOrTerminal =
 				/Flop revealed!|Turn card revealed!|River card revealed!|Showdown|wins .* chips|Tie!.*split the .* chips pot/i;
 			const playerTurnOrProgress =

@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { Window as DOMWindow } from 'happy-dom';
 import type { Card, Player } from './types';
 import {
 	createPlayer,
@@ -12,6 +13,7 @@ import {
 	foldPlayer,
 } from './index';
 import { PokerGame, buildPokerSettlementCommand } from './PokerGame';
+import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
 import { DEFAULT_SETTINGS } from './types';
 import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
 import type { SettlementGate, SettleRoundResult } from '../wallet';
@@ -2087,5 +2089,272 @@ describe('Poker six-max table controls', () => {
 		game.updateActionButtons();
 		expect(elements['btn-call'].disabled).toBe(true);
 		expect(elements['btn-deal'].hidden).toBe(false);
+	});
+});
+
+describe('Poker betting control regressions', () => {
+	type ControlGame = {
+		players: Player[];
+		pot: number;
+		gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+		bettingRound: string | null;
+		currentPlayerIndex: number;
+		communityCards: Card[];
+		dealerIndex: number;
+		minimumBet: number;
+		lastRaiseAmount: number;
+		aiRival: AIRivalAssistant;
+		processAITurn: () => Promise<void>;
+		advanceTurn: () => void;
+		nextPhase: () => void;
+		dealNewHand: () => Promise<void>;
+		updateActionButtons: () => void;
+		updateGameStatus: (message: string) => void;
+		showSettlementRecovery: (message: string) => void;
+		cancelPendingAutoDeal: () => void;
+		cancelPendingTurnTransitions: () => void;
+		waitForTurnTransition: () => Promise<boolean>;
+	};
+	let game: ControlGame;
+	let runAITurn: () => Promise<void>;
+	let advanceTurn: () => void;
+	let restoreGlobals: () => void;
+	let blocked: boolean;
+	const button = (id: string) => document.getElementById(`btn-${id}`) as HTMLButtonElement;
+	const input = (id: string) => document.getElementById(id) as HTMLInputElement;
+
+	beforeEach(() => {
+		const dom = new DOMWindow({ url: 'http://localhost:2000/games/poker' });
+		const originals = {
+			document: globalThis.document,
+			window: globalThis.window,
+			localStorage: globalThis.localStorage,
+			HTMLButtonElement: globalThis.HTMLButtonElement,
+			HTMLInputElement: globalThis.HTMLInputElement,
+			Event: globalThis.Event,
+		};
+		restoreGlobals = () => Object.assign(globalThis, originals);
+		Object.assign(globalThis, {
+			document: dom.document,
+			window: dom,
+			localStorage: dom.localStorage,
+			HTMLButtonElement: dom.HTMLButtonElement,
+			HTMLInputElement: dom.HTMLInputElement,
+			Event: dom.Event,
+		});
+		document.body.innerHTML = `
+			<div id="poker-root"><span id="player-balance" data-balance="1000"></span>
+				<p id="game-status"></p><p id="ai-rival-status"></p>
+				${['fold', 'check', 'call', 'raise', 'deal', 'max-bet'].map((id) => `<button id="btn-${id}"></button>`).join('')}
+				<input id="bet-slider" type="range" min="10" max="1000" value="20">
+				<input id="bet-input" type="number"><span id="bet-amount"></span>
+				${Array.from({ length: 4 }, () => '<button class="quick-bet-chip"><span data-preset-amount></span></button>').join('')}
+			</div>`;
+		blocked = false;
+		game = new PokerGame(() => 0.99, {
+			pending: null,
+			get isBlocked() {
+				return blocked;
+			},
+			settle: async () => {
+				throw new Error('Unexpected settlement');
+			},
+			retry: async () => null,
+			reset: () => {
+				blocked = false;
+			},
+		}) as unknown as ControlGame;
+		runAITurn = game.processAITurn.bind(game);
+		advanceTurn = game.advanceTurn.bind(game);
+		game.processAITurn = async () => {};
+		game.advanceTurn = () => {};
+		game.bettingRound = 'preflop';
+	});
+	afterEach(() => {
+		game.cancelPendingAutoDeal();
+		game.cancelPendingTurnTransitions();
+		restoreGlobals();
+	});
+
+	test('reset restores Deal after a blocked auto-deal has stopped', async () => {
+		game.bettingRound = null;
+		game.gamePhase = 'showdown';
+		blocked = true;
+		game.updateActionButtons();
+		await game.dealNewHand();
+		expect(button('deal').disabled).toBe(true);
+		button('reset-settlement').click();
+		expect(blocked).toBe(false);
+		expect(button('deal').disabled).toBe(false);
+		button('deal').click();
+		expect(game).toMatchObject({ bettingRound: 'preflop' });
+		expect(game.players.every((player) => player.hand.length === 2)).toBe(true);
+	});
+
+	test.each(['preflop', 'flop', 'turn'] as const)(
+		'resets the opening minimum after %s',
+		(phase) => {
+			game.gamePhase = phase;
+			game.dealerIndex = 5;
+			game.minimumBet = game.lastRaiseAmount = 200;
+			game.players = game.players.map((player) => ({ ...player, currentBet: 200, hasActed: true }));
+			game.nextPhase();
+			expect(game.minimumBet).toBe(10);
+			expect(game.lastRaiseAmount).toBe(10);
+			expect(input('bet-slider').min).toBe('10');
+			input('bet-slider').value = '10';
+			button('raise').click();
+			expect(game.players[0].currentBet).toBe(10);
+			expect(game.players[0].chips).toBe(990);
+		},
+	);
+
+	test('permits a short all-in raise without lowering the next full raise', () => {
+		game.minimumBet = game.lastRaiseAmount = 50;
+		game.players[0].chips = 75;
+		game.players[1].currentBet = 50;
+		game.updateActionButtons();
+		expect(button('raise').disabled).toBe(false);
+		expect(input('bet-slider').min).toBe('25');
+		expect(input('bet-slider').max).toBe('25');
+		button('raise').click();
+		expect(game.players[0].chips).toBe(0);
+		expect(game.players[0].currentBet).toBe(75);
+		expect(game.players[0].isAllIn).toBe(true);
+		expect(game.minimumBet).toBe(50);
+		expect(game.lastRaiseAmount).toBe(50);
+	});
+
+	test.each([75, 100])('enforces AI raise rights after a human all-in to %i', async (shove) => {
+		game.gamePhase = game.bettingRound = 'flop';
+		game.dealerIndex = game.currentPlayerIndex = 0;
+		game.minimumBet = game.lastRaiseAmount = 50;
+		game.communityCards = [
+			card('K', 'hearts', 13),
+			card('K', 'diamonds', 13),
+			card('2', 'hearts', 2),
+		];
+		game.players = game.players.map((player) => ({
+			...player,
+			folded: player.id > 2,
+			currentBet: player.id === 1 || player.id === 2 ? 50 : 0,
+			totalBet: player.id === 1 || player.id === 2 ? 50 : 0,
+			hasActed: player.id === 1 || player.id === 2,
+		}));
+		game.players[0].chips = shove;
+		game.players[0].hand = [card('A', 'hearts', 14), card('A', 'diamonds', 14)];
+		game.players[1].hand = [card('K', 'spades', 13), card('2', 'clubs', 2)];
+		game.players[2].hand = [card('Q', 'spades', 12), card('Q', 'diamonds', 12)];
+		game.pot = 100;
+		game.waitForTurnTransition = async () => true;
+		let aiTurn: Promise<void> | undefined;
+		game.processAITurn = () => (aiTurn = runAITurn());
+		let advances = 0;
+		// Run the real human-to-AI transition and AI decision; stop after its response.
+		game.advanceTurn = () => {
+			if (advances++ === 0) advanceTurn();
+		};
+		game.updateActionButtons();
+		input('bet-slider').value = String(shove - 50);
+		button('raise').click();
+		expect(aiTurn).toBeDefined();
+		await aiTurn;
+		expect(game.players[0].isAllIn).toBe(true);
+		if (shove === 75) {
+			expect(game.players[1].currentBet).toBe(75);
+			expect(game.minimumBet).toBe(50);
+			expect(document.getElementById('game-status')?.textContent).toContain('calls 25 chips');
+		} else {
+			// A full raise must still allow the AI's value re-raise with a full house.
+			expect(game.players[1].currentBet).toBeGreaterThan(100);
+		}
+	});
+
+	test.each([
+		{ name: 'unacted player', acted: false, paid: 50, firstAllIn: 75, highest: 75, canRaise: true },
+		{
+			name: 'short raise after acting',
+			acted: true,
+			paid: 50,
+			firstAllIn: 75,
+			highest: 75,
+			canRaise: false,
+		},
+		{ name: 'full raise', acted: true, paid: 50, firstAllIn: 100, highest: 100, canRaise: true },
+		{
+			name: 'cumulative short raises',
+			acted: true,
+			paid: 50,
+			firstAllIn: 75,
+			highest: 100,
+			canRaise: true,
+		},
+		{
+			name: 'caller of the first short raise',
+			acted: true,
+			paid: 75,
+			firstAllIn: 75,
+			highest: 100,
+			canRaise: false,
+		},
+	])(
+		'keeps human raise rights correct for $name',
+		({ acted, paid, firstAllIn, highest, canRaise }) => {
+			game.minimumBet = 50;
+			game.players[0].hasActed = acted;
+			game.players[0].currentBet = paid;
+			game.players[1].currentBet = firstAllIn;
+			game.players[2].currentBet = highest;
+			game.updateActionButtons();
+			expect(button('raise').disabled).toBe(!canRaise);
+			expect(input('bet-slider').disabled).toBe(!canRaise);
+			expect(button('call').disabled).toBe(false);
+			expect(button('fold').disabled).toBe(false);
+			if (!canRaise) {
+				button('raise').disabled = false;
+				button('raise').click();
+				expect(game.players[0].currentBet).toBe(paid);
+				button('call').click();
+				expect(game.players[0].currentBet).toBe(highest);
+			}
+		},
+	);
+
+	test('disables raising when the minimum exceeds the cap and an all-in is over the cap', () => {
+		game.minimumBet = 1200;
+		game.players[1].currentBet = 1200;
+		for (const stack of [2300, 5000]) {
+			game.players[0].chips = stack;
+			game.updateActionButtons();
+			expect(button('raise').disabled).toBe(true);
+			expect(input('bet-slider').disabled).toBe(true);
+			expect(button('max-bet').disabled).toBe(true);
+			// The handler must also reject an attempted raise independently of disabled UI.
+			button('raise').disabled = false;
+			button('raise').click();
+			expect(game.players[0].chips).toBe(stack);
+		}
+	});
+
+	test.each([
+		[20, 200],
+		[300, 300],
+		[1000, 800],
+	])('synchronizes AI raise %i to the legal amount %i', (suggested, actual) => {
+		game.minimumBet = 200;
+		game.players[1].currentBet = 200;
+		game.updateActionButtons();
+		const assistant = game.aiRival as unknown as {
+			applyAiMove: (move: AiMove, onStatus: (message: string) => void) => void;
+		};
+		assistant.applyAiMove({ move: 'raise', amount: suggested, raw: '' }, (message) =>
+			game.updateGameStatus(message),
+		);
+		expect(input('bet-slider').value).toBe(String(actual));
+		expect(input('bet-input').value).toBe(String(actual));
+		expect(document.getElementById('bet-amount')?.textContent).toBe(String(actual));
+		expect(document.getElementById('ai-rival-status')?.textContent).toContain(`${actual} chips`);
+		button('raise').click();
+		expect(game.players[0].chips).toBe(1000 - 200 - actual);
 	});
 });

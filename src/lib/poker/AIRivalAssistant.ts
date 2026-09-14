@@ -254,19 +254,21 @@ Keep the JSON as the only output.`;
 		} else if (move.move === 'call') {
 			description = this.t('aiMoveCall');
 		} else if (move.move === 'raise') {
+			description = this.t('aiMoveRaise');
 			const raise = this.clampRaise(move.amount);
-			if (raise !== null) {
-				const slider = this.getElementById('bet-slider');
-				const betLabel = this.getElementById('bet-amount');
-				if (typeof HTMLInputElement !== 'undefined' && slider instanceof HTMLInputElement) {
-					slider.value = String(raise);
-				}
-				if (betLabel) {
-					betLabel.textContent = formatChips(raise, this.locale);
-				}
-				description = this.t('aiMoveRaiseAmount', { amount: formatChips(raise, this.locale) });
-			} else {
-				description = this.t('aiMoveRaise');
+			const slider = this.getElementById('bet-slider');
+			if (
+				raise !== null &&
+				typeof HTMLInputElement !== 'undefined' &&
+				slider instanceof HTMLInputElement &&
+				!slider.disabled
+			) {
+				slider.value = String(raise);
+				// Use the game's input path to synchronize every control after native clamping.
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+				description = this.t('aiMoveRaiseAmount', {
+					amount: formatChips(Number(slider.value), this.locale),
+				});
 			}
 		}
 

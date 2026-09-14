@@ -711,8 +711,15 @@ export class PokerGame {
 				reasoning: `${decision.reasoning} (illegal check converted)`,
 			};
 		}
-		if (decision.action === 'raise' && !this.hasRaiseRights(currentPlayer)) {
-			decision = { ...decision, action: callAmount > 0 ? 'call' : 'check' };
+		if (decision.action === 'raise') {
+			// A raise is also illegal when the stack cannot cover it (mirrors the
+			// affordability check in the raise case below). Falling back to call
+			// keeps the bet matched; with no bet pending a free check is always
+			// legal, so the AI must never fold a hand it could see for free.
+			const raiseToAdd = callAmount + (decision.amount || this.minimumBet);
+			if (!this.hasRaiseRights(currentPlayer) || raiseToAdd > currentPlayer.chips) {
+				decision = { ...decision, action: callAmount > 0 ? 'call' : 'check' };
+			}
 		}
 
 		switch (decision.action) {

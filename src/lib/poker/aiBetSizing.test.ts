@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Card, GameContext, Player } from './types';
 import { getDifficultyProfile } from './aiDifficulty';
 import { chooseRaiseAmount } from './aiBetSizing';
+import { MAX_BET } from './constants';
 
 function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
@@ -80,6 +81,32 @@ describe('chooseRaiseAmount', () => {
 		});
 
 		expect(hardAmount).toBeGreaterThanOrEqual(easyAmount!);
+	});
+
+	test('caps the raise increment at the table maximum bet', () => {
+		const ai = player(1, 5000, 0, [card('A', 'spades', 14), card('A', 'hearts', 14)]);
+		const gameContext = { ...context(ai, [ai, player(2, 5000, 0)], 3000), minimumBet: 400 };
+		const amount = chooseRaiseAmount({
+			context: gameContext,
+			profile: getDifficultyProfile('hard'),
+			equity: 1,
+			texturePressure: 0,
+		});
+
+		expect(amount).toBe(MAX_BET);
+	});
+
+	test('returns null when the minimum raise exceeds the table cap', () => {
+		const ai = player(1, 5000, 0, [card('Q', 'spades', 12), card('Q', 'hearts', 12)]);
+		const gameContext = { ...context(ai, [ai, player(2, 5000, 0)], 3000), minimumBet: 1200 };
+		const amount = chooseRaiseAmount({
+			context: gameContext,
+			profile: getDifficultyProfile('hard'),
+			equity: 1,
+			texturePressure: 0,
+		});
+
+		expect(amount).toBeNull();
 	});
 
 	test('returns null when no minimum raise is affordable after calling', () => {

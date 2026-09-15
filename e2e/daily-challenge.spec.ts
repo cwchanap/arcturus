@@ -309,17 +309,21 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 		// reloading can instead match the stale pre-reload in-flight response,
 		// whose body is torn down once the navigation commits.
 		let initialCurrent: ReturnType<Page['waitForResponse']> | undefined;
+		// The recorder must also attach inside `navigate` — otherwise it misses
+		// the initial authenticated page load, which the legacy-endpoint
+		// assertion is meant to cover (no reload re-captures those requests).
+		let requestedUrls: string[] = [];
 		const { context, page } = await createIsolatedPage(browser, baseURL, {
 			emailPrefix: 'dc-ranked',
 			namePrefix: 'Daily Challenge E2E',
 			navigate: (candidate) => {
+				requestedUrls = recordVisitedUrls(candidate);
 				initialCurrent = candidate.waitForResponse((response) =>
 					isRunCurrentDaily(response.url(), response.request().method()),
 				);
 				return candidate.goto(DAILY_CHALLENGE_PAGE, { waitUntil: 'domcontentloaded' });
 			},
 		});
-		const requestedUrls = recordVisitedUrls(page);
 
 		try {
 			// A fresh user has no daily run: the shared client's current load

@@ -163,14 +163,26 @@ async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled'> {
 	return state;
 }
 
-/** Plays one ranked round through the new command endpoint: stand when legal. */
-async function playRankedRound(page: Page, round: number): Promise<void> {
-	if (!(await isStandEnabled(page))) {
+/**
+ * Plays one ranked round through the new command endpoint: stand when legal.
+ * `alreadyStarted` marks a round whose start-round command the caller already
+ * sent — the deal may have settled it immediately (e.g. a natural), leaving
+ * Stand disabled and Start Round enabled, which looks identical to "not yet
+ * started". Re-clicking there would burn the next round and desync the round
+ * counter for the rest of the attempt.
+ */
+async function playRankedRound(
+	page: Page,
+	round: number,
+	{ alreadyStarted = false }: { alreadyStarted?: boolean } = {},
+): Promise<void> {
+	if (!alreadyStarted && !(await isStandEnabled(page))) {
 		await page.getByTestId('daily-challenge-start-round').click();
 	}
 	const state = await waitForTurnOrSettled(page);
-	if (state !== 'turn') return;
-	await page.getByTestId('daily-challenge-action-stand').click();
+	if (state === 'turn') {
+		await page.getByTestId('daily-challenge-action-stand').click();
+	}
 	await expect
 		.poll(async () => {
 			if (round === ROUND_COUNT) return (await isReceiptVisible(page)) ? 'done' : 'pending';
@@ -408,12 +420,15 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 					formatCurrency(RANKED_WAGER),
 				);
 			}
-			await playRankedRound(page, 1);
+			await playRankedRound(page, 1, { alreadyStarted: true });
 
-			// Proof 5: reload mid-run resumes the same run from the server.
+			// Proof 5: reload mid-run resumes the same run from the server. A
+			// round that settles on the deal (committed wager back to '—',
+			// Start Round re-enabled) still consumed a round, so keep trying
+			// until one reaches a player turn — bounded by the rounds left.
 			let nextRound = 2;
 			let resumedOnce = false;
-			for (let attempt = 0; attempt < 3 && !resumedOnce && nextRound <= ROUND_COUNT; attempt += 1) {
+			while (!resumedOnce && nextRound <= ROUND_COUNT) {
 				await page.getByTestId('daily-challenge-start-round').click();
 				const state = await waitForTurnOrSettled(page);
 				if (state !== 'turn') {

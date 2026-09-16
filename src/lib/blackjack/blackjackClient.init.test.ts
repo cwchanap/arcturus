@@ -286,6 +286,11 @@ function buildBlackjackDOM(options: {
 	btnDeal.id = 'btn-deal';
 	btnDeal.textContent = 'DEAL CARDS';
 	bettingControls.appendChild(btnDeal);
+	for (const id of ['btn-rebet', 'btn-max-bet']) {
+		const button = document.createElement('button');
+		button.id = id;
+		bettingControls.appendChild(button);
+	}
 
 	root.appendChild(bettingControls);
 
@@ -680,11 +685,41 @@ describe('Blackjack client initialization and settlement flow', () => {
 		);
 		hundredBtn?.click();
 		expect(betAmountInput.value).toBe('100');
+		expect(hundredBtn?.getAttribute('aria-pressed')).toBe('true');
+		betAmountInput.value = '75';
+		betAmountInput.dispatchEvent(new happyWindow.Event('input'));
+		expect(hundredBtn?.getAttribute('aria-pressed')).toBe('false');
 
 		root.remove();
 	});
 
-	test('settings panel toggle shows and hides the panel', async () => {
+	test('rebet remembers the dealt wager and max honors both balance and configured limits', async () => {
+		installFetch();
+		const root = buildBlackjackDOM({
+			guestMode: true,
+			userId: 'cabinet-bets',
+			initialBalance: 300,
+		});
+		initBlackjackClient();
+		const input = document.getElementById('bet-amount') as HTMLInputElement;
+		const max = document.getElementById('btn-max-bet') as HTMLButtonElement;
+		max.click();
+		expect(input.value).toBe('300');
+		(document.getElementById('setting-max-bet') as HTMLInputElement).value = '200';
+		(document.getElementById('btn-save-settings') as HTMLButtonElement).click();
+		max.click();
+		expect(input.value).toBe('200');
+		input.value = '25';
+		clickDeal();
+		input.value = '100';
+		(document.getElementById('btn-rebet') as HTMLButtonElement).click();
+		expect(input.value).toBe('25');
+		clickStand();
+		await flush(10);
+		root.remove();
+	});
+
+	test('settings panel toggle focuses the first field when opened and hides the panel when closed', async () => {
 		installFetch();
 		const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-3', initialBalance: 1000 });
 		initBlackjackClient();
@@ -695,6 +730,7 @@ describe('Blackjack client initialization and settlement flow', () => {
 
 		(document.getElementById('btn-toggle-settings') as HTMLButtonElement).click();
 		expect(settingsPanel.classList.contains('hidden')).toBe(false);
+		expect(document.activeElement).toBe(document.getElementById('setting-starting-chips'));
 
 		(document.getElementById('btn-toggle-settings') as HTMLButtonElement).click();
 		expect(settingsPanel.classList.contains('hidden')).toBe(true);

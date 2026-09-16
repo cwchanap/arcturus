@@ -186,6 +186,16 @@ export function initBlackjackClient(): void {
 	const bettingControls = document.getElementById('betting-controls') as HTMLElement;
 	const gameControls = document.getElementById('game-controls') as HTMLElement;
 	const betAmountInput = document.getElementById('bet-amount') as HTMLInputElement;
+	let lastBet = betAmountInput.value;
+	const quickBetButtons = document.querySelectorAll<HTMLButtonElement>('.bet-quick');
+	function syncBetSelection() {
+		quickBetButtons.forEach((button) => {
+			button.setAttribute(
+				'aria-pressed',
+				String(Number(button.dataset.amount) === Number(betAmountInput.value)),
+			);
+		});
+	}
 	const btnDeal = document.getElementById('btn-deal') as HTMLButtonElement;
 	const btnHit = document.getElementById('btn-hit') as HTMLButtonElement;
 	const btnStand = document.getElementById('btn-stand') as HTMLButtonElement;
@@ -299,6 +309,7 @@ export function initBlackjackClient(): void {
 		if (Number.isNaN(currentBet) || currentBet < settings.minBet || currentBet > settings.maxBet) {
 			betAmountInput.value = settings.minBet.toString();
 		}
+		syncBetSelection();
 	}
 
 	function renderSettingsForm() {
@@ -313,6 +324,14 @@ export function initBlackjackClient(): void {
 	if (btnToggleSettings && settingsPanel) {
 		btnToggleSettings.addEventListener('click', () => {
 			settingsPanel.classList.toggle('hidden');
+			btnToggleSettings.setAttribute(
+				'aria-expanded',
+				String(!settingsPanel.classList.contains('hidden')),
+			);
+			if (!settingsPanel.classList.contains('hidden')) {
+				settingsPanel.scrollIntoView?.({ block: 'nearest' });
+				startingChipsInput?.focus();
+			}
 		});
 	}
 
@@ -400,13 +419,23 @@ export function initBlackjackClient(): void {
 	renderSettingsForm();
 
 	// Quick bet buttons
-	document.querySelectorAll<HTMLButtonElement>('.bet-quick').forEach((btn) => {
+	quickBetButtons.forEach((btn) => {
 		btn.addEventListener('click', () => {
 			const amount = btn.getAttribute('data-amount');
 			if (amount) {
 				betAmountInput.value = amount;
+				syncBetSelection();
 			}
 		});
+	});
+	betAmountInput.addEventListener('input', syncBetSelection);
+	document.getElementById('btn-rebet')?.addEventListener('click', () => {
+		betAmountInput.value = lastBet;
+		applyBetConstraints();
+	});
+	document.getElementById('btn-max-bet')?.addEventListener('click', () => {
+		betAmountInput.value = String(Math.min(settings.maxBet, Math.floor(game.getBalance())));
+		syncBetSelection();
 	});
 
 	// Deal button
@@ -427,6 +456,7 @@ export function initBlackjackClient(): void {
 
 		try {
 			game.placeBet(betAmount);
+			lastBet = String(betAmount);
 			game.deal();
 			persistGuestBalance();
 
@@ -777,6 +807,7 @@ export function initBlackjackClient(): void {
 			playerValueEl.textContent = '-';
 			currentBetEl.textContent = t('currentBet', { amount: formatAmount(0) });
 		}
+		playerValueEl.dataset.qualified = String(playerValueEl.textContent.length > 2);
 
 		// Render dealer hand
 		const dealerCardsEl = document.getElementById('dealer-cards');

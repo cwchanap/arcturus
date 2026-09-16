@@ -1,7 +1,7 @@
 /**
  * Card Slot Utilities
  * Handles card display by toggling visibility of pre-rendered elements
- * NO DOM element creation - only visibility toggling and text updates
+ * Detailed card faces also render suit pips when their markup opts in.
  */
 
 import { getSuitSymbol, isRedSuit } from './card-format';
@@ -67,6 +67,95 @@ function updateCardFace(cardFace: Element, card: CardData): void {
 	cardFace.querySelectorAll('[data-suit-small], [data-suit-center]').forEach((el) => {
 		el.textContent = suitSymbol;
 	});
+
+	// Detailed pip layout is shared by the Poker and Blackjack cabinets.
+	const detail = cardFace.querySelector<HTMLElement>('[data-card-detail]');
+	if (detail) {
+		detail.replaceChildren();
+		const face = cardFace.querySelector<HTMLElement>('[data-face-detail]');
+		face?.classList.toggle('hidden', Number(card.rank) >= 2 && Number(card.rank) <= 10);
+		const positions: Record<number, number[][]> = {
+			2: [
+				[50, 0],
+				[50, 100],
+			],
+			3: [
+				[50, 0],
+				[50, 50],
+				[50, 100],
+			],
+			4: [
+				[0, 0],
+				[100, 0],
+				[0, 100],
+				[100, 100],
+			],
+			5: [
+				[0, 0],
+				[100, 0],
+				[50, 50],
+				[0, 100],
+				[100, 100],
+			],
+			6: [
+				[0, 0],
+				[100, 0],
+				[0, 50],
+				[100, 50],
+				[0, 100],
+				[100, 100],
+			],
+			7: [
+				[0, 0],
+				[100, 0],
+				[50, 25],
+				[0, 50],
+				[100, 50],
+				[0, 100],
+				[100, 100],
+			],
+			8: [
+				[0, 0],
+				[100, 0],
+				[50, 25],
+				[0, 50],
+				[100, 50],
+				[50, 75],
+				[0, 100],
+				[100, 100],
+			],
+			9: [
+				[0, 0],
+				[100, 0],
+				[0, 33],
+				[100, 33],
+				[50, 50],
+				[0, 67],
+				[100, 67],
+				[0, 100],
+				[100, 100],
+			],
+			10: [
+				[0, 0],
+				[100, 0],
+				[50, 20],
+				[0, 33],
+				[100, 33],
+				[0, 67],
+				[100, 67],
+				[50, 80],
+				[0, 100],
+				[100, 100],
+			],
+		};
+		for (const [x, y] of positions[Number(card.rank)] ?? []) {
+			const pip = cardFace.ownerDocument.createElement('span');
+			pip.textContent = suitSymbol;
+			pip.style.left = `${x}%`;
+			pip.style.top = `${y}%`;
+			detail.appendChild(pip);
+		}
+	}
 
 	// Update color class
 	cardFace.classList.remove('card-red', 'card-black');

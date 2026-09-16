@@ -4,7 +4,6 @@
 
 import type { Card, GamePhase, Player } from './types';
 import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
-import { getSuitSymbol } from '../card-format';
 import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
@@ -312,93 +311,6 @@ export class PokerUIRenderer {
 	/** Localized accessible name for a shown card; null for a face-down card. */
 	private setCardA11y(slot: Element, card: Card | null): void {
 		if (card) {
-			const detail = slot.querySelector<HTMLElement>('[data-card-detail]');
-			if (detail) {
-				detail.replaceChildren();
-				const face = slot.querySelector<HTMLElement>('[data-face-detail]');
-				face?.classList.toggle('hidden', card.rank >= 2 && card.rank <= 10);
-				const positions: Record<number, number[][]> = {
-					2: [
-						[50, 0],
-						[50, 100],
-					],
-					3: [
-						[50, 0],
-						[50, 50],
-						[50, 100],
-					],
-					4: [
-						[0, 0],
-						[100, 0],
-						[0, 100],
-						[100, 100],
-					],
-					5: [
-						[0, 0],
-						[100, 0],
-						[50, 50],
-						[0, 100],
-						[100, 100],
-					],
-					6: [
-						[0, 0],
-						[100, 0],
-						[0, 50],
-						[100, 50],
-						[0, 100],
-						[100, 100],
-					],
-					7: [
-						[0, 0],
-						[100, 0],
-						[50, 25],
-						[0, 50],
-						[100, 50],
-						[0, 100],
-						[100, 100],
-					],
-					8: [
-						[0, 0],
-						[100, 0],
-						[50, 25],
-						[0, 50],
-						[100, 50],
-						[50, 75],
-						[0, 100],
-						[100, 100],
-					],
-					9: [
-						[0, 0],
-						[100, 0],
-						[0, 33],
-						[100, 33],
-						[50, 50],
-						[0, 67],
-						[100, 67],
-						[0, 100],
-						[100, 100],
-					],
-					10: [
-						[0, 0],
-						[100, 0],
-						[50, 20],
-						[0, 33],
-						[100, 33],
-						[0, 67],
-						[100, 67],
-						[50, 80],
-						[0, 100],
-						[100, 100],
-					],
-				};
-				for (const [x, y] of positions[card.rank] ?? []) {
-					const pip = document.createElement('span');
-					pip.textContent = getSuitSymbol(card.suit);
-					pip.style.left = `${x}%`;
-					pip.style.top = `${y}%`;
-					detail.appendChild(pip);
-				}
-			}
 			slot.setAttribute('role', 'img');
 			slot.setAttribute('aria-label', getPokerCardName(this.locale, card));
 		} else {

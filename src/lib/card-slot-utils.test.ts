@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test, beforeEach } from 'bun:test';
+import { Window } from 'happy-dom';
 import {
 	setSlotState,
 	renderCardsToContainer,
@@ -10,6 +11,28 @@ import {
 	setContainerHighlight,
 	type CardData,
 } from './card-slot-utils';
+
+test('detailed card slots replace numeric pips with face detail and back visibility', () => {
+	const window = new Window();
+	const slot = window.document.createElement('div');
+	slot.innerHTML =
+		'<div data-card-face><span data-rank></span><div data-card-detail></div><div data-face-detail><span data-rank></span><span data-suit-small></span></div></div><div data-card-back class="hidden"></div>';
+	try {
+		setSlotState(slot as unknown as Element, 'card', { rank: '9', suit: 'hearts' });
+		expect(slot.querySelector('[data-card-detail]')?.children.length).toBe(9);
+		expect(slot.querySelector('[data-card-detail]')?.textContent).toBe('♥'.repeat(9));
+		expect(slot.querySelector('[data-face-detail]')?.classList.contains('hidden')).toBe(true);
+		setSlotState(slot as unknown as Element, 'card', { rank: 'K', suit: 'spades' });
+		expect(slot.querySelector('[data-card-detail]')?.children.length).toBe(0);
+		expect(slot.querySelector('[data-face-detail]')?.classList.contains('hidden')).toBe(false);
+		expect(slot.querySelector('[data-face-detail] [data-rank]')?.textContent).toBe('K');
+		setSlotState(slot as unknown as Element, 'facedown');
+		expect(slot.querySelector('[data-card-face]')?.classList.contains('hidden')).toBe(true);
+		expect(slot.querySelector('[data-card-back]')?.classList.contains('hidden')).toBe(false);
+	} finally {
+		window.close();
+	}
+});
 
 // Mock types for DOM elements
 type MockElement = {

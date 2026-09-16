@@ -14,6 +14,12 @@ import { createTranslator, defineMessages } from '../translate';
 
 export const BLACKJACK_MESSAGES = defineMessages({
 	en: {
+		pays: 'Pays',
+		dealerStands: 'Stands on 17',
+		moreModes: 'More game modes',
+		nextBet: 'Next bet',
+		rebet: 'Rebet',
+		maxBet: 'Max',
 		pageTitle: '{game} - Arcturus Casino',
 		backToGames: 'Back to Games',
 		casual: 'Casual',
@@ -181,6 +187,12 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		handLabelWithWager: 'Hand {number} · {wager}',
 	},
 	'zh-Hant': {
+		pays: '賠率',
+		dealerStands: '17 點停牌',
+		moreModes: '更多遊戲模式',
+		nextBet: '下局下注',
+		rebet: '重複下注',
+		maxBet: '最高',
 		pageTitle: '{game} - Arcturus Casino',
 		backToGames: '返回遊戲',
 		casual: '休閒',
@@ -346,6 +358,12 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		handLabelWithWager: '第 {number} 手 · {wager}',
 	},
 	'zh-Hans': {
+		pays: '赔率',
+		dealerStands: '17 点停牌',
+		moreModes: '更多游戏模式',
+		nextBet: '下局下注',
+		rebet: '重复下注',
+		maxBet: '最高',
 		pageTitle: '{game} - Arcturus Casino',
 		backToGames: '返回游戏',
 		casual: '休闲',
@@ -511,6 +529,12 @@ export const BLACKJACK_MESSAGES = defineMessages({
 		handLabelWithWager: '第 {number} 手 · {wager}',
 	},
 	ja: {
+		pays: '配当',
+		dealerStands: '17 でスタンド',
+		moreModes: 'その他のゲームモード',
+		nextBet: '次のベット',
+		rebet: 'リベット',
+		maxBet: '最大',
 		pageTitle: '{game} - Arcturus Casino',
 		backToGames: 'ゲームに戻る',
 		casual: 'カジュアル',

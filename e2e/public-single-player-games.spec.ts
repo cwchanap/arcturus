@@ -207,8 +207,10 @@ test.describe('public single-player games', () => {
 		await page.goto('/games/blackjack', { waitUntil: 'domcontentloaded' });
 		await expect(page.locator('#blackjack-root')).toHaveAttribute('data-guest-mode', 'true');
 		await expect(page.getByText('Casual', { exact: true })).toBeVisible();
+		await page.locator('summary[aria-label="More game modes"]').click();
 		await expect(page.getByTestId('ranked-blackjack-signin')).toBeVisible();
 		await expect(page.getByTestId('ranked-blackjack-signin')).toHaveAttribute('href', '/signin');
+		await page.locator('summary[aria-label="More game modes"]').click();
 
 		await page.locator('#bet-amount').fill('50');
 		await page.getByRole('button', { name: 'Deal' }).click();

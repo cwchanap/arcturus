@@ -80,11 +80,13 @@ test.describe('authed user preservation', () => {
 				'false',
 			);
 			await expect(isolated.page.getByText('Casual', { exact: true })).toBeVisible();
+			await isolated.page.locator('summary[aria-label="More game modes"]').click();
 			await expect(isolated.page.getByTestId('ranked-blackjack-link')).toBeVisible();
 			await expect(isolated.page.getByTestId('ranked-blackjack-link')).toHaveAttribute(
 				'href',
 				'/games/blackjack/ranked',
 			);
+			await isolated.page.locator('summary[aria-label="More game modes"]').click();
 
 			await isolated.page.locator('#bet-amount').fill('50');
 			const settlementPromise = isolated.page.waitForResponse(

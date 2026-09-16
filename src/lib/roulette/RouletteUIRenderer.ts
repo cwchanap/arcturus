@@ -57,6 +57,20 @@ export class RouletteUIRenderer {
 
 		this.renderActiveBets(state.activeBets);
 		this.renderRoundHistory(state.roundHistory);
+		document.querySelectorAll<HTMLButtonElement>('[data-bet-type]').forEach((cell) => {
+			const target = cell.dataset.betTarget;
+			cell.dataset.staked = String(
+				state.activeBets.some(
+					(bet) =>
+						bet.type === cell.dataset.betType &&
+						(target === undefined ? bet.target === undefined : bet.target === Number(target)),
+				),
+			);
+			cell.disabled = state.phase !== 'betting';
+		});
+		this.activeBetsEl.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
+			button.disabled = state.phase !== 'betting';
+		});
 
 		const canSpin = state.activeBets.length > 0 && state.phase === 'betting';
 		this.spinBtn.disabled = !canSpin;
@@ -85,16 +99,24 @@ export class RouletteUIRenderer {
 	}
 
 	private renderActiveBets(bets: RouletteBet[]): void {
+		const focusedIndex = Array.from(this.activeBetsEl.children).findIndex(
+			(child) => child === document.activeElement,
+		);
 		this.activeBetsEl.replaceChildren();
 		if (bets.length === 0) {
 			const placeholder = document.createElement('span');
 			placeholder.className = 'text-[var(--deco-muted)] text-xs';
 			placeholder.textContent = this.t('noBetsPlaced');
 			this.activeBetsEl.appendChild(placeholder);
+			if (focusedIndex >= 0) {
+				this.activeBetsEl.closest('dialog')?.querySelector<HTMLButtonElement>('button')?.focus();
+			}
 			return;
 		}
 		for (const bet of bets) {
-			const div = document.createElement('div');
+			const div = document.createElement('button');
+			div.type = 'button';
+			div.title = this.t('removeBetHint');
 			div.id = `active-bet-${bet.id}`;
 			div.className = 'flex items-center justify-between py-1 text-sm';
 			const label = this.betLabel(bet);
@@ -106,6 +128,9 @@ export class RouletteUIRenderer {
 			div.appendChild(labelSpan);
 			div.appendChild(amountSpan);
 			this.activeBetsEl.appendChild(div);
+		}
+		if (focusedIndex >= 0) {
+			(this.activeBetsEl.children[Math.min(focusedIndex, bets.length - 1)] as HTMLElement).focus();
 		}
 	}
 
@@ -147,7 +172,13 @@ export class RouletteUIRenderer {
 	showResult(spinResult: SpinResult): void {
 		const n = spinResult.winningNumber;
 		const color = getRouletteColorLabel(this.locale, n);
-		this.resultEl.textContent = this.t('resultColor', { number: String(n), color });
+		const numberEl = document.createElement('span');
+		numberEl.textContent = String(n);
+		const colorEl = document.createElement('span');
+		colorEl.className = 'roulette-result-color';
+		colorEl.textContent = color;
+		this.resultEl.replaceChildren(numberEl, colorEl);
+		this.resultEl.dataset.color = n === 0 ? 'green' : RED_NUMBERS.has(n) ? 'red' : 'black';
 		this.resultEl.setAttribute(
 			'aria-label',
 			this.t('winningNumberAria', { number: String(n), color }),
@@ -158,7 +189,9 @@ export class RouletteUIRenderer {
 	}
 
 	clearResult(): void {
+		this.resultEl.replaceChildren();
 		this.resultEl.textContent = '';
+		delete this.resultEl.dataset.color;
 		this.resultEl.removeAttribute('aria-label');
 		const netDeltaEl = document.getElementById('net-delta');
 		if (netDeltaEl) {

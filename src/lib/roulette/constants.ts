@@ -34,5 +34,5 @@ export const MAX_ROUND_HISTORY = 20;
 export const MAX_BETS = 64;
 
 // Wheel spin animation duration in milliseconds. Must match the CSS
-// transition duration in src/pages/games/roulette.astro (SPIN_ANIMATION_MS / 1000).
+// transition duration in src/styles/roulette.css (SPIN_ANIMATION_MS / 1000).
 export const SPIN_ANIMATION_MS = 4000;

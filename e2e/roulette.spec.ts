@@ -110,12 +110,15 @@ test.describe('Roulette — Initial State', () => {
 	});
 
 	test('rules panel shows payout table', async ({ page }) => {
-		// Panel starts collapsed behind the #rules-toggle control.
 		await expect(page.locator('#rules-panel')).toBeHidden();
 		await page.getByTestId('rules-toggle').click();
 		await expect(page.locator('#rules-panel')).toBeVisible();
 		await expect(page.locator('#rules-panel')).toContainText('35:1');
 		await expect(page.locator('#rules-panel')).toContainText('2:1');
+		await expect(page.locator('#rules-panel').getByRole('button', { name: 'Close' })).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(page.locator('#rules-panel')).toBeHidden();
+		await expect(page.getByTestId('rules-toggle')).toBeFocused();
 	});
 
 	test('spin button disabled with no bets', async ({ page }) => {
@@ -139,12 +142,32 @@ test.describe('Roulette — Bet Placement', () => {
 		await expect(page.getByTestId('active-bets')).toContainText('25 chips');
 	});
 
-	test('places a straight-up bet on a number', async ({ page }) => {
-		await page.getByTestId('chip-25').click();
-		await page.locator('[data-bet-type="straight"][data-bet-target="17"]').click();
+	test('places and removes bets with keyboard focus preserved', async ({ page }) => {
+		await page.getByTestId('chip-5').click();
+		const position = page.getByRole('button', { name: 'Straight 17', exact: true });
+		await position.focus();
+		await page.keyboard.press('Enter');
 
-		await expect(page.getByTestId('total-bet')).toContainText('25 chips');
+		await expect(page.getByTestId('total-bet')).toContainText('5 chips');
 		await expect(page.getByTestId('active-bets')).toContainText('Straight 17');
+		await expect(position).toHaveAttribute('data-staked', 'true');
+		await page.locator('[data-bet-type="red"]').click();
+		await page.locator('[data-bet-type="black"]').click();
+		await expect(page.getByTestId('total-bet')).toContainText('15 chips');
+		await page.getByRole('button', { name: 'Active Bets', exact: true }).click();
+		const wagers = page.getByTestId('active-bets');
+		await wagers.getByRole('button', { name: /^Red/ }).focus();
+		await page.keyboard.press('Enter');
+		await expect(wagers.getByRole('button', { name: /^Black/ })).toBeFocused();
+		await page.keyboard.press('Enter');
+		await expect(wagers.getByRole('button', { name: /^Straight 17/ })).toBeFocused();
+		await page.keyboard.press('Enter');
+		await expect(page.getByTestId('active-bets')).toContainText('No bets placed');
+		await expect(page.locator('#bets-panel').getByRole('button', { name: 'Close' })).toBeFocused();
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('button', { name: 'Active Bets', exact: true })).toBeFocused();
+		await expect(position).toHaveAttribute('data-staked', 'false');
+		await expect(page.getByTestId('total-bet')).toContainText('0 chips');
 	});
 
 	test('places multiple bets and accumulates total', async ({ page }) => {
@@ -234,6 +257,8 @@ test.describe('Roulette — Game Flow', () => {
 			await page.getByTestId('spin-button').click();
 
 			await expect(page.getByTestId('bet-results')).not.toBeEmpty({ timeout: 15000 });
+			await page.getByRole('button', { name: 'Active Bets', exact: true }).click();
+			await expect(page.getByTestId('bet-results')).toBeVisible();
 		} finally {
 			await context.close();
 		}

@@ -1,0 +1,791 @@
+.roulette-cabinet {
+	--roulette-line: #c8a55c59;
+	margin: 14px;
+	padding: 5px;
+	background: linear-gradient(160deg, #e4c988, #8c7438 26%, #5c4a22 52%, #8c7438 76%, #e4c988);
+	box-shadow: 0 30px 90px #000b;
+	color: #c9c2b4;
+}
+.roulette-interior {
+	position: relative;
+	isolation: isolate;
+	display: flex;
+	flex-direction: column;
+	min-height: calc(100svh - 118px);
+	background:
+		repeating-linear-gradient(90deg, #c8a55c06 0 2px, transparent 2px 9px),
+		radial-gradient(72% 52% at 50% 46%, #143e30, #081a14 48%, #050706 86%);
+	box-shadow:
+		inset 0 0 180px #000e,
+		inset 0 0 60px #000b;
+}
+.roulette-interior::before,
+.roulette-interior::after {
+	content: '';
+	position: absolute;
+	inset: 0 auto 0 0;
+	width: 30px;
+	z-index: -1;
+	background:
+		repeating-linear-gradient(180deg, #c8a55c29 0 1px, transparent 1px 16px),
+		linear-gradient(90deg, #c8a55c1f, transparent);
+	pointer-events: none;
+}
+.roulette-interior::after {
+	left: auto;
+	right: 0;
+	transform: scaleX(-1);
+}
+.roulette-header,
+.roulette-title,
+.roulette-tools,
+.roulette-bankroll,
+.roulette-payout,
+.roulette-control-row,
+.roulette-chips,
+.roulette-total {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 11px;
+}
+.roulette-header {
+	justify-content: space-between;
+	padding: 14px 26px 0;
+	gap: 20px;
+}
+.roulette-back {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 8px 13px;
+	border: 1px solid var(--roulette-line);
+	background: #070b09b3;
+	font-size: 10px;
+	letter-spacing: 0.15em;
+	text-transform: uppercase;
+	white-space: nowrap;
+	color: #a99f8d;
+}
+.roulette-back > span {
+	font-size: 20px;
+	line-height: 16px;
+}
+.roulette-title {
+	flex: 1;
+	min-width: 0;
+	gap: 13px;
+}
+.roulette-title::before,
+.roulette-title::after {
+	content: '';
+	height: 1px;
+	flex: 0 1 70px;
+	background: linear-gradient(90deg, transparent, #e4c988);
+}
+.roulette-title::after {
+	transform: scaleX(-1);
+}
+.roulette-title h1 {
+	white-space: nowrap;
+	font: 900 14px var(--font-display);
+	letter-spacing: 0.4em;
+	color: #e4c988;
+	text-transform: uppercase;
+}
+.roulette-emblem {
+	display: grid;
+	place-items: center;
+	flex: 0 0 28px;
+	height: 28px;
+	margin: 5px;
+	border: 1px solid #e4c988;
+	color: #e4c988;
+	transform: rotate(45deg);
+}
+.roulette-emblem svg {
+	transform: rotate(-45deg);
+}
+.roulette-mode {
+	border: 1px solid var(--roulette-line);
+	padding: 4px 9px;
+	font-size: 9px;
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.roulette-tools {
+	gap: 9px;
+}
+.roulette-payout,
+.roulette-bankroll {
+	padding: 8px 12px;
+	border: 1px solid var(--roulette-line);
+	background: linear-gradient(#182220e6, #070b09e6);
+	box-shadow:
+		inset 0 1px #e4c98833,
+		inset 0 -3px 8px #000b;
+	white-space: nowrap;
+	color: #e4c988;
+	gap: 8px;
+	font-size: 14px;
+}
+.roulette-payout strong {
+	font-weight: 500;
+	font-size: 15px;
+}
+.roulette-label {
+	font-size: 9px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: #a99f8d;
+}
+.roulette-icon {
+	display: grid;
+	place-items: center;
+	flex-shrink: 0;
+	width: 36px;
+	height: 36px;
+	border: 1px solid var(--roulette-line);
+	color: #c8a55c;
+	background: #070b09b3;
+	cursor: pointer;
+}
+.roulette-stage {
+	display: flex;
+	flex: 1 0 auto;
+	align-items: center;
+	justify-content: center;
+	gap: 24px;
+	padding: 26px 30px 0;
+	min-height: 350px;
+}
+.roulette-wheel-group {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+	width: 300px;
+	max-width: 100%;
+}
+.roulette-cabinet .wheel-container {
+	position: relative;
+	width: 250px;
+	height: 250px;
+	flex: none;
+	border-radius: 50%;
+	background: linear-gradient(160deg, #e4c988, #8c7438 46%, #5c4a22 62%, #8c7438);
+	box-shadow:
+		0 0 0 1px #e4c98899,
+		0 18px 50px #000d,
+		0 0 60px #e4c9881f;
+}
+.roulette-cabinet .wheel-container::before {
+	content: '';
+	position: absolute;
+	inset: 11px;
+	border-radius: 50%;
+	background: #070b09;
+	box-shadow: inset 0 0 22px #000f;
+}
+.roulette-wheel-inner {
+	position: absolute;
+	inset: 15px;
+	border-radius: 50%;
+	overflow: hidden;
+	/* Keep in sync with SPIN_ANIMATION_MS in roulette/constants.ts. */
+	transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
+}
+.roulette-wheel-inner svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.roulette-cabinet .wheel-pointer {
+	position: absolute;
+	top: -4px;
+	left: 50%;
+	transform: translateX(-50%);
+	border-left: 8px solid transparent;
+	border-right: 8px solid transparent;
+	border-top: 15px solid #e4c988;
+	filter: drop-shadow(0 2px 4px #000b);
+}
+.roulette-history {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 9px;
+	max-width: 100%;
+}
+.roulette-cabinet #round-history {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 7px;
+	min-height: 24px;
+}
+.roulette-cabinet .round-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border: 1px solid var(--roulette-line);
+	border-radius: 50%;
+	font-size: 10px;
+	font-weight: 700;
+	color: #fff;
+}
+.roulette-cabinet .round-red {
+	background: #b91c1c;
+}
+.roulette-cabinet .round-black {
+	background: #171717;
+}
+.roulette-cabinet .round-green {
+	background: #0a7a3a;
+}
+.roulette-result-panel {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 13px;
+	width: 190px;
+}
+.roulette-result-diamond {
+	position: relative;
+	width: 132px;
+	height: 132px;
+	flex-shrink: 0;
+	clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+	background: linear-gradient(#e4c988, #8c7438);
+}
+.roulette-result-diamond::before {
+	content: '';
+	position: absolute;
+	inset: 3px;
+	clip-path: inherit;
+	background: #0b120f;
+}
+.roulette-result-diamond:has([data-color='red'])::before {
+	background: #8e1717;
+}
+.roulette-result-diamond:has([data-color='black'])::before {
+	background: #171717;
+}
+.roulette-result-diamond:has([data-color='green'])::before {
+	background: #0a6535;
+}
+.roulette-cabinet #wheel-result {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	color: #fff;
+	font: 900 46px/1 var(--font-display);
+}
+.roulette-cabinet #wheel-result:empty::before {
+	content: '—';
+}
+.roulette-result-color {
+	font: 400 9px/1.4 var(--font-body);
+	letter-spacing: 0.2em;
+	text-transform: uppercase;
+}
+.roulette-result-caption {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 9px;
+	text-align: center;
+}
+.roulette-cabinet #game-phase {
+	border: 1px solid #e4c98880;
+	padding: 3px 10px;
+	color: #e4c988;
+	font-size: 10px;
+	letter-spacing: 0.17em;
+	text-transform: uppercase;
+}
+.roulette-net {
+	display: flex;
+	align-items: baseline;
+	justify-content: center;
+	gap: 7px;
+	flex-wrap: wrap;
+}
+.roulette-cabinet #net-delta {
+	font: 800 24px/1.2 var(--font-display);
+	color: #e4c988;
+}
+.roulette-cabinet #net-delta:empty::before {
+	content: '—';
+}
+.roulette-cabinet #game-message {
+	font-size: 12px;
+	color: #a99f8d;
+	max-width: 190px;
+	min-height: 36px;
+}
+.roulette-board-area {
+	width: 100%;
+	padding: 20px 30px 0;
+}
+.roulette-board-scroll {
+	max-width: 1020px;
+	margin: auto;
+	overflow-x: auto;
+	scrollbar-color: #8c7438 #0b120f;
+	scrollbar-width: thin;
+}
+.roulette-cabinet .roulette-table {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+	min-width: 650px;
+	padding: 11px;
+	border: 1px solid #c8a55c66;
+	background: linear-gradient(135deg, #0a3d28, #073020 50%, #052518);
+	box-shadow:
+		inset 0 0 80px #0006,
+		0 10px 34px #000b;
+}
+.roulette-number-row {
+	display: flex;
+	align-items: stretch;
+	gap: 5px;
+}
+.roulette-number-grid {
+	display: grid;
+	flex: 1;
+	grid-template-columns: repeat(12, minmax(0, 1fr));
+	grid-template-rows: repeat(3, minmax(0, 1fr));
+	gap: 3px;
+	min-width: 0;
+}
+.roulette-columns {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	flex: 0 0 56px;
+}
+.roulette-cabinet .bet-cell {
+	position: relative;
+	min-width: 0;
+	min-height: 36px;
+	padding: 8px 0;
+	border: 1px solid #ffffff1a;
+	background: #ffffff0a;
+	color: #f4efe6;
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	font-variant-numeric: tabular-nums;
+	transition:
+		filter 0.15s,
+		box-shadow 0.15s;
+}
+.roulette-cabinet .bet-cell:hover:not(:disabled) {
+	filter: brightness(1.3);
+	border-color: #e4c988;
+}
+.roulette-cabinet .bet-cell[data-staked='true'] {
+	border-color: #e4c988;
+	box-shadow:
+		0 0 0 1px #e4c988,
+		0 0 16px #e4c98866;
+	z-index: 1;
+}
+.roulette-cabinet .bet-cell:disabled {
+	cursor: default;
+}
+.roulette-cabinet .roulette-zero {
+	flex: 0 0 44px;
+	background: #0a7a3a;
+	font: 700 20px var(--font-display);
+}
+.roulette-columns .bet-cell {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	align-items: center;
+	padding: 2px;
+	line-height: 1.2;
+}
+.roulette-columns span {
+	color: #a99f8d;
+	font-size: 8px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+.roulette-columns strong {
+	font-size: 11px;
+	color: #e4c988;
+}
+.roulette-dozens,
+.roulette-outside {
+	display: grid;
+	gap: 5px;
+}
+.roulette-dozens {
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.roulette-outside {
+	grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.roulette-dozens .bet-cell,
+.roulette-outside .bet-cell {
+	font-size: 11.5px;
+	font-weight: 400;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	padding: 10px 0;
+}
+.roulette-cabinet .roulette-bet-red {
+	background: #b91c1c;
+}
+.roulette-cabinet .roulette-bet-black {
+	background: #171717;
+}
+.roulette-scroll-hint {
+	display: none;
+	margin: 8px 0 0;
+	text-align: center;
+	font-size: 11px;
+	color: #a99f8d;
+}
+.roulette-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 13px;
+	padding: 16px 30px 20px;
+}
+.roulette-divider {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	height: 12px;
+}
+.roulette-divider::before,
+.roulette-divider::after {
+	content: '';
+	flex: 1;
+	height: 1px;
+	background: linear-gradient(90deg, transparent, #e4c98880);
+}
+.roulette-divider::after {
+	transform: scaleX(-1);
+}
+.roulette-divider i {
+	width: 7px;
+	height: 7px;
+	transform: rotate(45deg);
+	background: #8c7438;
+}
+.roulette-divider i:nth-child(2) {
+	width: 10px;
+	height: 10px;
+	background: none;
+	border: 1px solid #e4c988;
+}
+.roulette-control-row {
+	flex-wrap: wrap;
+	gap: 12px;
+}
+.roulette-chips {
+	gap: 11px;
+	padding-right: 16px;
+	border-right: 1px solid var(--roulette-line);
+}
+.roulette-cabinet .chip-select {
+	flex-shrink: 0;
+	cursor: pointer;
+	border-radius: 50%;
+	transition: transform 0.15s;
+}
+.roulette-cabinet .chip-select .poker-chip {
+	width: 44px;
+	height: 44px;
+	font-size: 11px;
+}
+.roulette-cabinet .chip-select.selected {
+	transform: scale(1.16);
+	filter: drop-shadow(0 0 8px #e4c98880);
+}
+.roulette-total {
+	padding: 8px 14px;
+	border: 1px solid var(--roulette-line);
+	background: linear-gradient(#182220e6, #070b09e6);
+}
+.roulette-cabinet #total-bet {
+	font: 700 20px/1.2 var(--font-display);
+	color: #e4c988;
+	white-space: nowrap;
+}
+.roulette-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	min-height: 44px;
+	padding: 11px 16px;
+	border: 1px solid var(--roulette-line);
+	background: transparent;
+	color: #a99f8d;
+	font-size: 11px;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	cursor: pointer;
+}
+.roulette-button-gold {
+	padding: 13px 38px;
+	background: linear-gradient(#f2dda6, #c8a55c 52%, #8c7438);
+	border-color: #f2dda6;
+	color: #0b0f0e;
+	font-weight: 600;
+	box-shadow:
+		inset 0 1px #ffffff73,
+		0 6px 20px #e4c98847;
+	letter-spacing: 0.24em;
+}
+.roulette-button > span {
+	font-size: 20px;
+	line-height: 16px;
+}
+.roulette-button:disabled {
+	opacity: 0.4;
+	box-shadow: none;
+	cursor: not-allowed;
+}
+.roulette-cabinet [hidden] {
+	display: none;
+}
+.roulette-cabinet :is(button, a, [tabindex]):focus-visible {
+	outline: 2px solid #e4c988;
+	outline-offset: 3px;
+}
+.roulette-drawer {
+	position: fixed;
+	inset: 0 0 0 auto;
+	margin: 0;
+	width: min(400px, 92vw);
+	height: 100dvh;
+	max-width: none;
+	max-height: none;
+	padding: 0;
+	border: 0;
+	border-left: 1px solid #8c7438;
+	background: #070b09;
+	color: #c9c2b4;
+}
+.roulette-drawer::backdrop {
+	background: #050706b3;
+}
+.roulette-drawer[open] {
+	display: flex;
+	flex-direction: column;
+}
+.roulette-drawer > header {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 18px 20px;
+	border-bottom: 1px solid var(--roulette-line);
+}
+.roulette-drawer h2 {
+	font: 700 17px var(--font-display);
+	letter-spacing: 0.1em;
+	color: #e4c988;
+}
+.roulette-drawer h3 {
+	margin: 24px 0 12px;
+	font-size: 10px;
+	letter-spacing: 0.2em;
+	color: #c8a55c;
+	text-transform: uppercase;
+}
+.roulette-drawer-body {
+	overflow-y: auto;
+	padding: 20px;
+}
+.roulette-drawer p {
+	margin-top: 20px;
+	color: #a99f8d;
+	font-size: 12px;
+	line-height: 1.7;
+}
+.roulette-payout-list > div {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid #16201c;
+	font-size: 14px;
+}
+.roulette-payout-list dd {
+	color: #e4c988;
+	white-space: nowrap;
+}
+.roulette-cabinet #active-bets button {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 13px 0;
+	border-bottom: 1px solid #16201c;
+	text-align: left;
+	cursor: pointer;
+}
+.roulette-cabinet #active-bets button:hover {
+	color: #e4c988;
+}
+.roulette-cabinet #active-bets button:disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+.roulette-cabinet #bet-results > div {
+	gap: 12px;
+	padding: 10px 0;
+	border-bottom: 1px solid #16201c;
+}
+.roulette-breakdown:has(#bet-results:empty) {
+	display: none;
+}
+@media (max-width: 1050px) {
+	.roulette-header {
+		flex-wrap: wrap;
+		gap: 12px;
+		padding-inline: 18px;
+	}
+	.roulette-title {
+		order: -1;
+		flex-basis: 100%;
+	}
+	.roulette-tools {
+		flex-wrap: wrap;
+	}
+}
+@media (max-width: 720px) {
+	.roulette-board-area {
+		padding-inline: 14px;
+	}
+	.roulette-scroll-hint {
+		display: block;
+	}
+	.roulette-controls {
+		padding-inline: 14px;
+	}
+	.roulette-chips {
+		border: 0;
+		padding: 0;
+	}
+}
+@media (max-width: 600px) {
+	.roulette-cabinet {
+		margin: 8px;
+		padding: 3px;
+	}
+	.roulette-interior {
+		min-height: calc(100svh - 140px);
+	}
+	.roulette-interior::before,
+	.roulette-interior::after {
+		width: 12px;
+	}
+	.roulette-header {
+		padding: 14px 12px 0;
+	}
+	.roulette-title {
+		gap: 8px;
+	}
+	.roulette-title h1 {
+		font-size: 12px;
+		letter-spacing: 0.22em;
+	}
+	.roulette-mode {
+		font-size: 8px;
+		padding: 4px 6px;
+		letter-spacing: 0.1em;
+	}
+	.roulette-back {
+		padding: 8px;
+		font-size: 9px;
+		letter-spacing: 0.05em;
+	}
+	.roulette-tools {
+		gap: 5px;
+	}
+	.roulette-payout {
+		padding: 8px;
+	}
+	.roulette-payout .roulette-label {
+		display: none;
+	}
+	.roulette-bankroll {
+		font-size: 12px;
+		padding: 8px;
+	}
+	.roulette-stage {
+		flex-direction: column;
+		gap: 22px;
+		padding: 28px 18px 4px;
+	}
+	.roulette-cabinet .wheel-container {
+		width: 220px;
+		height: 220px;
+	}
+	.roulette-result-panel {
+		flex-direction: row;
+		width: min(350px, 100%);
+		justify-content: center;
+		gap: 16px;
+	}
+	.roulette-result-diamond {
+		width: 108px;
+		height: 108px;
+	}
+	.roulette-result-caption {
+		flex: 1;
+		min-width: 0;
+	}
+	.roulette-cabinet #wheel-result {
+		font-size: 36px;
+	}
+	.roulette-cabinet #game-phase {
+		font-size: 9px;
+		letter-spacing: 0.08em;
+	}
+	.roulette-cabinet #net-delta {
+		font-size: 20px;
+	}
+	.roulette-cabinet #game-message {
+		font-size: 11px;
+	}
+	.roulette-chips {
+		flex-basis: 100%;
+		gap: 8px;
+	}
+	.roulette-chips > .roulette-label {
+		display: none;
+	}
+	.roulette-cabinet .chip-select .poker-chip {
+		width: 36px;
+		height: 36px;
+		font-size: 10px;
+	}
+	.roulette-total {
+		flex-basis: 100%;
+		padding: 7px 12px;
+	}
+	.roulette-control-row {
+		gap: 14px 10px;
+	}
+}

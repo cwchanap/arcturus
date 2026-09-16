@@ -112,6 +112,36 @@ describe('RouletteUIRenderer — update', () => {
 		expect(setup.elements['clear-bets-button'].disabled).toBe(true);
 	});
 
+	it('marks only wagered positions and locks the table until the next round', () => {
+		const straight = new MockElement('button');
+		straight.dataset.betType = 'straight';
+		straight.dataset.betTarget = '17';
+		attachToBody(straight);
+		const otherStraight = new MockElement('button');
+		otherStraight.dataset.betType = 'straight';
+		otherStraight.dataset.betTarget = '18';
+		attachToBody(otherStraight);
+		const red = new MockElement('button');
+		red.dataset.betType = 'red';
+		attachToBody(red);
+		const renderer = new RouletteUIRenderer();
+		const activeBets = [makeBet('straight', 5, 17), makeBet('red')];
+
+		renderer.update(makeState({ activeBets }));
+		expect(straight.dataset.staked).toBe('true');
+		expect(otherStraight.dataset.staked).toBe('false');
+		expect(red.dataset.staked).toBe('true');
+		expect(straight.disabled).toBe(false);
+
+		renderer.update(makeState({ phase: 'spinning', activeBets }));
+		expect(straight.disabled).toBe(true);
+		expect(red.disabled).toBe(true);
+		renderer.update(makeState());
+		expect(straight.dataset.staked).toBe('false');
+		expect(red.dataset.staked).toBe('false');
+		expect(straight.disabled).toBe(false);
+	});
+
 	it('shows new-round and hides spin in settled phase, reverses otherwise', () => {
 		const renderer = new RouletteUIRenderer();
 		renderer.update(makeState({ phase: 'settled' }));
@@ -153,6 +183,7 @@ describe('RouletteUIRenderer — renderActiveBets', () => {
 		const list = setup.elements['active-bets'];
 		expect(list.children).toHaveLength(2);
 		expect(list.children[0].id).toBe('active-bet-a');
+		expect(list.children[0].tagName).toBe('BUTTON');
 		// First child span = label, second = amount
 		expect(list.children[0].children[0].textContent).toBe('Red');
 		expect(list.children[0].children[1].textContent).toBe('50 chips');
@@ -229,13 +260,25 @@ describe('RouletteUIRenderer — showResult / clearResult', () => {
 	it('renders winning number + color and aria-label', () => {
 		const renderer = new RouletteUIRenderer();
 		renderer.showResult(makeSpin(0, 0, []));
-		expect(setup.elements['wheel-result'].textContent).toBe('0 Green');
+		expect(setup.elements['wheel-result'].children.map((el) => el.textContent)).toEqual([
+			'0',
+			'Green',
+		]);
+		expect(setup.elements['wheel-result'].dataset.color).toBe('green');
 		expect(setup.elements['wheel-result'].attributes['aria-label']).toBe('Winning number: 0 Green');
 
 		renderer.showResult(makeSpin(1, 0, []));
-		expect(setup.elements['wheel-result'].textContent).toBe('1 Red');
+		expect(setup.elements['wheel-result'].children.map((el) => el.textContent)).toEqual([
+			'1',
+			'Red',
+		]);
+		expect(setup.elements['wheel-result'].dataset.color).toBe('red');
 		renderer.showResult(makeSpin(2, 0, []));
-		expect(setup.elements['wheel-result'].textContent).toBe('2 Black');
+		expect(setup.elements['wheel-result'].children.map((el) => el.textContent)).toEqual([
+			'2',
+			'Black',
+		]);
+		expect(setup.elements['wheel-result'].dataset.color).toBe('black');
 	});
 
 	it('renders positive net delta in jade and negative in oxblood', () => {
@@ -287,6 +330,8 @@ describe('RouletteUIRenderer — showResult / clearResult', () => {
 		renderer.clearResult();
 		expect(setup.elements['wheel-result'].textContent).toBe('');
 		expect('aria-label' in setup.elements['wheel-result'].attributes).toBe(false);
+		expect(setup.elements['wheel-result'].children).toHaveLength(0);
+		expect(setup.elements['wheel-result'].dataset.color).toBeUndefined();
 		expect(setup.elements['net-delta'].textContent).toBe('');
 		expect(setup.elements['net-delta'].style.color).toBe('');
 		expect(setup.elements['bet-results'].children).toHaveLength(0);

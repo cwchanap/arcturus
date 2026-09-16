@@ -1,8 +1,17 @@
 ---
 import CasinoLayout from '../../layouts/casino.astro';
+import '../../styles/roulette.css';
+import DecoIcon from '../../components/DecoIcon.astro';
 import PokerChip from '../../components/PokerChip.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
-import { WHEEL_ORDER, RED_NUMBERS, CHIP_DENOMINATIONS } from '../../lib/roulette/constants';
+import {
+	WHEEL_ORDER,
+	RED_NUMBERS,
+	CHIP_DENOMINATIONS,
+	MIN_BET,
+	MAX_BET_PER_POSITION,
+	MAX_TOTAL_BET,
+} from '../../lib/roulette/constants';
 import { formatChips } from '../../lib/i18n/messages/common';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { rouletteTranslator } from '../../lib/i18n/messages/roulette';
@@ -69,52 +78,67 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 ];
 ---
 
-<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'roulette') })}>
+<CasinoLayout
+	title={t('pageTitle', { game: getGameName(locale, 'roulette') })}
+	footerClass="hidden"
+>
 	<div
 		id="roulette-root"
 		data-testid="roulette-root"
 		data-user-id={clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
-		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+		class="roulette-cabinet"
 	>
-		<!-- Header -->
-		<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-			<div>
-				<a
-					href="/games"
-					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
+		<div class="roulette-interior">
+			<header class="roulette-header">
+				<a href="/games" class="roulette-back"
+					><span aria-hidden="true">‹</span>{t('backToGames')}</a
 				>
-					← {t('backToGames')}
-				</a>
-				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'roulette')}</h1>
-				<p class="text-[var(--deco-muted)] text-sm mt-1">{t('subtitle')}</p>
-			</div>
-			<div
-				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
-			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">{gameSession.balanceLabel}</div>
-				<div
-					class="text-2xl font-bold text-[var(--deco-brass)]"
-					id="chip-balance"
-					data-testid="chip-balance"
-				>
-					{formatChips(initialBalance, locale)}
+				<div class="roulette-title">
+					<span class="roulette-emblem"><DecoIcon name="chip" size={18} /></span>
+					<h1>{getGameName(locale, 'roulette')}</h1><span class="roulette-mode"
+						>{t('singleZero')}</span
+					>
 				</div>
-			</div>
-		</div>
+				<div class="roulette-tools">
+					<div class="roulette-payout">
+						<span class="roulette-label">{t('straightLabel')}</span><strong>35 : 1</strong>
+					</div>
+					<div class="roulette-bankroll" title={gameSession.balanceLabel}>
+						<DecoIcon name="chip" size={16} /><span class="sr-only">{gameSession.balanceLabel}</span
+						>
+						<span id="chip-balance" data-testid="chip-balance"
+							>{formatChips(initialBalance, locale)}</span
+						>
+					</div>
+					<button
+						id="bets-toggle"
+						data-open-panel="bets-panel"
+						aria-controls="bets-panel"
+						aria-expanded="false"
+						class="roulette-icon"
+						title={t('activeBets')}
+						aria-label={t('activeBets')}><DecoIcon name="menu" size={16} /></button
+					>
+					<button
+						id="rules-toggle"
+						data-testid="rules-toggle"
+						data-open-panel="rules-panel"
+						aria-controls="rules-panel"
+						aria-expanded="false"
+						class="roulette-icon"
+						title={t('payouts')}
+						aria-label={t('payouts')}>?</button
+					>
+				</div>
+			</header>
 
-		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-			<!-- Main Game Area (3 cols) -->
-			<div class="lg:col-span-3 space-y-4">
-				<!-- Wheel + Status Panel -->
-				<div
-					class="bg-[var(--deco-obsidian-2)] rounded-xl border border-[var(--deco-line)] p-4 flex flex-col sm:flex-row items-center gap-6"
-				>
-					<!-- Wheel -->
-					<div class="wheel-container relative shrink-0">
+			<section class="roulette-stage" aria-label={getGameName(locale, 'roulette')}>
+				<div class="roulette-wheel-group">
+					<div class="wheel-container">
 						<div id="roulette-wheel" class="roulette-wheel-inner">
-							<svg viewBox="0 0 200 200" class="w-full h-full" aria-hidden="true">
+							<svg viewBox="0 0 200 200" aria-hidden="true">
 								{
 									wheelSegments.map((seg) => (
 										<g>
@@ -123,7 +147,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 												x={seg.lx}
 												y={seg.ly}
 												fill="white"
-												font-size="6"
+												font-size="8"
 												font-weight="bold"
 												text-anchor="middle"
 												dominant-baseline="central"
@@ -133,333 +157,256 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 										</g>
 									))
 								}
-								<circle cx="100" cy="100" r="30" fill="#1a1a2e" stroke="#d4a843" stroke-width="1"
+								<circle cx="100" cy="100" r="32" fill="#0b120f" stroke="#c8a55c" stroke-width="1"
 								></circle>
-								<circle cx="100" cy="100" r="6" fill="#d4a843"></circle>
+								<circle cx="100" cy="100" r="20" fill="none" stroke="#c8a55c66" stroke-width="0.6"
+								></circle>
+								<path
+									d="M100 82 L104 96 L118 100 L104 104 L100 118 L96 104 L82 100 L96 96 Z"
+									fill="#e4c988"></path>
 							</svg>
 						</div>
-						<div class="wheel-pointer" aria-hidden="true">▼</div>
+						<span class="wheel-pointer" aria-hidden="true"></span>
 					</div>
-
-					<!-- Result + Status -->
-					<div class="flex-1 w-full">
-						<div class="flex items-center gap-3 mb-2">
-							<span
-								id="game-phase"
-								class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)] uppercase tracking-wider"
-							>
-								{t('phasePlaceBets')}
-							</span>
-						</div>
-						<div class="flex items-baseline gap-4 mb-2">
-							<div>
-								<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
-									{t('winningNumber')}
-								</div>
-								<div
-									id="wheel-result"
-									data-testid="wheel-result"
-									aria-live="polite"
-									class="text-3xl font-bold text-[var(--deco-ivory)]"
-								>
-									—
-								</div>
-							</div>
-							<div>
-								<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
-									{t('net')}
-								</div>
-								<div
-									id="net-delta"
-									data-testid="net-delta"
-									aria-live="polite"
-									class="text-2xl font-bold text-[var(--deco-muted)]"
-								>
-									{formatChips(0, locale)}
-								</div>
-							</div>
-						</div>
-						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm min-h-[20px]">
-							{t('messageHint')}
-						</div>
+					<div class="roulette-history" aria-label={t('roundHistory')}>
+						<span class="roulette-label">{t('last')}</span>
+						<div id="round-history" data-testid="round-history"></div>
+					</div>
+				</div>
+				<div class="roulette-result-panel">
+					<div class="roulette-result-diamond">
 						<div
-							id="bet-results"
-							data-testid="bet-results"
+							id="wheel-result"
+							data-testid="wheel-result"
 							aria-live="polite"
-							class="mt-2 space-y-0.5"
+							aria-label={t('winningNumber')}
 						>
+							—
 						</div>
+					</div>
+					<div class="roulette-result-caption">
+						<span id="game-phase">{t('phasePlaceBets')}</span>
+						<div class="roulette-net">
+							<span class="roulette-label">{t('net')}</span>
+							<span id="net-delta" data-testid="net-delta" aria-live="polite"
+								>{formatChips(0, locale)}</span
+							>
+						</div>
+						<div id="game-message" role="status">{t('messageHint')}</div>
 					</div>
 				</div>
+			</section>
 
-				<!-- Betting Table -->
-				<div class="roulette-table rounded-2xl p-3 sm:p-4 space-y-1">
-					<!-- Number grid: 0 | 1-36 | column bets -->
-					<div class="flex gap-1 items-stretch">
-						<!-- Zero -->
-						<div
-							data-bet-type="straight"
-							data-bet-target="0"
-							role="button"
-							tabindex="0"
-							class="bet-cell rounded-l-lg flex items-center justify-center text-white font-bold text-lg px-2"
-							style="background-color: #0a7a3a; min-height: 120px;"
-						>
-							0
+			<div class="roulette-board-area">
+				<div
+					class="roulette-board-scroll"
+					tabindex="0"
+					role="region"
+					aria-label={t('bettingTable')}
+				>
+					<div class="roulette-table">
+						<div class="roulette-number-row">
+							<button
+								type="button"
+								data-bet-type="straight"
+								data-bet-target="0"
+								class="bet-cell roulette-zero"
+								aria-label={t('betStraight', { number: '0' })}>0</button
+							>
+							<div class="roulette-number-grid">
+								{
+									flatNumbers.map((n) => (
+										<button
+											type="button"
+											data-bet-type="straight"
+											data-bet-target={String(n)}
+											class="bet-cell"
+											aria-label={t('betStraight', { number: String(n) })}
+											style={`background-color: ${pocketBg(n)};`}
+										>
+											{n}
+										</button>
+									))
+								}
+							</div>
+							<div class="roulette-columns">
+								{
+									[0, 1, 2].map((ci) => (
+										<button
+											type="button"
+											data-bet-type="column"
+											data-bet-target={String(ci)}
+											class="bet-cell"
+											aria-label={t('betColumn', { number: String(3 - ci) })}
+										>
+											<>
+												<span>{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}</span>
+												<strong>2:1</strong>
+											</>
+										</button>
+									))
+								}
+							</div>
 						</div>
-
-						<!-- 3×12 number grid -->
-						<div class="grid grid-cols-12 grid-rows-3 gap-0.5 flex-1">
+						<div class="roulette-dozens">
 							{
-								flatNumbers.map((n) => (
-									<div
-										data-bet-type="straight"
-										data-bet-target={String(n)}
-										role="button"
-										tabindex="0"
-										class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded-sm"
-										style={`background-color: ${pocketBg(n)};`}
-									>
-										{n}
-									</div>
-								))
-							}
-						</div>
-
-						<!-- Column bets (2:1) -->
-						<div class="flex flex-col gap-0.5">
-							{
-								[0, 1, 2].map((ci) => (
-									<div
-										data-bet-type="column"
-										data-bet-target={String(ci)}
-										role="button"
-										tabindex="0"
-										class="bet-cell flex flex-col items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-xs rounded-r-sm px-2"
-										style="background-color: rgba(255,255,255,0.05);"
-									>
-										<span class="text-[10px] text-[var(--deco-muted)]">
-											{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}
-										</span>
-										<span>2:1</span>
-									</div>
-								))
-							}
-						</div>
-					</div>
-
-					<!-- Dozens -->
-					<div class="grid grid-cols-3 gap-1">
-						{
-							[
-								{ target: '0', ordinal: 'ordinal1st' },
-								{ target: '1', ordinal: 'ordinal2nd' },
-								{ target: '2', ordinal: 'ordinal3rd' },
-							].map((d) => (
-								<div
-									data-bet-type="dozen"
-									data-bet-target={d.target}
-									role="button"
-									tabindex="0"
-									class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
-									style="background-color: rgba(255,255,255,0.04);"
-								>
-									{t('betDozen', { ordinal: t(d.ordinal as 'ordinal1st') })}
-								</div>
-							))
-						}
-					</div>
-
-					<!-- Outside bets -->
-					<div class="grid grid-cols-6 gap-1">
-						<div
-							data-bet-type="low"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
-							style="background-color: rgba(255,255,255,0.04);"
-						>
-							{t('betLow')}
-						</div>
-						<div
-							data-bet-type="even"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
-							style="background-color: rgba(255,255,255,0.04);"
-						>
-							{t('tableEven')}
-						</div>
-						<div
-							data-bet-type="red"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
-							style="background-color: #b91c1c;"
-						>
-							{t('tableRed')}
-						</div>
-						<div
-							data-bet-type="black"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-white font-bold text-sm rounded py-2"
-							style="background-color: #171717;"
-						>
-							{t('tableBlack')}
-						</div>
-						<div
-							data-bet-type="odd"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
-							style="background-color: rgba(255,255,255,0.04);"
-						>
-							{t('tableOdd')}
-						</div>
-						<div
-							data-bet-type="high"
-							role="button"
-							tabindex="0"
-							class="bet-cell flex items-center justify-center text-[var(--deco-ivory-dim)] font-bold text-sm rounded py-2"
-							style="background-color: rgba(255,255,255,0.04);"
-						>
-							{t('betHigh')}
-						</div>
-					</div>
-				</div>
-				<!-- /betting-table -->
-
-				<!-- Chip Selector + Controls -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<div class="flex flex-wrap items-center justify-between gap-4">
-						<div class="flex gap-2 flex-wrap">
-							{
-								CHIP_DENOMINATIONS.map((amount, i) => (
+								(['ordinal1st', 'ordinal2nd', 'ordinal3rd'] as const).map((ordinal, i) => (
 									<button
-										class={`chip-select hover:scale-110 transition-transform${amount === 5 ? ' selected' : ''}`}
-										data-amount={amount}
-										data-testid={`chip-${amount}`}
-										aria-pressed={amount === 5 ? 'true' : 'false'}
+										type="button"
+										data-bet-type="dozen"
+										data-bet-target={String(i)}
+										class="bet-cell"
 									>
-										<PokerChip value={amount} color={chipColors[i]} locale={locale} />
+										{t('betDozen', { ordinal: t(ordinal) })}
 									</button>
 								))
 							}
 						</div>
-						<div class="flex items-center gap-3">
-							<div>
-								<span class="text-[var(--deco-muted)] text-sm">{t('totalBet')}</span>
-								<span
-									id="total-bet"
-									data-testid="total-bet"
-									class="text-[var(--deco-brass)] font-bold ml-1">{formatChips(0, locale)}</span
+						<div class="roulette-outside">
+							{
+								(
+									[
+										{ type: 'low', label: 'betLow' },
+										{ type: 'even', label: 'tableEven' },
+										{ type: 'red', label: 'tableRed' },
+										{ type: 'black', label: 'tableBlack' },
+										{ type: 'odd', label: 'tableOdd' },
+										{ type: 'high', label: 'betHigh' },
+									] as const
+								).map(({ type, label }) => (
+									<button
+										type="button"
+										data-bet-type={type}
+										class={`bet-cell roulette-bet-${type}`}
+									>
+										{t(label)}
+									</button>
+								))
+							}
+						</div>
+					</div>
+				</div>
+				<p class="roulette-scroll-hint">{t('scrollTable')}</p>
+			</div>
+
+			<section class="roulette-controls" aria-label={t('phasePlaceBets')}>
+				<div class="roulette-divider" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="roulette-control-row">
+					<div class="roulette-chips" role="group" aria-label={t('chipLabel')}>
+						<span class="roulette-label">{t('chipLabel')}</span>
+						{
+							CHIP_DENOMINATIONS.map((amount, i) => (
+								<button
+									type="button"
+									class={`chip-select${amount === 5 ? ' selected' : ''}`}
+									data-amount={amount}
+									data-testid={`chip-${amount}`}
+									aria-pressed={amount === 5}
+									aria-label={formatChips(amount, locale)}
 								>
-							</div>
-							<button
-								id="clear-bets-button"
-								data-testid="clear-bets-button"
-								class="px-3 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg text-sm transition-colors"
-							>
-								{t('clear')}
-							</button>
-							<button
-								id="spin-button"
-								data-testid="spin-button"
-								disabled
-								class="btn-gold px-6 py-2 rounded-xl font-bold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-							>
-								{t('spinButton')}
-							</button>
-							<button
-								id="new-round-button"
-								data-testid="new-round-button"
-								hidden
-								class="btn-gold px-6 py-2 rounded-xl font-bold text-sm"
-							>
-								{t('newRoundButton')}
-							</button>
-						</div>
+									<PokerChip value={amount} color={chipColors[i]} locale={locale} />
+								</button>
+							))
+						}
 					</div>
-				</div>
-			</div>
-			<!-- /main game area -->
-
-			<!-- Sidebar (1 col) -->
-			<div class="space-y-4">
-				<!-- Active Bets -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						{t('activeBets')}
-					</h3>
-					<div id="active-bets" data-testid="active-bets" class="space-y-1 min-h-[40px]">
-						<span class="text-[var(--deco-muted)] text-xs">{t('noBetsPlaced')}</span>
+					<div class="roulette-total">
+						<span class="roulette-label">{t('totalBet')}</span>
+						<span id="total-bet" data-testid="total-bet">{formatChips(0, locale)}</span>
 					</div>
-					<p class="text-[var(--deco-muted)] text-xs mt-2">{t('removeBetHint')}</p>
-				</div>
-
-				<!-- Round History -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						{t('roundHistory')}
-					</h3>
-					<div
-						id="round-history"
-						data-testid="round-history"
-						class="flex flex-wrap gap-1.5 min-h-[32px]"
-					>
-						<span class="text-[var(--deco-muted)] text-xs">{t('noRoundsYet')}</span>
-					</div>
-				</div>
-
-				<!-- Rules / Payouts -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<button
-						id="rules-toggle"
 						type="button"
-						data-testid="rules-toggle"
-						aria-expanded="false"
-						aria-controls="rules-panel"
-						class="flex w-full items-center justify-between text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider"
+						id="clear-bets-button"
+						data-testid="clear-bets-button"
+						class="roulette-button">{t('clear')}</button
 					>
-						<span>{t('payouts')}</span>
-						<span id="rules-toggle-icon" aria-hidden="true">▸</span>
-					</button>
-					<div id="rules-panel" hidden class="mt-3">
-						<div class="space-y-1 text-xs">
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutStraight')}</span>
-								<span class="text-[var(--deco-muted)]">35:1</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutRedBlack')}</span>
-								<span class="text-[var(--deco-muted)]">1:1</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutOddEven')}</span>
-								<span class="text-[var(--deco-muted)]">1:1</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutLowHigh')}</span>
-								<span class="text-[var(--deco-muted)]">1:1</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutDozens')}</span>
-								<span class="text-[var(--deco-muted)]">2:1</span>
-							</div>
-							<div class="flex justify-between">
-								<span class="text-[var(--deco-ivory-dim)]">{t('payoutColumns')}</span>
-								<span class="text-[var(--deco-muted)]">2:1</span>
-							</div>
-						</div>
-						<p class="text-[var(--deco-muted)] text-xs mt-3">{t('houseEdge')}</p>
-					</div>
+					<button
+						type="button"
+						id="spin-button"
+						data-testid="spin-button"
+						disabled
+						class="roulette-button roulette-button-gold"
+					>
+						<span aria-hidden="true">⟳</span>{t('spinButton')}</button
+					>
+					<button
+						type="button"
+						id="new-round-button"
+						data-testid="new-round-button"
+						hidden
+						class="roulette-button roulette-button-gold">{t('newRoundButton')}</button
+					>
 				</div>
-			</div>
-			<!-- /sidebar -->
+			</section>
 		</div>
-		<!-- /grid -->
 
+		<dialog id="bets-panel" class="roulette-drawer" aria-labelledby="bets-title">
+			<header>
+				<h2 id="bets-title">{t('activeBets')}</h2><form method="dialog">
+					<button class="roulette-icon" aria-label={t('close')}>×</button>
+				</form>
+			</header>
+			<div class="roulette-drawer-body">
+				<div id="active-bets" data-testid="active-bets"></div><p>{t('removeBetHint')}</p>
+				<section class="roulette-breakdown">
+					<h3>{t('lastResult')}</h3><div
+						id="bet-results"
+						data-testid="bet-results"
+						aria-live="polite"
+					>
+					</div>
+				</section>
+			</div>
+		</dialog>
+		<dialog id="rules-panel" class="roulette-drawer" aria-labelledby="rules-title">
+			<header>
+				<h2 id="rules-title">{t('payouts')}</h2><form method="dialog">
+					<button class="roulette-icon" aria-label={t('close')}>×</button>
+				</form>
+			</header>
+			<div class="roulette-drawer-body">
+				<dl class="roulette-payout-list">
+					{
+						(
+							[
+								['payoutStraight', '35:1'],
+								['payoutRedBlack', '1:1'],
+								['payoutOddEven', '1:1'],
+								['payoutLowHigh', '1:1'],
+								['payoutDozens', '2:1'],
+								['payoutColumns', '2:1'],
+							] as const
+						).map(([label, payout]) => (
+							<div>
+								<>
+									<dt>{t(label)}</dt>
+									<dd>{payout}</dd>
+								</>
+							</div>
+						))
+					}
+				</dl>
+				<h3>{t('limits')}</h3>
+				<dl class="roulette-payout-list">
+					{
+						(
+							[
+								['minimumBet', MIN_BET],
+								['perPosition', MAX_BET_PER_POSITION],
+								['maximumTotal', MAX_TOTAL_BET],
+							] as const
+						).map(([label, amount]) => (
+							<div>
+								<>
+									<dt>{t(label)}</dt>
+									<dd>{formatChips(amount, locale)}</dd>
+								</>
+							</div>
+						))
+					}
+				</dl>
+				<p>{t('houseEdge')}</p><p>{t('subtitle')}</p>
+			</div>
+		</dialog>
 		<!-- Achievement Toast -->
 		<div
 			id="achievement-toast"
@@ -481,94 +428,22 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 			</div>
 		</div>
 	</div>
-	<!-- /roulette-root -->
 </CasinoLayout>
-
-<style>
-	.roulette-table {
-		background: linear-gradient(135deg, #0a3d28 0%, #073020 50%, #052518 100%);
-		box-shadow:
-			inset 0 0 80px rgba(0, 0, 0, 0.3),
-			0 8px 32px rgba(0, 0, 0, 0.5);
-	}
-
-	.bet-cell {
-		cursor: pointer;
-		transition: all 0.15s ease;
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		user-select: none;
-	}
-	.bet-cell:hover {
-		filter: brightness(1.35);
-		border-color: color-mix(in srgb, var(--deco-brass) 60%, transparent);
-		transform: translateY(-1px);
-	}
-	.bet-cell:focus-visible {
-		outline: 2px solid color-mix(in srgb, var(--deco-brass) 90%, transparent);
-		outline-offset: 1px;
-	}
-
-	.wheel-container {
-		width: 220px;
-		height: 220px;
-	}
-	.roulette-wheel-inner {
-		width: 100%;
-		height: 100%;
-		border-radius: 50%;
-		/* Keep in sync with SPIN_ANIMATION_MS in src/lib/roulette/constants.ts */
-		transition: transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99);
-		box-shadow:
-			0 0 0 4px var(--deco-brass-dim),
-			0 0 0 6px var(--deco-obsidian),
-			0 8px 32px rgba(0, 0, 0, 0.6);
-	}
-	.wheel-pointer {
-		position: absolute;
-		top: -6px;
-		left: 50%;
-		transform: translateX(-50%);
-		color: var(--deco-brass-bright);
-		font-size: 1.4rem;
-		line-height: 1;
-		text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
-		z-index: 10;
-	}
-
-	.chip-select {
-		transition: transform 0.15s ease;
-	}
-	.chip-select.selected {
-		transform: scale(1.2);
-		filter: drop-shadow(0 0 8px color-mix(in srgb, var(--deco-brass) 50%, transparent));
-	}
-
-	.round-badge {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 26px;
-		height: 26px;
-		border-radius: 50%;
-		font-size: 10px;
-		font-weight: bold;
-	}
-	.round-red {
-		background: #b91c1c;
-		color: white;
-	}
-	.round-black {
-		background: #171717;
-		color: white;
-	}
-	.round-green {
-		background: #0a7a3a;
-		color: white;
-	}
-</style>
-
 <script>
 	import { initRouletteClient } from '../../lib/roulette/rouletteClient';
-
 	initRouletteClient();
+
+	// Native dialogs provide focus containment, Escape, and focus restoration.
+	for (const button of document.querySelectorAll<HTMLButtonElement>('[data-open-panel]')) {
+		const dialog = document.getElementById(button.dataset.openPanel!) as HTMLDialogElement;
+		button.addEventListener('click', () => {
+			dialog.showModal();
+			button.setAttribute('aria-expanded', 'true');
+		});
+		dialog.addEventListener('close', () => button.setAttribute('aria-expanded', 'false'));
+		dialog.addEventListener('click', (event) => {
+			if (event.target === dialog && event.clientX < dialog.getBoundingClientRect().left)
+				dialog.close();
+		});
+	}
 </script>

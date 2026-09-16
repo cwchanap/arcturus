@@ -294,7 +294,7 @@ describe('roulette client authenticated flow', () => {
 			},
 		});
 		expect(s.gamePhase.textContent).toBe('Round Complete');
-		expect(s.roundResult.textContent).toContain('17');
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 17 Black');
 	});
 
 	it('rejects a corrupt saved session with an invalid phase and clears storage', () => {

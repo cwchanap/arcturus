@@ -311,17 +311,6 @@ export function initRouletteClient(): void {
 		updateAndPersist();
 	});
 
-	const rulesToggle = document.getElementById('rules-toggle');
-	const rulesPanel = document.getElementById('rules-panel');
-	const rulesToggleIcon = document.getElementById('rules-toggle-icon');
-	rulesToggle?.addEventListener('click', () => {
-		if (!rulesPanel) return;
-		const expanded = rulesToggle.getAttribute('aria-expanded') === 'true';
-		rulesToggle.setAttribute('aria-expanded', String(!expanded));
-		rulesPanel.hidden = expanded;
-		if (rulesToggleIcon) rulesToggleIcon.textContent = expanded ? '▸' : '▾';
-	});
-
 	const achievementToast = document.getElementById('achievement-toast');
 	const achievementIconEl = document.getElementById('achievement-icon');
 	const achievementNameEl = document.getElementById('achievement-name');

@@ -21,10 +21,12 @@ test.describe('Slots game', () => {
 	});
 
 	test('renders the slot machine UI', async ({ page }) => {
-		await expect(page.locator('h1')).toHaveText('Slots');
+		await expect(page.locator('#slots-root h1')).toHaveText('Slots');
 		await expect(page.locator('#btn-spin')).toBeVisible();
 		await expect(page.locator('#chip-balance')).toBeVisible();
 		await expect(page.locator('.bet-chip')).toHaveCount(6);
+		await expect(page.locator('.symbol-art')).toHaveCount(15);
+		await expect(page.locator('#win-amount')).toHaveText('0');
 	});
 
 	test('spin deducts the bet and updates balance without reload', async ({ browser, baseURL }) => {
@@ -56,16 +58,54 @@ test.describe('Slots game', () => {
 
 	test('paytable panel matches a known multiplier', async ({ page }) => {
 		await page.locator('#btn-paytable').click();
-		await expect(page.locator('#paytable-panel')).not.toHaveClass(/hidden/);
+		await expect(page.locator('#paytable-panel')).toBeVisible();
 		await expect(page.locator('#paytable-panel')).toContainText('×1000'); // seven 5-of-a-kind
 		await page.locator('.btn-paytable-close').click();
-		await expect(page.locator('#paytable-panel')).toHaveClass(/hidden/);
+		await expect(page.locator('#paytable-panel')).toBeHidden();
+		await expect(page.locator('#btn-paytable')).toBeFocused();
+		await page.locator('#btn-paytable').click();
+		await page.keyboard.press('Escape');
+		await expect(page.locator('#paytable-panel')).toBeHidden();
+		await expect(page.locator('#btn-paytable')).toBeFocused();
+	});
+
+	test('cabinet drawers contain keyboard actions and quick spin persists', async ({ page }) => {
+		await page.locator('#setting-quick').check();
+		await page.reload();
+		await expect(page.locator('#setting-quick')).toBeChecked();
+		await page.locator('#setting-quick').uncheck();
+		await page.locator('#btn-settings').click();
+		await expect(page.locator('#settings-panel')).toBeVisible();
+		await page.locator('#setting-spin-speed').selectOption('fast');
+		await page.keyboard.press('Escape');
+		await expect(page.locator('#btn-settings')).toBeFocused();
+		await page.locator('#btn-recent').click();
+		await expect(page.locator('#recent-panel')).toBeVisible();
+		await expect(page.locator('.slots-empty-history')).toBeVisible();
+		await page.locator('#recent-panel').focus();
+		await page.keyboard.press('Space');
+		await expect(page.locator('#last-result')).toHaveText('Spin to play');
+		await page.keyboard.press('Escape');
+		await expect(page.locator('#btn-recent')).toBeFocused();
+		await page.locator('#btn-spin').click();
+		await expect(page.locator('#btn-spin')).toBeEnabled();
+		const description = (await page.locator('#last-result').textContent())!;
+		await expect(page.locator('#result-status')).toHaveText(
+			description === 'No win' ? 'No win' : `Line ${description.match(/line (\d+)/)![1]} pays`,
+		);
+		await page.locator('#btn-recent').click();
+		await expect(page.locator('#recent-spins > li')).toHaveCount(1);
+		await expect(page.locator('.slots-history-description')).toContainText(description);
+		await expect(page.locator('.slots-history-net')).toHaveText(/[+−]?\d[\d,]* chips?/);
+		await expect(page.locator('.slots-empty-history')).toBeHidden();
 	});
 
 	test('is responsive on mobile viewport', async ({ page }) => {
-		await page.setViewportSize({ width: 375, height: 667 });
+		await page.setViewportSize({ width: 320, height: 667 });
 		await expect(page.locator('#reel-window')).toBeVisible();
 		await expect(page.locator('.symbol-cell').first()).toBeVisible();
+		await expect(page.locator('.symbol-cell').last()).toBeVisible();
+		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 	});
 
 	test('wallet settlement gate blocks a second spin while the first settles', async ({

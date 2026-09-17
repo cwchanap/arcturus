@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { formatChips } from '../i18n/messages/common';
+import { getSlotsSymbolLabel } from '../i18n/messages/slots';
 import { SlotsUIRenderer } from './SlotsUIRenderer';
 import {
 	MAX_HISTORY,
 	NUM_REELS,
 	NUM_ROWS,
+	NUM_PAYLINES,
 	SYMBOL_ORDER,
-	SYMBOLS,
 	getSpinDurationMs as constantsGetSpinDurationMs,
 } from './constants';
 import type { LineWin, ReelGrid, SlotSettings, SpinResult, SymbolId } from './types';
@@ -19,7 +20,11 @@ class FakeElement {
 	className = '';
 	disabled = false;
 	dataset: Record<string, string> = {};
-	style: Record<string, string> = {};
+	style = Object.assign({} as Record<string, string>, {
+		setProperty: (name: string, value: string) => {
+			this.style[name] = value;
+		},
+	});
 	attributes: Record<string, string> = {};
 	children: FakeElement[] = [];
 	parent: FakeElement | null = null;
@@ -135,6 +140,9 @@ interface DomFixtures {
 	bet: FakeElement;
 	lastResult: FakeElement;
 	lastWin: FakeElement;
+	resultStatus: FakeElement;
+	winAmount: FakeElement;
+	paylines: FakeElement[];
 	recent: FakeElement;
 	status: FakeElement;
 	toast: FakeElement;
@@ -162,7 +170,12 @@ function setupSlotsDom(betIncrements: number[] = [1, 5, 10, 25, 50, 100]): DomFi
 	const bet = make('span', { id: 'current-bet' });
 	const lastResult = make('div', { id: 'last-result' });
 	const lastWin = make('div', { id: 'last-win' });
-	const recent = make('div', { id: 'recent-spins' });
+	const resultStatus = make('span', { id: 'result-status' });
+	const winAmount = make('strong', { id: 'win-amount' });
+	const paylines = Array.from({ length: NUM_PAYLINES }, (_, index) =>
+		make('span', { classes: ['slots-line'], dataset: { payline: String(index) } }),
+	);
+	const recent = make('ol', { id: 'recent-spins' });
 	const status = make('div', { id: 'game-status', classes: ['hidden'] });
 	const toast = make('div', { id: 'achievement-toast', classes: ['hidden'] });
 
@@ -181,6 +194,7 @@ function setupSlotsDom(betIncrements: number[] = [1, 5, 10, 25, 50, 100]): DomFi
 			});
 			const glyph = make('span', { classes: ['symbol-glyph'] });
 			cell.appendChild(glyph);
+			cell.appendChild(make('use', { classes: ['symbol-art'] }));
 			reel.appendChild(cell);
 		}
 	}
@@ -219,6 +233,9 @@ function setupSlotsDom(betIncrements: number[] = [1, 5, 10, 25, 50, 100]): DomFi
 		bet,
 		lastResult,
 		lastWin,
+		resultStatus,
+		winAmount,
+		paylines,
 		recent,
 		status,
 		toast,
@@ -317,14 +334,17 @@ describe('SlotsUIRenderer', () => {
 		expect(fx.betChips.find((c) => c.dataset.bet === '100')!.hasClass('selected')).toBe(true);
 	});
 
-	test('renderGrid writes the matching glyph into every cell using grid[reel][row]', () => {
+	test('renderGrid updates the artwork and accessible symbol name for every cell', () => {
 		const r = new SlotsUIRenderer();
 		const grid = gridWhereEachCellIsUnique();
 		r.renderGrid(grid);
 		for (let reel = 0; reel < NUM_REELS; reel++) {
 			for (let row = 0; row < NUM_ROWS; row++) {
 				const g = fx.glyph(reel, row);
-				expect(g?.textContent).toBe(SYMBOLS[grid[reel][row]].glyph);
+				expect(g?.textContent).toBe(getSlotsSymbolLabel('en', grid[reel][row]));
+				expect(fx.cell(reel, row)?.querySelector('.symbol-art')?.getAttribute('href')).toBe(
+					`/images/slots-symbols.svg#${grid[reel][row]}`,
+				);
 			}
 		}
 	});
@@ -333,9 +353,11 @@ describe('SlotsUIRenderer', () => {
 		const r = new SlotsUIRenderer();
 		fx.cell(0, 1)!.classList.add('win');
 		fx.cell(2, 2)!.classList.add('win');
+		fx.paylines[0].classList.add('win');
 		r.clearHighlight();
 		expect(fx.cell(0, 1)!.hasClass('win')).toBe(false);
 		expect(fx.cell(2, 2)!.hasClass('win')).toBe(false);
+		expect(fx.paylines[0].hasClass('win')).toBe(false);
 	});
 
 	test('highlightWins marks the first `count` cells along the chosen payline', () => {
@@ -346,11 +368,13 @@ describe('SlotsUIRenderer', () => {
 		expect(fx.cell(2, 1)!.hasClass('win')).toBe(true);
 		expect(fx.cell(3, 1)!.hasClass('win')).toBe(false);
 		expect(fx.cell(4, 1)!.hasClass('win')).toBe(false);
+		expect(fx.paylines.filter((line) => line.hasClass('win'))).toEqual([fx.paylines[0]]);
 	});
 
 	test('highlightWins follows V-shaped payline 4 across all five reels', () => {
 		const r = new SlotsUIRenderer();
 		r.highlightWins([makeWin({ paylineIndex: 3, count: 5 })]);
+		expect(fx.paylines[3].hasClass('win')).toBe(true);
 		const expected = [
 			[0, 0],
 			[1, 1],
@@ -403,33 +427,66 @@ describe('SlotsUIRenderer', () => {
 		});
 		r.renderResult(result);
 		expect(fx.lastResult.textContent).toBe('Seven ×5 on line 1');
+		expect(fx.resultStatus.textContent).toBe('Line 1 pays');
 		expect(fx.lastWin.textContent).toBe('WIN +250 chips');
 		expect(fx.lastWin.style.color).toBe('var(--deco-jade)');
+		expect(fx.winAmount.textContent).toBe('250');
+		expect(fx.winAmount.style['--slots-digits']).toBe('3');
 	});
 
 	test('renderResult without wins shows "No win" and clears the win line', () => {
 		const r = new SlotsUIRenderer();
 		fx.lastWin.textContent = 'WIN +99';
+		fx.winAmount.textContent = '99';
+		fx.resultStatus.textContent = 'Line 2 pays';
 		r.renderResult(makeResult({ lineWins: [] }));
 		expect(fx.lastResult.textContent).toBe('No win');
 		expect(fx.lastWin.textContent).toBe('');
+		expect(fx.winAmount.textContent).toBe('0');
+		expect(fx.resultStatus.textContent).toBe('No win');
 	});
 
-	test('renderRecent appends colored dots for positive, negative, and zero deltas', () => {
+	test('result updates preserve an active spinning or error message', () => {
+		const r = new SlotsUIRenderer();
+		for (const message of ['Spinning…', 'Settlement failed']) {
+			r.showStatus(message);
+			r.renderResult(makeResult({ lineWins: [makeWin({ paylineIndex: 1 })], payout: 20 }));
+			expect(fx.resultStatus.textContent).toBe('Line 2 pays');
+			expect(fx.status.textContent).toBe(message);
+			expect(fx.status.hasClass('hidden')).toBe(false);
+		}
+		r.showStatus(null);
+		expect(fx.resultStatus.textContent).toBe('Line 2 pays');
+	});
+
+	test('renderRecent shows ordered rows with outcome markers, actual winning lines, and net amounts', () => {
 		const r = new SlotsUIRenderer();
 		const history = [
-			makeResult({ netDelta: 50 }),
+			makeResult({
+				netDelta: 50,
+				lineWins: [
+					makeWin({ symbol: 'bell', count: 3, paylineIndex: 0 }),
+					makeWin({ symbol: 'cherry', count: 4, paylineIndex: 2 }),
+				],
+			}),
 			makeResult({ netDelta: -30 }),
 			makeResult({ netDelta: 0 }),
 		];
 		r.renderRecent(history);
 		expect(fx.recent.children).toHaveLength(3);
-		expect(fx.recent.children[0].textContent).toBe('+50 chips');
-		expect(fx.recent.children[0].style.color).toBe('var(--deco-jade)');
-		expect(fx.recent.children[1].textContent).toBe('−30 chips');
-		expect(fx.recent.children[1].style.color).toBe('var(--deco-oxblood-bright)');
-		expect(fx.recent.children[2].textContent).toBe('0 chips');
-		expect(fx.recent.children[2].style.color).toBe('var(--deco-muted)');
+		const [win, loss, even] = fx.recent.children;
+		expect(win.tagName).toBe('LI');
+		expect(win.hasClass('win')).toBe(true);
+		expect(loss.hasClass('win')).toBe(false);
+		expect(win.children[0].getAttribute('aria-hidden')).toBe('true');
+		expect(win.children[1].textContent).toBe('Bell ×3 on line 1 · Cherry ×4 on line 3');
+		expect(loss.children[1].textContent).toBe('No win');
+		expect(win.children[2].textContent).toBe('+50 chips');
+		expect(win.children[2].style.color).toBe('var(--deco-brass-bright)');
+		expect(loss.children[2].textContent).toBe('−30 chips');
+		expect(loss.children[2].style.color).toBe('#d7a29c');
+		expect(even.children[2].textContent).toBe('0 chips');
+		expect(even.children[2].style.color).toBe('var(--deco-muted)');
 	});
 
 	test(`renderRecent truncates history to MAX_HISTORY (${MAX_HISTORY}) entries`, () => {
@@ -446,7 +503,7 @@ describe('SlotsUIRenderer', () => {
 		expect(fx.recent.children).toHaveLength(1);
 		r.renderRecent([makeResult({ netDelta: 2 }), makeResult({ netDelta: 3 })]);
 		expect(fx.recent.children).toHaveLength(2);
-		expect(fx.recent.children[0].textContent).toBe('+2 chips');
+		expect(fx.recent.children[0].children[2].textContent).toBe('+2 chips');
 	});
 
 	test('getSpinDurationMs delegates to constants for each speed', () => {

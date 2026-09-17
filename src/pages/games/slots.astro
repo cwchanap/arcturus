@@ -1,10 +1,19 @@
 ---
+import '../../styles/slots.css';
+import DecoIcon from '../../components/DecoIcon.astro';
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { slotsTranslator, getSlotsSymbolLabel } from '../../lib/i18n/messages/slots';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
-import { BET_INCREMENTS, PAYTABLE, SYMBOL_ORDER, SYMBOLS } from '../../lib/slots/constants';
+import {
+	BET_INCREMENTS,
+	PAYTABLE,
+	SYMBOL_ORDER,
+	NUM_REELS,
+	NUM_ROWS,
+	NUM_PAYLINES,
+} from '../../lib/slots/constants';
 
 const locale = Astro.locals.locale;
 const t = slotsTranslator(locale);
@@ -14,322 +23,302 @@ const initialBalance = gameSession.initialBalance;
 const clientUserId = gameSession.clientUserId;
 ---
 
-<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'slots') })}>
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'slots') })} footerClass="hidden">
 	<div
 		id="slots-root"
 		data-testid="slots-root"
 		data-user-id={clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
-		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+		class="slots-cabinet"
 	>
-		<!-- Header -->
-		<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-			<div>
-				<a
-					href="/games"
-					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
-				>
-					← {t('backToGames')}
-				</a>
-				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'slots')}</h1>
-				<p class="text-[var(--deco-muted)] text-sm mt-1">
-					{t('freeChips')}
-				</p>
-			</div>
-			<div
-				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
-			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">
-					{getBalanceLabel(locale, gameSession.isGuest)}
+		<div class="slots-interior">
+			<div class="slots-sunburst" aria-hidden="true"></div>
+			<header class="slots-header">
+				<a href="/games" class="slots-back"><span aria-hidden="true">‹</span>{t('backToGames')}</a>
+				<div class="slots-title">
+					<span class="slots-emblem" aria-hidden="true"
+						><svg
+							viewBox="0 0 24 24"
+							width="18"
+							height="18"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.2"
+							><rect x="4" y="5" width="16" height="14" rx="1"></rect><path d="M9 5v14M15 5v14"
+							></path></svg
+						></span
+					>
+					<h1>{getGameName(locale, 'slots')}</h1><span class="slots-mode"
+						>{t('lineCount', { count: String(NUM_PAYLINES) })}</span
+					>
 				</div>
-				<div
-					class="text-2xl font-bold text-[var(--deco-brass)]"
-					id="chip-balance"
-					data-testid="chip-balance"
-				>
-					{formatChips(initialBalance, locale)}
-				</div>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-			<!-- Game table -->
-			<div class="lg:col-span-3">
-				<div class="felt-table rounded-3xl p-4 sm:p-6 mb-6 relative">
-					<div
-						id="game-status"
-						data-testid="game-status"
-						class="hidden absolute top-4 left-1/2 -translate-x-1/2 text-lg font-semibold text-[var(--deco-brass)] bg-[var(--deco-obsidian-2)] px-6 py-2 rounded-full border border-[var(--deco-brass)] z-10"
-					>
-						{t('placeYourBet')}
+				<div class="slots-tools">
+					<div class="slots-meter">
+						<span class="slots-label">{t('top')}</span><strong>×{PAYTABLE.seven[5]}</strong>
 					</div>
-
-					<div
-						id="last-result"
-						data-testid="last-result"
-						role="status"
-						aria-live="polite"
-						class="text-center text-[var(--deco-ivory-dim)] mb-3 h-6"
-					>
-						{t('spinToPlay')}
-					</div>
-
-					<!-- Reel window -->
-					<div
-						id="reel-window"
-						data-testid="reel-window"
-						class="grid grid-cols-5 gap-2 sm:gap-3 max-w-2xl mx-auto"
-					>
-						{
-							[0, 1, 2, 3, 4].map((reel) => (
-								<div class="reel flex flex-col gap-2" data-reel={reel}>
-									{[0, 1, 2].map((row) => (
-										<div
-											class="symbol-cell flex items-center justify-center rounded-lg bg-[var(--deco-obsidian)] border border-[var(--deco-line)] aspect-square text-3xl sm:text-5xl font-bold"
-											data-reel={reel}
-											data-row={row}
-										>
-											<span class="symbol-glyph">🍒</span>
-										</div>
-									))}
-								</div>
-							))
-						}
-					</div>
-
-					<div
-						id="last-win"
-						data-testid="last-win"
-						role="status"
-						aria-live="polite"
-						class="text-center mt-4 h-8 text-2xl font-bold"
-					>
-					</div>
-				</div>
-
-				<!-- Bet controls -->
-				<div
-					class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 sm:p-6 border border-[var(--deco-line)]"
-				>
-					<div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-						<span class="text-[var(--deco-muted)] text-sm">{t('betPerSpin')}</span>
-						<span
-							class="text-xl font-bold text-[var(--deco-brass)]"
-							id="current-bet"
-							data-testid="current-bet">{formatChips(BET_INCREMENTS[0], locale)}</span
+					<div class="slots-meter" title={getBalanceLabel(locale, gameSession.isGuest)}>
+						<DecoIcon name="chip" size={16} /><span class="sr-only"
+							>{getBalanceLabel(locale, gameSession.isGuest)}</span
+						>
+						<span id="chip-balance" data-testid="chip-balance"
+							>{formatChips(initialBalance, locale)}</span
 						>
 					</div>
-					<div class="flex flex-wrap gap-2 mb-4" id="bet-chips" data-testid="bet-chips">
-						{
-							BET_INCREMENTS.map((amount, i) => (
-								<button
-									type="button"
-									class={`bet-chip rounded-full px-3 py-2 text-sm font-semibold border transition ${i === 0 ? 'selected' : ''}`}
-									data-bet={amount}
-									aria-pressed={i === 0 ? 'true' : 'false'}
-								>
-									{formatChips(amount, locale)}
-								</button>
-							))
-						}
-					</div>
+					<label class="slots-icon slots-toggle" title={t('quickSpin')}>
+						<input type="checkbox" id="setting-quick" aria-label={t('quickSpin')} />
+						<svg
+							aria-hidden="true"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.6"><path d="M13 3L5.5 13.5h5L10 21l7.5-10.5h-5Z"></path></svg
+						>
+					</label>
 					<button
 						type="button"
-						id="btn-spin"
-						data-testid="btn-spin"
-						class="btn-gold w-full py-4 text-lg font-bold rounded-xl"
+						id="btn-recent"
+						data-slot-panel="recent-panel"
+						aria-controls="recent-panel"
+						aria-expanded="false"
+						class="slots-icon"
+						aria-label={t('recentSpins')}
+						title={t('recentSpins')}><DecoIcon name="menu" size={16} /></button
 					>
-						{t('spin')}
-					</button>
-				</div>
-			</div>
-
-			<!-- Sidebar: recent spins + toggles -->
-			<div class="lg:col-span-1 space-y-4">
-				<div class="bg-[var(--deco-obsidian-2)] rounded-2xl p-4 border border-[var(--deco-line)]">
-					<div class="text-sm text-[var(--deco-muted)] mb-2">{t('recentSpins')}</div>
-					<div
-						id="recent-spins"
-						data-testid="recent-spins"
-						class="flex flex-wrap gap-1 min-h-[28px]"
-					>
-					</div>
-				</div>
-				<div class="flex gap-2">
 					<button
 						type="button"
 						id="btn-paytable"
 						data-testid="btn-paytable"
-						class="deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-slot-panel="paytable-panel"
+						aria-controls="paytable-panel"
+						aria-expanded="false"
+						class="slots-icon"
+						aria-label={t('paytable')}
+						title={t('paytable')}>?</button
 					>
-						{t('paytable')}
-					</button>
 					<button
 						type="button"
 						id="btn-settings"
 						data-testid="btn-settings"
-						class="deco-btn flex-1 py-2 rounded-lg text-sm"
+						data-slot-panel="settings-panel"
+						aria-controls="settings-panel"
+						aria-expanded="false"
+						class="slots-icon"
+						aria-label={t('settings')}
+						title={t('settings')}
 					>
-						{t('settings')}
+						<svg
+							aria-hidden="true"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							><path
+								d="m10 3-.6 2.4-2.1 1.2L5 6l-2 3 1.8 1.8v2.4L3 15l2 3 2.3-.6 2.1 1.2L10 21h4l.6-2.4 2.1-1.2 2.3.6 2-3-1.8-1.8v-2.4L21 9l-2-3-2.3.6-2.1-1.2L14 3Z"
+							></path><circle cx="12" cy="12" r="3"></circle></svg
+						>
 					</button>
 				</div>
-			</div>
+			</header>
+			<section class="slots-stage" aria-label={getGameName(locale, 'slots')}>
+				<div class="slots-machine">
+					<div class="slots-paylines" aria-hidden="true">
+						{
+							[1, 0, 2].map((index) => (
+								<span class="slots-line" data-payline={index}>
+									<span>{index + 1}</span>
+								</span>
+							))
+						}
+					</div>
+					<div class="slots-reel-frame">
+						<div class="slots-reel-inset">
+							<div id="reel-window" data-testid="reel-window">
+								{
+									Array.from({ length: NUM_REELS }, (_, reel) => (
+										<div class="reel" data-reel={reel}>
+											{Array.from({ length: NUM_ROWS }, (_, row) => (
+												<div class="symbol-cell" data-reel={reel} data-row={row}>
+													<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
+														<use class="symbol-art" href="/images/slots-symbols.svg#cherry" />
+													</svg>
+													<span class="symbol-glyph sr-only">
+														{getSlotsSymbolLabel(locale, 'cherry')}
+													</span>
+												</div>
+											))}
+										</div>
+									))
+								}
+							</div>
+						</div>
+					</div>
+					<div class="slots-paylines" aria-hidden="true">
+						{
+							[3, 4].map((index) => (
+								<span class="slots-line" data-payline={index}>
+									<span>{index + 1}</span>
+								</span>
+							))
+						}
+					</div>
+				</div>
+				<div class="slots-result-panel">
+					<div class="slots-feedback">
+						<span id="result-status" class="slots-ready">{t('ready')}</span>
+						<div id="game-status" data-testid="game-status" role="status" class="hidden"></div>
+					</div>
+					<div class="slots-win-diamond">
+						<div class="slots-win-display">
+							<strong id="win-amount">0</strong><span class="slots-label">{t('won')}</span>
+						</div>
+						<div
+							id="last-win"
+							data-testid="last-win"
+							role="status"
+							aria-live="polite"
+							class="sr-only"
+						>
+						</div>
+					</div>
+					<div class="slots-result-caption">
+						<span class="slots-label">{t('lastSpin')}</span>
+						<div id="last-result" data-testid="last-result" role="status" aria-live="polite">
+							{t('spinToPlay')}
+						</div>
+					</div>
+				</div>
+			</section>
+			<section class="slots-controls" aria-label={t('betPerSpin')}>
+				<div class="slots-divider" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="slots-control-row">
+					<span class="slots-label">{t('betPerSpin')}</span>
+					<div id="bet-chips" data-testid="bet-chips" role="group" aria-label={t('betPerSpin')}>
+						{
+							BET_INCREMENTS.map((amount, i) => (
+								<button
+									type="button"
+									class={`bet-chip${i === 0 ? ' selected' : ''}`}
+									data-bet={amount}
+									aria-pressed={i === 0}
+									aria-label={formatChips(amount, locale)}
+								>
+									{amount}
+								</button>
+							))
+						}
+					</div>
+					<div class="slots-meter slots-current-bet">
+						<DecoIcon name="chip" size={14} /><span id="current-bet" data-testid="current-bet"
+							>{formatChips(BET_INCREMENTS[0], locale)}</span
+						>
+					</div>
+					<button type="button" id="btn-spin" data-testid="btn-spin" class="slots-spin"
+						><span aria-hidden="true">⟳</span>{t('spin')}</button
+					>
+				</div>
+			</section>
 		</div>
 
-		<!-- Paytable panel -->
-		<div
+		<dialog id="recent-panel" class="slots-drawer" aria-labelledby="recent-title">
+			<header>
+				<h2 id="recent-title">{t('recentSpins')}</h2><form method="dialog">
+					<button class="slots-icon" aria-label={t('close')}>×</button>
+				</form>
+			</header>
+			<div class="slots-drawer-body">
+				<ol id="recent-spins" data-testid="recent-spins" role="list"></ol><p
+					class="slots-empty-history"
+				>
+					{t('noSpins')}
+				</p>
+			</div>
+		</dialog>
+		<dialog
 			id="paytable-panel"
 			data-testid="paytable-panel"
-			role="dialog"
-			aria-modal="true"
-			aria-label={t('paytable')}
-			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+			class="slots-drawer"
+			aria-labelledby="paytable-title"
 		>
-			<div
-				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-2xl w-full p-6 max-h-[85vh] overflow-y-auto"
-			>
-				<div class="flex items-center justify-between mb-4">
-					<h2 class="deco-section-title text-2xl">{t('paytable')}</h2>
-					<button
-						type="button"
-						class="btn-paytable-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
-						aria-label={t('closePaytable')}
-					>
-						✕
-					</button>
-				</div>
-				<p class="text-[var(--deco-muted)] text-sm mb-4">
-					{t('paytableIntro')}
-				</p>
-				<table class="w-full text-sm">
-					<thead>
-						<tr class="text-[var(--deco-muted)]">
-							<th class="text-left py-2">{t('symbol')}</th>
-							<th class="text-right py-2">3</th>
-							<th class="text-right py-2">4</th>
-							<th class="text-right py-2">5</th>
-						</tr>
-					</thead>
-					<tbody>
+			<header>
+				<h2 id="paytable-title">{t('paytable')}</h2><form method="dialog">
+					<button class="slots-icon btn-paytable-close" aria-label={t('closePaytable')}>×</button>
+				</form>
+			</header>
+			<div class="slots-drawer-body">
+				<p>{t('paytableIntro')}</p>
+				<table>
+					<thead
+						><tr
+							><th scope="col">{t('symbol')}</th><th scope="col">3</th><th scope="col">4</th><th
+								scope="col">5</th
+							></tr
+						></thead
+					><tbody>
 						{
 							SYMBOL_ORDER.map((id) => (
-								<tr class="border-t border-[var(--deco-line)]">
-									<td class="py-2">
-										<span class="text-2xl mr-2">{SYMBOLS[id].glyph}</span>
-										<span class="text-[var(--deco-ivory-dim)]">
-											{getSlotsSymbolLabel(locale, id)}
-										</span>
-									</td>
-									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][3]}</td>
-									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][4]}</td>
-									<td class="text-right py-2 text-[var(--deco-brass)]">×{PAYTABLE[id][5]}</td>
+								<tr>
+									<>
+										<th scope="row">
+											<span class="slots-paytable-symbol">
+												<>
+													<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
+														<use href={`/images/slots-symbols.svg#${id}`} />
+													</svg>
+													<span>{getSlotsSymbolLabel(locale, id)}</span>
+												</>
+											</span>
+										</th>
+										<td>×{PAYTABLE[id][3]}</td>
+										<td>×{PAYTABLE[id][4]}</td>
+										<td>×{PAYTABLE[id][5]}</td>
+									</>
 								</tr>
 							))
 						}
 					</tbody>
 				</table>
-				<p class="text-[var(--deco-muted)] text-xs mt-4">
-					{t('paytableFootnote')}
-				</p>
+				<p>{t('paytableFootnote')}</p><p>{t('freeChips')}</p>
 			</div>
-		</div>
-
-		<!-- Settings panel -->
-		<div
+		</dialog>
+		<dialog
 			id="settings-panel"
 			data-testid="settings-panel"
-			role="dialog"
-			aria-modal="true"
-			aria-label={t('settings')}
-			class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+			class="slots-drawer"
+			aria-labelledby="settings-title"
 		>
-			<div
-				class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] rounded-2xl max-w-sm w-full p-6"
-			>
-				<div class="flex items-center justify-between mb-4">
-					<h2 class="deco-section-title text-2xl">{t('settings')}</h2>
-					<button
-						type="button"
-						class="btn-settings-close text-[var(--deco-muted)] hover:text-[var(--deco-brass)] text-xl"
-						aria-label={t('closeSettings')}
-					>
-						✕
-					</button>
-				</div>
-				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">{t('spinSpeed')}</span>
-					<select
-						id="setting-spin-speed"
-						class="bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded px-2 py-1"
-					>
-						<option value="slow">{t('speedSlow')}</option>
-						<option value="normal" selected>{t('speedNormal')}</option>
-						<option value="fast">{t('speedFast')}</option>
-					</select>
-				</label>
-				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">{t('sound')}</span>
-					<input type="checkbox" id="setting-sound" checked />
-				</label>
-				<label class="flex items-center justify-between py-2">
-					<span class="text-[var(--deco-ivory-dim)]">{t('quickSpin')}</span>
-					<input type="checkbox" id="setting-quick" />
-				</label>
+			<header>
+				<h2 id="settings-title">{t('settings')}</h2><form method="dialog">
+					<button class="slots-icon btn-settings-close" aria-label={t('closeSettings')}>×</button>
+				</form>
+			</header>
+			<div class="slots-drawer-body">
+				<label class="slots-setting"
+					><span>{t('spinSpeed')}</span><select id="setting-spin-speed"
+						><option value="slow">{t('speedSlow')}</option><option value="normal" selected
+							>{t('speedNormal')}</option
+						><option value="fast">{t('speedFast')}</option></select
+					></label
+				>
+				<label class="slots-setting"
+					><span>{t('sound')}</span><input type="checkbox" id="setting-sound" checked /></label
+				>
 			</div>
-		</div>
-
-		<!-- Achievement toast -->
+		</dialog>
 		<div
 			id="achievement-toast"
 			data-testid="achievement-toast"
-			class="hidden fixed bottom-6 right-6 z-50"
+			class="hidden slots-achievement"
+			role="status"
 		>
 		</div>
 	</div>
 </CasinoLayout>
-
-<style is:global>
-	.bet-chip {
-		background: var(--deco-obsidian);
-		border-color: var(--deco-line);
-		color: var(--deco-ivory-dim);
-	}
-	.bet-chip.selected {
-		border-color: var(--deco-brass);
-		color: var(--deco-brass-bright);
-		transform: scale(1.08);
-		box-shadow: 0 0 12px color-mix(in srgb, var(--deco-brass) 45%, transparent);
-	}
-	.symbol-cell.win {
-		border-color: var(--deco-brass-bright);
-		box-shadow: 0 0 16px color-mix(in srgb, var(--deco-brass) 60%, transparent);
-		animation: win-pulse 0.8s ease-in-out infinite alternate;
-	}
-	.reel.spinning .symbol-glyph {
-		animation: spin-scroll 0.12s linear infinite;
-		opacity: 0.6;
-	}
-	@keyframes win-pulse {
-		from {
-			transform: scale(1);
-		}
-		to {
-			transform: scale(1.08);
-		}
-	}
-	@keyframes spin-scroll {
-		from {
-			transform: translateY(-6px);
-		}
-		to {
-			transform: translateY(6px);
-		}
-	}
-</style>
-
 <script>
 	import { initSlotsClient } from '../../lib/slots/slotsClient';
-
 	initSlotsClient();
 </script>

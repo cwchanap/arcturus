@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <symbol id="seven" viewBox="0 0 24 24">
+    <text x="12" y="18.5" text-anchor="middle" font-size="21" font-weight="700" fill="currentColor" stroke="none">7</text>
+  </symbol>
+  <symbol id="bar" viewBox="0 0 24 24">
+    <text x="12" y="15" text-anchor="middle" font-size="8.2" font-weight="700" fill="currentColor" stroke="none">BAR</text>
+  </symbol>
+  <symbol id="bell" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.4 a1.5 1.5 0 0 1 1.5 1.5 v.7 a5.6 5.6 0 0 1 3.7 5.3 v3.1 l1.7 2.7 H5.1 l1.7 -2.7 v-3.1 a5.6 5.6 0 0 1 3.7 -5.3 v-.7 A1.5 1.5 0 0 1 12 3.4 Z"/>
+      <path d="M10.2 19 a1.8 1.8 0 0 0 3.6 0"/>
+    </g>
+  </symbol>
+  <symbol id="melon" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 7.4 h18 a9 9 0 0 1 -18 0 Z"/>
+      <path d="M5.4 8.1 a6.6 6.6 0 0 0 13.2 0"/>
+      <path d="M 8.65 11.6 a 0.75 0.75 0 1 0 1.5 0 a 0.75 0.75 0 1 0 -1.5 0" fill="currentColor"/>
+      <path d="M 13.85 11.6 a 0.75 0.75 0 1 0 1.5 0 a 0.75 0.75 0 1 0 -1.5 0" fill="currentColor"/>
+      <path d="M 11.25 14.4 a 0.75 0.75 0 1 0 1.5 0 a 0.75 0.75 0 1 0 -1.5 0" fill="currentColor"/>
+    </g>
+  </symbol>
+  <symbol id="grapes" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 7 V3.6"/>
+      <path d="M12.4 4.2 c2.1 -1.4 4 -.8 4.8 .6 c-2 1.3 -3.9 1 -4.8 -.6 Z"/>
+      <path d="M 10 8.6 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 7.3 12.2 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 12.7 12.2 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 9.9 15.8 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 5.1 15.8 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 14.7 15.8 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 7.4 19.2 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+      <path d="M 12.4 19.2 a 2 2 0 1 0 4 0 a 2 2 0 1 0 -4 0"/>
+    </g>
+  </symbol>
+  <symbol id="lemon" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.8 12 c0 -3.5 3.2 -6.1 7.2 -6.1 s7.2 2.6 7.2 6.1 s-3.2 6.1 -7.2 6.1 s-7.2 -2.6 -7.2 -6.1 Z"/>
+      <path d="M19.2 12 h2.3"/>
+      <path d="M2.5 12 h2.3"/>
+      <path d="M8.4 9.3 c1.6 -.9 3.4 -.9 5 0"/>
+    </g>
+  </symbol>
+  <symbol id="cherry" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 14.6 C10.2 10.2 13 6.6 16.4 4.6"/>
+      <path d="M15.9 14.9 C16.6 11 16.8 7.4 16.4 4.6"/>
+      <path d="M16.8 4.6 c2.3 -1.1 4 -.4 4.7 1.2 c-2.1 1.2 -3.8 .8 -4.7 -1.2 Z"/>
+      <path d="M 5 17.6 a 3.1 3.1 0 1 0 6.2 0 a 3.1 3.1 0 1 0 -6.2 0"/>
+      <path d="M 13.3 18 a 3.1 3.1 0 1 0 6.2 0 a 3.1 3.1 0 1 0 -6.2 0"/>
+    </g>
+  </symbol>
+</svg>

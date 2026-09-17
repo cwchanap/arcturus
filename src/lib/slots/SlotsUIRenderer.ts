@@ -2,14 +2,7 @@ import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { slotsTranslator, getSlotsSymbolLabel, formatSlotsNet } from '../i18n/messages/slots';
 import { formatWholeNumber } from '../formatting';
-import {
-	MAX_HISTORY,
-	NUM_REELS,
-	NUM_ROWS,
-	PAYLINES,
-	SYMBOLS,
-	getSpinDurationMs,
-} from './constants';
+import { MAX_HISTORY, NUM_REELS, NUM_ROWS, PAYLINES, getSpinDurationMs } from './constants';
 import type { LineWin, ReelGrid, SpinResult, SlotSettings } from './types';
 
 export class SlotsUIRenderer {
@@ -43,18 +36,25 @@ export class SlotsUIRenderer {
 					`.symbol-cell[data-reel="${reel}"][data-row="${row}"]`,
 				);
 				const glyph = cell?.querySelector<HTMLElement>('.symbol-glyph');
-				if (glyph) glyph.textContent = SYMBOLS[grid[reel][row]].glyph;
+				if (glyph) glyph.textContent = getSlotsSymbolLabel(this.locale, grid[reel][row]);
+				cell
+					?.querySelector('.symbol-art')
+					?.setAttribute('href', `/images/slots-symbols.svg#${grid[reel][row]}`);
 			}
 		}
 	}
 
 	clearHighlight(): void {
 		document.querySelectorAll('.symbol-cell.win').forEach((c) => c.classList.remove('win'));
+		document.querySelectorAll('.slots-line.win').forEach((c) => c.classList.remove('win'));
 	}
 
 	highlightWins(lineWins: LineWin[]): void {
 		this.clearHighlight();
 		for (const win of lineWins) {
+			document
+				.querySelector(`.slots-line[data-payline="${win.paylineIndex}"]`)
+				?.classList.add('win');
 			const payline = PAYLINES[win.paylineIndex];
 			for (let reel = 0; reel < win.count; reel++) {
 				const row = payline[reel];
@@ -86,15 +86,20 @@ export class SlotsUIRenderer {
 	renderResult(result: SpinResult): void {
 		const lastResult = document.getElementById('last-result');
 		const lastWin = document.getElementById('last-win');
+		const resultStatus = document.getElementById('result-status');
+		const amount = document.getElementById('win-amount');
+		if (amount) {
+			amount.textContent = formatWholeNumber(result.payout, this.locale);
+			amount.style.setProperty('--slots-digits', String(amount.textContent.length));
+		}
 		if (result.lineWins.length > 0) {
 			const top = result.lineWins.reduce((a, b) => (a.multiplier > b.multiplier ? a : b));
-			if (lastResult) {
-				lastResult.textContent = this.t('lineResult', {
-					symbol: getSlotsSymbolLabel(this.locale, top.symbol),
-					count: formatWholeNumber(top.count, this.locale),
+			if (resultStatus) {
+				resultStatus.textContent = this.t('linePays', {
 					line: formatWholeNumber(top.paylineIndex + 1, this.locale),
 				});
 			}
+			if (lastResult) lastResult.textContent = this.formatLineWin(top);
 			if (lastWin) {
 				lastWin.textContent = this.t('winAmount', {
 					amount: formatChips(result.payout, this.locale),
@@ -102,11 +107,20 @@ export class SlotsUIRenderer {
 				lastWin.style.color = 'var(--deco-jade)';
 			}
 		} else {
+			if (resultStatus) resultStatus.textContent = this.t('noWin');
 			if (lastResult) lastResult.textContent = this.t('noWin');
 			if (lastWin) {
 				lastWin.textContent = '';
 			}
 		}
+	}
+
+	private formatLineWin(win: LineWin): string {
+		return this.t('lineResult', {
+			symbol: getSlotsSymbolLabel(this.locale, win.symbol),
+			count: formatWholeNumber(win.count, this.locale),
+			line: formatWholeNumber(win.paylineIndex + 1, this.locale),
+		});
 	}
 
 	renderRecent(history: SpinResult[]): void {
@@ -115,17 +129,31 @@ export class SlotsUIRenderer {
 		const recent = history.slice(0, MAX_HISTORY);
 		el.replaceChildren();
 		for (const h of recent) {
-			const dot = document.createElement('span');
-			dot.className = 'px-2 py-1 rounded text-xs font-semibold';
-			dot.textContent = formatSlotsNet(this.locale, h.netDelta);
+			const row = document.createElement('li');
+			row.className = 'slots-history-row';
+			row.classList.toggle('win', h.lineWins.length > 0);
+			const marker = document.createElement('span');
+			marker.className = 'slots-history-marker';
+			marker.setAttribute('aria-hidden', 'true');
+			const description = document.createElement('span');
+			description.className = 'slots-history-description';
+			description.textContent = h.lineWins.length
+				? h.lineWins.map((win) => this.formatLineWin(win)).join(' · ')
+				: this.t('noWin');
+			const net = document.createElement('span');
+			net.className = 'slots-history-net';
+			net.textContent = formatSlotsNet(this.locale, h.netDelta);
 			if (h.netDelta > 0) {
-				dot.style.color = 'var(--deco-jade)';
+				net.style.color = 'var(--deco-brass-bright)';
 			} else if (h.netDelta < 0) {
-				dot.style.color = 'var(--deco-oxblood-bright)';
+				net.style.color = '#d7a29c';
 			} else {
-				dot.style.color = 'var(--deco-muted)';
+				net.style.color = 'var(--deco-muted)';
 			}
-			el.appendChild(dot);
+			row.appendChild(marker);
+			row.appendChild(description);
+			row.appendChild(net);
+			el.appendChild(row);
 		}
 	}
 

@@ -36,6 +36,10 @@ describe('slots message catalog', () => {
 	test('spin outcomes and settlement recovery copy', () => {
 		const t = slotsTranslator('en');
 		expect(t('lineResult', { symbol: 'Seven', count: '5', line: '1' })).toBe('Seven ×5 on line 1');
+		expect(t('linePays', { line: '2' })).toBe('Line 2 pays');
+		expect(slotsTranslator('zh-Hant')('linePays', { line: '2' })).toBe('第 2 線派彩');
+		expect(slotsTranslator('zh-Hans')('linePays', { line: '2' })).toBe('第 2 线派彩');
+		expect(slotsTranslator('ja')('linePays', { line: '2' })).toBe('2 ライン目が的中');
 		expect(t('noWin')).toBe('No win');
 		expect(t('winAmount', { amount: formatChips(250, 'en') })).toBe('WIN +250 chips');
 		expect(t('retrySettlement')).toBe('Retry settlement');

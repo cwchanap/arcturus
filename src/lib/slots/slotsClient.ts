@@ -251,14 +251,22 @@ export function initSlotsClient(): void {
 		});
 	}
 
-	// Settings panel wiring
-	const settingsPanel = document.getElementById('settings-panel');
-	document.getElementById('btn-settings')?.addEventListener('click', () => {
-		settingsPanel?.classList.remove('hidden');
-		applySettingsToUi();
-	});
-	document.querySelector('.btn-settings-close')?.addEventListener('click', () => {
-		settingsPanel?.classList.add('hidden');
+	// Native dialogs provide focus containment, Escape, and focus restoration.
+	root.querySelectorAll<HTMLButtonElement>('[data-slot-panel]').forEach((button) => {
+		const panel = document.getElementById(
+			button.dataset.slotPanel ?? '',
+		) as HTMLDialogElement | null;
+		if (!panel) return;
+		button.addEventListener('click', () => {
+			applySettingsToUi();
+			panel.showModal();
+			button.setAttribute('aria-expanded', 'true');
+		});
+		panel.addEventListener('close', () => button.setAttribute('aria-expanded', 'false'));
+		panel.addEventListener('click', (event) => {
+			if (event.target === panel && event.clientX < panel.getBoundingClientRect().left)
+				panel.close();
+		});
 	});
 	const speedSelect = document.getElementById('setting-spin-speed') as HTMLSelectElement | null;
 	speedSelect?.addEventListener('change', () => {
@@ -279,38 +287,14 @@ export function initSlotsClient(): void {
 		if (quick) quick.checked = s.quickSpin;
 	}
 
-	// Paytable panel wiring
-	const paytablePanel = document.getElementById('paytable-panel');
-	document.getElementById('btn-paytable')?.addEventListener('click', () => {
-		paytablePanel?.classList.remove('hidden');
-	});
-	document.querySelector('.btn-paytable-close')?.addEventListener('click', () => {
-		paytablePanel?.classList.add('hidden');
-	});
+	applySettingsToUi();
 
-	function isAnyModalOpen(): boolean {
-		return (
-			!paytablePanel?.classList.contains('hidden') || !settingsPanel?.classList.contains('hidden')
-		);
-	}
-
-	// Keyboard: Escape closes modals; Space/Enter spins (but not behind modals)
+	// Space/Enter spins only outside a dialog or an interactive control.
 	document.addEventListener('keydown', (e) => {
-		if (e.key === 'Escape') {
-			if (!paytablePanel?.classList.contains('hidden')) {
-				paytablePanel?.classList.add('hidden');
-				return;
-			}
-			if (!settingsPanel?.classList.contains('hidden')) {
-				settingsPanel?.classList.add('hidden');
-				return;
-			}
-		}
 		if ((e.key === ' ' || e.key === 'Enter') && game.canSpin()) {
-			if (isAnyModalOpen()) return;
+			if (root.querySelector('dialog[open]')) return;
 			const target = e.target as HTMLElement;
-			if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON')
-				return;
+			if (target.closest('input, select, button, a')) return;
 			e.preventDefault();
 			doSpin();
 		}

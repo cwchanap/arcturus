@@ -581,36 +581,41 @@
 	transform: none;
 }
 .blackjack-cabinet .playing-card-inner {
+	position: relative;
+	width: 100%;
 	height: 100%;
-	padding: 6px 7px;
+	user-select: none;
 }
 .blackjack-cabinet .card-corner {
 	position: absolute;
+	width: 20%;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	line-height: 0.9;
+	font:
+		700 18px/1 Georgia,
+		serif;
 }
 .blackjack-cabinet .card-corner-top {
-	top: 6px;
-	left: 7px;
+	top: 4%;
+	left: 4%;
 }
 .blackjack-cabinet .card-corner-bottom {
-	bottom: 6px;
-	right: 7px;
-	transform: rotate(180deg);
+	bottom: 4%;
+	right: 4%;
+	rotate: 180deg;
 }
 .blackjack-cabinet .card-rank {
-	font: 700 19px/0.9 var(--font-display);
+	font: inherit;
 }
 .blackjack-cabinet .card-suit-small {
-	font-size: 14px;
+	font-size: 0.72em;
 }
 .blackjack-cabinet .card-suit-center {
 	position: absolute;
 	left: 50%;
 	top: 50%;
-	transform: translate(-50%, -50%);
+	translate: -50% -50%;
 	font-size: 36px;
 }
 .blackjack-cabinet .card-red {
@@ -621,18 +626,18 @@
 }
 .blackjack-cabinet [data-card-detail] {
 	position: absolute;
-	inset: 32% 24%;
+	inset: 22% 34%;
 }
 .blackjack-cabinet [data-card-detail] span {
 	position: absolute;
-	transform: translate(-50%, -50%);
+	translate: -50% -50%;
 	font:
-		14px/1 Georgia,
+		18px/1 Georgia,
 		serif;
 }
 .blackjack-cabinet [data-face-detail] {
 	position: absolute;
-	inset: 14% 23%;
+	inset: 15% 28%;
 	border: 1px solid currentColor;
 	display: flex;
 	flex-direction: column;
@@ -908,11 +913,11 @@
 		width: 64px;
 		height: 90px;
 	}
-	.blackjack-cabinet .card-rank {
-		font-size: 14px;
+	.blackjack-cabinet .card-corner {
+		font-size: 13px;
 	}
 	.blackjack-cabinet [data-card-detail] span {
-		font-size: 10px;
+		font-size: 13px;
 	}
 	.blackjack-cabinet [data-face-detail] [data-rank] {
 		font-size: 24px;
@@ -920,18 +925,13 @@
 	.blackjack-cabinet [data-face-detail] [data-suit-small] {
 		font-size: 14px;
 	}
-	.blackjack-cabinet .card-suit-small {
-		font-size: 10px;
-	}
 	.blackjack-cabinet .card-suit-center {
 		font-size: 25px;
 	}
-	.blackjack-cabinet .card-corner-top {
-		top: 5px;
-		left: 5px;
-	}
-	.blackjack-cabinet .card-corner-bottom {
-		bottom: 5px;
-		right: 5px;
+}
+
+@media (max-width: 400px) {
+	.cabinet-dealer-hand {
+		flex-direction: column;
 	}
 }

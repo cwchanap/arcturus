@@ -151,7 +151,9 @@ test.describe('Roulette — Bet Placement', () => {
 		await expect(page.getByTestId('total-bet')).toContainText('5 chips');
 		await expect(page.getByTestId('active-bets')).toContainText('Straight 17');
 		await expect(position).toHaveAttribute('data-staked', 'true');
-		await page.locator('[data-bet-type="red"]').click();
+		const redCell = page.locator('[data-bet-type="red"]');
+		await redCell.focus();
+		await page.keyboard.press('Space');
 		await page.locator('[data-bet-type="black"]').click();
 		await expect(page.getByTestId('total-bet')).toContainText('15 chips');
 		await page.getByRole('button', { name: 'Active Bets', exact: true }).click();

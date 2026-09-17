@@ -726,14 +726,37 @@ describe('Blackjack client initialization and settlement flow', () => {
 		await flush(5);
 
 		const settingsPanel = document.getElementById('settings-panel') as HTMLElement;
+		const btnToggle = document.getElementById('btn-toggle-settings') as HTMLButtonElement;
 		expect(settingsPanel.classList.contains('hidden')).toBe(true);
 
-		(document.getElementById('btn-toggle-settings') as HTMLButtonElement).click();
+		btnToggle.click();
 		expect(settingsPanel.classList.contains('hidden')).toBe(false);
 		expect(document.activeElement).toBe(document.getElementById('setting-starting-chips'));
 
-		(document.getElementById('btn-toggle-settings') as HTMLButtonElement).click();
+		btnToggle.click();
 		expect(settingsPanel.classList.contains('hidden')).toBe(true);
+		expect(document.activeElement).toBe(btnToggle);
+
+		root.remove();
+	});
+
+	test('Escape inside the settings panel closes it and returns focus to the toggle', async () => {
+		installFetch();
+		const root = buildBlackjackDOM({ guestMode: true, userId: 'guest-esc', initialBalance: 1000 });
+		initBlackjackClient();
+		await flush(5);
+
+		const settingsPanel = document.getElementById('settings-panel') as HTMLElement;
+		const btnToggle = document.getElementById('btn-toggle-settings') as HTMLButtonElement;
+		btnToggle.click();
+		expect(settingsPanel.classList.contains('hidden')).toBe(false);
+
+		settingsPanel.dispatchEvent(
+			new happyWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+		);
+		expect(settingsPanel.classList.contains('hidden')).toBe(true);
+		expect(btnToggle.getAttribute('aria-expanded')).toBe('false');
+		expect(document.activeElement).toBe(btnToggle);
 
 		root.remove();
 	});

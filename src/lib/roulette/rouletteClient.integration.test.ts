@@ -166,7 +166,7 @@ describe('roulette client guest flow', () => {
 		const chip = s.doc.document.querySelectorAll('.chip-select')[3];
 		chip.dispatchEvent(new MockEvent('click'));
 		expect(chip.classList.contains('selected')).toBe(true);
-		s.betCells.red.dispatchEvent(new MockEvent('keydown', { key: 'Enter' }));
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
 		expect(s.spinBtn.disabled).toBe(false);
 	});
 });

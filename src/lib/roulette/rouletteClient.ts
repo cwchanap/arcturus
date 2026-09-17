@@ -192,9 +192,10 @@ export function initRouletteClient(): void {
 		});
 	});
 
-	// Betting table — click and keyboard activation. The domain reports
-	// placement failures as stable English strings; translate them here at the
-	// presentation boundary (the wire/domain values stay language-neutral).
+	// Betting table — the bet cells are native <button>s, so click covers
+	// keyboard activation. The domain reports placement failures as stable
+	// English strings; translate them here at the presentation boundary (the
+	// wire/domain values stay language-neutral).
 	const betPlacementErrorText = (error: string | undefined): string => {
 		if (!error) return t('cannotPlaceBet');
 		if (error === 'Insufficient chips') return t('errorInsufficientChips');
@@ -222,12 +223,6 @@ export function initRouletteClient(): void {
 			updateAndPersist();
 		};
 		el.addEventListener('click', placeBetFromCell);
-		el.addEventListener('keydown', (event) => {
-			if (event.key === 'Enter' || event.key === ' ') {
-				event.preventDefault();
-				placeBetFromCell();
-			}
-		});
 	});
 
 	document.getElementById('active-bets')?.addEventListener('click', (event) => {

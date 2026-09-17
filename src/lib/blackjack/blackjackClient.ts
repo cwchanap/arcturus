@@ -322,16 +322,21 @@ export function initBlackjackClient(): void {
 
 	// Settings panel toggle (only if elements exist)
 	if (btnToggleSettings && settingsPanel) {
-		btnToggleSettings.addEventListener('click', () => {
-			settingsPanel.classList.toggle('hidden');
-			btnToggleSettings.setAttribute(
-				'aria-expanded',
-				String(!settingsPanel.classList.contains('hidden')),
-			);
-			if (!settingsPanel.classList.contains('hidden')) {
+		const setSettingsPanelOpen = (open: boolean) => {
+			settingsPanel.classList.toggle('hidden', !open);
+			btnToggleSettings.setAttribute('aria-expanded', String(open));
+			if (open) {
 				settingsPanel.scrollIntoView?.({ block: 'nearest' });
 				startingChipsInput?.focus();
+			} else if (settingsPanel.contains(document.activeElement)) {
+				btnToggleSettings.focus();
 			}
+		};
+		btnToggleSettings.addEventListener('click', () => {
+			setSettingsPanelOpen(settingsPanel.classList.contains('hidden'));
+		});
+		settingsPanel.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape') setSettingsPanelOpen(false);
 		});
 	}
 

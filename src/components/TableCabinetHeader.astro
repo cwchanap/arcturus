@@ -50,8 +50,9 @@ const { title, backLabel, balance, balanceLabel, tag, icon = 'dice' } = Astro.pr
 	</div>
 	<div class="tc-tools">
 		<div class="tc-balance" title={balanceLabel}>
-			<DecoIcon name="chip" size={18} /><span id="chip-balance" data-testid="chip-balance"
-				>{balance}</span
+			<DecoIcon name="chip" size={18} /><span class="sr-only">{balanceLabel}</span><span
+				id="chip-balance"
+				data-testid="chip-balance">{balance}</span
 			>
 		</div>
 		<slot />

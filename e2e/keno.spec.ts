@@ -67,6 +67,9 @@ test.describe('Keno game', () => {
 		expect(drawn.every((number) => number >= 1 && number <= 80)).toBe(true);
 		const hitCount = drawn.filter((number) => selected.includes(number)).length;
 		expect(hitCount).toBe(3);
+		await expect(page.locator('[data-keno-payout]')).toHaveText(String(PAYTABLE[3][3] * bet));
+		await expect(page.locator('[data-keno-caught]')).toHaveText('3 / 3');
+		await expect(page.locator('[data-keno-multiplier]')).toHaveText(`×${PAYTABLE[3][3]}`);
 		await expect(page.getByTestId('last-result')).toHaveText(
 			expectedResultText(selected.length, hitCount, bet),
 		);

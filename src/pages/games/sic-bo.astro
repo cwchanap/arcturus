@@ -1,15 +1,22 @@
 ---
+import CabinetDrawer from '../../components/CabinetDrawer.astro';
+import TableCabinetHeader from '../../components/TableCabinetHeader.astro';
+import DecoIcon from '../../components/DecoIcon.astro';
+import '../../styles/table-cabinet.css';
+import '../../styles/sic-bo.css';
+import { cabinetTranslator } from '../../lib/i18n/messages/cabinet';
 import CasinoLayout from '../../layouts/casino.astro';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { sicBoTranslator, type SIC_BO_MESSAGES } from '../../lib/i18n/messages/sic-bo';
 import { getGameName } from '../../lib/i18n/messages/games';
-import { formatChips } from '../../lib/i18n/messages/common';
+import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import type { MessageKey } from '../../lib/i18n/translate';
 import { SIC_BO_CHIP_DENOMINATIONS, TOTAL_ODDS } from '../../lib/sic-bo';
 import type { SicBoBetKey } from '../../lib/sic-bo';
 
 const locale = Astro.locals.locale;
 const t = sicBoTranslator(locale);
+const cabinet = cabinetTranslator(locale);
 const gameSession = createPublicGameSession(Astro.locals.user);
 
 const PRIMARY_BET_LABEL_KEYS: Record<
@@ -46,218 +53,183 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 }));
 ---
 
-<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'sic-bo') })}>
-	<main
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'sic-bo') })} footerClass="hidden">
+	<div
 		id="sic-bo-root"
 		data-testid="sic-bo-root"
 		data-user-id={gameSession.clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={gameSession.initialBalance}
-		class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8"
+		class="table-cabinet sic-bo-cabinet"
 	>
-		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
-			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
-				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'sic-bo')}</h1>
-				<p class="text-[var(--deco-muted)]">
-					{t('subtitle')}
-				</p>
-			</div>
-			<div class="deco-panel px-5 py-3">
-				<div class="text-xs text-[var(--deco-muted)]">{gameSession.balanceLabel}</div>
+		<div class="tc-interior">
+			<TableCabinetHeader
+				title={getGameName(locale, 'sic-bo')}
+				backLabel={t('backToGames')}
+				tag={t('paytableA')}
+				balance={formatChips(gameSession.initialBalance, locale)}
+				balanceLabel={getBalanceLabel(locale, gameSession.isGuest)}
+			>
+				<span class="tc-top">{cabinet('top')} <strong>50 : 1</strong></span>
+				<button
+					type="button"
+					aria-haspopup="dialog"
+					class="tc-icon"
+					data-cabinet-panel="sic-bo-history"
+					aria-controls="sic-bo-history"
+					aria-expanded="false"
+					aria-label={cabinet('history')}
+					title={cabinet('history')}><DecoIcon name="menu" size={17} /></button
+				>
+				<button
+					type="button"
+					aria-haspopup="dialog"
+					class="tc-icon"
+					data-cabinet-panel="sic-bo-paytable"
+					aria-controls="sic-bo-paytable"
+					aria-expanded="false"
+					aria-label={t('paytableA')}
+					title={t('paytableA')}>?</button
+				>
+			</TableCabinetHeader>
+			<section class="tc-stage" aria-label={t('subtitle')}>
+				<div class="tc-rays" aria-hidden="true"></div>
+				<div class="tc-dice">
+					{
+						[0, 1, 2].map((i) => (
+							<div
+								id={`sic-bo-die-${i}`}
+								data-testid={`sic-bo-die-${i}`}
+								data-value="0"
+								class="tc-die"
+							>
+								<span data-die-value>—</span>
+								{Array.from({ length: 9 }, () => (
+									<i class="tc-pip" aria-hidden="true" />
+								))}
+							</div>
+						))
+					}
+				</div>
+				<div class="sic-bo-total">
+					<div class="tc-diamond">
+						<strong id="sic-bo-total">—</strong><small>{cabinet('total')}</small>
+					</div><div
+						id="sic-bo-result"
+						data-testid="sic-bo-result"
+						role="status"
+						aria-live="polite"
+					>
+					</div>
+				</div>
+			</section>
+			<section class="tc-content">
+				<div class="sic-bo-primary">
+					{
+						primaryBets.map((bet) => (
+							<button
+								type="button"
+								data-bet-key={bet.key}
+								aria-pressed="false"
+								class="sic-bo-bet-button"
+							>
+								<>
+									<span class="sic-bo-bet-label">{t(PRIMARY_BET_LABEL_KEYS[bet.key])}</span>
+									<span class="sic-bo-bet-odds">{bet.odds}</span>
+									<span class="sic-bo-bet-amount" data-bet-amount />
+								</>
+							</button>
+						))
+					}
+				</div>
+				<div class="sic-bo-totals">
+					{
+						totalBets.map((bet) => (
+							<button
+								type="button"
+								data-bet-key={bet.key}
+								aria-pressed="false"
+								class="sic-bo-bet-button"
+							>
+								<>
+									<span class="sic-bo-bet-label">{bet.label}</span>
+									<span class="sic-bo-bet-odds">{bet.odds}</span>
+									<span class="sic-bo-bet-amount" data-bet-amount />
+								</>
+							</button>
+						))
+					}
+				</div>
+				<div class="tc-divider" aria-hidden="true">◆ ◇ ◆</div>
+				<div class="tc-controls">
+					<div class="tc-chips">
+						<span class="tc-label">{cabinet('chip')}</span>{
+							SIC_BO_CHIP_DENOMINATIONS.map((amount) => (
+								<button
+									type="button"
+									data-denomination={amount}
+									aria-pressed="false"
+									class="tc-chip"
+									aria-label={formatChips(amount, locale)}
+								>
+									{amount}
+								</button>
+							))
+						}
+					</div>
+					<span id="sic-bo-total-stake" data-testid="sic-bo-total-stake" class="tc-stake"
+						>{t('totalStake', { amount: formatChips(0, locale) })}</span
+					>
+					<button
+						type="button"
+						id="sic-bo-clear-bets"
+						data-testid="sic-bo-clear-bets"
+						class="tc-button">{t('clearBets')}</button
+					>
+					<button
+						type="button"
+						id="sic-bo-action"
+						data-testid="sic-bo-action"
+						class="tc-primary"
+						disabled>{t('roll')}</button
+					>
+				</div>
 				<div
-					id="chip-balance"
-					data-testid="chip-balance"
-					class="text-2xl font-bold text-[var(--deco-brass)]"
+					id="sic-bo-status"
+					data-testid="sic-bo-status"
+					role="status"
+					aria-live="polite"
+					class="tc-status"
 				>
-					{formatChips(gameSession.initialBalance, locale)}
+					{t('chooseDenomination')}
 				</div>
-			</div>
-		</header>
-
-		<section class="felt-table rounded-3xl p-6">
-			<div class="flex justify-center gap-4">
-				{
-					[0, 1, 2].map((i) => (
-						<div
-							id={`sic-bo-die-${i}`}
-							data-testid={`sic-bo-die-${i}`}
-							data-value="0"
-							class="sic-bo-die"
-						>
-							—
-						</div>
-					))
-				}
-			</div>
-
-			<div
-				id="sic-bo-status"
-				data-testid="sic-bo-status"
-				role="status"
-				aria-live="polite"
-				class="mt-4 text-center text-[var(--deco-ivory-dim)]"
-			>
-				{t('chooseDenomination')}
-			</div>
-			<div
-				id="sic-bo-result"
-				data-testid="sic-bo-result"
-				role="status"
-				aria-live="polite"
-				class="mt-1 min-h-6 text-center font-semibold text-[var(--deco-brass)]"
-			>
-			</div>
-
-			<div class="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-5">
-				{
-					primaryBets.map((bet) => (
-						<button type="button" data-bet-key={bet.key} class="sic-bo-bet-button">
-							<span class="sic-bo-bet-label">{t(PRIMARY_BET_LABEL_KEYS[bet.key])}</span>
-							<span class="sic-bo-bet-odds">{bet.odds}</span>
-							<span class="sic-bo-bet-amount" data-bet-amount />
-						</button>
-					))
-				}
-			</div>
-
-			<div class="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-7">
-				{
-					totalBets.map((bet) => (
-						<button type="button" data-bet-key={bet.key} class="sic-bo-bet-button">
-							<span class="sic-bo-bet-label">{bet.label}</span>
-							<span class="sic-bo-bet-odds">{bet.odds}</span>
-							<span class="sic-bo-bet-amount" data-bet-amount />
-						</button>
-					))
-				}
-			</div>
-
-			<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
-				{
-					SIC_BO_CHIP_DENOMINATIONS.map((amount) => (
-						<button
-							type="button"
-							data-denomination={amount}
-							aria-pressed="false"
-							class="deco-btn rounded-lg px-4 py-2"
-						>
-							{formatChips(amount, locale)}
-						</button>
-					))
-				}
-			</div>
-
-			<div class="mt-6 flex flex-wrap items-center justify-center gap-4">
-				<span id="sic-bo-total-stake" data-testid="sic-bo-total-stake" class="text-sm">
-					{t('totalStake', { amount: formatChips(0, locale) })}
-				</span>
-				<button
-					type="button"
-					id="sic-bo-clear-bets"
-					data-testid="sic-bo-clear-bets"
-					class="deco-btn rounded-lg px-4 py-2"
-				>
-					{t('clearBets')}
-				</button>
-				<button
-					type="button"
-					id="sic-bo-action"
-					data-testid="sic-bo-action"
-					class="btn-gold rounded-lg px-8 py-3"
-					disabled
-				>
-					{t('roll')}
-				</button>
-			</div>
-			<div id="sic-bo-recovery-host" class="mt-4 flex justify-center"></div>
-		</section>
-
-		<aside class="deco-panel mt-6 p-5">
-			<h2 class="deco-section-title text-2xl">{t('paytableA')}</h2>
-			<p class="mt-1 text-xs text-[var(--deco-muted)]">
-				{t('paytableNote')}
-			</p>
-			<div class="mt-3 grid gap-2 text-sm">
-				<div class="flex justify-between gap-4">
-					<span>{t('paytablePrimary')}</span>
-					<span>1:1</span>
-				</div>
-				<div class="flex justify-between gap-4">
-					<span>{t('paytableAnyTriple')}</span>
-					<span>24:1</span>
-				</div>
-				{
-					paytableTotalRows.map((row) => (
-						<div class="flex justify-between gap-4">
+				<div id="sic-bo-recovery-host" class="tc-controls"></div>
+			</section>
+		</div>
+		<CabinetDrawer id="sic-bo-paytable" title={t('paytableA')} closeLabel={cabinet('close')}>
+			<p class="tc-empty">{t('paytableNote')}</p>
+			<div class="tc-pay-row"><span>{t('paytablePrimary')}</span><span>1:1</span></div>
+			<div class="tc-pay-row"><span>{t('paytableAnyTriple')}</span><span>24:1</span></div>
+			{
+				paytableTotalRows.map((row) => (
+					<div class="tc-pay-row">
+						<>
 							<span>{t('paytableTotal', { value: row.label })}</span>
 							<span>{row.odds}</span>
-						</div>
-					))
-				}
+						</>
+					</div>
+				))
+			}
+			<div class="tc-pay-row">
+				<span>{t('paytableTotal', { value: '9–12' })}</span><span>6:1</span>
 			</div>
-		</aside>
-	</main>
+		</CabinetDrawer>
+		<CabinetDrawer id="sic-bo-history" title={cabinet('history')} closeLabel={cabinet('close')}
+			><ol id="sic-bo-recent"></ol><p class="tc-empty">{cabinet('noHistory')}</p></CabinetDrawer
+		>
+	</div>
 </CasinoLayout>
-
-<style>
-	.sic-bo-die {
-		width: 72px;
-		height: 72px;
-		border-radius: 12px;
-		background: var(--deco-obsidian);
-		border: 1px solid var(--deco-line);
-		color: var(--deco-ivory);
-		font-size: 2rem;
-		font-weight: 700;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		box-shadow:
-			inset 0 0 24px rgba(0, 0, 0, 0.35),
-			0 4px 12px rgba(0, 0, 0, 0.4);
-	}
-
-	.sic-bo-bet-button {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 2px;
-		padding: 10px 6px;
-		border-radius: 10px;
-		background: var(--deco-obsidian);
-		border: 1px solid var(--deco-line);
-		color: var(--deco-ivory);
-		transition:
-			border-color 0.15s ease,
-			transform 0.15s ease;
-	}
-	.sic-bo-bet-button:hover {
-		border-color: color-mix(in srgb, var(--deco-brass) 60%, transparent);
-		transform: translateY(-1px);
-	}
-	.sic-bo-bet-button:focus-visible {
-		outline: 2px solid color-mix(in srgb, var(--deco-brass) 90%, transparent);
-		outline-offset: 2px;
-	}
-	.sic-bo-bet-label {
-		font-weight: 700;
-		font-size: 0.9rem;
-	}
-	.sic-bo-bet-odds {
-		font-size: 0.7rem;
-		color: var(--deco-muted);
-	}
-	.sic-bo-bet-amount {
-		min-height: 1.1rem;
-		font-size: 0.85rem;
-		font-weight: 700;
-		color: var(--deco-brass);
-	}
-</style>
-
 <script>
 	import { initSicBoClient } from '../../lib/sic-bo/client';
-
 	initSicBoClient();
 </script>

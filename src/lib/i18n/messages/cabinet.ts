@@ -5,7 +5,7 @@ export const CABINET_MESSAGES = defineMessages({
 	en: {
 		close: 'Close',
 		top: 'Top',
-		won: 'Won',
+		payout: 'Payout',
 		total: 'Total',
 		history: 'Roll history',
 		chip: 'Chip',
@@ -22,7 +22,7 @@ export const CABINET_MESSAGES = defineMessages({
 	'zh-Hant': {
 		close: '關閉',
 		top: '最高',
-		won: '派彩',
+		payout: '派彩',
 		total: '總和',
 		history: '擲骰紀錄',
 		chip: '籌碼',
@@ -39,7 +39,7 @@ export const CABINET_MESSAGES = defineMessages({
 	'zh-Hans': {
 		close: '关闭',
 		top: '最高',
-		won: '派彩',
+		payout: '派彩',
 		total: '总和',
 		history: '掷骰记录',
 		chip: '筹码',
@@ -56,7 +56,7 @@ export const CABINET_MESSAGES = defineMessages({
 	ja: {
 		close: '閉じる',
 		top: '最高',
-		won: '払戻し',
+		payout: '払戻し',
 		total: '合計',
 		history: 'ロール履歴',
 		chip: 'チップ',

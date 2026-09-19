@@ -1,0 +1,251 @@
+.keno-content {
+	width: min(100% - 64px, 1040px);
+	padding-top: 9px;
+}
+.keno-playfield {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 180px;
+	gap: 24px;
+	align-items: start;
+}
+.keno-board {
+	padding: 12px;
+	border: 5px solid #8c7438;
+	background:
+		repeating-linear-gradient(90deg, #c8a55c05 0 2px, transparent 2px 8px),
+		radial-gradient(ellipse at 50% 20%, #16492f, #072416);
+	box-shadow:
+		inset 0 0 0 1px #e4c988,
+		0 0 0 1px #e4c988,
+		0 20px 40px #0007;
+}
+#keno-grid {
+	display: grid;
+	grid-template-columns: repeat(10, minmax(0, 1fr));
+	gap: 7px;
+}
+.keno-cabinet .keno-cell {
+	position: relative;
+	min-width: 0;
+	aspect-ratio: 1;
+	display: grid;
+	place-items: center;
+	border: 1px solid #c8a55c69;
+	background: linear-gradient(#0d3021cc, #071d14dd);
+	color: #bcb6a7;
+	font: 700 24px var(--font-body);
+	cursor: pointer;
+	transition:
+		background 0.15s,
+		box-shadow 0.15s;
+	box-shadow: inset 0 0 0 2px #02140b55;
+}
+.keno-cabinet .keno-cell:hover {
+	border-color: #e4c988;
+}
+.keno-cabinet .keno-cell.selected {
+	background: linear-gradient(#397340, #174526);
+	color: #e9e3c7;
+	border-color: #a6aa65;
+	box-shadow:
+		inset 0 0 0 2px #b5b06a33,
+		0 0 10px #87954633;
+}
+.keno-cabinet .keno-cell.drawn {
+	border: 2px solid #e4c988;
+	color: #e4c988;
+}
+.keno-cabinet .keno-cell.hit {
+	background: linear-gradient(#e5ce84, #b99642);
+	color: #192419;
+	border-color: #ffebaa;
+	box-shadow: 0 0 13px #e4c98855;
+}
+.keno-cabinet .pick-order {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	font: 600 9px var(--font-body);
+}
+.keno-cabinet .hit .pick-order {
+	color: #183422;
+}
+.keno-results {
+	align-self: center;
+	text-align: center;
+	padding-top: 6px;
+}
+.keno-status {
+	min-height: 32px;
+	border: 1px solid var(--tc-line);
+	padding: 8px;
+	color: #e4c988;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+.keno-prize {
+	display: grid;
+	justify-items: center;
+	padding-top: 18px;
+}
+.keno-metrics {
+	display: grid;
+	gap: 6px;
+	margin: 14px 0;
+}
+.keno-metrics > div {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 9px 12px;
+	border: 1px solid var(--tc-line);
+}
+.keno-metrics dt {
+	font-size: 9px;
+	color: #aaa38e;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+}
+.keno-metrics dd {
+	font: 600 13px var(--font-body);
+	color: #e4c988;
+}
+.keno-last {
+	font-size: 12px;
+	line-height: 1.6;
+}
+.keno-last p {
+	margin-top: 5px;
+}
+.keno-inline-paytable {
+	margin-top: 16px;
+	font-size: 11px;
+	text-align: left;
+}
+.keno-inline-paytable summary {
+	cursor: pointer;
+	color: #c8a55c;
+}
+.keno-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 7px;
+	justify-content: center;
+}
+.keno-actions .tc-button {
+	padding-inline: 16px;
+}
+.keno-cabinet .keno-modal {
+	justify-content: flex-end;
+	backdrop-filter: blur(3px);
+}
+.keno-cabinet .keno-modal > div {
+	margin: 0;
+	border-radius: 0;
+	height: 100dvh;
+	width: min(430px, 92vw);
+	max-width: none;
+	overflow-y: auto;
+	background: #070b09;
+	border: 0;
+	border-left: 1px solid #8c7438;
+}
+.keno-cabinet .keno-modal h2 {
+	font-family: var(--font-display);
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+}
+.keno-cabinet .keno-modal button[id$='close'] {
+	width: 36px;
+	height: 36px;
+	border: 1px solid var(--tc-line);
+}
+.keno-cabinet .speed-opt {
+	border-radius: 0;
+}
+.keno-cabinet .speed-opt.selected {
+	border-color: #e4c988;
+	color: #e4c988;
+}
+.keno-cabinet #recent-tickets > div {
+	border-bottom: 1px solid var(--tc-line);
+	padding: 10px 0;
+}
+@media (max-width: 1000px) {
+	.keno-playfield {
+		grid-template-columns: minmax(0, 1fr) 210px;
+		gap: 16px;
+	}
+	.keno-board {
+		padding: 10px;
+	}
+	#keno-grid {
+		gap: 5px;
+	}
+	.keno-cabinet .keno-cell {
+		font-size: 18px;
+	}
+}
+@media (max-width: 800px) {
+	.keno-playfield {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.keno-results {
+		align-self: center;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		align-items: center;
+	}
+	.keno-prize {
+		grid-row: span 2;
+		padding: 0;
+	}
+	.keno-status {
+		grid-column: 1 / -1;
+	}
+	.keno-metrics {
+		margin: 0;
+	}
+	.keno-inline-paytable {
+		grid-column: 1 / -1;
+		margin: 0;
+	}
+}
+@media (max-width: 640px) {
+	.keno-content {
+		width: calc(100% - 24px);
+		padding-top: 8px;
+	}
+	#keno-grid {
+		grid-template-columns: repeat(8, minmax(0, 1fr));
+		gap: 3px;
+	}
+	.keno-board {
+		padding: 7px;
+		border-width: 3px;
+	}
+	.keno-cabinet .keno-cell {
+		font-size: 16px;
+		aspect-ratio: 0.85;
+	}
+	.keno-cabinet .pick-order {
+		font-size: 7px;
+		top: 0;
+		right: 2px;
+	}
+	.keno-metrics dd {
+		font-size: 17px;
+	}
+	.keno-metrics dt {
+		font-size: 8px;
+		letter-spacing: 0.03em;
+	}
+	.keno-actions {
+		width: 100%;
+	}
+	.keno-actions .tc-primary {
+		flex: 1;
+	}
+}

@@ -1,6 +1,12 @@
 ---
+import type { BetType } from '../../lib/craps/types';
 import CasinoLayout from '../../layouts/casino.astro';
-import PokerChip from '../../components/PokerChip.astro';
+import CabinetDrawer from '../../components/CabinetDrawer.astro';
+import TableCabinetHeader from '../../components/TableCabinetHeader.astro';
+import DecoIcon from '../../components/DecoIcon.astro';
+import { cabinetTranslator } from '../../lib/i18n/messages/cabinet';
+import '../../styles/table-cabinet.css';
+import '../../styles/craps.css';
 import { createPublicGameSession } from '../../lib/public-game-session';
 import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { crapsTranslator, getCrapsBetLabel } from '../../lib/i18n/messages/craps';
@@ -14,407 +20,338 @@ const t = crapsTranslator(locale);
 // Opaque per-user surrogate: 'anonymous' for guests, a non-reversible hash for
 // authenticated users. The raw account id is never rendered into the DOM.
 const clientUserId = gameSession.clientUserId;
+const cabinet = cabinetTranslator(locale);
 ---
 
-<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'craps') })}>
+<CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'craps') })} footerClass="hidden">
 	<div
 		id="craps-root"
 		data-user-id={clientUserId}
 		data-guest-mode={gameSession.guestModeValue}
 		data-initial-balance={initialBalance}
-		class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
+		class="table-cabinet craps-cabinet"
 	>
-		<!-- Header -->
-		<div class="flex items-center justify-between mb-6">
-			<div>
-				<a
-					href="/games"
-					class="text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors mb-2 inline-block"
-				>
-					← {t('backToGames')}
-				</a>
-				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'craps')}</h1>
-			</div>
-			<div
-				class="bg-[var(--deco-obsidian-2)] px-6 py-3 rounded-lg border border-[var(--deco-brass-dim)]"
+		<div class="tc-interior">
+			<TableCabinetHeader
+				title={getGameName(locale, 'craps')}
+				backLabel={t('backToGames')}
+				balance={formatChips(initialBalance, locale)}
+				balanceLabel={getBalanceLabel(locale, gameSession.isGuest)}
+				tag={cabinet('crapsOdds')}
 			>
-				<div class="text-xs text-[var(--deco-muted)] mb-1">
-					{getBalanceLabel(locale, gameSession.isGuest)}
-				</div>
-				<div class="text-2xl font-bold text-[var(--deco-brass)]" id="chip-balance">
-					{formatChips(initialBalance, locale)}
-				</div>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-			<!-- Main Game Area (3 cols) -->
-			<div class="lg:col-span-3 space-y-4">
-				<!-- Dice + Status Bar -->
-				<div
-					class="bg-[var(--deco-obsidian-2)] rounded-xl border border-[var(--deco-line)] p-4 flex items-center gap-6"
+				<button
+					type="button"
+					class="tc-icon"
+					data-cabinet-panel="craps-active"
+					aria-haspopup="dialog"
+					aria-expanded="false"
+					aria-label={t('activeBets')}
+					title={t('activeBets')}><DecoIcon name="menu" /></button
 				>
-					<div class="flex gap-4 items-center">
-						<div class="die-display" id="die1" data-value="0">
-							<svg viewBox="0 0 60 60" class="w-14 h-14" aria-hidden="true">
-								<rect width="60" height="60" rx="10" class="die-face"></rect>
-								<g class="die-dots" id="die1-dots"></g>
-							</svg>
-						</div>
-						<div class="die-display" id="die2" data-value="0">
-							<svg viewBox="0 0 60 60" class="w-14 h-14" aria-hidden="true">
-								<rect width="60" height="60" rx="10" class="die-face"></rect>
-								<g class="die-dots" id="die2-dots"></g>
-							</svg>
-						</div>
-						<div class="text-center">
-							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider">
-								{t('totalLabel')}
-							</div>
-							<div class="text-3xl font-bold text-[var(--deco-ivory)]" id="roll-total">—</div>
-						</div>
-					</div>
-
-					<div class="flex-1 border-l border-[var(--deco-line)] pl-4">
-						<div class="flex items-center gap-3 mb-1">
-							<span
-								id="phase-badge"
-								class="px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-sapphire)] uppercase tracking-wider"
-							>
-								{t('phaseComeOut')}
-							</span>
-							<span
-								id="point-badge"
-								class="hidden px-2 py-0.5 rounded text-xs font-bold bg-[var(--deco-obsidian-3)] text-[var(--deco-brass)]"
-							>
-								{t('pointLabel', { point: '—' })}
-							</span>
-						</div>
-						<div id="game-message" class="text-[var(--deco-ivory-dim)] text-sm">
-							{t('messagePlaceBets')}
-						</div>
-						<div
-							id="settlement-recovery"
-							class="hidden mt-2 flex flex-wrap gap-2"
-							data-testid="settlement-recovery"
-						>
-							<button
-								id="btn-retry-settlement"
-								type="button"
-								class="btn-gold px-3 py-1 rounded text-xs font-bold"
-								data-testid="retry-settlement"
-							>
-								{t('retrySettlement')}
-							</button>
-							<button
-								id="btn-reset-settlement"
-								type="button"
-								class="px-3 py-1 rounded text-xs border border-[var(--deco-line)]"
-								data-testid="reset-settlement"
-							>
-								{t('resetSettlement')}
-							</button>
-						</div>
-					</div>
-
-					<div>
-						<button
-							id="roll-button"
-							data-testid="roll-button"
-							disabled
-							class="btn-gold px-6 py-3 rounded-xl font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed min-w-[110px]"
-						>
-							{t('rollButton')}
-						</button>
-					</div>
-				</div>
-
-				<!-- Craps Table -->
-				<div class="craps-table rounded-2xl p-4 space-y-3">
-					<!-- Pass Line / Don't Pass -->
-					<div class="grid grid-cols-2 gap-3">
-						<div
-							data-bet-type="passLine"
-							class="bet-zone pass-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
-								{t('betPassLine')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-						<div
-							data-bet-type="dontPass"
-							class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
-								{t('tableDontPassBar')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-					</div>
-
-					<!-- Pass Odds / Don't Pass Odds (shown only in point phase) -->
-					<div id="odds-row" class="hidden grid-cols-2 gap-3">
-						<div
-							data-bet-type="passLineOdds"
-							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
-								{t('betPassLineOdds')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-						<div
-							data-bet-type="dontPassOdds"
-							class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
-								{t('betDontPassOdds')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-					</div>
-
-					<!-- Number Row: Place / Come bets per number -->
-					<div class="grid grid-cols-6 gap-2">
+				<button
+					type="button"
+					class="tc-icon"
+					data-cabinet-panel="craps-payouts"
+					aria-haspopup="dialog"
+					aria-expanded="false"
+					aria-label={t('payoutsHeading')}
+					title={t('payoutsHeading')}>?</button
+				>
+			</TableCabinetHeader>
+			<div class="tc-content">
+				<div class="tc-stage craps-stage">
+					<div class="tc-rays" aria-hidden="true"></div>
+					<div class="tc-dice">
 						{
-							[4, 5, 6, 8, 9, 10].map((n) => (
-								<div class="number-box rounded-lg p-2 text-center" data-number={n}>
-									<div class="text-[var(--deco-ivory)] font-bold text-sm">
-										{n === 6 ? t('numberSix') : n === 8 ? t('numberEight') : n}
-									</div>
-									<div
-										data-bet-type={`place${n}`}
-										class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
-									>
-										<div class="text-[var(--deco-muted)] text-xs">{t('placeNumber')}</div>
-										<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
-									</div>
-									<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
-										<div class="text-[var(--deco-sapphire)] text-xs font-bold come-display-amount" />
-									</div>
-									<div class="flex gap-1 mt-1 justify-center">
-										<div
-											data-bet-type={`buy${n}`}
-											class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-jade)] hover:bg-[var(--deco-emerald-deep)]"
-										>
-											B
-										</div>
-										<div
-											data-bet-type={`lay${n}`}
-											class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-oxblood-bright)] hover:bg-[var(--deco-oxblood)]"
-										>
-											L
-										</div>
-									</div>
+							[1, 2].map((i) => (
+								<div
+									class="die-display"
+									id={`die${i}`}
+									data-value="0"
+									role="img"
+									aria-label={cabinet('die', { value: '—' })}
+								>
+									<>
+										<svg viewBox="0 0 60 60" aria-hidden="true">
+											<>
+												<rect width="60" height="60" rx="9" class="die-face" />
+												<g class="die-dots" id={`die${i}-dots`} />
+											</>
+										</svg>
+										<span class="die-empty" aria-hidden="true">
+											—
+										</span>
+									</>
 								</div>
 							))
 						}
 					</div>
-
-					<!-- Come / Don't Come / Field -->
-					<div class="grid grid-cols-3 gap-3">
-						<div
-							data-bet-type="come"
-							class="bet-zone come-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-sapphire)] font-bold text-sm uppercase tracking-wider">
-								{t('betCome')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-						<div
-							data-bet-type="field"
-							class="bet-zone field-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div class="text-[var(--deco-amethyst)] font-bold text-sm uppercase tracking-wider">
-								{t('betField')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('fieldNote')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-						<div
-							data-bet-type="dontCome"
-							class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
-						>
-							<div
-								class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider"
+					<div class="tc-diamond">
+						<strong id="roll-total">—</strong><small>{t('totalLabel')}</small>
+					</div>
+					<div class="craps-result">
+						<div class="craps-phase">
+							<span id="phase-badge">{t('phaseComeOut')}</span><span id="point-badge" class="hidden"
+								>{t('pointLabel', { point: '—' })}</span
 							>
-								{t('betDontCome')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
 						</div>
-					</div>
-
-					<!-- Big 6 / Big 8 -->
-					<div class="grid grid-cols-2 gap-3">
-						<div
-							data-bet-type="big6"
-							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
-						>
-							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
-								{t('betBig6')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-						<div
-							data-bet-type="big8"
-							class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
-						>
-							<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
-								{t('betBig8')}
-							</div>
-							<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
-							<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
-						</div>
-					</div>
-
-					<!-- Hardways Row -->
-					<div class="border-t border-[var(--deco-line)] pt-3">
-						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
-							{t('hardwaysHeading')}
-						</div>
-						<div class="grid grid-cols-4 gap-2">
-							{
-								(
-									[
-										{ type: 'hard4', pays: '7:1' },
-										{ type: 'hard6', pays: '9:1' },
-										{ type: 'hard8', pays: '9:1' },
-										{ type: 'hard10', pays: '7:1' },
-									] as const
-								).map((h) => (
-									<div
-										data-bet-type={h.type}
-										class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
-									>
-										<div class="text-[var(--deco-brass-bright)] font-bold text-xs">
-											{getCrapsBetLabel(locale, h.type)}
-										</div>
-										<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
-										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
-									</div>
-								))
-							}
-						</div>
-					</div>
-
-					<!-- Proposition Bets -->
-					<div class="border-t border-[var(--deco-line)] pt-3">
-						<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
-							{t('propositionHeading')}
-						</div>
-						<div class="grid grid-cols-7 gap-1.5">
-							{
-								(
-									[
-										{ type: 'any7', pays: '4:1' },
-										{ type: 'anyCraps', pays: '7:1' },
-										{ type: 'aces', pays: '30:1' },
-										{ type: 'aceDeuce', pays: '15:1' },
-										{ type: 'yo', pays: '15:1' },
-										{ type: 'boxcars', pays: '30:1' },
-										{ type: 'ce', pays: '3/7:1' },
-									] as const
-								).map((p) => (
-									<div
-										data-bet-type={p.type}
-										class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
-									>
-										<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
-											{getCrapsBetLabel(locale, p.type)}
-										</div>
-										<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
-										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
-									</div>
-								))
-							}
-						</div>
-					</div>
-				</div><!-- /craps-table -->
-
-				<!-- Chip Selection + Controls -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<div class="flex flex-wrap items-center justify-between gap-4">
-						<div class="flex gap-2 flex-wrap">
-							{
-								[
-									{ amount: 5, color: 'gold' },
-									{ amount: 25, color: 'red' },
-									{ amount: 50, color: 'blue' },
-									{ amount: 100, color: 'green' },
-									{ amount: 500, color: 'black' },
-								].map((c) => (
-									<button
-										class="chip-select hover:scale-110 transition-transform"
-										data-amount={c.amount}
-										data-testid={`chip-${c.amount}`}
-									>
-										<PokerChip
-											value={c.amount}
-											color={c.color as 'red' | 'blue' | 'green' | 'black' | 'gold'}
-											locale={locale}
-										/>
-									</button>
-								))
-							}
-						</div>
-						<div class="flex items-center gap-3">
-							<div>
-								<span class="text-[var(--deco-muted)] text-sm">{t('totalBet')}</span>
-								<span
-									id="total-bet"
-									data-testid="total-bet"
-									class="text-[var(--deco-brass)] font-bold ml-1">{formatChips(0, locale)}</span
-								>
-							</div>
-							<button
-								id="clear-bets-button"
-								data-testid="clear-bets-button"
-								class="px-3 py-2 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-ivory)] rounded-lg text-sm transition-colors"
-							>
-								{t('clearBets')}
-							</button>
+						<div id="game-message" role="status">{t('messagePlaceBets')}</div>
+						<div id="roll-history" data-testid="roll-history" aria-label={t('rollHistory')}>
+							<span class="roll-history-placeholder">{t('noRollsYet')}</span>
 						</div>
 					</div>
 				</div>
-			</div><!-- /main game area -->
-
-			<!-- Sidebar (1 col) -->
-			<div class="space-y-4">
-				<!-- Roll History -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						{t('rollHistory')}
-					</h3>
-					<div
-						id="roll-history"
-						data-testid="roll-history"
-						class="flex flex-wrap gap-1.5 min-h-[40px]"
+				<div id="settlement-recovery" class="hidden tc-status" data-testid="settlement-recovery">
+					<button
+						id="btn-retry-settlement"
+						type="button"
+						class="tc-button"
+						data-testid="retry-settlement">{t('retrySettlement')}</button
+					><button
+						id="btn-reset-settlement"
+						type="button"
+						class="tc-button"
+						data-testid="reset-settlement">{t('resetSettlement')}</button
 					>
-						<span class="roll-history-placeholder text-[var(--deco-muted)] text-xs"
-							>{t('noRollsYet')}</span
+				</div>
+				<div class="craps-table">
+					<div class="craps-tabs">
+						<button
+							type="button"
+							data-craps-panel="craps-main-bets"
+							aria-controls="craps-main-bets"
+							aria-pressed="true">{cabinet('mainBets')}</button
+						><button
+							type="button"
+							data-craps-panel="craps-extra-bets"
+							aria-controls="craps-extra-bets"
+							aria-pressed="false">{cabinet('extraBets')}</button
 						>
 					</div>
-				</div>
+					<div id="craps-main-bets" class="craps-bets">
+						<!-- Number Row: Place / Come bets per number -->
+						<div class="craps-numbers">
+							{
+								[4, 5, 6, 8, 9, 10].map((n) => (
+									<div class="number-box rounded-lg p-2 text-center" data-number={n}>
+										<div class="text-[var(--deco-ivory)] font-bold text-sm">
+											{n === 6 ? t('numberSix') : n === 8 ? t('numberEight') : n}
+										</div>
+										<div
+											data-bet-type={`place${n}`}
+											class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
+										>
+											<div class="text-[var(--deco-muted)] text-xs">{t('placeNumber')}</div>
+											<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
+										</div>
+										<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
+											<div class="text-[var(--deco-sapphire)] text-xs font-bold come-display-amount" />
+										</div>
+										<div class="flex gap-1 mt-1 justify-center">
+											<div
+												data-bet-type={`buy${n}`}
+												class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-jade)] hover:bg-[var(--deco-emerald-deep)]"
+											>
+												<>
+													<span>{getCrapsBetLabel(locale, `buy${n}` as BetType)}</span>
+													<span class="bet-amount" />
+												</>
+											</div>
+											<div
+												data-bet-type={`lay${n}`}
+												class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-oxblood-bright)] hover:bg-[var(--deco-oxblood)]"
+											>
+												<>
+													<span>{getCrapsBetLabel(locale, `lay${n}` as BetType)}</span>
+													<span class="bet-amount" />
+												</>
+											</div>
+										</div>
+									</div>
+								))
+							}
+						</div>
 
-				<!-- Active Bets -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
-						{t('activeBets')}
-					</h3>
-					<div id="active-bets" data-testid="active-bets" class="space-y-1.5 min-h-[40px]">
-						<span class="text-[var(--deco-muted)] text-xs">{t('noBetsPlaced')}</span>
+						<!-- Pass Line / Don't Pass -->
+						<div class="grid grid-cols-2 gap-3">
+							<div
+								data-bet-type="passLine"
+								class="bet-zone pass-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
+									{t('betPassLine')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+							<div
+								data-bet-type="dontPass"
+								class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-ivory)] font-bold text-sm uppercase tracking-wider">
+									{t('tableDontPassBar')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+						</div>
+
+						<!-- Pass Odds / Don't Pass Odds (shown only in point phase) -->
+						<div id="odds-row" class="hidden grid-cols-2 gap-3">
+							<div
+								data-bet-type="passLineOdds"
+								class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
+									{t('betPassLineOdds')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+							<div
+								data-bet-type="dontPassOdds"
+								class="bet-zone odds-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-jade)] font-bold text-sm uppercase tracking-wider">
+									{t('betDontPassOdds')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('oddsNote')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+						</div>
+
+						<!-- Come / Don't Come / Field -->
+						<div class="grid grid-cols-3 gap-3">
+							<div
+								data-bet-type="come"
+								class="bet-zone come-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-sapphire)] font-bold text-sm uppercase tracking-wider">
+									{t('betCome')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+							<div
+								data-bet-type="field"
+								class="bet-zone field-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div class="text-[var(--deco-amethyst)] font-bold text-sm uppercase tracking-wider">
+									{t('betField')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('fieldNote')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+							<div
+								data-bet-type="dontCome"
+								class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
+							>
+								<div
+									class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider"
+								>
+									{t('betDontCome')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+						</div>
+					</div>
+					<div id="craps-extra-bets" class="craps-bets" hidden>
+						<!-- Hardways Row -->
+						<div class="border-t border-[var(--deco-line)] pt-3">
+							<div
+								class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center"
+							>
+								{t('hardwaysHeading')}
+							</div>
+							<div class="grid grid-cols-4 gap-2">
+								{
+									(
+										[
+											{ type: 'hard4', pays: '7:1' },
+											{ type: 'hard6', pays: '9:1' },
+											{ type: 'hard8', pays: '9:1' },
+											{ type: 'hard10', pays: '7:1' },
+										] as const
+									).map((h) => (
+										<div
+											data-bet-type={h.type}
+											class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
+										>
+											<div class="text-[var(--deco-brass-bright)] font-bold text-xs">
+												{getCrapsBetLabel(locale, h.type)}
+											</div>
+											<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
+											<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
+										</div>
+									))
+								}
+							</div>
+						</div>
+
+						<!-- Proposition Bets -->
+						<div class="border-t border-[var(--deco-line)] pt-3">
+							<div
+								class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center"
+							>
+								{t('propositionHeading')}
+							</div>
+							<div class="craps-props">
+								{
+									(
+										[
+											{ type: 'any7', pays: '4:1' },
+											{ type: 'anyCraps', pays: '7:1' },
+											{ type: 'aces', pays: '30:1' },
+											{ type: 'aceDeuce', pays: '15:1' },
+											{ type: 'yo', pays: '15:1' },
+											{ type: 'boxcars', pays: '30:1' },
+											{ type: 'ce', pays: '3/7:1' },
+										] as const
+									).map((p) => (
+										<div
+											data-bet-type={p.type}
+											class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
+										>
+											<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
+												{getCrapsBetLabel(locale, p.type)}
+											</div>
+											<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
+											<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
+										</div>
+									))
+								}
+							</div>
+						</div>
+						<!-- Big 6 / Big 8 -->
+						<div class="grid grid-cols-2 gap-3">
+							<div
+								data-bet-type="big6"
+								class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
+							>
+								<div
+									class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider"
+								>
+									{t('betBig6')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+							<div
+								data-bet-type="big8"
+								class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
+							>
+								<div
+									class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider"
+								>
+									{t('betBig8')}
+								</div>
+								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
+								<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-5 text-sm"></div>
+							</div>
+						</div>
 					</div>
 				</div>
-
 				<!-- Come Bet Odds -->
 				<div
 					id="come-odds-panel"
@@ -428,7 +365,75 @@ const clientUserId = gameSession.clientUserId;
 					<p class="text-[var(--deco-muted)] text-xs mt-2">{t('comeOddsHint')}</p>
 				</div>
 
-				<!-- Payouts Reference -->
+				<div class="tc-divider" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+				<div class="tc-controls">
+					<div class="tc-chips">
+						<span class="tc-label">{cabinet('chip')}</span>{
+							[5, 25, 50, 100, 500].map((amount, i) => (
+								<button
+									type="button"
+									class="tc-chip chip-select"
+									data-amount={amount}
+									data-testid={`chip-${amount}`}
+									aria-label={formatChips(amount, locale)}
+									aria-pressed={i === 0 ? 'true' : 'false'}
+								>
+									{amount}
+								</button>
+							))
+						}
+					</div>
+					<div class="tc-stake">
+						<span>{t('totalBet')}</span><strong id="total-bet" data-testid="total-bet"
+							>{formatChips(0, locale)}</strong
+						>
+					</div>
+					<button
+						type="button"
+						id="clear-bets-button"
+						data-testid="clear-bets-button"
+						class="tc-button">{t('clearBets')}</button
+					>
+					<button
+						type="button"
+						id="roll-button"
+						data-testid="roll-button"
+						class="tc-button tc-primary"
+						disabled>{t('rollButton')}</button
+					>
+				</div>
+				<details class="craps-advisor">
+					<summary>{t('aiAdvisor')}</summary><!-- LLM Advisor -->
+					<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
+						<div class="flex items-center justify-between mb-3">
+							<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider">
+								{t('aiAdvisor')}
+							</h3>
+							<button
+								id="llm-advice-btn"
+								data-testid="llm-advice-btn"
+								disabled={gameSession.isGuest}
+								class="px-3 py-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-brass)] rounded text-xs transition-colors border border-[var(--deco-brass-dim)]"
+							>
+								{t('ask')}
+							</button>
+						</div>
+						<div
+							id="llm-advice"
+							class="text-[var(--deco-muted)] text-xs leading-relaxed min-h-[48px]"
+						>
+							{gameSession.isGuest ? t('aiGuestHint') : t('aiConfigureHint')}
+						</div>
+					</div>
+				</details>
+			</div>
+			<CabinetDrawer id="craps-active" title={t('activeBets')} closeLabel={cabinet('close')}
+				><div id="active-bets" data-testid="active-bets" class="space-y-3">
+					<span>{t('noBetsPlaced')}</span>
+				</div></CabinetDrawer
+			>
+			<CabinetDrawer id="craps-payouts" title={t('payoutsHeading')} closeLabel={cabinet('close')}
+				><!-- Payouts Reference -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
 						{t('payoutsHeading')}
@@ -491,32 +496,8 @@ const clientUserId = gameSession.clientUserId;
 						</div>
 					</div>
 				</div>
-
-				<!-- LLM Advisor -->
-				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
-					<div class="flex items-center justify-between mb-3">
-						<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider">
-							{t('aiAdvisor')}
-						</h3>
-						<button
-							id="llm-advice-btn"
-							data-testid="llm-advice-btn"
-							disabled={gameSession.isGuest}
-							class="px-3 py-1 bg-[var(--deco-obsidian-3)] hover:bg-[var(--deco-line)] text-[var(--deco-brass)] rounded text-xs transition-colors border border-[var(--deco-brass-dim)]"
-						>
-							{t('ask')}
-						</button>
-					</div>
-					<div
-						id="llm-advice"
-						class="text-[var(--deco-muted)] text-xs leading-relaxed min-h-[48px]"
-					>
-						{gameSession.isGuest ? t('aiGuestHint') : t('aiConfigureHint')}
-					</div>
-				</div>
-			</div><!-- /sidebar -->
-		</div><!-- /grid -->
-
+			</CabinetDrawer>
+		</div>
 		<!-- Insufficient Chips Overlay -->
 		<div
 			id="insufficient-overlay"
@@ -557,153 +538,6 @@ const clientUserId = gameSession.clientUserId;
 	</div><!-- /craps-root -->
 </CasinoLayout>
 
-<style>
-	.craps-table {
-		background: linear-gradient(135deg, #0a3d28 0%, #073020 50%, #052518 100%);
-		box-shadow:
-			inset 0 0 80px rgba(0, 0, 0, 0.3),
-			0 8px 32px rgba(0, 0, 0, 0.5);
-	}
-
-	.bet-zone {
-		border: 2px solid rgba(255, 255, 255, 0.08);
-		transition: all 0.15s ease;
-	}
-	.bet-zone:hover {
-		border-color: color-mix(in srgb, var(--deco-brass) 50%, transparent);
-		background: color-mix(in srgb, var(--deco-brass) 5%, transparent);
-		transform: translateY(-1px);
-	}
-	.bet-zone:focus-visible {
-		outline: 2px solid color-mix(in srgb, var(--deco-brass) 90%, transparent);
-		outline-offset: 2px;
-	}
-	.bet-zone-active {
-		border-color: color-mix(in srgb, var(--deco-brass) 80%, transparent) !important;
-		box-shadow: 0 0 12px color-mix(in srgb, var(--deco-brass) 25%, transparent);
-	}
-	.bet-zone-locked {
-		opacity: 0.6;
-		cursor: not-allowed !important;
-		pointer-events: none;
-	}
-	.bet-zone-disabled {
-		opacity: 0.35;
-		cursor: not-allowed !important;
-		pointer-events: none;
-	}
-
-	.pass-zone {
-		background: rgba(59, 110, 140, 0.12);
-	}
-	.dont-zone {
-		background: rgba(154, 45, 51, 0.14);
-	}
-	.odds-zone {
-		background: rgba(47, 158, 111, 0.12);
-	}
-	.come-zone {
-		background: rgba(59, 110, 140, 0.14);
-	}
-	.field-zone {
-		background: rgba(125, 90, 158, 0.14);
-	}
-	.place-zone {
-		background: color-mix(in srgb, var(--deco-brass) 10%, transparent);
-	}
-	.hardway-zone {
-		background: rgba(228, 201, 136, 0.1);
-	}
-	.prop-zone {
-		background: rgba(154, 45, 51, 0.14);
-	}
-	.buy-zone {
-		background: rgba(47, 158, 111, 0.14);
-	}
-	.lay-zone {
-		background: rgba(154, 45, 51, 0.16);
-	}
-
-	.number-box {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-	}
-	.number-box-point {
-		border-color: color-mix(in srgb, var(--deco-brass) 60%, transparent) !important;
-		box-shadow: 0 0 16px color-mix(in srgb, var(--deco-brass) 20%, transparent);
-	}
-
-	.die-face {
-		fill: #f8fafc;
-	}
-	.die-dot {
-		fill: #1e293b;
-	}
-	.die-display {
-		filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
-		transition: transform 0.15s ease;
-	}
-	.die-rolling {
-		animation: diceRoll 0.4s ease-out;
-	}
-	@keyframes diceRoll {
-		0% {
-			transform: rotate(0deg) scale(1);
-		}
-		25% {
-			transform: rotate(15deg) scale(1.1);
-		}
-		50% {
-			transform: rotate(-10deg) scale(0.95);
-		}
-		75% {
-			transform: rotate(5deg) scale(1.05);
-		}
-		100% {
-			transform: rotate(0deg) scale(1);
-		}
-	}
-
-	.roll-badge {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 28px;
-		height: 28px;
-		border-radius: 50%;
-		font-size: 11px;
-		font-weight: bold;
-	}
-	.roll-natural {
-		background: #103d2c;
-		color: #6fd6a0;
-	}
-	.roll-craps {
-		background: #4a161a;
-		color: #d98f93;
-	}
-	.roll-point {
-		background: #1d3a4a;
-		color: #8fc3dd;
-	}
-	.roll-normal {
-		background: var(--deco-obsidian-3);
-		color: var(--deco-muted);
-	}
-	.roll-seven {
-		background: #5a2d12;
-		color: var(--deco-brass-bright);
-	}
-
-	.chip-select {
-		transition: transform 0.15s ease;
-	}
-	.chip-select.selected {
-		transform: scale(1.2);
-		filter: drop-shadow(0 0 8px color-mix(in srgb, var(--deco-brass) 50%, transparent));
-	}
-</style>
-
 <script>
 	import {
 		buildCrapsSettlementCommand,
@@ -725,6 +559,7 @@ const clientUserId = gameSession.clientUserId;
 	import { initAchievementToast } from '../../lib/achievement-toast';
 	import { getDocumentLocale } from '../../lib/i18n/locale';
 	import { formatChips } from '../../lib/i18n/messages/common';
+	import { cabinetTranslator } from '../../lib/i18n/messages/cabinet';
 	import {
 		crapsTranslator,
 		getCrapsBetLabel,
@@ -1006,14 +841,27 @@ const clientUserId = gameSession.clientUserId;
 
 		function setSelectedChip(amount: number) {
 			selectedChipAmount = amount;
-			document.querySelectorAll('.chip-select').forEach((btn) => btn.classList.remove('selected'));
+			document.querySelectorAll<HTMLElement>('.chip-select').forEach((btn) => {
+				btn.classList.remove('selected');
+				btn.setAttribute('aria-pressed', String(Number(btn.dataset.amount) === amount));
+			});
 			document.querySelector(`.chip-select[data-amount="${amount}"]`)?.classList.add('selected');
 		}
 
+		document.querySelectorAll<HTMLButtonElement>('[data-craps-panel]').forEach((button) => {
+			button.addEventListener('click', () => {
+				document.querySelectorAll<HTMLButtonElement>('[data-craps-panel]').forEach((tab) => {
+					const selected = tab === button;
+					tab.setAttribute('aria-pressed', String(selected));
+					const panel = document.getElementById(tab.dataset.crapsPanel!);
+					if (panel) panel.hidden = !selected;
+				});
+			});
+		});
 		restoreSession();
 
 		// Rehydrate UI after restoring session: render dice and roll history
-		(function rehydrateUI() {
+		function rehydrateUI() {
 			const state = game.getState();
 
 			// Render last roll dice if present
@@ -1070,7 +918,7 @@ const clientUserId = gameSession.clientUserId;
 					addRollToHistory(total, prevPhase);
 				});
 			}
-		})();
+		}
 
 		function initializeInteractiveBetZones() {
 			document.querySelectorAll('.bet-zone[data-bet-type]').forEach((el) => {
@@ -1134,6 +982,9 @@ const clientUserId = gameSession.clientUserId;
 		};
 
 		function renderDie(dotsEl: Element, value: number) {
+			const die = dotsEl.closest('.die-display');
+			die?.setAttribute('data-value', String(value));
+			die?.setAttribute('aria-label', cabinetTranslator(locale)('die', { value }));
 			dotsEl.innerHTML = '';
 			const positions = DOT_POSITIONS[value] ?? [];
 			for (const [cx, cy] of positions) {
@@ -1724,6 +1575,7 @@ const clientUserId = gameSession.clientUserId;
 
 		// ─── Initial render ───────────────────────────────────────────────────────────
 
+		rehydrateUI();
 		initializeInteractiveBetZones();
 		updateUI();
 	}

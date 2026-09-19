@@ -1,0 +1,114 @@
+.sic-bo-cabinet .tc-stage {
+	padding-top: 45px;
+}
+.sic-bo-cabinet .sic-bo-bet-button:disabled {
+	opacity: 1;
+	cursor: default;
+}
+.sic-bo-primary {
+	display: grid;
+	grid-template-columns: repeat(5, minmax(0, 1fr));
+	gap: 6px;
+}
+.sic-bo-totals {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 6px;
+	margin-top: 6px;
+}
+.sic-bo-cabinet .sic-bo-bet-button {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 12px 6px;
+	min-height: 76px;
+	border: 1px solid #c8a55c33;
+	background: linear-gradient(#19231ee6, #060a08e6);
+	box-shadow: inset 0 0 0 2px #c8a55c08;
+	cursor: pointer;
+	color: #c9c2b4;
+}
+.sic-bo-primary .sic-bo-bet-button {
+	min-height: 90px;
+}
+.sic-bo-cabinet .sic-bo-bet-button:hover {
+	border-color: #e4c988;
+}
+.sic-bo-cabinet .sic-bo-bet-button[aria-pressed='true'] {
+	border-color: #e4c988;
+	color: #e4c988;
+	background: linear-gradient(#e4c98829, #070b09cc);
+	box-shadow: 0 0 20px #e4c98835;
+}
+.sic-bo-bet-label {
+	font: 800 20px/1.2 var(--font-display);
+}
+.sic-bo-primary .sic-bo-bet-label {
+	font: 600 13px/1.4 var(--font-body);
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+}
+.sic-bo-bet-odds {
+	font-size: 11px;
+	color: #a99f8d;
+}
+.sic-bo-bet-amount {
+	min-height: 17px;
+	font-size: 12px;
+	color: #e4c988;
+	font-weight: 600;
+}
+.sic-bo-total {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	max-width: 180px;
+}
+#sic-bo-result {
+	min-height: 16px;
+	font-size: 11px;
+	color: #e4c988;
+	text-align: center;
+}
+#sic-bo-status {
+	margin: 16px 0 6px;
+}
+#sic-bo-recent {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+@media (max-width: 640px) {
+	.sic-bo-primary {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.sic-bo-primary .sic-bo-bet-button:last-child {
+		grid-column: 1 / -1;
+		min-height: 65px;
+	}
+	.sic-bo-primary .sic-bo-bet-button {
+		min-height: 74px;
+	}
+	.sic-bo-totals {
+		gap: 4px;
+	}
+	.sic-bo-totals .sic-bo-bet-button {
+		min-height: 64px;
+		padding: 7px 1px;
+	}
+	.sic-bo-bet-label {
+		font-size: 16px;
+	}
+	.sic-bo-bet-odds {
+		font-size: 9px;
+	}
+	.sic-bo-bet-amount {
+		font-size: 9px;
+		overflow-wrap: anywhere;
+	}
+	.sic-bo-cabinet .tc-stage {
+		flex-wrap: wrap;
+	}
+}

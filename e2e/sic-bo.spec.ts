@@ -52,6 +52,14 @@ test.describe('Sic Bo guest', () => {
 			await expect(page.getByTestId(`sic-bo-die-${index}`)).toHaveText(value);
 		}
 
+		await expect(page.locator('#sic-bo-total')).toHaveText('11');
+		await expect(page.locator('[data-bet-key="big"]')).toHaveAttribute('aria-pressed', 'true');
+		await page.getByRole('button', { name: 'Roll history', exact: true }).click();
+		await expect(page.getByRole('dialog', { name: 'Roll history' })).toBeVisible();
+		await expect(page.locator('#sic-bo-recent li')).toHaveText('1 + 4 + 6 = 11 · +5 chips');
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('button', { name: 'Roll history', exact: true })).toBeFocused();
+
 		// 4. Big wins: balance increases by 5.
 		await expect(page.getByTestId('sic-bo-result')).toHaveText('Won +5 chips');
 		await expect(page.getByTestId('chip-balance')).toHaveText('1,005 chips');

@@ -2,6 +2,7 @@
 import { KENO_POOL, MAX_SPOTS, PAYTABLE } from './constants';
 import type { DrawResult } from './types';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
+import { formatWholeNumber } from '../formatting';
 import { formatChips } from '../i18n/messages/common';
 import { kenoTranslator, formatKenoNet, type KENO_MESSAGES } from '../i18n/messages/keno';
 import type { MessageKey } from '../i18n/translate';
@@ -284,6 +285,16 @@ export class KenoUIRenderer {
 		return this.retrySettlementBtn;
 	}
 	renderLastResult(r: DrawResult): void {
+		const payout = this.root.querySelector<HTMLElement>('[data-keno-payout]');
+		if (payout) {
+			payout.textContent = formatWholeNumber(r.payout, this.locale);
+			payout.parentElement?.style.setProperty('--tc-digits', String(payout.textContent.length));
+		}
+		const caught = this.root.querySelector('[data-keno-caught]');
+		if (caught) caught.textContent = `${r.hitCount} / ${r.spots}`;
+		const multiplier = this.root.querySelector('[data-keno-multiplier]');
+		if (multiplier) multiplier.textContent = `×${r.multiplier}`;
+
 		if (r.outcome === 'push') {
 			this.lastResultEl.textContent = this.t('lastResultPush', {
 				hits: String(r.hitCount),

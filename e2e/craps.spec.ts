@@ -13,6 +13,14 @@ const createIsolatedCrapsPage = (browser: Browser, baseURL?: string) =>
 		navigate: gotoCraps,
 	});
 
+async function rollSnakeEyes(page: Page): Promise<void> {
+	await page.evaluate(() => {
+		Math.random = () => 0; // A come-out 1 + 1 settles the Pass Line wager immediately.
+	});
+	await page.getByTestId('roll-button').click();
+	await expect(page.locator('#roll-total')).toHaveText('2');
+}
+
 function parseBalance(text: string): number {
 	const normalized = text.replace(/,/g, '');
 	const match = normalized.match(/-?\d+(?:\.\d+)?/);
@@ -72,6 +80,24 @@ test.describe('Craps — Initial State', () => {
 		await expect(page.locator('[data-bet-type="passLine"]')).toBeVisible();
 		await expect(page.locator('[data-bet-type="dontPass"]')).toBeVisible();
 		await expect(page.locator('[data-bet-type="field"]')).toBeVisible();
+	});
+
+	test('cabinet tabs retain wagers and the active-bets drawer restores focus', async ({ page }) => {
+		await gotoCraps(page);
+		await page.getByTestId('chip-5').click();
+		await page.getByTestId('bet-buy4').click();
+		await expect(page.getByTestId('bet-buy4').locator('.bet-amount')).toHaveText('5 chips');
+		await page.getByRole('button', { name: 'Hardways & props', exact: true }).click();
+		await expect(page.locator('#craps-main-bets')).toBeHidden();
+		await page.getByTestId('bet-hard4').click();
+		await expect(page.getByTestId('total-bet')).toHaveText('10 chips');
+		await page.getByRole('button', { name: 'Main bets', exact: true }).click();
+		await expect(page.getByTestId('bet-buy4').locator('.bet-amount')).toHaveText('5 chips');
+		await page.getByRole('button', { name: 'Active Bets', exact: true }).click();
+		await expect(page.getByRole('dialog', { name: 'Active Bets' })).toBeVisible();
+		await expect(page.getByTestId('active-bets')).toContainText('Hard 4');
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('button', { name: 'Active Bets', exact: true })).toBeFocused();
 	});
 
 	test('odds row is hidden during come-out', async ({ page }) => {
@@ -200,7 +226,6 @@ test.describe('Craps — Game Flow', () => {
 				return `craps-session:${userId}`;
 			});
 			const settlementCommands: Array<Record<string, unknown>> = [];
-			let snapshotBeforeFailedRoll: string | null = null;
 			await page.route('**/api/wallet/settle', async (route) => {
 				const command = route.request().postDataJSON() as Record<string, unknown>;
 				settlementCommands.push(command);
@@ -225,19 +250,11 @@ test.describe('Craps — Game Flow', () => {
 
 			await page.getByTestId('chip-5').click();
 			await page.click('[data-bet-type="passLine"]');
-			for (let attempt = 0; attempt < 20; attempt += 1) {
-				if (await page.getByTestId('settlement-recovery').isVisible()) break;
-				const rollButton = page.getByTestId('roll-button');
-				if (await rollButton.isDisabled()) {
-					await page.click('[data-bet-type="passLine"]');
-				}
-				snapshotBeforeFailedRoll = await page.evaluate(
-					(sessionKey) => window.localStorage.getItem(sessionKey),
-					persistedSessionKey,
-				);
-				await rollButton.click();
-				await page.waitForTimeout(700);
-			}
+			const snapshotBeforeFailedRoll = await page.evaluate(
+				(sessionKey) => window.localStorage.getItem(sessionKey),
+				persistedSessionKey,
+			);
+			await rollSnakeEyes(page);
 
 			await expect(page.getByTestId('settlement-recovery')).toBeVisible();
 			await expect(page.getByTestId('roll-button')).toBeDisabled();
@@ -301,17 +318,9 @@ test.describe('Craps — Game Flow', () => {
 
 			await page.getByTestId('chip-5').click();
 			await page.click('[data-bet-type="passLine"]');
-			for (let attempt = 0; attempt < 20; attempt += 1) {
-				if (settlementCommands.length > 0) break;
-				const rollButton = page.getByTestId('roll-button');
-				if (await rollButton.isDisabled()) {
-					await page.click('[data-bet-type="passLine"]');
-				}
-				await rollButton.click();
-				await page.waitForTimeout(700);
-			}
+			await rollSnakeEyes(page);
 
-			expect(settlementCommands).toHaveLength(1);
+			await expect.poll(() => settlementCommands.length).toBe(1);
 			await expect(page.getByTestId('settlement-recovery')).toBeHidden();
 			await expect
 				.poll(
@@ -355,19 +364,11 @@ test.describe('Craps — Game Flow', () => {
 
 			await page.getByTestId('chip-5').click();
 			await page.click('[data-bet-type="passLine"]');
-			for (let attempt = 0; attempt < 20; attempt += 1) {
-				if (await page.getByTestId('settlement-recovery').isVisible()) break;
-				const rollButton = page.getByTestId('roll-button');
-				if (await rollButton.isDisabled()) {
-					await page.click('[data-bet-type="passLine"]');
-				}
-				await rollButton.click();
-				await page.waitForTimeout(700);
-			}
+			await rollSnakeEyes(page);
 
 			// A settlement must have been attempted and failed.
-			expect(settlementCommands.length).toBeGreaterThanOrEqual(1);
 			await expect(page.getByTestId('settlement-recovery')).toBeVisible();
+			expect(settlementCommands).toHaveLength(1);
 
 			// The authenticated session must not persist table state to localStorage.
 			// If it did, a reload would restore the pre-roll wager and allow it to be
@@ -402,6 +403,59 @@ test.describe('Craps — Game Flow', () => {
 		} finally {
 			await context.close();
 		}
+	});
+});
+
+test.describe('Craps — Guest Session', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test('restores a played round and keeps error, win, and loss colors', async ({ page }) => {
+		const pageErrors: string[] = [];
+		page.on('pageerror', (error) => pageErrors.push(error.message));
+		await page.addInitScript(() => {
+			Math.random = () => 0.4; // Roll 3 + 3 before and after reload.
+		});
+		await gotoCraps(page);
+		const startingBalance = parseBalance(await page.locator('#chip-balance').innerText());
+		const message = page.locator('#game-message');
+		const history = page.getByTestId('roll-history').locator('.roll-badge');
+
+		await page.getByTestId('chip-5').click();
+		await page.getByTestId('bet-passLine').click();
+		await page.getByTestId('bet-passLine').click();
+		await expect(message).toContainText('You can only have one Pass Line bet');
+		await expect(message).toHaveCSS('color', 'rgb(154, 45, 51)');
+		await page.getByTestId('roll-button').click();
+		await expect(page.locator('#roll-total')).toHaveText('6');
+		await expect(history).toHaveCount(1);
+
+		await page.reload({ waitUntil: 'networkidle' });
+		await expect(page.locator('#phase-badge')).toContainText('Point');
+		await expect(page.locator('#point-badge')).toContainText('6');
+		await expect(page.locator('#roll-total')).toHaveText('6');
+		await expect(page.locator('#die1-dots circle')).toHaveCount(3);
+		await expect(page.locator('#die2-dots circle')).toHaveCount(3);
+		await expect(history).toHaveCount(1);
+		await expect(page.getByTestId('total-bet')).toHaveText('5 chips');
+		await expect(page.getByTestId('chip-5')).toHaveAttribute('aria-pressed', 'true');
+		await expect(page.getByTestId('roll-button')).toBeEnabled();
+
+		await page.getByTestId('roll-button').click();
+		await expect(history).toHaveCount(2);
+		await expect(message).toHaveCSS('color', 'rgb(47, 158, 111)');
+		expect(parseBalance(await page.locator('#chip-balance').innerText())).toBe(startingBalance + 5);
+		await expect(page.locator('#die1')).not.toHaveClass(/die-rolling/);
+
+		await page.evaluate(() => {
+			Math.random = () => 0; // Roll 1 + 1, losing the next Pass Line wager.
+		});
+		await page.getByTestId('bet-passLine').click();
+		await page.getByTestId('roll-button').click();
+		await expect(page.locator('#roll-total')).toHaveText('2');
+		await expect(history).toHaveCount(3);
+		await expect(message).toHaveCSS('color', 'rgb(154, 45, 51)');
+		expect(parseBalance(await page.locator('#chip-balance').innerText())).toBe(startingBalance);
+		expect(pageErrors).toEqual([]);
 	});
 });
 

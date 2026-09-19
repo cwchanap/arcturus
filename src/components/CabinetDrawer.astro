@@ -1,0 +1,32 @@
+---
+interface Props {
+	id: string;
+	title: string;
+	closeLabel: string;
+}
+const { id, title, closeLabel } = Astro.props;
+---
+
+<dialog id={id} class="tc-drawer" aria-labelledby={`${id}-title`}>
+	<header>
+		<h2 id={`${id}-title`}>{title}</h2><form method="dialog">
+			<button class="tc-icon" aria-label={closeLabel}>×</button>
+		</form>
+	</header>
+	<div class="tc-drawer-body"><slot /></div>
+</dialog>
+<script>
+	document.querySelectorAll<HTMLButtonElement>('[data-cabinet-panel]').forEach((button) => {
+		const panel = document.getElementById(button.dataset.cabinetPanel ?? '');
+		if (!(panel instanceof HTMLDialogElement)) return;
+		button.addEventListener('click', () => {
+			panel.showModal();
+			button.setAttribute('aria-expanded', 'true');
+		});
+		panel.addEventListener('close', () => button.setAttribute('aria-expanded', 'false'));
+		panel.addEventListener('click', (event) => {
+			if (event.target === panel && event.clientX < panel.getBoundingClientRect().left)
+				panel.close();
+		});
+	});
+</script>

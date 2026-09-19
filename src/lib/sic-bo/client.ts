@@ -1,6 +1,7 @@
 import { createPublicGameSettlementController } from '../wallet';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
+import { cabinetTranslator } from '../i18n/messages/cabinet';
 import { sicBoTranslator, formatSicBoNet, type SIC_BO_MESSAGES } from '../i18n/messages/sic-bo';
 import type { MessageKey } from '../i18n/translate';
 import { SicBoGame } from './game';
@@ -28,6 +29,7 @@ export function initSicBoClient(): void {
 
 	const locale = getDocumentLocale(root.ownerDocument);
 	const t = sicBoTranslator(locale);
+	const cabinet = cabinetTranslator(locale);
 
 	const statusEl = document.getElementById('sic-bo-status');
 	const totalStakeEl = document.getElementById('sic-bo-total-stake');
@@ -38,6 +40,7 @@ export function initSicBoClient(): void {
 	const dieCells = [0, 1, 2].map((i) => document.getElementById(`sic-bo-die-${i}`));
 
 	let selectedDenomination = SIC_BO_CHIP_DENOMINATIONS[0];
+	const recent: SicBoRoundResult[] = [];
 
 	function setStatus(message: string): void {
 		if (statusEl) statusEl.textContent = message;
@@ -65,19 +68,34 @@ export function initSicBoClient(): void {
 			);
 		});
 
-		if (state.result) {
-			state.result.roll.forEach((value, i) => {
-				const cell = dieCells[i];
-				if (!cell) return;
-				cell.setAttribute('data-value', String(value));
-				cell.textContent = String(value);
-			});
-		} else {
-			dieCells.forEach((cell) => {
-				if (!cell) return;
-				cell.setAttribute('data-value', '0');
-				cell.textContent = '—';
-			});
+		dieCells.forEach((cell, i) => {
+			if (!cell) return;
+			const value = state.result?.roll[i] ?? 0;
+			cell.setAttribute('data-value', String(value));
+			cell.setAttribute('role', 'img');
+			cell.setAttribute('aria-label', cabinet('die', { value: value || '—' }));
+			const label = cell.querySelector('[data-die-value]');
+			if (label) label.textContent = value ? String(value) : '—';
+		});
+		const total = root?.querySelector('#sic-bo-total');
+		if (total)
+			total.textContent = state.result ? String(state.result.roll.reduce((a, b) => a + b, 0)) : '—';
+		root?.querySelectorAll<HTMLButtonElement>('[data-bet-key]').forEach((button) => {
+			button.setAttribute(
+				'aria-pressed',
+				String(Boolean(state.bets[button.dataset.betKey as SicBoBetKey])),
+			);
+			button.disabled = state.phase !== 'betting';
+		});
+		const history = root?.querySelector('#sic-bo-recent');
+		if (history) {
+			history.replaceChildren(
+				...recent.map((round) => {
+					const row = document.createElement('li');
+					row.textContent = `${round.roll.join(' + ')} = ${round.roll.reduce((a, b) => a + b, 0)} · ${formatSicBoNet(locale, round.netDelta)}`;
+					return row;
+				}),
+			);
 		}
 
 		if (resultEl) {
@@ -178,6 +196,8 @@ export function initSicBoClient(): void {
 				setStatus(t('cannotRoll'));
 				return;
 			}
+			recent.unshift(result);
+			recent.splice(20);
 			render();
 
 			await settlement.completeRound(result.netDelta, game.getState().balance);

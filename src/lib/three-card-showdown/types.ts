@@ -2,12 +2,7 @@ import type { Card } from '../cards';
 import type { BetValidationCode } from '../bet-validation';
 
 export type ThreeCardHandCategory =
-	| 'straight-flush'
-	| 'three-of-kind'
-	| 'straight'
-	| 'flush'
-	| 'pair'
-	| 'high-card';
+	'straight-flush' | 'three-of-kind' | 'straight' | 'flush' | 'pair' | 'high-card';
 
 export interface ThreeCardHandEvaluation {
 	category: ThreeCardHandCategory;
@@ -41,6 +36,4 @@ export interface ThreeCardShowdownState {
  * boundary. The client maps the code through the game message catalog.
  */
 export type ThreeCardWagerErrorCode =
-	| BetValidationCode
-	| 'whole-number-required'
-	| 'insufficient-balance';
+	BetValidationCode | 'whole-number-required' | 'insufficient-balance';

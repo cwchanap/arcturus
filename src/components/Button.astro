@@ -23,6 +23,6 @@ const variantClass =
 const cls = `deco-btn ${variantClass} ${className}`.trim();
 ---
 
-<a href={href} class={cls} {...rest as Omit<HTMLAttributes<'a'>, 'class'>}>
+<a href={href} class={cls} {...rest as Omit}>
 	<slot />
 </a>

@@ -1,13 +1,5 @@
 export type BetType =
-	| 'straight'
-	| 'red'
-	| 'black'
-	| 'odd'
-	| 'even'
-	| 'low'
-	| 'high'
-	| 'dozen'
-	| 'column';
+	'straight' | 'red' | 'black' | 'odd' | 'even' | 'low' | 'high' | 'dozen' | 'column';
 
 export interface RouletteBet {
 	id: string;

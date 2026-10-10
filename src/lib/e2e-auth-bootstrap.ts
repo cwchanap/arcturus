@@ -1,5 +1,6 @@
 import { setSessionCookie } from 'better-auth/cookies';
-import { createAuthEndpoint, type BetterAuthPlugin } from 'better-auth/plugins';
+import { createAuthEndpoint } from 'better-auth/api';
+import type { BetterAuthPlugin } from 'better-auth/types';
 import { APIError } from 'better-auth';
 import { z } from 'zod';
 
@@ -123,31 +124,30 @@ export function e2eAuthBootstrapPlugin(env: E2eBootstrapEnv): BetterAuthPlugin {
 								image: null,
 								name: body.name,
 							},
-							ctx,
+							// better-auth >= 1.7 provisioning source; no validateUserInfo gate is
+							// configured in this app, so a custom method string is accepted.
+							{ method: 'e2e-bootstrap' },
 						);
 					}
 
-					const existingAccount = await ctx.context.internalAdapter.findAccountByProviderId(
+					const existingAccount = await ctx.context.internalAdapter.findAccountByKey({
+						providerId: E2E_BOOTSTRAP_PROVIDER_ID,
 						accountId,
-						E2E_BOOTSTRAP_PROVIDER_ID,
-					);
+					});
 
 					if (existingAccount && existingAccount.userId !== authUser.id) {
 						throw new APIError('CONFLICT', { message: 'ACCOUNT_CONFLICT' });
 					}
 
 					if (!existingAccount) {
-						await ctx.context.internalAdapter.linkAccount(
-							{
-								accountId,
-								providerId: E2E_BOOTSTRAP_PROVIDER_ID,
-								userId: authUser.id,
-							},
-							ctx,
-						);
+						await ctx.context.internalAdapter.linkAccount({
+							accountId,
+							providerId: E2E_BOOTSTRAP_PROVIDER_ID,
+							userId: authUser.id,
+						});
 					}
 
-					const session = await ctx.context.internalAdapter.createSession(authUser.id, ctx);
+					const session = await ctx.context.internalAdapter.createSession(authUser.id);
 					await setSessionCookie(ctx, { session, user: authUser });
 
 					return ctx.json({

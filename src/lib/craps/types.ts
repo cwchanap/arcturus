@@ -153,16 +153,11 @@ export interface CrapsBetContext {
 
 /** Closed result of {@link CrapsGame.canPlaceBet}. */
 export type CrapsBetCheckResult =
-	| { ok: true }
-	| { ok: false; error: CrapsBetErrorCode; context?: CrapsBetContext };
+	{ ok: true } | { ok: false; error: CrapsBetErrorCode; context?: CrapsBetContext };
 
 /** Table-operation failures (add come odds / remove bet), beyond placement. */
 export type CrapsTableErrorCode =
-	| 'bet-not-found'
-	| 'not-come-bet'
-	| 'no-come-point'
-	| 'line-bet-locked'
-	| 'come-bet-locked';
+	'bet-not-found' | 'not-come-bet' | 'no-come-point' | 'line-bet-locked' | 'come-bet-locked';
 
 export interface CrapsError {
 	code: CrapsErrorCode;

@@ -47,7 +47,7 @@
 		"@types/canvas-confetti": "^1.9.0",
 		"astro": "^5.14.1",
 		"better-auth": "^1.7.7",
-		"better-call": "^1.0.19",
+		"better-call": "^1.4.1",
 		"better-sqlite3": "^13.0.3",
 		"canvas-confetti": "^1.9.4",
 		"drizzle-orm": "^0.45.3",

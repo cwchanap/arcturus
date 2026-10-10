@@ -18,6 +18,7 @@ async function gotoBlackjack(page: Page) {
 	} catch (error) {
 		throw new Error(
 			`Auth state expired: unable to recover redirected blackjack session (${error instanceof Error ? error.message : 'unknown error'})`,
+			{ cause: error },
 		);
 	}
 

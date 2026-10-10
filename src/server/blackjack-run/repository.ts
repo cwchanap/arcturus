@@ -79,9 +79,7 @@ export interface AppendRankedCommandWithStakeInput {
 }
 
 export type AppendRankedCommandWithStakeResult =
-	| { kind: 'applied' }
-	| { kind: 'not-applied' }
-	| { kind: 'insufficient' };
+	{ kind: 'applied' } | { kind: 'not-applied' } | { kind: 'insufficient' };
 
 export interface AppendDailyCommandInput {
 	userId: string;

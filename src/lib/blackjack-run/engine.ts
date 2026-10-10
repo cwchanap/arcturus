@@ -284,12 +284,10 @@ function createMutableInitialState(initialWager: number, deck: readonly Card[]):
 function snapshotState(state: MutableState): BlackjackRoundState {
 	return {
 		phase: state.phase,
-		playerHands: state.playerHands.map(
-			(hand): BlackjackRoundHand => ({
-				cards: hand.cards.map((card) => ({ ...card })),
-				wager: hand.wager,
-			}),
-		),
+		playerHands: state.playerHands.map((hand): BlackjackRoundHand => ({
+			cards: hand.cards.map((card) => ({ ...card })),
+			wager: hand.wager,
+		})),
 		activeHandIndex: state.activeHandIndex,
 		dealerHand: {
 			cards: state.dealerHand.cards.map((card) => ({ ...card })),

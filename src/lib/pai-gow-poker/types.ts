@@ -64,9 +64,7 @@ export interface PaiGowPokerState {
  * boundary. The client maps the code through the game message catalog.
  */
 export type PaiGowWagerErrorCode =
-	| BetValidationCode
-	| 'whole-number-required'
-	| 'insufficient-balance';
+	BetValidationCode | 'whole-number-required' | 'insufficient-balance';
 
 /**
  * Language-neutral arrangement validation result, translated at the

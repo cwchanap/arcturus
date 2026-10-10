@@ -52,11 +52,7 @@ export interface SlotsGameState {
 }
 
 export type SlotsErrorCode =
-	| 'BET_BELOW_MIN'
-	| 'BET_ABOVE_MAX'
-	| 'INSUFFICIENT_BALANCE'
-	| 'INVALID_BET'
-	| 'INVALID_SYNC_ID';
+	'BET_BELOW_MIN' | 'BET_ABOVE_MAX' | 'INSUFFICIENT_BALANCE' | 'INVALID_BET' | 'INVALID_SYNC_ID';
 
 export interface SlotsError {
 	code: SlotsErrorCode;

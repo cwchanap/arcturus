@@ -43,6 +43,4 @@ export interface VideoPokerState {
  * boundary. The client maps the code through the game message catalog.
  */
 export type VideoPokerWagerErrorCode =
-	| BetValidationCode
-	| 'whole-number-required'
-	| 'insufficient-balance';
+	BetValidationCode | 'whole-number-required' | 'insufficient-balance';

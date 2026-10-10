@@ -3,8 +3,7 @@ import { getPlayerStatisticsSummary } from './game-stats/player-statistics';
 import type { PlayerStatisticsSummary } from './game-stats/player-statistics-types';
 
 export type ProfileStatisticsState =
-	| { status: 'ready'; summary: PlayerStatisticsSummary }
-	| { status: 'error' };
+	{ status: 'ready'; summary: PlayerStatisticsSummary } | { status: 'error' };
 
 export async function loadProfileStatisticsState(
 	db: Database,

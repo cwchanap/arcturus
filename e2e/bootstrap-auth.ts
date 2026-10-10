@@ -51,6 +51,10 @@ export async function bootstrapTestUser(
 		data: credentials,
 		headers: {
 			[E2E_BOOTSTRAP_SECRET_HEADER]: getE2eBootstrapSecret(),
+			// better-auth >= 1.7 enforces origin checks once a request carries
+			// cookies (storageState-loaded contexts do), and Playwright's
+			// APIRequestContext sends no Origin header by default.
+			Origin: baseURL,
 		},
 	});
 

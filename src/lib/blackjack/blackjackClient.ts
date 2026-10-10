@@ -122,7 +122,7 @@ export function formatBlackjackOutcomeMessage(
 	const wins = outcomes.filter((o) => o.result === 'win' || o.result === 'blackjack').length;
 	const losses = outcomes.filter((o) => o.result === 'loss').length;
 
-	let summary = '';
+	let summary: string;
 	if (wins > losses) {
 		summary = t('overallWin');
 	} else if (losses > wins) {

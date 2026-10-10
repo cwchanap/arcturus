@@ -62,8 +62,8 @@ export function getBlackjackStrategyAdvice(
 	const total = formatWholeNumber(handValue.value, locale);
 	const dealer = formatWholeNumber(dealerValue, locale);
 
-	let action: BlackjackAction = 'stand';
-	let reasoning = '';
+	let action: BlackjackAction;
+	let reasoning: string;
 
 	if (handValue.value <= 11) {
 		action = 'hit';

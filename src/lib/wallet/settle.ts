@@ -10,10 +10,7 @@ export const MAX_ABSOLUTE_SETTLEMENT_DELTA = 1_000_000;
 export const MAX_ABSOLUTE_SETTLEMENT_STAT = 1_000_000;
 
 export type WalletSettlementErrorCode =
-	| 'INVALID_COMMAND'
-	| 'USER_NOT_FOUND'
-	| 'INSUFFICIENT_BALANCE'
-	| 'SETTLEMENT_CONFLICT';
+	'INVALID_COMMAND' | 'USER_NOT_FOUND' | 'INSUFFICIENT_BALANCE' | 'SETTLEMENT_CONFLICT';
 
 export class WalletSettlementDomainError extends Error {
 	readonly code: WalletSettlementErrorCode;

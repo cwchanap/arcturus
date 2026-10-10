@@ -36,9 +36,7 @@ const ACTIVE_RUN_EXISTS = 'ACTIVE_RUN_EXISTS';
 const SEQUENCE_MISMATCH = 'SEQUENCE_MISMATCH';
 
 export type BlackjackRunClientCommand =
-	| { command: 'start-round'; wager: number }
-	| { command: BlackjackAction }
-	| { command: 'forfeit' };
+	{ command: 'start-round'; wager: number } | { command: BlackjackAction } | { command: 'forfeit' };
 
 export interface BlackjackRunClientDeps {
 	/** Request-id source; must return 16-128 `[A-Za-z0-9_-]` characters. */

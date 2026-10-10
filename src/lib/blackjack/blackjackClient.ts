@@ -350,9 +350,7 @@ export function initBlackjackClient(): void {
 			const newMinBet = parseInt(minBetInput.value || `${settings.minBet}`, 10);
 			const newMaxBet = parseInt(maxBetInput.value || `${settings.maxBet}`, 10);
 			const newDealerSpeed = (dealerSpeedSelect.value || settings.dealerSpeed) as
-				| 'slow'
-				| 'normal'
-				| 'fast';
+				'slow' | 'normal' | 'fast';
 
 			if (Number.isNaN(newStartingChips) || newStartingChips <= 0) {
 				statusEl.textContent = t('settingsStartingChipsError');

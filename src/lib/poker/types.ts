@@ -13,14 +13,7 @@ export type Card = {
 };
 
 export type GamePhase =
-	| 'idle'
-	| 'dealing'
-	| 'preflop'
-	| 'flop'
-	| 'turn'
-	| 'river'
-	| 'showdown'
-	| 'complete';
+	'idle' | 'dealing' | 'preflop' | 'flop' | 'turn' | 'river' | 'showdown' | 'complete';
 
 export type PlayerAction = 'fold' | 'check' | 'call' | 'raise';
 
@@ -96,10 +89,7 @@ export interface AIDecision {
 }
 
 export type AIPersonality =
-	| 'tight-passive'
-	| 'tight-aggressive'
-	| 'loose-passive'
-	| 'loose-aggressive';
+	'tight-passive' | 'tight-aggressive' | 'loose-passive' | 'loose-aggressive';
 
 export interface GameContext {
 	player: Player;

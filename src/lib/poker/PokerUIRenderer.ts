@@ -2,8 +2,12 @@
  * PokerUIRenderer - Handles all DOM manipulation and UI updates
  */
 
-import type { Card, GamePhase, Player } from './types';
+import type { AIPersonality, Card, GamePhase, Player } from './types';
+import type { AIDifficulty } from './aiDifficulty';
 import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
+import { estimateDrawingOuts } from './handEvaluator';
+import { isSameCard, readHand } from './handReadout';
+import type { PokerSessionStats } from './sessionStats';
 import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
@@ -28,6 +32,35 @@ const PHASE_KEYS: Record<GamePhase, MessageKey<typeof POKER_MESSAGES>> = {
 	showdown: 'phaseShowdown',
 	complete: 'phaseComplete',
 };
+
+const RIVAL_KEYS: Record<
+	AIPersonality,
+	{ name: MessageKey<typeof POKER_MESSAGES>; hint: MessageKey<typeof POKER_MESSAGES> }
+> = {
+	'tight-aggressive': { name: 'rivalShark', hint: 'rivalSharkHint' },
+	'loose-aggressive': { name: 'rivalManiac', hint: 'rivalManiacHint' },
+	'tight-passive': { name: 'rivalRock', hint: 'rivalRockHint' },
+	'loose-passive': { name: 'rivalStation', hint: 'rivalStationHint' },
+};
+
+const DIFFICULTY_KEYS: Record<AIDifficulty, MessageKey<typeof POKER_MESSAGES>> = {
+	easy: 'difficultyEasy',
+	medium: 'difficultyMedium',
+	hard: 'difficultyHard',
+};
+
+/** Seat label that outlives a single render: the street's last action or a showdown hand. */
+type SeatLabel = { text: string; kind: 'fold' | 'check' | 'call' | 'raise' | 'hand' | 'winner' };
+
+export type HandResultTone = 'win' | 'loss' | 'neutral';
+
+export interface HandResultView {
+	title: string;
+	detail: string;
+	tone: HandResultTone;
+	/** The human's chip change for the hand; null hides the delta chip. */
+	delta: number | null;
+}
 
 /**
  * Presentational hand-strength classification for the human's combined cards.
@@ -120,6 +153,8 @@ export function evaluateHandKey(
 export class PokerUIRenderer {
 	private readonly locale: Locale;
 	private readonly t: Translator;
+	private readonly seatLabels = new Map<number, SeatLabel>();
+	private currentHandLog: HTMLElement | null = null;
 
 	constructor() {
 		// AppLayout writes data-locale on <html>; the renderer reads it so the
@@ -209,62 +244,49 @@ export class PokerUIRenderer {
 	}
 
 	/**
-	 * Show AI decision next to opponent badge
+	 * Show an AI decision on its seat. The label stays for the rest of the
+	 * street (cleared by `clearSeatActions`) so a glance away never loses who
+	 * raised; colour comes from `data-action`.
 	 */
 	public showAIDecision(playerIndex: number, action: string, amount?: number) {
-		const container = document.getElementById(`opponent${playerIndex}-cards`);
-		if (!container) return;
-
-		const parent = container.parentElement;
-		if (!parent) return;
-
-		// Remove existing decision badge
-		const existingBadge = parent.querySelector('.ai-decision-badge');
-		if (existingBadge) {
-			existingBadge.remove();
-		}
-
-		// Create decision badge
-		const badge = document.createElement('div');
-		badge.className =
-			'ai-decision-badge absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-xs px-2 py-1 rounded font-semibold shadow-lg whitespace-nowrap z-10';
-		parent.style.position = 'relative';
-
-		// Style based on action
-		switch (action.toLowerCase()) {
+		const kind = action.toLowerCase();
+		const amountText = formatWholeNumber(amount || 0, this.locale);
+		let label: SeatLabel;
+		switch (kind) {
 			case 'fold':
-				badge.className += ' bg-[var(--deco-oxblood-bright)] text-white';
-				badge.textContent = this.t('badgeFold');
+				label = { kind, text: this.t('badgeFold') };
 				break;
 			case 'check':
-				badge.className += ' bg-[var(--deco-sapphire)] text-white';
-				badge.textContent = this.t('badgeCheck');
+				label = { kind, text: this.t('badgeCheck') };
 				break;
 			case 'call':
-				badge.className += ' bg-[var(--deco-jade)] text-[var(--deco-obsidian)]';
-				badge.textContent = this.t('badgeCall', {
-					amount: formatChips(amount || 0, this.locale),
-				});
+				label = { kind, text: this.t('badgeCall', { amount: amountText }) };
 				break;
 			case 'raise':
-				badge.className += ' bg-[var(--deco-brass)] text-[var(--deco-obsidian)]';
-				badge.textContent = this.t('badgeRaise', {
-					amount: formatChips(amount || 0, this.locale),
-				});
+				label = { kind, text: this.t('badgeRaise', { amount: amountText }) };
 				break;
 			default:
-				badge.className += ' bg-[var(--deco-obsidian-3)] text-white';
-				badge.textContent = action.toUpperCase();
+				return;
 		}
+		this.seatLabels.set(playerIndex, label);
+		const element = document.getElementById(`opponent${playerIndex}-action`);
+		if (element) {
+			element.textContent = label.text;
+			element.dataset.action = kind;
+		}
+	}
 
-		parent.appendChild(badge);
+	/** Forget per-street seat actions (new street or new hand). */
+	public clearSeatActions() {
+		this.seatLabels.clear();
+	}
 
-		// Auto-remove after 3 seconds
-		setTimeout(() => {
-			if (badge.parentElement) {
-				badge.remove();
-			}
-		}, 3000);
+	/** Pin a showdown hand name under a seat; winners get the gold treatment. */
+	public setSeatHand(playerId: number, handKey: PokerHandNameKey, isWinner: boolean) {
+		this.seatLabels.set(playerId, {
+			kind: isWinner ? 'winner' : 'hand',
+			text: getPokerHandName(this.locale, handKey),
+		});
 	}
 
 	public revealOpponentHands(players: Player[], winners: Player[]) {
@@ -291,7 +313,6 @@ export class PokerUIRenderer {
 		Array.from({ length: NUM_PLAYERS - 1 }, (_, i) =>
 			document.getElementById(`opponent${i + 1}-cards`),
 		).forEach((container) => {
-			container?.parentElement?.querySelector('.ai-decision-badge')?.remove();
 			if (!container) return;
 			const slots = container.querySelectorAll('.card-slot');
 			slots.forEach((slot, index) => {
@@ -328,11 +349,215 @@ export class PokerUIRenderer {
 		const strengthEl = document.getElementById('hand-strength');
 		if (!strengthEl) return;
 
-		const key = evaluateHandKey(humanPlayer, communityCards);
+		const readout = readHand(humanPlayer.hand, communityCards);
+		const key = readout?.key ?? null;
 		strengthEl.textContent = key ? getPokerHandName(this.locale, key) : '--';
+		// One bar per ranking step, so High Card and Pair no longer look alike.
 		document.querySelectorAll<HTMLElement>('.poker-strength-bars span').forEach((bar, index) => {
-			bar.dataset.lit = String(key !== null && index < Math.ceil((HAND_RANKINGS[key] + 1) / 2));
+			bar.dataset.lit = String(key !== null && index <= HAND_RANKINGS[key]);
 		});
+
+		const detail = document.getElementById('hand-detail');
+		if (detail) {
+			const outs =
+				communityCards.length === 3 || communityCards.length === 4
+					? estimateDrawingOuts(humanPlayer.hand, communityCards)
+					: 0;
+			detail.textContent =
+				readout && communityCards.length >= 3 && !readout.usesHoleCards
+					? this.t('boardPlays')
+					: outs >= 4
+						? this.t('drawOuts', { outs })
+						: '';
+		}
+
+		// Outline the cards that make a pair or better while the hand is live.
+		this.clearCardHighlights();
+		if (
+			readout &&
+			!humanPlayer.folded &&
+			communityCards.length > 0 &&
+			readout.usesHoleCards &&
+			HAND_RANKINGS[readout.key] >= HAND_RANKINGS.PAIR
+		) {
+			this.markCards('player-cards', humanPlayer.hand, readout.coreCards, 'play');
+			this.markCards('community-cards', communityCards, readout.coreCards, 'play');
+		}
+	}
+
+	/** Mark slots whose card is in `core`; with `win`, the rest of the row dims. */
+	private markCards(containerId: string, cards: Card[], core: Card[], mode: 'play' | 'win') {
+		const slots = document.getElementById(containerId)?.querySelectorAll<HTMLElement>('.card-slot');
+		slots?.forEach((slot, index) => {
+			const card = cards[index];
+			if (!card) return;
+			const inCore = core.some((coreCard) => isSameCard(coreCard, card));
+			if (inCore) slot.dataset.highlight = mode;
+			else if (mode === 'win') slot.dataset.highlight = 'dim';
+		});
+	}
+
+	public clearCardHighlights() {
+		const ids = ['player-cards', 'community-cards'];
+		for (let id = 1; id < NUM_PLAYERS; id++) ids.push(`opponent${id}-cards`);
+		for (const id of ids) {
+			document
+				.getElementById(id)
+				?.querySelectorAll<HTMLElement>('.card-slot')
+				.forEach((slot) => delete slot.dataset.highlight);
+		}
+	}
+
+	/** Light up the winning five (core) cards across the board and the winners' hands. */
+	public highlightWinningCards(communityCards: Card[], winners: Player[]) {
+		this.clearCardHighlights();
+		const core: Card[] = [];
+		for (const winner of winners) {
+			const readout = readHand(winner.hand, communityCards);
+			if (readout) core.push(...readout.coreCards);
+		}
+		this.markCards('community-cards', communityCards, core, 'win');
+		for (const winner of winners) {
+			const id = winner.id === 0 ? 'player-cards' : `opponent${winner.id}-cards`;
+			this.markCards(id, winner.hand, core, 'win');
+		}
+	}
+
+	/** Show the end-of-hand banner in the pot's place. */
+	public showHandResult(result: HandResultView) {
+		const banner = document.getElementById('poker-result');
+		if (!banner) return;
+		const title = document.getElementById('poker-result-title');
+		const detail = document.getElementById('poker-result-detail');
+		const delta = document.getElementById('poker-result-delta');
+		if (title) title.textContent = result.title;
+		if (detail) detail.textContent = result.detail;
+		if (delta) {
+			delta.hidden = result.delta === null;
+			delta.textContent =
+				result.delta === null
+					? ''
+					: `${this.t('resultYourHand')} ${this.formatDelta(result.delta)}`;
+		}
+		banner.dataset.tone = result.tone;
+		banner.hidden = false;
+		const human = document.getElementById('poker-seat-0');
+		if (human) human.dataset.result = result.tone;
+	}
+
+	public clearHandResult() {
+		const banner = document.getElementById('poker-result');
+		if (banner) banner.hidden = true;
+		const human = document.getElementById('poker-seat-0');
+		if (human) delete human.dataset.result;
+		const callout = document.getElementById('poker-callout');
+		if (callout) callout.hidden = true;
+		for (let id = 0; id < NUM_PLAYERS; id++) {
+			const float = document.getElementById(`seat-delta-${id}`);
+			if (float) float.hidden = true;
+		}
+		this.clearCardHighlights();
+	}
+
+	/** Signed chip change with a true minus sign, e.g. "+140" / "−30". */
+	public formatDelta(delta: number): string {
+		const amount = formatWholeNumber(Math.abs(delta), this.locale);
+		return delta > 0 ? `+${amount}` : delta < 0 ? `\u2212${amount}` : `±${amount}`;
+	}
+
+	/** Float a chip change over a seat (seat 0 is the human bankroll). */
+	public showChipDelta(playerId: number, delta: number) {
+		const float = document.getElementById(`seat-delta-${playerId}`);
+		if (!float || delta === 0) return;
+		float.textContent = this.formatDelta(delta);
+		float.dataset.tone = delta > 0 ? 'win' : 'loss';
+		this.replayFlash(float);
+	}
+
+	/** Brief flourish over the board when the human improves to a strong hand. */
+	public showCallout(handKey: PokerHandNameKey) {
+		const callout = document.getElementById('poker-callout');
+		if (!callout) return;
+		const eyebrow = document.getElementById('poker-callout-eyebrow');
+		const hand = document.getElementById('poker-callout-hand');
+		if (eyebrow) eyebrow.textContent = this.t('calloutMade');
+		if (hand) hand.textContent = getPokerHandName(this.locale, handKey);
+		this.replayFlash(callout);
+	}
+
+	/** Show an element whose one-shot CSS animation fades it out, restarting it if visible. */
+	private replayFlash(element: HTMLElement) {
+		element.hidden = true;
+		void element.offsetWidth; // flush styles so the animation restarts on re-show
+		element.hidden = false;
+	}
+
+	/** "To call 20 · Pot 70 · Pot odds 22%" while it is the human's turn. */
+	public renderBetSummary(visible: boolean, call: number, pot: number) {
+		const summary = document.getElementById('poker-to-call');
+		if (!summary) return;
+		summary.hidden = !visible;
+		if (!visible) return;
+		const potText = this.t('potSummary', { amount: formatWholeNumber(pot, this.locale) });
+		summary.textContent =
+			call > 0
+				? [
+						this.t('toCall', { amount: formatWholeNumber(call, this.locale) }),
+						potText,
+						this.t('potOdds', { percent: Math.round((call / (pot + call)) * 100) }),
+					].join(' · ')
+				: `${this.t('checkFree')} · ${potText}`;
+	}
+
+	public renderSessionStats(stats: PokerSessionStats) {
+		const hands = document.getElementById('session-hands');
+		const net = document.getElementById('session-net');
+		const best = document.getElementById('session-best');
+		const streak = document.getElementById('session-streak');
+		if (hands) hands.textContent = formatWholeNumber(stats.hands, this.locale);
+		if (net) {
+			net.textContent = this.formatDelta(stats.net);
+			net.dataset.tone = stats.net > 0 ? 'win' : stats.net < 0 ? 'loss' : 'neutral';
+		}
+		if (best)
+			best.textContent = stats.bestHand ? getPokerHandName(this.locale, stats.bestHand) : '—';
+		if (streak) {
+			streak.hidden = stats.streak < 2;
+			streak.textContent = this.t('sessionStreak', { count: stats.streak });
+		}
+	}
+
+	/** Name each AI seat by its playing style so reads feel earned. */
+	public renderRivals(
+		rivals: Array<{ id: number; personality: AIPersonality; difficulty: AIDifficulty }>,
+	) {
+		for (const rival of rivals) {
+			const tag = document.getElementById(`rival-${rival.id}`);
+			if (!tag) continue;
+			const keys = RIVAL_KEYS[rival.personality];
+			tag.textContent = `${this.t(keys.name)} · ${this.t(DIFFICULTY_KEYS[rival.difficulty])}`;
+			tag.title = this.t(keys.hint);
+			tag.dataset.style = rival.personality;
+		}
+	}
+
+	/** Open a new group in the hand history; later status lines append to it. */
+	public startHandHistory(handNumber: number) {
+		const history = document.getElementById('poker-history');
+		if (!history) return;
+		const group = document.createElement('li');
+		group.className = 'poker-history-hand';
+		const title = document.createElement('strong');
+		title.textContent = this.t('historyHand', { number: handNumber });
+		const entries = document.createElement('ol');
+		group.appendChild(title);
+		group.appendChild(entries);
+		history.insertBefore(group, history.firstChild);
+		this.currentHandLog = entries;
+		// ponytail: keep the last 30 hands in-page; persist only if saved history is needed.
+		while (history.children.length > 30) history.lastElementChild?.remove();
+		const empty = document.getElementById('poker-history-empty');
+		if (empty) empty.hidden = true;
 	}
 
 	public updateUI(pot: number, humanPlayer: Player) {
@@ -364,16 +589,25 @@ export class PokerUIRenderer {
 					(player.id - dealerIndex + players.length) % players.length
 				];
 			const action = document.getElementById(`opponent${player.id}-action`);
-			if (action)
-				action.textContent = player.folded
-					? this.t('foldedBadge')
-					: player.isAllIn
-						? this.t('allIn')
-						: isTurn
-							? this.t('thinking')
-							: player.currentBet > 0
-								? formatWholeNumber(player.currentBet, this.locale)
-								: '—';
+			if (action) {
+				const label = this.seatLabels.get(player.id);
+				const pinned = label?.kind === 'hand' || label?.kind === 'winner';
+				const [text, kind] = player.folded
+					? [this.t('foldedBadge'), 'fold']
+					: pinned && label
+						? [label.text, label.kind]
+						: player.isAllIn
+							? [this.t('allIn'), 'allin']
+							: isTurn
+								? [this.t('thinking'), 'thinking']
+								: label
+									? [label.text, label.kind]
+									: player.currentBet > 0
+										? [formatWholeNumber(player.currentBet, this.locale), 'bet']
+										: ['—', 'none'];
+				action.textContent = text;
+				action.dataset.action = kind;
+			}
 		}
 		this.updateOpponentUI(players);
 	}
@@ -391,15 +625,23 @@ export class PokerUIRenderer {
 			if (index === phaseIndex) street.setAttribute('aria-current', 'step');
 			else street.removeAttribute('aria-current');
 		});
-		const history = document.getElementById('poker-history');
-		if (history && history.firstElementChild?.textContent !== `[${phaseLabel}] ${message}`) {
-			const entry = document.createElement('li');
-			entry.textContent = `[${phaseLabel}] ${message}`;
-			history.insertBefore(entry, history.firstChild);
-			// ponytail: retain 100 session events; persist hands only if saved history is needed.
-			while (history.children.length > 100) history.lastElementChild?.remove();
-			const empty = document.getElementById('poker-history-empty');
-			if (empty) empty.hidden = true;
+		const entryText = `[${phaseLabel}] ${message}`;
+		if (this.currentHandLog) {
+			if (this.currentHandLog.lastElementChild?.textContent !== entryText) {
+				const entry = document.createElement('li');
+				entry.textContent = entryText;
+				this.currentHandLog.appendChild(entry);
+			}
+		} else {
+			const history = document.getElementById('poker-history');
+			if (history && history.firstElementChild?.textContent !== entryText) {
+				const entry = document.createElement('li');
+				entry.textContent = entryText;
+				history.insertBefore(entry, history.firstChild);
+				while (history.children.length > 100) history.lastElementChild?.remove();
+				const empty = document.getElementById('poker-history-empty');
+				if (empty) empty.hidden = true;
+			}
 		}
 		if (pot > 0) {
 			statusEl.textContent = this.t('statusWithPot', {

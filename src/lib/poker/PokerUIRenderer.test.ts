@@ -239,14 +239,6 @@ function mockDocument() {
 	return elements;
 }
 
-interface AppendedElement {
-	textContent: string;
-	className: string;
-	parentElement?: unknown;
-	removed?: boolean;
-	remove?: () => void;
-}
-
 // Helper functions
 function card(value: string, suit: Card['suit'], rank: number): Card {
 	return { value, suit, rank };
@@ -494,138 +486,42 @@ describe('PokerUIRenderer', () => {
 	});
 
 	describe('showAIDecision()', () => {
-		test('shows fold decision', () => {
-			const appendedElements: AppendedElement[] = [];
-
-			const opp1Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: () => null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
-
-			elements['opponent1-cards'] = opp1Container;
-
-			renderer.showAIDecision(1, 'fold');
-
-			expect(appendedElements.length).toBe(1);
-			expect(appendedElements[0].textContent).toBe('✕ FOLD');
-			expect(appendedElements[0].className).toContain('bg-[var(--deco-oxblood-bright)]');
+		test.each([
+			['fold', undefined, '✕ FOLD'],
+			['check', undefined, '✓ CHECK'],
+			['call', 50, '✓ CALL 50'],
+			['raise', 100, '↑ RAISE 100'],
+		] as const)('labels the seat for %s', (action, amount, text) => {
+			renderer.showAIDecision(1, action, amount);
+			expect(elements['opponent1-action'].textContent).toBe(text);
+			expect(elements['opponent1-action'].dataset?.action).toBe(action);
 		});
 
-		test('shows check decision', () => {
-			const appendedElements: AppendedElement[] = [];
+		test('keeps the action on the seat for the rest of the street', () => {
+			elements['poker-seat-1'] = createMockElement();
+			const players = [player(0, 'You', 500, [])].concat({
+				...player(1, 'Player 2', 400, []),
+				currentBet: 40,
+			});
+			renderer.showAIDecision(1, 'raise', 40);
+			renderer.updateTableState(players, 0, 0, true);
+			expect(elements['opponent1-action'].textContent).toBe('↑ RAISE 40');
 
-			const opp1Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: () => null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
-
-			elements['opponent1-cards'] = opp1Container;
-
-			renderer.showAIDecision(1, 'check');
-
-			expect(appendedElements[0].textContent).toBe('✓ CHECK');
-			expect(appendedElements[0].className).toContain('bg-[var(--deco-sapphire)]');
+			renderer.clearSeatActions();
+			renderer.updateTableState(players, 0, 0, true);
+			expect(elements['opponent1-action'].textContent).toBe('40');
 		});
 
-		test('shows call decision with amount', () => {
-			const appendedElements: AppendedElement[] = [];
-
-			const opp2Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: () => null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
-
-			elements['opponent2-cards'] = opp2Container;
-
-			renderer.showAIDecision(2, 'call', 50);
-
-			expect(appendedElements[0].textContent).toBe('✓ CALL 50 chips');
-			expect(appendedElements[0].className).toContain('bg-[var(--deco-jade)]');
-		});
-
-		test('shows raise decision with amount', () => {
-			const appendedElements: AppendedElement[] = [];
-
-			const opp1Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: () => null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
-
-			elements['opponent1-cards'] = opp1Container;
-
-			renderer.showAIDecision(1, 'raise', 100);
-
-			expect(appendedElements[0].textContent).toBe('↑ RAISE 100 chips');
-			expect(appendedElements[0].className).toContain('bg-[var(--deco-brass)]');
-		});
-
-		test('removes existing decision badge before adding new one', () => {
-			const existingBadge: AppendedElement = {
-				textContent: '',
-				className: '',
-				remove: () => {
-					existingBadge.removed = true;
-				},
-				removed: false,
-			};
-			const appendedElements: AppendedElement[] = [];
-
-			const opp1Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: (selector: string) =>
-						selector === '.ai-decision-badge' ? existingBadge : null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
-
-			elements['opponent1-cards'] = opp1Container;
-
-			renderer.showAIDecision(1, 'check');
-
-			expect(existingBadge.removed).toBe(true);
+		test('pins a showdown hand name over the all-in label', () => {
+			elements['poker-seat-1'] = createMockElement();
+			const players = [player(0, 'You', 500, [])].concat({
+				...player(1, 'Player 2', 0, []),
+				isAllIn: true,
+			});
+			renderer.setSeatHand(1, 'STRAIGHT', true);
+			renderer.updateTableState(players, 0, 0, false);
+			expect(elements['opponent1-action'].textContent).toBe('Straight');
+			expect(elements['opponent1-action'].dataset?.action).toBe('winner');
 		});
 	});
 
@@ -1015,29 +911,78 @@ describe('PokerUIRenderer', () => {
 
 			expect(elements['game-status'].textContent).toBe('[Preflop] New hand!');
 		});
+	});
 
-		test('shows call decision badge with a chip phrase', () => {
-			const appendedElements: AppendedElement[] = [];
+	describe('hand result and table feedback', () => {
+		test('shows the result banner with the human delta', () => {
+			renderer.showHandResult({
+				title: 'Player 3 wins 70 chips',
+				detail: 'Straight',
+				tone: 'loss',
+				delta: -30,
+			});
+			expect(elements['poker-result'].hidden).toBe(false);
+			expect(elements['poker-result'].dataset?.tone).toBe('loss');
+			expect(elements['poker-result-title'].textContent).toBe('Player 3 wins 70 chips');
+			expect(elements['poker-result-detail'].textContent).toBe('Straight');
+			expect(elements['poker-result-delta'].textContent).toBe('Your hand \u221230');
 
-			const opp2Container = {
-				innerHTML: '',
-				textContent: '',
-				classList: { add: () => {}, remove: () => {} },
-				parentElement: {
-					querySelector: () => null,
-					appendChild: (el: AppendedElement) => appendedElements.push(el),
-					style: {},
-				},
-				querySelector: () => null,
-				appendChild: () => {},
-				remove: () => {},
-			};
+			renderer.clearHandResult();
+			expect(elements['poker-result'].hidden).toBe(true);
+		});
 
-			elements['opponent2-cards'] = opp2Container;
+		test('formats signed chip deltas', () => {
+			expect(renderer.formatDelta(1400)).toBe('+1,400');
+			expect(renderer.formatDelta(-30)).toBe('\u221230');
+			expect(renderer.formatDelta(0)).toBe('±0');
+		});
 
-			renderer.showAIDecision(2, 'call', 50);
+		test('summarises the call price and pot odds on the human turn', () => {
+			renderer.renderBetSummary(true, 20, 50);
+			expect(elements['poker-to-call'].textContent).toBe('To call 20 · Pot 50 · Pot odds 29%');
+			renderer.renderBetSummary(true, 0, 50);
+			expect(elements['poker-to-call'].textContent).toBe('Check is free · Pot 50');
+			renderer.renderBetSummary(false, 20, 50);
+			expect(elements['poker-to-call'].hidden).toBe(true);
+		});
 
-			expect(appendedElements[0].textContent).toBe('✓ CALL 50 chips');
+		test('notes when the board plays and when drawing', () => {
+			const board = [
+				card('K', 'hearts', 13),
+				card('K', 'spades', 13),
+				card('9', 'diamonds', 9),
+				card('8', 'clubs', 8),
+				card('5', 'spades', 5),
+			];
+			renderer.renderPlayerCards(
+				player(0, 'You', 500, [card('2', 'diamonds', 2), card('3', 'clubs', 3)]),
+				board,
+			);
+			expect(elements['hand-detail'].textContent).toBe('Board plays');
+
+			renderer.renderPlayerCards(
+				player(0, 'You', 500, [card('A', 'hearts', 14), card('7', 'hearts', 7)]),
+				[card('2', 'hearts', 2), card('9', 'hearts', 9), card('K', 'clubs', 13)],
+			);
+			expect(elements['hand-detail'].textContent).toBe('Drawing · ≈9 outs');
+		});
+
+		test('renders the session tally and rival styles', () => {
+			renderer.renderSessionStats({
+				hands: 12,
+				net: 340,
+				streak: 3,
+				biggestPot: 200,
+				bestHand: 'FLUSH',
+			});
+			expect(elements['session-hands'].textContent).toBe('12');
+			expect(elements['session-net'].textContent).toBe('+340');
+			expect(elements['session-best'].textContent).toBe('Flush');
+			expect(elements['session-streak'].hidden).toBe(false);
+			expect(elements['session-streak'].textContent).toBe('3 wins in a row');
+
+			renderer.renderRivals([{ id: 1, personality: 'tight-aggressive', difficulty: 'hard' }]);
+			expect(elements['rival-1'].textContent).toBe('Shark · Hard');
 		});
 	});
 

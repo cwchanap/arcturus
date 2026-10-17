@@ -142,3 +142,28 @@ export function resolveSidePotAwards(
 
 	return { awards, tierWinners, tierResults };
 }
+
+/**
+ * Collapses pot tiers won by the same player set into one result so the
+ * showdown message reports "Player 3 wins 70" rather than one line per tier
+ * when folded players' uneven contributions created extra tiers.
+ */
+export function mergeTiersByWinners(tierResults: TierResult[]): TierResult[] {
+	const merged: TierResult[] = [];
+	for (const tier of tierResults) {
+		const ids = tier.winners
+			.map((w) => w.id)
+			.sort((a, b) => a - b)
+			.join(',');
+		const existing = merged.find(
+			(m) =>
+				m.winners
+					.map((w) => w.id)
+					.sort((a, b) => a - b)
+					.join(',') === ids,
+		);
+		if (existing) existing.amount += tier.amount;
+		else merged.push({ amount: tier.amount, winners: tier.winners });
+	}
+	return merged;
+}

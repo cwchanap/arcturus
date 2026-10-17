@@ -63,6 +63,7 @@ export {
 	distributePot,
 	calculateSidePots,
 	resolveSidePotAwards,
+	mergeTiersByWinners,
 	getMinimumBet,
 } from './potCalculator';
 

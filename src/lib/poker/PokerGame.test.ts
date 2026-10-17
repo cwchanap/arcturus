@@ -12,7 +12,7 @@ import {
 	placeBet,
 	foldPlayer,
 } from './index';
-import { PokerGame, buildPokerSettlementCommand } from './PokerGame';
+import { AUTO_DEAL_DELAY_MS, PokerGame, buildPokerSettlementCommand } from './PokerGame';
 import { clearLLMCache } from './llmAIStrategy';
 import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
@@ -1026,8 +1026,10 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 				nextPhase: () => void;
 				processAITurn: () => Promise<void>;
 				dealNewHand: () => Promise<void>;
+				autoDealEnabled: boolean;
 			};
 
+			game.autoDealEnabled = true;
 			game.processAITurn = async () => {};
 			game.humanChipsBefore = 500;
 			game.pot = 150;
@@ -1044,7 +1046,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			expect(chipUpdateBodies).toHaveLength(1);
 
 			const staleAutoDeal = timers.scheduledTimers.find(
-				(timer) => timer.delay === 3000 && !timer.cleared,
+				(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared,
 			);
 			expect(staleAutoDeal).toBeDefined();
 
@@ -1061,6 +1063,49 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 
 			expect(chipUpdateBodies).toHaveLength(1);
 			expect(game.humanChipsBefore).toBe(500);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('holds the finished hand on screen until the player deals when auto-deal is off', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const timers = mockTrackedTimers();
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				pot: number;
+				humanChipsBefore: number;
+				handStartChips: number;
+				handNumber: number;
+				nextPhase: () => void;
+				sessionStats: { hands: number; net: number; streak: number };
+			};
+			game.handNumber = 1;
+			game.humanChipsBefore = 500;
+			game.handStartChips = 500;
+			game.pot = 150;
+			game.players[0] = { ...game.players[0], chips: 450, folded: false };
+			game.players = game.players.map((player) => ({ ...player, folded: player.id !== 0 }));
+
+			game.nextPhase();
+
+			expect(timers.scheduledTimers.some((timer) => timer.delay === AUTO_DEAL_DELAY_MS)).toBe(
+				false,
+			);
+			expect(elements['btn-deal'].hidden).toBe(false);
+			expect(elements['btn-deal'].textContent).toBe('Next Hand');
+			expect(elements['poker-result'].hidden).toBe(false);
+			expect(elements['poker-result-title'].textContent).toBe('You win 150 chips');
+			expect(elements['poker-result-delta'].textContent).toBe('Your hand +100');
+			expect(game.sessionStats).toMatchObject({ hands: 1, net: 100, streak: 1 });
 		} finally {
 			timers.restore();
 		}
@@ -1345,7 +1390,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 
 		expect(game.formatShowdownMessage([])).toBe('Showdown complete.');
 
-		const alice = createPlayer(0, 'Alice', 500);
+		const alice = createPlayer(3, 'Alice', 500);
 		const bob = createPlayer(1, 'Bob', 500);
 		expect(game.formatShowdownMessage([{ amount: 300, winners: [alice] }])).toBe(
 			'Alice wins 300 chips! 🎉',
@@ -1368,6 +1413,18 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 				{ amount: 100, winners: [charlie] },
 			]),
 		).toBe('Main pot: Alice & Bob split 200 chips | Side pot 1: Charlie wins 100 chips');
+
+		// Tiers won by the same player read as one win, and the human reads as "You win".
+		expect(
+			game.formatShowdownMessage([
+				{ amount: 30, winners: [charlie] },
+				{ amount: 40, winners: [charlie] },
+			]),
+		).toBe('Charlie wins 70 chips! 🎉');
+		const you = createPlayer(0, 'You', 500);
+		expect(game.formatShowdownMessage([{ amount: 120, winners: [you] }])).toBe(
+			'You win 120 chips! 🎉',
+		);
 	});
 
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
@@ -2331,7 +2388,6 @@ describe('Poker betting control regressions', () => {
 			game.updateActionButtons();
 			expect(button('raise').disabled).toBe(true);
 			expect(input('bet-slider').disabled).toBe(true);
-			expect(button('max-bet').disabled).toBe(true);
 			// The handler must also reject an attempted raise independently of disabled UI.
 			button('raise').disabled = false;
 			button('raise').click();

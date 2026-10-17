@@ -17,8 +17,13 @@ export interface HandReadout {
 	key: PokerHandNameKey;
 	/** Cards that form the category (e.g. both cards of a pair, all five of a flush). */
 	coreCards: Card[];
-	/** False when the category comes entirely from the board ("the board plays"). */
+	/** False when the category's core cards all come from the board. */
 	usesHoleCards: boolean;
+	/**
+	 * True only on a full board when the hole cards don't improve the board's
+	 * own best five, kickers included ("the board plays").
+	 */
+	boardPlays: boolean;
 }
 
 const CATEGORY_KEYS: Record<FiveCardRanking['category'], PokerHandNameKey> = {
@@ -87,6 +92,7 @@ export function readHand(holeCards: Card[], communityCards: Card[]): HandReadout
 			key: paired.length > 0 ? 'PAIR' : 'HIGH_CARD',
 			coreCards,
 			usesHoleCards: coreCards.some((card) => holeCards.some((hole) => isSameCard(card, hole))),
+			boardPlays: false,
 		};
 	}
 
@@ -96,9 +102,12 @@ export function readHand(holeCards: Card[], communityCards: Card[]): HandReadout
 			? 'ROYAL_FLUSH'
 			: CATEGORY_KEYS[best.ranking.category];
 	const coreCards = coreOf(best.cards, best.ranking);
+	const boardOnly = communityCards.length === 5 ? bestFive(communityCards) : null;
 	return {
 		key,
 		coreCards,
 		usesHoleCards: coreCards.some((card) => holeCards.some((hole) => isSameCard(card, hole))),
+		boardPlays:
+			boardOnly !== null && compareFiveCardRankings(best.ranking, boardOnly.ranking) === 0,
 	};
 }

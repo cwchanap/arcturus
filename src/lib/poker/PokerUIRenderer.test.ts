@@ -960,6 +960,13 @@ describe('PokerUIRenderer', () => {
 			);
 			expect(elements['hand-detail'].textContent).toBe('Board plays');
 
+			// An ace kicker plays, so the board alone does not.
+			renderer.renderPlayerCards(
+				player(0, 'You', 500, [card('A', 'diamonds', 14), card('2', 'clubs', 2)]),
+				board,
+			);
+			expect(elements['hand-detail'].textContent).toBe('');
+
 			renderer.renderPlayerCards(
 				player(0, 'You', 500, [card('A', 'hearts', 14), card('7', 'hearts', 7)]),
 				[card('2', 'hearts', 2), card('9', 'hearts', 9), card('K', 'clubs', 13)],

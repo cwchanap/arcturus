@@ -40,6 +40,12 @@ const clientUserId = gameSession.clientUserId;
 					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
 				</div>
 				<div class="poker-tools">
+					<dl id="poker-session" class="poker-session">
+						<div><dt>{t('sessionHands')}</dt><dd id="session-hands">0</dd></div>
+						<div><dt>{t('sessionNet')}</dt><dd id="session-net" data-tone="neutral">±0</dd></div>
+						<div><dt>{t('sessionBest')}</dt><dd id="session-best">—</dd></div>
+					</dl>
+					<span id="session-streak" class="poker-session-streak" hidden></span>
 					<div class="poker-blinds">
 						<span>{t('blinds')}</span><strong id="table-blinds">5 / 10</strong>
 					</div>
@@ -90,6 +96,8 @@ const clientUserId = gameSession.clientUserId;
 									<span class="poker-portrait-rule" />
 								</>
 							</div>
+							<span id={`rival-${id}`} class="poker-rival" />
+							<span id={`seat-delta-${id}`} class="poker-seat-delta" hidden aria-hidden="true" />
 							<div class="poker-seat-meta">
 								<>
 									<span class="poker-position" id={`position-${id}`}>
@@ -115,8 +123,19 @@ const clientUserId = gameSession.clientUserId;
 					))
 				}
 				<div class="poker-board">
-					<div class="poker-pot" aria-label={t('pot')}>
-						<DecoIcon name="chip" size={20} /><span id="pot-amount">0</span>
+					<div class="poker-pot-slot">
+						<div class="poker-pot" aria-label={t('pot')}>
+							<DecoIcon name="chip" size={20} /><span id="pot-amount">0</span>
+						</div>
+						<div id="poker-result" class="poker-result" role="status" hidden>
+							<strong id="poker-result-title"></strong>
+							<span
+								><span id="poker-result-detail"></span><span id="poker-result-delta"></span></span
+							>
+						</div>
+					</div>
+					<div id="poker-callout" class="poker-callout" aria-live="polite" hidden>
+						<span id="poker-callout-eyebrow"></span><strong id="poker-callout-hand"></strong>
 					</div>
 					<div class="poker-board-tray">
 						<PokerCardContainer
@@ -139,9 +158,13 @@ const clientUserId = gameSession.clientUserId;
 						}
 					</ol>
 					<span id="poker-phase" class="poker-phase">{t('phaseIdle')}</span>
+					<div id="game-status" class="poker-status" role="status" aria-live="polite">
+						{t('startHint', { deal: t('dealNewHand') })}
+					</div>
 				</div>
 			</div>
 			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
+				<span id="seat-delta-0" class="poker-seat-delta" hidden aria-hidden="true"></span>
 				<div class="poker-bankroll">
 					<span class="poker-small-label">{getBalanceLabel(locale, gameSession.isGuest)}</span
 					><strong
@@ -166,12 +189,13 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 				<div class="poker-hand-strength">
 					<span id="hand-strength">—</span><div class="poker-strength-bars" aria-hidden="true">
-						{Array.from({ length: 5 }, () => <span />)}
-					</div>
+						{Array.from({ length: 10 }, () => <span />)}
+					</div><span id="hand-detail" class="poker-hand-detail"></span>
 				</div>
 			</section>
 			<div class="poker-controls">
 				<div class="poker-divider" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+				<p id="poker-to-call" class="poker-to-call" hidden></p>
 				<div class="poker-actions">
 					<button id="btn-fold" class="poker-action poker-fold" disabled
 						><span aria-hidden="true">×</span><span>{t('fold')}</span></button
@@ -189,6 +213,9 @@ const clientUserId = gameSession.clientUserId;
 						></button
 					>
 					<button id="btn-deal" class="poker-action poker-gold">{t('dealNewHand')}</button>
+					<label id="auto-deal-label" class="poker-auto-deal"
+						><input type="checkbox" id="auto-deal-toggle" /><span>{t('autoDeal')}</span></label
+					>
 					<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden
 						>{t('rebuyChips')}</button
 					>
@@ -203,7 +230,12 @@ const clientUserId = gameSession.clientUserId;
 								aria-label={t(key)}
 								aria-pressed="false"
 							>
-								<span data-preset-amount>—</span>
+								<>
+									<span class="poker-preset-label">
+										{['½', '⅔', t('presetPot'), t('max')][index]}
+									</span>
+									<span data-preset-amount>—</span>
+								</>
 							</button>
 						))
 					}
@@ -218,7 +250,6 @@ const clientUserId = gameSession.clientUserId;
 							inputmode="numeric"
 						/></label
 					>
-					<button id="btn-max-bet" class="poker-preset">{t('max')}</button>
 					<input
 						id="bet-slider"
 						aria-label={t('customRaise')}
@@ -228,9 +259,6 @@ const clientUserId = gameSession.clientUserId;
 						step="1"
 						value="20"
 					/>
-				</div>
-				<div id="game-status" class="poker-status" role="status" aria-live="polite">
-					{t('startHint', { deal: t('dealNewHand') })}
 				</div>
 			</div>
 			<div id="llm-overlay" class="hidden poker-llm-overlay">
@@ -303,7 +331,7 @@ const clientUserId = gameSession.clientUserId;
 						).map((key) => <li>{t(key)}</li>)
 					}<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li><li>
 						{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}
-					</li>
+					</li><li>{t('shortcutsHint')}</li>
 				</ul>
 			</div>
 		</dialog>

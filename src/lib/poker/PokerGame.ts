@@ -27,8 +27,16 @@ import {
 	createAIConfig,
 	isAIDifficulty,
 	makeAIDecision,
+	mergeTiersByWinners,
 } from './index';
-import { NUM_PLAYERS, MAX_BET, SMALL_BLIND } from './constants';
+import { HAND_RANKINGS, NUM_PLAYERS, MAX_BET, SMALL_BLIND } from './constants';
+import { readHand } from './handReadout';
+import {
+	loadSessionStats,
+	recordHand,
+	saveSessionStats,
+	type PokerSessionStats,
+} from './sessionStats';
 import { DEFAULT_SETTINGS } from './types';
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
@@ -39,7 +47,7 @@ import { loadAiSettings, type AiSettings } from '../ai';
 import { formatWholeNumber } from '../formatting';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
-import { pokerTranslator } from '../i18n/messages/poker';
+import { getPokerHandName, pokerTranslator } from '../i18n/messages/poker';
 import {
 	DEFAULT_GUEST_GAME_BALANCE,
 	isGuestModeValue,
@@ -78,6 +86,10 @@ export function buildPokerSettlementCommand(
 
 type AIDifficultySetting = GameSettings['aiDifficulty1'];
 
+/** How long a finished hand stays on screen before auto-deal (when enabled). */
+export const AUTO_DEAL_DELAY_MS = 5000;
+export const AUTO_DEAL_STORAGE_KEY = 'poker_auto_deal';
+
 export class PokerGame {
 	// Helper classes
 	private deck: DeckManager;
@@ -108,6 +120,13 @@ export class PokerGame {
 	private hasServerSyncedBalance = false;
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
+	// Same baseline for presentation; unlike humanChipsBefore it survives settlement.
+	private handStartChips = 0;
+	private handNumber = 0;
+	private handInProgress = false;
+	private lastAnnouncedRank = -1;
+	private sessionStats: PokerSessionStats;
+	private autoDealEnabled = false;
 	private settlementGate: SettlementGate;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
@@ -131,6 +150,8 @@ export class PokerGame {
 		this.ui = new PokerUIRenderer();
 		this.aiRival = new AIRivalAssistant();
 		this.settingsManager = new GameSettingsManager();
+		this.sessionStats = loadSessionStats();
+		this.autoDealEnabled = PokerGame.loadAutoDealPreference();
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
 		const balanceEl = document.getElementById('player-balance');
@@ -175,6 +196,8 @@ export class PokerGame {
 		this.updateBetControls(true);
 		this.updateActionButtons();
 		this.aiRival.highlightSuggestedMove(null);
+		this.ui.renderSessionStats(this.sessionStats);
+		this.renderRivals();
 
 		if (!this.hasServerSyncedBalance) {
 			const dealButton = document.getElementById('btn-deal') as HTMLButtonElement | null;
@@ -194,6 +217,134 @@ export class PokerGame {
 
 	private getEffectiveServerBalance(): number {
 		return Math.max(0, this.serverSyncedBalance);
+	}
+
+	private static loadAutoDealPreference(): boolean {
+		try {
+			return localStorage.getItem(AUTO_DEAL_STORAGE_KEY) === 'true';
+		} catch {
+			return false;
+		}
+	}
+
+	private setAutoDeal(enabled: boolean): void {
+		this.autoDealEnabled = enabled;
+		try {
+			localStorage.setItem(AUTO_DEAL_STORAGE_KEY, String(enabled));
+		} catch {
+			// Preference is a convenience; the toggle still works for this page.
+		}
+		if (!enabled) this.cancelPendingAutoDeal();
+		else if (this.handNumber > 0 && !this.handInProgress) this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
+		this.updateActionButtons();
+	}
+
+	private renderRivals(): void {
+		this.ui.renderRivals(
+			[...this.aiConfigs].map(([id, config]) => ({
+				id,
+				personality: config.personality,
+				difficulty: config.difficulty,
+			})),
+		);
+	}
+
+	/**
+	 * Present the end of a hand: banner over the pot, winning cards, seat
+	 * deltas, hand names, and the session tally. `awards` maps player id to
+	 * chips collected; `showdown` is false when everyone else folded.
+	 */
+	private presentHandResult(awards: Map<number, number>, showdown: boolean): void {
+		const human = this.players[0];
+		const delta = human.chips - this.handStartChips;
+		const humanWon = awards.get(0) ?? 0;
+		const winnerIds = [...awards.keys()];
+		const winners = this.players.filter((player) => winnerIds.includes(player.id));
+		const topWinnerIds = [...awards.entries()]
+			.filter(([, amount]) => amount === Math.max(...awards.values()))
+			.map(([id]) => id);
+		const headliners = this.players.filter((player) => topWinnerIds.includes(player.id));
+		const total = [...awards.values()].reduce((sum, amount) => sum + amount, 0);
+
+		let title: string;
+		if (humanWon > 0) {
+			title = this.t(winners.length > 1 && humanWon < total ? 'resultYouSplit' : 'resultYouWin', {
+				amount: formatChips(humanWon, this.locale),
+			});
+		} else if (headliners.length > 1) {
+			title = this.t('resultSplit', {
+				names: headliners.map((player) => player.name).join(' & '),
+				amount: formatChips(total, this.locale),
+			});
+		} else {
+			title = this.t('resultPlayerWins', {
+				name: headliners[0]?.name ?? '',
+				amount: formatChips(awards.get(headliners[0]?.id) ?? total, this.locale),
+			});
+		}
+
+		const featured = humanWon > 0 ? human : headliners[0];
+		const featuredHand = showdown && featured ? readHand(featured.hand, this.communityCards) : null;
+		const detail = featuredHand
+			? getPokerHandName(this.locale, featuredHand.key)
+			: !showdown
+				? this.t('resultEveryoneFolded')
+				: '';
+		const involved = this.handStartChips > 0;
+		this.ui.showHandResult({
+			title,
+			detail:
+				human.folded && humanWon === 0 && detail
+					? `${detail} · ${this.t('resultYouFolded')}`
+					: detail,
+			tone: delta > 0 ? 'win' : delta < 0 ? 'loss' : 'neutral',
+			delta: involved ? delta : null,
+		});
+
+		if (showdown) {
+			for (const player of this.players.slice(1)) {
+				if (player.folded) continue;
+				const readout = readHand(player.hand, this.communityCards);
+				if (readout) this.ui.setSeatHand(player.id, readout.key, winnerIds.includes(player.id));
+			}
+			this.ui.highlightWinningCards(this.communityCards, featured ? [featured] : winners);
+		}
+		for (const [id, amount] of awards) {
+			if (id !== 0) this.ui.showChipDelta(id, amount);
+		}
+		if (involved) this.ui.showChipDelta(0, delta);
+
+		if (involved) {
+			const humanHand =
+				showdown && !human.folded ? readHand(human.hand, this.communityCards) : null;
+			this.sessionStats = recordHand(this.sessionStats, {
+				delta,
+				potWon: humanWon,
+				handKey: humanHand?.key ?? null,
+			});
+			saveSessionStats(this.sessionStats);
+			this.ui.renderSessionStats(this.sessionStats);
+		}
+	}
+
+	/** End-of-hand pause: hold the result for the player, or auto-deal if they opted in. */
+	private finishHand(): void {
+		this.handInProgress = false;
+		if (this.autoDealEnabled) this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
+		this.updateActionButtons();
+	}
+
+	/** Celebrate when a new street improves the human to two pair or better. */
+	private announceImprovement(): void {
+		const human = this.players[0];
+		if (human.folded) return;
+		const readout = readHand(human.hand, this.communityCards);
+		if (!readout || !readout.usesHoleCards) return;
+		const rank = HAND_RANKINGS[readout.key];
+		if (rank >= HAND_RANKINGS.TWO_PAIR && rank > this.lastAnnouncedRank) {
+			this.ui.showCallout(readout.key);
+		}
+		this.lastAnnouncedRank = Math.max(this.lastAnnouncedRank, rank);
 	}
 
 	private clearTimeoutRef(id: ReturnType<typeof setTimeout> | null): null {
@@ -561,6 +712,12 @@ export class PokerGame {
 
 		// Capture human chip count before blinds are posted (used for delta calculation at hand end)
 		this.humanChipsBefore = this.players[0].chips;
+		this.handStartChips = this.humanChipsBefore;
+		this.handNumber += 1;
+		this.handInProgress = true;
+		this.ui.startHandHistory(this.handNumber);
+		this.ui.clearHandResult();
+		this.ui.clearSeatActions();
 
 		// Deal 2 cards to each player
 		for (let i = 0; i < this.players.length; i++) {
@@ -571,6 +728,8 @@ export class PokerGame {
 
 		// Reset community cards
 		this.communityCards = [];
+		const preflop = readHand(this.players[0].hand, []);
+		this.lastAnnouncedRank = preflop ? HAND_RANKINGS[preflop.key] : -1;
 
 		// Post blinds using settings
 		this.players[this.smallBlindIndex] = postBlind(
@@ -896,7 +1055,15 @@ export class PokerGame {
 			deal.hidden = active;
 			deal.disabled =
 				!this.hasServerSyncedBalance || (!this.isGuestMode && this.settlementGate.isBlocked);
+			if (this.handNumber > 0) deal.textContent = this.t('nextHand');
+			// The CSS countdown bar runs while an auto-deal is pending.
+			deal.dataset.countdown = String(this.autoDealTimeoutId !== null && !active);
 		}
+		const autoDealLabel = document.getElementById('auto-deal-label');
+		if (autoDealLabel) autoDealLabel.hidden = active;
+		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
+		if (autoDealToggle) autoDealToggle.checked = this.autoDealEnabled;
+		this.ui.renderBetSummary(canAct, Math.min(call, human.chips), this.pot);
 		this.updateBetControls();
 		this.ui.updateTableState(
 			this.players,
@@ -912,12 +1079,13 @@ export class PokerGame {
 	 * winners of different tiers (e.g. short stack wins main, covering player
 	 * wins side), and reports each tier's amount instead of the total pot.
 	 */
-	private formatShowdownMessage(tierResults: TierResult[]): string {
+	private formatShowdownMessage(rawTierResults: TierResult[]): string {
+		const tierResults = mergeTiersByWinners(rawTierResults);
 		if (tierResults.length === 0) return this.t('statusShowdownComplete');
 		if (tierResults.length === 1) {
 			const { amount, winners } = tierResults[0];
 			if (winners.length === 1) {
-				return this.t('statusPlayerWins', {
+				return this.t(winners[0].id === 0 ? 'statusYouWin' : 'statusPlayerWins', {
 					name: winners[0].name,
 					amount: formatChips(amount, this.locale),
 				});
@@ -934,7 +1102,7 @@ export class PokerGame {
 				i === 0 ? this.t('statusMainPot') : this.t('statusSidePot', { number: String(i) });
 			const amount = formatChips(tier.amount, this.locale);
 			if (tier.winners.length === 1) {
-				return this.t('statusTierWins', {
+				return this.t(tier.winners[0].id === 0 ? 'statusTierYouWin' : 'statusTierWins', {
 					label,
 					name: tier.winners[0].name,
 					amount,
@@ -952,9 +1120,10 @@ export class PokerGame {
 		if (activePlayers.length === 1) {
 			this.bettingRound = null;
 			const winner = activePlayers[0];
+			const awards = new Map([[winner.id, this.pot]]);
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(
-				this.t('statusPlayerWinsWalkover', {
+				this.t(winner.id === 0 ? 'statusYouWinWalkover' : 'statusPlayerWinsWalkover', {
 					name: winner.name,
 					amount: formatChips(this.pot, this.locale),
 				}),
@@ -966,13 +1135,14 @@ export class PokerGame {
 			if (winner.id === 0) {
 				this.settleHand('win');
 			}
-			this.updateActionButtons();
-			this.scheduleAutoDeal(3000);
+			this.presentHandResult(awards, false);
+			this.finishHand();
 			return;
 		}
 
 		// Reset current bets for new betting round
 		this.players = this.players.map(resetCurrentBets);
+		this.ui.clearSeatActions();
 
 		if (this.gamePhase === 'preflop') {
 			this.gamePhase = 'flop';
@@ -999,7 +1169,7 @@ export class PokerGame {
 				const winner = activePlayers[0];
 				this.players[winner.id] = awardChips(winner, this.pot);
 				this.updateGameStatus(
-					this.t('statusPlayerWins', {
+					this.t(winner.id === 0 ? 'statusYouWin' : 'statusPlayerWins', {
 						name: winner.name,
 						amount: formatChips(this.pot, this.locale),
 					}),
@@ -1007,6 +1177,7 @@ export class PokerGame {
 				if (winner.id === 0) {
 					this.settleHand('win');
 				}
+				this.presentHandResult(new Map([[winner.id, this.pot]]), false);
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
 				// short all-in can only win up to the tiers they contributed to.
@@ -1040,13 +1211,12 @@ export class PokerGame {
 						humanDelta > 0 ? 'win' : humanDelta < 0 ? 'loss' : 'push';
 					this.settleHand(outcome);
 				}
+				this.presentHandResult(awards, true);
 			}
 			this.pot = 0;
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.ui.updateOpponentUI(this.players);
-			// Auto-deal new hand after 3 seconds
-			this.updateActionButtons();
-			this.scheduleAutoDeal(3000);
+			this.finishHand();
 			return;
 		}
 
@@ -1060,6 +1230,7 @@ export class PokerGame {
 		this.ui.renderCommunityCards(this.communityCards);
 		this.ui.renderPlayerCards(this.players[0], this.communityCards);
 		this.ui.updateUI(this.pot, this.players[0]);
+		this.announceImprovement();
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus(this.t('statusYourTurn'));
@@ -1238,9 +1409,34 @@ export class PokerGame {
 		document.querySelectorAll<HTMLButtonElement>('.quick-bet-chip').forEach((button) => {
 			button.addEventListener('click', () => this.setRaiseAmount(Number(button.dataset.amount)));
 		});
-		document
-			.getElementById('btn-max-bet')
-			?.addEventListener('click', () => this.setRaiseAmount(Number(slider?.max)));
+		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
+		autoDealToggle?.addEventListener('change', () => this.setAutoDeal(autoDealToggle.checked));
+
+		// Keyboard play: F fold, C check/call, R raise, Space/Enter next hand.
+		window.addEventListener('keydown', (event: KeyboardEvent) => {
+			const target = event.target as HTMLElement | null;
+			if (
+				event.ctrlKey ||
+				event.metaKey ||
+				event.altKey ||
+				target?.closest?.('input, select, textarea, dialog, [contenteditable="true"]')
+			)
+				return;
+			const key = event.key.toLowerCase();
+			const press = (id: string) => {
+				const button = document.getElementById(id) as HTMLButtonElement | null;
+				if (!button || button.hidden || button.disabled) return false;
+				button.click();
+				return true;
+			};
+			let handled = false;
+			if (key === 'f') handled = press('btn-fold');
+			else if (key === 'c') handled = press('btn-check') || press('btn-call');
+			else if (key === 'r') handled = press('btn-raise');
+			else if ((key === ' ' || key === 'enter') && target?.tagName !== 'BUTTON')
+				handled = press('btn-deal');
+			if (handled) event.preventDefault();
+		});
 
 		document.getElementById('btn-ai-move')?.addEventListener('click', () => {
 			void this.aiRival.requestAiMove(
@@ -1333,6 +1529,7 @@ export class PokerGame {
 			// Update AI configs
 			this.aiConfigs.set(1, this.buildAIConfig(aiPersonality1, aiDifficulty1));
 			this.aiConfigs.set(2, this.buildAIConfig(aiPersonality2, aiDifficulty2));
+			this.renderRivals();
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;
@@ -1356,6 +1553,7 @@ export class PokerGame {
 			const defaults = this.settingsManager.getSettings();
 			this.aiConfigs.set(1, this.buildAIConfig(defaults.aiPersonality1, defaults.aiDifficulty1));
 			this.aiConfigs.set(2, this.buildAIConfig(defaults.aiPersonality2, defaults.aiDifficulty2));
+			this.renderRivals();
 
 			// Mark that chips should be reset on next deal
 			this.pendingChipReset = true;
@@ -1482,8 +1680,6 @@ export class PokerGame {
 			const label = button.querySelector('[data-preset-amount]');
 			if (label) label.textContent = formatWholeNumber(amount, this.locale);
 		});
-		const maxButton = document.getElementById('btn-max-bet') as HTMLButtonElement | null;
-		if (maxButton) maxButton.disabled = disabled;
 		const blinds = document.getElementById('table-blinds');
 		if (blinds)
 			blinds.textContent = `${formatWholeNumber(this.handSmallBlind, this.locale)} / ${formatWholeNumber(this.handBigBlind, this.locale)}`;

@@ -6,6 +6,7 @@ import {
 	calculateSidePots,
 	distributePot,
 	getMinimumBet,
+	mergeTiersByWinners,
 	resolveSidePotAwards,
 } from './potCalculator';
 
@@ -206,5 +207,29 @@ describe('potCalculator', () => {
 			expect(awards.get(2)).toBe(50);
 			expect(tierWinners.map((p) => p.id).sort()).toEqual([0, 1, 2]);
 		});
+	});
+});
+
+describe('mergeTiersByWinners', () => {
+	test('folds tiers won by the same player into one amount', () => {
+		const p3 = makePlayer({ id: 3 });
+		expect(
+			mergeTiersByWinners([
+				{ amount: 30, winners: [p3] },
+				{ amount: 40, winners: [p3] },
+			]),
+		).toEqual([{ amount: 70, winners: [p3] }]);
+	});
+
+	test('keeps tiers with different winners apart', () => {
+		const p1 = makePlayer({ id: 1 });
+		const p2 = makePlayer({ id: 2 });
+		const merged = mergeTiersByWinners([
+			{ amount: 60, winners: [p1] },
+			{ amount: 40, winners: [p2] },
+			{ amount: 10, winners: [p2, p1] },
+			{ amount: 6, winners: [p1, p2] },
+		]);
+		expect(merged.map((tier) => tier.amount)).toEqual([60, 40, 16]);
 	});
 });

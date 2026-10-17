@@ -43,6 +43,20 @@ describe('readHand', () => {
 		const readout = readHand([c('2d'), c('3c')], [c('Kh'), c('Ks'), c('9d'), c('8c'), c('5s')]);
 		expect(readout?.key).toBe('PAIR');
 		expect(readout?.usesHoleCards).toBe(false);
+		expect(readout?.boardPlays).toBe(true);
+	});
+
+	test('a hole card that plays only as a kicker means the board does not play', () => {
+		const readout = readHand([c('Ad'), c('2c')], [c('Kh'), c('Ks'), c('9d'), c('8c'), c('5s')]);
+		expect(readout?.key).toBe('PAIR');
+		expect(readout?.usesHoleCards).toBe(false);
+		expect(readout?.boardPlays).toBe(false);
+	});
+
+	test('the board can only play on the river', () => {
+		const flop = readHand([c('2d'), c('3c')], [c('Kh'), c('Ks'), c('9d')]);
+		expect(flop?.usesHoleCards).toBe(false);
+		expect(flop?.boardPlays).toBe(false);
 	});
 
 	test('distinguishes a royal flush from a straight flush', () => {

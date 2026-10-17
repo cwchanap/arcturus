@@ -1427,6 +1427,87 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		);
 	});
 
+	test('presentHandResult reads ties from pot tiers, not award totals', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			handStartChips: number;
+			ui: unknown;
+			presentHandResult: (
+				awards: Map<number, number>,
+				tiers: Array<{ amount: number; winners: Player[] }>,
+				showdown: boolean,
+			) => void;
+		};
+		const titles: string[] = [];
+		game.ui = {
+			showHandResult: ({ title }: { title: string }) => titles.push(title),
+			showChipDelta: () => {},
+		};
+		game.handStartChips = 0;
+		const [you, rivalA, rivalB] = game.players;
+
+		// You win the main pot outright while a rival takes a side pot: not a split.
+		game.presentHandResult(
+			new Map([
+				[you.id, 150],
+				[rivalA.id, 100],
+			]),
+			[
+				{ amount: 150, winners: [you] },
+				{ amount: 100, winners: [rivalA] },
+			],
+			false,
+		);
+		// A genuine tie for the pot you won.
+		game.presentHandResult(
+			new Map([
+				[you.id, 50],
+				[rivalA.id, 50],
+			]),
+			[{ amount: 100, winners: [you, rivalA] }],
+			false,
+		);
+		// An odd chip pays a rivals' tie 51/50; it is still a split.
+		game.presentHandResult(
+			new Map([
+				[rivalA.id, 51],
+				[rivalB.id, 50],
+			]),
+			[{ amount: 101, winners: [rivalA, rivalB] }],
+			false,
+		);
+		// Different rivals win the main and side pots: the main pot's winner headlines.
+		game.presentHandResult(
+			new Map([
+				[rivalA.id, 150],
+				[rivalB.id, 100],
+			]),
+			[
+				{ amount: 150, winners: [rivalA] },
+				{ amount: 100, winners: [rivalB] },
+			],
+			false,
+		);
+
+		expect(titles).toEqual([
+			'You win 150 chips',
+			'You split 50 chips',
+			'Player 2 & Player 3 split 101 chips',
+			'Player 2 wins 150 chips',
+		]);
+	});
+
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

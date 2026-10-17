@@ -363,12 +363,11 @@ export class PokerUIRenderer {
 				communityCards.length === 3 || communityCards.length === 4
 					? estimateDrawingOuts(humanPlayer.hand, communityCards)
 					: 0;
-			detail.textContent =
-				readout && communityCards.length >= 3 && !readout.usesHoleCards
-					? this.t('boardPlays')
-					: outs >= 4
-						? this.t('drawOuts', { outs })
-						: '';
+			detail.textContent = readout?.boardPlays
+				? this.t('boardPlays')
+				: outs >= 4
+					? this.t('drawOuts', { outs })
+					: '';
 		}
 
 		// Outline the cards that make a pair or better while the hand is live.

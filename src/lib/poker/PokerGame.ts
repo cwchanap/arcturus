@@ -252,29 +252,42 @@ export class PokerGame {
 	/**
 	 * Present the end of a hand: banner over the pot, winning cards, seat
 	 * deltas, hand names, and the session tally. `awards` maps player id to
-	 * chips collected; `showdown` is false when everyone else folded.
+	 * chips collected; `tiers` holds each pot tier's own winners, which is the
+	 * only reliable source of ties (separate main/side pot winners are not a
+	 * split, and an odd chip can pay a genuine tie unevenly); `showdown` is
+	 * false when everyone else folded.
 	 */
-	private presentHandResult(awards: Map<number, number>, showdown: boolean): void {
+	private presentHandResult(
+		awards: Map<number, number>,
+		tiers: TierResult[],
+		showdown: boolean,
+	): void {
 		const human = this.players[0];
 		const delta = human.chips - this.handStartChips;
 		const humanWon = awards.get(0) ?? 0;
 		const winnerIds = [...awards.keys()];
 		const winners = this.players.filter((player) => winnerIds.includes(player.id));
-		const topWinnerIds = [...awards.entries()]
-			.filter(([, amount]) => amount === Math.max(...awards.values()))
-			.map(([id]) => id);
-		const headliners = this.players.filter((player) => topWinnerIds.includes(player.id));
+		const humanTiers = tiers.filter((tier) => tier.winners.some((player) => player.id === 0));
+		const humanSplit = humanTiers.length > 0 && humanTiers.every((tier) => tier.winners.length > 1);
+		// Headline the largest pot (the main pot on equal amounts) and whoever won it.
+		const headline = mergeTiersByWinners(tiers).reduce<TierResult | null>(
+			(top, tier) => (!top || tier.amount > top.amount ? tier : top),
+			null,
+		);
+		const headliners = this.players.filter((player) =>
+			headline?.winners.some((winner) => winner.id === player.id),
+		);
 		const total = [...awards.values()].reduce((sum, amount) => sum + amount, 0);
 
 		let title: string;
 		if (humanWon > 0) {
-			title = this.t(winners.length > 1 && humanWon < total ? 'resultYouSplit' : 'resultYouWin', {
+			title = this.t(humanSplit ? 'resultYouSplit' : 'resultYouWin', {
 				amount: formatChips(humanWon, this.locale),
 			});
-		} else if (headliners.length > 1) {
+		} else if (headline && headliners.length > 1) {
 			title = this.t('resultSplit', {
 				names: headliners.map((player) => player.name).join(' & '),
-				amount: formatChips(total, this.locale),
+				amount: formatChips(headline.amount, this.locale),
 			});
 		} else {
 			title = this.t('resultPlayerWins', {
@@ -1121,6 +1134,7 @@ export class PokerGame {
 			this.bettingRound = null;
 			const winner = activePlayers[0];
 			const awards = new Map([[winner.id, this.pot]]);
+			const tiers = [{ amount: this.pot, winners: [winner] }];
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(
 				this.t(winner.id === 0 ? 'statusYouWinWalkover' : 'statusPlayerWinsWalkover', {
@@ -1135,7 +1149,7 @@ export class PokerGame {
 			if (winner.id === 0) {
 				this.settleHand('win');
 			}
-			this.presentHandResult(awards, false);
+			this.presentHandResult(awards, tiers, false);
 			this.finishHand();
 			return;
 		}
@@ -1177,7 +1191,11 @@ export class PokerGame {
 				if (winner.id === 0) {
 					this.settleHand('win');
 				}
-				this.presentHandResult(new Map([[winner.id, this.pot]]), false);
+				this.presentHandResult(
+					new Map([[winner.id, this.pot]]),
+					[{ amount: this.pot, winners: [winner] }],
+					false,
+				);
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
 				// short all-in can only win up to the tiers they contributed to.
@@ -1211,7 +1229,7 @@ export class PokerGame {
 						humanDelta > 0 ? 'win' : humanDelta < 0 ? 'loss' : 'push';
 					this.settleHand(outcome);
 				}
-				this.presentHandResult(awards, true);
+				this.presentHandResult(awards, tierResults, true);
 			}
 			this.pot = 0;
 			this.ui.updateUI(this.pot, this.players[0]);

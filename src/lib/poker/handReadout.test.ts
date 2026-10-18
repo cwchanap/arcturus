@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readHand } from './handReadout';
+import { countDrawingOuts, readHand } from './handReadout';
 import type { Card } from './types';
 
 function c(code: string): Card {
@@ -79,5 +79,46 @@ describe('readHand', () => {
 		expect(readHand([c('9h'), c('Kh')], [c('Qh'), c('Jh'), c('10h'), c('2c'), c('3d')])?.key).toBe(
 			'STRAIGHT_FLUSH',
 		);
+	});
+});
+
+describe('countDrawingOuts', () => {
+	test('a broadway gutshot has 4 outs, not 8', () => {
+		// A-K on Q-J-7-2: only a ten completes the straight — 4 distinct cards.
+		expect(countDrawingOuts([c('Ah'), c('Kd')], [c('Qc'), c('Js'), c('2h'), c('7d')])).toBe(4);
+	});
+
+	test('an ordinary gutshot counts', () => {
+		// 5-6 on 8-9-2: only a seven completes 5-6-7-8-9.
+		expect(countDrawingOuts([c('5h'), c('6h')], [c('8s'), c('9c'), c('2d')])).toBe(4);
+	});
+
+	test('an open-ended draw counts both ends', () => {
+		// 8-9 on T-J-2: a seven or a queen completes it — 8 distinct cards.
+		expect(countDrawingOuts([c('8h'), c('9h')], [c('10c'), c('Js'), c('2d')])).toBe(8);
+	});
+
+	test('a wheel draw counts the four fives', () => {
+		// A-2 on 3-4-K: only a five completes A-2-3-4-5.
+		expect(countDrawingOuts([c('As'), c('2d')], [c('4c'), c('3h'), c('Ks')])).toBe(4);
+	});
+
+	test('overlapping draws count each finishing card once', () => {
+		// 8-9 of hearts on J-Q-2: 9 hearts finish the flush, 4 tens finish the
+		// straight, and the ten of hearts does both — 12, not 17.
+		expect(countDrawingOuts([c('8h'), c('9h')], [c('Jh'), c('Qh'), c('2c')])).toBe(12);
+	});
+
+	test('a lone pair draws to trips with 2 outs', () => {
+		expect(countDrawingOuts([c('Ac'), c('Ad')], [c('Ks'), c('9h'), c('4d')])).toBe(2);
+	});
+
+	test('a made hand does not manufacture draws behind itself', () => {
+		// The straight is already made; no straight outs, and no pair for trips.
+		expect(countDrawingOuts([c('8h'), c('9d')], [c('10c'), c('Js'), c('Qd'), c('2h')])).toBe(0);
+	});
+
+	test('a flush draw counts its 9 suit cards', () => {
+		expect(countDrawingOuts([c('Ah'), c('7h')], [c('2h'), c('9h'), c('Kc')])).toBe(9);
 	});
 });

@@ -5,8 +5,7 @@
 import type { AIPersonality, Card, GamePhase, Player } from './types';
 import type { AIDifficulty } from './aiDifficulty';
 import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
-import { estimateDrawingOuts } from './handEvaluator';
-import { isSameCard, readHand } from './handReadout';
+import { countDrawingOuts, isSameCard, readHand } from './handReadout';
 import type { PokerSessionStats } from './sessionStats';
 import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
@@ -361,7 +360,7 @@ export class PokerUIRenderer {
 		if (detail) {
 			const outs =
 				communityCards.length === 3 || communityCards.length === 4
-					? estimateDrawingOuts(humanPlayer.hand, communityCards)
+					? countDrawingOuts(humanPlayer.hand, communityCards)
 					: 0;
 			detail.textContent = readout?.boardPlays
 				? this.t('boardPlays')

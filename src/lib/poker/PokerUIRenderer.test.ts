@@ -1036,6 +1036,27 @@ describe('PokerUIRenderer', () => {
 			expect(elements['hand-detail'].textContent).toBe('Drawing · ≈9 outs');
 		});
 
+		test('counts distinct outs — a broadway gutshot is 4, a gutshot notes', () => {
+			// A-K on Q-J-7-2: only the four tens complete the straight.
+			renderer.renderPlayerCards(
+				player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'diamonds', 13)]),
+				[
+					card('Q', 'clubs', 12),
+					card('J', 'spades', 11),
+					card('2', 'hearts', 2),
+					card('7', 'diamonds', 7),
+				],
+			);
+			expect(elements['hand-detail'].textContent).toBe('Drawing · ≈4 outs');
+
+			// An ordinary gutshot (5-6 on 8-9-2) reaches the note threshold too.
+			renderer.renderPlayerCards(
+				player(0, 'You', 500, [card('5', 'hearts', 5), card('6', 'hearts', 6)]),
+				[card('8', 'spades', 8), card('9', 'clubs', 9), card('2', 'diamonds', 2)],
+			);
+			expect(elements['hand-detail'].textContent).toBe('Drawing · ≈4 outs');
+		});
+
 		test('renders the session tally and rival styles', () => {
 			renderer.renderSessionStats({
 				hands: 12,

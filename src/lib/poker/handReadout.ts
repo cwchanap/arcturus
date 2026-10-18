@@ -15,6 +15,8 @@ import type { Card } from './types';
 
 export interface HandReadout {
 	key: PokerHandNameKey;
+	/** The exact five cards of the best hand, kickers included. */
+	bestCards: Card[];
 	/** Cards that form the category (e.g. both cards of a pair, all five of a flush). */
 	coreCards: Card[];
 	/** False when the category's core cards all come from the board. */
@@ -90,6 +92,7 @@ export function readHand(holeCards: Card[], communityCards: Card[]): HandReadout
 			paired.length > 0 ? paired : [all.reduce((h, card) => (card.rank > h.rank ? card : h))];
 		return {
 			key: paired.length > 0 ? 'PAIR' : 'HIGH_CARD',
+			bestCards: [...all],
 			coreCards,
 			usesHoleCards: coreCards.some((card) => holeCards.some((hole) => isSameCard(card, hole))),
 			boardPlays: false,
@@ -105,6 +108,7 @@ export function readHand(holeCards: Card[], communityCards: Card[]): HandReadout
 	const boardOnly = communityCards.length === 5 ? bestFive(communityCards) : null;
 	return {
 		key,
+		bestCards: best.cards,
 		coreCards,
 		usesHoleCards: coreCards.some((card) => holeCards.some((hole) => isSameCard(card, hole))),
 		boardPlays:

@@ -593,6 +593,34 @@ describe('PokerUIRenderer', () => {
 		});
 	});
 
+	describe('highlightWinningCards()', () => {
+		test('the winning kicker lights up, not just the made-hand core', () => {
+			// Board K K 9 8 5: A-2 makes a pair of kings and the ace kicker wins.
+			const community = [
+				card('K', 'hearts', 13),
+				card('K', 'spades', 13),
+				card('9', 'diamonds', 9),
+				card('8', 'clubs', 8),
+				card('5', 'spades', 5),
+			];
+			const winner = player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'clubs', 2)]);
+
+			renderer.highlightWinningCards(community, [winner]);
+
+			const playerSlots = elements['player-cards'].querySelectorAll?.('.card-slot') || [];
+			expect(playerSlots[0].dataset.highlight).toBe('win'); // the deciding ace
+			expect(playerSlots[1].dataset.highlight).toBe('dim');
+			const boardSlots = elements['community-cards'].querySelectorAll?.('.card-slot') || [];
+			expect(boardSlots.map((slot) => slot.dataset.highlight)).toEqual([
+				'win',
+				'win',
+				'win',
+				'win',
+				'dim',
+			]);
+		});
+	});
+
 	describe('hideOpponentHands()', () => {
 		test('resets opponents to face-down cards', () => {
 			renderer.hideOpponentHands();

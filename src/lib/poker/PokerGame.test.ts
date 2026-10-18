@@ -1150,6 +1150,11 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			expect(game.players[0].chips).toBe(515);
 			expect(elements['poker-result-title'].textContent).toBe('You win 25 chips');
 			expect(elements['poker-result-delta'].textContent).toBe('Your hand +15');
+			// The status line agrees with the banner: the returned raise is not
+			// announced as winnings.
+			expect(elements['game-status'].textContent).toBe(
+				'[Preflop | Pot: 115 chips] You win 25 chips! (Everyone else folded) 🎉',
+			);
 			expect(game.sessionStats).toMatchObject({ hands: 1, net: 15, biggestPot: 25 });
 		} finally {
 			timers.restore();
@@ -1616,6 +1621,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			players: Player[];
 			communityCards: Card[];
 			handStartChips: number;
+			handStartStacks: Map<number, number>;
 			sessionStats: { hands: number; net: number; biggestPot: number; streak: number };
 			presentHandResult: (
 				awards: Map<number, number>,
@@ -1639,11 +1645,15 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			chips: 400,
 			hand: [card('Q', 'diamonds', 12), card('J', 'spades', 11)],
 		};
+		// The rival started the hand at 500, committed 100, and collected the
+		// 200 pot — ending at 600 for a net +100.
 		game.players[1] = {
 			...game.players[1],
+			chips: 600,
 			hand: [card('A', 'hearts', 14), card('2', 'clubs', 2)],
 		};
 		game.handStartChips = 500;
+		game.handStartStacks = new Map([[1, 500]]);
 
 		const [you, rival] = game.players;
 		game.presentHandResult(
@@ -1662,10 +1672,84 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		expect(elements['poker-result-detail'].textContent).toBe('Pair');
 		expect(elements['poker-result-delta'].textContent).toBe('Your hand −100');
 		expect(elements['poker-result'].dataset?.tone).toBe('loss');
-		// Seat floats show contested winnings only — no "+400" on the human.
+		// Seat floats show net change — no "+400" on the human, and the rival's
+		// 200 award nets their 100 stake down to +100.
 		expect(elements['seat-delta-0'].textContent).toBe('−100');
-		expect(elements['seat-delta-1'].textContent).toBe('+200');
+		expect(elements['seat-delta-1'].textContent).toBe('+100');
 		expect(game.sessionStats).toMatchObject({ hands: 1, net: -100, biggestPot: 0 });
+	});
+
+	test('a pot win on a net-loss hand reads as a take, not a win', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			communityCards: Card[];
+			handStartChips: number;
+			handStartStacks: Map<number, number>;
+			presentHandResult: (
+				awards: Map<number, number>,
+				tiers: Array<{ amount: number; winners: Player[]; uncontested: boolean }>,
+				showdown: boolean,
+			) => void;
+		};
+
+		// The human committed 100, won the 60 main pot, and lost the 160 side
+		// pot: a real award but a net −40 hand.
+		game.communityCards = [
+			card('K', 'hearts', 13),
+			card('K', 'spades', 13),
+			card('9', 'diamonds', 9),
+			card('8', 'clubs', 8),
+			card('5', 'spades', 5),
+		];
+		game.players[0] = {
+			...game.players[0],
+			chips: 460,
+			hand: [card('Q', 'diamonds', 12), card('J', 'spades', 11)],
+		};
+		game.players[1] = {
+			...game.players[1],
+			chips: 560,
+			hand: [card('A', 'hearts', 14), card('2', 'clubs', 2)],
+		};
+		game.players[2] = { ...game.players[2], chips: 480 };
+		game.handStartChips = 500;
+		game.handStartStacks = new Map([
+			[1, 500],
+			[2, 500],
+		]);
+
+		const [you, rivalA] = game.players;
+		game.presentHandResult(
+			new Map([
+				[you.id, 60],
+				[rivalA.id, 160],
+			]),
+			[
+				{ amount: 60, winners: [you], uncontested: false },
+				{ amount: 160, winners: [rivalA], uncontested: false },
+			],
+			true,
+		);
+
+		expect(elements['poker-result-title'].textContent).toBe('You take 60 chips');
+		expect(elements['poker-result-delta'].textContent).toBe('Your hand −40');
+		expect(elements['poker-result'].dataset?.tone).toBe('loss');
+		// Every seat floats its net change: the rival who took the side pot
+		// netted +60, the all-in loser shows −20.
+		expect(elements['seat-delta-0'].textContent).toBe('−40');
+		expect(elements['seat-delta-1'].textContent).toBe('+60');
+		expect(elements['seat-delta-2'].textContent).toBe('−20');
 	});
 
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {

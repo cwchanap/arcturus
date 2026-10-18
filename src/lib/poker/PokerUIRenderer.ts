@@ -407,18 +407,28 @@ export class PokerUIRenderer {
 		}
 	}
 
-	/** Light up the winning best five — kickers decide pots, so they glow too. */
-	public highlightWinningCards(communityCards: Card[], winners: Player[]) {
+	/**
+	 * Light up every winner's best five and dim the rest of each revealed
+	 * hand. Folded hands are skipped entirely — their cards stay private.
+	 */
+	public highlightWinningCards(
+		communityCards: Card[],
+		players: Player[],
+		winnerIds: ReadonlySet<number>,
+	) {
 		this.clearCardHighlights();
-		const core: Card[] = [];
-		for (const winner of winners) {
-			const readout = readHand(winner.hand, communityCards);
-			if (readout) core.push(...readout.bestCards);
+		const winningCards: Card[] = [];
+		for (const player of players) {
+			if (!winnerIds.has(player.id)) continue;
+			const readout = readHand(player.hand, communityCards);
+			if (readout) winningCards.push(...readout.bestCards);
 		}
-		this.markCards('community-cards', communityCards, core, 'win');
-		for (const winner of winners) {
-			const id = winner.id === 0 ? 'player-cards' : `opponent${winner.id}-cards`;
-			this.markCards(id, winner.hand, core, 'win');
+		this.markCards('community-cards', communityCards, winningCards, 'win');
+		for (const player of players) {
+			if (player.folded) continue;
+			const id = player.id === 0 ? 'player-cards' : `opponent${player.id}-cards`;
+			const readout = winnerIds.has(player.id) ? readHand(player.hand, communityCards) : null;
+			this.markCards(id, player.hand, readout?.bestCards ?? [], 'win');
 		}
 	}
 

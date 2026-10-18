@@ -74,11 +74,18 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 	}
 
 	// A made straight suppresses straight outs; a made flush simply can't
-	// reach exactly four of a suit.
+	// reach exactly four of a suit. Once a flush is made, only straight-flush
+	// cards improve it, and trips no longer improve a made straight or flush.
 	const hasStraight = ranksFormStraight(knownRanks);
+	const madeFlushSuit = [...suitCounts.entries()].find(([, count]) => count >= 5)?.[0] ?? null;
+	const madeFlushRanks = new Set(
+		known.filter((card) => card.suit === madeFlushSuit).map((card) => card.rank),
+	);
 	const flushSuit = [...suitCounts.entries()].find(([, count]) => count === 4)?.[0] ?? null;
 	const rankCountValues = [...rankCounts.values()];
 	const pairRank =
+		!hasStraight &&
+		madeFlushSuit === null &&
 		rankCountValues.filter((count) => count === 2).length === 1 &&
 		!rankCountValues.some((count) => count >= 3)
 			? [...rankCounts.entries()].find(([, count]) => count === 2)?.[0]
@@ -88,7 +95,12 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 	for (const suit of SUITS) {
 		for (let rank = 2; rank <= 14; rank++) {
 			if (knownCards.has(`${rank}-${suit}`)) continue;
-			const completesStraight = !hasStraight && ranksFormStraight(new Set([...knownRanks, rank]));
+			const completesStraight =
+				madeFlushSuit !== null
+					? suit === madeFlushSuit &&
+						!ranksFormStraight(madeFlushRanks) &&
+						ranksFormStraight(new Set([...madeFlushRanks, rank]))
+					: !hasStraight && ranksFormStraight(new Set([...knownRanks, rank]));
 			if (
 				completesStraight ||
 				(flushSuit !== null && suit === flushSuit) ||

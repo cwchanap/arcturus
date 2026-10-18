@@ -149,4 +149,18 @@ describe('countDrawingOuts', () => {
 	test('a flush draw counts its 9 suit cards', () => {
 		expect(countDrawingOuts([c('Ah'), c('7h')], [c('2h'), c('9h'), c('Kc')])).toBe(9);
 	});
+
+	test('a made flush counts only the straight-flush cards', () => {
+		// 8h-9h on 10h-Jh-2h: only 7h and Qh beat the flush; other sevens and queens make a lower straight.
+		expect(countDrawingOuts([c('8h'), c('9h')], [c('10h'), c('Jh'), c('2h')])).toBe(2);
+	});
+
+	test('a made flush ignores straight cards that cannot make a straight flush', () => {
+		// The 9 is a club, so no heart completes a straight flush.
+		expect(countDrawingOuts([c('8h'), c('9c')], [c('10h'), c('Jh'), c('2h'), c('5h')])).toBe(0);
+	});
+
+	test('a pair inside a made straight has no trips outs', () => {
+		expect(countDrawingOuts([c('9d'), c('9c')], [c('7s'), c('8h'), c('10d'), c('Jc')])).toBe(0);
+	});
 });

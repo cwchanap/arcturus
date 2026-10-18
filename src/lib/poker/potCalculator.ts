@@ -12,6 +12,17 @@ export function calculatePot(players: Player[]): number {
 }
 
 /**
+ * The portion of the pot `player` can actually win after putting in
+ * `callAmount` more chips: every player's committed chips capped at the
+ * caller's post-call total. Displayed pot odds for a short stack facing a
+ * bigger bet — settlement still pays out the real side-pot tiers.
+ */
+export function contestablePot(players: Player[], player: Player, callAmount: number): number {
+	const covered = player.totalBet + callAmount;
+	return players.reduce((sum, p) => sum + Math.min(p.totalBet, covered), 0);
+}
+
+/**
  * Calculates the current round pot (from currentBet, not totalBet)
  */
 export function calculateRoundPot(players: Player[]): number {

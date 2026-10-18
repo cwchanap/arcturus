@@ -1508,6 +1508,52 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		]);
 	});
 
+	test('a folded hand keeps its local delta when the server balance reconciles mid-hand', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'fold-delta-user' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const { gate } = createPendingSettlementGate();
+		const game = new PokerGame(undefined, gate) as unknown as {
+			players: Player[];
+			handStartChips: number;
+			humanChipsBefore: number;
+			sessionStats: { hands: number; net: number; streak: number };
+			settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+			adoptSettlementResult: (result: SettleRoundResult) => void;
+			presentHandResult: (
+				awards: Map<number, number>,
+				tiers: Array<{ amount: number; winners: Player[] }>,
+				showdown: boolean,
+			) => void;
+		};
+
+		// The human put 40 chips into the hand and folded: the outcome is final.
+		game.handStartChips = 500;
+		game.humanChipsBefore = 500;
+		game.players[0] = { ...game.players[0], chips: 460, folded: true, totalBet: 40 };
+		game.settleHand('loss');
+
+		// Before the remaining opponents finish, the server answer reconciles
+		// the stack to an account balance that includes unrelated winnings.
+		game.adoptSettlementResult({ balance: 580, duplicate: false });
+		expect(game.players[0].chips).toBe(580);
+
+		const winner = game.players[1];
+		game.presentHandResult(new Map([[winner.id, 40]]), [{ amount: 40, winners: [winner] }], false);
+
+		expect(elements['poker-result-delta'].textContent).toBe('Your hand −40');
+		expect(elements['poker-result'].dataset.tone).toBe('loss');
+		expect(elements['seat-delta-0'].textContent).toBe('−40');
+		expect(game.sessionStats).toMatchObject({ hands: 1, net: -40, streak: 0 });
+	});
+
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

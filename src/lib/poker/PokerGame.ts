@@ -122,6 +122,11 @@ export class PokerGame {
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
 	// Same baseline for presentation; unlike humanChipsBefore it survives settlement.
 	private handStartChips = 0;
+	// The hand-local delta frozen when the human's outcome becomes final. Once
+	// settlement is adopted, players[0].chips becomes the reconciled account
+	// balance — recomputing the delta then would leak unrelated balance changes
+	// into the result banner and session tally.
+	private handResultDelta: number | null = null;
 	private handNumber = 0;
 	private handInProgress = false;
 	private lastAnnouncedRank = -1;
@@ -263,7 +268,7 @@ export class PokerGame {
 		showdown: boolean,
 	): void {
 		const human = this.players[0];
-		const delta = human.chips - this.handStartChips;
+		const delta = this.handResultDelta ?? human.chips - this.handStartChips;
 		const humanWon = awards.get(0) ?? 0;
 		const winnerIds = [...awards.keys()];
 		const winners = this.players.filter((player) => winnerIds.includes(player.id));
@@ -509,6 +514,12 @@ export class PokerGame {
 	}
 
 	private settleHand(outcome: PokerSettlementOutcome = 'push'): void {
+		// Freeze the hand-local result first: every call site reaches settleHand
+		// exactly when the human's outcome becomes final (fold, walkover, or
+		// showdown awards), before the async reconcile can replace the stack.
+		if (this.handResultDelta === null && this.handStartChips > 0) {
+			this.handResultDelta = this.players[0].chips - this.handStartChips;
+		}
 		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
 			if (this.isGuestMode) {
 				this.persistGuestBankroll();
@@ -726,6 +737,7 @@ export class PokerGame {
 		// Capture human chip count before blinds are posted (used for delta calculation at hand end)
 		this.humanChipsBefore = this.players[0].chips;
 		this.handStartChips = this.humanChipsBefore;
+		this.handResultDelta = null;
 		this.handNumber += 1;
 		this.handInProgress = true;
 		this.ui.startHandHistory(this.handNumber);

@@ -124,6 +124,9 @@ export class PokerGame {
 	private humanChipsBefore: number = 0; // Human chip count at start of current hand (before blinds)
 	// Same baseline for presentation; unlike humanChipsBefore it survives settlement.
 	private handStartChips = 0;
+	// Per-seat stacks at hand start (before blinds), so seat floats can show
+	// each player's net change for the hand like the human's delta float.
+	private handStartStacks = new Map<number, number>();
 	// The hand-local delta frozen when the human's outcome becomes final. Once
 	// settlement is adopted, players[0].chips becomes the reconciled account
 	// balance — recomputing the delta then would leak unrelated balance changes
@@ -308,10 +311,14 @@ export class PokerGame {
 		const total = [...awards.keys()].reduce((sum, id) => sum + contestedAward(id), 0);
 
 		let title: string;
-		if (humanWon > 0) {
+		if (humanWon > 0 && delta > 0) {
 			title = this.t(humanSplit ? 'resultYouSplit' : 'resultYouWin', {
 				amount: formatChips(humanWon, this.locale),
 			});
+		} else if (humanWon > 0) {
+			// Won a pot but the hand netted zero or less: keep the award visible
+			// without claiming a win the loss delta would contradict.
+			title = this.t('resultYouTake', { amount: formatChips(humanWon, this.locale) });
 		} else if (headline && headliners.length > 1) {
 			title = this.t('resultSplit', {
 				names: headliners.map((player) => player.name).join(' & '),
@@ -350,11 +357,16 @@ export class PokerGame {
 			}
 			this.ui.highlightWinningCards(this.communityCards, this.players, winnerIds);
 		}
-		for (const [id] of awards) {
-			const amount = contestedAward(id);
-			if (id !== 0 && amount > 0) this.ui.showChipDelta(id, amount);
+		if (involved) {
+			// Seat floats show each player's net change for the hand — a pot
+			// award is gross of the bets it repays, so a loser who collected a
+			// small pot shows their real loss rather than "+amount".
+			for (const player of this.players.slice(1)) {
+				const start = this.handStartStacks.get(player.id);
+				if (start !== undefined) this.ui.showChipDelta(player.id, player.chips - start);
+			}
+			this.ui.showChipDelta(0, delta);
 		}
-		if (involved) this.ui.showChipDelta(0, delta);
 
 		if (involved) {
 			const humanHand =
@@ -381,6 +393,18 @@ export class PokerGame {
 			uncontested: pot.contributorCount === 1,
 		}));
 		return tiers.length > 0 ? tiers : [{ amount: this.pot, winners: [winner], uncontested: false }];
+	}
+
+	/**
+	 * Chips actually won in a walkover: the contested tiers, or the whole pot
+	 * when every tier is a lone bettor's return (matching the banner, which
+	 * falls back to showing the return rather than an empty result).
+	 */
+	private walkoverWinnings(tiers: TierResult[]): number {
+		const contested = tiers
+			.filter((tier) => !tier.uncontested)
+			.reduce((sum, tier) => sum + tier.amount, 0);
+		return contested > 0 ? contested : this.pot;
 	}
 
 	/** End-of-hand pause: hold the result for the player, or auto-deal if they opted in. */
@@ -775,6 +799,7 @@ export class PokerGame {
 		// Capture human chip count before blinds are posted (used for delta calculation at hand end)
 		this.humanChipsBefore = this.players[0].chips;
 		this.handStartChips = this.humanChipsBefore;
+		this.handStartStacks = new Map(this.players.map((player) => [player.id, player.chips]));
 		this.handResultDelta = null;
 		this.handNumber += 1;
 		this.handInProgress = true;
@@ -1198,7 +1223,7 @@ export class PokerGame {
 			this.updateGameStatus(
 				this.t(winner.id === 0 ? 'statusYouWinWalkover' : 'statusPlayerWinsWalkover', {
 					name: winner.name,
-					amount: formatChips(this.pot, this.locale),
+					amount: formatChips(this.walkoverWinnings(tiers), this.locale),
 				}),
 			);
 			this.pot = 0;
@@ -1240,17 +1265,18 @@ export class PokerGame {
 			if (activePlayers.length === 1) {
 				// Only one player left - they win by default (folded on river)
 				const winner = activePlayers[0];
+				const tiers = this.walkoverTiers(winner);
 				this.players[winner.id] = awardChips(winner, this.pot);
 				this.updateGameStatus(
 					this.t(winner.id === 0 ? 'statusYouWin' : 'statusPlayerWins', {
 						name: winner.name,
-						amount: formatChips(this.pot, this.locale),
+						amount: formatChips(this.walkoverWinnings(tiers), this.locale),
 					}),
 				);
 				if (winner.id === 0) {
 					this.settleHand('win');
 				}
-				this.presentHandResult(new Map([[winner.id, this.pot]]), this.walkoverTiers(winner), false);
+				this.presentHandResult(new Map([[winner.id, this.pot]]), tiers, false);
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
 				// short all-in can only win up to the tiers they contributed to.

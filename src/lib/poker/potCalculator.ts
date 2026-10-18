@@ -38,12 +38,15 @@ export function distributePot(winners: Player[], pot: number): Map<number, numbe
 
 /**
  * Handles side pots for all-in scenarios
- * Returns main pot and array of side pots with eligible players
+ * Returns main pot and array of side pots with eligible players.
+ * `contributorCount` includes folded players — a tier built from a single
+ * player's chips is that player's uncalled bet coming back, not a pot
+ * anyone contested.
  */
 export function calculateSidePots(
 	players: Player[],
-): Array<{ amount: number; eligiblePlayerIds: number[] }> {
-	const pots: Array<{ amount: number; eligiblePlayerIds: number[] }> = [];
+): Array<{ amount: number; eligiblePlayerIds: number[]; contributorCount: number }> {
+	const pots: Array<{ amount: number; eligiblePlayerIds: number[]; contributorCount: number }> = [];
 
 	// Get all players sorted by their total bet amount
 	const sortedPlayers = [...players].sort((a, b) => a.totalBet - b.totalBet);
@@ -66,6 +69,7 @@ export function calculateSidePots(
 			pots.push({
 				amount: potAmount,
 				eligiblePlayerIds: remainingPlayers.filter((p) => !p.folded).map((p) => p.id),
+				contributorCount: remainingPlayers.length,
 			});
 		}
 
@@ -100,6 +104,12 @@ export type WinnerDeterminer = (eligiblePlayers: Player[], communityCards: Card[
 export interface TierResult {
 	amount: number;
 	winners: Player[];
+	/**
+	 * True when every chip in the tier came from one player — an uncalled bet
+	 * returning to its bettor. Presentation uses this to keep returned chips
+	 * out of win attribution; it never changes who is awarded what.
+	 */
+	uncontested: boolean;
 }
 
 /**
@@ -133,7 +143,7 @@ export function resolveSidePotAwards(
 		for (const w of winners) {
 			if (!tierWinners.some((p) => p.id === w.id)) tierWinners.push(w);
 		}
-		tierResults.push({ amount: pot.amount, winners });
+		tierResults.push({ amount: pot.amount, winners, uncontested: pot.contributorCount === 1 });
 		const distribution = distributePot(winners, pot.amount);
 		for (const [playerId, amount] of distribution.entries()) {
 			awards.set(playerId, (awards.get(playerId) ?? 0) + amount);
@@ -163,7 +173,7 @@ export function mergeTiersByWinners(tierResults: TierResult[]): TierResult[] {
 					.join(',') === ids,
 		);
 		if (existing) existing.amount += tier.amount;
-		else merged.push({ amount: tier.amount, winners: tier.winners });
+		else merged.push({ amount: tier.amount, winners: tier.winners, uncontested: tier.uncontested });
 	}
 	return merged;
 }

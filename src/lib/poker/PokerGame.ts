@@ -269,20 +269,42 @@ export class PokerGame {
 	): void {
 		const human = this.players[0];
 		const delta = this.handResultDelta ?? human.chips - this.handStartChips;
-		const humanWon = awards.get(0) ?? 0;
-		const winnerIds = [...awards.keys()];
-		const winners = this.players.filter((player) => winnerIds.includes(player.id));
-		const humanTiers = tiers.filter((tier) => tier.winners.some((player) => player.id === 0));
+		// A tier made of a single player's chips returns their uncalled bet;
+		// excluding it keeps returned chips out of win attribution. The award
+		// itself is untouched — the bettor still gets those chips back.
+		const contestedTiers = tiers.filter((tier) => !tier.uncontested);
+		// If every tier is a lone contributor's chips (only one player ever bet),
+		// the return is the whole result — show it rather than an empty banner.
+		const displayTiers = contestedTiers.length > 0 ? contestedTiers : tiers;
+		const returnedByPlayer = new Map<number, number>();
+		if (contestedTiers.length > 0) {
+			for (const tier of tiers) {
+				if (!tier.uncontested) continue;
+				for (const winner of tier.winners) {
+					returnedByPlayer.set(winner.id, (returnedByPlayer.get(winner.id) ?? 0) + tier.amount);
+				}
+			}
+		}
+		const contestedAward = (playerId: number) =>
+			Math.max(0, (awards.get(playerId) ?? 0) - (returnedByPlayer.get(playerId) ?? 0));
+		const humanWon = contestedAward(0);
+		const winnerIds = new Set(
+			displayTiers.flatMap((tier) => tier.winners.map((player) => player.id)),
+		);
+		const winners = this.players.filter((player) => winnerIds.has(player.id));
+		const humanTiers = displayTiers.filter((tier) =>
+			tier.winners.some((player) => player.id === 0),
+		);
 		const humanSplit = humanTiers.length > 0 && humanTiers.every((tier) => tier.winners.length > 1);
-		// Headline the largest pot (the main pot on equal amounts) and whoever won it.
-		const headline = mergeTiersByWinners(tiers).reduce<TierResult | null>(
+		// Headline the largest contested pot (the main pot on equal amounts).
+		const headline = mergeTiersByWinners(displayTiers).reduce<TierResult | null>(
 			(top, tier) => (!top || tier.amount > top.amount ? tier : top),
 			null,
 		);
 		const headliners = this.players.filter((player) =>
 			headline?.winners.some((winner) => winner.id === player.id),
 		);
-		const total = [...awards.values()].reduce((sum, amount) => sum + amount, 0);
+		const total = [...awards.keys()].reduce((sum, id) => sum + contestedAward(id), 0);
 
 		let title: string;
 		if (humanWon > 0) {
@@ -297,7 +319,7 @@ export class PokerGame {
 		} else {
 			title = this.t('resultPlayerWins', {
 				name: headliners[0]?.name ?? '',
-				amount: formatChips(awards.get(headliners[0]?.id) ?? total, this.locale),
+				amount: formatChips(contestedAward(headliners[0]?.id ?? -1) || total, this.locale),
 			});
 		}
 
@@ -323,12 +345,13 @@ export class PokerGame {
 			for (const player of this.players.slice(1)) {
 				if (player.folded) continue;
 				const readout = readHand(player.hand, this.communityCards);
-				if (readout) this.ui.setSeatHand(player.id, readout.key, winnerIds.includes(player.id));
+				if (readout) this.ui.setSeatHand(player.id, readout.key, winnerIds.has(player.id));
 			}
 			this.ui.highlightWinningCards(this.communityCards, featured ? [featured] : winners);
 		}
-		for (const [id, amount] of awards) {
-			if (id !== 0) this.ui.showChipDelta(id, amount);
+		for (const [id] of awards) {
+			const amount = contestedAward(id);
+			if (id !== 0 && amount > 0) this.ui.showChipDelta(id, amount);
 		}
 		if (involved) this.ui.showChipDelta(0, delta);
 
@@ -1105,7 +1128,8 @@ export class PokerGame {
 	 * wins side), and reports each tier's amount instead of the total pot.
 	 */
 	private formatShowdownMessage(rawTierResults: TierResult[]): string {
-		const tierResults = mergeTiersByWinners(rawTierResults);
+		// Returned uncalled bets are not wins; keep them out of the status line.
+		const tierResults = mergeTiersByWinners(rawTierResults.filter((tier) => !tier.uncontested));
 		if (tierResults.length === 0) return this.t('statusShowdownComplete');
 		if (tierResults.length === 1) {
 			const { amount, winners } = tierResults[0];
@@ -1146,7 +1170,7 @@ export class PokerGame {
 			this.bettingRound = null;
 			const winner = activePlayers[0];
 			const awards = new Map([[winner.id, this.pot]]);
-			const tiers = [{ amount: this.pot, winners: [winner] }];
+			const tiers = [{ amount: this.pot, winners: [winner], uncontested: false }];
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(
 				this.t(winner.id === 0 ? 'statusYouWinWalkover' : 'statusPlayerWinsWalkover', {
@@ -1205,7 +1229,7 @@ export class PokerGame {
 				}
 				this.presentHandResult(
 					new Map([[winner.id, this.pot]]),
-					[{ amount: this.pot, winners: [winner] }],
+					[{ amount: this.pot, winners: [winner], uncontested: false }],
 					false,
 				);
 			} else {

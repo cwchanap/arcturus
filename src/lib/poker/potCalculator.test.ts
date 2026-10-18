@@ -49,7 +49,7 @@ describe('potCalculator', () => {
 		];
 		const pots = calculateSidePots(players);
 		expect(pots).toHaveLength(1);
-		expect(pots[0]).toEqual({ amount: 150, eligiblePlayerIds: [0, 1, 2] });
+		expect(pots[0]).toEqual({ amount: 150, eligiblePlayerIds: [0, 1, 2], contributorCount: 3 });
 	});
 
 	test('calculateSidePots handles single all-in creating side pot', () => {
@@ -60,9 +60,9 @@ describe('potCalculator', () => {
 		];
 		const pots = calculateSidePots(players);
 		expect(pots).toHaveLength(3);
-		expect(pots[0]).toEqual({ amount: 150, eligiblePlayerIds: [0, 1, 2] });
-		expect(pots[1]).toEqual({ amount: 60, eligiblePlayerIds: [0, 2] });
-		expect(pots[2]).toEqual({ amount: 20, eligiblePlayerIds: [0] });
+		expect(pots[0]).toEqual({ amount: 150, eligiblePlayerIds: [0, 1, 2], contributorCount: 3 });
+		expect(pots[1]).toEqual({ amount: 60, eligiblePlayerIds: [0, 2], contributorCount: 2 });
+		expect(pots[2]).toEqual({ amount: 20, eligiblePlayerIds: [0], contributorCount: 1 });
 	});
 
 	test('calculateSidePots handles multiple all-ins at different levels', () => {
@@ -74,9 +74,13 @@ describe('potCalculator', () => {
 		];
 		const pots = calculateSidePots(players);
 		expect(pots).toHaveLength(3);
-		expect(pots[0]).toEqual({ amount: 320, eligiblePlayerIds: [0, 1, 2, 3] });
-		expect(pots[1]).toEqual({ amount: 210, eligiblePlayerIds: [0, 1, 3] });
-		expect(pots[2]).toEqual({ amount: 100, eligiblePlayerIds: [0, 3] });
+		expect(pots[0]).toEqual({
+			amount: 320,
+			eligiblePlayerIds: [0, 1, 2, 3],
+			contributorCount: 4,
+		});
+		expect(pots[1]).toEqual({ amount: 210, eligiblePlayerIds: [0, 1, 3], contributorCount: 3 });
+		expect(pots[2]).toEqual({ amount: 100, eligiblePlayerIds: [0, 3], contributorCount: 2 });
 	});
 
 	test('calculateSidePots ignores folded players for eligibility', () => {
@@ -88,8 +92,10 @@ describe('potCalculator', () => {
 		];
 		const pots = calculateSidePots(players);
 		expect(pots).toHaveLength(2);
-		expect(pots[0]).toEqual({ amount: 120, eligiblePlayerIds: [1, 2, 3] });
-		expect(pots[1]).toEqual({ amount: 90, eligiblePlayerIds: [1, 3] });
+		// A folded player's chips still count toward contributors — they make the
+		// tier contested dead money rather than an uncalled return.
+		expect(pots[0]).toEqual({ amount: 120, eligiblePlayerIds: [1, 2, 3], contributorCount: 4 });
+		expect(pots[1]).toEqual({ amount: 90, eligiblePlayerIds: [1, 3], contributorCount: 3 });
 	});
 
 	// A simple winner-determiner: the eligible player with the lowest id wins.
@@ -142,8 +148,36 @@ describe('potCalculator', () => {
 			// tierResults must keep the tiers separate so callers can distinguish
 			// side-pot-different-winners from a genuine split-pot tie.
 			expect(tierResults).toHaveLength(2);
-			expect(tierResults[0]).toEqual({ amount: 150, winners: [players[1]] });
-			expect(tierResults[1]).toEqual({ amount: 100, winners: [players[0]] });
+			expect(tierResults[0]).toEqual({
+				amount: 150,
+				winners: [players[1]],
+				uncontested: false,
+			});
+			expect(tierResults[1]).toEqual({
+				amount: 100,
+				winners: [players[0]],
+				uncontested: false,
+			});
+		});
+
+		test('a tier built from a single bettor is marked as an uncontested return', () => {
+			// Player 0 bet 100; players 1 and 2 called only 50 each and went all-in.
+			// The top tier (the extra 50 nobody covered) is player 0's own chips
+			// coming back — it must not be presented as winnings.
+			const players = [
+				makePlayer({ id: 0, totalBet: 100 }),
+				makePlayer({ id: 1, totalBet: 50, isAllIn: true }),
+				makePlayer({ id: 2, totalBet: 50, isAllIn: true }),
+			];
+			const determiner = (eligible: Player[], _c: Card[]): Player[] =>
+				eligible.filter((p) => p.id === 0);
+			const { awards, tierResults } = resolveSidePotAwards(players, [], determiner);
+			expect(tierResults).toEqual([
+				{ amount: 150, winners: [players[0]], uncontested: false },
+				{ amount: 50, winners: [players[0]], uncontested: true },
+			]);
+			// The award itself is unchanged: player 0 still collects all 200.
+			expect(awards.get(0)).toBe(200);
 		});
 
 		test('short all-in cannot win chips from bets it did not cover', () => {
@@ -215,20 +249,20 @@ describe('mergeTiersByWinners', () => {
 		const p3 = makePlayer({ id: 3 });
 		expect(
 			mergeTiersByWinners([
-				{ amount: 30, winners: [p3] },
-				{ amount: 40, winners: [p3] },
+				{ amount: 30, winners: [p3], uncontested: false },
+				{ amount: 40, winners: [p3], uncontested: false },
 			]),
-		).toEqual([{ amount: 70, winners: [p3] }]);
+		).toEqual([{ amount: 70, winners: [p3], uncontested: false }]);
 	});
 
 	test('keeps tiers with different winners apart', () => {
 		const p1 = makePlayer({ id: 1 });
 		const p2 = makePlayer({ id: 2 });
 		const merged = mergeTiersByWinners([
-			{ amount: 60, winners: [p1] },
-			{ amount: 40, winners: [p2] },
-			{ amount: 10, winners: [p2, p1] },
-			{ amount: 6, winners: [p1, p2] },
+			{ amount: 60, winners: [p1], uncontested: false },
+			{ amount: 40, winners: [p2], uncontested: false },
+			{ amount: 10, winners: [p2, p1], uncontested: false },
+			{ amount: 6, winners: [p1, p2], uncontested: false },
 		]);
 		expect(merged.map((tier) => tier.amount)).toEqual([60, 40, 16]);
 	});

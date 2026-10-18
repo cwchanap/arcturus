@@ -501,8 +501,12 @@ export class PokerUIRenderer {
 		element.hidden = false;
 	}
 
-	/** "To call 20 · Pot 70 · Pot odds 22%" while it is the human's turn. */
-	public renderBetSummary(visible: boolean, call: number, pot: number) {
+	/**
+	 * "To call 20 · Pot 70 · Pot odds 22%" while it is the human's turn.
+	 * `contestable` is the part of the pot the call can actually win — a
+	 * short-stacked call only fights for the tiers its chips cover.
+	 */
+	public renderBetSummary(visible: boolean, call: number, pot: number, contestable = pot) {
 		const summary = document.getElementById('poker-to-call');
 		if (!summary) return;
 		summary.hidden = !visible;
@@ -513,7 +517,9 @@ export class PokerUIRenderer {
 				? [
 						this.t('toCall', { amount: formatWholeNumber(call, this.locale) }),
 						potText,
-						this.t('potOdds', { percent: Math.round((call / (pot + call)) * 100) }),
+						this.t('potOdds', {
+							percent: Math.round((call / (contestable + call)) * 100),
+						}),
 					].join(' · ')
 				: `${this.t('checkFree')} · ${potText}`;
 	}

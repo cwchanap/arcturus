@@ -22,6 +22,7 @@ import {
 	getHighestBet,
 	getCallAmount,
 	calculatePot,
+	contestablePot,
 	resolveSidePotAwards,
 	determineShowdownWinners,
 	createAIConfig,
@@ -1110,7 +1111,15 @@ export class PokerGame {
 		if (autoDealLabel) autoDealLabel.hidden = active;
 		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
 		if (autoDealToggle) autoDealToggle.checked = this.autoDealEnabled;
-		this.ui.renderBetSummary(canAct, Math.min(call, human.chips), this.pot);
+		// Odds are drawn against the pot the human can actually win — a
+		// short-stacked call contests only the tiers its chips cover.
+		const callCap = Math.min(call, human.chips);
+		this.ui.renderBetSummary(
+			canAct,
+			callCap,
+			this.pot,
+			contestablePot(this.players, human, callCap),
+		);
 		this.updateBetControls();
 		this.ui.updateTableState(
 			this.players,

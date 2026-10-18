@@ -2398,7 +2398,7 @@ describe('Poker betting control regressions', () => {
 		});
 		document.body.innerHTML = `
 			<div id="poker-root"><span id="player-balance" data-balance="1000"></span>
-				<p id="game-status"></p><p id="ai-rival-status"></p>
+				<p id="game-status"></p><p id="ai-rival-status"></p><p id="poker-to-call"></p>
 				${['fold', 'check', 'call', 'raise', 'deal', 'max-bet'].map((id) => `<button id="btn-${id}"></button>`).join('')}
 				<input id="bet-slider" type="range" min="10" max="1000" value="20">
 				<input id="bet-input" type="number"><span id="bet-amount"></span>
@@ -2477,6 +2477,21 @@ describe('Poker betting control regressions', () => {
 		expect(game.players[0].isAllIn).toBe(true);
 		expect(game.minimumBet).toBe(50);
 		expect(game.lastRaiseAmount).toBe(50);
+	});
+
+	test('pot odds count only the pot the short-stacked caller can win', () => {
+		// Two rivals committed 100 each; the human has just 10 chips and can
+		// contest only the first 10 of each bet — 10/(20+10) ≈ 33%.
+		game.players[0].chips = 10;
+		game.players[1].currentBet = 100;
+		game.players[1].totalBet = 100;
+		game.players[2].currentBet = 100;
+		game.players[2].totalBet = 100;
+		game.pot = 200;
+		game.updateActionButtons();
+		expect(document.getElementById('poker-to-call')?.textContent).toBe(
+			'To call 10 · Pot 200 · Pot odds 33%',
+		);
 	});
 
 	test.each([75, 100])('enforces AI raise rights after a human all-in to %i', async (shove) => {

@@ -1001,6 +1001,13 @@ describe('PokerUIRenderer', () => {
 			expect(elements['poker-to-call'].hidden).toBe(true);
 		});
 
+		test('pot odds use only the part of the pot the call can win', () => {
+			// Two rivals committed 100 each; the short-stacked human can call 10,
+			// contesting 20 chips — 10/(20+10) ≈ 33%, not 10/210 ≈ 5%.
+			renderer.renderBetSummary(true, 10, 200, 20);
+			expect(elements['poker-to-call'].textContent).toBe('To call 10 · Pot 200 · Pot odds 33%');
+		});
+
 		test('notes when the board plays and when drawing', () => {
 			const board = [
 				card('K', 'hearts', 13),

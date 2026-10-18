@@ -60,6 +60,7 @@ export type { TierResult } from './potCalculator';
 export {
 	calculatePot,
 	calculateRoundPot,
+	contestablePot,
 	distributePot,
 	calculateSidePots,
 	resolveSidePotAwards,

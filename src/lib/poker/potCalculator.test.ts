@@ -4,6 +4,7 @@ import {
 	calculatePot,
 	calculateRoundPot,
 	calculateSidePots,
+	contestablePot,
 	distributePot,
 	getMinimumBet,
 	mergeTiersByWinners,
@@ -81,6 +82,28 @@ describe('potCalculator', () => {
 		});
 		expect(pots[1]).toEqual({ amount: 210, eligiblePlayerIds: [0, 1, 3], contributorCount: 3 });
 		expect(pots[2]).toEqual({ amount: 100, eligiblePlayerIds: [0, 3], contributorCount: 2 });
+	});
+
+	test("contestablePot caps each commitment at the caller's post-call total", () => {
+		const players = [
+			makePlayer({ id: 0, totalBet: 0 }), // the short-stacked caller
+			makePlayer({ id: 1, totalBet: 100 }),
+			makePlayer({ id: 2, totalBet: 100 }),
+		];
+		// A 10-chip call covers only the first 10 of each rival's bet.
+		expect(contestablePot(players, players[0], 10)).toBe(20);
+		// A fully covered call contests the whole pot.
+		expect(contestablePot(players, players[0], 100)).toBe(200);
+	});
+
+	test("contestablePot keeps dead money and the caller's own chips contestable", () => {
+		const players = [
+			makePlayer({ id: 0, totalBet: 50 }), // caller already put 50 in
+			makePlayer({ id: 1, totalBet: 300 }),
+			makePlayer({ id: 2, totalBet: 40, folded: true }),
+		];
+		// Calling 90 more covers 140: all of the fold and own chips, 140 of the big bet.
+		expect(contestablePot(players, players[0], 90)).toBe(50 + 140 + 40);
 	});
 
 	test('calculateSidePots ignores folded players for eligibility', () => {

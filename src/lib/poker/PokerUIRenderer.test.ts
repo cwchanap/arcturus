@@ -603,7 +603,7 @@ describe('PokerUIRenderer', () => {
 			card('5', 'spades', 5),
 		];
 		const highlights = (id: string) =>
-			(elements[id].querySelectorAll?.('.card-slot') || []).map((slot) => slot.dataset.highlight);
+			(elements[id].querySelectorAll?.('.card-slot') || []).map((slot) => slot.dataset?.highlight);
 
 		test('the winning kicker lights up, not just the made-hand core', () => {
 			const winner = player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'clubs', 2)]);

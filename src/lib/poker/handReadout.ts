@@ -46,12 +46,18 @@ export function isSameCard(a: Card, b: Card): boolean {
 
 const SUITS: readonly Card['suit'][] = ['hearts', 'diamonds', 'clubs', 'spades'];
 
+/** The highest five-in-a-row window a rank set contains; the wheel counts last. */
+function bestStraightWindow(ranks: ReadonlySet<number>): ReadonlySet<number> | null {
+	for (let high = 14; high >= 5; high--) {
+		const window = new Set([0, 1, 2, 3, 4].map((offset) => high - offset));
+		if ([...window].every((rank) => ranks.has(rank))) return window;
+	}
+	return [14, 5, 4, 3, 2].every((rank) => ranks.has(rank)) ? new Set([14, 5, 4, 3, 2]) : null;
+}
+
 /** Five in a row, with the ace able to play low for the wheel. */
 function ranksFormStraight(ranks: ReadonlySet<number>): boolean {
-	for (let high = 14; high >= 5; high--) {
-		if ([0, 1, 2, 3, 4].every((offset) => ranks.has(high - offset))) return true;
-	}
-	return ranks.has(14) && ranks.has(5) && ranks.has(4) && ranks.has(3) && ranks.has(2);
+	return bestStraightWindow(ranks) !== null;
 }
 
 /**
@@ -59,6 +65,10 @@ function ranksFormStraight(ranks: ReadonlySet<number>): boolean {
  * draw — presentation only; the AI keeps its own `estimateDrawingOuts`
  * heuristic. Unlike the heuristic, overlapping draws count each finishing
  * card once and one-ended draws (gutshots, wheel draws) count 4, not 8.
+ *
+ * Outs are personal: a river card that finishes a draw the board already
+ * owns alone — a fifth card of a four-flush board, or a straight whose best
+ * window needs no hole card — is shared by everyone and does not count.
  */
 export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): number {
 	const known = [...holeCards, ...communityCards];
@@ -81,7 +91,13 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 	const madeFlushRanks = new Set(
 		known.filter((card) => card.suit === madeFlushSuit).map((card) => card.rank),
 	);
-	const flushSuit = [...suitCounts.entries()].find(([, count]) => count === 4)?.[0] ?? null;
+	// A four-flush only counts when a hole card joins it: four suited board
+	// cards finish a flush everyone shares, so they are not personal outs.
+	const fourFlushSuit = [...suitCounts.entries()].find(([, count]) => count === 4)?.[0] ?? null;
+	const flushSuit =
+		fourFlushSuit !== null && holeCards.some((card) => card.suit === fourFlushSuit)
+			? fourFlushSuit
+			: null;
 	const rankCountValues = [...rankCounts.values()];
 	const pairRank =
 		!hasStraight &&
@@ -91,6 +107,22 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 			? [...rankCounts.entries()].find(([, count]) => count === 2)?.[0]
 			: undefined;
 
+	const boardRanks = new Set(communityCards.map((card) => card.rank));
+	const boardFlushRanks = new Set(
+		communityCards.filter((card) => card.suit === madeFlushSuit).map((card) => card.rank),
+	);
+	// A straight out must make the player's best straight need a hole card —
+	// a rank only the hole holds, not the candidate (it lands on the board)
+	// or a rank the board already owns.
+	const personalStraight = (
+		drawRanks: ReadonlySet<number>,
+		sharedRanks: ReadonlySet<number>,
+		rank: number,
+	): boolean => {
+		const window = bestStraightWindow(new Set([...drawRanks, rank]));
+		return window !== null && [...window].some((r) => r !== rank && !sharedRanks.has(r));
+	};
+
 	let outs = 0;
 	for (const suit of SUITS) {
 		for (let rank = 2; rank <= 14; rank++) {
@@ -99,8 +131,8 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 				madeFlushSuit !== null
 					? suit === madeFlushSuit &&
 						!ranksFormStraight(madeFlushRanks) &&
-						ranksFormStraight(new Set([...madeFlushRanks, rank]))
-					: !hasStraight && ranksFormStraight(new Set([...knownRanks, rank]));
+						personalStraight(madeFlushRanks, boardFlushRanks, rank)
+					: !hasStraight && personalStraight(knownRanks, boardRanks, rank);
 			if (
 				completesStraight ||
 				(flushSuit !== null && suit === flushSuit) ||

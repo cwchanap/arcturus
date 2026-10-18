@@ -163,4 +163,40 @@ describe('countDrawingOuts', () => {
 	test('a pair inside a made straight has no trips outs', () => {
 		expect(countDrawingOuts([c('9d'), c('9c')], [c('7s'), c('8h'), c('10d'), c('Jc')])).toBe(0);
 	});
+
+	test('a four-flush on the board alone is a shared draw, not personal outs', () => {
+		// A-K-8-2 of hearts on the turn with no heart in hand: a fifth heart
+		// finishes a flush everyone plays.
+		expect(countDrawingOuts([c('7c'), c('6s')], [c('Ah'), c('Kh'), c('8h'), c('2h')])).toBe(0);
+	});
+
+	test('a board four-straight gives no personal straight outs', () => {
+		// 5-6-7-8 on the turn: a four or a nine finishes the board's own
+		// straight — shared, not an out.
+		expect(countDrawingOuts([c('Ah'), c('2d')], [c('5c'), c('6d'), c('7s'), c('8h')])).toBe(0);
+	});
+
+	test('a lower private straight behind the board’s higher one is not an out', () => {
+		// 2 in hand on 4-5-6-7: a three makes a 2-6 straight, but the board's
+		// own 3-7 outranks it — still zero outs.
+		expect(countDrawingOuts([c('2h'), c('Kd')], [c('4c'), c('5d'), c('6s'), c('7h')])).toBe(0);
+	});
+
+	test('a hole card completing the straight keeps the outs personal', () => {
+		// 8 in hand on 5-6-7: fours and nines finish a straight only the hole
+		// card makes possible.
+		expect(countDrawingOuts([c('8h'), c('Ad')], [c('5c'), c('6d'), c('7s')])).toBe(8);
+	});
+
+	test('a board straight-flush draw is shared without a matching hole card', () => {
+		// 4h-5h-6h-7h on the turn with an off-suit hole: a 3h or 8h finishes the
+		// board's own straight flush.
+		expect(countDrawingOuts([c('Ac'), c('2d')], [c('4h'), c('5h'), c('6h'), c('7h')])).toBe(0);
+	});
+
+	test('a suited board straight draw shared on both axes still has no outs', () => {
+		// 5h-6h-7h-8h on the turn: a 4h or 9h finishes a straight flush on the
+		// board itself — shared twice over.
+		expect(countDrawingOuts([c('Ac'), c('2d')], [c('5h'), c('6h'), c('7h'), c('8h')])).toBe(0);
+	});
 });

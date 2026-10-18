@@ -1111,6 +1111,51 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 		}
 	});
 
+	test('a walkover raise announces only the contested chips, not the returned raise', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const timers = mockTrackedTimers();
+		try {
+			const game = new PokerGame() as unknown as {
+				players: Player[];
+				pot: number;
+				humanChipsBefore: number;
+				handStartChips: number;
+				handNumber: number;
+				nextPhase: () => void;
+				sessionStats: { hands: number; net: number; biggestPot: number };
+			};
+			// Blinds 5/10; the human raises to 100 and both blinds fold. 90 of
+			// the 115-chip pot is the human's own uncalled raise coming back.
+			game.handNumber = 1;
+			game.humanChipsBefore = 500;
+			game.handStartChips = 500;
+			game.pot = 115;
+			game.players = game.players.map((player) => ({
+				...player,
+				folded: player.id !== 0,
+				totalBet: player.id === 0 ? 100 : player.id === 1 ? 5 : player.id === 2 ? 10 : 0,
+			}));
+			game.players[0] = { ...game.players[0], chips: 400 };
+
+			game.nextPhase();
+
+			expect(game.players[0].chips).toBe(515);
+			expect(elements['poker-result-title'].textContent).toBe('You win 25 chips');
+			expect(elements['poker-result-delta'].textContent).toBe('Your hand +15');
+			expect(game.sessionStats).toMatchObject({ hands: 1, net: 15, biggestPot: 25 });
+		} finally {
+			timers.restore();
+		}
+	});
+
 	test('ignores a stale next-phase callback after a manual deal starts a fresh hand', async () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

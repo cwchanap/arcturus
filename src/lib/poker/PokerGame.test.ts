@@ -1554,6 +1554,73 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		expect(game.sessionStats).toMatchObject({ hands: 1, net: -40, streak: 0 });
 	});
 
+	test('an uncalled bet returned at showdown is not announced as winnings', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			communityCards: Card[];
+			handStartChips: number;
+			sessionStats: { hands: number; net: number; biggestPot: number; streak: number };
+			presentHandResult: (
+				awards: Map<number, number>,
+				tiers: Array<{ amount: number; winners: Player[]; uncontested: boolean }>,
+				showdown: boolean,
+			) => void;
+		};
+
+		// The human bet 500; the lone rival called all-in for 100 and won the
+		// showdown. The extra 400 in the human's award is the human's own
+		// uncalled bet coming back, not winnings.
+		game.communityCards = [
+			card('K', 'hearts', 13),
+			card('K', 'spades', 13),
+			card('9', 'diamonds', 9),
+			card('8', 'clubs', 8),
+			card('5', 'spades', 5),
+		];
+		game.players[0] = {
+			...game.players[0],
+			chips: 400,
+			hand: [card('Q', 'diamonds', 12), card('J', 'spades', 11)],
+		};
+		game.players[1] = {
+			...game.players[1],
+			hand: [card('A', 'hearts', 14), card('2', 'clubs', 2)],
+		};
+		game.handStartChips = 500;
+
+		const [you, rival] = game.players;
+		game.presentHandResult(
+			new Map([
+				[rival.id, 200],
+				[you.id, 400],
+			]),
+			[
+				{ amount: 200, winners: [rival], uncontested: false },
+				{ amount: 400, winners: [you], uncontested: true },
+			],
+			true,
+		);
+
+		expect(elements['poker-result-title'].textContent).toBe('Player 2 wins 200 chips');
+		expect(elements['poker-result-detail'].textContent).toBe('Pair');
+		expect(elements['poker-result-delta'].textContent).toBe('Your hand −100');
+		expect(elements['poker-result'].dataset.tone).toBe('loss');
+		// Seat floats show contested winnings only — no "+400" on the human.
+		expect(elements['seat-delta-0'].textContent).toBe('−100');
+		expect(elements['seat-delta-1'].textContent).toBe('+200');
+		expect(game.sessionStats).toMatchObject({ hands: 1, net: -100, biggestPot: 0 });
+	});
+
 	test('getPlayerPosition maps 3-handed dealer/early/middle correctly', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {

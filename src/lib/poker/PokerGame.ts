@@ -22,6 +22,7 @@ import {
 	getHighestBet,
 	getCallAmount,
 	calculatePot,
+	calculateSidePots,
 	contestablePot,
 	resolveSidePotAwards,
 	determineShowdownWinners,
@@ -366,6 +367,20 @@ export class PokerGame {
 			saveSessionStats(this.sessionStats);
 			this.ui.renderSessionStats(this.sessionStats);
 		}
+	}
+
+	/**
+	 * Presentation tiers for a hand everyone else folded: the pot's real
+	 * contribution tiers, all won by `winner`, so an uncalled raise reads as
+	 * returned rather than won. The chip award is still the whole pot.
+	 */
+	private walkoverTiers(winner: Player): TierResult[] {
+		const tiers = calculateSidePots(this.players).map((pot) => ({
+			amount: pot.amount,
+			winners: [winner],
+			uncontested: pot.contributorCount === 1,
+		}));
+		return tiers.length > 0 ? tiers : [{ amount: this.pot, winners: [winner], uncontested: false }];
 	}
 
 	/** End-of-hand pause: hold the result for the player, or auto-deal if they opted in. */
@@ -1178,7 +1193,7 @@ export class PokerGame {
 			this.bettingRound = null;
 			const winner = activePlayers[0];
 			const awards = new Map([[winner.id, this.pot]]);
-			const tiers = [{ amount: this.pot, winners: [winner], uncontested: false }];
+			const tiers = this.walkoverTiers(winner);
 			this.players[winner.id] = awardChips(winner, this.pot);
 			this.updateGameStatus(
 				this.t(winner.id === 0 ? 'statusYouWinWalkover' : 'statusPlayerWinsWalkover', {
@@ -1235,11 +1250,7 @@ export class PokerGame {
 				if (winner.id === 0) {
 					this.settleHand('win');
 				}
-				this.presentHandResult(
-					new Map([[winner.id, this.pot]]),
-					[{ amount: this.pot, winners: [winner], uncontested: false }],
-					false,
-				);
+				this.presentHandResult(new Map([[winner.id, this.pot]]), this.walkoverTiers(winner), false);
 			} else {
 				// Multiple players - resolve pots with side-pot eligibility so a
 				// short all-in can only win up to the tiers they contributed to.

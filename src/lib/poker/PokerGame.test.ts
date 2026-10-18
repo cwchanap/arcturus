@@ -1512,6 +1512,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			click: () => {},
 			dataset: { balance: '500', balanceAvailable: 'true', userId: 'fold-delta-user' },
 			innerHTML: '',
 			textContent: '500',
@@ -1549,7 +1550,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		game.presentHandResult(new Map([[winner.id, 40]]), [{ amount: 40, winners: [winner] }], false);
 
 		expect(elements['poker-result-delta'].textContent).toBe('Your hand −40');
-		expect(elements['poker-result'].dataset.tone).toBe('loss');
+		expect(elements['poker-result'].dataset?.tone).toBe('loss');
 		expect(elements['seat-delta-0'].textContent).toBe('−40');
 		expect(game.sessionStats).toMatchObject({ hands: 1, net: -40, streak: 0 });
 	});
@@ -1558,6 +1559,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		const elements = mockPokerGameDOM();
 		elements['player-balance'] = {
 			addEventListener: () => {},
+			click: () => {},
 			dataset: { balance: '500' },
 			innerHTML: '',
 			textContent: '500',
@@ -1614,7 +1616,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		expect(elements['poker-result-title'].textContent).toBe('Player 2 wins 200 chips');
 		expect(elements['poker-result-detail'].textContent).toBe('Pair');
 		expect(elements['poker-result-delta'].textContent).toBe('Your hand −100');
-		expect(elements['poker-result'].dataset.tone).toBe('loss');
+		expect(elements['poker-result'].dataset?.tone).toBe('loss');
 		// Seat floats show contested winnings only — no "+400" on the human.
 		expect(elements['seat-delta-0'].textContent).toBe('−100');
 		expect(elements['seat-delta-1'].textContent).toBe('+200');

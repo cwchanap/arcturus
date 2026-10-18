@@ -33,6 +33,19 @@ describe('readHand', () => {
 		expect(readout?.usesHoleCards).toBe(true);
 	});
 
+	test('the best five include the decisive kicker the core cards omit', () => {
+		// Board K K 9 8 5: A-2 beats Q-J on the ace kicker. The ace is not a
+		// core card of the pair, but it is part of the winning five.
+		const readout = readHand([c('Ah'), c('2c')], [c('Kh'), c('Ks'), c('9d'), c('8c'), c('5s')]);
+		expect(readout?.key).toBe('PAIR');
+		expect(codes(readout!.coreCards)).toEqual(['Kh', 'Ks']);
+		expect(codes(readout!.bestCards)).toEqual(['8c', '9d', 'Ah', 'Kh', 'Ks']);
+	});
+
+	test('before the board the best cards are the known cards themselves', () => {
+		expect(codes(readHand([c('Ah'), c('Ks')], [])!.bestCards)).toEqual(['Ah', 'Ks']);
+	});
+
 	test('finds a straight using one hole card', () => {
 		const readout = readHand([c('2d'), c('9h')], [c('4h'), c('Qs'), c('10d'), c('8c'), c('Js')]);
 		expect(readout?.key).toBe('STRAIGHT');

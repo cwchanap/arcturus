@@ -407,13 +407,13 @@ export class PokerUIRenderer {
 		}
 	}
 
-	/** Light up the winning five (core) cards across the board and the winners' hands. */
+	/** Light up the winning best five — kickers decide pots, so they glow too. */
 	public highlightWinningCards(communityCards: Card[], winners: Player[]) {
 		this.clearCardHighlights();
 		const core: Card[] = [];
 		for (const winner of winners) {
 			const readout = readHand(winner.hand, communityCards);
-			if (readout) core.push(...readout.coreCards);
+			if (readout) core.push(...readout.bestCards);
 		}
 		this.markCards('community-cards', communityCards, core, 'win');
 		for (const winner of winners) {

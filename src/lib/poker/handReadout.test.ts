@@ -72,6 +72,34 @@ describe('readHand', () => {
 		expect(flop?.boardPlays).toBe(false);
 	});
 
+	// Classification cases migrated from the removed test-only
+	// `evaluateHandKey` in PokerUIRenderer — `readHand` is the production
+	// readout these labels now come from.
+	test('classifies pairs, two pair, trips, and quads', () => {
+		expect(readHand([c('Ah'), c('As')], [])?.key).toBe('PAIR');
+		expect(readHand([c('Ah'), c('As')], [c('Kh'), c('Kd'), c('9c'), c('2c')])?.key).toBe(
+			'TWO_PAIR',
+		);
+		expect(readHand([c('Qh'), c('Qs')], [c('Qd'), c('9c'), c('2h')])?.key).toBe('THREE_OF_A_KIND');
+		expect(readHand([c('Jh'), c('Js')], [c('Jd'), c('Jc'), c('2h')])?.key).toBe('FOUR_OF_A_KIND');
+	});
+
+	test('classifies full house', () => {
+		expect(readHand([c('Ah'), c('As')], [c('Ad'), c('Kc'), c('Kh')])?.key).toBe('FULL_HOUSE');
+	});
+
+	test('classifies straights including the wheel', () => {
+		expect(readHand([c('6h'), c('7h')], [c('8s'), c('9s'), c('10s')])?.key).toBe('STRAIGHT');
+		expect(readHand([c('Ah'), c('2s')], [c('3c'), c('4d'), c('5h')])?.key).toBe('STRAIGHT');
+	});
+
+	test('classifies flush, straight flush, royal flush, and high card', () => {
+		expect(readHand([c('Ah'), c('Kh')], [c('Qh'), c('Jh'), c('10h')])?.key).toBe('ROYAL_FLUSH');
+		expect(readHand([c('5d'), c('6d')], [c('7d'), c('8d'), c('9d')])?.key).toBe('STRAIGHT_FLUSH');
+		expect(readHand([c('Ac'), c('Kc')], [c('Qc'), c('9c'), c('2c')])?.key).toBe('FLUSH');
+		expect(readHand([c('Ah'), c('Ks')], [c('Qd'), c('9c'), c('2h')])?.key).toBe('HIGH_CARD');
+	});
+
 	test('distinguishes a royal flush from a straight flush', () => {
 		expect(readHand([c('Ah'), c('Kh')], [c('Qh'), c('Jh'), c('10h'), c('2c'), c('3d')])?.key).toBe(
 			'ROYAL_FLUSH',

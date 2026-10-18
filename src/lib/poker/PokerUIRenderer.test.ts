@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
-import { PokerUIRenderer, evaluateHandKey } from './PokerUIRenderer';
+import { PokerUIRenderer } from './PokerUIRenderer';
 import { HAND_RANKINGS, type PokerHandNameKey } from './constants';
 import { getPokerHandName } from '../i18n/messages/poker';
 import type { Card, Player } from './types';
@@ -769,100 +769,7 @@ describe('PokerUIRenderer', () => {
 		});
 	});
 
-	describe('evaluateHandKey()', () => {
-		test('returns null for fewer than two cards', () => {
-			expect(evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14)]), [])).toBeNull();
-			expect(evaluateHandKey(player(0, 'You', 500), [])).toBeNull();
-		});
-
-		test('classifies pairs, two pair, trips, and quads', () => {
-			expect(
-				evaluateHandKey(
-					player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]),
-					[],
-				),
-			).toBe('PAIR');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]), [
-					card('K', 'hearts', 13),
-					card('K', 'diamonds', 13),
-					card('9', 'clubs', 9),
-					card('2', 'clubs', 2),
-				]),
-			).toBe('TWO_PAIR');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('Q', 'hearts', 12), card('Q', 'spades', 12)]), [
-					card('Q', 'diamonds', 12),
-					card('9', 'clubs', 9),
-					card('2', 'hearts', 2),
-				]),
-			).toBe('THREE_OF_A_KIND');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('J', 'hearts', 11), card('J', 'spades', 11)]), [
-					card('J', 'diamonds', 11),
-					card('J', 'clubs', 11),
-					card('2', 'hearts', 2),
-				]),
-			).toBe('FOUR_OF_A_KIND');
-		});
-
-		test('classifies full house', () => {
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('A', 'spades', 14)]), [
-					card('A', 'diamonds', 14),
-					card('K', 'clubs', 13),
-					card('K', 'hearts', 13),
-				]),
-			).toBe('FULL_HOUSE');
-		});
-
-		test('classifies straights including the wheel', () => {
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('6', 'hearts', 6), card('7', 'hearts', 7)]), [
-					card('8', 'spades', 8),
-					card('9', 'spades', 9),
-					card('10', 'spades', 10),
-				]),
-			).toBe('STRAIGHT');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'spades', 2)]), [
-					card('3', 'clubs', 3),
-					card('4', 'diamonds', 4),
-					card('5', 'hearts', 5),
-				]),
-			).toBe('STRAIGHT');
-		});
-
-		test('classifies flush, straight flush, and royal flush', () => {
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'hearts', 13)]), [
-					card('Q', 'hearts', 12),
-					card('J', 'hearts', 11),
-					card('10', 'hearts', 10),
-				]),
-			).toBe('ROYAL_FLUSH');
-			expect(
-				evaluateHandKey(
-					player(0, 'You', 500, [card('5', 'diamonds', 5), card('6', 'diamonds', 6)]),
-					[card('7', 'diamonds', 7), card('8', 'diamonds', 8), card('9', 'diamonds', 9)],
-				),
-			).toBe('STRAIGHT_FLUSH');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'clubs', 14), card('K', 'clubs', 13)]), [
-					card('Q', 'clubs', 12),
-					card('9', 'clubs', 9),
-					card('2', 'clubs', 2),
-				]),
-			).toBe('FLUSH');
-			expect(
-				evaluateHandKey(player(0, 'You', 500, [card('A', 'hearts', 14), card('K', 'spades', 13)]), [
-					card('Q', 'diamonds', 12),
-					card('9', 'clubs', 9),
-					card('2', 'hearts', 2),
-				]),
-			).toBe('HIGH_CARD');
-		});
-
+	describe('hand ranking labels', () => {
 		test('every hand ranking key maps to a distinct label', () => {
 			const keys = Object.keys(HAND_RANKINGS) as PokerHandNameKey[];
 			expect(keys.length).toBe(10);

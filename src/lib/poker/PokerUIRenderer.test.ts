@@ -594,30 +594,57 @@ describe('PokerUIRenderer', () => {
 	});
 
 	describe('highlightWinningCards()', () => {
+		// Board K K 9 8 5 throughout: A-x pairs the kings with the ace kicker.
+		const community = () => [
+			card('K', 'hearts', 13),
+			card('K', 'spades', 13),
+			card('9', 'diamonds', 9),
+			card('8', 'clubs', 8),
+			card('5', 'spades', 5),
+		];
+		const highlights = (id: string) =>
+			(elements[id].querySelectorAll?.('.card-slot') || []).map((slot) => slot.dataset.highlight);
+
 		test('the winning kicker lights up, not just the made-hand core', () => {
-			// Board K K 9 8 5: A-2 makes a pair of kings and the ace kicker wins.
-			const community = [
-				card('K', 'hearts', 13),
-				card('K', 'spades', 13),
-				card('9', 'diamonds', 9),
-				card('8', 'clubs', 8),
-				card('5', 'spades', 5),
-			];
 			const winner = player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'clubs', 2)]);
-
-			renderer.highlightWinningCards(community, [winner]);
-
-			const playerSlots = elements['player-cards'].querySelectorAll?.('.card-slot') || [];
-			expect(playerSlots[0].dataset.highlight).toBe('win'); // the deciding ace
-			expect(playerSlots[1].dataset.highlight).toBe('dim');
-			const boardSlots = elements['community-cards'].querySelectorAll?.('.card-slot') || [];
-			expect(boardSlots.map((slot) => slot.dataset.highlight)).toEqual([
-				'win',
-				'win',
-				'win',
-				'win',
-				'dim',
+			const loser = player(1, 'Player 2', 500, [
+				card('Q', 'diamonds', 12),
+				card('J', 'spades', 11),
 			]);
+
+			renderer.highlightWinningCards(community(), [winner, loser], new Set([0]));
+
+			// The deciding ace glows; the dead deuce and the losing row dim.
+			expect(highlights('player-cards')).toEqual(['win', 'dim']);
+			expect(highlights('opponent1-cards')).toEqual(['dim', 'dim']);
+			expect(highlights('community-cards')).toEqual(['win', 'win', 'win', 'win', 'dim']);
+		});
+
+		test('every winner of a split pot gets the win treatment', () => {
+			// Both ace-high pairs of kings tie: the human and player 3 split.
+			const players = [
+				player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'clubs', 2)]),
+				player(1, 'Player 2', 500, [card('Q', 'diamonds', 12), card('J', 'spades', 11)]),
+				player(2, 'Player 3', 500, [card('A', 'diamonds', 14), card('3', 'hearts', 3)]),
+			];
+
+			renderer.highlightWinningCards(community(), players, new Set([0, 2]));
+
+			expect(highlights('player-cards')).toEqual(['win', 'dim']);
+			expect(highlights('opponent1-cards')).toEqual(['dim', 'dim']);
+			expect(highlights('opponent2-cards')).toEqual(['win', 'dim']);
+			expect(highlights('community-cards')).toEqual(['win', 'win', 'win', 'win', 'dim']);
+		});
+
+		test('folded hands stay private — no marks, no dimming', () => {
+			const players = [
+				player(0, 'You', 500, [card('A', 'hearts', 14), card('2', 'clubs', 2)]),
+				player(1, 'Player 2', 500, [card('Q', 'diamonds', 12), card('J', 'spades', 11)], true),
+			];
+
+			renderer.highlightWinningCards(community(), players, new Set([0]));
+
+			expect(highlights('opponent1-cards')).toEqual([undefined, undefined]);
 		});
 	});
 

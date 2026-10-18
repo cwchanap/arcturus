@@ -291,7 +291,6 @@ export class PokerGame {
 		const winnerIds = new Set(
 			displayTiers.flatMap((tier) => tier.winners.map((player) => player.id)),
 		);
-		const winners = this.players.filter((player) => winnerIds.has(player.id));
 		const humanTiers = displayTiers.filter((tier) =>
 			tier.winners.some((player) => player.id === 0),
 		);
@@ -347,7 +346,7 @@ export class PokerGame {
 				const readout = readHand(player.hand, this.communityCards);
 				if (readout) this.ui.setSeatHand(player.id, readout.key, winnerIds.has(player.id));
 			}
-			this.ui.highlightWinningCards(this.communityCards, featured ? [featured] : winners);
+			this.ui.highlightWinningCards(this.communityCards, this.players, winnerIds);
 		}
 		for (const [id] of awards) {
 			const amount = contestedAward(id);

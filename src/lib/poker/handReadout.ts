@@ -44,6 +44,63 @@ export function isSameCard(a: Card, b: Card): boolean {
 	return a.rank === b.rank && a.suit === b.suit;
 }
 
+const SUITS: readonly Card['suit'][] = ['hearts', 'diamonds', 'clubs', 'spades'];
+
+/** Five in a row, with the ace able to play low for the wheel. */
+function ranksFormStraight(ranks: ReadonlySet<number>): boolean {
+	for (let high = 14; high >= 5; high--) {
+		if ([0, 1, 2, 3, 4].every((offset) => ranks.has(high - offset))) return true;
+	}
+	return ranks.has(14) && ranks.has(5) && ranks.has(4) && ranks.has(3) && ranks.has(2);
+}
+
+/**
+ * Counts distinct unseen cards that complete a straight, flush, or trips
+ * draw — presentation only; the AI keeps its own `estimateDrawingOuts`
+ * heuristic. Unlike the heuristic, overlapping draws count each finishing
+ * card once and one-ended draws (gutshots, wheel draws) count 4, not 8.
+ */
+export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): number {
+	const known = [...holeCards, ...communityCards];
+	if (known.length < 2) return 0;
+
+	const knownCards = new Set(known.map((card) => `${card.rank}-${card.suit}`));
+	const knownRanks = new Set(known.map((card) => card.rank));
+	const suitCounts = new Map<Card['suit'], number>();
+	const rankCounts = new Map<number, number>();
+	for (const card of known) {
+		suitCounts.set(card.suit, (suitCounts.get(card.suit) ?? 0) + 1);
+		rankCounts.set(card.rank, (rankCounts.get(card.rank) ?? 0) + 1);
+	}
+
+	// A made straight suppresses straight outs; a made flush simply can't
+	// reach exactly four of a suit.
+	const hasStraight = ranksFormStraight(knownRanks);
+	const flushSuit = [...suitCounts.entries()].find(([, count]) => count === 4)?.[0] ?? null;
+	const rankCountValues = [...rankCounts.values()];
+	const pairRank =
+		rankCountValues.filter((count) => count === 2).length === 1 &&
+		!rankCountValues.some((count) => count >= 3)
+			? [...rankCounts.entries()].find(([, count]) => count === 2)?.[0]
+			: undefined;
+
+	let outs = 0;
+	for (const suit of SUITS) {
+		for (let rank = 2; rank <= 14; rank++) {
+			if (knownCards.has(`${rank}-${suit}`)) continue;
+			const completesStraight = !hasStraight && ranksFormStraight(new Set([...knownRanks, rank]));
+			if (
+				completesStraight ||
+				(flushSuit !== null && suit === flushSuit) ||
+				(pairRank !== undefined && rank === pairRank)
+			) {
+				outs++;
+			}
+		}
+	}
+	return outs;
+}
+
 function fiveCardCombos(cards: Card[], start = 0, combo: Card[] = []): Card[][] {
 	if (combo.length === 5) return [[...combo]];
 	const combos: Card[][] = [];

@@ -565,6 +565,9 @@ export class PokerGame {
 			this.dispatchEarnedAchievements(result.newAchievements);
 		}
 		this.ui.updateUI(this.pot, this.players[0]);
+		if (this.autoDealEnabled && !this.handInProgress && this.autoDealTimeoutId === null) {
+			this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
+		}
 		this.updateActionButtons();
 	}
 

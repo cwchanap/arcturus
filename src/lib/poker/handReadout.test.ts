@@ -199,4 +199,20 @@ describe('countDrawingOuts', () => {
 		// board itself — shared twice over.
 		expect(countDrawingOuts([c('Ac'), c('2d')], [c('5h'), c('6h'), c('7h'), c('8h')])).toBe(0);
 	});
+
+	test('a pair on the board alone gives no trips outs', () => {
+		// 8h-9h on T-J-2-2: sevens and queens complete the straight (8 outs),
+		// but a third deuce makes trips everyone shares.
+		expect(countDrawingOuts([c('8h'), c('9h')], [c('10c'), c('Js'), c('2d'), c('2c')])).toBe(8);
+	});
+
+	test('a board pair still gives no trips outs without a straight draw', () => {
+		expect(countDrawingOuts([c('Ah'), c('9h')], [c('Js'), c('2d'), c('2c')])).toBe(0);
+	});
+
+	test('a split pair keeps its trips outs personal', () => {
+		// T in hand matching a T on board: the two remaining tens make trips
+		// only the hole card can hold.
+		expect(countDrawingOuts([c('8h'), c('10d')], [c('10c'), c('Js'), c('2d'), c('5c')])).toBe(2);
+	});
 });

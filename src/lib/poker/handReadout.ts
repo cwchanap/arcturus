@@ -67,8 +67,9 @@ function ranksFormStraight(ranks: ReadonlySet<number>): boolean {
  * card once and one-ended draws (gutshots, wheel draws) count 4, not 8.
  *
  * Outs are personal: a river card that finishes a draw the board already
- * owns alone — a fifth card of a four-flush board, or a straight whose best
- * window needs no hole card — is shared by everyone and does not count.
+ * owns alone — a fifth card of a four-flush board, a straight whose best
+ * window needs no hole card, or trips off a pair the board holds alone —
+ * is shared by everyone and does not count.
  */
 export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): number {
 	const known = [...holeCards, ...communityCards];
@@ -99,12 +100,16 @@ export function countDrawingOuts(holeCards: Card[], communityCards: Card[]): num
 			? fourFlushSuit
 			: null;
 	const rankCountValues = [...rankCounts.values()];
+	// Trips outs only count when a hole card joins the pair: a pair that
+	// sits entirely on the board makes trips everyone shares.
 	const pairRank =
 		!hasStraight &&
 		madeFlushSuit === null &&
 		rankCountValues.filter((count) => count === 2).length === 1 &&
 		!rankCountValues.some((count) => count >= 3)
-			? [...rankCounts.entries()].find(([, count]) => count === 2)?.[0]
+			? [...rankCounts.entries()].find(
+					([rank, count]) => count === 2 && holeCards.some((card) => card.rank === rank),
+				)?.[0]
 			: undefined;
 
 	const boardRanks = new Set(communityCards.map((card) => card.rank));

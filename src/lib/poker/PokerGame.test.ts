@@ -2169,6 +2169,148 @@ describe('Poker wallet settlement commands', () => {
 		}
 	});
 
+	test('re-arms auto-deal after a settlement that outlives the countdown', async () => {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ settings: null }),
+		})) as unknown as typeof fetch;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'slow-settlement-user' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+		const { gate, release } = createPendingSettlementGate();
+		try {
+			const game = new PokerGame(undefined, gate) as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				autoDealEnabled: boolean;
+				settleHand: (outcome?: 'win' | 'loss' | 'push') => void;
+				finishHand: () => void;
+			};
+			game.autoDealEnabled = true;
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 450 };
+
+			game.settleHand('loss');
+			game.finishHand();
+
+			const stalled = timers.scheduledTimers.find(
+				(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared,
+			);
+			expect(stalled).toBeDefined();
+			stalled?.callback();
+			await flushAsyncWork();
+
+			expect(game.players[0].hand).toHaveLength(0);
+			expect(gate.pending).not.toBeNull();
+
+			release({ balance: 490, duplicate: false });
+			await flushAsyncWork();
+
+			const rearmed = timers.scheduledTimers.find(
+				(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared && timer !== stalled,
+			);
+			expect(rearmed).toBeDefined();
+			rearmed?.callback();
+			await flushAsyncWork();
+
+			expect(game.players[0].hand).toHaveLength(2);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('leaves auto-deal stopped when the overdue settlement fails', async () => {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ settings: null }),
+		})) as unknown as typeof fetch;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'failed-settlement-user' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+		let pendingCommand: ReturnType<typeof buildPokerSettlementCommand> | null = null;
+		const gate: SettlementGate = {
+			get pending() {
+				return pendingCommand;
+			},
+			get isBlocked() {
+				return pendingCommand !== null;
+			},
+			settle: async (command) => {
+				pendingCommand = command;
+				throw new Error('NETWORK_ERROR');
+			},
+			retry: async () => null,
+			reset: () => {
+				pendingCommand = null;
+			},
+		};
+		try {
+			const game = new PokerGame(undefined, gate) as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				autoDealEnabled: boolean;
+				settleHand: (outcome?: 'win' | 'loss' | 'push') => void;
+				finishHand: () => void;
+			};
+			game.autoDealEnabled = true;
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 450 };
+
+			game.settleHand('loss');
+			game.finishHand();
+
+			const stalled = timers.scheduledTimers.find(
+				(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared,
+			);
+			expect(stalled).toBeDefined();
+			stalled?.callback();
+			await flushAsyncWork();
+
+			expect(game.players[0].hand).toHaveLength(0);
+			expect(
+				timers.scheduledTimers.some(
+					(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared && timer !== stalled,
+				),
+			).toBe(false);
+		} finally {
+			timers.restore();
+		}
+	});
+
 	test('retry handler re-attempts a failed settlement and adopts the result', async () => {
 		const elements = mockPokerGameDOM();
 		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {

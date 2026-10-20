@@ -2580,19 +2580,19 @@ describe('Poker wallet settlement commands', () => {
 			players: Player[];
 			serverSyncedBalance: number;
 			handInProgress: boolean;
-			adoptAccountBalance: (balance: number) => void;
+			adoptAccountBalance: (balance: number) => boolean;
 		};
 
 		game.handInProgress = true;
-		game.adoptAccountBalance(1250);
+		expect(game.adoptAccountBalance(1250)).toBe(false);
 		expect(game.players[0].chips).toBe(500);
 
 		game.handInProgress = false;
-		game.adoptAccountBalance(1250);
+		expect(game.adoptAccountBalance(1250)).toBe(true);
 		expect(game.players[0].chips).toBe(1250);
 		expect(game.serverSyncedBalance).toBe(1250);
 
-		game.adoptAccountBalance(Number.NaN);
+		expect(game.adoptAccountBalance(Number.NaN)).toBe(false);
 		expect(game.players[0].chips).toBe(1250);
 	});
 

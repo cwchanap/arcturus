@@ -50,8 +50,11 @@ export interface PokerTableMissionsOptions {
 	/** Where `POKER_HAND_SETTLED_EVENT` is dispatched (the window). */
 	events: EventTarget;
 	fetchImpl?: typeof fetch;
-	/** Called with the account balance after a successful claim. */
-	onBalance: (balance: number) => void;
+	/**
+	 * Called with the account balance after a successful claim. Returning
+	 * false means the table could not take it yet (a hand was running).
+	 */
+	onBalance: (balance: number) => boolean;
 }
 
 export interface PokerTableMissions {
@@ -72,6 +75,9 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	let generation = 0;
 	// Earliest daily/weekly reset of the last board; fresh missions start then.
 	let nextReset = Number.POSITIVE_INFINITY;
+	// A claim the table could not take mid-hand; the next board after the hand
+	// settles carries the account balance, reward included.
+	let balanceOwed = false;
 
 	function title(mission: MissionView): string {
 		return getMissionTitle(locale, mission.missionDefId);
@@ -153,6 +159,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 		if (request !== generation) return;
 		nextReset = Math.min(Date.parse(board.nextDailyReset), Date.parse(board.nextWeeklyReset));
 		if (Number.isNaN(nextReset)) nextReset = Number.POSITIVE_INFINITY;
+		if (balanceOwed && onBalance(board.chipBalance)) balanceOwed = false;
 		const next = selectPokerMissions(board);
 		const completed = findNewlyCompleted(missions, next);
 		missions = next;
@@ -179,7 +186,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 			render();
 			const claimed = missions.find((m) => m.missionDefId === missionDefId);
 			if (claimed) announce(label(claimed));
-			if (result.status === 'completed') onBalance(result.chipBalance);
+			if (result.status === 'completed' && !onBalance(result.chipBalance)) balanceOwed = true;
 		} catch {
 			// Leave the token claimable; the missions page can still claim it.
 		} finally {
@@ -195,9 +202,11 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	});
 
 	events.addEventListener(POKER_HAND_SETTLED_EVENT, () => {
-		// Nothing left for a hand to move once every token is complete, until
-		// a daily or weekly reset brings fresh missions.
-		if (missions.some((m) => !m.completed) || Date.now() >= nextReset) void refresh();
+		// Read the board while a hand can still move a ring, once a daily or
+		// weekly reset brings fresh missions, or while a claim is owed.
+		if (balanceOwed || missions.some((m) => !m.completed) || Date.now() >= nextReset) {
+			void refresh();
+		}
 	});
 
 	void refresh();

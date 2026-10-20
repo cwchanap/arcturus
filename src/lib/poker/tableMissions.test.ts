@@ -87,7 +87,7 @@ describe('initPokerTableMissions', () => {
 		for (const w of windows.splice(0)) w.close();
 	});
 
-	function setup(responses: Record<string, unknown[]>) {
+	function setup(responses: Record<string, unknown[]>, tableTakesBalance = () => true) {
 		const happyWindow = new Window();
 		windows.push(happyWindow);
 		const document = happyWindow.document as unknown as Document;
@@ -113,7 +113,10 @@ describe('initPokerTableMissions', () => {
 			locale: 'en',
 			events,
 			fetchImpl,
-			onBalance: (balance) => balances.push(balance),
+			onBalance: (balance) => {
+				balances.push(balance);
+				return tableTakesBalance();
+			},
 		});
 		const tokens = () => [...root.querySelectorAll<HTMLElement>('.poker-mission')];
 		return { root, calls, events, balances, missions, tokens };
@@ -230,6 +233,39 @@ describe('initPokerTableMissions', () => {
 		expect(balances).toEqual([1750]);
 		expect(tokens()[0].dataset.state).toBe('claimed');
 		expect(tokens()[0].textContent).toBe('🏆✓');
+	});
+
+	test('a claim made mid-hand reaches the table once the hand settles', async () => {
+		let handRunning = true;
+		const claimed = wins(3, { completed: true, claimed: true });
+		const { calls, events, balances, tokens } = setup(
+			{
+				'/api/missions/board': [
+					board([wins(3, { completed: true, claimable: true })]),
+					{ ...board([claimed]), chipBalance: 1690 },
+				],
+				'/api/missions/claim': [
+					{ status: 'completed', missionDefId: 'daily-win-3', rewardChips: 750, chipBalance: 1750 },
+				],
+			},
+			() => !handRunning,
+		);
+		await flush();
+		tokens()[0].click();
+		await flush();
+		expect(balances).toEqual([1750]);
+
+		// The hand ends 60 down; every ring is complete, but the claim is owed.
+		handRunning = false;
+		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+		await flush();
+		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(2);
+		expect(balances).toEqual([1750, 1690]);
+
+		// Once the table has it, a settled hand stops reading a complete board.
+		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+		await flush();
+		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(2);
 	});
 
 	test('a ring still in progress does not claim', async () => {

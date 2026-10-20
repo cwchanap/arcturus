@@ -558,7 +558,11 @@ export class PokerGame {
 	 * settlement returns the account balance, reward included.
 	 */
 	public adoptAccountBalance(balance: number): void {
+		if (!Number.isSafeInteger(balance) || balance < 0) return;
 		if (this.isGuestMode || this.handInProgress || this.settlementGate.pending) return;
+		// The server just reported the account, so play can start even if the
+		// balance was unavailable when the page loaded.
+		this.hasServerSyncedBalance = true;
 		this.serverSyncedBalance = balance;
 		this.players[0] = { ...this.players[0], chips: balance };
 		this.ui.updateUI(this.pot, this.players[0]);

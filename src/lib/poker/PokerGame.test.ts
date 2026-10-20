@@ -2591,6 +2591,29 @@ describe('Poker wallet settlement commands', () => {
 		game.adoptAccountBalance(1250);
 		expect(game.players[0].chips).toBe(1250);
 		expect(game.serverSyncedBalance).toBe(1250);
+
+		game.adoptAccountBalance(Number.NaN);
+		expect(game.players[0].chips).toBe(1250);
+	});
+
+	test('a claimed reward makes an unavailable balance playable', () => {
+		const elements = mockSignedInTable();
+		elements['player-balance'].dataset = {
+			balance: '',
+			balanceAvailable: 'false',
+			userId: 'mission-user',
+		};
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			hasServerSyncedBalance: boolean;
+			adoptAccountBalance: (balance: number) => void;
+		};
+		expect(game.hasServerSyncedBalance).toBe(false);
+
+		game.adoptAccountBalance(750);
+
+		expect(game.hasServerSyncedBalance).toBe(true);
+		expect(game.players[0].chips).toBe(750);
 	});
 });
 

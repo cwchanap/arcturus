@@ -100,7 +100,9 @@ describe('initPokerTableMissions', () => {
 		const fetchImpl = (async (url: string, init?: RequestInit) => {
 			calls.push({ url, init });
 			const queue = responses[url] ?? [];
-			const body = queue.length > 1 ? queue.shift() : queue[0];
+			const next = queue.length > 1 ? queue.shift() : queue[0];
+			// A function entry is a held response the test releases itself.
+			const body = typeof next === 'function' ? await next() : next;
 			if (body === undefined) return { ok: false, json: async () => ({}) };
 			return { ok: true, json: async () => body };
 		}) as unknown as typeof fetch;
@@ -168,6 +170,48 @@ describe('initPokerTableMissions', () => {
 		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
 		await flush();
 		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(1);
+	});
+
+	test('refreshes a complete board again once its reset has passed', async () => {
+		const completeBoard = {
+			...board([wins(3, { completed: true, claimed: true })]),
+			nextDailyReset: '2000-01-01T00:00:00.000Z',
+			nextWeeklyReset: '2000-01-03T00:00:00.000Z',
+		};
+		const { calls, events, tokens } = setup({
+			'/api/missions/board': [completeBoard, board([wins(1)])],
+		});
+		await flush();
+		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+		await flush();
+		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(2);
+		expect(tokens()[0].textContent).toBe('🏆1/3');
+	});
+
+	test('a board read that lands after a claim does not undo the claim', async () => {
+		let releaseBoard: (value: BoardState) => void = () => {};
+		// The weekly ring is still open, so a settled hand reads the board.
+		const ready = board([wins(3, { completed: true, claimable: true })], [tried(1)]);
+		const { calls, tokens, events } = setup({
+			'/api/missions/board': [
+				ready,
+				() => new Promise<BoardState>((resolve) => (releaseBoard = resolve)),
+			],
+			'/api/missions/claim': [
+				{ status: 'completed', missionDefId: 'daily-win-3', rewardChips: 750, chipBalance: 1750 },
+			],
+		});
+		await flush();
+		// A hand settles while the ring is still claimable, so a board read
+		// starts; the player claims before that read comes back.
+		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+		tokens()[0].click();
+		await flush();
+		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(2);
+		expect(tokens()[0].dataset.state).toBe('claimed');
+		releaseBoard(ready);
+		await flush();
+		expect(tokens()[0].dataset.state).toBe('claimed');
 	});
 
 	test('clicking a ready ring claims it and passes on the new balance', async () => {

@@ -67,6 +67,11 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	const announcer = root.querySelector<HTMLElement>('[data-mission-announcer]');
 	let missions: MissionView[] = [];
 	let claiming = false;
+	// Bumped by each board request and each claim, so a board read that
+	// started earlier cannot overwrite newer state when it lands late.
+	let generation = 0;
+	// Earliest daily/weekly reset of the last board; fresh missions start then.
+	let nextReset = Number.POSITIVE_INFINITY;
 
 	function title(mission: MissionView): string {
 		return getMissionTitle(locale, mission.missionDefId);
@@ -136,6 +141,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	}
 
 	async function refresh(): Promise<void> {
+		const request = ++generation;
 		let board: BoardState;
 		try {
 			const response = await fetchImpl('/api/missions/board');
@@ -144,6 +150,9 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 		} catch {
 			return;
 		}
+		if (request !== generation) return;
+		nextReset = Math.min(Date.parse(board.nextDailyReset), Date.parse(board.nextWeeklyReset));
+		if (Number.isNaN(nextReset)) nextReset = Number.POSITIVE_INFINITY;
 		const next = selectPokerMissions(board);
 		const completed = findNewlyCompleted(missions, next);
 		missions = next;
@@ -163,6 +172,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 			if (!response.ok) return;
 			const result = (await response.json()) as ClaimResult;
 			if (result.status !== 'completed' && result.status !== 'already-claimed') return;
+			generation++;
 			missions = missions.map((m) =>
 				m.missionDefId === missionDefId ? { ...m, claimed: true, claimable: false } : m,
 			);
@@ -185,8 +195,9 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	});
 
 	events.addEventListener(POKER_HAND_SETTLED_EVENT, () => {
-		// Nothing left for a hand to move once every token is complete.
-		if (missions.some((m) => !m.completed)) void refresh();
+		// Nothing left for a hand to move once every token is complete, until
+		// a daily or weekly reset brings fresh missions.
+		if (missions.some((m) => !m.completed) || Date.now() >= nextReset) void refresh();
 	});
 
 	void refresh();

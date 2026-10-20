@@ -240,20 +240,31 @@ export class PokerUIRenderer {
 		});
 	}
 
-	/** Localized accessible name for a shown card; null for a face-down card. */
+	/**
+	 * Localized accessible name for a shown card; null for a face-down card.
+	 * Suit and rank go on the slot too, so poker.css can pick the painted art.
+	 */
 	private setCardA11y(slot: Element, card: Card | null): void {
+		slot.setAttribute('role', 'img');
 		if (card) {
-			slot.setAttribute('role', 'img');
 			slot.setAttribute('aria-label', getPokerCardName(this.locale, card));
+			slot.setAttribute('data-card-suit', card.suit);
+			slot.setAttribute('data-card-rank', card.value);
 		} else {
-			slot.setAttribute('role', 'img');
 			slot.setAttribute('aria-label', this.t('cardFaceDown'));
+			this.clearCardArt(slot);
 		}
 	}
 
 	private clearCardA11y(slot: Element): void {
 		slot.removeAttribute('role');
 		slot.removeAttribute('aria-label');
+		this.clearCardArt(slot);
+	}
+
+	private clearCardArt(slot: Element): void {
+		slot.removeAttribute('data-card-suit');
+		slot.removeAttribute('data-card-rank');
 	}
 
 	private evaluateHand(humanPlayer: Player, communityCards: Card[]) {

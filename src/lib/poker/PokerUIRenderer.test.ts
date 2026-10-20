@@ -838,6 +838,20 @@ describe('PokerUIRenderer', () => {
 			expect(slots[1].getAttribute?.('aria-label')).toBe('Jack of Clubs');
 			expect(slots[2].getAttribute?.('aria-label')).toBeNull();
 		});
+
+		test('face-up slots carry suit and rank for the painted card art', () => {
+			renderer.renderCommunityCards([card('Q', 'diamonds', 12), card('10', 'clubs', 10)]);
+
+			const slots = elements['community-cards'].querySelectorAll?.('.card-slot') || [];
+			expect(slots[0].getAttribute?.('data-card-suit')).toBe('diamonds');
+			expect(slots[0].getAttribute?.('data-card-rank')).toBe('Q');
+			expect(slots[1].getAttribute?.('data-card-rank')).toBe('10');
+			expect(slots[2].getAttribute?.('data-card-suit')).toBeNull();
+
+			renderer.renderCommunityCards([]);
+			expect(slots[0].getAttribute?.('data-card-suit')).toBeNull();
+			expect(slots[0].getAttribute?.('data-card-rank')).toBeNull();
+		});
 	});
 
 	describe('chip phrase presentation', () => {
@@ -1033,5 +1047,6 @@ describe('Poker six-max presentation', () => {
 		renderer.hideOpponentHands();
 		expect(fifth.getAttribute?.('data-slot-state')).toBe('facedown');
 		expect(fifth.getAttribute?.('aria-label')).toBe('Face-down card');
+		expect(fifth.getAttribute?.('data-card-suit')).toBeNull();
 	});
 });

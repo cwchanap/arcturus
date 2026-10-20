@@ -35,7 +35,13 @@ const clientUserId = gameSession.clientUserId;
 					><span aria-hidden="true">‹</span><span>{t('backToGames')}</span></a
 				>
 				<div class="poker-title">
-					<span class="poker-emblem"><DecoIcon name="star" size={20} /></span><h1>
+					<img
+						class="poker-emblem"
+						src="/images/poker/emblem.webp"
+						alt=""
+						width="40"
+						height="40"
+					/><h1>
 						{getGameName(locale, 'poker')}
 					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
 				</div>
@@ -125,7 +131,9 @@ const clientUserId = gameSession.clientUserId;
 				<div class="poker-board">
 					<div class="poker-pot-slot">
 						<div class="poker-pot" aria-label={t('pot')}>
-							<DecoIcon name="chip" size={20} /><span id="pot-amount">0</span>
+							<img src="/images/poker/pot-chips.webp" alt="" width="40" height="40" /><span
+								id="pot-amount">0</span
+							>
 						</div>
 						<div id="poker-result" class="poker-result" role="status" hidden>
 							<strong id="poker-result-title"></strong>

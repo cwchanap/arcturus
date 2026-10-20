@@ -554,12 +554,13 @@ export class PokerGame {
 
 	/**
 	 * Adopt an account balance that changed outside a hand (a mission claimed
-	 * at the table). Mid-hand or mid-settlement it is skipped: the hand's
-	 * settlement returns the account balance, reward included.
+	 * at the table). Mid-hand or mid-settlement it is skipped and returns
+	 * false, so the caller can offer the account balance again once the hand
+	 * has settled.
 	 */
-	public adoptAccountBalance(balance: number): void {
-		if (!Number.isSafeInteger(balance) || balance < 0) return;
-		if (this.isGuestMode || this.handInProgress || this.settlementGate.pending) return;
+	public adoptAccountBalance(balance: number): boolean {
+		if (!Number.isSafeInteger(balance) || balance < 0) return false;
+		if (this.isGuestMode || this.handInProgress || this.settlementGate.pending) return false;
 		// The server just reported the account, so play can start even if the
 		// balance was unavailable when the page loaded.
 		this.hasServerSyncedBalance = true;
@@ -567,6 +568,7 @@ export class PokerGame {
 		this.players[0] = { ...this.players[0], chips: balance };
 		this.ui.updateUI(this.pot, this.players[0]);
 		this.updateActionButtons();
+		return true;
 	}
 
 	private showSettlementRecovery(message: string): void {

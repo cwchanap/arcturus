@@ -73,4 +73,15 @@ test.describe('Poker turn flow smoke test', () => {
 			await context.close();
 		}
 	});
+
+	test('a signed-in player sees mission rings beside their seat', async ({ browser, baseURL }) => {
+		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
+		try {
+			const missions = page.getByRole('group', { name: 'Missions' });
+			await expect(missions).toBeVisible();
+			await expect(missions.getByRole('button', { name: /^Three Wins: .* of 3$/ })).toBeVisible();
+		} finally {
+			await context.close();
+		}
+	});
 });

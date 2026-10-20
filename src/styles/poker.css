@@ -1396,6 +1396,116 @@
 	background: url('/images/poker/trophy.webp') center / contain no-repeat;
 }
 
+/* ── Missions at the table: progress rings beside the player ────── */
+.poker-missions {
+	position: absolute;
+	top: 50%;
+	left: 0;
+	transform: translateY(-50%);
+}
+.poker-mission-tokens {
+	display: flex;
+	gap: 12px;
+}
+.poker-mission {
+	--mission-progress: 0;
+	position: relative;
+	display: grid;
+	place-items: center;
+	width: 54px;
+	height: 54px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background:
+		radial-gradient(circle, #0d1512 0 62%, transparent 63%),
+		conic-gradient(var(--poker-gold) calc(var(--mission-progress) * 1turn), #e4c98826 0);
+	cursor: default;
+}
+.poker-mission-icon {
+	font-size: 22px;
+	line-height: 1;
+}
+.poker-mission-count {
+	position: absolute;
+	bottom: -9px;
+	left: 50%;
+	transform: translateX(-50%);
+	padding: 1px 6px;
+	border: 1px solid var(--poker-line);
+	background: #070b09;
+	font-size: 10px;
+	letter-spacing: 0.06em;
+	color: var(--poker-gold);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+.poker-mission[data-state='ready'] {
+	cursor: pointer;
+	box-shadow:
+		0 0 0 1px var(--poker-gold),
+		0 0 18px #e4c98866;
+	animation: poker-mission-glow 1.8s ease-in-out infinite;
+}
+.poker-mission[data-state='ready'] .poker-mission-count {
+	border-color: var(--poker-gold);
+	background: var(--poker-gold);
+	color: #070b09;
+	font-weight: 600;
+}
+.poker-mission[data-state='claimed'] {
+	opacity: 0.45;
+}
+.poker-mission[data-pop='true'] {
+	animation:
+		poker-mission-pop 0.6s ease-out,
+		poker-mission-glow 1.8s ease-in-out 0.6s infinite;
+}
+.poker-mission:focus-visible {
+	outline: 2px solid var(--poker-gold);
+	outline-offset: 3px;
+}
+@keyframes poker-mission-glow {
+	50% {
+		box-shadow:
+			0 0 0 1px var(--poker-gold),
+			0 0 28px #e4c988aa;
+	}
+}
+@keyframes poker-mission-pop {
+	40% {
+		transform: scale(1.25);
+	}
+}
+/* Below this width the seat row has no free side, so the rings get their own row. */
+@media (max-width: 1100px) {
+	.poker-human {
+		flex-wrap: wrap;
+		row-gap: 16px;
+	}
+	.poker-missions {
+		position: static;
+		order: 1;
+		flex-basis: 100%;
+		transform: none;
+	}
+	.poker-mission-tokens {
+		justify-content: center;
+	}
+}
+@media (max-width: 600px) {
+	.poker-missions {
+		grid-column: 1 / -1;
+	}
+	.poker-mission {
+		width: 42px;
+		height: 42px;
+	}
+	.poker-mission-icon {
+		font-size: 17px;
+	}
+}
+
 /* ── Human seat: situation readout and result glow ─────────────── */
 .poker-hand-detail {
 	min-height: 14px;

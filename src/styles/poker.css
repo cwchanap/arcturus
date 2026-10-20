@@ -1329,7 +1329,7 @@
 	visibility: hidden;
 }
 
-/* Board and hole cards: a jewel suit or court portrait in the centre; the rank stays live text. */
+/* Board and hole cards: a jewel suit or court portrait in the centre; the corner rank and suit stay live text. */
 .poker-room .card-slot[data-card-suit='spades'] {
 	--suit-art: url('/images/poker/cards/suit-spade.webp');
 }
@@ -1384,13 +1384,6 @@
 	text-shadow:
 		0 0 3px #f6efe0,
 		0 0 6px #f6efe0;
-}
-.poker-room [data-detailed='true'][data-card-suit] .card-suit-small {
-	width: 0.9em;
-	height: 0.9em;
-	color: transparent;
-	text-shadow: none;
-	background: var(--suit-art) center / contain no-repeat;
 }
 
 .poker-result[data-tone='win'] strong::before {

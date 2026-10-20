@@ -47,3 +47,6 @@ export const ACTION_ANIMATION_DELAY = 1000;
 
 // Debounce delay for player actions (milliseconds)
 export const ACTION_DEBOUNCE_DELAY = 300;
+
+// Window event dispatched once a hand's wallet settlement has been adopted
+export const POKER_HAND_SETTLED_EVENT = 'poker-hand-settled';

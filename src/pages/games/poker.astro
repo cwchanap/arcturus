@@ -172,6 +172,20 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 			</div>
 			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
+				{
+					!gameSession.isGuest && (
+						<div
+							id="poker-missions"
+							class="poker-missions"
+							role="group"
+							aria-label={t('missionsLabel')}
+							hidden
+						>
+							<div class="poker-mission-tokens" data-mission-tokens />
+							<span class="sr-only" aria-live="polite" data-mission-announcer />
+						</div>
+					)
+				}
 				<span id="seat-delta-0" class="poker-seat-delta" hidden aria-hidden="true"></span>
 				<div class="poker-bankroll">
 					<span class="poker-small-label">{getBalanceLabel(locale, gameSession.isGuest)}</span
@@ -534,7 +548,18 @@ const clientUserId = gameSession.clientUserId;
 </CasinoLayout>
 <script>
 	import { PokerGame } from '../../lib/poker/PokerGame';
-	new PokerGame();
+	import { initPokerTableMissions } from '../../lib/poker/tableMissions';
+	import { getDocumentLocale } from '../../lib/i18n/locale';
+	const game = new PokerGame();
+	const missionsRoot = document.getElementById('poker-missions');
+	if (missionsRoot) {
+		initPokerTableMissions({
+			root: missionsRoot,
+			locale: getDocumentLocale(),
+			events: window,
+			onBalance: (balance) => game.adoptAccountBalance(balance),
+		});
+	}
 	for (const button of document.querySelectorAll<HTMLButtonElement>('[data-open-panel]')) {
 		button.addEventListener('click', () => {
 			const dialog = document.getElementById(button.dataset.openPanel!) as HTMLDialogElement;

@@ -2510,6 +2510,88 @@ describe('Poker wallet settlement commands', () => {
 			(globalThis as typeof globalThis & { window: Window }).window.dispatchEvent = origDispatch;
 		}
 	});
+
+	function mockSignedInTable() {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ settings: null }),
+		})) as unknown as typeof fetch;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'mission-user' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+			click: () => {},
+		};
+		return elements;
+	}
+
+	test('tells the table a hand settled once the settlement is adopted', async () => {
+		mockSignedInTable();
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const origDispatch = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof window.dispatchEvent;
+
+		try {
+			const gate: SettlementGate = {
+				pending: null,
+				isBlocked: false,
+				settle: async () => ({ balance: 650, duplicate: false }),
+				retry: async () => null,
+				reset: () => {},
+			};
+			const game = new PokerGame(undefined, gate) as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+			};
+
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 650 };
+			game.settleHand('win');
+			expect(dispatched).not.toContain('poker-hand-settled');
+			await flushAsyncWork();
+
+			expect(dispatched).toContain('poker-hand-settled');
+		} finally {
+			win.dispatchEvent = origDispatch;
+		}
+	});
+
+	test('adopts a claimed mission reward between hands, not mid-hand', () => {
+		mockSignedInTable();
+		const game = new PokerGame() as unknown as {
+			players: Player[];
+			serverSyncedBalance: number;
+			handInProgress: boolean;
+			adoptAccountBalance: (balance: number) => void;
+		};
+
+		game.handInProgress = true;
+		game.adoptAccountBalance(1250);
+		expect(game.players[0].chips).toBe(500);
+
+		game.handInProgress = false;
+		game.adoptAccountBalance(1250);
+		expect(game.players[0].chips).toBe(1250);
+		expect(game.serverSyncedBalance).toBe(1250);
+	});
 });
 
 // The mockup's six seats must play real hands, and custom amounts must remain legal.

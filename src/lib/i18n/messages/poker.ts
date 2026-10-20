@@ -233,6 +233,10 @@ export const POKER_MESSAGES = defineMessages({
 		rivalRockHint: 'Waits for strong hands and rarely bluffs',
 		rivalStationHint: 'Calls a lot and seldom raises',
 		shortcutsHint: 'Keyboard: F fold · C check/call · R raise · Space next hand',
+		missionsLabel: 'Missions',
+		missionProgress: '{title}: {description}. {progress} of {target}',
+		missionReady: '{title} complete. Claim {chips}',
+		missionClaimed: '{title} claimed',
 	},
 	'zh-Hant': {
 		blinds: '盲注',
@@ -450,6 +454,10 @@ export const POKER_MESSAGES = defineMessages({
 		rivalRockHint: '只等強牌、很少詐唬',
 		rivalStationHint: '常跟注、很少加注',
 		shortcutsHint: '鍵盤：F 棄牌 · C 過牌/跟注 · R 加注 · 空白鍵 下一手',
+		missionsLabel: '任務',
+		missionProgress: '{title}：{description}。{progress}/{target}',
+		missionReady: '{title} 已完成。領取 {chips}',
+		missionClaimed: '{title} 已領取',
 	},
 	'zh-Hans': {
 		blinds: '盲注',
@@ -667,6 +675,10 @@ export const POKER_MESSAGES = defineMessages({
 		rivalRockHint: '只等强牌、很少诈唬',
 		rivalStationHint: '常跟注、很少加注',
 		shortcutsHint: '键盘：F 弃牌 · C 过牌/跟注 · R 加注 · 空格键 下一手',
+		missionsLabel: '任务',
+		missionProgress: '{title}：{description}。{progress}/{target}',
+		missionReady: '{title} 已完成。领取 {chips}',
+		missionClaimed: '{title} 已领取',
 	},
 	ja: {
 		blinds: 'ブラインド',
@@ -890,6 +902,10 @@ export const POKER_MESSAGES = defineMessages({
 		rivalRockHint: '強い手を待ち、めったにブラフしない',
 		rivalStationHint: 'よくコールし、めったにレイズしない',
 		shortcutsHint: 'キー操作：F フォールド · C チェック/コール · R レイズ · Space 次のハンド',
+		missionsLabel: 'ミッション',
+		missionProgress: '{title}：{description}。{progress}/{target}',
+		missionReady: '{title} 達成。{chips}を受け取る',
+		missionClaimed: '{title} 受け取り済み',
 	},
 });
 

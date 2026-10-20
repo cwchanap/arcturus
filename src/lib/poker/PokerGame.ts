@@ -31,7 +31,13 @@ import {
 	makeAIDecision,
 	mergeTiersByWinners,
 } from './index';
-import { HAND_RANKINGS, NUM_PLAYERS, MAX_BET, SMALL_BLIND } from './constants';
+import {
+	HAND_RANKINGS,
+	NUM_PLAYERS,
+	MAX_BET,
+	SMALL_BLIND,
+	POKER_HAND_SETTLED_EVENT,
+} from './constants';
 import { readHand } from './handReadout';
 import {
 	loadSessionStats,
@@ -541,6 +547,24 @@ export class PokerGame {
 		window.dispatchEvent(new CustomEvent('achievement-earned', { detail: { achievements } }));
 	}
 
+	private dispatchHandSettled(): void {
+		if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
+		window.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+	}
+
+	/**
+	 * Adopt an account balance that changed outside a hand (a mission claimed
+	 * at the table). Mid-hand or mid-settlement it is skipped: the hand's
+	 * settlement returns the account balance, reward included.
+	 */
+	public adoptAccountBalance(balance: number): void {
+		if (this.isGuestMode || this.handInProgress || this.settlementGate.pending) return;
+		this.serverSyncedBalance = balance;
+		this.players[0] = { ...this.players[0], chips: balance };
+		this.ui.updateUI(this.pot, this.players[0]);
+		this.updateActionButtons();
+	}
+
 	private showSettlementRecovery(message: string): void {
 		this.updateGameStatus(message);
 		const controls = this.getSettlementRecoveryControls();
@@ -564,6 +588,7 @@ export class PokerGame {
 		if (result.newAchievements && result.newAchievements.length > 0) {
 			this.dispatchEarnedAchievements(result.newAchievements);
 		}
+		this.dispatchHandSettled();
 		this.ui.updateUI(this.pot, this.players[0]);
 		if (this.autoDealEnabled && !this.handInProgress && this.autoDealTimeoutId === null) {
 			this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);

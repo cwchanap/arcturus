@@ -21,8 +21,9 @@
 	border: 5px solid #8c7438;
 	border-image: linear-gradient(160deg, #e4c988, #8c7438 26%, #5c4a22 52%, #8c7438 76%, #e4c988) 1;
 	background:
-		repeating-linear-gradient(90deg, rgb(200 165 92 / 2%) 0 2px, transparent 2px 9px),
-		radial-gradient(ellipse at 50% 60%, #123929, #081a14 46%, #050706 84%);
+		radial-gradient(ellipse at 50% 60%, #12392933, #081a14b3 46%, #050706f2 84%),
+		url('/images/poker/felt.webp') center / cover no-repeat,
+		#081a14;
 	box-shadow:
 		inset 0 0 100px #0009,
 		0 30px 90px #0009;
@@ -93,17 +94,9 @@
 	white-space: nowrap;
 }
 .poker-emblem {
-	width: 32px;
-	height: 32px;
-	display: grid;
-	place-items: center;
-	border: 1px solid var(--poker-gold);
-	transform: rotate(45deg);
-	color: var(--poker-gold);
-	margin: 0 5px;
-}
-.poker-emblem svg {
-	transform: rotate(-45deg);
+	width: 40px;
+	height: 40px;
+	filter: drop-shadow(0 0 10px #e4c98840);
 }
 .poker-blinds {
 	gap: 8px;
@@ -291,6 +284,11 @@
 		0 0 46px #e4c98826,
 		inset 0 1px 0 #e4c98847;
 	color: var(--poker-gold);
+}
+.poker-pot img {
+	width: 44px;
+	height: 44px;
+	margin-block: -6px;
 }
 .poker-pot span {
 	font:
@@ -678,7 +676,7 @@
 	border-radius: 5px;
 }
 .poker-room .playing-card {
-	background: linear-gradient(#fffdf8, #efe8da);
+	background: #f6efe0 url('/images/poker/cards/face.webp') center / 100% 100% no-repeat;
 	border: 1px solid #c8a55cb3;
 	box-shadow: 0 12px 28px #000b;
 	color: #141414;
@@ -765,9 +763,7 @@
 	font-size: 9px;
 }
 .poker-room .card-back-deco {
-	background:
-		repeating-linear-gradient(45deg, #c8a55c24 0 4px, transparent 4px 8px),
-		linear-gradient(160deg, #123f31, #0a2620);
+	background: #0a2620 url('/images/poker/card-back.webp') center / cover no-repeat;
 	border: 0;
 	border-radius: 2px;
 }
@@ -957,6 +953,10 @@
 	}
 	.poker-pot span {
 		font-size: 32px;
+	}
+	.poker-pot img {
+		width: 34px;
+		height: 34px;
 	}
 	.poker-room #community-cards {
 		gap: 7px;
@@ -1293,6 +1293,114 @@
 }
 .poker-room .poker-seat .card-slot[data-highlight='win'] {
 	transform: translateY(-3px);
+}
+
+/* ── Painted art: rival portraits, card centres, win trophy ────── */
+/* One portrait per AI style; the Rock has none yet and keeps its monogram. */
+.poker-seat:has(.poker-rival[data-style='tight-aggressive']) .poker-portrait {
+	background-image: url('/images/poker/rival-shark.webp');
+}
+.poker-seat:has(.poker-rival[data-style='loose-aggressive']) .poker-portrait {
+	background-image: url('/images/poker/rival-maniac.webp');
+}
+.poker-seat:has(.poker-rival[data-style='loose-passive']) .poker-portrait {
+	background-image: url('/images/poker/rival-station.webp');
+}
+.poker-seat:has(
+		.poker-rival:is(
+			[data-style='tight-aggressive'],
+			[data-style='loose-aggressive'],
+			[data-style='loose-passive']
+		)
+	)
+	.poker-portrait {
+	background-position: center;
+	background-size: cover;
+}
+.poker-seat:has(
+		.poker-rival:is(
+			[data-style='tight-aggressive'],
+			[data-style='loose-aggressive'],
+			[data-style='loose-passive']
+		)
+	)
+	.poker-portrait
+	> * {
+	visibility: hidden;
+}
+
+/* Board and hole cards: a jewel suit or court portrait in the centre; the rank stays live text. */
+.poker-room .card-slot[data-card-suit='spades'] {
+	--suit-art: url('/images/poker/cards/suit-spade.webp');
+}
+.poker-room .card-slot[data-card-suit='hearts'] {
+	--suit-art: url('/images/poker/cards/suit-heart.webp');
+}
+.poker-room .card-slot[data-card-suit='diamonds'] {
+	--suit-art: url('/images/poker/cards/suit-diamond.webp');
+}
+.poker-room .card-slot[data-card-suit='clubs'] {
+	--suit-art: url('/images/poker/cards/suit-club.webp');
+}
+.poker-room .card-slot[data-card-rank='J'] {
+	--court-art: url('/images/poker/cards/court-jack.webp');
+}
+.poker-room .card-slot[data-card-rank='Q'] {
+	--court-art: url('/images/poker/cards/court-queen.webp');
+}
+.poker-room .card-slot[data-card-rank='K'] {
+	--court-art: url('/images/poker/cards/court-king.webp');
+}
+.poker-room [data-detailed='true'] [data-card-detail],
+.poker-room [data-detailed='true'] [data-face-detail],
+.poker-room [data-detailed='true'] .card-corner-bottom {
+	display: none;
+}
+.poker-room [data-detailed='true'][data-card-suit] .playing-card-inner::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: var(--suit-art) 54% 58% / 52% auto no-repeat;
+	filter: drop-shadow(0 2px 3px #0004);
+}
+.poker-room [data-detailed='true'][data-card-rank='A'] .playing-card-inner::before {
+	background-position: 52% 55%;
+	background-size: 74% auto;
+}
+.poker-room
+	[data-detailed='true']:is([data-card-rank='J'], [data-card-rank='Q'], [data-card-rank='K'])
+	.playing-card-inner::before {
+	inset: 7%;
+	background: var(--court-art) 50% 18% / cover no-repeat;
+	border-radius: 3px;
+	filter: none;
+	mask-image: radial-gradient(ellipse 85% 88% at 54% 48%, #000 70%, transparent 100%);
+}
+.poker-room [data-detailed='true'] .card-corner-top {
+	top: 8%;
+	left: 10%;
+	z-index: 1;
+	gap: 2px;
+	text-shadow:
+		0 0 3px #f6efe0,
+		0 0 6px #f6efe0;
+}
+.poker-room [data-detailed='true'][data-card-suit] .card-suit-small {
+	width: 0.9em;
+	height: 0.9em;
+	color: transparent;
+	text-shadow: none;
+	background: var(--suit-art) center / contain no-repeat;
+}
+
+.poker-result[data-tone='win'] strong::before {
+	content: '';
+	display: inline-block;
+	width: 1.5em;
+	height: 1.5em;
+	margin: -0.4em 0.3em -0.4em 0;
+	vertical-align: middle;
+	background: url('/images/poker/trophy.webp') center / contain no-repeat;
 }
 
 /* ── Human seat: situation readout and result glow ─────────────── */

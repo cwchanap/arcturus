@@ -666,6 +666,8 @@ export class PokerGame {
 			this.ui.updateUI(this.pot, this.players[0]);
 			this.updateGameStatus(this.t('settlementReset'));
 			this.updateActionButtons();
+			// The hand is closed without a result; let the table read the account.
+			this.dispatchHandSettled();
 		});
 	}
 

@@ -2435,12 +2435,22 @@ describe('Poker wallet settlement commands', () => {
 
 		expect(elements['game-status']?.textContent).toContain('Settlement failed');
 
+		const dispatched: string[] = [];
+		(globalThis as typeof globalThis & { window: Window }).window.dispatchEvent = ((event: {
+			type: string;
+		}) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof window.dispatchEvent;
+
 		// Click reset — the reset handler clears the gate and restores balance.
 		elements['btn-reset-settlement'].click();
 
 		expect(resetCalls).toBe(1);
 		expect(game.players[0].chips).toBe(game.serverSyncedBalance);
 		expect(game.humanChipsBefore).toBe(0);
+		// The table missions read the account once the hand is closed.
+		expect(dispatched).toContain('poker-hand-settled');
 	});
 
 	test('dispatches achievement-earned event when settlement returns new achievements', async () => {

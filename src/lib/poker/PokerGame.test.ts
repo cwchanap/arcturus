@@ -2625,6 +2625,58 @@ describe('Poker wallet settlement commands', () => {
 		}
 	});
 
+	test('a reset while the hand plays on reports once the hand is over', async () => {
+		const elements = mockSignedInTable();
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const origDispatch = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof window.dispatchEvent;
+
+		try {
+			let blocked = false;
+			const gate = {
+				get pending() {
+					return null;
+				},
+				get isBlocked() {
+					return blocked;
+				},
+				settle: async () => {
+					blocked = true;
+					throw new Error('NETWORK_ERROR');
+				},
+				retry: async () => null,
+				reset: () => {
+					blocked = false;
+				},
+			} as SettlementGate;
+			const game = new PokerGame(undefined, gate) as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				handInProgress: boolean;
+				settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+				finishHand: () => void;
+			};
+
+			// The human folds, the settlement fails, and they reset mid-hand.
+			game.handInProgress = true;
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 480 };
+			game.settleHand('loss');
+			await flushAsyncWork();
+			elements['btn-reset-settlement'].click();
+			expect(dispatched).not.toContain('poker-hand-settled');
+
+			game.finishHand();
+			expect(dispatched.filter((type) => type === 'poker-hand-settled')).toHaveLength(1);
+		} finally {
+			win.dispatchEvent = origDispatch;
+		}
+	});
+
 	test('a hand that ends while its settlement runs reports only once it lands', () => {
 		mockSignedInTable();
 		const dispatched: string[] = [];

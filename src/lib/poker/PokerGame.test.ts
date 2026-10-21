@@ -3175,3 +3175,145 @@ describe('Poker betting control regressions', () => {
 		}
 	});
 });
+
+describe('Poker table sound, turn timer and hand recap', () => {
+	type TableGame = {
+		players: Player[];
+		currentPlayerIndex: number;
+		bettingRound: string | null;
+		pot: number;
+		processAITurn: () => Promise<void>;
+		updateActionButtons: () => void;
+		actOnTimeout: () => void;
+		nextPhase: () => void;
+		recap: { start: (hand: number, hole: Card[]) => void; last: unknown };
+		turnTimer: { running: boolean; stop: () => void };
+	};
+
+	function setup() {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const played: string[] = [];
+		const sound = {
+			play: (sfx: string) => void played.push(sfx),
+			isMuted: () => false,
+			setMuted: () => {},
+			unlock: () => {},
+		};
+		const game = new PokerGame(undefined, undefined, sound) as unknown as TableGame;
+		game.processAITurn = async () => {};
+		return { elements, game, played };
+	}
+
+	/** Put the human on turn preflop, facing `facing` chips. */
+	function humanTurn(game: TableGame, facing: number) {
+		game.bettingRound = 'preflop';
+		game.currentPlayerIndex = 0;
+		game.players = game.players.map((player) => ({
+			...player,
+			currentBet: player.id === 0 ? 0 : facing,
+			folded: false,
+			hasActed: false,
+		}));
+		game.updateActionButtons();
+	}
+
+	function setVisibility(state: string | undefined) {
+		(document as unknown as { visibilityState?: string }).visibilityState = state;
+	}
+
+	afterEach(() => setVisibility(undefined));
+
+	test('the human turn chimes and starts the countdown only while the page is visible', () => {
+		const { game, played } = setup();
+		setVisibility('hidden');
+		humanTurn(game, 0);
+		expect(played).toEqual(['turn']);
+		expect(game.turnTimer.running).toBe(false);
+
+		game.bettingRound = null;
+		game.updateActionButtons();
+		setVisibility('visible');
+		humanTurn(game, 0);
+		expect(game.turnTimer.running).toBe(true);
+
+		game.bettingRound = null;
+		game.updateActionButtons();
+		expect(game.turnTimer.running).toBe(false);
+	});
+
+	test('running out of time folds when facing a bet', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { game, played } = setup();
+			setVisibility('visible');
+			humanTurn(game, 20);
+			game.actOnTimeout();
+			expect(game.players[0].folded).toBe(true);
+			expect(played).toContain('fold');
+			expect(game.turnTimer.running).toBe(false);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('running out of time checks when checking is free', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { game, played } = setup();
+			setVisibility('visible');
+			humanTurn(game, 0);
+			game.actOnTimeout();
+			expect(game.players[0].folded).toBe(false);
+			expect(game.players[0].hasActed).toBe(true);
+			expect(played).toContain('check');
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a finished hand leaves a recap with each action and the winner', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game, played } = setup();
+			game.recap.start(1, game.players[0].hand);
+			humanTurn(game, 20);
+			elements['btn-fold'].click();
+			// Everyone but seat 1 has folded: seat 1 takes the pot uncontested.
+			game.players = game.players.map((player) =>
+				player.id === 1 ? player : { ...player, folded: true },
+			);
+			game.pot = 60;
+			game.nextPhase();
+
+			const recap = game.recap.last as {
+				streets: Array<{ events: Array<{ playerId: number; action: string }> }>;
+				reveals: Array<{ playerId: number }>;
+				showdown: boolean;
+			};
+			expect(recap.streets[0].events).toEqual([
+				expect.objectContaining({ playerId: 0, action: 'fold' }),
+			]);
+			expect(recap.showdown).toBe(false);
+			expect(recap.reveals.map((reveal) => reveal.playerId)).toEqual([1]);
+			// A fold already cost the chips; no losing sting on top of it.
+			expect(played).not.toContain('lose');
+			expect(elements['btn-recap'].hidden).toBe(false);
+		} finally {
+			timers.restore();
+		}
+	});
+});

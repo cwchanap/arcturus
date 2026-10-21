@@ -1743,3 +1743,231 @@
 		font-size: 38px;
 	}
 }
+
+/* ── Sound and turn-timer toggles ────────────────────────────── */
+.poker-toggle[aria-pressed='true'] {
+	color: var(--poker-gold);
+}
+.poker-toggle[aria-pressed='true'] .poker-toggle-off,
+.poker-toggle[aria-pressed='false'] .poker-toggle-on {
+	display: none;
+}
+
+/* ── Turn countdown ring beside the hole cards ───────────────── */
+@property --turn-left {
+	syntax: '<number>';
+	inherits: true;
+	initial-value: 1;
+}
+.poker-turn-timer {
+	--turn-left: 1;
+	--turn-color: var(--poker-gold);
+	position: relative;
+	width: 38px;
+	height: 38px;
+	flex: none;
+	display: grid;
+	place-items: center;
+	border-radius: 50%;
+	background: conic-gradient(
+		var(--turn-color) calc(var(--turn-left) * 360deg),
+		#ffffff1a calc(var(--turn-left) * 360deg)
+	);
+	transition: --turn-left 0.25s linear;
+}
+.poker-turn-timer::before {
+	content: '';
+	position: absolute;
+	inset: 4px;
+	border-radius: 50%;
+	background: #070b09;
+}
+.poker-turn-timer[hidden] {
+	display: none;
+}
+.poker-turn-timer > span {
+	position: relative;
+	font:
+		500 14px 'Jost',
+		sans-serif;
+	color: var(--turn-color);
+	font-variant-numeric: tabular-nums;
+}
+.poker-turn-timer[data-warn='true'] {
+	--turn-color: #e7a6a0;
+	animation: poker-turn-pulse 1s ease-in-out infinite;
+}
+@keyframes poker-turn-pulse {
+	50% {
+		box-shadow: 0 0 14px #e7a6a088;
+	}
+}
+
+/* ── Hand recap ──────────────────────────────────────────────── */
+.poker-recap-button {
+	padding-inline: 14px;
+}
+.poker-recap-button[hidden] {
+	display: none;
+}
+.poker-recap-number {
+	color: var(--poker-muted);
+	font-size: 13px;
+}
+.poker-recap-delta {
+	margin-left: auto;
+	font-size: 16px;
+	font-variant-numeric: tabular-nums;
+}
+.poker-recap-delta[data-tone='win'] {
+	color: #9fd9a8;
+}
+.poker-recap-delta[data-tone='loss'] {
+	color: #e7a6a0;
+}
+.poker-recap {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+.poker-recap-street,
+.poker-recap-showdown {
+	padding-bottom: 14px;
+	border-bottom: 1px solid #16201c;
+}
+.poker-recap-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	margin-bottom: 9px;
+}
+.poker-recap-name {
+	font-size: 10px;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--poker-muted);
+}
+.poker-recap-cards {
+	display: inline-flex;
+	gap: 4px;
+}
+.poker-recap-card {
+	min-width: 30px;
+	padding: 4px 5px;
+	border-radius: 4px;
+	background: linear-gradient(#fbf6ea, #e9dfc8);
+	border: 1px solid #c8a55c;
+	color: #14110d;
+	font:
+		600 13px 'Jost',
+		sans-serif;
+	text-align: center;
+}
+.poker-recap-card:is([data-suit='hearts'], [data-suit='diamonds']) {
+	color: #b3262f;
+}
+.poker-recap-actions {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.poker-recap-action {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 3px 9px 3px 3px;
+	border: 1px solid var(--poker-line);
+	border-radius: 999px;
+	background: #0d1412;
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+}
+.poker-recap-icon {
+	font-size: 14px;
+	line-height: 1;
+}
+.poker-recap-action[data-action='fold'] {
+	opacity: 0.55;
+}
+.poker-recap-action[data-action='fold'] .poker-recap-icon {
+	color: #e7a6a0;
+}
+.poker-recap-action:is([data-action='raise'], [data-action='all-in']) {
+	border-color: var(--poker-gold);
+	color: var(--poker-gold);
+}
+.poker-recap-avatar {
+	width: 24px;
+	height: 24px;
+	flex: none;
+	display: inline-grid;
+	place-items: center;
+	border-radius: 50%;
+	border: 1px solid var(--poker-line);
+	background: #1f2c28 center / cover no-repeat;
+	color: var(--poker-gold);
+	font:
+		500 11px 'Playfair Display',
+		serif;
+}
+.poker-recap-avatar[data-seat='0'] {
+	background-image: url('/images/poker/emblem.webp');
+	border-color: var(--poker-gold);
+}
+.poker-recap-avatar[data-style='tight-aggressive'] {
+	background-image: url('/images/poker/rival-shark.webp');
+}
+.poker-recap-avatar[data-style='loose-aggressive'] {
+	background-image: url('/images/poker/rival-maniac.webp');
+}
+.poker-recap-avatar[data-style='loose-passive'] {
+	background-image: url('/images/poker/rival-station.webp');
+}
+.poker-recap-avatar:is(
+	[data-style='tight-aggressive'],
+	[data-style='loose-aggressive'],
+	[data-style='loose-passive']
+) {
+	color: transparent;
+}
+.poker-recap-showdown {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	border-bottom: 0;
+}
+.poker-recap-reveal {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	padding: 6px 8px;
+	border: 1px solid transparent;
+}
+.poker-recap-reveal[data-winner='true'] {
+	border-color: var(--poker-gold);
+	background: linear-gradient(90deg, #e4c98822, transparent);
+}
+.poker-recap-hand {
+	flex: 1;
+	font-size: 13px;
+	color: var(--poker-muted);
+}
+.poker-recap-reveal[data-winner='true'] .poker-recap-hand {
+	color: var(--poker-gold);
+}
+.poker-recap-won {
+	color: #9fd9a8;
+	font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+	.poker-turn-timer[data-warn='true'] {
+		animation: none;
+	}
+}

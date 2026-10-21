@@ -55,6 +55,8 @@ export interface PokerTableMissionsOptions {
 	 * false means the table could not take it yet (a hand was running).
 	 */
 	onBalance: (balance: number) => boolean;
+	/** Sound cue: a mission just became claimable, or a claim paid out. */
+	onCue?: (cue: 'ready' | 'claimed') => void;
 }
 
 export interface PokerTableMissions {
@@ -62,7 +64,7 @@ export interface PokerTableMissions {
 }
 
 export function initPokerTableMissions(options: PokerTableMissionsOptions): PokerTableMissions {
-	const { root, locale, events, onBalance } = options;
+	const { root, locale, events, onBalance, onCue } = options;
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const t = pokerTranslator(locale);
 	const doc = root.ownerDocument;
@@ -167,7 +169,10 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 		const completed = findNewlyCompleted(missions, next);
 		missions = next;
 		render(new Set(completed.map((m) => m.missionDefId)));
-		if (completed.length > 0) announce(completed.map(label).join(' '));
+		if (completed.length > 0) {
+			announce(completed.map(label).join(' '));
+			onCue?.('ready');
+		}
 	}
 
 	async function claim(missionDefId: string): Promise<void> {
@@ -189,6 +194,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 			render();
 			const claimed = missions.find((m) => m.missionDefId === missionDefId);
 			if (claimed) announce(label(claimed));
+			if (result.status === 'completed') onCue?.('claimed');
 			if (result.status === 'completed' && !onBalance(result.chipBalance)) balanceOwed = true;
 		} catch {
 			// Leave the token claimable; the missions page can still claim it.

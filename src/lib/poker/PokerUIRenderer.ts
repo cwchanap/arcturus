@@ -7,6 +7,8 @@ import type { AIDifficulty } from './aiDifficulty';
 import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
 import { countDrawingOuts, isSameCard, readHand } from './handReadout';
 import type { PokerSessionStats } from './sessionStats';
+import type { HandRecap, RecapAction } from './handRecap';
+import { TURN_WARN_SECONDS } from './turnTimer';
 import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
@@ -52,6 +54,24 @@ const DIFFICULTY_KEYS: Record<AIDifficulty, MessageKey<typeof POKER_MESSAGES>> =
 type SeatLabel = { text: string; kind: 'fold' | 'check' | 'call' | 'raise' | 'hand' | 'winner' };
 
 export type HandResultTone = 'win' | 'loss' | 'neutral';
+
+const RECAP_STREET_KEYS = {
+	preflop: 'phasePreflop',
+	flop: 'phaseFlop',
+	turn: 'phaseTurn',
+	river: 'phaseRiver',
+} as const;
+
+const RECAP_ICONS: Record<RecapAction, string> = { fold: '×', check: '✓', call: '✓', raise: '↑' };
+const RANK_LABELS: Partial<Record<number, string>> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
+const SUIT_GLYPHS: Record<Card['suit'], string> = {
+	hearts: '♥',
+	diamonds: '♦',
+	clubs: '♣',
+	spades: '♠',
+};
+
+export type RecapSeats = Map<number, { name: string; style: AIPersonality | null }>;
 
 export interface HandResultView {
 	title: string;
@@ -476,6 +496,137 @@ export class PokerUIRenderer {
 			tag.title = this.t(keys.hint);
 			tag.dataset.style = rival.personality;
 		}
+	}
+
+	/** The human's turn countdown ring; null hides it. */
+	public renderTurnTimer(fraction: number | null, secondsLeft: number) {
+		const timer = document.getElementById('poker-turn-timer');
+		if (!timer) return;
+		timer.hidden = fraction === null;
+		if (fraction === null) return;
+		timer.style?.setProperty('--turn-left', fraction.toFixed(3));
+		timer.dataset.warn = String(secondsLeft <= TURN_WARN_SECONDS);
+		const seconds = document.getElementById('poker-turn-seconds');
+		if (seconds && seconds.textContent !== String(secondsLeft)) {
+			seconds.textContent = String(secondsLeft);
+			timer.title = this.t('turnTimeLeft', { seconds: secondsLeft });
+		}
+	}
+
+	/**
+	 * Fill the recap panel with the finished hand: one row per street with
+	 * the cards it brought and each action as avatar + icon + amount, then
+	 * the hands shown down. Icons carry the story; words stay in labels.
+	 */
+	public renderHandRecap(recap: HandRecap, seats: RecapSeats) {
+		const list = document.getElementById('poker-recap');
+		const doc = list?.ownerDocument;
+		if (!list || !doc) return;
+		const el = (tag: string, className: string, text?: string) => {
+			const node = doc.createElement(tag);
+			node.className = className;
+			if (text !== undefined) node.textContent = text;
+			return node;
+		};
+		const nameOf = (id: number) => (id === 0 ? this.t('recapYou') : (seats.get(id)?.name ?? ''));
+		const avatar = (id: number) => {
+			const node = el('span', 'poker-recap-avatar', id === 0 ? '' : nameOf(id).charAt(0));
+			node.dataset.seat = String(id);
+			const style = seats.get(id)?.style;
+			if (style) node.dataset.style = style;
+			node.title = nameOf(id);
+			return node;
+		};
+		const cards = (hand: Card[]) => {
+			const row = el('span', 'poker-recap-cards');
+			for (const card of hand) {
+				const chip = el(
+					'span',
+					'poker-recap-card',
+					`${RANK_LABELS[card.rank] ?? card.rank}${SUIT_GLYPHS[card.suit]}`,
+				);
+				chip.dataset.suit = card.suit;
+				chip.setAttribute('aria-label', getPokerCardName(this.locale, card));
+				row.appendChild(chip);
+			}
+			return row;
+		};
+
+		const title = document.getElementById('recap-hand');
+		if (title) title.textContent = `#${recap.handNumber}`;
+		const delta = document.getElementById('recap-delta');
+		if (delta) {
+			delta.hidden = recap.delta === null;
+			delta.textContent = recap.delta === null ? '' : this.formatDelta(recap.delta);
+			delta.dataset.tone =
+				recap.delta === null || recap.delta === 0 ? 'neutral' : recap.delta > 0 ? 'win' : 'loss';
+		}
+
+		const rows: HTMLElement[] = [];
+		for (const street of recap.streets) {
+			const row = el('li', 'poker-recap-street');
+			row.dataset.street = street.street;
+			const head = el('div', 'poker-recap-head');
+			head.appendChild(el('span', 'poker-recap-name', this.t(RECAP_STREET_KEYS[street.street])));
+			head.appendChild(cards(street.street === 'preflop' ? recap.hole : street.board));
+			row.appendChild(head);
+			const actions = el('ol', 'poker-recap-actions');
+			for (const event of street.events) {
+				const item = el('li', 'poker-recap-action');
+				item.dataset.action = event.allIn ? 'all-in' : event.action;
+				item.dataset.seat = String(event.playerId);
+				item.appendChild(avatar(event.playerId));
+				const icon = el('span', 'poker-recap-icon', event.allIn ? '⇈' : RECAP_ICONS[event.action]);
+				icon.setAttribute('aria-hidden', 'true');
+				item.appendChild(icon);
+				if (event.amount > 0) {
+					item.appendChild(
+						el('span', 'poker-recap-amount', formatWholeNumber(event.amount, this.locale)),
+					);
+				}
+				const actionName =
+					event.action === 'fold'
+						? this.t('badgeFold')
+						: event.action === 'check'
+							? this.t('badgeCheck')
+							: this.t(event.action === 'call' ? 'badgeCall' : 'badgeRaise', {
+									amount: formatWholeNumber(event.amount, this.locale),
+								});
+				item.title = `${nameOf(event.playerId)} · ${event.allIn ? this.t('recapAllIn') : actionName}`;
+				actions.appendChild(item);
+			}
+			row.appendChild(actions);
+			rows.push(row);
+		}
+
+		const showdown = el('li', 'poker-recap-showdown');
+		showdown.dataset.showdown = String(recap.showdown);
+		// Winners first, then the rest in seat order.
+		for (const reveal of [...recap.reveals].sort((a, b) => Number(b.won > 0) - Number(a.won > 0))) {
+			const seat = el('div', 'poker-recap-reveal');
+			seat.dataset.winner = String(reveal.won > 0);
+			seat.appendChild(avatar(reveal.playerId));
+			if (reveal.cards.length > 0) seat.appendChild(cards(reveal.cards));
+			seat.appendChild(
+				el(
+					'span',
+					'poker-recap-hand',
+					reveal.handKey
+						? getPokerHandName(this.locale, reveal.handKey)
+						: recap.showdown
+							? ''
+							: this.t('resultEveryoneFolded'),
+				),
+			);
+			if (reveal.won > 0) {
+				seat.appendChild(
+					el('span', 'poker-recap-won', `+${formatWholeNumber(reveal.won, this.locale)}`),
+				);
+			}
+			showdown.appendChild(seat);
+		}
+		rows.push(showdown);
+		list.replaceChildren(...rows);
 	}
 
 	/** Open a new group in the hand history; later status lines append to it. */

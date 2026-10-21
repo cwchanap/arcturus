@@ -45,6 +45,9 @@ import {
 	saveSessionStats,
 	type PokerSessionStats,
 } from './sessionStats';
+import { HandRecapRecorder, type RecapAction, type RecapReveal } from './handRecap';
+import { pokerSound, type PokerSfx, type PokerSound } from './sound';
+import { TURN_TIMER_STORAGE_KEY, TurnTimer } from './turnTimer';
 import { DEFAULT_SETTINGS } from './types';
 import { DeckManager } from './DeckManager';
 import { PokerUIRenderer } from './PokerUIRenderer';
@@ -98,6 +101,13 @@ type AIDifficultySetting = GameSettings['aiDifficulty1'];
 export const AUTO_DEAL_DELAY_MS = 5000;
 export const AUTO_DEAL_STORAGE_KEY = 'poker_auto_deal';
 
+const ACTION_SFX: Record<RecapAction, PokerSfx> = {
+	fold: 'fold',
+	check: 'check',
+	call: 'chips',
+	raise: 'raise',
+};
+
 export class PokerGame {
 	// Helper classes
 	private deck: DeckManager;
@@ -144,6 +154,13 @@ export class PokerGame {
 	private sessionStats: PokerSessionStats;
 	private autoDealEnabled = false;
 	private settlementGate: SettlementGate;
+	private readonly sound: PokerSound;
+	private readonly recap = new HandRecapRecorder();
+	private readonly turnTimer: TurnTimer;
+	private turnTimerEnabled = true;
+	// Whether the human could act at the last button refresh; its rising edge
+	// starts their turn (chime + countdown).
+	private humanTurnLive = false;
 	private autoDealTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	private autoDealToken = 0;
 	private turnTransitionTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -155,9 +172,15 @@ export class PokerGame {
 	private readonly t: ReturnType<typeof pokerTranslator>;
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
-	constructor(aiRandom?: () => number, settlementGate?: SettlementGate) {
+	constructor(aiRandom?: () => number, settlementGate?: SettlementGate, sound?: PokerSound) {
 		this.aiRandom = aiRandom;
 		this.settlementGate = settlementGate ?? createSettlementGate();
+		this.sound = sound ?? pokerSound;
+		this.turnTimer = new TurnTimer({
+			onTick: (fraction, secondsLeft) => this.ui.renderTurnTimer(fraction, secondsLeft),
+			onWarn: () => this.sound.play('tick'),
+			onExpire: () => this.actOnTimeout(),
+		});
 		// AppLayout writes data-locale on <html>; the game reads it so browser
 		// and SSR share one locale handoff for status/phase/pot copy.
 		this.locale = getDocumentLocale();
@@ -168,6 +191,7 @@ export class PokerGame {
 		this.settingsManager = new GameSettingsManager();
 		this.sessionStats = loadSessionStats();
 		this.autoDealEnabled = PokerGame.loadAutoDealPreference();
+		this.turnTimerEnabled = PokerGame.loadTurnTimerPreference();
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
 		const balanceEl = document.getElementById('player-balance');
@@ -241,6 +265,99 @@ export class PokerGame {
 		} catch {
 			return false;
 		}
+	}
+
+	private static loadTurnTimerPreference(): boolean {
+		try {
+			return localStorage.getItem(TURN_TIMER_STORAGE_KEY) !== 'false';
+		} catch {
+			return true;
+		}
+	}
+
+	private setTurnTimer(enabled: boolean): void {
+		this.turnTimerEnabled = enabled;
+		try {
+			localStorage.setItem(TURN_TIMER_STORAGE_KEY, String(enabled));
+		} catch {
+			// Preference is a convenience; the toggle still works for this page.
+		}
+		if (enabled && this.humanTurnLive) this.startTurnTimer();
+		else if (!enabled) this.stopTurnTimer();
+		this.renderToggles();
+	}
+
+	/** Toolbar icon toggles reflect their state through aria-pressed. */
+	private renderToggles(): void {
+		document
+			.getElementById('btn-sound')
+			?.setAttribute?.('aria-pressed', String(!this.sound.isMuted()));
+		document
+			.getElementById('btn-turn-timer')
+			?.setAttribute?.('aria-pressed', String(this.turnTimerEnabled));
+	}
+
+	/**
+	 * Count down the human's turn. Only while the page is visible: a
+	 * background tab should never act for the player.
+	 */
+	private startTurnTimer(): void {
+		if (!this.turnTimerEnabled || document.visibilityState !== 'visible') return;
+		this.turnTimer.start();
+	}
+
+	private stopTurnTimer(): void {
+		this.turnTimer.stop();
+		this.ui.renderTurnTimer(null, 0);
+	}
+
+	/** Time ran out: take the free check, otherwise fold. */
+	private actOnTimeout(): void {
+		this.ui.renderTurnTimer(null, 0);
+		// A panel is open (settings, history, recap): give them a fresh clock
+		// rather than act while they cannot see the table.
+		if (document.querySelector('dialog[open]')) {
+			this.startTurnTimer();
+			return;
+		}
+		const check = document.getElementById('btn-check') as HTMLButtonElement | null;
+		if (check && !check.hidden && !check.disabled) check.click();
+		else document.getElementById('btn-fold')?.click();
+	}
+
+	/** The human's turn starts or ends with each button refresh. */
+	private syncHumanTurn(live: boolean): void {
+		if (live === this.humanTurnLive) return;
+		this.humanTurnLive = live;
+		if (live) {
+			this.sound.play('turn');
+			this.startTurnTimer();
+		} else {
+			this.stopTurnTimer();
+		}
+	}
+
+	/** Record an action for the recap and play its sound. */
+	private noteAction(playerId: number, action: RecapAction, amount = 0): void {
+		const allIn = (action === 'call' || action === 'raise') && !!this.players[playerId]?.isAllIn;
+		this.recap.act({ playerId, action, amount, allIn });
+		this.sound.play(allIn ? 'allIn' : ACTION_SFX[action]);
+	}
+
+	/** Show an AI decision on its seat and note it. */
+	private showDecision(playerId: number, action: RecapAction, amount?: number): void {
+		this.ui.showAIDecision(playerId, action, amount);
+		this.noteAction(playerId, action, amount ?? 0);
+	}
+
+	/** Seat names and rival styles for the recap's avatars. */
+	private recapSeats(): Map<number, { name: string; style: AIPersonality | null }> {
+		return new Map(
+			this.players.map((player) => [
+				player.id,
+				{ name: player.name, style: this.aiConfigs.get(player.id)?.personality ?? null },
+			]),
+		);
 	}
 
 	private setAutoDeal(enabled: boolean): void {
@@ -385,6 +502,35 @@ export class PokerGame {
 			saveSessionStats(this.sessionStats);
 			this.ui.renderSessionStats(this.sessionStats);
 		}
+
+		// Showdown hands for the recap; a walkover shows only who took it.
+		const reveals: RecapReveal[] = showdown
+			? this.players
+					.filter((player) => !player.folded)
+					.map((player) => ({
+						playerId: player.id,
+						cards: player.hand,
+						handKey: readHand(player.hand, this.communityCards)?.key ?? null,
+						won: contestedAward(player.id),
+					}))
+			: headliners.map((player) => ({
+					playerId: player.id,
+					cards: [],
+					handKey: null,
+					won: contestedAward(player.id),
+				}));
+		const recap = this.recap.finish({ reveals, showdown, delta: involved ? delta : null });
+		if (recap) this.ui.renderHandRecap(recap, this.recapSeats());
+
+		if (involved && delta > 0) {
+			const humanKey = featured === human ? featuredHand?.key : undefined;
+			const big =
+				humanWon >= 20 * this.handBigBlind ||
+				(humanKey !== undefined && HAND_RANKINGS[humanKey] >= HAND_RANKINGS.FLUSH);
+			this.sound.play(big ? 'bigWin' : 'win');
+		} else if (involved && delta < 0 && !human.folded) {
+			this.sound.play('lose');
+		}
 	}
 
 	/**
@@ -432,6 +578,7 @@ export class PokerGame {
 		const rank = HAND_RANKINGS[readout.key];
 		if (rank >= HAND_RANKINGS.TWO_PAIR && rank > this.lastAnnouncedRank) {
 			this.ui.showCallout(readout.key);
+			this.sound.play('callout');
 		}
 		this.lastAnnouncedRank = Math.max(this.lastAnnouncedRank, rank);
 	}
@@ -857,6 +1004,8 @@ export class PokerGame {
 
 		// Reset community cards
 		this.communityCards = [];
+		this.recap.start(this.handNumber, this.players[0].hand);
+		this.sound.play('deal');
 		const preflop = readHand(this.players[0].hand, []);
 		this.lastAnnouncedRank = preflop ? HAND_RANKINGS[preflop.key] : -1;
 
@@ -935,9 +1084,11 @@ export class PokerGame {
 			const callAmount = getCallAmount(currentPlayer, highestBet);
 			if (callAmount === 0) {
 				this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
+				this.noteAction(currentPlayer.id, 'check');
 			} else {
 				this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 				this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
+				this.noteAction(currentPlayer.id, 'fold');
 			}
 			this.advanceTurn();
 			return;
@@ -1014,13 +1165,13 @@ export class PokerGame {
 			case 'fold':
 				this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 				this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
-				this.ui.showAIDecision(currentPlayer.id, 'fold');
+				this.showDecision(currentPlayer.id, 'fold');
 				break;
 
 			case 'check':
 				this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
 				this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
-				this.ui.showAIDecision(currentPlayer.id, 'check');
+				this.showDecision(currentPlayer.id, 'check');
 				break;
 
 			case 'call':
@@ -1037,14 +1188,14 @@ export class PokerGame {
 							amount: formatChips(actualCall, this.locale),
 						}),
 					);
-					this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
+					this.showDecision(currentPlayer.id, 'call', actualCall);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
 					// No bet to call - treat as a check
 					this.players[this.currentPlayerIndex] = { ...currentPlayer, hasActed: true };
 					this.updateGameStatus(this.t('statusPlayerChecks', { name: currentPlayer.name }));
-					this.ui.showAIDecision(currentPlayer.id, 'check');
+					this.showDecision(currentPlayer.id, 'check');
 				}
 				break;
 
@@ -1064,7 +1215,7 @@ export class PokerGame {
 							amount: formatChips(raiseAmount, this.locale),
 						}),
 					);
-					this.ui.showAIDecision(currentPlayer.id, 'raise', raiseAmount);
+					this.showDecision(currentPlayer.id, 'raise', raiseAmount);
 					this.ui.updateUI(this.pot, this.players[0]);
 					this.ui.updateOpponentUI(this.players);
 				} else {
@@ -1080,13 +1231,13 @@ export class PokerGame {
 								amount: formatChips(actualCall, this.locale),
 							}),
 						);
-						this.ui.showAIDecision(currentPlayer.id, 'call', actualCall);
+						this.showDecision(currentPlayer.id, 'call', actualCall);
 						this.ui.updateUI(this.pot, this.players[0]);
 						this.ui.updateOpponentUI(this.players);
 					} else {
 						this.players[this.currentPlayerIndex] = foldPlayer(currentPlayer);
 						this.updateGameStatus(this.t('statusPlayerFolds', { name: currentPlayer.name }));
-						this.ui.showAIDecision(currentPlayer.id, 'fold');
+						this.showDecision(currentPlayer.id, 'fold');
 					}
 				}
 				break;
@@ -1162,6 +1313,7 @@ export class PokerGame {
 			!this.isProcessingAction &&
 			!human.folded &&
 			!human.isAllIn;
+		this.syncHumanTurn(canAct);
 		const { call, canRaise } = this.getRaiseBounds();
 		const enabled = {
 			fold: canAct,
@@ -1188,6 +1340,8 @@ export class PokerGame {
 			// The CSS countdown bar runs while an auto-deal is pending.
 			deal.dataset.countdown = String(this.autoDealTimeoutId !== null && !active);
 		}
+		const recapButton = document.getElementById('btn-recap');
+		if (recapButton) recapButton.hidden = active || this.recap.last === null;
 		const autoDealLabel = document.getElementById('auto-deal-label');
 		if (autoDealLabel) autoDealLabel.hidden = active;
 		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
@@ -1287,16 +1441,19 @@ export class PokerGame {
 			this.gamePhase = 'flop';
 			this.bettingRound = 'flop';
 			this.communityCards.push(this.deck.drawCard(), this.deck.drawCard(), this.deck.drawCard());
+			this.recap.street('flop', this.communityCards.slice(0, 3));
 			this.updateGameStatus(this.t('statusFlopRevealed'));
 		} else if (this.gamePhase === 'flop') {
 			this.gamePhase = 'turn';
 			this.bettingRound = 'turn';
 			this.communityCards.push(this.deck.drawCard());
+			this.recap.street('turn', this.communityCards.slice(3));
 			this.updateGameStatus(this.t('statusTurnRevealed'));
 		} else if (this.gamePhase === 'turn') {
 			this.gamePhase = 'river';
 			this.bettingRound = 'river';
 			this.communityCards.push(this.deck.drawCard());
+			this.recap.street('river', this.communityCards.slice(4));
 			this.updateGameStatus(this.t('statusRiverRevealed'));
 		} else if (this.gamePhase === 'river') {
 			this.gamePhase = 'showdown';
@@ -1370,6 +1527,7 @@ export class PokerGame {
 		this.ui.renderCommunityCards(this.communityCards);
 		this.ui.renderPlayerCards(this.players[0], this.communityCards);
 		this.ui.updateUI(this.pot, this.players[0]);
+		this.sound.play('flip');
 		this.announceImprovement();
 
 		if (this.currentPlayerIndex === 0) {
@@ -1432,6 +1590,7 @@ export class PokerGame {
 
 			try {
 				this.players[0] = foldPlayer(this.players[0]);
+				this.noteAction(0, 'fold');
 				this.ui.updateUI(this.pot, this.players[0]);
 				this.updateGameStatus(this.t('statusYouFolded'));
 				// Sync immediately — human chip count is now locked in for this hand
@@ -1455,6 +1614,7 @@ export class PokerGame {
 			this.updateActionButtons();
 			try {
 				this.players[0] = { ...this.players[0], hasActed: true };
+				this.noteAction(0, 'check');
 				this.updateGameStatus(this.t('statusYouChecked'));
 			} finally {
 				this.scheduleTurnTransition(200, () => {
@@ -1479,6 +1639,7 @@ export class PokerGame {
 				// placeBet() clamps to remaining chips and marks the player all-in.
 				const actualCall = Math.min(callAmount, this.players[0].chips);
 				this.players[0] = placeBet(this.players[0], callAmount);
+				this.noteAction(0, 'call', actualCall);
 				this.pot = calculatePot(this.players);
 				this.ui.updateUI(this.pot, this.players[0]);
 				const allInNote = this.players[0].isAllIn;
@@ -1511,6 +1672,7 @@ export class PokerGame {
 			this.updateActionButtons();
 			try {
 				this.players[0] = placeBet(human, call + raiseAmount);
+				this.noteAction(0, 'raise', raiseAmount);
 				// A short all-in does not reduce the next full raise's minimum.
 				if (raiseAmount >= minimumRaise) {
 					this.lastRaiseAmount = raiseAmount;
@@ -1551,6 +1713,27 @@ export class PokerGame {
 		});
 		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
 		autoDealToggle?.addEventListener('change', () => this.setAutoDeal(autoDealToggle.checked));
+		document.getElementById('btn-sound')?.addEventListener('click', () => {
+			this.sound.setMuted(!this.sound.isMuted());
+			this.sound.play('check');
+			this.renderToggles();
+		});
+		document
+			.getElementById('btn-turn-timer')
+			?.addEventListener('click', () => this.setTurnTimer(!this.turnTimerEnabled));
+		document.getElementById('btn-recap')?.addEventListener('click', () => {
+			(document.getElementById('recap-panel') as HTMLDialogElement | null)?.showModal?.();
+		});
+		this.renderToggles();
+		// Browsers only start audio from a user gesture.
+		const unlockAudio = () => this.sound.unlock();
+		window.addEventListener('pointerdown', unlockAudio, { once: true });
+		window.addEventListener('keydown', unlockAudio, { once: true });
+		// Hold the countdown while the tab is in the background; restart it on return.
+		document.addEventListener?.('visibilitychange', () => {
+			if (document.visibilityState !== 'visible') this.stopTurnTimer();
+			else if (this.humanTurnLive) this.startTurnTimer();
+		});
 
 		// Keyboard play: F fold, C check/call, R raise, Space/Enter next hand.
 		window.addEventListener('keydown', (event: KeyboardEvent) => {

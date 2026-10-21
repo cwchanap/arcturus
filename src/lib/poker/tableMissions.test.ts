@@ -144,6 +144,19 @@ describe('initPokerTableMissions', () => {
 		expect(tokens()).toEqual([]);
 	});
 
+	test('a settled hand retries a board that failed to load', async () => {
+		const { root, calls, events, tokens } = setup({
+			'/api/missions/board': [undefined, board([wins(1)])],
+		});
+		await flush();
+		expect(root.hidden).toBe(true);
+		events.dispatchEvent(new Event(POKER_HAND_SETTLED_EVENT));
+		await flush();
+		expect(calls.filter((c) => c.url === '/api/missions/board')).toHaveLength(2);
+		expect(root.hidden).toBe(false);
+		expect(tokens()[0].textContent).toBe('🏆1/3');
+	});
+
 	test('a settled hand refreshes the rings and pops a completed mission', async () => {
 		const { root, calls, events, tokens } = setup({
 			'/api/missions/board': [

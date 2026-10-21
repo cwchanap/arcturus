@@ -416,6 +416,9 @@ export class PokerGame {
 	/** End-of-hand pause: hold the result for the player, or auto-deal if they opted in. */
 	private finishHand(): void {
 		this.handInProgress = false;
+		// A fold settles mid-hand, so tell the table now that the hand is over.
+		// Otherwise the settlement is still running and reports once it lands.
+		if (!this.isGuestMode && !this.settlementGate.isBlocked) this.dispatchHandSettled();
 		if (this.autoDealEnabled) this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
 		this.updateActionButtons();
 	}
@@ -594,7 +597,8 @@ export class PokerGame {
 		if (result.newAchievements && result.newAchievements.length > 0) {
 			this.dispatchEarnedAchievements(result.newAchievements);
 		}
-		this.dispatchHandSettled();
+		// After a fold the hand plays on; finishHand reports it once it ends.
+		if (!this.handInProgress) this.dispatchHandSettled();
 		this.ui.updateUI(this.pot, this.players[0]);
 		if (this.autoDealEnabled && !this.handInProgress && this.autoDealTimeoutId === null) {
 			this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);

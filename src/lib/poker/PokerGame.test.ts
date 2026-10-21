@@ -2584,6 +2584,77 @@ describe('Poker wallet settlement commands', () => {
 		}
 	});
 
+	test('after a fold, tells the table once the hand is over', async () => {
+		mockSignedInTable();
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const origDispatch = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof window.dispatchEvent;
+
+		try {
+			const gate: SettlementGate = {
+				pending: null,
+				isBlocked: false,
+				settle: async () => ({ balance: 480, duplicate: false }),
+				retry: async () => null,
+				reset: () => {},
+			};
+			const game = new PokerGame(undefined, gate) as unknown as {
+				players: Player[];
+				humanChipsBefore: number;
+				handInProgress: boolean;
+				settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+				finishHand: () => void;
+			};
+
+			// The human folds and settles while the rivals play on.
+			game.handInProgress = true;
+			game.humanChipsBefore = 500;
+			game.players[0] = { ...game.players[0], chips: 480 };
+			game.settleHand('loss');
+			await flushAsyncWork();
+			expect(dispatched).not.toContain('poker-hand-settled');
+
+			game.finishHand();
+			expect(dispatched.filter((type) => type === 'poker-hand-settled')).toHaveLength(1);
+		} finally {
+			win.dispatchEvent = origDispatch;
+		}
+	});
+
+	test('a hand that ends while its settlement runs reports only once it lands', () => {
+		mockSignedInTable();
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const origDispatch = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof window.dispatchEvent;
+
+		try {
+			const gate: SettlementGate = {
+				pending: null,
+				isBlocked: true,
+				settle: async () => ({ balance: 650, duplicate: false }),
+				retry: async () => null,
+				reset: () => {},
+			};
+			const game = new PokerGame(undefined, gate) as unknown as {
+				handInProgress: boolean;
+				finishHand: () => void;
+			};
+			game.handInProgress = true;
+			game.finishHand();
+			expect(dispatched).not.toContain('poker-hand-settled');
+		} finally {
+			win.dispatchEvent = origDispatch;
+		}
+	});
+
 	test('adopts a claimed mission reward between hands, not mid-hand', () => {
 		mockSignedInTable();
 		const game = new PokerGame() as unknown as {

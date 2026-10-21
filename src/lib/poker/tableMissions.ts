@@ -69,6 +69,8 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	const list = root.querySelector<HTMLElement>('[data-mission-tokens]') ?? root;
 	const announcer = root.querySelector<HTMLElement>('[data-mission-announcer]');
 	let missions: MissionView[] = [];
+	// False until a board has loaded, so a failed first read is retried.
+	let loaded = false;
 	let claiming = false;
 	// Bumped by each board request and each claim, so a board read that
 	// started earlier cannot overwrite newer state when it lands late.
@@ -157,6 +159,7 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 			return;
 		}
 		if (request !== generation) return;
+		loaded = true;
 		nextReset = Math.min(Date.parse(board.nextDailyReset), Date.parse(board.nextWeeklyReset));
 		if (Number.isNaN(nextReset)) nextReset = Number.POSITIVE_INFINITY;
 		if (balanceOwed && onBalance(board.chipBalance)) balanceOwed = false;
@@ -202,9 +205,10 @@ export function initPokerTableMissions(options: PokerTableMissionsOptions): Poke
 	});
 
 	events.addEventListener(POKER_HAND_SETTLED_EVENT, () => {
-		// Read the board while a hand can still move a ring, once a daily or
-		// weekly reset brings fresh missions, or while a claim is owed.
-		if (balanceOwed || missions.some((m) => !m.completed) || Date.now() >= nextReset) {
+		// Read the board until one has loaded, while a hand can still move a
+		// ring, once a daily or weekly reset brings fresh missions, or while a
+		// claim is owed.
+		if (!loaded || balanceOwed || missions.some((m) => !m.completed) || Date.now() >= nextReset) {
 			void refresh();
 		}
 	});

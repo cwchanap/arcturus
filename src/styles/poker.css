@@ -1296,7 +1296,7 @@
 }
 
 /* ── Painted art: rival portraits, card centres, win trophy ────── */
-/* One portrait per AI style; the Rock has none yet and keeps its monogram. */
+/* One portrait per AI style. */
 .poker-seat:has(.poker-rival[data-style='tight-aggressive']) .poker-portrait {
 	background-image: url('/images/poker/rival-shark.webp');
 }
@@ -1306,11 +1306,15 @@
 .poker-seat:has(.poker-rival[data-style='loose-passive']) .poker-portrait {
 	background-image: url('/images/poker/rival-station.webp');
 }
+.poker-seat:has(.poker-rival[data-style='tight-passive']) .poker-portrait {
+	background-image: url('/images/poker/rival-rock.webp');
+}
 .poker-seat:has(
 		.poker-rival:is(
 			[data-style='tight-aggressive'],
 			[data-style='loose-aggressive'],
-			[data-style='loose-passive']
+			[data-style='loose-passive'],
+			[data-style='tight-passive']
 		)
 	)
 	.poker-portrait {
@@ -1321,7 +1325,8 @@
 		.poker-rival:is(
 			[data-style='tight-aggressive'],
 			[data-style='loose-aggressive'],
-			[data-style='loose-passive']
+			[data-style='loose-passive'],
+			[data-style='tight-passive']
 		)
 	)
 	.poker-portrait
@@ -1930,10 +1935,14 @@
 .poker-recap-avatar[data-style='loose-passive'] {
 	background-image: url('/images/poker/rival-station.webp');
 }
+.poker-recap-avatar[data-style='tight-passive'] {
+	background-image: url('/images/poker/rival-rock.webp');
+}
 .poker-recap-avatar:is(
 	[data-style='tight-aggressive'],
 	[data-style='loose-aggressive'],
-	[data-style='loose-passive']
+	[data-style='loose-passive'],
+	[data-style='tight-passive']
 ) {
 	color: transparent;
 }

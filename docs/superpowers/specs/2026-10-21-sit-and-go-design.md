@@ -14,8 +14,8 @@ Add a casual six-seat, one-table Texas Hold'em **Sit & Go** option against five 
 - Elimination is permanent after the hand ends and all side-pot awards have been assigned. No eliminated seat may be dealt in, post blinds, take a turn, or rebuy. In particular, cash Poker's `dealNewHand()` path that restores a zero-chip human from the account balance must be skipped in SNG even if another terminal-state guard fails.
 - Continue while the human is alive and at least one AI remains. When the human is the **last funded seat**, finish **1st**. If the human busts, stop immediately and show their finish place instead of simulating AI-only hands.
 - Show a simple tournament header: players remaining, current blind level, hand count, next blind increase. After completion, display finish place and **New Tournament** / **Back to Cash Poker**.
-- For a complete event, signed-in users send **one** zero-delta `game: 'poker'` settlement (one aggregate result, not one per hand), built using the **existing `buildPokerSettlementCommand`** helper. Guest play makes no server calls. This leaves a simple, existing settlement seam for HPA-172 to attach its future `sit-and-go-champion` feat; this ticket does **not** grant that achievement.
-- The event result is displayed independently of settlement success. Retry uses the existing pending command/ID; a failed receipt never mutates tournament stacks.
+- **All SNG play is local, even for signed-in users:** no per-hand or terminal wallet settlements, no Poker account-stat updates, no mission progression event, and no rewards in HPA-176. This keeps tournaments from contaminating existing cash-Poker statistics in D1. The future HPA-172 ticket will determine whether/how a distinct tournament result and `sit-and-go-champion` achievement are recorded.
+- Keep existing auto-deal/5-second result hold, but stop queued deals at terminal status. **New Tournament** is an ordinary link back to `/games/poker?mode=sng` (full reload); don't add an in-place reset routine.
 
 ## Existing code / reuse survey (current main)
 
@@ -23,9 +23,10 @@ Add a casual six-seat, one-table Texas Hold'em **Sit & Go** option against five 
 - `src/lib/poker/PokerGame.ts` currently seeds the human from the account/guest bankroll; auto-rebuys AI with `settings.startingChips`; synchronizes each human result through `settleHand()`; rotates blinds naively through every seat. These branches must remain **cash-only** in tournament mode.
 - `src/lib/poker/player.ts` regards non-folded seats as active. Busted seats must be deliberately marked out of each new hand or the current turn, pot, and showdown functions will include them.
 - `src/lib/poker/potCalculator.ts` and `handEvaluator.ts` already handle contested pots, side pots, ties and showdown. Reuse without rewriting poker rules. `PokerUIRenderer.ts`, `poker.css`, and `src/lib/i18n/messages/poker.ts` are existing presentation boundaries.
-- `src/lib/wallet/settle.ts` already accepts a signed-in settlement with `delta: 0` and one positive round stat, and `SettlementGate` supports retry/reset. Reuse `buildPokerSettlementCommand(0, outcome)` in `PokerGame.ts`; do not duplicate the command shape. Both `adoptSettlementResult()` **and** `adoptAccountBalance()` can overwrite `players[0].chips` with the account balance (the latter is wired to at-table mission claims); neither may change tournament chips.
-- `PokerGame.presentHandResult()` persists cash session statistics through `recordHand`/`saveSessionStats`; SNG hands must not write to that shared `poker_session_stats` store. The existing table-mission panel listens for the per-hand `POKER_HAND_SETTLED_EVENT`, but SNG has no per-hand wallet settlement. Suppress that event and don't mount the table-mission panel in SNG.
-- `src/lib/mp-poker/` is private-room multiplayer with Durable Object semantics. Do not couple single-player tournament play to its room/identity/connection protocol or move normal Poker into it.
+- `PokerGame.presentHandResult()` persists cash session statistics through `recordHand`/`saveSessionStats`; tournament hands must skip these writes, the shared `poker_session_stats` display, and per-hand `POKER_HAND_SETTLED_EVENT` emissions.
+- Reuse existing guest-mode/local-play branches rather than adding many SNG-only guards: define `private get playsLocally() { return this.isGuestMode || this.mode === 'sng'; }` for account-balance start gates, per-hand settlement, settlement-gate blocking, per-hand event dispatch, account-balance adoption, and LLM settings/decision/overlay checks. Preserve actual `isGuestMode` for **cash-only** guest bankroll loading, persistence and rebuy (`isGuestMode && mode === 'cash'`). A guest SNG must never alter their saved cash bankroll.
+- Render `#poker-missions` only for `!gameSession.isGuest && !isSng` in `poker.astro`; `initPokerTableMissions` and its `onBalance` handler then aren't wired for SNG. The `adoptAccountBalance()` guard still protects direct callers.
+- `src/lib/mp-poker/` is multiplayer with Durable Object semantics. Do not couple single-player tournament play to its room/identity/connection protocol or move normal Poker into it.
 
 ## Tournament rules
 
@@ -44,54 +45,42 @@ export const SNG_BLINDS = [
 export const SNG_HANDS_PER_LEVEL = 5;
 ```
 
-First hand is level 0. Increment the completed-hand counter **only once at final pot award**; a new level applies on hand numbers 6, 11, 16, 21, then stays at 80/160. Blinds never change mid-hand; use a snapshot for legal minimum bet, posted blinds, and toolbar. No user-configurable stacks/blinds in SNG. Reuse stored AI difficulty/personality, but **force built-in rule-based AI** in SNG (no BYOK requirement/API cost). Existing cash settings remain untouched.
+First hand is level 0. The existing `PokerGame.handNumber` increments once per dealt hand. Derive `level = min(4, floor((handNumber - 1) / 5))`, with levels on hands 1, 6, 11, 16 and 21. No second completed-hand counter. Snapshot posted blinds, minimum bet and UI labels for the duration of that hand. SNG ignores cash stack/blind settings, retains configured AI personalities/difficulties but **forces built-in rule-based AI** with no BYOK cost. Accept the current `MAX_BET` cap.
 
 ### Seats / dealer / action order
 
 - Preserve the six `Player.id` ↔ array-index assumptions in `PokerGame`; do **not** splice eliminated players out of the array.
 - At the start of each hand compute funded seats (`chips > 0`), reset hand fields for all seats, and mark eliminated seats folded and unable to act. Deal cards only to funded seats. A zero-stack seat is not an all-in contender from a previous hand.
-- Move the button to the next funded seat clockwise; determine blinds from **funded** seat order, skipping gaps.
-- **3–6 handed:** next funded seat after button is small blind, next after that big blind, first preflop actor is next funded seat after big blind; postflop starts left of button.
-- **Heads-up:** button posts small blind and acts **first preflop**; other seat posts big blind; big blind acts first postflop. Correct even when surviving indices aren't adjacent.
-- Mark an all-in funded player eligible to win its side pot until showdown. Do not mark it eliminated until **after** final awards. When all surviving players are all-in, run out the board and award pots without waiting for an impossible action.
+- Rotate the button to the next **funded** seat clockwise; for three or more, SB and BB are the next two funded seats. In heads-up, button **is** SB, other seat BB. The same next-funded rotation may replace cash's naive modulo rotation because playable cash seats are restored/rebought before rotating.
+- Reuse `getNextPlayerIndex(players, bigBlindIndex)` for preflop actor order and `getNextPlayerIndex(players, dealerIndex)` postflop. It filters `canPlayerAct`, which is correct for betting turns but **not** for dealer/blind selection; keep funded-seat selection distinct.
+- All-in participants retain side-pot eligibility until final awards. Do not mark them eliminated mid-hand. Busted seats from **previous** hands are folded and receive no new cards.
+- **Shared engine fix:** the current `nextPhase()` calls `getNextPlayerIndex()` even when no one can act, whose fallback selects the dealer (potentially folded/all-in). The human can be stuck with disabled controls, or a folded AI can make phantom bets. After dealing a **new, unbet street**, if `getPlayersWhoCanAct(players).length < 2`, schedule the next street/showdown through existing turn transitions rather than offering an impossible turn. `processAITurn()` must not ask `!canPlayerAct(currentPlayer)` for a decision; reconcile/advance safely. Also handle no legal preflop actor after blinds. **Do not** skip an outstanding preflop decision to call/fold an all-in raise; only shortcut when the betting round is resolved. Test human-dealer and folded-AI-dealer all-in runouts, no phantom bets, correct side-pot awards and no deadlocks. This fixes cash Poker too.
 
 ### Elimination and finish order
 
-At each completed hand, compare pre-hand funded stacks with post-award chips:
+At each completed hand, compare pre-hand funded stacks with awarded stacks. No full finish-order list is required because play stops when the human busts:
 
-1. Find seats that newly reached zero. Add them to finish order once, **after** all award tiers resolve.
-2. If multiple seats bust in that hand, the smaller **start-of-hand** stack finishes lower; equal start stacks share a placing (display `tied Nth`). Player's place can always be calculated from the number of still-funded seats plus simultaneous eliminations ahead of them.
-3. The human's elimination immediately terminates the SNG; a surviving human alone is 1st. Repeated next-hand/timeout/auto-deal callbacks cannot start more hands after termination.
-4. In a tie, never split tournament chips except through existing hand/showdown pot rules. The tournament rank tie is only a final-place display issue.
+1. Find newly busted seats **after** all side-pot awards, not when they become all-in.
+2. The human's place is `fundedSeatsAfterHand + 1 + newlyBustedOpponentsWithLargerStartOfHandStack`. If several busted players started with equal stacks they tie their placing.
+3. Human reaches zero → finish; human is the only funded seat → 1st. A terminal guard blocks queued and manual future deals.
+4. Hand/showdown tie rules determine pot splits; tournament rank ties do not change chips.
 
-A small, pure `src/lib/poker/sitAndGo.ts` owns constants, eligible-seat/dealer/blind selection, level calculation, and final-place derivation. `PokerGame` remains the stateful hand engine and passes hand results into these pure helpers. Do not add a parallel PokerGame subclass, generalized tournament framework, event store, or new D1 schema.
+A small pure `src/lib/poker/sitAndGo.ts` owns constants, next-funded seat/blind selection, level calculation from `handNumber`, and human place. `PokerGame` stays stateful. No duplicate PokerGame subclass, framework, DB state or new schema.
 
-### Wallet and progression boundary
+### Cash wallet, session, and progression isolation
 
-- `settleHand()`, guest bankroll storage, balance adoption, account-balance availability gate, auto-rebuy and pending settings reset remain unchanged in **cash mode**. SNG hand transitions skip all these paths. `adoptAccountBalance()` must return `false` in SNG (including when idle) so mission claims cannot corrupt the local tournament stack. `dealNewHand()` must never restore a busted human from `getEffectiveServerBalance()` in SNG.
-- On terminal SNG state, submit at most one `SettleRoundCommand` for authenticated play, using the existing Poker settlement builder:
-
-```ts
-const command = buildPokerSettlementCommand(
-  0,
-  finishPlace === 1 ? 'win' : 'loss',
-);
-// => game: 'poker', delta: 0, stats: { rounds: 1, wins: 0|1,
-//    losses: 0|1, biggestWin: 0 }
-```
-
-The existing builder omits optional `netProfit`; with `delta: 0`, the wallet repository's fallback net-profit semantics also record zero. Do not create a second command factory or change wallet validation for this ticket.
-
-This deliberately counts **one tournament result as one Poker stats round** (not every tournament hand). The wallet stays unchanged. SNG must not call `recordHand`/`saveSessionStats` for individual hands, so switching back to Cash Poker does not inherit tournament deltas. `POKER_HAND_SETTLED_EVENT` must not fire for SNG hand completions; leave table-mission tokens unmounted/hidden in SNG. Mission progress (including `handsPlayed`) advances once through the terminal settlement, not once per hand. If this aggregate distinction proves confusing, revisit presentation in a later ticket, rather than create a stats subsystem here. The result callback may dispatch earned achievements but must never assign account `balance` to the SNG player's chips. The existing receipt and retry gate provide idempotency *within a single live page*. No promise of resume or recovery after page reload.
-
-HPA-172 later adds an optional allowable `feats` field to this **same terminal command**, with a `sit-and-go-champion` feat when `finishPlace === 1`; HPA-176 must not alter `ACHIEVEMENT_IDS`, `wallet/settle.ts`, or achievement evaluation to anticipate that work.
+- All SNG hands run in `playsLocally` regardless of authentication. Skip `settleHand` account synchronization, settlement gate blocking, wallet-balance availability gating, and the `POKER_HAND_SETTLED_EVENT`. **No terminal zero-delta receipt.** Cash mode keeps existing settlements and recovery semantics unchanged.
+- Keep cash-only guest bankroll reads/writes (including constructor, beforeunload, `persistGuestBankroll` and guest rebuy) behind `isGuestMode && mode === 'cash'`. A signed-in or guest SNG never adopts server balance; `adoptAccountBalance()` returns false in local mode.
+- In `dealNewHand`, skip both wallet-funded busted-human restoration and AI auto-rebuy for SNG. Also ignore pending cash chip resets. On terminal state no further deal may start, even after a delayed timer.
+- Skip SNG `recordHand`, `saveSessionStats`, shared cash localStorage and table-mission token updates. There are zero SNG wallet calls and no SNG changes to missions or D1 Poker aggregate statistics.
+- HPA-172 owns the future achievement and any distinct account-side result event. That ticket must review the stats/missions distinction rather than silently reusing existing cash `handsPlayed` and `winRate` aggregates.
 
 ## UI / interaction
 
 - `/games/poker` stays cash by default; use a plain mode link `?mode=sng`, plus a reverse link to cash. Mode selection is URL-based; don't switch modes mid-hand.
-- SNG header and seat badges explicitly use *tournament chips*, not account bankroll. Disable/hide cash session-net, rebuy, **table-mission panel and initialization**, account-pending round controls and stack/blind settings in this mode (except terminal receipt retry if it fails). Do not re-render or persist cash session stats as SNG hands finish.
-- `Deal New Hand` remains manual; disable cash auto-deal in SNG to ensure players see eliminations and changed blinds. Terminal action becomes `New Tournament` (recreate state) instead of dealing into a finished event.
-- Add strings for English and Traditional Chinese via existing `pokerTranslator`; render card/seat UI through existing `PokerUIRenderer`, not ad-hoc duplicated templates. Use text/emoji/existing art only.
+- SNG header and seat badges explicitly use *tournament chips*; hide cash session-net, rebuy, table-mission panel and initialization, account-pending round controls, cash stack/blind settings and LLM option.
+- Keep existing auto-deal preference, turn timer and 5-second hand-result hold. Terminal state prevents further deals (manual or auto). **New Tournament** is a plain `<a href="/games/poker?mode=sng">` link; **Cash Poker** links to `/games/poker` rather than in-place state resets.
+- Add strings for English and Traditional Chinese via existing `pokerTranslator`; render cards/seats through existing `PokerUIRenderer`. Use existing art only.
 
 ## Not included
 
@@ -99,14 +88,11 @@ Server authority, anti-cheat, tournament save/load, buy-in/prize economy, new ga
 
 ## Acceptance criteria
 
-- [ ] Cash poker tests and wallet/guest flows behave exactly as before.
-- [ ] Both guests and signed-in users can start and finish SNG at zero account cost, with fixed six seats and no rebuy.
-- [ ] Eliminated seats cannot act/deal/blind; correct dealer, SB/BB and turn order with nonadjacent survivors and heads-up.
-- [ ] Blind escalation happens at the defined completed-hand boundaries, never during a hand.
-- [ ] Existing fold-out/showdown/side-pot/tie rules still hold and total tournament stacks remain 3,000 after every completed hand.
-- [ ] Human bust immediately produces the correct finishing place; winning produces 1st; no extra deal/duplicate receipt after termination.
-- [ ] One zero-delta terminal settlement created by `buildPokerSettlementCommand` for signed-in play (including Retry with same ID); guests never hit wallet endpoints.
-- [ ] SNG never adopts an account balance into local stacks (neither terminal receipt nor mission claim); a busted human cannot be restored from a positive account balance.
-- [ ] SNG hands never write shared cash session stats, mount per-hand table missions, or emit per-hand settled events; cash mode preserves all three behaviors.
-- [ ] Tournament UI names the mode/remaining players/blinds/place and uses localized strings; no new assets.
-- [ ] Pure state and PokerGame integration unit tests plus a representative Playwright scenario; existing test/lint/build gates pass.
+- [ ] Cash Poker tests, guest bankroll, account settlement and session-stat/missions flows behave as before, except the shared all-in runout fix.
+- [ ] Both guest and signed-in users start six 500-chip stacks independent of account balance, with no wallet calls or guest bankroll changes; busted human cannot be revived from positive wallet balance.
+- [ ] Correct funded-seat dealer/SB/BB rotation and turn order with nonadjacent survivors and heads-up; eliminated seats never deal, blind, or act.
+- [ ] Blind levels increase at hand 1/6/11/16/21, never within a hand.
+- [ ] All-in board runout never stalls or lets folded/all-in AI act; preflop outstanding call/fold rights remain intact. Existing side pots and ties resolve correctly.
+- [ ] A seeded simulated tournament terminates with correct placement, conserves all 3,000 chips after every hand, catches dead/stalled turns and illegal folded-seat bets, and produces no wallet calls, settled-hand events, or cash session-stat writes.
+- [ ] Human bust immediately yields correct finish place and blocks next hand; winner is 1st. New Tournament reloads without stale state.
+- [ ] Localized tournament UI and representative browser smoke test; focused regressions and existing test/lint/build gates pass. No new assets or schema.

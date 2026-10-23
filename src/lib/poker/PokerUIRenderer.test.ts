@@ -1050,3 +1050,103 @@ describe('Poker six-max presentation', () => {
 		expect(fifth.getAttribute?.('data-card-suit')).toBeNull();
 	});
 });
+
+describe('PokerUIRenderer Sit & Go tournament UI', () => {
+	function sngDocument() {
+		const elements = mockDocument();
+		elements['poker-root'] = createMockElement();
+		(elements['poker-root'].dataset as Record<string, string>) = { pokerMode: 'sng' };
+		return elements;
+	}
+
+	test('renders hands, level, next blind change, players, and hidden place at hand 7', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+
+		renderer.renderTournament({ handNumber: 7, fundedSeats: 4, place: null });
+
+		expect(elements['tournament-hands'].textContent).toBe('7');
+		expect(elements['tournament-level'].textContent).toBe('2 / 5');
+		expect(elements['tournament-next'].textContent).toBe('20 / 40 · 4 to go');
+		expect(elements['tournament-players'].textContent).toBe('4');
+		expect(elements['tournament-place-row'].hidden as boolean).toBe(true);
+	});
+
+	test('shows placeholders before the first hand', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+
+		renderer.renderTournament({ handNumber: 0, fundedSeats: 6, place: null });
+
+		expect(elements['tournament-level'].textContent).toBe('—');
+		expect(elements['tournament-next'].textContent).toBe('—');
+	});
+
+	test('names the final level once the ladder caps', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+
+		renderer.renderTournament({ handNumber: 22, fundedSeats: 2, place: null });
+
+		expect(elements['tournament-level'].textContent).toBe('5 / 5');
+		expect(elements['tournament-next'].textContent).toBe('Final level');
+	});
+
+	test('reveals the finish place in the header once the tournament ends', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+
+		renderer.renderTournament({ handNumber: 14, fundedSeats: 2, place: 3 });
+
+		expect(elements['tournament-place-row'].hidden as boolean).toBe(false);
+		expect(elements['tournament-place'].textContent).toBe('3rd');
+	});
+
+	test('fills the terminal panel with the localized place and shows it', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+
+		renderer.showTournamentTerminal(5);
+
+		expect(elements['poker-terminal'].hidden as boolean).toBe(false);
+		expect(elements['poker-terminal-place'].textContent).toBe('You finished 5th');
+	});
+
+	test('marks settled zero-chip seats eliminated but not live all-ins', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[2].chips = 0;
+		players[3].chips = 0;
+		players[3].isAllIn = true;
+
+		renderer.updateTableState(players, 0, 1, false);
+
+		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
+		expect(elements['opponent2-action'].textContent).toBe('ELIMINATED');
+		expect(elements['opponent2-action'].dataset?.action).toBe('out');
+		// A settled all-in that lost everything is out too.
+		expect(elements['poker-seat-3'].dataset?.eliminated).toBe('true');
+		expect(elements['opponent3-action'].textContent).toBe('ELIMINATED');
+
+		// Mid-hand, a zero-chip all-in is still alive and can win it back.
+		renderer.updateTableState(players, 0, 1, true);
+
+		expect(elements['poker-seat-3'].dataset?.eliminated).toBe('false');
+		expect(elements['opponent3-action'].textContent).toBe('All in');
+	});
+
+	test('cash seats never show an eliminated state', () => {
+		const elements = mockDocument();
+		const renderer = new PokerUIRenderer();
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[2].chips = 0;
+
+		renderer.updateTableState(players, 0, 1, false);
+
+		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
+		expect(elements['opponent2-action'].textContent).toBe('—');
+	});
+});

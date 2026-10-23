@@ -54,6 +54,7 @@ import {
 	humanPlace,
 	levelFor,
 	nextFundedSeats,
+	placeLabel,
 	type PokerMode,
 } from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
@@ -110,11 +111,7 @@ type AIDifficultySetting = GameSettings['aiDifficulty1'];
 export const AUTO_DEAL_DELAY_MS = 5000;
 export const AUTO_DEAL_STORAGE_KEY = 'poker_auto_deal';
 
-/** English ordinal suffix for a six-seat finish (1st–6th). */
-function ordinalSuffix(place: number): string {
-	return ['th', 'st', 'nd', 'rd'][place] ?? 'th';
-}
-
+/** Action sound effect played for each seat action. */
 const ACTION_SFX: Record<RecapAction, PokerSfx> = {
 	fold: 'fold',
 	check: 'check',
@@ -182,9 +179,8 @@ export class PokerGame {
 	private turnTransitionToken = 0;
 	private isGuestMode = false;
 	private mode: PokerMode = 'cash';
-	// Human's finish place once the Sit & Go ends; null while it runs. Task
-	// 5's terminal panel reads tournamentPlace and replaces the plain status
-	// line shown at the end.
+	// Human's finish place once the Sit & Go ends; null while it runs. The
+	// localized terminal status and panel render from this at tournament end.
 	private finishedPlace: number | null = null;
 	private clientUserId = '';
 	private readonly locale: Locale;
@@ -633,8 +629,9 @@ export class PokerGame {
 							.map((player) => this.handStartStacks.get(player.id) ?? 0),
 					);
 		this.finishedPlace = place;
-		// Plain placeholder line; task 5 replaces it with a localized terminal panel.
-		this.updateGameStatus(`You finished ${place}${ordinalSuffix(place)}`);
+		// Localized terminal status; the renderer shows the plain-link panel.
+		this.updateGameStatus(this.t('tournamentFinished', { place: placeLabel(this.locale, place) }));
+		this.ui.showTournamentTerminal(place);
 	}
 
 	/** Celebrate when a new street improves the human to two pair or better. */
@@ -2123,6 +2120,13 @@ export class PokerGame {
 		const blinds = document.getElementById('table-blinds');
 		if (blinds)
 			blinds.textContent = `${formatWholeNumber(this.handSmallBlind, this.locale)} / ${formatWholeNumber(this.handBigBlind, this.locale)}`;
+		if (this.mode === 'sng') {
+			this.ui.renderTournament({
+				handNumber: this.handNumber,
+				fundedSeats: this.players.filter((player) => player.chips > 0).length,
+				place: this.finishedPlace,
+			});
+		}
 		this.setRaiseAmount(reset ? this.handBigBlind * 2 : Number(slider?.value ?? min));
 	}
 }

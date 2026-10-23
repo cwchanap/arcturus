@@ -9,6 +9,7 @@ import { formatChips, getBalanceLabel } from '../../lib/i18n/messages/common';
 import { getGameName } from '../../lib/i18n/messages/games';
 import { getPokerHandName, pokerTranslator } from '../../lib/i18n/messages/poker';
 import { MAX_BET, MIN_BET, NUM_PLAYERS, HAND_RANKINGS } from '../../lib/poker/constants';
+import { SNG_START_STACK } from '../../lib/poker/sitAndGo';
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
@@ -53,12 +54,68 @@ const clientUserId = gameSession.clientUserId;
 					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
 				</div>
 				<div class="poker-tools">
-					<dl id="poker-session" class="poker-session">
-						<div><dt>{t('sessionHands')}</dt><dd id="session-hands">0</dd></div>
-						<div><dt>{t('sessionNet')}</dt><dd id="session-net" data-tone="neutral">±0</dd></div>
-						<div><dt>{t('sessionBest')}</dt><dd id="session-best">—</dd></div>
-					</dl>
-					<span id="session-streak" class="poker-session-streak" hidden></span>
+					{
+						isSng ? (
+							<dl id="poker-tournament" class="poker-session" data-testid="poker-tournament">
+								<div>
+									<>
+										<dt>{t('sessionHands')}</dt>
+										<dd id="tournament-hands">0</dd>
+									</>
+								</div>
+								<div>
+									<>
+										<dt>{t('tournamentLevel')}</dt>
+										<dd id="tournament-level">—</dd>
+									</>
+								</div>
+								<div>
+									<>
+										<dt>{t('tournamentNextLevel')}</dt>
+										<dd id="tournament-next">—</dd>
+									</>
+								</div>
+								<div>
+									<>
+										<dt>{t('tournamentPlayers')}</dt>
+										<dd id="tournament-players">{formatWholeNumber(NUM_PLAYERS, locale)}</dd>
+									</>
+								</div>
+								<div id="tournament-place-row" hidden>
+									<>
+										<dt>{t('tournamentFinish')}</dt>
+										<dd id="tournament-place" />
+									</>
+								</div>
+							</dl>
+						) : (
+							<>
+								<dl id="poker-session" class="poker-session">
+									<div>
+										<>
+											<dt>{t('sessionHands')}</dt>
+											<dd id="session-hands">0</dd>
+										</>
+									</div>
+									<div>
+										<>
+											<dt>{t('sessionNet')}</dt>
+											<dd id="session-net" data-tone="neutral">
+												±0
+											</dd>
+										</>
+									</div>
+									<div>
+										<>
+											<dt>{t('sessionBest')}</dt>
+											<dd id="session-best">—</dd>
+										</>
+									</div>
+								</dl>
+								<span id="session-streak" class="poker-session-streak" hidden />
+							</>
+						)
+					}
 					<div class="poker-blinds">
 						<span>{t('blinds')}</span><strong id="table-blinds">5 / 10</strong>
 					</div>
@@ -219,6 +276,18 @@ const clientUserId = gameSession.clientUserId;
 					<div id="game-status" class="poker-status" role="status" aria-live="polite">
 						{t('startHint', { deal: t('dealNewHand') })}
 					</div>
+					{
+						isSng && (
+							<div id="poker-terminal" class="poker-terminal" data-testid="poker-terminal" hidden>
+								<strong class="poker-terminal-title">{t('tournamentCompleteTitle')}</strong>
+								<p id="poker-terminal-place" class="poker-terminal-place" />
+								<nav class="poker-terminal-links">
+									<a href="/games/poker?mode=sng">{t('tournamentNew')}</a>
+									<a href="/games/poker">{t('tournamentCashPoker')}</a>
+								</nav>
+							</div>
+						)
+					}
 				</div>
 			</div>
 			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
@@ -238,14 +307,16 @@ const clientUserId = gameSession.clientUserId;
 				}
 				<span id="seat-delta-0" class="poker-seat-delta" hidden aria-hidden="true"></span>
 				<div class="poker-bankroll">
-					<span class="poker-small-label">{getBalanceLabel(locale, gameSession.isGuest)}</span
+					<span class="poker-small-label"
+						>{isSng ? t('tournamentChips') : getBalanceLabel(locale, gameSession.isGuest)}</span
 					><strong
 						id="player-balance"
 						data-testid="player-balance"
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={gameSession.balanceAvailableValue}
 						data-guest-mode={gameSession.guestModeValue}
-						data-user-id={clientUserId}>{initialBalanceLabel}</strong
+						data-user-id={clientUserId}
+						>{isSng ? formatChips(SNG_START_STACK, locale) : initialBalanceLabel}</strong
 					><span class="poker-your-bet"
 						>{t('yourBet')} <span id="current-bet">{formatChips(0, locale)}</span></span
 					>
@@ -315,9 +386,13 @@ const clientUserId = gameSession.clientUserId;
 					<label id="auto-deal-label" class="poker-auto-deal"
 						><input type="checkbox" id="auto-deal-toggle" /><span>{t('autoDeal')}</span></label
 					>
-					<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden
-						>{t('rebuyChips')}</button
-					>
+					{
+						!isSng && (
+							<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden>
+								{t('rebuyChips')}
+							</button>
+						)
+					}
 				</div>
 				<div class="poker-bet-picker">
 					{
@@ -457,8 +532,8 @@ const clientUserId = gameSession.clientUserId;
 				>
 			</header><div class="poker-drawer-body">
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<!-- Starting Chips -->
-					<div>
+					<!-- Starting Chips (cash only; tournament stacks are fixed) -->
+					<div hidden={isSng}>
 						<label for="setting-starting-chips" class="block text-xs text-[var(--deco-muted)] mb-1"
 							>{t('startingChips')}</label
 						>
@@ -472,8 +547,8 @@ const clientUserId = gameSession.clientUserId;
 						/>
 					</div>
 
-					<!-- Small Blind -->
-					<div>
+					<!-- Small Blind (cash only) -->
+					<div hidden={isSng}>
 						<label for="setting-small-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
 							>{t('smallBlind')}</label
 						>
@@ -487,8 +562,8 @@ const clientUserId = gameSession.clientUserId;
 						/>
 					</div>
 
-					<!-- Big Blind -->
-					<div>
+					<!-- Big Blind (cash only) -->
+					<div hidden={isSng}>
 						<label for="setting-big-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
 							>{t('bigBlind')}</label
 						>
@@ -582,8 +657,11 @@ const clientUserId = gameSession.clientUserId;
 					</div>
 				</div>
 
-				<!-- LLM AI Toggle -->
-				<div class="p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]">
+				<!-- LLM AI Toggle (cash only; tournament rivals are always the built-in AI) -->
+				<div
+					hidden={isSng}
+					class="p-4 bg-[var(--deco-obsidian-2)] rounded-lg border border-[var(--deco-line)]"
+				>
 					<div class="flex items-center gap-3">
 						<input
 							type="checkbox"

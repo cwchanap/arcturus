@@ -1660,7 +1660,8 @@
 	}
 }
 @media (max-width: 900px) {
-	.poker-session div:nth-child(3) {
+	/* Cash drops its third tally column; the tournament header keeps all five. */
+	#poker-session div:nth-child(3) {
 		display: none;
 	}
 	.poker-human .poker-seat-delta {
@@ -1676,7 +1677,7 @@
 		gap: 8px;
 		padding: 4px 8px;
 	}
-	.poker-session div:first-child,
+	#poker-session div:first-child,
 	.poker-session-streak {
 		display: none;
 	}
@@ -1979,4 +1980,58 @@
 	.poker-turn-timer[data-warn='true'] {
 		animation: none;
 	}
+}
+
+/* ── Sit & Go tournament ───────────────────────────────────────── */
+.poker-terminal {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	margin: 12px auto 0;
+	padding: 14px 26px;
+	border: 1px solid var(--poker-gold);
+	background: linear-gradient(#182220f2, #070b09f2);
+	text-align: center;
+}
+.poker-terminal[hidden] {
+	display: none;
+}
+.poker-terminal-title {
+	font-size: 11px;
+	letter-spacing: 0.22em;
+	text-transform: uppercase;
+	color: var(--poker-gold);
+}
+.poker-terminal-place {
+	margin: 0;
+	font-size: 18px;
+	font-variant-numeric: tabular-nums;
+	color: #f4efe6;
+}
+.poker-terminal-links {
+	display: flex;
+	gap: 12px;
+}
+.poker-terminal-links a {
+	padding: 8px 16px;
+	border: 1px solid var(--poker-gold);
+	color: var(--poker-gold);
+	font-size: 11px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	text-decoration: none;
+	transition: background 0.15s ease;
+}
+.poker-terminal-links a:hover {
+	background: #e4c98822;
+}
+.poker-seat[data-eliminated='true'] .poker-portrait,
+.poker-seat[data-eliminated='true'] .poker-seat-hand {
+	filter: grayscale(1);
+	opacity: 0.45;
+}
+.poker-seat-action[data-action='out'] {
+	color: #e7a6a0;
+	border-color: #e7a6a055;
 }

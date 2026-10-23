@@ -17,6 +17,8 @@ import {
 	dealCardsToPlayer,
 	awardChips,
 	getActivePlayers,
+	getPlayersWhoCanAct,
+	canPlayerAct,
 	getNextPlayerIndex,
 	isBettingRoundComplete,
 	getHighestBet,
@@ -1041,8 +1043,10 @@ export class PokerGame {
 		this.handSmallBlind = settings.smallBlind;
 		this.handBigBlind = settings.bigBlind;
 
-		// Start with player after big blind
-		this.currentPlayerIndex = (this.bigBlindIndex + 1) % this.players.length;
+		// Start with the first seat after the big blind that can still act; if
+		// the blinds already resolved the round (every seat all-in) run the
+		// board out on timers instead of handing anyone a turn.
+		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.bigBlindIndex);
 
 		// Render UI
 		this.ui.hideOpponentHands(); // Hide opponent cards for new hand
@@ -1053,7 +1057,9 @@ export class PokerGame {
 		this.aiRival.highlightSuggestedMove(null);
 		this.hideRebuyButton();
 
-		if (this.currentPlayerIndex === 0) {
+		if (isBettingRoundComplete(this.players)) {
+			this.scheduleTurnTransition(1000, () => this.nextPhase());
+		} else if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus(
 				this.t('statusYourTurnFull', {
 					check: this.t('check'),
@@ -1088,6 +1094,13 @@ export class PokerGame {
 
 		const currentPlayer = this.players[this.currentPlayerIndex];
 		if (!currentPlayer || !currentPlayer.isAI) return;
+
+		// A folded or all-in seat is never asked for a decision; reconcile and
+		// advance so a dead seat can never place phantom bets.
+		if (!canPlayerAct(currentPlayer)) {
+			this.advanceTurn();
+			return;
+		}
 
 		// Get AI config
 		const aiConfig = this.aiConfigs.get(currentPlayer.id);
@@ -1534,14 +1547,22 @@ export class PokerGame {
 		this.minimumBet = this.handBigBlind;
 		this.lastRaiseAmount = this.minimumBet;
 
-		// Start new betting round from dealer
-		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.dealerIndex);
-
 		this.ui.renderCommunityCards(this.communityCards);
 		this.ui.renderPlayerCards(this.players[0], this.communityCards);
 		this.ui.updateUI(this.pot, this.players[0]);
 		this.sound.play('flip');
 		this.announceImprovement();
+
+		// All-in runout: with fewer than two seats able to bet nobody gets a
+		// turn (a lone actor cannot bet into an all-in), so the board runs out
+		// on timers to the showdown.
+		if (getPlayersWhoCanAct(this.players).length < 2) {
+			this.scheduleTurnTransition(1000, () => this.nextPhase());
+			return;
+		}
+
+		// Start new betting round from dealer
+		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.dealerIndex);
 
 		if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus(this.t('statusYourTurn'));

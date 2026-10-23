@@ -254,6 +254,8 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentCompleteTitle: 'Tournament complete',
 		tournamentNew: 'New Tournament',
 		tournamentCashPoker: 'Cash Poker',
+		tournamentSitGo: 'Sit & Go',
+		tournamentRefreshNotice: 'Tournament chips only — refreshing the page restarts the tournament',
 		eliminatedBadge: 'ELIMINATED',
 	},
 	'zh-Hant': {
@@ -493,6 +495,8 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentCompleteTitle: '錦標賽結束',
 		tournamentNew: '新錦標賽',
 		tournamentCashPoker: '現金撲克',
+		tournamentSitGo: 'Sit & Go 錦標賽',
+		tournamentRefreshNotice: '僅限錦標賽籌碼 — 重新整理頁面會重新開始錦標賽',
 		eliminatedBadge: '已淘汰',
 	},
 	'zh-Hans': {
@@ -732,6 +736,8 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentCompleteTitle: '锦标赛结束',
 		tournamentNew: '新锦标赛',
 		tournamentCashPoker: '现金扑克',
+		tournamentSitGo: 'Sit & Go 锦标赛',
+		tournamentRefreshNotice: '仅为锦标赛筹码 — 刷新页面会重新开始锦标赛',
 		eliminatedBadge: '已淘汰',
 	},
 	ja: {
@@ -977,6 +983,9 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentCompleteTitle: 'トーナメント終了',
 		tournamentNew: '新しいトーナメント',
 		tournamentCashPoker: 'キャッシュポーカー',
+		tournamentSitGo: 'Sit & Go トーナメント',
+		tournamentRefreshNotice:
+			'トーナメントチップ限定 — ページを更新するとトーナメントは最初からやり直しになります',
 		eliminatedBadge: '脱落',
 	},
 });

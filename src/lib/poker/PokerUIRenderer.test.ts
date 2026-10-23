@@ -1177,8 +1177,5 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
 		expect(elements['opponent2-action'].textContent).toBe('—');
-
-		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
-		expect(elements['opponent2-action'].textContent).toBe('—');
 	});
 });

@@ -2123,9 +2123,14 @@ export class PokerGame {
 		if (blinds)
 			blinds.textContent = `${formatWholeNumber(this.handSmallBlind, this.locale)} / ${formatWholeNumber(this.handBigBlind, this.locale)}`;
 		if (this.mode === 'sng') {
+			// Funded seats come from hand-start stacks during a hand, so a live
+			// all-in at 0 chips doesn't flicker the count down (same discriminator
+			// as the eliminated badge); live chips apply before any hand is dealt.
 			this.ui.renderTournament({
 				handNumber: this.handNumber,
-				fundedSeats: this.players.filter((player) => player.chips > 0).length,
+				fundedSeats: this.players.filter((player) =>
+					this.handInProgress ? (this.handStartStacks.get(player.id) ?? 0) > 0 : player.chips > 0,
+				).length,
 				place: this.finishedPlace,
 			});
 		}

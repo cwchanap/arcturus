@@ -12,6 +12,8 @@ import { MAX_BET, MIN_BET, NUM_PLAYERS, HAND_RANKINGS } from '../../lib/poker/co
 
 const user = Astro.locals.user;
 const gameSession = createPublicGameSession(user);
+// Mode is a literal URL parameter; anything other than 'sng' stays cash.
+const isSng = Astro.url.searchParams.get('mode') === 'sng';
 const initialBalance = gameSession.initialBalance;
 const hasInitialBalance = gameSession.balanceAvailableValue === 'true';
 const locale = Astro.locals.locale;
@@ -28,7 +30,12 @@ const clientUserId = gameSession.clientUserId;
 ---
 
 <CasinoLayout title={t('pageTitle', { game: getGameName(locale, 'poker') })} footerClass="hidden">
-	<div id="poker-root" class="poker-room" data-guest-mode={gameSession.guestModeValue}>
+	<div
+		id="poker-root"
+		class="poker-room"
+		data-guest-mode={gameSession.guestModeValue}
+		data-poker-mode={isSng ? 'sng' : 'cash'}
+	>
 		<div class="poker-frame">
 			<header class="poker-toolbar">
 				<a href="/#games" class="poker-utility poker-back"
@@ -216,7 +223,7 @@ const clientUserId = gameSession.clientUserId;
 			</div>
 			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
 				{
-					!gameSession.isGuest && (
+					!gameSession.isGuest && !isSng && (
 						<div
 							id="poker-missions"
 							class="poker-missions"

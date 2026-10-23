@@ -13,6 +13,7 @@ import {
 	foldPlayer,
 } from './index';
 import { AUTO_DEAL_DELAY_MS, PokerGame, buildPokerSettlementCommand } from './PokerGame';
+import { SNG_START_STACK } from './sitAndGo';
 import { clearLLMCache } from './llmAIStrategy';
 import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
@@ -3314,6 +3315,243 @@ describe('Poker table sound, turn timer and hand recap', () => {
 			expect(elements['btn-recap'].hidden).toBe(false);
 		} finally {
 			timers.restore();
+		}
+	});
+});
+
+describe('PokerGame Sit & Go mode (HPA-176)', () => {
+	type SngGame = {
+		players: Player[];
+		serverSyncedBalance: number;
+		humanChipsBefore: number;
+		handNumber: number;
+		settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+		finishHand: () => void;
+		adoptAccountBalance: (balance: number) => boolean;
+		getLLMSettings: () => Promise<unknown>;
+		processAITurn: () => Promise<void>;
+		dealNewHand: () => Promise<void>;
+	};
+
+	interface SngDomOptions {
+		guest: boolean;
+		/** Value for data-poker-mode; omit to leave the attribute unset. */
+		mode?: string;
+		/** Rendered account balance; omit for an unavailable balance. */
+		balance?: string;
+	}
+
+	function mockModeDom({ guest, mode, balance }: SngDomOptions) {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: mode ? { guestMode: String(guest), pokerMode: mode } : { guestMode: String(guest) },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: balance ?? '',
+				balanceAvailable: balance === undefined ? 'false' : 'true',
+				guestMode: String(guest),
+				userId: guest ? 'anonymous' : 'u_sng',
+			},
+			innerHTML: '',
+			textContent: balance === undefined ? 'Unavailable' : `$${balance}`,
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		return elements;
+	}
+
+	function memoryStorage(seed: Record<string, string> = {}) {
+		const storage = { ...seed };
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: (key: string, value: string) => {
+				storage[key] = value;
+			},
+			removeItem: (key: string) => {
+				delete storage[key];
+			},
+			clear: () => {
+				for (const key of Object.keys(storage)) delete storage[key];
+			},
+			key: () => null,
+			length: 0,
+		};
+		return storage;
+	}
+
+	function recordFetch() {
+		const calls: string[] = [];
+		const original = globalThis.fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				calls.push(url);
+				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			},
+		) as unknown as typeof fetch;
+		return { calls, restore: () => (globalThis.fetch = original) };
+	}
+
+	function recordWindowEvents() {
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const original = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof win.dispatchEvent;
+		return { dispatched, restore: () => (win.dispatchEvent = original) };
+	}
+
+	function recordingGate() {
+		const settlements: unknown[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			settle: async (command) => {
+				settlements.push(command);
+				return { balance: 500, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+		return { settlements, gate };
+	}
+
+	beforeEach(() => {
+		mockPokerGameDOM();
+		memoryStorage();
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => {
+			return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+		}) as unknown as typeof fetch;
+	});
+
+	test('SNG starts six fixed 500-chip stacks and adopts no account balance', () => {
+		mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+
+		const game = new PokerGame() as unknown as SngGame;
+
+		expect(game.players).toHaveLength(6);
+		for (const player of game.players) {
+			expect(player.chips).toBe(SNG_START_STACK);
+		}
+		// The nonzero account balance is never adopted as the tournament stack.
+		expect(game.serverSyncedBalance).toBe(SNG_START_STACK);
+		expect(game.adoptAccountBalance(9999)).toBe(false);
+		expect(game.players[0].chips).toBe(SNG_START_STACK);
+	});
+
+	test('SNG stays playable with an unavailable balance and makes zero wallet calls', async () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng' });
+		const fetchRecorder = recordFetch();
+		const events = recordWindowEvents();
+		const { settlements, gate } = recordingGate();
+
+		try {
+			const game = new PokerGame(undefined, gate) as unknown as SngGame;
+
+			expect(elements['btn-deal']?.disabled).toBe(false);
+			for (const player of game.players) {
+				expect(player.chips).toBe(SNG_START_STACK);
+			}
+
+			// A finished tournament hand settles nothing and tells the table nothing.
+			game.humanChipsBefore = SNG_START_STACK;
+			game.players[0] = { ...game.players[0], chips: 700 };
+			game.settleHand('win');
+			game.finishHand();
+			await flushAsyncWork();
+
+			expect(settlements).toHaveLength(0);
+			expect(fetchRecorder.calls).toEqual([]);
+			expect(events.dispatched).not.toContain('poker-hand-settled');
+			expect(game.humanChipsBefore).toBe(0);
+		} finally {
+			fetchRecorder.restore();
+			events.restore();
+		}
+	});
+
+	test('SNG dealNewHand plays a local hand with no wallet or account activity', async () => {
+		mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		const fetchRecorder = recordFetch();
+		const { settlements, gate } = recordingGate();
+
+		try {
+			const game = new PokerGame(undefined, gate) as unknown as SngGame;
+			game.processAITurn = async () => {};
+
+			await game.dealNewHand();
+
+			expect(game.handNumber).toBe(1);
+			expect(game.humanChipsBefore).toBe(SNG_START_STACK);
+			expect(settlements).toHaveLength(0);
+			expect(fetchRecorder.calls).toEqual([]);
+		} finally {
+			fetchRecorder.restore();
+		}
+	});
+
+	test('guest SNG never touches the persisted cash bankroll, cash still restores it', () => {
+		const storage = memoryStorage({ 'poker-bankroll:anonymous': '725' });
+		const elements = mockModeDom({ guest: true, mode: 'sng', balance: '1000' });
+
+		const game = new PokerGame() as unknown as SngGame;
+
+		for (const player of game.players) {
+			expect(player.chips).toBe(SNG_START_STACK);
+		}
+		// The saved cash bankroll is neither read into the tournament stack...
+		expect(storage['poker-bankroll:anonymous']).toBe('725');
+		expect(elements['player-balance']?.textContent).toBe('$1000');
+
+		// ...nor rewritten by settlement, unload, or a bust-and-deal.
+		game.settleHand('loss');
+		windowListeners.beforeunload?.();
+		expect(storage['poker-bankroll:anonymous']).toBe('725');
+
+		// The same saved bankroll still backs an ordinary cash game.
+		mockModeDom({ guest: true, balance: '1000' });
+		memoryStorage({ 'poker-bankroll:anonymous': '725' });
+		const cashGame = new PokerGame() as unknown as SngGame;
+		expect(cashGame.players[0].chips).toBe(725);
+	});
+
+	test('absent or unknown mode values default to cash', () => {
+		mockModeDom({ guest: false, mode: 'tournament', balance: '40' });
+		const bogus = new PokerGame() as unknown as SngGame;
+		expect(bogus.players[0].chips).toBe(40);
+
+		mockModeDom({ guest: false, balance: '40' });
+		const absent = new PokerGame() as unknown as SngGame;
+		expect(absent.players[0].chips).toBe(40);
+	});
+
+	test('SNG forces rule-based AI: LLM settings are unavailable without fetching', async () => {
+		mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		memoryStorage({
+			'arcturus-ai-settings': JSON.stringify({
+				provider: 'openai',
+				model: 'gpt-4o',
+				apiKey: 'sk-local',
+			}),
+		});
+		const fetchRecorder = recordFetch();
+
+		try {
+			const game = new PokerGame() as unknown as SngGame;
+			expect(await game.getLLMSettings()).toBeNull();
+			expect(fetchRecorder.calls).toEqual([]);
+		} finally {
+			fetchRecorder.restore();
 		}
 	});
 });

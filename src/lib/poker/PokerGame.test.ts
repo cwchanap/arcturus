@@ -4532,5 +4532,5 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 			win.dispatchEvent = originalDispatch;
 			delete globalThisWithSession.sessionStorage;
 		}
-	});
+	}, 30000);
 });

@@ -95,7 +95,7 @@ export class PokerUIRenderer {
 	// Sit & Go seats show an eliminated state once their chips are gone;
 	// cash seats never do (a busted guest awaits a rebuy instead).
 	private readonly isTournament: boolean;
-	private seatLabels = new Map<number, SeatLabel>();
+	private readonly seatLabels = new Map<number, SeatLabel>();
 	private currentHandLog: HTMLElement | null = null;
 
 	constructor() {

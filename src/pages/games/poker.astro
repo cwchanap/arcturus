@@ -52,6 +52,13 @@ const clientUserId = gameSession.clientUserId;
 					/><h1>
 						{getGameName(locale, 'poker')}
 					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
+					{
+						!isSng && (
+							<a class="poker-format" href="/games/poker?mode=sng">
+								{t('tournamentSitGo')}
+							</a>
+						)
+					}
 				</div>
 				<div class="poker-tools">
 					{
@@ -194,6 +201,7 @@ const clientUserId = gameSession.clientUserId;
 					>
 				</div>
 			</header>
+			{isSng && <p class="poker-sng-notice">{t('tournamentRefreshNotice')}</p>}
 			<div class="poker-table" aria-label={getGameName(locale, 'poker')}>
 				{
 					Array.from({ length: NUM_PLAYERS - 1 }, (_, i) => i + 1).map((id) => (

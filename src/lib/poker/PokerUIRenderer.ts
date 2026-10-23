@@ -719,16 +719,20 @@ export class PokerUIRenderer {
 		dealerIndex: number,
 		currentPlayerIndex: number,
 		active: boolean,
+		handStartStacks: ReadonlyMap<number, number>,
 	) {
 		for (const player of players) {
 			const seat = document.getElementById(`poker-seat-${player.id}`);
 			if (!seat) continue;
 			const isTurn =
 				active && player.id === currentPlayerIndex && !player.folded && !player.isAllIn;
-			// A seat with no chips is out of the tournament for good — but only
-			// once the hand has settled: a mid-hand all-in at zero chips can
-			// still win everything back.
-			const eliminated = this.isTournament && !active && player.chips === 0;
+			// A seat that was not dealt into the current hand is out of the
+			// tournament for good, so its eliminated state holds through every
+			// later betting round; a seat dealt into this hand only shows
+			// eliminated once the hand settles — a mid-hand all-in at zero
+			// chips can still win everything back.
+			const dealtIn = (handStartStacks.get(player.id) ?? 0) > 0;
+			const eliminated = this.isTournament && player.chips === 0 && (!dealtIn || !active);
 			seat.dataset.turn = String(isTurn);
 			seat.dataset.folded = String(player.folded);
 			seat.dataset.eliminated = String(eliminated);
@@ -741,12 +745,14 @@ export class PokerUIRenderer {
 			if (action) {
 				const label = this.seatLabels.get(player.id);
 				const pinned = label?.kind === 'hand' || label?.kind === 'winner';
-				const [text, kind] = player.folded
-					? [this.t('foldedBadge'), 'fold']
-					: pinned && label
-						? [label.text, label.kind]
-						: eliminated
-							? [this.t('eliminatedBadge'), 'out']
+				// An eliminated seat is out for good, so it outranks the
+				// placeholder folded flag startHand gives skipped seats.
+				const [text, kind] = eliminated
+					? [this.t('eliminatedBadge'), 'out']
+					: player.folded
+						? [this.t('foldedBadge'), 'fold']
+						: pinned && label
+							? [label.text, label.kind]
 							: player.isAllIn
 								? [this.t('allIn'), 'allin']
 								: isTurn

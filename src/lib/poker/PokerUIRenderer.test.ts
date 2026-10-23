@@ -266,6 +266,11 @@ function player(
 	};
 }
 
+/** Hand-start stacks the engine tracks per hand; participation is a stack above zero. */
+function stacksOf(players: Player[]): Map<number, number> {
+	return new Map(players.map((p) => [p.id, p.chips]));
+}
+
 describe('PokerUIRenderer', () => {
 	let renderer: PokerUIRenderer;
 	let elements: Record<string, MockElement>;
@@ -504,11 +509,11 @@ describe('PokerUIRenderer', () => {
 				currentBet: 40,
 			});
 			renderer.showAIDecision(1, 'raise', 40);
-			renderer.updateTableState(players, 0, 0, true);
+			renderer.updateTableState(players, 0, 0, true, stacksOf(players));
 			expect(elements['opponent1-action'].textContent).toBe('↑ RAISE 40');
 
 			renderer.clearSeatActions();
-			renderer.updateTableState(players, 0, 0, true);
+			renderer.updateTableState(players, 0, 0, true, stacksOf(players));
 			expect(elements['opponent1-action'].textContent).toBe('40');
 		});
 
@@ -519,7 +524,7 @@ describe('PokerUIRenderer', () => {
 				isAllIn: true,
 			});
 			renderer.setSeatHand(1, 'STRAIGHT', true);
-			renderer.updateTableState(players, 0, 0, false);
+			renderer.updateTableState(players, 0, 0, false, stacksOf(players));
 			expect(elements['opponent1-action'].textContent).toBe('Straight');
 			expect(elements['opponent1-action'].dataset?.action).toBe('winner');
 		});
@@ -1032,7 +1037,7 @@ describe('Poker six-max presentation', () => {
 		players[5].chips = 420;
 		const renderer = new PokerUIRenderer();
 		renderer.hideOpponentHands();
-		renderer.updateTableState(players, 2, 5, true);
+		renderer.updateTableState(players, 2, 5, true, stacksOf(players));
 		expect(elements['opponent5-chips'].textContent).toBe('420');
 		expect(elements['poker-seat-5'].dataset?.turn).toBe('true');
 		expect(elements['poker-seat-4'].dataset?.folded).toBe('true');
@@ -1120,8 +1125,10 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		players[2].chips = 0;
 		players[3].chips = 0;
 		players[3].isAllIn = true;
+		// Both seats were dealt into this hand.
+		const handStartStacks = new Map(players.map((p) => [p.id, 500]));
 
-		renderer.updateTableState(players, 0, 1, false);
+		renderer.updateTableState(players, 0, 1, false, handStartStacks);
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
 		expect(elements['opponent2-action'].textContent).toBe('ELIMINATED');
@@ -1131,10 +1138,32 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		expect(elements['opponent3-action'].textContent).toBe('ELIMINATED');
 
 		// Mid-hand, a zero-chip all-in is still alive and can win it back.
-		renderer.updateTableState(players, 0, 1, true);
+		renderer.updateTableState(players, 0, 1, true, handStartStacks);
 
 		expect(elements['poker-seat-3'].dataset?.eliminated).toBe('false');
 		expect(elements['opponent3-action'].textContent).toBe('All in');
+	});
+
+	test("keeps long-busted seats eliminated through a later hand's betting rounds", () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer();
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[2].chips = 0; // busted in an earlier hand
+		players[2].folded = true; // startHand flags skipped seats so they never act
+		// Seat 2 was not dealt into the current hand.
+		const handStartStacks = new Map(players.map((p) => [p.id, p.id === 2 ? 0 : 500]));
+
+		// Betting is live, but the seat stays visibly out — no revert to '—'.
+		renderer.updateTableState(players, 0, 1, true, handStartStacks);
+
+		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
+		expect(elements['opponent2-action'].textContent).toBe('ELIMINATED');
+		expect(elements['opponent2-action'].dataset?.action).toBe('out');
+
+		// The state holds in the settled window between hands too.
+		renderer.updateTableState(players, 0, 1, false, handStartStacks);
+		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
 	});
 
 	test('cash seats never show an eliminated state', () => {
@@ -1144,7 +1173,10 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
 		players[2].chips = 0;
 
-		renderer.updateTableState(players, 0, 1, false);
+		renderer.updateTableState(players, 0, 1, false, stacksOf(players));
+
+		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
+		expect(elements['opponent2-action'].textContent).toBe('—');
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
 		expect(elements['opponent2-action'].textContent).toBe('—');

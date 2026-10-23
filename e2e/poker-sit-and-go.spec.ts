@@ -26,7 +26,7 @@ test.describe('Poker Sit & Go smoke', () => {
 
 			// Six seats, 500 tournament chips each; the bankroll label says
 			// tournament chips, not a cash or guest balance.
-			await expect(page.getByText('Tournament chips')).toBeVisible();
+			await expect(page.getByText('Tournament chips', { exact: true })).toBeVisible();
 			await expect(page.locator('#player-balance')).toHaveText('500 chips');
 			for (const id of [1, 2, 3, 4, 5]) {
 				await expect(page.locator(`#opponent${id}-chips`)).toHaveText('500');

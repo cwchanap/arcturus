@@ -3319,6 +3319,331 @@ describe('Poker table sound, turn timer and hand recap', () => {
 	});
 });
 
+// HPA-176: shared cash-engine defects the Sit & Go work exposed. The first
+// three tests were RED against the pre-fix engine: an all-in runout froze the
+// table and dead seats were still asked to act.
+describe('Poker all-in runout and dead-seat defects (HPA-176)', () => {
+	type DefectGame = {
+		players: Player[];
+		pot: number;
+		gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+		bettingRound: string | null;
+		currentPlayerIndex: number;
+		dealerIndex: number;
+		communityCards: Card[];
+		handNumber: number;
+		humanChipsBefore: number;
+		handStartChips: number;
+		handInProgress: boolean;
+		nextPhase: () => void;
+		advanceTurn: () => void;
+		processAITurn: () => Promise<void>;
+	};
+
+	beforeEach(() => {
+		mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => {
+			return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+		}) as unknown as typeof fetch;
+	});
+
+	/** Guest cash table: the same engine as authenticated cash, fully local. */
+	function cashTable() {
+		const elements = mockPokerGameDOM();
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'true' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '1000',
+				balanceAvailable: 'true',
+				guestMode: 'true',
+				userId: 'defects',
+			},
+			innerHTML: '',
+			textContent: '$1,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const game = new PokerGame() as unknown as DefectGame;
+		return { elements, game };
+	}
+
+	function foldSeats(game: DefectGame, seats: number[]) {
+		for (const seat of seats) {
+			game.players[seat] = { ...game.players[seat], folded: true, hasActed: true };
+		}
+	}
+
+	test('all-in runout with the human on the button runs the board out instead of freezing', () => {
+		const { game } = cashTable();
+		const timers = mockTrackedTimers();
+		try {
+			game.handNumber = 1;
+			game.humanChipsBefore = 500;
+			game.handStartChips = 500;
+			game.handInProgress = true;
+			game.dealerIndex = 0;
+			game.gamePhase = 'preflop';
+			game.bettingRound = 'preflop';
+			game.pot = 1000;
+			game.players[0] = {
+				...game.players[0],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 500,
+				totalBet: 500,
+				hand: [card('A', 'hearts', 14), card('A', 'diamonds', 14)],
+			};
+			game.players[1] = {
+				...game.players[1],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 500,
+				totalBet: 500,
+				hand: [card('K', 'hearts', 13), card('K', 'diamonds', 13)],
+			};
+			foldSeats(game, [2, 3, 4, 5]);
+
+			game.nextPhase();
+
+			// The frozen defect: the all-in human dealer was handed the turn with
+			// every control dead and no timer ever scheduled again.
+			const runout = timers.scheduledTimers.find((timer) => !timer.cleared);
+			expect(runout).toBeDefined();
+
+			for (let i = 0; i < 5; i++) {
+				const next = timers.scheduledTimers.find((timer) => !timer.cleared);
+				if (!next) break;
+				next.callback();
+			}
+
+			expect(game.communityCards).toHaveLength(5);
+			expect(game.bettingRound).toBeNull();
+			expect(game.handInProgress).toBe(false);
+			expect(game.pot).toBe(0);
+			expect(game.players[0].chips + game.players[1].chips).toBe(1000);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a folded AI on the button is never selected to act on a new street', async () => {
+		const { game } = cashTable();
+		const timers = mockTrackedTimers();
+		try {
+			game.handNumber = 1;
+			game.humanChipsBefore = 500;
+			game.handStartChips = 500;
+			game.handInProgress = true;
+			game.dealerIndex = 1;
+			game.gamePhase = 'preflop';
+			game.bettingRound = 'preflop';
+			game.pot = 600;
+			game.players[0] = { ...game.players[0], chips: 400, folded: true, hasActed: true };
+			game.players[1] = {
+				...game.players[1],
+				chips: 300,
+				folded: true,
+				hasActed: false,
+				hand: [card('K', 'hearts', 13), card('K', 'diamonds', 13)],
+			};
+			game.players[2] = {
+				...game.players[2],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 300,
+				totalBet: 300,
+				hand: [card('A', 'spades', 14), card('A', 'clubs', 14)],
+			};
+			foldSeats(game, [3, 4]);
+			game.players[5] = {
+				...game.players[5],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 300,
+				totalBet: 300,
+				hand: [card('Q', 'spades', 12), card('Q', 'diamonds', 12)],
+			};
+
+			game.nextPhase();
+
+			const pending = timers.scheduledTimers.find((timer) => !timer.cleared);
+			expect(pending).toBeDefined();
+			pending?.callback();
+			await flushAsyncWork();
+
+			// The illegal decision: the folded button seat was asked to act (any
+			// decision flips hasActed and can move its chips).
+			expect(game.players[1].hasActed).toBe(false);
+			expect(game.players[1].chips).toBe(300);
+			expect(game.players[1].currentBet).toBe(0);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('processAITurn advances without deciding for a seat that cannot act', async () => {
+		const { game } = cashTable();
+		const timers = mockTrackedTimers();
+		try {
+			game.bettingRound = 'flop';
+			game.currentPlayerIndex = 2;
+			game.players[2] = {
+				...game.players[2],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				// The dead seat must keep a hand so a decision is possible and detectable.
+				hand: [card('A', 'hearts', 14), card('A', 'diamonds', 14)],
+			};
+
+			const turn = game.processAITurn();
+			const delay = timers.scheduledTimers.find((timer) => !timer.cleared);
+			expect(delay).toBeDefined();
+			delay?.callback();
+			await turn;
+
+			// The all-in seat must never place a phantom bet or mark itself acted.
+			expect(game.players[2].hasActed).toBe(false);
+			expect(game.players[2].chips).toBe(0);
+			expect(game.players[2].currentBet).toBe(0);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('short all-in side pots still resolve at the runout showdown', () => {
+		const { game } = cashTable();
+		const timers = mockTrackedTimers();
+		try {
+			game.handNumber = 1;
+			game.humanChipsBefore = 500;
+			game.handStartChips = 500;
+			game.handInProgress = true;
+			game.gamePhase = 'river';
+			game.bettingRound = 'river';
+			game.communityCards = [
+				card('2', 'hearts', 2),
+				card('7', 'diamonds', 7),
+				card('9', 'clubs', 9),
+				card('3', 'spades', 3),
+				card('5', 'hearts', 5),
+			];
+			game.pot = 700;
+			game.players[0] = {
+				...game.players[0],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 100,
+				totalBet: 100,
+				hand: [card('A', 'hearts', 14), card('A', 'diamonds', 14)],
+			};
+			game.players[1] = {
+				...game.players[1],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 300,
+				totalBet: 300,
+				hand: [card('K', 'hearts', 13), card('K', 'diamonds', 13)],
+			};
+			game.players[2] = {
+				...game.players[2],
+				chips: 200,
+				folded: false,
+				hasActed: true,
+				currentBet: 300,
+				totalBet: 300,
+				hand: [card('Q', 'hearts', 12), card('Q', 'diamonds', 12)],
+			};
+			foldSeats(game, [3, 4, 5]);
+
+			game.nextPhase(); // river -> showdown
+
+			// Aces take the 300 main pot, kings the 400 side pot; queens get nothing.
+			expect(game.players[0].chips).toBe(300);
+			expect(game.players[1].chips).toBe(400);
+			expect(game.players[2].chips).toBe(200);
+			expect(game.pot).toBe(0);
+			expect(game.handInProgress).toBe(false);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('an outstanding preflop call/fold decision versus an all-in raise is not skipped', () => {
+		const { game, elements } = cashTable();
+		const timers = mockTrackedTimers();
+		try {
+			game.handInProgress = true;
+			game.gamePhase = 'preflop';
+			game.bettingRound = 'preflop';
+			game.currentPlayerIndex = 1;
+			game.pot = 500;
+			game.players[0] = {
+				...game.players[0],
+				chips: 400,
+				folded: false,
+				hasActed: true,
+				currentBet: 100,
+				totalBet: 100,
+			};
+			game.players[1] = {
+				...game.players[1],
+				chips: 0,
+				isAllIn: true,
+				folded: false,
+				hasActed: true,
+				currentBet: 500,
+				totalBet: 500,
+			};
+			foldSeats(game, [2, 3, 4, 5]);
+
+			game.advanceTurn();
+
+			// The shove left the human a live call/fold decision.
+			expect(game.currentPlayerIndex).toBe(0);
+			expect(elements['btn-call']?.hidden).toBe(false);
+			expect(elements['btn-call']?.disabled).toBe(false);
+			expect(elements['btn-fold']?.disabled).toBe(false);
+
+			elements['btn-call']?.click();
+			expect(game.players[0].isAllIn).toBe(true);
+			expect(game.players[0].currentBet).toBe(500);
+			// The runout proceeds on timers rather than skipping the showdown.
+			expect(timers.scheduledTimers.some((timer) => !timer.cleared)).toBe(true);
+		} finally {
+			timers.restore();
+		}
+	});
+});
+
 describe('PokerGame Sit & Go mode (HPA-176)', () => {
 	type SngGame = {
 		players: Player[];

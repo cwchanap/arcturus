@@ -48,7 +48,14 @@ import {
 	type PokerSessionStats,
 } from './sessionStats';
 import { HandRecapRecorder, type RecapAction, type RecapReveal } from './handRecap';
-import { SNG_BLINDS, SNG_START_STACK, levelFor, nextFundedSeats, type PokerMode } from './sitAndGo';
+import {
+	SNG_BLINDS,
+	SNG_START_STACK,
+	humanPlace,
+	levelFor,
+	nextFundedSeats,
+	type PokerMode,
+} from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
 import { TURN_TIMER_STORAGE_KEY, TurnTimer } from './turnTimer';
 import { DEFAULT_SETTINGS } from './types';
@@ -102,6 +109,11 @@ type AIDifficultySetting = GameSettings['aiDifficulty1'];
 /** How long a finished hand stays on screen before auto-deal (when enabled). */
 export const AUTO_DEAL_DELAY_MS = 5000;
 export const AUTO_DEAL_STORAGE_KEY = 'poker_auto_deal';
+
+/** English ordinal suffix for a six-seat finish (1st–6th). */
+function ordinalSuffix(place: number): string {
+	return ['th', 'st', 'nd', 'rd'][place] ?? 'th';
+}
 
 const ACTION_SFX: Record<RecapAction, PokerSfx> = {
 	fold: 'fold',
@@ -170,6 +182,10 @@ export class PokerGame {
 	private turnTransitionToken = 0;
 	private isGuestMode = false;
 	private mode: PokerMode = 'cash';
+	// Human's finish place once the Sit & Go ends; null while it runs. Task
+	// 5's terminal panel reads tournamentPlace and replaces the plain status
+	// line shown at the end.
+	private finishedPlace: number | null = null;
 	private clientUserId = '';
 	private readonly locale: Locale;
 	private readonly t: ReturnType<typeof pokerTranslator>;
@@ -266,6 +282,11 @@ export class PokerGame {
 	/** Guest cash play and Sit & Go are both fully local: no wallet, account balance, or LLM access. */
 	private get playsLocally(): boolean {
 		return this.isGuestMode || this.mode === 'sng';
+	}
+
+	/** The human's Sit & Go finish place, or null while the tournament runs. */
+	public get tournamentPlace(): number | null {
+		return this.finishedPlace;
 	}
 
 	private getEffectiveServerBalance(): number {
@@ -504,8 +525,8 @@ export class PokerGame {
 			this.ui.showChipDelta(0, delta);
 		}
 
-		// Tournament hands stay out of the cash session tally (the rest of the
-		// SNG stat isolation lands with HPA-176 task 4).
+		// Tournament hands stay out of the cash session tally entirely: the
+		// localStorage write and the toolbar render share this gate.
 		if (involved && this.mode === 'cash') {
 			const humanHand =
 				showdown && !human.folded ? readHand(human.hand, this.communityCards) : null;
@@ -580,8 +601,40 @@ export class PokerGame {
 		// A fold settles mid-hand, so tell the table now that the hand is over.
 		// Otherwise the settlement is still running and reports once it lands.
 		if (!this.playsLocally && !this.settlementGate.isBlocked) this.dispatchHandSettled();
+		this.settleTournamentOutcome();
 		if (this.autoDealEnabled) this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
 		this.updateActionButtons();
+	}
+
+	/**
+	 * End the tournament when a hand leaves the human busted or a single seat
+	 * holding every chip, and report the human's place exactly once. Place
+	 * math uses start-of-hand stacks so simultaneous busts with larger stacks
+	 * finish ahead of the human; after this, every deal path stays blocked.
+	 */
+	private settleTournamentOutcome(): void {
+		if (this.mode !== 'sng' || this.finishedPlace !== null) return;
+		const humanChips = this.players[0].chips;
+		const fundedSeats = this.players.filter((player) => player.chips > 0).length;
+		if (humanChips > 0 && fundedSeats > 1) return;
+		const place =
+			humanChips > 0
+				? 1
+				: humanPlace(
+						fundedSeats,
+						this.handStartStacks.get(0) ?? 0,
+						this.players
+							.filter(
+								(player) =>
+									player.id !== 0 &&
+									player.chips === 0 &&
+									(this.handStartStacks.get(player.id) ?? 0) > 0,
+							)
+							.map((player) => this.handStartStacks.get(player.id) ?? 0),
+					);
+		this.finishedPlace = place;
+		// Plain placeholder line; task 5 replaces it with a localized terminal panel.
+		this.updateGameStatus(`You finished ${place}${ordinalSuffix(place)}`);
 	}
 
 	/** Celebrate when a new street improves the human to two pair or better. */
@@ -647,6 +700,8 @@ export class PokerGame {
 
 	private scheduleAutoDeal(delayMs: number): void {
 		this.cancelPendingAutoDeal();
+		// A finished tournament never queues another hand.
+		if (this.finishedPlace !== null) return;
 		const autoDealToken = this.autoDealToken;
 		this.autoDealTimeoutId = setTimeout(() => {
 			if (autoDealToken !== this.autoDealToken) {
@@ -1385,7 +1440,9 @@ export class PokerGame {
 		if (deal) {
 			deal.hidden = active;
 			deal.disabled =
-				!this.hasServerSyncedBalance || (!this.playsLocally && this.settlementGate.isBlocked);
+				!this.hasServerSyncedBalance ||
+				(!this.playsLocally && this.settlementGate.isBlocked) ||
+				this.finishedPlace !== null;
 			if (this.handNumber > 0) deal.textContent = this.t('nextHand');
 			// The CSS countdown bar runs while an auto-deal is pending.
 			deal.dataset.countdown = String(this.autoDealTimeoutId !== null && !active);

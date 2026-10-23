@@ -46,6 +46,7 @@ import {
 	type PokerSessionStats,
 } from './sessionStats';
 import { HandRecapRecorder, type RecapAction, type RecapReveal } from './handRecap';
+import { SNG_START_STACK, type PokerMode } from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
 import { TURN_TIMER_STORAGE_KEY, TurnTimer } from './turnTimer';
 import { DEFAULT_SETTINGS } from './types';
@@ -64,7 +65,6 @@ import {
 	isGuestModeValue,
 	loadGuestBankroll,
 	persistGuestBankroll,
-	shouldSyncAccountChips,
 } from '../public-game-session';
 import {
 	createSettlementGate,
@@ -167,6 +167,7 @@ export class PokerGame {
 	private pendingTurnTransitionResolver: ((completed: boolean) => void) | null = null;
 	private turnTransitionToken = 0;
 	private isGuestMode = false;
+	private mode: PokerMode = 'cash';
 	private clientUserId = '';
 	private readonly locale: Locale;
 	private readonly t: ReturnType<typeof pokerTranslator>;
@@ -199,6 +200,7 @@ export class PokerGame {
 		this.isGuestMode =
 			isGuestModeValue(balanceEl?.dataset?.guestMode) ||
 			isGuestModeValue(rootEl?.dataset?.guestMode);
+		this.mode = rootEl?.dataset?.pokerMode === 'sng' ? 'sng' : 'cash';
 		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
 		// Strip locale formatting (commas, currency symbols) then parse
@@ -206,13 +208,17 @@ export class PokerGame {
 		const hasDigit = /[0-9]/.test(sanitized);
 		const parsed = hasDigit ? Number(sanitized) : Number.NaN;
 		this.hasServerSyncedBalance =
-			this.isGuestMode || (balanceAvailable === 'false' ? false : Number.isFinite(parsed));
+			this.playsLocally || (balanceAvailable === 'false' ? false : Number.isFinite(parsed));
 		this.serverSyncedBalance = this.hasServerSyncedBalance ? Math.trunc(parsed) : 0;
 
 		const userId = balanceEl?.dataset?.userId ?? '';
 		this.clientUserId = userId;
 
-		if (this.isGuestMode && this.hasServerSyncedBalance) {
+		if (this.mode === 'sng') {
+			// Tournament chips replace every cash baseline: account balance and
+			// guest bankroll are never consulted for Sit & Go play.
+			this.serverSyncedBalance = SNG_START_STACK;
+		} else if (this.isGuestMode && this.hasServerSyncedBalance) {
 			this.serverSyncedBalance = loadGuestBankroll(
 				PokerGame.GUEST_BANKROLL_GAME_KEY,
 				userId,
@@ -225,7 +231,7 @@ export class PokerGame {
 		// the server-rendered #player-balance (default $1,000). Sync the DOM to
 		// the restored stack now so it doesn't disagree with the bet slider until
 		// the first action triggers updateUI.
-		if (this.isGuestMode && this.hasServerSyncedBalance) {
+		if (this.isGuestMode && this.mode === 'cash' && this.hasServerSyncedBalance) {
 			this.ui.updateUI(this.pot, this.players[0]);
 		}
 		this.attachEventListeners();
@@ -251,8 +257,13 @@ export class PokerGame {
 		void this.checkLlmConfigOnLoad();
 
 		window.addEventListener('beforeunload', () => {
-			if (this.isGuestMode) this.persistGuestBankroll();
+			if (this.isGuestMode && this.mode === 'cash') this.persistGuestBankroll();
 		});
+	}
+
+	/** Guest cash play and Sit & Go are both fully local: no wallet, account balance, or LLM access. */
+	private get playsLocally(): boolean {
+		return this.isGuestMode || this.mode === 'sng';
 	}
 
 	private getEffectiveServerBalance(): number {
@@ -564,7 +575,7 @@ export class PokerGame {
 		this.handInProgress = false;
 		// A fold settles mid-hand, so tell the table now that the hand is over.
 		// Otherwise the settlement is still running and reports once it lands.
-		if (!this.isGuestMode && !this.settlementGate.isBlocked) this.dispatchHandSettled();
+		if (!this.playsLocally && !this.settlementGate.isBlocked) this.dispatchHandSettled();
 		if (this.autoDealEnabled) this.scheduleAutoDeal(AUTO_DEAL_DELAY_MS);
 		this.updateActionButtons();
 	}
@@ -644,7 +655,7 @@ export class PokerGame {
 
 	// Check LLM configuration once on page load.
 	private async checkLlmConfigOnLoad() {
-		if (this.isGuestMode) {
+		if (this.playsLocally) {
 			return;
 		}
 
@@ -710,7 +721,7 @@ export class PokerGame {
 	 */
 	public adoptAccountBalance(balance: number): boolean {
 		if (!Number.isSafeInteger(balance) || balance < 0) return false;
-		if (this.isGuestMode || this.handInProgress || this.settlementGate.pending) return false;
+		if (this.playsLocally || this.handInProgress || this.settlementGate.pending) return false;
 		// The server just reported the account, so play can start even if the
 		// balance was unavailable when the page loaded.
 		this.hasServerSyncedBalance = true;
@@ -754,7 +765,7 @@ export class PokerGame {
 	}
 
 	private persistGuestBankroll(): void {
-		if (!this.isGuestMode) return;
+		if (!this.isGuestMode || this.mode !== 'cash') return;
 		const persistedChips = Math.max(0, this.players[0]?.chips ?? this.serverSyncedBalance);
 		persistGuestBankroll(PokerGame.GUEST_BANKROLL_GAME_KEY, this.clientUserId, persistedChips);
 		this.serverSyncedBalance = persistedChips;
@@ -767,8 +778,8 @@ export class PokerGame {
 		if (this.handResultDelta === null && this.handStartChips > 0) {
 			this.handResultDelta = this.players[0].chips - this.handStartChips;
 		}
-		if (!shouldSyncAccountChips({ isGuestMode: this.isGuestMode })) {
-			if (this.isGuestMode) {
+		if (this.playsLocally) {
+			if (this.isGuestMode && this.mode === 'cash') {
 				this.persistGuestBankroll();
 			}
 			this.humanChipsBefore = 0;
@@ -838,16 +849,17 @@ export class PokerGame {
 
 	private initPlayers() {
 		const settings = this.settingsManager.getSettings();
+		// Sit & Go seats all start at the fixed tournament stack; cash play
+		// keeps its configured starting chips and the account/guest balance.
+		const isSng = this.mode === 'sng';
+		const humanStack = isSng ? SNG_START_STACK : this.getEffectiveServerBalance();
+		const opponentStack = isSng ? SNG_START_STACK : settings.startingChips;
 		this.players = [
-			createPlayer(0, 'You', this.getEffectiveServerBalance(), false),
-			createAIPlayer(1, 'Player 2', settings.startingChips),
-			createAIPlayer(2, 'Player 3', settings.startingChips),
+			createPlayer(0, 'You', humanStack, false),
+			createAIPlayer(1, 'Player 2', opponentStack),
+			createAIPlayer(2, 'Player 3', opponentStack),
 			...Array.from({ length: NUM_PLAYERS - 3 }, (_, i) =>
-				createAIPlayer(
-					i + 3,
-					this.t('playerName', { number: String(i + 4) }),
-					settings.startingChips,
-				),
+				createAIPlayer(i + 3, this.t('playerName', { number: String(i + 4) }), opponentStack),
 			),
 		];
 		this.players[this.dealerIndex].isDealer = true;
@@ -875,11 +887,12 @@ export class PokerGame {
 
 	/**
 	 * Get browser-local AI settings for automatic LLM opponents.
-	 * Returns null only when guest mode prevents access; otherwise returns
-	 * the browser-local AI settings (which may be null if unconfigured).
+	 * Returns null only when local play (guest cash or Sit & Go) prevents
+	 * access; otherwise returns the browser-local AI settings (which may be
+	 * null if unconfigured).
 	 */
 	private async getLLMSettings(): Promise<AiSettings | null> {
-		if (this.isGuestMode) {
+		if (this.playsLocally) {
 			return null;
 		}
 
@@ -896,7 +909,7 @@ export class PokerGame {
 		const settings = this.settingsManager.getSettings();
 
 		// If LLM-powered AI is enabled, ensure the user has a valid API key configured
-		if (settings.useLLMAI && !this.isGuestMode) {
+		if (settings.useLLMAI && !this.playsLocally) {
 			const llmSettings = await this.getLLMSettings();
 			if (!llmSettings) {
 				this.updateGameStatus(this.t('errorLlmNoKeyNewGame'));
@@ -916,13 +929,13 @@ export class PokerGame {
 			return;
 		}
 
-		if (!this.isGuestMode && this.settlementGate.isBlocked) {
+		if (!this.playsLocally && this.settlementGate.isBlocked) {
 			this.showSettlementRecovery(this.t('settlementPending'));
 			return;
 		}
 
 		this.finalizeActiveHandBeforeDeal();
-		if (!this.isGuestMode && this.settlementGate.isBlocked) {
+		if (!this.playsLocally && this.settlementGate.isBlocked) {
 			this.showSettlementRecovery(this.t('settlementPending'));
 			return;
 		}
@@ -948,9 +961,9 @@ export class PokerGame {
 				if (player.id === 0) {
 					if (effectiveServerBalance <= 0) {
 						this.updateGameStatus(this.t('statusGameOver'));
-						// Rebuy is guest-only; authed balances live on the server and
+						// Rebuy is guest cash-only; authed balances live on the server and
 						// must be topped up through missions or other server flows.
-						if (this.isGuestMode) {
+						if (this.isGuestMode && this.mode === 'cash') {
 							this.showRebuyButton();
 						}
 						return; // Stop the game
@@ -1115,7 +1128,7 @@ export class PokerGame {
 		const settings = this.settingsManager.getSettings();
 		let decision;
 
-		if (settings.useLLMAI && !this.isGuestMode) {
+		if (settings.useLLMAI && !this.playsLocally) {
 			// Try LLM-based AI with fallback to rule-based
 			const llmSettings = await this.getLLMSettings();
 			if (turnTransitionToken !== this.turnTransitionToken) return;
@@ -1335,7 +1348,7 @@ export class PokerGame {
 		if (deal) {
 			deal.hidden = active;
 			deal.disabled =
-				!this.hasServerSyncedBalance || (!this.isGuestMode && this.settlementGate.isBlocked);
+				!this.hasServerSyncedBalance || (!this.playsLocally && this.settlementGate.isBlocked);
 			if (this.handNumber > 0) deal.textContent = this.t('nextHand');
 			// The CSS countdown bar runs while an auto-deal is pending.
 			deal.dataset.countdown = String(this.autoDealTimeoutId !== null && !active);
@@ -1563,7 +1576,7 @@ export class PokerGame {
 	 * other server-side flows.
 	 */
 	private async rebuyBustedGuest(): Promise<void> {
-		if (!this.isGuestMode) return;
+		if (!this.isGuestMode || this.mode !== 'cash') return;
 
 		this.serverSyncedBalance = DEFAULT_GUEST_GAME_BALANCE;
 		persistGuestBankroll(
@@ -1835,7 +1848,7 @@ export class PokerGame {
 			const aiDifficulty2: AIDifficultySetting = isAIDifficulty(aiDifficulty2El.value)
 				? aiDifficulty2El.value
 				: currentSettings.aiDifficulty2;
-			const useLLMAI = this.isGuestMode ? false : useLLMAIEl.checked;
+			const useLLMAI = this.playsLocally ? false : useLLMAIEl.checked;
 
 			this.settingsManager.updateSettings({
 				startingChips,
@@ -1926,12 +1939,14 @@ export class PokerGame {
 		if (aiDifficulty1Select) aiDifficulty1Select.value = settings.aiDifficulty1;
 		if (aiDifficulty2Select) aiDifficulty2Select.value = settings.aiDifficulty2;
 		if (useLLMAICheckbox) {
-			useLLMAICheckbox.checked = this.isGuestMode ? false : settings.useLLMAI;
-			useLLMAICheckbox.disabled = this.isGuestMode;
-			useLLMAICheckbox.title = this.isGuestMode ? this.t('aiLlmTitleGuest') : '';
+			useLLMAICheckbox.checked = this.playsLocally ? false : settings.useLLMAI;
+			useLLMAICheckbox.disabled = this.playsLocally;
+			useLLMAICheckbox.title = this.playsLocally ? this.t('aiLlmTitleGuest') : '';
 			const llmHelpText = useLLMAICheckbox.parentElement?.querySelector('.text-xs');
 			if (llmHelpText) {
-				llmHelpText.textContent = this.isGuestMode ? this.t('aiLlmHelpGuest') : this.t('aiLlmHelp');
+				llmHelpText.textContent = this.playsLocally
+					? this.t('aiLlmHelpGuest')
+					: this.t('aiLlmHelp');
 			}
 		}
 	}

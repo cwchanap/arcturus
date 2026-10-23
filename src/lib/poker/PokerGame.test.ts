@@ -3880,3 +3880,428 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		}
 	});
 });
+
+describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
+	type LifecycleGame = {
+		players: Player[];
+		pot: number;
+		minimumBet: number;
+		handNumber: number;
+		dealerIndex: number;
+		smallBlindIndex: number;
+		bigBlindIndex: number;
+		currentPlayerIndex: number;
+		serverSyncedBalance: number;
+		pendingChipReset: boolean;
+		processAITurn: () => Promise<void>;
+		dealNewHand: () => Promise<void>;
+	};
+
+	function sngTable(balance = '2500') {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ balance: 500 }),
+		})) as unknown as typeof fetch;
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'false', pokerMode: 'sng' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance,
+				balanceAvailable: 'true',
+				guestMode: 'false',
+				userId: 'u_lifecycle',
+			},
+			innerHTML: '',
+			textContent: `$${balance}`,
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const game = new PokerGame() as unknown as LifecycleGame;
+		game.processAITurn = async () => {};
+		return { elements, game };
+	}
+
+	function setStacks(game: LifecycleGame, chips: number[]) {
+		game.players = game.players.map((player, seat) => ({ ...player, chips: chips[seat] }));
+	}
+
+	test('rotation skips busted seats: survivors [0,2,5] from a dead button', async () => {
+		const { game } = sngTable();
+		setStacks(game, [500, 0, 500, 0, 0, 500]);
+		game.dealerIndex = 5;
+
+		await game.dealNewHand();
+
+		expect(game.handNumber).toBe(1);
+		expect(game.dealerIndex).toBe(0);
+		expect(game.smallBlindIndex).toBe(2);
+		expect(game.bigBlindIndex).toBe(5);
+		expect(game.players[0].isDealer).toBe(true);
+		// Level-0 blinds (5/10) hit only funded seats.
+		expect(game.players[2].chips).toBe(495);
+		expect(game.players[5].chips).toBe(490);
+		expect(game.players[1].chips).toBe(0);
+		// Busted seats sit the hand out: folded, cardless, never acting.
+		for (const seat of [1, 3, 4]) {
+			expect(game.players[seat].folded).toBe(true);
+			expect(game.players[seat].hand).toHaveLength(0);
+		}
+		for (const seat of [0, 2, 5]) {
+			expect(game.players[seat].folded).toBe(false);
+			expect(game.players[seat].hand).toHaveLength(2);
+		}
+		// Preflop action starts after the big blind: seat 0.
+		expect(game.currentPlayerIndex).toBe(0);
+	});
+
+	test('heads-up [0,5]: the button posts the small blind and acts first preflop', async () => {
+		const { game } = sngTable();
+		setStacks(game, [800, 0, 0, 0, 0, 700]);
+		game.dealerIndex = 5;
+
+		await game.dealNewHand();
+
+		expect(game.dealerIndex).toBe(0);
+		expect(game.smallBlindIndex).toBe(0);
+		expect(game.bigBlindIndex).toBe(5);
+		expect(game.players[0].chips).toBe(795); // small blind 5
+		expect(game.players[5].chips).toBe(690); // big blind 10
+		expect(game.currentPlayerIndex).toBe(0);
+	});
+
+	test('dead seats between the button, SB and BB are skipped without adjacency', async () => {
+		const { game } = sngTable();
+		setStacks(game, [500, 500, 0, 500, 0, 500]);
+		game.dealerIndex = 1;
+
+		await game.dealNewHand();
+
+		expect(game.dealerIndex).toBe(3);
+		expect(game.smallBlindIndex).toBe(5); // skips dead seat 4
+		expect(game.bigBlindIndex).toBe(0); // wraps past dead seats
+		expect(game.players[5].chips).toBe(495);
+		expect(game.players[0].chips).toBe(490);
+		// First to act preflop is the funded seat after the big blind: seat 1.
+		expect(game.currentPlayerIndex).toBe(1);
+	});
+
+	test('heads-up blinds that put both seats all-in run out on timers', async () => {
+		const { game } = sngTable();
+		setStacks(game, [5, 0, 0, 0, 0, 10]);
+		game.dealerIndex = 5;
+		const timers = mockTrackedTimers();
+		try {
+			await game.dealNewHand();
+
+			// Level-0 blinds (5/10) put both survivors all-in; nobody can act.
+			expect(game.players[0].isAllIn).toBe(true);
+			expect(game.players[5].isAllIn).toBe(true);
+			const runout = timers.scheduledTimers.find((timer) => !timer.cleared);
+			expect(runout).toBeDefined();
+
+			for (let i = 0; i < 6; i++) {
+				const next = timers.scheduledTimers.find((timer) => !timer.cleared);
+				if (!next) break;
+				next.callback();
+			}
+
+			expect(game.handInProgress).toBe(false);
+			expect(game.pot).toBe(0);
+			expect(game.players[0].chips + game.players[5].chips).toBe(15);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('SNG blinds derive from the tournament level and reach raise legality and the toolbar', async () => {
+		const { game, elements } = sngTable();
+		setStacks(game, [500, 500, 500, 500, 500, 500]);
+		game.dealerIndex = 0;
+		game.handNumber = 5; // the next deal is hand 6: level 1 (10/20)
+
+		await game.dealNewHand();
+
+		expect(game.players[2].chips).toBe(490); // SB 10
+		expect(game.players[3].chips).toBe(480); // BB 20
+		expect(game.minimumBet).toBe(20);
+		expect(elements['table-blinds']?.textContent).toBe('10 / 20');
+	});
+
+	test('a zero-stack human with a positive wallet is not restored in SNG', async () => {
+		const { game } = sngTable('2500');
+		setStacks(game, [0, 500, 500, 500, 500, 500]);
+		game.dealerIndex = 0;
+
+		await game.dealNewHand();
+
+		// Tournament over for the human: no deal, no cash restore.
+		expect(game.handNumber).toBe(0);
+		expect(game.players[0].chips).toBe(0);
+		expect(game.players[0].hand).toHaveLength(0);
+		expect(game.serverSyncedBalance).toBe(SNG_START_STACK);
+	});
+
+	test('busted AI seats are never auto-rebought in SNG', async () => {
+		const { game } = sngTable();
+		setStacks(game, [500, 0, 500, 500, 500, 500]);
+		game.dealerIndex = 0;
+
+		await game.dealNewHand();
+
+		// A cash rebuy would restore the settings stack (1000).
+		expect(game.players[1].chips).toBe(0);
+		expect(game.players[1].folded).toBe(true);
+		expect(game.players[1].hand).toHaveLength(0);
+	});
+
+	test('a pending cash chip reset never rewrites SNG stacks', async () => {
+		const { game } = sngTable();
+		game.pendingChipReset = true;
+		setStacks(game, [700, 0, 600, 500, 400, 800]);
+		game.dealerIndex = 5;
+
+		await game.dealNewHand();
+
+		// Seats 4 and 5 are out of the blinds: a cash reset would set them to 1000.
+		expect(game.players[4].chips).toBe(400);
+		expect(game.players[5].chips).toBe(800);
+		expect(game.players.reduce((sum, player) => sum + player.chips, game.pot)).toBe(3000);
+	});
+
+	test('the tournament stops dealing once one seat holds every chip', async () => {
+		const { game } = sngTable();
+		setStacks(game, [3000, 0, 0, 0, 0, 0]);
+
+		await game.dealNewHand();
+
+		expect(game.handNumber).toBe(0);
+		expect(game.players[0].hand).toHaveLength(0);
+	});
+});
+
+describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
+	type SimGame = {
+		players: Player[];
+		pot: number;
+		handNumber: number;
+		handInProgress: boolean;
+		bettingRound: string | null;
+		currentPlayerIndex: number;
+		isProcessingAction: boolean;
+		dealNewHand: () => Promise<void>;
+	};
+
+	/** Deterministic LCG so every run plays the same tournament. */
+	function seededRandom(seed: number): () => number {
+		let state = seed >>> 0;
+		return () => {
+			state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+			return state / 4294967296;
+		};
+	}
+
+	test('a seeded tournament plays to a terminal state with zero cash side effects', async () => {
+		const elements = mockPokerGameDOM();
+		const storage: Record<string, string> = {};
+		const sessionWrites: string[] = [];
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: (key: string, value: string) => {
+				storage[key] = value;
+			},
+			removeItem: (key: string) => {
+				delete storage[key];
+			},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		const globalThisWithSession = globalThis as typeof globalThis & {
+			sessionStorage?: Storage;
+		};
+		globalThisWithSession.sessionStorage = {
+			getItem: () => null,
+			setItem: (key: string, value: string) => sessionWrites.push(`${key}=${value}`),
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		const fetchCalls: string[] = [];
+		const originalFetch = globalThis.fetch;
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request) => {
+				const url =
+					typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+				fetchCalls.push(url);
+				return { ok: true, status: 200, json: async () => ({ balance: 500 }) };
+			},
+		) as unknown as typeof fetch;
+		const settlements: unknown[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			settle: async (command) => {
+				settlements.push(command);
+				return { balance: 500, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+		const dispatched: string[] = [];
+		const win = (globalThis as typeof globalThis & { window: Window }).window;
+		const originalDispatch = win.dispatchEvent;
+		win.dispatchEvent = ((event: { type: string }) => {
+			dispatched.push(event.type);
+			return true;
+		}) as typeof win.dispatchEvent;
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'false', pokerMode: 'sng' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '2500',
+				balanceAvailable: 'true',
+				guestMode: 'false',
+				userId: 'u_sim',
+			},
+			innerHTML: '',
+			textContent: '$2,500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const timers = mockTrackedTimers();
+		try {
+			const game = new PokerGame(seededRandom(20261021), gate) as unknown as SimGame;
+			const TOTAL = 6 * SNG_START_STACK;
+
+			const humanCanAct = () => {
+				const human = game.players[0];
+				return (
+					game.handInProgress &&
+					game.bettingRound !== null &&
+					!game.isProcessingAction &&
+					game.currentPlayerIndex === 0 &&
+					!human.folded &&
+					!human.isAllIn
+				);
+			};
+
+			/** Conservation, dead-seat and liveness invariants after every step. */
+			const assertStep = (bustedSeats: number[], foldedChips: Map<number, number>) => {
+				expect(game.players.reduce((sum, player) => sum + player.chips, 0) + game.pot).toBe(TOTAL);
+				for (const seat of bustedSeats) {
+					// Busted seats stay busted, cardless and folded all hand.
+					expect(game.players[seat].chips).toBe(0);
+					expect(game.players[seat].folded).toBe(true);
+					if (game.handInProgress) expect(game.players[seat].hand).toHaveLength(0);
+				}
+				// A folded seat never moves chips again for the rest of the hand.
+				if (game.handInProgress) {
+					for (const player of game.players) {
+						if (!player.folded) continue;
+						const seen = foldedChips.get(player.id);
+						if (seen === undefined) foldedChips.set(player.id, player.chips);
+						else expect(player.chips).toBe(seen);
+					}
+				}
+				// Every pending state has a timer, awaits legal human input, or is
+				// mid-transition; otherwise the table is stuck.
+				if (game.handInProgress && game.bettingRound !== null) {
+					const hasTimer = timers.scheduledTimers.some((timer) => !timer.cleared);
+					const awaitingHuman = humanCanAct();
+					expect(hasTimer || awaitingHuman || game.isProcessingAction).toBe(true);
+				}
+			};
+
+			const actForHuman = (handIndex: number) => {
+				const human = game.players[0];
+				const call = getCallAmount(human, getHighestBet(game.players));
+				const available = human.chips - call;
+				if (handIndex % 3 === 0 && !human.hasActed && available > 0) {
+					const slider = elements['bet-slider'];
+					slider!.value = String(Math.min(1000, available));
+					elements['btn-raise'].click(); // shove
+				} else if (call > 0) {
+					elements['btn-call'].click();
+				} else {
+					elements['btn-check'].click();
+				}
+			};
+
+			let hands = 0;
+			while (hands < 200) {
+				const bustedSeats = game.players.filter((player) => player.chips === 0).map((p) => p.id);
+				const foldedChips = new Map<number, number>();
+				await game.dealNewHand();
+				if (!game.handInProgress) break; // terminal guard refused the deal
+				hands += 1;
+
+				const firedTimers = new Set<number>();
+				let steps = 0;
+				while (game.handInProgress && steps++ < 400) {
+					if (humanCanAct()) actForHuman(hands);
+					else {
+						// Fire each scheduled timer at most once, like a real clock.
+						const timer = timers.scheduledTimers.find(
+							(entry) => !entry.cleared && !firedTimers.has(entry.id),
+						);
+						expect(timer).toBeDefined();
+						firedTimers.add(timer!.id);
+						timer?.callback();
+					}
+					await flushAsyncWork();
+					assertStep(bustedSeats, foldedChips);
+				}
+				// Every hand completes and pays out its whole pot.
+				expect(game.handInProgress).toBe(false);
+				expect(game.pot).toBe(0);
+
+				const humanChips = game.players[0].chips;
+				if (humanChips === 0 || humanChips === TOTAL) break;
+			}
+
+			// Terminal within the bound: the human wins all 3,000 chips or busts.
+			expect(hands).toBeGreaterThan(0);
+			expect(hands).toBeLessThan(200);
+			const humanFinal = game.players[0].chips;
+			expect(humanFinal === 0 || humanFinal === TOTAL).toBe(true);
+
+			// Zero cash side effects across the entire run.
+			expect(settlements).toHaveLength(0);
+			expect(fetchCalls).toHaveLength(0);
+			expect(dispatched).not.toContain('poker-hand-settled');
+			expect(sessionWrites).toEqual([]);
+			expect(storage).toEqual({});
+		} finally {
+			timers.restore();
+			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			win.dispatchEvent = originalDispatch;
+			delete globalThisWithSession.sessionStorage;
+		}
+	});
+});

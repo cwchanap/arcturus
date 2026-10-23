@@ -48,7 +48,7 @@ import {
 	type PokerSessionStats,
 } from './sessionStats';
 import { HandRecapRecorder, type RecapAction, type RecapReveal } from './handRecap';
-import { SNG_START_STACK, type PokerMode } from './sitAndGo';
+import { SNG_BLINDS, SNG_START_STACK, levelFor, nextFundedSeats, type PokerMode } from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
 import { TURN_TIMER_STORAGE_KEY, TurnTimer } from './turnTimer';
 import { DEFAULT_SETTINGS } from './types';
@@ -504,7 +504,9 @@ export class PokerGame {
 			this.ui.showChipDelta(0, delta);
 		}
 
-		if (involved) {
+		// Tournament hands stay out of the cash session tally (the rest of the
+		// SNG stat isolation lands with HPA-176 task 4).
+		if (involved && this.mode === 'cash') {
 			const humanHand =
 				showdown && !human.folded ? readHand(human.hand, this.communityCards) : null;
 			this.sessionStats = recordHand(this.sessionStats, {
@@ -942,52 +944,66 @@ export class PokerGame {
 			return;
 		}
 
-		// Check for eliminated players (0 chips)
+		if (this.mode === 'sng') {
+			// Tournament seats never rebuy or restore: play ends once the human
+			// busts or a single seat holds every chip (finish UI is task 4).
+			const fundedSeats = this.players.filter((p) => p.chips > 0).length;
+			if (this.players[0].chips <= 0 || fundedSeats < 2) return;
+		} else {
+			// Check for eliminated players (0 chips)
 
-		// Apply pending chip reset if settings were changed
-		if (this.pendingChipReset) {
-			const effectiveServerBalance = this.getEffectiveServerBalance();
-			this.players = this.players.map((p) =>
-				p.id === 0
-					? { ...p, chips: effectiveServerBalance }
-					: { ...p, chips: settings.startingChips },
-			);
-			this.pendingChipReset = false;
-			this.updateGameStatus(this.t('statusChipReset'));
-		}
+			// Apply pending chip reset if settings were changed
+			if (this.pendingChipReset) {
+				const effectiveServerBalance = this.getEffectiveServerBalance();
+				this.players = this.players.map((p) =>
+					p.id === 0
+						? { ...p, chips: effectiveServerBalance }
+						: { ...p, chips: settings.startingChips },
+				);
+				this.pendingChipReset = false;
+				this.updateGameStatus(this.t('statusChipReset'));
+			}
 
-		const eliminatedPlayers = this.players.filter((p) => p.chips === 0);
-		if (eliminatedPlayers.length > 0) {
-			const effectiveServerBalance = this.getEffectiveServerBalance();
-			for (const player of eliminatedPlayers) {
-				if (player.id === 0) {
-					if (effectiveServerBalance <= 0) {
-						this.updateGameStatus(this.t('statusGameOver'));
-						// Rebuy is guest cash-only; authed balances live on the server and
-						// must be topped up through missions or other server flows.
-						if (this.isGuestMode && this.mode === 'cash') {
-							this.showRebuyButton();
+			const eliminatedPlayers = this.players.filter((p) => p.chips === 0);
+			if (eliminatedPlayers.length > 0) {
+				const effectiveServerBalance = this.getEffectiveServerBalance();
+				for (const player of eliminatedPlayers) {
+					if (player.id === 0) {
+						if (effectiveServerBalance <= 0) {
+							this.updateGameStatus(this.t('statusGameOver'));
+							// Rebuy is guest-only; authed balances live on the server and
+							// must be topped up through missions or other server flows.
+							if (this.isGuestMode) {
+								this.showRebuyButton();
+							}
+							return; // Stop the game
 						}
-						return; // Stop the game
+						this.players[0] = { ...this.players[0], chips: effectiveServerBalance };
+					} else {
+						// AI player eliminated - auto rebuy
+						this.players[player.id] = {
+							...this.players[player.id],
+							chips: settings.startingChips,
+						};
+						this.updateGameStatus(
+							this.t('statusRebuys', {
+								name: player.name,
+								amount: formatChips(settings.startingChips, this.locale),
+							}),
+						);
 					}
-					this.players[0] = { ...this.players[0], chips: effectiveServerBalance };
-				} else {
-					// AI player eliminated - auto rebuy
-					this.players[player.id] = { ...this.players[player.id], chips: settings.startingChips };
-					this.updateGameStatus(
-						this.t('statusRebuys', {
-							name: player.name,
-							amount: formatChips(settings.startingChips, this.locale),
-						}),
-					);
 				}
 			}
 		}
 
-		// Rotate dealer button clockwise
-		this.dealerIndex = (this.dealerIndex + 1) % this.players.length;
-		this.smallBlindIndex = (this.dealerIndex + 1) % this.players.length;
-		this.bigBlindIndex = (this.dealerIndex + 2) % this.players.length;
+		// Rotate the button to the next funded seat. Cash restored or rebought
+		// every seat above, so this stays a plain clockwise rotation there;
+		// tournament play skips busted seats and heads-up puts the button on
+		// the small blind.
+		const seats = nextFundedSeats(this.players, this.dealerIndex);
+		this.dealerIndex = seats.buttonIndex;
+		this.smallBlindIndex = seats.smallBlindIndex;
+		this.bigBlindIndex = seats.bigBlindIndex;
 
 		// Update dealer flag on players
 		this.players = this.players.map((p) => ({ ...p, isDealer: false }));
@@ -998,6 +1014,11 @@ export class PokerGame {
 
 		// Reset players for new hand (preserves chips from previous hands)
 		this.players = this.players.map(resetPlayerForNewHand);
+		// Busted tournament seats keep their seat but never act, post, or take
+		// cards; their chips are gone for good.
+		this.players = this.players.map((p) =>
+			p.chips <= 0 ? { ...p, folded: true, hasActed: true } : p,
+		);
 
 		// Capture human chip count before blinds are posted (used for delta calculation at hand end)
 		this.humanChipsBefore = this.players[0].chips;
@@ -1010,8 +1031,9 @@ export class PokerGame {
 		this.ui.clearHandResult();
 		this.ui.clearSeatActions();
 
-		// Deal 2 cards to each player
+		// Deal 2 cards to each funded player
 		for (let i = 0; i < this.players.length; i++) {
+			if (this.players[i].chips <= 0) continue;
 			const card1 = this.deck.drawCard();
 			const card2 = this.deck.drawCard();
 			this.players[i] = dealCardsToPlayer(this.players[i], [card1, card2]);
@@ -1024,24 +1046,26 @@ export class PokerGame {
 		const preflop = readHand(this.players[0].hand, []);
 		this.lastAnnouncedRank = preflop ? HAND_RANKINGS[preflop.key] : -1;
 
-		// Post blinds using settings
+		// Post blinds for this hand: the tournament derives them from the blind
+		// level, cash keeps its configured blinds.
+		const handBlinds =
+			this.mode === 'sng'
+				? SNG_BLINDS[levelFor(this.handNumber)]
+				: { small: settings.smallBlind, big: settings.bigBlind };
 		this.players[this.smallBlindIndex] = postBlind(
 			this.players[this.smallBlindIndex],
-			settings.smallBlind,
+			handBlinds.small,
 		);
-		this.players[this.bigBlindIndex] = postBlind(
-			this.players[this.bigBlindIndex],
-			settings.bigBlind,
-		);
+		this.players[this.bigBlindIndex] = postBlind(this.players[this.bigBlindIndex], handBlinds.big);
 
 		// Set game state
 		this.pot = calculatePot(this.players);
 		this.gamePhase = 'preflop';
 		this.bettingRound = 'preflop';
-		this.minimumBet = settings.bigBlind;
-		this.lastRaiseAmount = settings.bigBlind;
-		this.handSmallBlind = settings.smallBlind;
-		this.handBigBlind = settings.bigBlind;
+		this.minimumBet = handBlinds.big;
+		this.lastRaiseAmount = handBlinds.big;
+		this.handSmallBlind = handBlinds.small;
+		this.handBigBlind = handBlinds.big;
 
 		// Start with the first seat after the big blind that can still act; if
 		// the blinds already resolved the round (every seat all-in) run the

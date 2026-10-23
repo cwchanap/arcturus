@@ -1403,6 +1403,7 @@ export class PokerGame {
 			this.dealerIndex,
 			this.currentPlayerIndex,
 			this.bettingRound !== null,
+			this.handStartStacks,
 		);
 	}
 
@@ -1465,6 +1466,7 @@ export class PokerGame {
 			this.dealerIndex,
 			this.currentPlayerIndex,
 			active && !this.isProcessingAction,
+			this.handStartStacks,
 		);
 	}
 

@@ -12,7 +12,13 @@ import {
 	placeBet,
 	foldPlayer,
 } from './index';
-import { AUTO_DEAL_DELAY_MS, PokerGame, buildPokerSettlementCommand } from './PokerGame';
+import {
+	AUTO_DEAL_DELAY_MS,
+	AUTO_DEAL_STORAGE_KEY,
+	PokerGame,
+	buildPokerSettlementCommand,
+} from './PokerGame';
+import { SESSION_STATS_KEY } from './sessionStats';
 import { SNG_START_STACK } from './sitAndGo';
 import { clearLLMCache } from './llmAIStrategy';
 import type { GameSettingsManager } from './GameSettingsManager';
@@ -4096,6 +4102,221 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 	});
 });
 
+describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
+	type TerminalGame = {
+		players: Player[];
+		handNumber: number;
+		tournamentPlace: number | null;
+		handStartStacks: Map<number, number>;
+		humanChipsBefore: number;
+		serverSyncedBalance: number;
+		updateGameStatus: (message: string) => void;
+		finishHand: () => void;
+		settleHand: (outcome: 'win' | 'loss' | 'push') => void;
+		dealNewHand: () => Promise<void>;
+		scheduleAutoDeal: (delayMs: number) => void;
+	};
+
+	function sngTerminalTable(storage: Record<string, string> = {}) {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: (key: string) => (key in storage ? storage[key] : null),
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ balance: 500 }),
+		})) as unknown as typeof fetch;
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'false', pokerMode: 'sng' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '2500',
+				balanceAvailable: 'true',
+				guestMode: 'false',
+				userId: 'u_terminal',
+			},
+			innerHTML: '',
+			textContent: '$2,500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const game = new PokerGame() as unknown as TerminalGame;
+		return { elements, game };
+	}
+
+	function setTerminalStacks(game: TerminalGame, chips: number[], startStacks: number[]): void {
+		game.players = game.players.map((player, seat) => ({ ...player, chips: chips[seat] }));
+		game.handStartStacks = new Map(startStacks.map((stack, seat) => [seat, stack]));
+	}
+
+	test('a busting human places behind simultaneous larger-stack busts', () => {
+		const { game } = sngTerminalTable();
+		setTerminalStacks(game, [0, 0, 500, 0, 700, 600], [300, 450, 500, 0, 700, 600]);
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		game.finishHand();
+
+		// 3 funded survivors + the human; seat 1 busted the same hand from a
+		// larger start stack and finishes ahead, seat 3 busted before the hand.
+		expect(game.tournamentPlace).toBe(5);
+		expect(statuses).toEqual(['You finished 5th']);
+	});
+
+	test('a heads-up loss finishes 2nd and reports exactly once', () => {
+		const { game } = sngTerminalTable();
+		setTerminalStacks(game, [0, 3000, 0, 0, 0, 0], [500, 500, 0, 0, 0, 0]);
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		game.finishHand();
+		game.finishHand(); // a later end-of-hand sweep must not re-report the finish
+
+		expect(game.tournamentPlace).toBe(2);
+		expect(statuses).toEqual(['You finished 2nd']);
+	});
+
+	test('the sole surviving human finishes 1st', () => {
+		const { game } = sngTerminalTable();
+		setTerminalStacks(game, [3000, 0, 0, 0, 0, 0], [500, 500, 500, 500, 500, 500]);
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		game.finishHand();
+
+		expect(game.tournamentPlace).toBe(1);
+		expect(statuses).toEqual(['You finished 1st']);
+	});
+
+	test('an ordinary finished hand keeps the tournament open and auto-deal alive', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { game } = sngTerminalTable({ [AUTO_DEAL_STORAGE_KEY]: 'true' });
+			setTerminalStacks(game, [400, 0, 0, 900, 700, 0], [500, 300, 200, 500, 700, 300]);
+			const statuses: string[] = [];
+			game.updateGameStatus = (message) => statuses.push(message);
+
+			game.finishHand();
+
+			expect(game.tournamentPlace).toBeNull();
+			expect(statuses).toEqual([]);
+			expect(
+				timers.scheduledTimers.some(
+					(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared,
+				),
+			).toBe(true);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a terminal hand blocks queued, scheduled and manual deals', async () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game } = sngTerminalTable({ [AUTO_DEAL_STORAGE_KEY]: 'true' });
+			setTerminalStacks(game, [0, 3000, 0, 0, 0, 0], [500, 500, 0, 0, 0, 0]);
+
+			game.finishHand();
+
+			// The terminal hand queues no countdown...
+			expect(timers.scheduledTimers.filter((timer) => !timer.cleared)).toHaveLength(0);
+
+			// ...refuses any later scheduling attempt...
+			game.scheduleAutoDeal(0);
+			expect(timers.scheduledTimers.filter((timer) => !timer.cleared)).toHaveLength(0);
+
+			// ...and neither the manual deal button nor a fired auto-deal deal again.
+			elements['btn-deal'].click();
+			await flushAsyncWork();
+			await game.dealNewHand();
+			expect(game.handNumber).toBe(0);
+			expect(game.tournamentPlace).toBe(2);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a pre-terminal auto-deal timer firing after the terminal hand never deals', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { game } = sngTerminalTable({ [AUTO_DEAL_STORAGE_KEY]: 'true' });
+			// An ordinary hand end queues the 5-second auto-deal countdown.
+			setTerminalStacks(game, [400, 0, 0, 900, 700, 0], [500, 300, 200, 500, 700, 300]);
+			game.finishHand();
+			const countdown = timers.scheduledTimers.find(
+				(timer) => timer.delay === AUTO_DEAL_DELAY_MS && !timer.cleared,
+			);
+			expect(countdown).toBeDefined();
+
+			// The next hand ends the tournament: seat 3 was already busted, so the
+			// heads-up loss places 2nd and the pending countdown dies with it.
+			setTerminalStacks(game, [0, 2000, 0, 0, 0, 0], [400, 900, 0, 0, 0, 0]);
+			game.finishHand();
+			expect(game.tournamentPlace).toBe(2);
+
+			countdown!.callback(); // the clock fires the stale countdown anyway
+			expect(timers.scheduledTimers.filter((timer) => !timer.cleared)).toHaveLength(0);
+			expect(game.handNumber).toBe(0);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('cash settlement works normally after a fresh cash navigation', async () => {
+		const { game } = sngTerminalTable();
+		setTerminalStacks(game, [0, 3000, 0, 0, 0, 0], [500, 500, 0, 0, 0, 0]);
+		game.finishHand();
+		expect(game.tournamentPlace).toBe(2);
+
+		// A fresh cash page shares the browser storage but nothing else.
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500', balanceAvailable: 'true', userId: 'u_cash_after_sng' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const settlements: unknown[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			settle: async (command) => {
+				settlements.push(command);
+				return { balance: 450, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+
+		const cash = new PokerGame(undefined, gate) as unknown as TerminalGame;
+		cash.humanChipsBefore = 500;
+		cash.players[0] = { ...cash.players[0], chips: 450 };
+		cash.settleHand('loss');
+		await flushAsyncWork();
+
+		expect(settlements).toHaveLength(1);
+		const command = settlements[0] as ReturnType<typeof buildPokerSettlementCommand>;
+		expect(command.delta).toBe(-50);
+		expect(command.game).toBe('poker');
+		expect(cash.serverSyncedBalance).toBe(450);
+	});
+});
+
 describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 	type SimGame = {
 		players: Player[];
@@ -4136,8 +4357,16 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 		const globalThisWithSession = globalThis as typeof globalThis & {
 			sessionStorage?: Storage;
 		};
+		// A leftover cash session tally must survive the whole tournament untouched.
+		const seededCashSession = JSON.stringify({
+			hands: 3,
+			net: 250,
+			streak: 1,
+			biggestPot: 400,
+			bestHand: 'FLUSH',
+		});
 		globalThisWithSession.sessionStorage = {
-			getItem: () => null,
+			getItem: (key: string) => (key === SESSION_STATS_KEY ? seededCashSession : null),
 			setItem: (key: string, value: string) => sessionWrites.push(`${key}=${value}`),
 			removeItem: () => {},
 			clear: () => {},

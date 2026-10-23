@@ -4,6 +4,7 @@
  */
 
 import type { Player } from './types';
+import type { Locale } from '../i18n/locale';
 
 export type PokerMode = 'cash' | 'sng';
 
@@ -75,4 +76,13 @@ export function humanPlace(
 		1 +
 		bustedOpponentStartStacks.filter((stack) => stack > humanStartStack).length
 	);
+}
+
+/**
+ * Human-readable finish place: English ordinals ("5th"), bare numbers in
+ * languages that mark rank with particles instead of suffixes.
+ */
+export function placeLabel(locale: Locale, place: number): string {
+	if (locale !== 'en') return String(place);
+	return `${place}${['th', 'st', 'nd', 'rd'][place] ?? 'th'}`;
 }

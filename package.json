@@ -68,7 +68,7 @@
 		"eslint-plugin-astro": "^3.2.1",
 		"happy-dom": "20.14.5",
 		"husky": "^9.1.7",
-		"lint-staged": "^16.2.3",
+		"lint-staged": "^17.6.0",
 		"miniflare": "4.20260730.0",
 		"prettier": "^3.9.10",
 		"prettier-plugin-astro": "^0.14.1",

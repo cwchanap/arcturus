@@ -21,9 +21,30 @@ export const SNG_HANDS_PER_LEVEL = 5;
 /**
  * Blind level derived from the existing 1-based handNumber.
  * Levels change on hands 1, 6, 11, 16, 21 and cap at the last level.
+ * Pre-deal callers pass 0; clamp so the ladder never indexes negative.
  */
 export function levelFor(handNumber: number): number {
-	return Math.min(SNG_BLINDS.length - 1, Math.floor((handNumber - 1) / SNG_HANDS_PER_LEVEL));
+	return Math.max(
+		0,
+		Math.min(SNG_BLINDS.length - 1, Math.floor((handNumber - 1) / SNG_HANDS_PER_LEVEL)),
+	);
+}
+
+/**
+ * Seat ids holding a place in the current hand, in table order: the seats
+ * that started it funded, or every funded seat before the first deal.
+ * Position labels and AI position reads order against this list so busted
+ * seats can't shift a live seat's place.
+ */
+export function seatsInHand(
+	players: Player[],
+	handStartStacks: ReadonlyMap<number, number>,
+): number[] {
+	return players
+		.filter((player) =>
+			handStartStacks.size === 0 ? player.chips > 0 : (handStartStacks.get(player.id) ?? 0) > 0,
+		)
+		.map((player) => player.id);
 }
 
 export interface SeatSelection {

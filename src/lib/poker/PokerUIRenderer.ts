@@ -9,7 +9,14 @@ import { countDrawingOuts, isSameCard, readHand } from './handReadout';
 import type { PokerSessionStats } from './sessionStats';
 import type { HandRecap, RecapAction } from './handRecap';
 import { TURN_WARN_SECONDS } from './turnTimer';
-import { SNG_BLINDS, SNG_HANDS_PER_LEVEL, levelFor, placeLabel } from './sitAndGo';
+import {
+	SNG_BLINDS,
+	SNG_HANDS_PER_LEVEL,
+	levelFor,
+	placeLabel,
+	seatsInHand,
+	type PokerMode,
+} from './sitAndGo';
 import { formatWholeNumber } from '../formatting';
 import { renderCardsToContainer, setSlotState } from '../card-slot-utils';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
@@ -85,8 +92,25 @@ export interface HandResultView {
 /** Values the Sit & Go toolbar header needs; level and next blinds derive from the hand number. */
 export interface TournamentHeaderView {
 	handNumber: number;
+	/**
+	 * The hand the level and countdown describe: the live hand mid-hand, the
+	 * upcoming hand between deals, null before hand 1.
+	 */
+	levelHand: number | null;
 	fundedSeats: number;
 	place: number | null;
+}
+
+/** Everything one table render needs; the game supplies each refresh. */
+export interface TableStateView {
+	players: Player[];
+	dealerIndex: number;
+	currentPlayerIndex: number;
+	/** A seat is genuinely being asked to act — drives the turn highlight. */
+	turnLive: boolean;
+	/** The hand's result is final; dealt-in zero-chip seats are out for good. */
+	settled: boolean;
+	handStartStacks: ReadonlyMap<number, number>;
 }
 
 export class PokerUIRenderer {
@@ -98,12 +122,13 @@ export class PokerUIRenderer {
 	private readonly seatLabels = new Map<number, SeatLabel>();
 	private currentHandLog: HTMLElement | null = null;
 
-	constructor() {
+	constructor(mode: PokerMode) {
 		// AppLayout writes data-locale on <html>; the renderer reads it so the
 		// browser and SSR share one locale handoff.
 		this.locale = getDocumentLocale();
 		this.t = pokerTranslator(this.locale);
-		this.isTournament = document.getElementById('poker-root')?.dataset?.pokerMode === 'sng';
+		// The game knows its mode; the renderer never sniffs the page for it.
+		this.isTournament = mode === 'sng';
 	}
 
 	public renderPlayerCards(humanPlayer: Player, communityCards: Card[]) {
@@ -251,17 +276,23 @@ export class PokerUIRenderer {
 		}
 	}
 
-	public hideOpponentHands() {
+	public hideOpponentHands(players: Player[], handStartStacks: ReadonlyMap<number, number>) {
+		// A seat that went all-in posting its blind holds cards at zero chips;
+		// the dealt-in set — not the live stack — decides who has a hand.
+		const dealtIn = new Set(seatsInHand(players, handStartStacks));
 		// Reset to face-down cards for opponents
-		Array.from({ length: NUM_PLAYERS - 1 }, (_, i) =>
-			document.getElementById(`opponent${i + 1}-cards`),
-		).forEach((container) => {
+		Array.from({ length: NUM_PLAYERS - 1 }, (_, i) => i + 1).forEach((id) => {
+			const container = document.getElementById(`opponent${id}-cards`);
 			if (!container) return;
+			// A tournament seat that busted earlier takes no cards — hidden
+			// slots stay silent for screen readers instead of announcing
+			// face-down cards that will never be dealt.
+			const busted = this.isTournament && !dealtIn.has(id);
 			const slots = container.querySelectorAll('.card-slot');
 			slots.forEach((slot, index) => {
 				// Remove any winner highlight
 				slot.classList.remove('ring-2', 'ring-[var(--deco-brass-bright)]');
-				if (index < 2) {
+				if (!busted && index < 2) {
 					setSlotState(slot, 'facedown');
 					this.setCardA11y(slot, null);
 				} else {
@@ -679,7 +710,8 @@ export class PokerUIRenderer {
 		const handsEl = document.getElementById('tournament-hands');
 		if (!handsEl) return;
 		handsEl.textContent = formatWholeNumber(view.handNumber, this.locale);
-		const level = view.handNumber < 1 ? null : levelFor(view.handNumber);
+		const levelHand = view.levelHand ?? 0;
+		const level = view.levelHand === null ? null : levelFor(levelHand);
 		const levelEl = document.getElementById('tournament-level');
 		if (levelEl) levelEl.textContent = level === null ? '—' : `${level + 1} / ${SNG_BLINDS.length}`;
 		const nextEl = document.getElementById('tournament-next');
@@ -691,7 +723,7 @@ export class PokerUIRenderer {
 						? this.t('tournamentFinalLevel')
 						: this.t('tournamentNextLevelIn', {
 								blinds: `${formatWholeNumber(SNG_BLINDS[level + 1].small, this.locale)} / ${formatWholeNumber(SNG_BLINDS[level + 1].big, this.locale)}`,
-								hands: SNG_HANDS_PER_LEVEL - ((view.handNumber - 1) % SNG_HANDS_PER_LEVEL),
+								hands: SNG_HANDS_PER_LEVEL - ((levelHand - 1) % SNG_HANDS_PER_LEVEL),
 							});
 		}
 		const playersEl = document.getElementById('tournament-players');
@@ -702,45 +734,51 @@ export class PokerUIRenderer {
 		if (placeEl && view.place !== null) placeEl.textContent = placeLabel(this.locale, view.place);
 	}
 
-	/** Unhide the terminal panel with the localized finish place; its plain links are the reset. */
-	public showTournamentTerminal(place: number) {
+	/** Unhide the terminal panel; the game translates the finish text once for both surfaces. */
+	public showTournamentTerminal(finishedText: string) {
 		const panel = document.getElementById('poker-terminal');
 		if (!panel) return;
 		const placeEl = document.getElementById('poker-terminal-place');
-		if (placeEl)
-			placeEl.textContent = this.t('tournamentFinished', {
-				place: placeLabel(this.locale, place),
-			});
+		if (placeEl) placeEl.textContent = finishedText;
 		panel.hidden = false;
 	}
 
-	public updateTableState(
-		players: Player[],
-		dealerIndex: number,
-		currentPlayerIndex: number,
-		active: boolean,
-		handStartStacks: ReadonlyMap<number, number>,
-	) {
+	public updateTableState(view: TableStateView) {
+		const { players, dealerIndex, currentPlayerIndex, turnLive, settled, handStartStacks } = view;
+		// Positions follow the seats dealt into this hand, not raw seat
+		// distance: a busted gap would otherwise shift every label, and
+		// heads-up the button posts the small blind while the other seat is
+		// the big blind.
+		const order = seatsInHand(players, handStartStacks);
+		const buttonAt = order.indexOf(dealerIndex);
+		const POSITION_LABELS = ['BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'];
 		for (const player of players) {
 			const seat = document.getElementById(`poker-seat-${player.id}`);
 			if (!seat) continue;
 			const isTurn =
-				active && player.id === currentPlayerIndex && !player.folded && !player.isAllIn;
+				turnLive && player.id === currentPlayerIndex && !player.folded && !player.isAllIn;
 			// A seat that was not dealt into the current hand is out of the
 			// tournament for good, so its eliminated state holds through every
 			// later betting round; a seat dealt into this hand only shows
 			// eliminated once the hand settles — a mid-hand all-in at zero
 			// chips can still win everything back.
 			const dealtIn = (handStartStacks.get(player.id) ?? 0) > 0;
-			const eliminated = this.isTournament && player.chips === 0 && (!dealtIn || !active);
+			const eliminated = this.isTournament && player.chips === 0 && (!dealtIn || settled);
 			seat.dataset.turn = String(isTurn);
 			seat.dataset.folded = String(player.folded);
 			seat.dataset.eliminated = String(eliminated);
 			const position = document.getElementById(`position-${player.id}`);
-			if (position)
-				position.textContent = ['BTN', 'SB', 'BB', 'UTG', 'MP', 'CO'][
-					(player.id - dealerIndex + players.length) % players.length
-				];
+			if (position) {
+				const seatAt = order.indexOf(player.id);
+				position.textContent =
+					seatAt === -1 || buttonAt === -1
+						? '—'
+						: order.length === 2
+							? seatAt === buttonAt
+								? 'BTN'
+								: 'BB'
+							: POSITION_LABELS[(seatAt - buttonAt + order.length) % order.length];
+			}
 			const action = document.getElementById(`opponent${player.id}-action`);
 			if (action) {
 				const label = this.seatLabels.get(player.id);

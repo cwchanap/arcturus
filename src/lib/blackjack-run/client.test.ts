@@ -6,6 +6,8 @@ import {
 } from './client';
 import type { BlackjackRunPublicState } from './protocol';
 
+type RankedRunState = Extract<BlackjackRunPublicState, { mode: 'ranked' }>;
+
 const RUN_ID = 'abcdefghijklmnopqrstuv';
 const REQUEST_ID = 'request-1234567890abcdef';
 
@@ -19,7 +21,7 @@ const originalFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
 
 beforeEach(() => {
 	fetchImpl = mock(() => Promise.resolve(jsonResponse(activeState())));
-	globalThis.fetch = fetchImpl as typeof fetch;
+	globalThis.fetch = fetchImpl as unknown as typeof fetch;
 });
 
 afterEach(() => {
@@ -45,7 +47,7 @@ function errorResponse(
 	});
 }
 
-function activeState(overrides: Partial<BlackjackRunPublicState> = {}): BlackjackRunPublicState {
+function activeState(overrides: Partial<RankedRunState> = {}): RankedRunState {
 	return {
 		mode: 'ranked',
 		runId: RUN_ID,
@@ -76,7 +78,7 @@ function activeState(overrides: Partial<BlackjackRunPublicState> = {}): Blackjac
 	};
 }
 
-function terminalState(overrides: Partial<BlackjackRunPublicState> = {}): BlackjackRunPublicState {
+function terminalState(overrides: Partial<RankedRunState> = {}): BlackjackRunPublicState {
 	return {
 		...activeState(),
 		status: 'settled',
@@ -228,7 +230,7 @@ describe('blackjack-run client', () => {
 			.mockResolvedValueOnce(jsonResponse(activeState({ balance: 732 })));
 
 		const client = createClient();
-		const state = await client.startRanked(10);
+		const state = (await client.startRanked(10)) as RankedRunState;
 
 		expect(requestUrl(1)).toBe('/api/blackjack-runs/current?mode=ranked');
 		expect(state.balance).toBe(732);
@@ -262,7 +264,7 @@ describe('blackjack-run client', () => {
 
 		const client = createClient();
 		await client.loadRun(RUN_ID);
-		const state = await client.command(RUN_ID, { command: 'hit' });
+		const state = (await client.command(RUN_ID, { command: 'hit' })) as RankedRunState;
 
 		expect(requestUrl(2)).toBe(`/api/blackjack-runs/${RUN_ID}`);
 		expect(state.nextSequence).toBe(4);
@@ -293,7 +295,7 @@ describe('blackjack-run client', () => {
 		fetchImpl.mockImplementation(() =>
 			Promise.resolve(jsonResponse(activeState({ balance: 500 }))),
 		);
-		expect((await client.loadRun(RUN_ID)).balance).toBe(500);
+		expect(((await client.loadRun(RUN_ID)) as RankedRunState).balance).toBe(500);
 	});
 
 	test('a timeout surfaces an error, sends no retry, and a later explicit load recovers', async () => {
@@ -319,7 +321,7 @@ describe('blackjack-run client', () => {
 		fetchImpl.mockImplementation(() =>
 			Promise.resolve(jsonResponse(activeState({ balance: 300 }))),
 		);
-		expect((await client.loadRun(RUN_ID)).balance).toBe(300);
+		expect(((await client.loadRun(RUN_ID)) as RankedRunState).balance).toBe(300);
 	});
 
 	test('a network failure surfaces an error and a later explicit load recovers', async () => {

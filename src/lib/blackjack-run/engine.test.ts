@@ -4,8 +4,10 @@ import {
 	replayBlackjackRound,
 	replayBlackjackRoundWithDeck,
 	shuffleDeck,
+	type BlackjackRoundOutcome,
 } from './engine';
-import { BlackjackRunError, type BlackjackAction } from './protocol';
+import type { Card } from '../blackjack/types';
+import { type BlackjackAction } from './protocol';
 import { card, deckWithDraws, splitCapableDeck } from './deck-helpers';
 
 function deckForFourHands(): Card[] {
@@ -322,7 +324,7 @@ describe('Blackjack dealer transition and settlement', () => {
 		({ deck, actions, name: _name, ...expectedOutcome }) => {
 			const replay = replayBlackjackRoundWithDeck(10, deck(), actions);
 
-			expect(replay.outcome).toEqual(expectedOutcome);
+			expect(replay.outcome).toEqual(expectedOutcome as unknown as BlackjackRoundOutcome);
 		},
 	);
 });
@@ -435,7 +437,7 @@ describe('Blackjack action rejection', () => {
 
 	test('rejects a rule-illegal action', () => {
 		expect(() => replayBlackjackRoundWithDeck(10, activeDeck(), ['split'])).toThrow(
-			expect.objectContaining<Partial<BlackjackRunError>>({
+			expect.objectContaining({
 				code: 'INVALID_ACTION',
 			}),
 		);
@@ -450,7 +452,7 @@ describe('Blackjack action rejection', () => {
 		);
 
 		expect(() => replayBlackjackRoundWithDeck(10, naturalDeck, ['stand'])).toThrow(
-			expect.objectContaining<Partial<BlackjackRunError>>({
+			expect.objectContaining({
 				code: 'INVALID_ACTION',
 			}),
 		);

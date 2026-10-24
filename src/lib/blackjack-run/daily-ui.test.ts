@@ -260,7 +260,7 @@ function installFetch(
 			}),
 		);
 	});
-	globalThis.fetch = fetchImpl as typeof fetch;
+	globalThis.fetch = fetchImpl as unknown as typeof fetch;
 }
 
 beforeEach(() => {
@@ -536,7 +536,7 @@ describe('daily page — guest bootstrap and local practice', () => {
 					headers: { 'content-type': 'application/json' },
 				}),
 			);
-		}) as typeof fetch;
+		}) as unknown as typeof fetch;
 
 		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
 
@@ -553,7 +553,7 @@ describe('daily page — guest bootstrap and local practice', () => {
 		const root = makeRoot(false);
 		globalThis.fetch = mock(() =>
 			Promise.resolve(new Response(JSON.stringify({ error: 'INTERNAL_ERROR' }), { status: 500 })),
-		) as typeof fetch;
+		) as unknown as typeof fetch;
 
 		await initDailyChallengePage(root, { createSeed: createSeedQueue({ count: 0 }) });
 
@@ -923,7 +923,7 @@ describe('daily run renderer — direct DOM behavior', () => {
 	test('renders exactly one weekly empty-state item when there are no entries', () => {
 		renderer.renderWeeklyLeaderboard(EMPTY_WEEKLY_LEADERBOARD);
 
-		const rows = root.querySelectorAll(
+		const rows = root.querySelectorAll<HTMLElement>(
 			'[data-testid="daily-challenge-weekly-leaderboard-rows"] > li',
 		);
 		expect(rows).toHaveLength(1);

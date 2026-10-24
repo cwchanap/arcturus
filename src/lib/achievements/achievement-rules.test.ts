@@ -418,6 +418,14 @@ describe('Achievement check functions', () => {
 				}
 			}
 		});
+
+		test('rejects misspelled feat IDs at compile time', () => {
+			const misspelled = {
+				// @ts-expect-error - a misspelled key fails the satisfies constraint
+				royal_treatmen: ['poker'],
+			} as const satisfies Partial<Record<AchievementId, readonly GameType[]>>;
+			expect(Object.keys(misspelled)).toEqual(['royal_treatmen']);
+		});
 	});
 
 	describe('reported feat checks', () => {

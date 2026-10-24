@@ -151,6 +151,35 @@ describe('wallet settlement validation', () => {
 		);
 	});
 
+	test('accepts legacy commands without feats and an empty feats array', () => {
+		expect(() => validate(command())).not.toThrow();
+		expect(() => validate(command({ feats: [] }))).not.toThrow();
+	});
+
+	test('accepts feats allowed for the settling game', () => {
+		expect(() => validate(command({ game: 'slots', feats: ['jackpot'] }))).not.toThrow();
+		expect(() => validate(command({ game: 'poker', feats: ['royal_treatment'] }))).not.toThrow();
+		expect(() =>
+			validate(command({ game: 'video-poker', feats: ['royal_treatment'] })),
+		).not.toThrow();
+		expect(() => validate(command({ game: 'sic-bo', feats: ['triple_threat'] }))).not.toThrow();
+	});
+
+	test('rejects malformed feats payloads', () => {
+		expectInvalid(command({ feats: 'jackpot' as never }));
+		expectInvalid(command({ feats: {} as never }));
+		expectInvalid(command({ feats: [42] as never }));
+		expectInvalid(command({ feats: [null] as never }));
+		expectInvalid(command({ feats: ['jackpot', 'jackpot'] as never }));
+		expectInvalid(command({ feats: ['bogus_feat'] as never }));
+	});
+
+	test('rejects feats claimed for the wrong game', () => {
+		expectInvalid(command({ game: 'blackjack', feats: ['jackpot'] as never }));
+		expectInvalid(command({ game: 'blackjack', feats: ['royal_treatment'] as never }));
+		expectInvalid(command({ game: 'slots', feats: ['royal_treatment'] as never }));
+	});
+
 	test('rejects excessive statistic values even with a zero delta', () => {
 		expectInvalid(
 			command({
@@ -206,6 +235,22 @@ describe('settleWalletRound', () => {
 			duplicate: true,
 		});
 		expect(calls).toHaveLength(1);
+	});
+
+	test('rejects invalid feats before any receipt lookup or write', async () => {
+		let prepareCount = 0;
+		const d1 = {
+			prepare(sql: string) {
+				prepareCount += 1;
+				void sql;
+				throw new Error('D1 must not be touched for invalid feats');
+			},
+		} as unknown as D1Database;
+
+		await expect(
+			settleWalletRound(d1, 'user-1', command({ feats: ['jackpot'] as never })),
+		).rejects.toMatchObject({ code: 'INVALID_COMMAND' });
+		expect(prepareCount).toBe(0);
 	});
 
 	test('rejects a missing user before attempting a settlement batch', async () => {
@@ -479,5 +524,24 @@ describe('settleWalletRound (Miniflare D1 integration)', () => {
 			.bind(userId)
 			.first<{ chipBalance: number }>();
 		expect(balance?.chipBalance).toBe(1000);
+	});
+
+	test('forwards validated feats so wallet feats can be granted', async () => {
+		const userId = 'feat-forward';
+		await insertIntegrationUser(d1!, userId);
+
+		const result = await settleWalletRound(
+			d1!,
+			userId,
+			command({
+				settlementId: 'slots-feat-round-1',
+				game: 'slots',
+				delta: 50,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 50 },
+				feats: ['jackpot'],
+			}),
+		);
+
+		expect(result.newAchievements?.map((achievement) => achievement.id)).toContain('jackpot');
 	});
 });

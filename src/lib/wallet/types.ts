@@ -1,4 +1,5 @@
 import type { AchievementId } from '../achievements/types';
+import type { WalletFeatId } from '../achievements/achievement-rules';
 import type { GameType } from '../game-stats/types';
 
 export interface RoundStats {
@@ -21,6 +22,8 @@ export interface SettleRoundCommand {
 	game: GameType;
 	delta: number;
 	stats: RoundStats;
+	/** Reported wallet feats; validated against WALLET_FEAT_GAMES and never persisted in receipts. */
+	feats?: readonly WalletFeatId[];
 }
 
 export interface SettleRoundResult {

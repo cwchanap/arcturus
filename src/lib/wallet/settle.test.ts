@@ -172,6 +172,11 @@ describe('wallet settlement validation', () => {
 		expectInvalid(command({ feats: [null] as never }));
 		expectInvalid(command({ feats: ['jackpot', 'jackpot'] as never }));
 		expectInvalid(command({ feats: ['bogus_feat'] as never }));
+		// Inherited Object.prototype members must be rejected as INVALID_COMMAND,
+		// not crash the lookup with a TypeError (which the API maps to a 500).
+		expectInvalid(command({ feats: ['constructor'] as never }));
+		expectInvalid(command({ feats: ['hasOwnProperty'] as never }));
+		expectInvalid(command({ feats: ['__proto__'] as never }));
 	});
 
 	test('rejects feats claimed for the wrong game', () => {

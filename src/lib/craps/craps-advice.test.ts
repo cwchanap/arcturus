@@ -74,7 +74,7 @@ describe('getCrapsAdvice', () => {
 	};
 
 	test('uses the shared client and parses Craps advice', async () => {
-		globalThis.fetch = async (input, init) => {
+		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 			expect(new URL(String(input)).pathname).toBe('/v1/chat/completions');
 			const body = JSON.parse(String(init?.body)) as {
 				model: string;
@@ -95,7 +95,7 @@ describe('getCrapsAdvice', () => {
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
 			);
-		};
+		}) as unknown as typeof fetch;
 
 		const result = await getCrapsAdvice(
 			{
@@ -117,7 +117,7 @@ describe('getCrapsAdvice', () => {
 	});
 
 	test('normalizes duplicate bets before building the provider prompt', async () => {
-		globalThis.fetch = async (_input, init) => {
+		globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
 			const body = JSON.parse(String(init?.body)) as {
 				messages: Array<{ content: string }>;
 			};
@@ -127,7 +127,7 @@ describe('getCrapsAdvice', () => {
 			return new Response(
 				JSON.stringify({ choices: [{ message: { content: '{"advice":"Keep it steady."}' } }] }),
 			);
-		};
+		}) as unknown as typeof fetch;
 
 		const result = await getCrapsAdvice(baseContext, settings);
 
@@ -135,8 +135,10 @@ describe('getCrapsAdvice', () => {
 	});
 
 	test('preserves parseable provider status for page-level UX', async () => {
-		globalThis.fetch = async () =>
-			new Response(JSON.stringify({ error: 'bad key' }), { status: 401 });
+		globalThis.fetch = (async () =>
+			new Response(JSON.stringify({ error: 'bad key' }), {
+				status: 401,
+			})) as unknown as typeof fetch;
 
 		expect(await getCrapsAdvice(baseContext, settings)).toEqual({
 			ok: false,
@@ -191,12 +193,12 @@ describe('getCrapsAdvice', () => {
 		}) as typeof clearTimeout;
 
 		try {
-			globalThis.fetch = async (_input, init) =>
+			globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) =>
 				await new Promise<Response>((_resolve, reject) => {
 					init?.signal?.addEventListener('abort', () =>
 						reject(new DOMException('Aborted', 'AbortError')),
 					);
-				});
+				})) as unknown as typeof fetch;
 
 			const result = await getCrapsAdvice(baseContext, settings);
 
@@ -209,7 +211,7 @@ describe('getCrapsAdvice', () => {
 	});
 
 	test('keeps Craps response defaults for missing or invalid fields', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(
 				JSON.stringify({
 					choices: [
@@ -221,7 +223,7 @@ describe('getCrapsAdvice', () => {
 						},
 					],
 				}),
-			);
+			)) as unknown as typeof fetch;
 
 		const result = await getCrapsAdvice(baseContext, settings);
 
@@ -236,7 +238,7 @@ describe('getCrapsAdvice', () => {
 	});
 
 	test('filters mixed suggested bets to known Craps bet types', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(
 				JSON.stringify({
 					choices: [
@@ -248,7 +250,7 @@ describe('getCrapsAdvice', () => {
 						},
 					],
 				}),
-			);
+			)) as unknown as typeof fetch;
 
 		const result = await getCrapsAdvice(baseContext, settings);
 
@@ -259,7 +261,7 @@ describe('getCrapsAdvice', () => {
 	});
 
 	test('falls back to pass line when no suggested bets are valid', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(
 				JSON.stringify({
 					choices: [
@@ -270,7 +272,7 @@ describe('getCrapsAdvice', () => {
 						},
 					],
 				}),
-			);
+			)) as unknown as typeof fetch;
 
 		const result = await getCrapsAdvice(baseContext, settings);
 

@@ -15,18 +15,18 @@ describe('fetchWithTimeout', () => {
 		expect(res).toBe(okResponse);
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 		const [, init] = fetchSpy.mock.calls[0];
-		expect(init.signal).toBeInstanceOf(AbortSignal);
+		expect(init?.signal).toBeInstanceOf(AbortSignal);
 		fetchSpy.mockRestore();
 	});
 
 	test('aborts after the timeout elapses', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		await expect(fetchWithTimeout('https://example.com', {}, 10)).rejects.toThrow('aborted');
@@ -35,7 +35,7 @@ describe('fetchWithTimeout', () => {
 
 	test('propagates an already-aborted caller signal immediately', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -44,7 +44,7 @@ describe('fetchWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();
@@ -58,7 +58,7 @@ describe('fetchWithTimeout', () => {
 
 	test('registers no abort listener when the caller signal is already aborted', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -67,7 +67,7 @@ describe('fetchWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();
@@ -89,7 +89,7 @@ describe('fetchWithTimeout', () => {
 
 	test('propagates a caller signal aborted mid-flight', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -98,7 +98,7 @@ describe('fetchWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();
@@ -147,7 +147,7 @@ describe('fetchWithTimeout', () => {
 
 	test('removes the caller-signal abort listener after a caller-abort rejection', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -156,7 +156,7 @@ describe('fetchWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();
@@ -180,7 +180,7 @@ describe('fetchWithTimeout', () => {
 
 	test('removes the caller-signal abort listener after a timeout rejection', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -189,7 +189,7 @@ describe('fetchWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();
@@ -237,7 +237,7 @@ describe('fetchJsonWithTimeout', () => {
 		// keep the abort controller armed across the body read so a stalled
 		// body aborts and the caller can fall through to its fallback.
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((resolve) => {
 					// Resolve immediately with headers, but the body stream
 					// never emits chunks and never closes. When the abort
@@ -252,7 +252,7 @@ describe('fetchJsonWithTimeout', () => {
 						},
 					});
 					resolve(new Response(neverClosingBody, { status: 200 }));
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		await expect(
@@ -263,12 +263,12 @@ describe('fetchJsonWithTimeout', () => {
 
 	test('aborts after the timeout when fetch itself stalls', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		await expect(fetchJsonWithTimeout('https://example.com', {}, 10)).rejects.toThrow('aborted');
@@ -277,7 +277,7 @@ describe('fetchJsonWithTimeout', () => {
 
 	test('propagates an already-aborted caller signal immediately', async () => {
 		const fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
-			(_url: string, init?: RequestInit) =>
+			((_url: string, init?: RequestInit) =>
 				new Promise((_resolve, reject) => {
 					if (init?.signal?.aborted) {
 						reject(new DOMException('aborted', 'AbortError'));
@@ -286,7 +286,7 @@ describe('fetchJsonWithTimeout', () => {
 					init?.signal?.addEventListener('abort', () => {
 						reject(new DOMException('aborted', 'AbortError'));
 					});
-				}),
+				})) as unknown as typeof fetch,
 		);
 
 		const caller = new AbortController();

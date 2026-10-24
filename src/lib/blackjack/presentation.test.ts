@@ -93,7 +93,7 @@ describe('createBlackjackCardElement', () => {
 			{ rank: 'K', suit: 'spades' },
 			'ranked-player-card',
 		);
-		document.body.append(card);
+		document.body.append(card as unknown as string);
 
 		const byRole = document.querySelector('[role="img"]');
 		expect(byRole).toBe(card);
@@ -104,11 +104,11 @@ describe('createBlackjackCardElement', () => {
 		const isolated = new Window();
 		try {
 			const card = createBlackjackCardElement(
-				isolated.document,
+				isolated.document as unknown as Document,
 				{ rank: 'K', suit: 'spades' },
 				'iso-card',
 			);
-			expect(card.ownerDocument).toBe(isolated.document);
+			expect(card.ownerDocument).toBe(isolated.document as unknown as Document);
 			expect(card.textContent).toBe('K♠');
 		} finally {
 			isolated.close();
@@ -124,7 +124,7 @@ describe('renderBlackjackDealer', () => {
 	test('renders only the projected cards and writes the formatted value', () => {
 		const dealerHand = document.createElement('div');
 		const dealerValue = document.createElement('span');
-		document.body.append(dealerHand, dealerValue);
+		(document.body.append as (...nodes: (Node | string)[]) => void)(dealerHand, dealerValue);
 
 		renderBlackjackDealer(
 			document,
@@ -149,7 +149,7 @@ describe('renderBlackjackDealer', () => {
 	test('honors an alternate test-id prefix', () => {
 		const dealerHand = document.createElement('div');
 		const dealerValue = document.createElement('span');
-		document.body.append(dealerHand, dealerValue);
+		(document.body.append as (...nodes: (Node | string)[]) => void)(dealerHand, dealerValue);
 
 		renderBlackjackDealer(
 			document,
@@ -169,8 +169,14 @@ describe('renderBlackjackDealer', () => {
 	test('clears the container when no cards are projected', () => {
 		const dealerHand = document.createElement('div');
 		const dealerValue = document.createElement('span');
-		dealerHand.append(createBlackjackCardElement(document, { rank: '2', suit: 'clubs' }, 'stale'));
-		document.body.append(dealerHand, dealerValue);
+		dealerHand.append(
+			createBlackjackCardElement(
+				document,
+				{ rank: '2', suit: 'clubs' },
+				'stale',
+			) as unknown as string,
+		);
+		(document.body.append as (...nodes: (Node | string)[]) => void)(dealerHand, dealerValue);
 
 		renderBlackjackDealer(
 			document,
@@ -191,7 +197,7 @@ describe('renderBlackjackPlayerHands', () => {
 
 	test('renders label, value, and cards for each hand and styles the active hand', () => {
 		const playerHands = document.createElement('div');
-		document.body.append(playerHands);
+		document.body.append(playerHands as unknown as string);
 		const hands = [
 			{
 				cards: [{ rank: 'A', suit: 'clubs' }] as readonly Card[],
@@ -236,7 +242,7 @@ describe('renderBlackjackPlayerHands', () => {
 
 	test('formats the wager through the provided formatter', () => {
 		const playerHands = document.createElement('div');
-		document.body.append(playerHands);
+		document.body.append(playerHands as unknown as string);
 
 		renderBlackjackPlayerHands(
 			document,
@@ -257,8 +263,8 @@ describe('renderBlackjackPlayerHands', () => {
 
 	test('replaces existing hands instead of appending', () => {
 		const playerHands = document.createElement('div');
-		playerHands.append(document.createElement('section'));
-		document.body.append(playerHands);
+		playerHands.append(document.createElement('section') as unknown as string);
+		document.body.append(playerHands as unknown as string);
 
 		renderBlackjackPlayerHands(document, playerHands, [], 0, {
 			testIdPrefix: 'ranked',

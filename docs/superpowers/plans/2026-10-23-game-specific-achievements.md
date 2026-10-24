@@ -31,7 +31,9 @@ Before coding, confirm `main` has not changed relevant achievement/wallet/SNG bo
 
 **Files**
 - `src/lib/achievements/achievements.ts`
-- `src/lib/game-stats/game-stats-repository.ts` (read existing export, change only if necessary)
+- `src/lib/game-stats/aggregation.ts` (reuse existing `aggregateGameStats` export)
+- `src/lib/game-stats/game-stats-repository.ts` (reuse existing `getAllUserGameStats` export)
+- New `src/lib/wallet/feats.ts` (single small literal allowlist and derived `WalletFeatId` type)
 - `src/lib/wallet/types.ts`
 - `src/lib/wallet/settle.ts`
 - `src/lib/achievements/achievements.test.ts`
@@ -39,10 +41,10 @@ Before coding, confirm `main` has not changed relevant achievement/wallet/SNG bo
 - `src/lib/wallet/settle-api.test.ts`
 
 **Work**
-1. Supply `getAllUserGameStats` to the existing service's dependency object alongside `getAggregateUserStats`. Map the returned 11-or-fewer rows into the rule context; pass optional `feats` through service options. Prefer the already-existing reader over a custom query or a new repository class.
-2. Add `feats?: string[]` on `SettleRoundCommand`. Extend `validate(unknown)` allowed top-level keys with `feats`, use one concise per-game allowlist, and allow zero or one valid feat. Validate before receipt lookup, balance update or DB batch. All omitted-feat commands remain valid.
+1. **Swap, do not add**, the achievement service dependency: replace `getAggregateUserStats` with `getAllUserGameStats` and compute current aggregate fields using `aggregateGameStats(rows)` from the same returned rows. Map those 11-or-fewer rows into the rule context, pass optional feat IDs through service options, and adjust service test mocks. Do not run two identical D1 selects or invent a second repository.
+2. Create one literal per-game wallet allowlist in `src/lib/wallet/feats.ts` and derive its closed `WalletFeatId` union from its values. Add `feats?: readonly WalletFeatId[]` to `SettleRoundCommand`; allow `readonly (WalletFeatId | 'sng_champion')[]` in achievement service/context options for the isolated SNG event. Extend `validate(unknown)` allowed top-level keys with `feats`, check against the same allowlist at runtime, and allow zero or one valid wallet feat. Validate before receipt lookup, balance update or DB batch. All omitted-feat commands remain valid. Test wrong game, unknown, malformed, and duplicate values.
 3. Forward validated `command.feats` from `buildFreshResult` to achievement evaluation. Do not change wallet receipt schema, post-commit ordering, or duplicate-receipt behavior.
-4. Test accepted/disallowed combinations, malformed arrays, missing feats, duplicate receipt idempotence, and the new context dependency. Ensure previous achievement/wallet tests still pass.
+4. Test accepted/disallowed combinations, malformed arrays, missing feats, duplicate receipt idempotence, and the **one-reader** context dependency. Assert `getAllUserGameStats` is called once per achievement evaluation and totals match `aggregateGameStats` output. Ensure previous achievement/wallet tests still pass.
 
 **Gate:** `bun test src/lib/achievements src/lib/wallet`.
 
@@ -58,13 +60,13 @@ Before coding, confirm `main` has not changed relevant achievement/wallet/SNG bo
 - `src/pages/api/roulette/spin.ts` / `src/lib/roulette/spin-api.test.ts`
 
 **Work**
-1. Extend `PublicGameSettlementController.completeRound(netDelta, localBalance, feats?)` and `buildRoundSettlementCommand(..., feats?)`; do **not** introduce a second settlement controller. Video Poker emits `royal_treatment` from `round.evaluation.category`; Sic Bo emits `triple_threat` if the dice all match and any bet won.
+1. Extend `PublicGameSettlementController.completeRound(netDelta, localBalance, feats?: readonly WalletFeatId[])` and `buildRoundSettlementCommand(..., feats?)`; do **not** introduce a second settlement controller. Video Poker emits `royal_treatment` from `round.evaluation.category`; Sic Bo emits `triple_threat` if the dice all match and any bet won. **The other two existing consumers**, Three-Card Showdown and Pai Gow Poker, continue to call the controller without feats and must produce byte-for-byte equivalent settlement command shapes.
 2. Cash Poker: check `readHand(human.hand, communityCards)` when the completed hand is settled; pass `royal_treatment` to the existing command builder only when the human did not fold and qualifies. Never emit it from SNG through the cash settlement path.
 3. Keno: use `result.multiplier >= 100` in the existing command builder. Slots: use `result.lineWins.some(win => win.symbol === 'seven' && win.count === 5)`. Keep the same feat on settlement retry, because the original command is already retained by the gate.
 4. Roulette: compute `straight_up` from `results.some(result => result.won && result.bet.type === 'straight')` after server evaluation and include it in the server-built command. Reject any request trying to submit a feat via roulette client fields.
-5. Test command shape and negative outcomes in game-local tests; smoke-test the shared public-game controller and roulette server route. No new graphics, settings, page-level state machines, or payout changes.
+5. Test command shape and negative outcomes in game-local tests; extend `src/lib/wallet/public-game-settlement.test.ts` to cover omitted-feats behavior and authenticated/guest flows for unchanged Three-Card Showdown and Pai Gow Poker callers. Add focused tests in their existing client/init test suites only where needed; do not modify either game's production code. Smoke-test the roulette server route. No new graphics, settings, page-level state machines, or payout changes.
 
-**Gate:** focused Poker, Video Poker, Sic Bo, Keno, Slots, Roulette and wallet-controller unit tests.
+**Gate:** focused Poker, Video Poker, Sic Bo, Keno, Slots, Roulette, shared wallet-controller, Three-Card Showdown, and Pai Gow Poker regression tests.
 
 ## 4. Wallet-free Sit & Go Champion
 
@@ -102,7 +104,9 @@ Before coding, confirm `main` has not changed relevant achievement/wallet/SNG bo
 ## Completion checklist
 
 - [ ] Nine badges in IDs/rules/i18n, with tests and correct `gameType`
-- [ ] One allowlisted optional wallet `feats` input, with negative validation tests
+- [ ] One closed-union, allowlisted optional wallet `feats` input, with negative validation tests
+- [ ] Single `game_stats` read per evaluation (local `aggregateGameStats`); no duplicate query
+- [ ] Three-Card Showdown and Pai Gow Poker remain unchanged through the shared-controller extension
 - [ ] Five wallet-attached feats, three stat milestones, and a wallet-free SNG champion signal
 - [ ] No DB/schema changes, no new artwork, no second progression or settlement path
 - [ ] Toast/profile verified; full lint/test/format/build gates green

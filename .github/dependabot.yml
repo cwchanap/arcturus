@@ -13,6 +13,12 @@ updates:
     commit-message:
       prefix: 'chore'
       include: 'scope'
+    ignore:
+      # vitest 5 (vite 7) breaks integration tests via astro's getViteConfig
+      # ("assetsInclude" must be a string, astro passes a function); revisit
+      # once astro ships a compatible vite baseline
+      - dependency-name: 'vitest'
+        update-types: ['version-update:semver-major']
     groups:
       js-minor-and-patch:
         patterns:

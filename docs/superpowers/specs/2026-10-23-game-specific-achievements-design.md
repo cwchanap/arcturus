@@ -18,7 +18,7 @@ These are **account achievements** only. Guests can play the games but do not pe
 - `src/lib/achievements/achievement-repository.ts`: idempotent `user_achievement` insert keyed by `(userId, achievementId)`; `gameType` already exists.
 - `src/lib/wallet/{types,settle}.ts`: validated per-round command, persisted wallet receipt and best-effort achievement evaluation after settlement.
 - `src/lib/game-stats/{constants,game-stats-repository}.ts`: the 11 `GAME_TYPES` and `getAllUserGameStats`, with per-game hands, wins, and biggest win.
-- `src/lib/wallet/public-game-settlement.ts`: shared settlement controller for Video Poker and Sic Bo; Slots, Keno, and Poker have game-local command builders.
+- `src/lib/wallet/public-game-settlement.ts`: shared settlement controller for Video Poker, Sic Bo, Three-Card Showdown, and Pai Gow Poker. The latter two must retain unchanged behavior when the optional feat argument is omitted; Slots, Keno, and Poker have game-local command builders.
 - `src/lib/i18n/messages/achievements.ts`: achievement names/descriptions in en, zh-Hant, zh-Hans, and ja. The shared `achievement-earned` event is already handled by the toast. The profile reads `ACHIEVEMENTS`.
 
 **HPA-176 is merged and its Sit & Go runtime exists.** Its `PokerGame.settleTournamentOutcome()` already knows `finishedPlace`, but SNG intentionally has no wallet transaction, no cash-Poker stats, and no account mission event. Do not add any of those to award an SNG badge.
@@ -41,7 +41,9 @@ The account-wide milestones are **retroactive** against existing aggregate stats
 
 ## Settlement feat contract
 
-Extend `SettleRoundCommand` with optional `feats?: string[]`. Add `feats?: readonly string[]` to the achievement service/context options. The wallet's `validate(unknown)` accepts omitted feats or an array containing at most one recognized feat, and rejects non-strings, duplicates, unknown IDs, and a feat not allowed for that `game` with `INVALID_COMMAND`, before any wallet write. A single game can emit at most one defined feat per round today; avoid a generalized registry/plugin mechanism.
+Extend `SettleRoundCommand` with optional `feats?: readonly WalletFeatId[]` rather than unbounded strings. Define the small per-game wallet allowlist once in `src/lib/wallet/feats.ts` as an `as const` object constrained by `Partial<Record<GameType, readonly string[]>>`, and derive `WalletFeatId` from the literal values of that same object. Both the wallet command type and runtime validation must use that single allowlist; game builders then get compile-time checking without duplicating a second list of allowed IDs. The achievement service/context accepts `feats?: readonly (WalletFeatId | 'sng_champion')[]` so the isolated SNG endpoint can pass its fixed event, while wallet commands cannot carry `sng_champion`.
+
+The wallet's `validate(unknown)` accepts omitted feats or an array containing at most one recognized, game-allowed wallet feat. It rejects non-strings, duplicates, unknown IDs, and a feat not allowed for that `game` with `INVALID_COMMAND` before any wallet write. Runtime validation remains essential for untrusted JSON, even with the closed TypeScript type. A single game can emit at most one defined feat per round today; avoid a generalized registry/plugin mechanism.
 
 Wallet feat allowlist:
 
@@ -54,7 +56,7 @@ Wallet feat allowlist:
 
 `sng_champion` is **not valid on any wallet command**. It uses the SNG-only endpoint. The service's feat checks require the expected `gameType` and the feat ID in the current request; milestones require no feat. Do not persist the feat array in the wallet receipt or game stats: it is only input to post-settlement achievement checking.
 
-Use `getAllUserGameStats(db, userId)` once as an additional service dependency to build a compact per-game stats view. Reuse the existing aggregate query rather than rewriting all consumers. This costs one small D1 read per normal achievement evaluation and avoids a new materialized store.
+**Replace** the achievement service's `getAggregateUserStats` dependency with `getAllUserGameStats(db, userId)`; do not add both. `getAggregateUserStats` already calls `getAllUserGameStats` internally, so using both would query identical D1 rows twice per evaluation. In `buildAchievementContext`, call the per-game repository reader once, then derive the existing total fields locally with the already-exported `aggregateGameStats(rows)` from `src/lib/game-stats/aggregation.ts`. Pass both the aggregate fields and compact per-game rows into the rule context. This keeps one `game_stats` D1 read per achievement evaluation (besides the existing earned-ID/rank reads), with no new table or query.
 
 ### SNG-only achievement event
 
@@ -66,7 +68,7 @@ Return only the newly granted `{id, icon}` payload; dispatch the existing `achie
 
 ## Client integration
 
-- Video Poker/Sic Bo: add an optional `feats` argument to `PublicGameSettlementController.completeRound` so existing callers remain unchanged; derive the feat from the completed round and submit it with the same wallet command.
+- Video Poker/Sic Bo: add an optional typed `feats` argument to `PublicGameSettlementController.completeRound` so all existing callers remain unchanged; derive the feat from the completed round and submit it with the same wallet command. Explicitly regression-test that Three-Card Showdown and Pai Gow Poker continue submitting their original feat-free commands through this same controller.
 - Poker: include `royal_treatment` on the *cash* `buildPokerSettlementCommand` call only when the human reaches a qualifying complete hand. Keep SNG fully isolated.
 - Slots and Keno: extend existing game-local command builders to read `lineWins` or `multiplier` on the completed result, respectively. Retried commands retain the original feat list.
 - Roulette: set `straight_up` within `src/pages/api/roulette/spin.ts`, using server-calculated winning `BetResult`, not a client flag.
@@ -82,7 +84,8 @@ Do not add live progress bars, leaderboard filters, multi-tier badge art, retros
 
 1. Every added ID has one definition, rule, and translated name/description in all four locales. Existing five achievement rules remain unchanged.
 2. All six feat predicates and three milestone predicates are covered by positive, negative, game attribution, and already-earned unit tests.
-3. Invalid/disallowed wallet feats return `INVALID_COMMAND` before writes; omitted feats leave previous requests untouched.
-4. A single accepted wallet event grants each feat once, and repeated receipts/POSTs do not grant a second badge.
-5. SNG champion works only on signed-in first-place completion and never touches wallet, guest bankroll, cash stats, or missions.
-6. Profile and toast show new earned badges. Run focused unit tests, full unit suite, lint, format check and build, plus at least one representative browser journey.
+3. Invalid/disallowed wallet feats return `INVALID_COMMAND` before writes; omitted feats leave previous requests untouched. Compile-time wallet callers use the closed `WalletFeatId` union; untrusted JSON is checked against the same allowlist.
+4. Achievement evaluation reads the user's `game_stats` only once and derives aggregate totals locally. The shared settlement controller continues to work without feats for both Three-Card Showdown and Pai Gow Poker.
+5. A single accepted wallet event grants each feat once, and repeated receipts/POSTs do not grant a second badge.
+6. SNG champion works only on signed-in first-place completion and never touches wallet, guest bankroll, cash stats, or missions.
+7. Profile and toast show new earned badges. Run focused unit tests, full unit suite, lint, format check and build, plus at least one representative browser journey.

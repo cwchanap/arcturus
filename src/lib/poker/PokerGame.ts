@@ -55,6 +55,7 @@ import {
 	levelFor,
 	nextFundedSeats,
 	placeLabel,
+	seatsInHand,
 	type PokerMode,
 } from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
@@ -200,8 +201,18 @@ export class PokerGame {
 		// and SSR share one locale handoff for status/phase/pot copy.
 		this.locale = getDocumentLocale();
 		this.t = pokerTranslator(this.locale);
+
+		// The page declares guest/mode first: helpers below take it from the
+		// game rather than sniffing the DOM themselves.
+		const balanceEl = document.getElementById('player-balance');
+		const rootEl = document.getElementById('poker-root');
+		this.isGuestMode =
+			isGuestModeValue(balanceEl?.dataset?.guestMode) ||
+			isGuestModeValue(rootEl?.dataset?.guestMode);
+		this.mode = rootEl?.dataset?.pokerMode === 'sng' ? 'sng' : 'cash';
+
 		this.deck = new DeckManager();
-		this.ui = new PokerUIRenderer();
+		this.ui = new PokerUIRenderer(this.mode);
 		this.aiRival = new AIRivalAssistant();
 		this.settingsManager = new GameSettingsManager();
 		this.sessionStats = loadSessionStats();
@@ -209,12 +220,6 @@ export class PokerGame {
 		this.turnTimerEnabled = PokerGame.loadTurnTimerPreference();
 
 		// Seed serverSyncedBalance from the server-rendered DOM value
-		const balanceEl = document.getElementById('player-balance');
-		const rootEl = document.getElementById('poker-root');
-		this.isGuestMode =
-			isGuestModeValue(balanceEl?.dataset?.guestMode) ||
-			isGuestModeValue(rootEl?.dataset?.guestMode);
-		this.mode = rootEl?.dataset?.pokerMode === 'sng' ? 'sng' : 'cash';
 		const balanceAvailable = balanceEl?.dataset?.balanceAvailable;
 		const rawBalance = balanceEl?.dataset?.balance ?? balanceEl?.textContent ?? '';
 		// Strip locale formatting (commas, currency symbols) then parse
@@ -278,11 +283,6 @@ export class PokerGame {
 	/** Guest cash play and Sit & Go are both fully local: no wallet, account balance, or LLM access. */
 	private get playsLocally(): boolean {
 		return this.isGuestMode || this.mode === 'sng';
-	}
-
-	/** The human's Sit & Go finish place, or null while the tournament runs. */
-	public get tournamentPlace(): number | null {
-		return this.finishedPlace;
 	}
 
 	private getEffectiveServerBalance(): number {
@@ -629,9 +629,12 @@ export class PokerGame {
 							.map((player) => this.handStartStacks.get(player.id) ?? 0),
 					);
 		this.finishedPlace = place;
-		// Localized terminal status; the renderer shows the plain-link panel.
-		this.updateGameStatus(this.t('tournamentFinished', { place: placeLabel(this.locale, place) }));
-		this.ui.showTournamentTerminal(place);
+		// Localized once for both the status line and the plain-link panel.
+		const finished = this.t('tournamentFinished', {
+			place: placeLabel(this.locale, place),
+		});
+		this.updateGameStatus(finished);
+		this.ui.showTournamentTerminal(finished);
 	}
 
 	/** Celebrate when a new street improves the human to two pair or better. */
@@ -934,11 +937,12 @@ export class PokerGame {
 			);
 		}
 
-		// Update blinds from settings
-		this.minimumBet = settings.bigBlind;
-		this.lastRaiseAmount = settings.bigBlind;
-		this.handSmallBlind = settings.smallBlind;
-		this.handBigBlind = settings.bigBlind;
+		// Baseline blinds come from the tournament ladder in SNG — the saved
+		// cash blinds must never leak onto the table before the first deal.
+		this.minimumBet = isSng ? SNG_BLINDS[0].big : settings.bigBlind;
+		this.lastRaiseAmount = this.minimumBet;
+		this.handSmallBlind = isSng ? SNG_BLINDS[0].small : settings.smallBlind;
+		this.handBigBlind = isSng ? SNG_BLINDS[0].big : settings.bigBlind;
 	}
 
 	/**
@@ -1125,7 +1129,7 @@ export class PokerGame {
 		this.currentPlayerIndex = getNextPlayerIndex(this.players, this.bigBlindIndex);
 
 		// Render UI
-		this.ui.hideOpponentHands(); // Hide opponent cards for new hand
+		this.ui.hideOpponentHands(this.players, this.handStartStacks); // Hide opponent cards for new hand
 		this.ui.renderPlayerCards(this.players[0], this.communityCards);
 		this.ui.renderCommunityCards(this.communityCards);
 		this.ui.updateOpponentUI(this.players);
@@ -1134,7 +1138,16 @@ export class PokerGame {
 		this.hideRebuyButton();
 
 		if (isBettingRoundComplete(this.players)) {
-			this.scheduleTurnTransition(1000, () => this.nextPhase());
+			// The blinds themselves ran every live seat all-in (reachable
+			// heads-up at high levels): nobody owns a turn, so hold the same
+			// processing state a mid-hand runout does before the board runs out.
+			this.currentPlayerIndex = -1;
+			this.isProcessingAction = true;
+			this.updateActionButtons();
+			this.scheduleTurnTransition(1000, () => {
+				this.isProcessingAction = false;
+				this.nextPhase();
+			});
 		} else if (this.currentPlayerIndex === 0) {
 			this.updateGameStatus(
 				this.t('statusYourTurnFull', {
@@ -1381,16 +1394,18 @@ export class PokerGame {
 	}
 
 	private getPlayerPosition(player: Player): 'early' | 'middle' | 'late' {
-		const dealerIndex = this.dealerIndex;
-		const playerIndex = this.players.findIndex((p) => p.id === player.id);
+		// Position reads run over the seats dealt into this hand: a busted
+		// tournament seat between the button and a live seat must not drag
+		// that read late.
+		const order = seatsInHand(this.players, this.handStartStacks);
 		const positionFromDealer =
-			(playerIndex - dealerIndex + this.players.length) % this.players.length;
+			(order.indexOf(player.id) - order.indexOf(this.dealerIndex) + order.length) % order.length;
 
 		if (positionFromDealer === 0) return 'late';
 		// 3-handed: dealer=late, the seat immediately after the dealer acts first
 		// postflop (early), and the remaining seat is middle. Without this special
 		// case both non-dealer seats collapse to 'early' and 'middle' is unreachable.
-		if (this.players.length === 3) {
+		if (order.length === 3) {
 			return positionFromDealer === 1 ? 'early' : 'middle';
 		}
 		return positionFromDealer <= 2 ? 'early' : positionFromDealer === 3 ? 'middle' : 'late';
@@ -1398,13 +1413,14 @@ export class PokerGame {
 
 	private updateGameStatus(message: string) {
 		this.ui.updateGameStatus(message, this.gamePhase, this.pot);
-		this.ui.updateTableState(
-			this.players,
-			this.dealerIndex,
-			this.currentPlayerIndex,
-			this.bettingRound !== null,
-			this.handStartStacks,
-		);
+		this.ui.updateTableState({
+			players: this.players,
+			dealerIndex: this.dealerIndex,
+			currentPlayerIndex: this.currentPlayerIndex,
+			turnLive: this.bettingRound !== null && !this.isProcessingAction,
+			settled: this.bettingRound === null,
+			handStartStacks: this.handStartStacks,
+		});
 	}
 
 	private updateActionButtons() {
@@ -1461,13 +1477,14 @@ export class PokerGame {
 			contestablePot(this.players, human, callCap),
 		);
 		this.updateBetControls();
-		this.ui.updateTableState(
-			this.players,
-			this.dealerIndex,
-			this.currentPlayerIndex,
-			active && !this.isProcessingAction,
-			this.handStartStacks,
-		);
+		this.ui.updateTableState({
+			players: this.players,
+			dealerIndex: this.dealerIndex,
+			currentPlayerIndex: this.currentPlayerIndex,
+			turnLive: active && !this.isProcessingAction,
+			settled: !active,
+			handStartStacks: this.handStartStacks,
+		});
 	}
 
 	/**
@@ -1635,9 +1652,17 @@ export class PokerGame {
 
 		// All-in runout: with fewer than two seats able to bet nobody gets a
 		// turn (a lone actor cannot bet into an all-in), so the board runs out
-		// on timers to the showdown.
+		// on timers to the showdown. Park the pointer off every seat and hold
+		// the processing flag — a stray control refresh must never hand the
+		// human a check or raise while the board deals itself out.
 		if (getPlayersWhoCanAct(this.players).length < 2) {
-			this.scheduleTurnTransition(1000, () => this.nextPhase());
+			this.currentPlayerIndex = -1;
+			this.isProcessingAction = true;
+			this.updateActionButtons();
+			this.scheduleTurnTransition(1000, () => {
+				this.isProcessingAction = false;
+				this.nextPhase();
+			});
 			return;
 		}
 
@@ -1876,6 +1901,10 @@ export class PokerGame {
 		});
 
 		document.getElementById('btn-ai-move')?.addEventListener('click', () => {
+			// Local play never spends a BYOK key on advice — the button is hidden
+			// on the tournament page; refuse here too in case it is triggered
+			// programmatically.
+			if (this.playsLocally) return;
 			void this.aiRival.requestAiMove(
 				this.gamePhase,
 				this.players[0],
@@ -1932,10 +1961,15 @@ export class PokerGame {
 			// Parse and validate values. Enum values from <select> elements are
 			// validated against their domain and fall back to the current setting
 			// if the DOM is malformed.
-			const startingChips = parseInt(startingChipsEl.value || '500');
-			const smallBlind = parseInt(smallBlindEl.value || '5');
-			const bigBlind = parseInt(bigBlindEl.value || '10');
 			const currentSettings = this.settingsManager.getSettings();
+			// The tournament hides the cash fields; keep whatever cash saved
+			// instead of writing the hidden inputs back into shared storage.
+			const isSng = this.mode === 'sng';
+			const startingChips = isSng
+				? currentSettings.startingChips
+				: parseInt(startingChipsEl.value || '500');
+			const smallBlind = isSng ? currentSettings.smallBlind : parseInt(smallBlindEl.value || '5');
+			const bigBlind = isSng ? currentSettings.bigBlind : parseInt(bigBlindEl.value || '10');
 			const aiSpeed = isAISpeed(aiSpeedEl.value) ? aiSpeedEl.value : currentSettings.aiSpeed;
 			const aiPersonality1 = isAIPersonality(aiPersonality1El.value)
 				? aiPersonality1El.value
@@ -1949,7 +1983,11 @@ export class PokerGame {
 			const aiDifficulty2: AIDifficultySetting = isAIDifficulty(aiDifficulty2El.value)
 				? aiDifficulty2El.value
 				: currentSettings.aiDifficulty2;
-			const useLLMAI = this.playsLocally ? false : useLLMAIEl.checked;
+			const useLLMAI = isSng
+				? currentSettings.useLLMAI
+				: this.playsLocally
+					? false
+					: useLLMAIEl.checked;
 
 			this.settingsManager.updateSettings({
 				startingChips,
@@ -1974,8 +2012,10 @@ export class PokerGame {
 			// Update bet controls to reflect new minimum bet
 			this.updateBetControls();
 
-			// Notify user
-			this.updateGameStatus(this.t('statusSettingsSaved'));
+			// Notify user — a finished tournament's result line stays put.
+			if (this.finishedPlace === null) {
+				this.updateGameStatus(this.t('statusSettingsSaved'));
+			}
 
 			// Hide settings panel
 			(document.getElementById('settings-panel') as HTMLDialogElement | null)?.close();
@@ -1983,7 +2023,18 @@ export class PokerGame {
 
 		// Reset settings
 		document.getElementById('btn-reset-settings')?.addEventListener('click', () => {
+			// Defaults would wipe the hidden cash fields too, so tournament
+			// resets restore whatever cash had saved for them.
+			const preserved = this.mode === 'sng' ? this.settingsManager.getSettings() : null;
 			this.settingsManager.resetToDefaults();
+			if (preserved) {
+				this.settingsManager.updateSettings({
+					startingChips: preserved.startingChips,
+					smallBlind: preserved.smallBlind,
+					bigBlind: preserved.bigBlind,
+					useLLMAI: preserved.useLLMAI,
+				});
+			}
 			this.renderSettingsPanel();
 
 			// Update AI configs to match reset defaults
@@ -1998,7 +2049,10 @@ export class PokerGame {
 			// Update bet controls to reflect reset minimum bet
 			this.updateBetControls();
 
-			this.updateGameStatus(this.t('statusSettingsReset'));
+			// Same terminal guard as save: the finish place stays on the line.
+			if (this.finishedPlace === null) {
+				this.updateGameStatus(this.t('statusSettingsReset'));
+			}
 		});
 	}
 
@@ -2128,6 +2182,14 @@ export class PokerGame {
 			// as the eliminated badge); live chips apply before any hand is dealt.
 			this.ui.renderTournament({
 				handNumber: this.handNumber,
+				// Between hands the header previews the upcoming deal so the
+				// completed hand doesn't count itself into the countdown.
+				levelHand:
+					this.handNumber === 0
+						? null
+						: this.handInProgress || this.finishedPlace !== null
+							? this.handNumber
+							: this.handNumber + 1,
 				fundedSeats: this.players.filter((player) =>
 					this.handInProgress ? (this.handStartStacks.get(player.id) ?? 0) > 0 : player.chips > 0,
 				).length,

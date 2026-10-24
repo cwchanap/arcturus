@@ -700,7 +700,7 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 
 				<p class="text-xs text-[var(--deco-muted)]">{t('settingsApplyHint')}</p>
-				<p>{t('opponentDefaults')}</p><section class="poker-ai-settings">
+				<p>{t('opponentDefaults')}</p><section class="poker-ai-settings" hidden={isSng}>
 					<h3>{t('aiRival')}</h3><p id="ai-rival-status">
 						{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}
 					</p><button id="btn-ai-move" class="poker-action" disabled={gameSession.isGuest}

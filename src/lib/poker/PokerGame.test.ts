@@ -3656,10 +3656,18 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		serverSyncedBalance: number;
 		humanChipsBefore: number;
 		handNumber: number;
+		dealerIndex: number;
+		finishedPlace: number | null;
+		minimumBet: number;
+		handStartStacks: Map<number, number>;
+		settingsManager: GameSettingsManager;
+		aiRival: AIRivalAssistant;
 		settleHand: (outcome: 'win' | 'loss' | 'push') => void;
 		finishHand: () => void;
 		adoptAccountBalance: (balance: number) => boolean;
 		getLLMSettings: () => Promise<unknown>;
+		getPlayerPosition: (player: Player) => 'early' | 'middle' | 'late';
+		updateGameStatus: (message: string) => void;
 		processAITurn: () => Promise<void>;
 		dealNewHand: () => Promise<void>;
 	};
@@ -3885,6 +3893,129 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 			fetchRecorder.restore();
 		}
 	});
+
+	test('SNG settings save preserves the hidden cash fields', () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		const storage = memoryStorage({
+			poker_game_settings: JSON.stringify({
+				startingChips: 777,
+				smallBlind: 25,
+				bigBlind: 50,
+				useLLMAI: true,
+			}),
+		});
+
+		new PokerGame();
+		// The hidden inputs could hold anything — they must not be written back.
+		elements['setting-starting-chips']!.value = '1';
+		elements['setting-small-blind']!.value = '2';
+		elements['setting-big-blind']!.value = '3';
+		elements['setting-use-llm-ai']!.checked = false;
+		elements['setting-ai-speed']!.value = 'fast';
+		elements['btn-save-settings'].click();
+
+		const saved = JSON.parse(storage['poker_game_settings']);
+		expect(saved.startingChips).toBe(777);
+		expect(saved.smallBlind).toBe(25);
+		expect(saved.bigBlind).toBe(50);
+		// The tournament-editable field does persist.
+		expect(saved.aiSpeed).toBe('fast');
+		expect(saved.useLLMAI).toBe(true);
+	});
+
+	test('SNG settings reset preserves the cash fields while resetting AI prefs', () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		const storage = memoryStorage({
+			poker_game_settings: JSON.stringify({
+				startingChips: 777,
+				smallBlind: 25,
+				bigBlind: 50,
+				aiSpeed: 'slow',
+				useLLMAI: true,
+			}),
+		});
+
+		new PokerGame();
+		elements['btn-reset-settings'].click();
+
+		const saved = JSON.parse(storage['poker_game_settings']);
+		expect(saved.startingChips).toBe(777);
+		expect(saved.smallBlind).toBe(25);
+		expect(saved.bigBlind).toBe(50);
+		expect(saved.useLLMAI).toBe(true);
+		expect(saved.aiSpeed).toBe(DEFAULT_SETTINGS.aiSpeed);
+	});
+
+	test('a terminal finish stays on the status line through settings save and reset', () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		memoryStorage();
+		const game = new PokerGame() as unknown as SngGame;
+		game.finishedPlace = 3;
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		elements['btn-save-settings'].click();
+		elements['btn-reset-settings'].click();
+
+		expect(statuses).toEqual([]);
+	});
+
+	test('SNG shows ladder blinds before the first deal, not saved cash blinds', () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		memoryStorage({
+			poker_game_settings: JSON.stringify({ smallBlind: 25, bigBlind: 50 }),
+		});
+
+		const game = new PokerGame() as unknown as SngGame;
+
+		expect(game.minimumBet).toBe(10);
+		expect(elements['table-blinds']?.textContent).toBe('5 / 10');
+	});
+
+	test('the AI Rival button never fires a paid request in SNG', () => {
+		const elements = mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		memoryStorage({
+			'arcturus-ai-settings': JSON.stringify({
+				provider: 'openai',
+				model: 'gpt-4o',
+				apiKey: 'sk-local',
+			}),
+		});
+
+		const game = new PokerGame() as unknown as SngGame;
+		const spy = mock(async () => {});
+		game.aiRival.requestAiMove = spy as unknown as AIRivalAssistant['requestAiMove'];
+
+		elements['btn-ai-move'].click();
+
+		expect(spy).not.toHaveBeenCalled();
+	});
+
+	test('AI position reads run over the dealt-in seats after eliminations', () => {
+		mockModeDom({ guest: false, mode: 'sng', balance: '2500' });
+		memoryStorage();
+
+		const game = new PokerGame() as unknown as SngGame;
+		// Survivors at seats 0, 2, 4, 5; the button is on seat 0. Seat-distance
+		// math across all six seats would read seats 4 and 5 as 'late' — over
+		// the dealt-in order [0,2,4,5] they are only middle of four.
+		game.players = game.players.map((player, seat) => ({
+			...player,
+			chips: [500, 0, 500, 0, 500, 500][seat],
+		}));
+		game.handStartStacks = new Map([
+			[0, 500],
+			[2, 500],
+			[4, 500],
+			[5, 500],
+		]);
+		game.dealerIndex = 0;
+
+		expect(game.getPlayerPosition(game.players[0])).toBe('late'); // button
+		expect(game.getPlayerPosition(game.players[2])).toBe('early');
+		expect(game.getPlayerPosition(game.players[4])).toBe('early');
+		expect(game.getPlayerPosition(game.players[5])).toBe('middle');
+	});
 });
 
 describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
@@ -3897,6 +4028,7 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 		smallBlindIndex: number;
 		bigBlindIndex: number;
 		currentPlayerIndex: number;
+		isProcessingAction: boolean;
 		serverSyncedBalance: number;
 		pendingChipReset: boolean;
 		processAITurn: () => Promise<void>;
@@ -4009,7 +4141,7 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 	});
 
 	test('heads-up blinds that put both seats all-in run out on timers', async () => {
-		const { game } = sngTable();
+		const { elements, game } = sngTable();
 		setStacks(game, [5, 0, 0, 0, 0, 10]);
 		game.dealerIndex = 5;
 		const timers = mockTrackedTimers();
@@ -4019,6 +4151,13 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 			// Level-0 blinds (5/10) put both survivors all-in; nobody can act.
 			expect(game.players[0].isAllIn).toBe(true);
 			expect(game.players[5].isAllIn).toBe(true);
+			// The runout parks the turn pointer and locks input until the board
+			// finishes dealing itself out.
+			expect(game.currentPlayerIndex).toBe(-1);
+			expect(game.isProcessingAction).toBe(true);
+			expect(elements['btn-check']?.disabled).toBe(true);
+			expect(elements['btn-call']?.disabled).toBe(true);
+			expect(elements['btn-raise']?.disabled).toBe(true);
 			const runout = timers.scheduledTimers.find((timer) => !timer.cleared);
 			expect(runout).toBeDefined();
 
@@ -4026,6 +4165,7 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 				const next = timers.scheduledTimers.find((timer) => !timer.cleared);
 				if (!next) break;
 				next.callback();
+				if (game.handInProgress) expect(game.currentPlayerIndex).toBe(-1);
 			}
 
 			expect(game.handInProgress).toBe(false);
@@ -4106,7 +4246,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 	type TerminalGame = {
 		players: Player[];
 		handNumber: number;
-		tournamentPlace: number | null;
+		finishedPlace: number | null;
 		handStartStacks: Map<number, number>;
 		humanChipsBefore: number;
 		serverSyncedBalance: number;
@@ -4172,7 +4312,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 
 		// 3 funded survivors + the human; seat 1 busted the same hand from a
 		// larger start stack and finishes ahead, seat 3 busted before the hand.
-		expect(game.tournamentPlace).toBe(5);
+		expect(game.finishedPlace).toBe(5);
 		expect(statuses).toEqual(['You finished 5th']);
 	});
 
@@ -4185,7 +4325,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 		game.finishHand();
 		game.finishHand(); // a later end-of-hand sweep must not re-report the finish
 
-		expect(game.tournamentPlace).toBe(2);
+		expect(game.finishedPlace).toBe(2);
 		expect(statuses).toEqual(['You finished 2nd']);
 	});
 
@@ -4197,7 +4337,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 
 		game.finishHand();
 
-		expect(game.tournamentPlace).toBe(1);
+		expect(game.finishedPlace).toBe(1);
 		expect(statuses).toEqual(['You finished 1st']);
 	});
 
@@ -4211,7 +4351,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 
 			game.finishHand();
 
-			expect(game.tournamentPlace).toBeNull();
+			expect(game.finishedPlace).toBeNull();
 			expect(statuses).toEqual([]);
 			expect(
 				timers.scheduledTimers.some(
@@ -4243,7 +4383,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 			await flushAsyncWork();
 			await game.dealNewHand();
 			expect(game.handNumber).toBe(0);
-			expect(game.tournamentPlace).toBe(2);
+			expect(game.finishedPlace).toBe(2);
 		} finally {
 			timers.restore();
 		}
@@ -4265,7 +4405,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 			// heads-up loss places 2nd and the pending countdown dies with it.
 			setTerminalStacks(game, [0, 2000, 0, 0, 0, 0], [400, 900, 0, 0, 0, 0]);
 			game.finishHand();
-			expect(game.tournamentPlace).toBe(2);
+			expect(game.finishedPlace).toBe(2);
 
 			countdown!.callback(); // the clock fires the stale countdown anyway
 			expect(timers.scheduledTimers.filter((timer) => !timer.cleared)).toHaveLength(0);
@@ -4279,7 +4419,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 		const { game } = sngTerminalTable();
 		setTerminalStacks(game, [0, 3000, 0, 0, 0, 0], [500, 500, 0, 0, 0, 0]);
 		game.finishHand();
-		expect(game.tournamentPlace).toBe(2);
+		expect(game.finishedPlace).toBe(2);
 
 		// A fresh cash page shares the browser storage but nothing else.
 		const elements = mockPokerGameDOM();

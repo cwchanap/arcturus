@@ -7,6 +7,7 @@ import {
 	levelFor,
 	nextFundedSeats,
 	humanPlace,
+	seatsInHand,
 } from './sitAndGo';
 
 function sixSeats(chips: number[]): ReturnType<typeof createPlayer>[] {
@@ -49,6 +50,39 @@ describe('levelFor()', () => {
 		expect(levelFor(26)).toBe(4);
 		expect(levelFor(100)).toBe(4);
 		expect(SNG_BLINDS[levelFor(100)]).toEqual({ small: 80, big: 160 });
+	});
+
+	test('clamps the pre-deal hand number 0 to level 0', () => {
+		expect(levelFor(0)).toBe(0);
+		expect(SNG_BLINDS[levelFor(0)]).toEqual({ small: 5, big: 10 });
+	});
+});
+
+describe('seatsInHand()', () => {
+	test('returns the funded seats in table order before any hand', () => {
+		const players = sixSeats([500, 0, 500, 0, 0, 500]);
+		expect(seatsInHand(players, new Map())).toEqual([0, 2, 5]);
+	});
+
+	test('a mid-hand all-in stays in the order via its hand-start stack', () => {
+		const players = sixSeats([0, 200, 0, 350, 0, 0]);
+		// Seats 1 and 3 were dealt in; seat 3 went all-in to zero.
+		const handStartStacks = new Map([
+			[1, 500],
+			[3, 350],
+		]);
+		expect(seatsInHand(players, handStartStacks)).toEqual([1, 3]);
+	});
+
+	test('seats that were never dealt in stay out of the order', () => {
+		const players = sixSeats([500, 0, 500, 500, 0, 500]);
+		const handStartStacks = new Map([
+			[0, 500],
+			[2, 500],
+			[3, 500],
+			[5, 500],
+		]);
+		expect(seatsInHand(players, handStartStacks)).toEqual([0, 2, 3, 5]);
 	});
 });
 

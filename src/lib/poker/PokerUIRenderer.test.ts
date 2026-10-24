@@ -277,7 +277,7 @@ describe('PokerUIRenderer', () => {
 
 	beforeEach(() => {
 		elements = mockDocument();
-		renderer = new PokerUIRenderer();
+		renderer = new PokerUIRenderer('cash');
 	});
 
 	describe('renderPlayerCards()', () => {
@@ -509,11 +509,25 @@ describe('PokerUIRenderer', () => {
 				currentBet: 40,
 			});
 			renderer.showAIDecision(1, 'raise', 40);
-			renderer.updateTableState(players, 0, 0, true, stacksOf(players));
+			renderer.updateTableState({
+				players,
+				dealerIndex: 0,
+				currentPlayerIndex: 0,
+				turnLive: true,
+				settled: false,
+				handStartStacks: stacksOf(players),
+			});
 			expect(elements['opponent1-action'].textContent).toBe('↑ RAISE 40');
 
 			renderer.clearSeatActions();
-			renderer.updateTableState(players, 0, 0, true, stacksOf(players));
+			renderer.updateTableState({
+				players,
+				dealerIndex: 0,
+				currentPlayerIndex: 0,
+				turnLive: true,
+				settled: false,
+				handStartStacks: stacksOf(players),
+			});
 			expect(elements['opponent1-action'].textContent).toBe('40');
 		});
 
@@ -524,7 +538,14 @@ describe('PokerUIRenderer', () => {
 				isAllIn: true,
 			});
 			renderer.setSeatHand(1, 'STRAIGHT', true);
-			renderer.updateTableState(players, 0, 0, false, stacksOf(players));
+			renderer.updateTableState({
+				players,
+				dealerIndex: 0,
+				currentPlayerIndex: 0,
+				turnLive: false,
+				settled: true,
+				handStartStacks: stacksOf(players),
+			});
 			expect(elements['opponent1-action'].textContent).toBe('Straight');
 			expect(elements['opponent1-action'].dataset?.action).toBe('winner');
 		});
@@ -654,8 +675,10 @@ describe('PokerUIRenderer', () => {
 	});
 
 	describe('hideOpponentHands()', () => {
+		const seated = [player(0, 'You', 500), player(1, 'Player 2', 350), player(2, 'Player 3', 750)];
+
 		test('resets opponents to face-down cards', () => {
-			renderer.hideOpponentHands();
+			renderer.hideOpponentHands(seated, stacksOf(seated));
 
 			// Both opponents should have slots
 			const opp1Slots = elements['opponent1-cards'].querySelectorAll?.('.card-slot') || [];
@@ -665,7 +688,7 @@ describe('PokerUIRenderer', () => {
 		});
 
 		test('face-down cards have decorative styling', () => {
-			renderer.hideOpponentHands();
+			renderer.hideOpponentHands(seated, stacksOf(seated));
 
 			// Both opponents should have slots with face-down state
 			const opp1Slots = elements['opponent1-cards'].querySelectorAll?.('.card-slot') || [];
@@ -1035,9 +1058,16 @@ describe('Poker six-max presentation', () => {
 		);
 		players[4].folded = true;
 		players[5].chips = 420;
-		const renderer = new PokerUIRenderer();
-		renderer.hideOpponentHands();
-		renderer.updateTableState(players, 2, 5, true, stacksOf(players));
+		const renderer = new PokerUIRenderer('cash');
+		renderer.hideOpponentHands(players, stacksOf(players));
+		renderer.updateTableState({
+			players,
+			dealerIndex: 2,
+			currentPlayerIndex: 5,
+			turnLive: true,
+			settled: false,
+			handStartStacks: stacksOf(players),
+		});
 		expect(elements['opponent5-chips'].textContent).toBe('420');
 		expect(elements['poker-seat-5'].dataset?.turn).toBe('true');
 		expect(elements['poker-seat-4'].dataset?.folded).toBe('true');
@@ -1049,7 +1079,7 @@ describe('Poker six-max presentation', () => {
 		expect(fifth.getAttribute?.('data-slot-state')).toBe('card');
 		expect(fifth.getAttribute?.('aria-label')).toBe('Ace of Spades');
 		expect(folded.getAttribute?.('data-slot-state')).toBe('facedown');
-		renderer.hideOpponentHands();
+		renderer.hideOpponentHands(players, stacksOf(players));
 		expect(fifth.getAttribute?.('data-slot-state')).toBe('facedown');
 		expect(fifth.getAttribute?.('aria-label')).toBe('Face-down card');
 		expect(fifth.getAttribute?.('data-card-suit')).toBeNull();
@@ -1058,17 +1088,15 @@ describe('Poker six-max presentation', () => {
 
 describe('PokerUIRenderer Sit & Go tournament UI', () => {
 	function sngDocument() {
-		const elements = mockDocument();
-		elements['poker-root'] = createMockElement();
-		(elements['poker-root'].dataset as Record<string, string>) = { pokerMode: 'sng' };
-		return elements;
+		// The mode comes from the constructor now — no poker-root sniffing.
+		return mockDocument();
 	}
 
 	test('renders hands, level, next blind change, players, and hidden place at hand 7', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 
-		renderer.renderTournament({ handNumber: 7, fundedSeats: 4, place: null });
+		renderer.renderTournament({ handNumber: 7, levelHand: 7, fundedSeats: 4, place: null });
 
 		expect(elements['tournament-hands'].textContent).toBe('7');
 		expect(elements['tournament-level'].textContent).toBe('2 / 5');
@@ -1077,11 +1105,34 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		expect(elements['tournament-place-row'].hidden as boolean).toBe(true);
 	});
 
+	test('between hands the header previews the upcoming hand’s level', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+
+		// Hand 10 just finished; hand 11 opens level 3 — the countdown must not
+		// include the completed hand.
+		renderer.renderTournament({ handNumber: 10, levelHand: 11, fundedSeats: 4, place: null });
+
+		expect(elements['tournament-hands'].textContent).toBe('10');
+		expect(elements['tournament-level'].textContent).toBe('3 / 5');
+		expect(elements['tournament-next'].textContent).toBe('40 / 80 · 5 to go');
+	});
+
+	test('mid-hand the countdown counts the live hand', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+
+		renderer.renderTournament({ handNumber: 10, levelHand: 10, fundedSeats: 4, place: null });
+
+		expect(elements['tournament-level'].textContent).toBe('2 / 5');
+		expect(elements['tournament-next'].textContent).toBe('20 / 40 · 1 to go');
+	});
+
 	test('shows placeholders before the first hand', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 
-		renderer.renderTournament({ handNumber: 0, fundedSeats: 6, place: null });
+		renderer.renderTournament({ handNumber: 0, levelHand: null, fundedSeats: 6, place: null });
 
 		expect(elements['tournament-level'].textContent).toBe('—');
 		expect(elements['tournament-next'].textContent).toBe('—');
@@ -1089,9 +1140,9 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 
 	test('names the final level once the ladder caps', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 
-		renderer.renderTournament({ handNumber: 22, fundedSeats: 2, place: null });
+		renderer.renderTournament({ handNumber: 22, levelHand: 22, fundedSeats: 2, place: null });
 
 		expect(elements['tournament-level'].textContent).toBe('5 / 5');
 		expect(elements['tournament-next'].textContent).toBe('Final level');
@@ -1099,27 +1150,115 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 
 	test('reveals the finish place in the header once the tournament ends', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 
-		renderer.renderTournament({ handNumber: 14, fundedSeats: 2, place: 3 });
+		renderer.renderTournament({ handNumber: 14, levelHand: 14, fundedSeats: 2, place: 3 });
 
 		expect(elements['tournament-place-row'].hidden as boolean).toBe(false);
 		expect(elements['tournament-place'].textContent).toBe('3rd');
 	});
 
-	test('fills the terminal panel with the localized place and shows it', () => {
+	test('fills the terminal panel with the translated finish text and shows it', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 
-		renderer.showTournamentTerminal(5);
+		renderer.showTournamentTerminal('You finished 5th');
 
 		expect(elements['poker-terminal'].hidden as boolean).toBe(false);
 		expect(elements['poker-terminal-place'].textContent).toBe('You finished 5th');
 	});
 
+	test('labels positions over the dealt-in seats, skipping busted gaps', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		// Survivors sit at seats 0, 2 and 5 with the button on 5: only the
+		// dealt-in order decides who is SB and who is BB.
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[1].chips = 0;
+		players[3].chips = 0;
+		players[4].chips = 0;
+		const handStartStacks = new Map([
+			[0, 500],
+			[2, 500],
+			[5, 500],
+		]);
+
+		renderer.updateTableState({
+			players,
+			dealerIndex: 5,
+			currentPlayerIndex: -1,
+			turnLive: false,
+			settled: false,
+			handStartStacks,
+		});
+
+		expect(elements['position-5'].textContent).toBe('BTN');
+		expect(elements['position-0'].textContent).toBe('SB');
+		expect(elements['position-2'].textContent).toBe('BB');
+		// Busted seats carry no position at all.
+		expect(elements['position-1'].textContent).toBe('—');
+	});
+
+	test('heads-up labels the button BTN and the other seat BB', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		for (const seat of [1, 2, 3, 4]) players[seat].chips = 0;
+		const handStartStacks = new Map([
+			[0, 500],
+			[5, 500],
+		]);
+
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 0,
+			turnLive: true,
+			settled: false,
+			handStartStacks,
+		});
+
+		expect(elements['position-0'].textContent).toBe('BTN');
+		expect(elements['position-5'].textContent).toBe('BB');
+	});
+
+	test('busted seats get no face-down card slots', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+		for (let id = 1; id < 6; id++)
+			elements[`opponent${id}-cards`] = createMockContainerWithSlots(2);
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[2].chips = 0; // out for good — no cards and no screen-reader slot
+		// Seat 5 posted its whole 5-chip stack as the blind: zero chips but
+		// dealt in, so its slots stay face-down rather than vanishing.
+		players[5].chips = 0;
+		const handStartStacks = new Map([
+			[0, 500],
+			[1, 500],
+			[3, 500],
+			[4, 500],
+			[5, 5],
+		]);
+
+		renderer.hideOpponentHands(players, handStartStacks);
+
+		const alive = elements['opponent1-cards'].querySelectorAll?.('.card-slot') || [];
+		const busted = elements['opponent2-cards'].querySelectorAll?.('.card-slot') || [];
+		const allIn = elements['opponent5-cards'].querySelectorAll?.('.card-slot') || [];
+		expect(alive[0].getAttribute?.('data-slot-state')).toBe('facedown');
+		expect(alive[0].getAttribute?.('aria-label')).toBe('Face-down card');
+		expect(busted[0].getAttribute?.('data-slot-state')).toBe('hidden');
+		expect(busted[1].getAttribute?.('data-slot-state')).toBe('hidden');
+		expect(busted[0].getAttribute?.('aria-label')).toBeNull();
+		expect(allIn[0].getAttribute?.('data-slot-state')).toBe('facedown');
+		expect(allIn[0].getAttribute?.('aria-label')).toBe('Face-down card');
+	});
+
 	test('marks settled zero-chip seats eliminated but not live all-ins', () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
 		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
 		players[2].chips = 0;
@@ -1128,7 +1267,14 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		// Both seats were dealt into this hand.
 		const handStartStacks = new Map(players.map((p) => [p.id, 500]));
 
-		renderer.updateTableState(players, 0, 1, false, handStartStacks);
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 1,
+			turnLive: false,
+			settled: true,
+			handStartStacks,
+		});
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
 		expect(elements['opponent2-action'].textContent).toBe('ELIMINATED');
@@ -1138,15 +1284,46 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		expect(elements['opponent3-action'].textContent).toBe('ELIMINATED');
 
 		// Mid-hand, a zero-chip all-in is still alive and can win it back.
-		renderer.updateTableState(players, 0, 1, true, handStartStacks);
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 1,
+			turnLive: true,
+			settled: false,
+			handStartStacks,
+		});
 
 		expect(elements['poker-seat-3'].dataset?.eliminated).toBe('false');
 		expect(elements['opponent3-action'].textContent).toBe('All in');
 	});
 
+	test('a live all-in stays alive while processing locks the buttons', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
+		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
+		players[3].chips = 0;
+		players[3].isAllIn = true;
+		const handStartStacks = new Map(players.map((p) => [p.id, 500]));
+
+		// The runout window: nobody owns a turn, but the hand is not settled.
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: -1,
+			turnLive: false,
+			settled: false,
+			handStartStacks,
+		});
+
+		expect(elements['poker-seat-3'].dataset?.eliminated).toBe('false');
+		expect(elements['opponent3-action'].textContent).toBe('All in');
+		expect(elements['poker-seat-3'].dataset?.turn).toBe('false');
+	});
+
 	test("keeps long-busted seats eliminated through a later hand's betting rounds", () => {
 		const elements = sngDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('sng');
 		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
 		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
 		players[2].chips = 0; // busted in an earlier hand
@@ -1155,25 +1332,46 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 		const handStartStacks = new Map(players.map((p) => [p.id, p.id === 2 ? 0 : 500]));
 
 		// Betting is live, but the seat stays visibly out — no revert to '—'.
-		renderer.updateTableState(players, 0, 1, true, handStartStacks);
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 1,
+			turnLive: true,
+			settled: false,
+			handStartStacks,
+		});
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
 		expect(elements['opponent2-action'].textContent).toBe('ELIMINATED');
 		expect(elements['opponent2-action'].dataset?.action).toBe('out');
 
 		// The state holds in the settled window between hands too.
-		renderer.updateTableState(players, 0, 1, false, handStartStacks);
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 1,
+			turnLive: false,
+			settled: true,
+			handStartStacks,
+		});
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
 	});
 
 	test('cash seats never show an eliminated state', () => {
 		const elements = mockDocument();
-		const renderer = new PokerUIRenderer();
+		const renderer = new PokerUIRenderer('cash');
 		for (let id = 0; id < 6; id++) elements[`poker-seat-${id}`] = createMockElement();
 		const players = Array.from({ length: 6 }, (_, id) => player(id, `P${id + 1}`, 500));
 		players[2].chips = 0;
 
-		renderer.updateTableState(players, 0, 1, false, stacksOf(players));
+		renderer.updateTableState({
+			players,
+			dealerIndex: 0,
+			currentPlayerIndex: 1,
+			turnLive: false,
+			settled: true,
+			handStartStacks: stacksOf(players),
+		});
 
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('false');
 		expect(elements['opponent2-action'].textContent).toBe('—');

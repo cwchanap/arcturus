@@ -1693,7 +1693,10 @@ a.poker-format:hover {
 		gap: 8px;
 		padding: 4px 8px;
 	}
+	/* Both headers drop their hands tally first on phones — the tournament's
+	   five columns otherwise overflow the toolbar. */
 	#poker-session div:first-child,
+	#poker-tournament div:first-child,
 	.poker-session-streak {
 		display: none;
 	}

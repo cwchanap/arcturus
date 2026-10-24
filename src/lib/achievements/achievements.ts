@@ -18,6 +18,7 @@ type AchievementContextOptions = {
 	recentWinAmount?: number;
 	gameType?: GameType;
 	overallRank?: number | null;
+	feats?: readonly AchievementId[];
 };
 import { ACHIEVEMENTS, ACHIEVEMENT_CHECKS } from './achievement-rules';
 import type { AchievementCheckFn } from './achievement-rules';
@@ -27,7 +28,8 @@ import {
 	grantAchievement,
 	redactUserId,
 } from './achievement-repository';
-import { getAggregateUserStats } from '../game-stats/game-stats-repository';
+import { aggregateGameStats } from '../game-stats/aggregation';
+import { getAllUserGameStats } from '../game-stats/game-stats-repository';
 import { getUserRank } from '../leaderboard/leaderboard-repository';
 
 export class DatabaseError extends Error {
@@ -50,7 +52,7 @@ type AchievementDeps = {
 	getUserAchievements: typeof getUserAchievements;
 	getEarnedAchievementIds: typeof getEarnedAchievementIds;
 	grantAchievement: typeof grantAchievement;
-	getAggregateUserStats: typeof getAggregateUserStats;
+	getAllUserGameStats: typeof getAllUserGameStats;
 	getUserRank: typeof getUserRank;
 	achievementChecks: Partial<Record<AchievementId, AchievementCheckFn>>;
 };
@@ -60,7 +62,7 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		getUserAchievements,
 		getEarnedAchievementIds,
 		grantAchievement,
-		getAggregateUserStats,
+		getAllUserGameStats,
 		getUserRank,
 		achievementChecks: ACHIEVEMENT_CHECKS,
 		...overrides,
@@ -83,15 +85,19 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 		currentChipBalance: number,
 		options: AchievementContextOptions = {},
 	): Promise<AchievementCheckContext> {
-		const [existingAchievementIds, stats, overallRank] = await Promise.all([
+		const [existingAchievementIds, statsRows, overallRank] = await Promise.all([
 			runDatabaseOperation('getEarnedAchievementIds', () =>
 				deps.getEarnedAchievementIds(db, userId),
 			),
-			runDatabaseOperation('getAggregateUserStats', () => deps.getAggregateUserStats(db, userId)),
+			runDatabaseOperation('getAllUserGameStats', () => deps.getAllUserGameStats(db, userId)),
 			options.overallRank != null
 				? Promise.resolve(options.overallRank)
 				: runDatabaseOperation('getUserRank', () => deps.getUserRank(db, userId)),
 		]);
+
+		// One stats read per evaluation feeds both the aggregate fields and the
+		// per-game rows used by grand_tour/specialist/big_score.
+		const stats = aggregateGameStats(statsRows);
 
 		return {
 			userId,
@@ -104,8 +110,8 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			currentChipBalance,
 			recentWinAmount: options.recentWinAmount,
 			gameType: options.gameType,
-			// shortcut: placeholder rows until the service reads getAllUserGameStats, upgrade in the settlement-wiring task
-			gameStats: [],
+			feats: options.feats,
+			gameStats: statsRows,
 			existingAchievementIds,
 		};
 	}

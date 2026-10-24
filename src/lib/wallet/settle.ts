@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { checkAndGrantAchievements } from '../achievements/achievements';
+import { WALLET_FEAT_GAMES } from '../achievements/achievement-rules';
 import { isValidGameType } from '../game-stats/constants';
 import { createDb } from '../db';
 import { SETTLEMENT_ID_RE } from './settlement-id';
@@ -46,7 +47,10 @@ function requireSafeInteger(value: unknown): number {
  * callers inside the game code use the typed command interface.
  */
 export function validate(command: unknown): asserts command is SettleRoundCommand {
-	if (!isRecord(command) || !hasOnlyKeys(command, ['settlementId', 'game', 'delta', 'stats'])) {
+	if (
+		!isRecord(command) ||
+		!hasOnlyKeys(command, ['settlementId', 'game', 'delta', 'stats', 'feats'])
+	) {
 		return invalidCommand();
 	}
 
@@ -57,6 +61,20 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 		!isValidGameType(command.game)
 	) {
 		return invalidCommand();
+	}
+
+	// Feats must be known wallet feat IDs, unique, and allowed for this game.
+	// Runs before any receipt lookup or write because validate() is called first.
+	const feats = command.feats;
+	if (feats !== undefined) {
+		if (!Array.isArray(feats)) return invalidCommand();
+		const seen = new Set<string>();
+		for (const feat of feats) {
+			if (typeof feat !== 'string' || seen.has(feat)) return invalidCommand();
+			const allowedGames = (WALLET_FEAT_GAMES as Record<string, readonly string[]>)[feat];
+			if (!allowedGames?.includes(command.game as string)) return invalidCommand();
+			seen.add(feat);
+		}
 	}
 
 	const delta = requireSafeInteger(command.delta);
@@ -123,6 +141,7 @@ async function buildFreshResult(
 		const earned = await checkAndGrantAchievements(createDb(d1), userId, nextBalance, {
 			recentWinAmount: command.stats.biggestWin > 0 ? command.stats.biggestWin : undefined,
 			gameType: command.game,
+			feats: command.feats,
 		});
 		newAchievements = earned.map((achievement) => ({
 			id: achievement.id,

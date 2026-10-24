@@ -2,7 +2,7 @@
  * Achievement System Domain Types
  */
 
-import type { GameType } from '../game-stats/types';
+import type { GameStats, GameType } from '../game-stats/types';
 
 /**
  * Valid achievement identifiers (derived from const array for single source of truth)
@@ -13,6 +13,15 @@ export const ACHIEVEMENT_IDS = [
 	'champion',
 	'consistent',
 	'comeback',
+	'royal_treatment',
+	'sng_champion',
+	'triple_threat',
+	'straight_up',
+	'big_catch',
+	'jackpot',
+	'grand_tour',
+	'specialist',
+	'big_score',
 ] as const;
 export type AchievementId = (typeof ACHIEVEMENT_IDS)[number];
 
@@ -71,6 +80,12 @@ export interface AchievementCheckContext {
 	currentChipBalance: number;
 	recentWinAmount?: number;
 	gameType?: GameType;
+
+	// Feats reported by the settling surface (wallet feats or the SNG event)
+	feats?: readonly AchievementId[];
+
+	// Per-game statistics rows (reused directly from game-stats reads)
+	gameStats: readonly Pick<GameStats, 'gameType' | 'handsPlayed' | 'totalWins' | 'biggestWin'>[];
 
 	// Already earned achievements (to prevent re-granting)
 	existingAchievementIds: readonly AchievementId[];

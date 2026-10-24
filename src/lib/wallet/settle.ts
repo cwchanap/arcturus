@@ -72,7 +72,11 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 		for (const feat of feats) {
 			if (typeof feat !== 'string' || seen.has(feat)) return invalidCommand();
 			const allowedGames = (WALLET_FEAT_GAMES as Record<string, readonly string[]>)[feat];
-			if (!allowedGames?.includes(command.game as string)) return invalidCommand();
+			// Array.isArray also rejects inherited Object.prototype members (e.g. 'constructor')
+			// that bracket access resolves on untrusted feat IDs.
+			if (!Array.isArray(allowedGames) || !allowedGames.includes(command.game as string)) {
+				return invalidCommand();
+			}
 			seen.add(feat);
 		}
 	}

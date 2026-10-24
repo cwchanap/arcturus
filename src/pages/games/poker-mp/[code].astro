@@ -21,7 +21,9 @@ if (!code || !isValidRoomCode(code)) {
 	>
 		<header class="flex justify-between items-center">
 			<h1 class="deco-section-title text-2xl">{t('roomTitle', { code })}</h1>
-			<span data-testid="connection-status" class="text-[var(--deco-jade)]">{t('connecting')}</span>
+			<span data-testid="connection-status" class="text-[var(--deco-jade)]">
+				{t('connecting')}
+			</span>
 		</header>
 
 		<div
@@ -39,36 +41,36 @@ if (!code || !isValidRoomCode(code)) {
 		<div class="flex gap-2 justify-center" data-testid="actions">
 			<button
 				data-action="fold"
-				class="bg-[var(--deco-oxblood-bright)] px-4 py-2 rounded text-white">{t('fold')}</button
+				class="bg-[var(--deco-oxblood-bright)] px-4 py-2 rounded text-white"
 			>
-			<button data-action="check" class="bg-[var(--deco-obsidian-3)] px-4 py-2 rounded text-white"
-				>{t('check')}</button
-			>
-			<button data-action="call" class="bg-[var(--deco-sapphire)] px-4 py-2 rounded text-white"
-				>{t('call')}</button
-			>
+				{t('fold')}
+			</button>
+			<button data-action="check" class="bg-[var(--deco-obsidian-3)] px-4 py-2 rounded text-white">
+				{t('check')}
+			</button>
+			<button data-action="call" class="bg-[var(--deco-sapphire)] px-4 py-2 rounded text-white">
+				{t('call')}
+			</button>
 			<input
 				type="number"
 				data-testid="raise-amount"
 				class="bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] p-2 rounded w-32 border border-[var(--deco-line)]"
 				placeholder={t('amount')}
 			/>
-			<button data-action="raise" class="bg-[var(--deco-jade)] px-4 py-2 rounded text-white"
-				>{t('raise')}</button
-			>
+			<button data-action="raise" class="bg-[var(--deco-jade)] px-4 py-2 rounded text-white">
+				{t('raise')}
+			</button>
 		</div>
 
 		<div class="flex gap-3 justify-center flex-wrap">
-			{
-				Array.from({ length: 6 }, (_, seat) => (
-					<button
-						data-testid={`take-seat-${seat}`}
-						class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
-					>
-						{t('sitAtSeat', { seat: String(seat) })}
-					</button>
-				))
-			}
+			{Array.from({ length: 6 }, (_, seat) => (
+				<button
+					data-testid={`take-seat-${seat}`}
+					class="bg-[var(--deco-obsidian-3)] px-3 py-1 rounded text-white"
+				>
+					{t('sitAtSeat', { seat: String(seat) })}
+				</button>
+			))}
 			<button
 				data-testid="start-hand"
 				class="bg-[var(--deco-brass)] px-3 py-1 rounded text-[var(--deco-obsidian)] font-semibold"
@@ -86,8 +88,7 @@ if (!code || !isValidRoomCode(code)) {
 		<div
 			data-testid="log"
 			class="text-[var(--deco-ivory-dim)] text-sm space-y-1 max-h-40 overflow-auto"
-		>
-		</div>
+		></div>
 	</div>
 </CasinoLayout>
 

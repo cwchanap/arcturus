@@ -17,26 +17,24 @@ const { id, maxHands = 4, maxCardsPerHand = 10, detailed = false } = Astro.props
 ---
 
 <div id={id} class="hidden flex-wrap justify-center gap-4" data-split-hands-container>
-	{
-		Array.from({ length: maxHands }).map((_, handIndex) => (
-			<div class="hand-container hidden" data-hand-index={handIndex} data-hand-active="false">
-				<div class="hand-label" data-hand-label>
-					Hand {handIndex + 1}
-				</div>
-				<div class="hand-cards" data-hand-cards>
-					<CardContainer
-						id={`${id}-hand-${handIndex}-cards`}
-						maxCards={maxCardsPerHand}
-						detailed={detailed}
-					/>
-				</div>
-				<div class="hand-value" data-hand-value>
-					-
-				</div>
-				<div class="hand-bet" data-hand-bet>
-					0
-				</div>
+	{Array.from({ length: maxHands }).map((_, handIndex) => (
+		<div class="hand-container hidden" data-hand-index={handIndex} data-hand-active="false">
+			<div class="hand-label" data-hand-label>
+				Hand {handIndex + 1}
 			</div>
-		))
-	}
+			<div class="hand-cards" data-hand-cards>
+				<CardContainer
+					id={`${id}-hand-${handIndex}-cards`}
+					maxCards={maxCardsPerHand}
+					detailed={detailed}
+				/>
+			</div>
+			<div class="hand-value" data-hand-value>
+				-
+			</div>
+			<div class="hand-bet" data-hand-bet>
+				0
+			</div>
+		</div>
+	))}
 </div>

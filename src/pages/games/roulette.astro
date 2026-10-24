@@ -92,25 +92,28 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 	>
 		<div class="roulette-interior">
 			<header class="roulette-header">
-				<a href="/games" class="roulette-back"
-					><span aria-hidden="true">‹</span>{t('backToGames')}</a
-				>
+				<a href="/games" class="roulette-back">
+					<span aria-hidden="true">‹</span>
+					{t('backToGames')}
+				</a>
 				<div class="roulette-title">
-					<span class="roulette-emblem"><DecoIcon name="chip" size={18} /></span>
-					<h1>{getGameName(locale, 'roulette')}</h1><span class="roulette-mode"
-						>{t('singleZero')}</span
-					>
+					<span class="roulette-emblem">
+						<DecoIcon name="chip" size={18} />
+					</span>
+					<h1>{getGameName(locale, 'roulette')}</h1>
+					<span class="roulette-mode">{t('singleZero')}</span>
 				</div>
 				<div class="roulette-tools">
 					<div class="roulette-payout">
-						<span class="roulette-label">{t('straightLabel')}</span><strong>35 : 1</strong>
+						<span class="roulette-label">{t('straightLabel')}</span>
+						<strong>35 : 1</strong>
 					</div>
 					<div class="roulette-bankroll" title={gameSession.balanceLabel}>
-						<DecoIcon name="chip" size={16} /><span class="sr-only">{gameSession.balanceLabel}</span
-						>
-						<span id="chip-balance" data-testid="chip-balance"
-							>{formatChips(initialBalance, locale)}</span
-						>
+						<DecoIcon name="chip" size={16} />
+						<span class="sr-only">{gameSession.balanceLabel}</span>
+						<span id="chip-balance" data-testid="chip-balance">
+							{formatChips(initialBalance, locale)}
+						</span>
 					</div>
 					<button
 						id="bets-toggle"
@@ -119,8 +122,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						aria-expanded="false"
 						class="roulette-icon"
 						title={t('activeBets')}
-						aria-label={t('activeBets')}><DecoIcon name="menu" size={16} /></button
+						aria-label={t('activeBets')}
 					>
+						<DecoIcon name="menu" size={16} />
+					</button>
 					<button
 						id="rules-toggle"
 						data-testid="rules-toggle"
@@ -129,8 +134,10 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						aria-expanded="false"
 						class="roulette-icon"
 						title={t('payouts')}
-						aria-label={t('payouts')}>?</button
+						aria-label={t('payouts')}
 					>
+						?
+					</button>
 				</div>
 			</header>
 
@@ -139,31 +146,42 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 					<div class="wheel-container">
 						<div id="roulette-wheel" class="roulette-wheel-inner">
 							<svg viewBox="0 0 200 200" aria-hidden="true">
-								{
-									wheelSegments.map((seg) => (
-										<g>
-											<path d={seg.path} fill={seg.fill} stroke="#3f3f46" stroke-width="0.3" />
-											<text
-												x={seg.lx}
-												y={seg.ly}
-												fill="white"
-												font-size="8"
-												font-weight="bold"
-												text-anchor="middle"
-												dominant-baseline="central"
-											>
-												{seg.num}
-											</text>
-										</g>
-									))
-								}
-								<circle cx="100" cy="100" r="32" fill="#0b120f" stroke="#c8a55c" stroke-width="1"
+								{wheelSegments.map((seg) => (
+									<g>
+										<path d={seg.path} fill={seg.fill} stroke="#3f3f46" stroke-width="0.3" />
+										<text
+											x={seg.lx}
+											y={seg.ly}
+											fill="white"
+											font-size="8"
+											font-weight="bold"
+											text-anchor="middle"
+											dominant-baseline="central"
+										>
+											{seg.num}
+										</text>
+									</g>
+								))}
+								<circle
+									cx="100"
+									cy="100"
+									r="32"
+									fill="#0b120f"
+									stroke="#c8a55c"
+									stroke-width="1"
 								></circle>
-								<circle cx="100" cy="100" r="20" fill="none" stroke="#c8a55c66" stroke-width="0.6"
+								<circle
+									cx="100"
+									cy="100"
+									r="20"
+									fill="none"
+									stroke="#c8a55c66"
+									stroke-width="0.6"
 								></circle>
 								<path
 									d="M100 82 L104 96 L118 100 L104 104 L100 118 L96 104 L82 100 L96 96 Z"
-									fill="#e4c988"></path>
+									fill="#e4c988"
+								></path>
 							</svg>
 						</div>
 						<span class="wheel-pointer" aria-hidden="true"></span>
@@ -188,11 +206,13 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						<span id="game-phase">{t('phasePlaceBets')}</span>
 						<div class="roulette-net">
 							<span class="roulette-label">{t('net')}</span>
-							<span id="net-delta" data-testid="net-delta" aria-live="polite"
-								>{formatChips(0, locale)}</span
-							>
+							<span id="net-delta" data-testid="net-delta" aria-live="polite">
+								{formatChips(0, locale)}
+							</span>
 						</div>
-						<div id="game-message" role="status">{t('messageHint')}</div>
+						<div id="game-message" role="status">
+							{t('messageHint')}
+						</div>
 					</div>
 				</div>
 			</section>
@@ -211,78 +231,68 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 								data-bet-type="straight"
 								data-bet-target="0"
 								class="bet-cell roulette-zero"
-								aria-label={t('betStraight', { number: '0' })}>0</button
+								aria-label={t('betStraight', { number: '0' })}
 							>
+								0
+							</button>
 							<div class="roulette-number-grid">
-								{
-									flatNumbers.map((n) => (
-										<button
-											type="button"
-											data-bet-type="straight"
-											data-bet-target={String(n)}
-											class="bet-cell"
-											aria-label={t('betStraight', { number: String(n) })}
-											style={`background-color: ${pocketBg(n)};`}
-										>
-											{n}
-										</button>
-									))
-								}
+								{flatNumbers.map((n) => (
+									<button
+										type="button"
+										data-bet-type="straight"
+										data-bet-target={String(n)}
+										class="bet-cell"
+										aria-label={t('betStraight', { number: String(n) })}
+										style={`background-color: ${pocketBg(n)};`}
+									>
+										{n}
+									</button>
+								))}
 							</div>
 							<div class="roulette-columns">
-								{
-									[0, 1, 2].map((ci) => (
-										<button
-											type="button"
-											data-bet-type="column"
-											data-bet-target={String(ci)}
-											class="bet-cell"
-											aria-label={t('betColumn', { number: String(3 - ci) })}
-										>
-											<>
-												<span>{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}</span>
-												<strong>2:1</strong>
-											</>
-										</button>
-									))
-								}
+								{[0, 1, 2].map((ci) => (
+									<button
+										type="button"
+										data-bet-type="column"
+										data-bet-target={String(ci)}
+										class="bet-cell"
+										aria-label={t('betColumn', { number: String(3 - ci) })}
+									>
+										<>
+											<span>{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}</span>
+											<strong>2:1</strong>
+										</>
+									</button>
+								))}
 							</div>
 						</div>
 						<div class="roulette-dozens">
-							{
-								(['ordinal1st', 'ordinal2nd', 'ordinal3rd'] as const).map((ordinal, i) => (
-									<button
-										type="button"
-										data-bet-type="dozen"
-										data-bet-target={String(i)}
-										class="bet-cell"
-									>
-										{t('betDozen', { ordinal: t(ordinal) })}
-									</button>
-								))
-							}
+							{(['ordinal1st', 'ordinal2nd', 'ordinal3rd'] as const).map((ordinal, i) => (
+								<button
+									type="button"
+									data-bet-type="dozen"
+									data-bet-target={String(i)}
+									class="bet-cell"
+								>
+									{t('betDozen', { ordinal: t(ordinal) })}
+								</button>
+							))}
 						</div>
 						<div class="roulette-outside">
-							{
-								(
-									[
-										{ type: 'low', label: 'betLow' },
-										{ type: 'even', label: 'tableEven' },
-										{ type: 'red', label: 'tableRed' },
-										{ type: 'black', label: 'tableBlack' },
-										{ type: 'odd', label: 'tableOdd' },
-										{ type: 'high', label: 'betHigh' },
-									] as const
-								).map(({ type, label }) => (
-									<button
-										type="button"
-										data-bet-type={type}
-										class={`bet-cell roulette-bet-${type}`}
-									>
-										{t(label)}
-									</button>
-								))
-							}
+							{(
+								[
+									{ type: 'low', label: 'betLow' },
+									{ type: 'even', label: 'tableEven' },
+									{ type: 'red', label: 'tableRed' },
+									{ type: 'black', label: 'tableBlack' },
+									{ type: 'odd', label: 'tableOdd' },
+									{ type: 'high', label: 'betHigh' },
+								] as const
+							).map(({ type, label }) => (
+								<button type="button" data-bet-type={type} class={`bet-cell roulette-bet-${type}`}>
+									{t(label)}
+								</button>
+							))}
 						</div>
 					</div>
 				</div>
@@ -290,35 +300,41 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 			</div>
 
 			<section class="roulette-controls" aria-label={t('phasePlaceBets')}>
-				<div class="roulette-divider" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="roulette-divider" aria-hidden="true">
+					<i></i>
+					<i></i>
+					<i></i>
+				</div>
 				<div class="roulette-control-row">
 					<div class="roulette-chips" role="group" aria-label={t('chipLabel')}>
 						<span class="roulette-label">{t('chipLabel')}</span>
-						{
-							CHIP_DENOMINATIONS.map((amount, i) => (
-								<button
-									type="button"
-									class={`chip-select${amount === 5 ? ' selected' : ''}`}
-									data-amount={amount}
-									data-testid={`chip-${amount}`}
-									aria-pressed={amount === 5}
-									aria-label={formatChips(amount, locale)}
-								>
-									<PokerChip value={amount} color={chipColors[i]} locale={locale} />
-								</button>
-							))
-						}
+						{CHIP_DENOMINATIONS.map((amount, i) => (
+							<button
+								type="button"
+								class={`chip-select${amount === 5 ? ' selected' : ''}`}
+								data-amount={amount}
+								data-testid={`chip-${amount}`}
+								aria-pressed={amount === 5}
+								aria-label={formatChips(amount, locale)}
+							>
+								<PokerChip value={amount} color={chipColors[i]} locale={locale} />
+							</button>
+						))}
 					</div>
 					<div class="roulette-total">
 						<span class="roulette-label">{t('totalBet')}</span>
-						<span id="total-bet" data-testid="total-bet">{formatChips(0, locale)}</span>
+						<span id="total-bet" data-testid="total-bet">
+							{formatChips(0, locale)}
+						</span>
 					</div>
 					<button
 						type="button"
 						id="clear-bets-button"
 						data-testid="clear-bets-button"
-						class="roulette-button">{t('clear')}</button
+						class="roulette-button"
 					>
+						{t('clear')}
+					</button>
 					<button
 						type="button"
 						id="spin-button"
@@ -326,85 +342,88 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 						disabled
 						class="roulette-button roulette-button-gold"
 					>
-						<span aria-hidden="true">⟳</span>{t('spinButton')}</button
-					>
+						<span aria-hidden="true">⟳</span>
+						{t('spinButton')}
+					</button>
 					<button
 						type="button"
 						id="new-round-button"
 						data-testid="new-round-button"
 						hidden
-						class="roulette-button roulette-button-gold">{t('newRoundButton')}</button
+						class="roulette-button roulette-button-gold"
 					>
+						{t('newRoundButton')}
+					</button>
 				</div>
 			</section>
 		</div>
 
 		<dialog id="bets-panel" class="roulette-drawer" aria-labelledby="bets-title">
 			<header>
-				<h2 id="bets-title">{t('activeBets')}</h2><form method="dialog">
-					<button class="roulette-icon" aria-label={t('close')}>×</button>
+				<h2 id="bets-title">{t('activeBets')}</h2>
+				<form method="dialog">
+					<button class="roulette-icon" aria-label={t('close')}>
+						×
+					</button>
 				</form>
 			</header>
 			<div class="roulette-drawer-body">
-				<div id="active-bets" data-testid="active-bets"></div><p>{t('removeBetHint')}</p>
+				<div id="active-bets" data-testid="active-bets"></div>
+				<p>{t('removeBetHint')}</p>
 				<section class="roulette-breakdown">
-					<h3>{t('lastResult')}</h3><div
-						id="bet-results"
-						data-testid="bet-results"
-						aria-live="polite"
-					>
-					</div>
+					<h3>{t('lastResult')}</h3>
+					<div id="bet-results" data-testid="bet-results" aria-live="polite"></div>
 				</section>
 			</div>
 		</dialog>
 		<dialog id="rules-panel" class="roulette-drawer" aria-labelledby="rules-title">
 			<header>
-				<h2 id="rules-title">{t('payouts')}</h2><form method="dialog">
-					<button class="roulette-icon" aria-label={t('close')}>×</button>
+				<h2 id="rules-title">{t('payouts')}</h2>
+				<form method="dialog">
+					<button class="roulette-icon" aria-label={t('close')}>
+						×
+					</button>
 				</form>
 			</header>
 			<div class="roulette-drawer-body">
 				<dl class="roulette-payout-list">
-					{
-						(
-							[
-								['payoutStraight', '35:1'],
-								['payoutRedBlack', '1:1'],
-								['payoutOddEven', '1:1'],
-								['payoutLowHigh', '1:1'],
-								['payoutDozens', '2:1'],
-								['payoutColumns', '2:1'],
-							] as const
-						).map(([label, payout]) => (
-							<div>
-								<>
-									<dt>{t(label)}</dt>
-									<dd>{payout}</dd>
-								</>
-							</div>
-						))
-					}
+					{(
+						[
+							['payoutStraight', '35:1'],
+							['payoutRedBlack', '1:1'],
+							['payoutOddEven', '1:1'],
+							['payoutLowHigh', '1:1'],
+							['payoutDozens', '2:1'],
+							['payoutColumns', '2:1'],
+						] as const
+					).map(([label, payout]) => (
+						<div>
+							<>
+								<dt>{t(label)}</dt>
+								<dd>{payout}</dd>
+							</>
+						</div>
+					))}
 				</dl>
 				<h3>{t('limits')}</h3>
 				<dl class="roulette-payout-list">
-					{
-						(
-							[
-								['minimumBet', MIN_BET],
-								['perPosition', MAX_BET_PER_POSITION],
-								['maximumTotal', MAX_TOTAL_BET],
-							] as const
-						).map(([label, amount]) => (
-							<div>
-								<>
-									<dt>{t(label)}</dt>
-									<dd>{formatChips(amount, locale)}</dd>
-								</>
-							</div>
-						))
-					}
+					{(
+						[
+							['minimumBet', MIN_BET],
+							['perPosition', MAX_BET_PER_POSITION],
+							['maximumTotal', MAX_TOTAL_BET],
+						] as const
+					).map(([label, amount]) => (
+						<div>
+							<>
+								<dt>{t(label)}</dt>
+								<dd>{formatChips(amount, locale)}</dd>
+							</>
+						</div>
+					))}
 				</dl>
-				<p>{t('houseEdge')}</p><p>{t('subtitle')}</p>
+				<p>{t('houseEdge')}</p>
+				<p>{t('subtitle')}</p>
 			</div>
 		</dialog>
 		<!-- Achievement Toast -->
@@ -417,7 +436,9 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 			class="fixed bottom-4 right-4 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 			style="z-index: 9999;"
 		>
-			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
+			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">
+				🏆
+			</span>
 			<div>
 				<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
 					{t('achievementUnlocked')}

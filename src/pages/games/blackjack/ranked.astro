@@ -35,20 +35,14 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 				</a>
 				<div class="flex flex-wrap items-center gap-3">
 					<h1 class="deco-section-title text-4xl">{getGameName(locale, 'blackjack')}</h1>
-					<span
-						class="rounded-full border border-[var(--deco-brass)] bg-[var(--deco-brass-dim)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-brass-bright)]"
-					>
+					<span class="rounded-full border border-[var(--deco-brass)] bg-[var(--deco-brass-dim)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-brass-bright)]">
 						{t('ranked')}
 					</span>
 				</div>
-				<p class="mt-3 max-w-2xl text-sm leading-6 text-[var(--deco-muted)]">
-					{t('rankedIntro')}
-				</p>
+				<p class="mt-3 max-w-2xl text-sm leading-6 text-[var(--deco-muted)]">{t('rankedIntro')}</p>
 			</div>
 
-			<div
-				class="grid grid-cols-2 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4"
-			>
+			<div class="grid grid-cols-2 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4">
 				<div>
 					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">{t('balance')}</p>
 					<p
@@ -92,8 +86,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 						id="ranked-dealer-hand"
 						data-testid="ranked-dealer-hand"
 						class="flex min-h-24 flex-wrap justify-center gap-3"
-					>
-					</div>
+					></div>
 				</div>
 
 				<div
@@ -113,17 +106,16 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 						</p>
 						<p class="text-sm text-[var(--deco-brass)]">
 							{t('committed')}
-							<strong id="ranked-committed-wager" data-testid="ranked-committed-wager"
-								>{formatChips(0, locale)}</strong
-							>
+							<strong id="ranked-committed-wager" data-testid="ranked-committed-wager">
+								{formatChips(0, locale)}
+							</strong>
 						</p>
 					</div>
 					<div
 						id="ranked-player-hands"
 						data-testid="ranked-player-hands"
 						class="grid min-h-36 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-					>
-					</div>
+					></div>
 				</div>
 			</div>
 		</section>
@@ -142,12 +134,10 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							for="ranked-wager"
 							class="mb-2 block text-sm font-medium text-[var(--deco-muted)]"
 						>
-							{
-								t('wagerLabel', {
-									min: formatWholeNumber(MINIMUM_WAGER, locale),
-									max: formatWholeNumber(MAXIMUM_WAGER, locale),
-								})
-							}
+							{t('wagerLabel', {
+								min: formatWholeNumber(MINIMUM_WAGER, locale),
+								max: formatWholeNumber(MAXIMUM_WAGER, locale),
+							})}
 						</label>
 						<input
 							id="ranked-wager"
@@ -214,9 +204,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 						</button>
 					</div>
 				</div>
-				<p class="mt-5 text-xs leading-5 text-[var(--deco-muted)]">
-					{t('rankAuthorityNote')}
-				</p>
+				<p class="mt-5 text-xs leading-5 text-[var(--deco-muted)]">{t('rankAuthorityNote')}</p>
 			</section>
 
 			<section
@@ -236,8 +224,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							id="ranked-result-outcome"
 							data-testid="ranked-result-outcome"
 							class="mt-1 text-lg font-bold text-[var(--deco-ivory)]"
-						>
-						</dd>
+						></dd>
 					</div>
 					<div>
 						<dt class="text-[var(--deco-muted)]">{t('resultCommittedWager')}</dt>
@@ -245,8 +232,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							id="ranked-result-wager"
 							data-testid="ranked-result-wager"
 							class="mt-1 font-semibold text-[var(--deco-ivory)]"
-						>
-						</dd>
+						></dd>
 					</div>
 					<div>
 						<dt class="text-[var(--deco-muted)]">{t('resultPayout')}</dt>
@@ -254,8 +240,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							id="ranked-result-payout"
 							data-testid="ranked-result-payout"
 							class="mt-1 font-semibold text-[var(--deco-ivory)]"
-						>
-						</dd>
+						></dd>
 					</div>
 					<div>
 						<dt class="text-[var(--deco-muted)]">{t('resultNet')}</dt>
@@ -263,8 +248,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							id="ranked-result-net"
 							data-testid="ranked-result-net"
 							class="mt-1 font-semibold text-[var(--deco-ivory)]"
-						>
-						</dd>
+						></dd>
 					</div>
 					<div>
 						<dt class="text-[var(--deco-muted)]">{t('resultFinalBalance')}</dt>
@@ -272,8 +256,7 @@ const initialWager = Math.min(100, Math.max(10, initialBalance));
 							id="ranked-result-balance"
 							data-testid="ranked-result-balance"
 							class="mt-1 font-semibold text-[var(--deco-ivory)]"
-						>
-						</dd>
+						></dd>
 					</div>
 				</dl>
 			</section>

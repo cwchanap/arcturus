@@ -35,35 +35,38 @@ const clientUserId = gameSession.clientUserId;
 		<div class="slots-interior">
 			<div class="slots-sunburst" aria-hidden="true"></div>
 			<header class="slots-header">
-				<a href="/games" class="slots-back"><span aria-hidden="true">‹</span>{t('backToGames')}</a>
+				<a href="/games" class="slots-back">
+					<span aria-hidden="true">‹</span>
+					{t('backToGames')}
+				</a>
 				<div class="slots-title">
-					<span class="slots-emblem" aria-hidden="true"
-						><svg
+					<span class="slots-emblem" aria-hidden="true">
+						<svg
 							viewBox="0 0 24 24"
 							width="18"
 							height="18"
 							fill="none"
 							stroke="currentColor"
 							stroke-width="1.2"
-							><rect x="4" y="5" width="16" height="14" rx="1"></rect><path d="M9 5v14M15 5v14"
-							></path></svg
-						></span
-					>
-					<h1>{getGameName(locale, 'slots')}</h1><span class="slots-mode"
-						>{t('lineCount', { count: String(NUM_PAYLINES) })}</span
-					>
+						>
+							<rect x="4" y="5" width="16" height="14" rx="1"></rect>
+							<path d="M9 5v14M15 5v14"></path>
+						</svg>
+					</span>
+					<h1>{getGameName(locale, 'slots')}</h1>
+					<span class="slots-mode">{t('lineCount', { count: String(NUM_PAYLINES) })}</span>
 				</div>
 				<div class="slots-tools">
 					<div class="slots-meter">
-						<span class="slots-label">{t('top')}</span><strong>×{PAYTABLE.seven[5]}</strong>
+						<span class="slots-label">{t('top')}</span>
+						<strong>×{PAYTABLE.seven[5]}</strong>
 					</div>
 					<div class="slots-meter" title={getBalanceLabel(locale, gameSession.isGuest)}>
-						<DecoIcon name="chip" size={16} /><span class="sr-only"
-							>{getBalanceLabel(locale, gameSession.isGuest)}</span
-						>
-						<span id="chip-balance" data-testid="chip-balance"
-							>{formatChips(initialBalance, locale)}</span
-						>
+						<DecoIcon name="chip" size={16} />
+						<span class="sr-only">{getBalanceLabel(locale, gameSession.isGuest)}</span>
+						<span id="chip-balance" data-testid="chip-balance">
+							{formatChips(initialBalance, locale)}
+						</span>
 					</div>
 					<label class="slots-icon slots-toggle" title={t('quickSpin')}>
 						<input type="checkbox" id="setting-quick" aria-label={t('quickSpin')} />
@@ -74,8 +77,10 @@ const clientUserId = gameSession.clientUserId;
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
-							stroke-width="1.6"><path d="M13 3L5.5 13.5h5L10 21l7.5-10.5h-5Z"></path></svg
+							stroke-width="1.6"
 						>
+							<path d="M13 3L5.5 13.5h5L10 21l7.5-10.5h-5Z"></path>
+						</svg>
 					</label>
 					<button
 						type="button"
@@ -85,8 +90,10 @@ const clientUserId = gameSession.clientUserId;
 						aria-expanded="false"
 						class="slots-icon"
 						aria-label={t('recentSpins')}
-						title={t('recentSpins')}><DecoIcon name="menu" size={16} /></button
+						title={t('recentSpins')}
 					>
+						<DecoIcon name="menu" size={16} />
+					</button>
 					<button
 						type="button"
 						id="btn-paytable"
@@ -96,8 +103,10 @@ const clientUserId = gameSession.clientUserId;
 						aria-expanded="false"
 						class="slots-icon"
 						aria-label={t('paytable')}
-						title={t('paytable')}>?</button
+						title={t('paytable')}
 					>
+						?
+					</button>
 					<button
 						type="button"
 						id="btn-settings"
@@ -117,64 +126,61 @@ const clientUserId = gameSession.clientUserId;
 							fill="none"
 							stroke="currentColor"
 							stroke-width="1.5"
-							><path
-								d="m10 3-.6 2.4-2.1 1.2L5 6l-2 3 1.8 1.8v2.4L3 15l2 3 2.3-.6 2.1 1.2L10 21h4l.6-2.4 2.1-1.2 2.3.6 2-3-1.8-1.8v-2.4L21 9l-2-3-2.3.6-2.1-1.2L14 3Z"
-							></path><circle cx="12" cy="12" r="3"></circle></svg
 						>
+							<path d="m10 3-.6 2.4-2.1 1.2L5 6l-2 3 1.8 1.8v2.4L3 15l2 3 2.3-.6 2.1 1.2L10 21h4l.6-2.4 2.1-1.2 2.3.6 2-3-1.8-1.8v-2.4L21 9l-2-3-2.3.6-2.1-1.2L14 3Z"></path>
+							<circle cx="12" cy="12" r="3"></circle>
+						</svg>
 					</button>
 				</div>
 			</header>
 			<section class="slots-stage" aria-label={getGameName(locale, 'slots')}>
 				<div class="slots-machine">
 					<div class="slots-paylines" aria-hidden="true">
-						{
-							[1, 0, 2].map((index) => (
-								<span class="slots-line" data-payline={index}>
-									<span>{index + 1}</span>
-								</span>
-							))
-						}
+						{[1, 0, 2].map((index) => (
+							<span class="slots-line" data-payline={index}>
+								<span>{index + 1}</span>
+							</span>
+						))}
 					</div>
 					<div class="slots-reel-frame">
 						<div class="slots-reel-inset">
 							<div id="reel-window" data-testid="reel-window">
-								{
-									Array.from({ length: NUM_REELS }, (_, reel) => (
-										<div class="reel" data-reel={reel}>
-											{Array.from({ length: NUM_ROWS }, (_, row) => (
-												<div class="symbol-cell" data-reel={reel} data-row={row}>
-													<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
-														<use class="symbol-art" href="/images/slots-symbols.svg#cherry" />
-													</svg>
-													<span class="symbol-glyph sr-only">
-														{getSlotsSymbolLabel(locale, 'cherry')}
-													</span>
-												</div>
-											))}
-										</div>
-									))
-								}
+								{Array.from({ length: NUM_REELS }, (_, reel) => (
+									<div class="reel" data-reel={reel}>
+										{Array.from({ length: NUM_ROWS }, (_, row) => (
+											<div class="symbol-cell" data-reel={reel} data-row={row}>
+												<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
+													<use class="symbol-art" href="/images/slots-symbols.svg#cherry" />
+												</svg>
+												<span class="symbol-glyph sr-only">
+													{getSlotsSymbolLabel(locale, 'cherry')}
+												</span>
+											</div>
+										))}
+									</div>
+								))}
 							</div>
 						</div>
 					</div>
 					<div class="slots-paylines" aria-hidden="true">
-						{
-							[3, 4].map((index) => (
-								<span class="slots-line" data-payline={index}>
-									<span>{index + 1}</span>
-								</span>
-							))
-						}
+						{[3, 4].map((index) => (
+							<span class="slots-line" data-payline={index}>
+								<span>{index + 1}</span>
+							</span>
+						))}
 					</div>
 				</div>
 				<div class="slots-result-panel">
 					<div class="slots-feedback">
-						<span id="result-status" class="slots-ready">{t('ready')}</span>
+						<span id="result-status" class="slots-ready">
+							{t('ready')}
+						</span>
 						<div id="game-status" data-testid="game-status" role="status" class="hidden"></div>
 					</div>
 					<div class="slots-win-diamond">
 						<div class="slots-win-display">
-							<strong id="win-amount">0</strong><span class="slots-label">{t('won')}</span>
+							<strong id="win-amount">0</strong>
+							<span class="slots-label">{t('won')}</span>
 						</div>
 						<div
 							id="last-win"
@@ -182,8 +188,7 @@ const clientUserId = gameSession.clientUserId;
 							role="status"
 							aria-live="polite"
 							class="sr-only"
-						>
-						</div>
+						></div>
 					</div>
 					<div class="slots-result-caption">
 						<span class="slots-label">{t('lastSpin')}</span>
@@ -194,48 +199,52 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 			</section>
 			<section class="slots-controls" aria-label={t('betPerSpin')}>
-				<div class="slots-divider" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="slots-divider" aria-hidden="true">
+					<i></i>
+					<i></i>
+					<i></i>
+				</div>
 				<div class="slots-control-row">
 					<span class="slots-label">{t('betPerSpin')}</span>
 					<div id="bet-chips" data-testid="bet-chips" role="group" aria-label={t('betPerSpin')}>
-						{
-							BET_INCREMENTS.map((amount, i) => (
-								<button
-									type="button"
-									class={`bet-chip${i === 0 ? ' selected' : ''}`}
-									data-bet={amount}
-									aria-pressed={i === 0}
-									aria-label={formatChips(amount, locale)}
-								>
-									{amount}
-								</button>
-							))
-						}
+						{BET_INCREMENTS.map((amount, i) => (
+							<button
+								type="button"
+								class={`bet-chip${i === 0 ? ' selected' : ''}`}
+								data-bet={amount}
+								aria-pressed={i === 0}
+								aria-label={formatChips(amount, locale)}
+							>
+								{amount}
+							</button>
+						))}
 					</div>
 					<div class="slots-meter slots-current-bet">
-						<DecoIcon name="chip" size={14} /><span id="current-bet" data-testid="current-bet"
-							>{formatChips(BET_INCREMENTS[0], locale)}</span
-						>
+						<DecoIcon name="chip" size={14} />
+						<span id="current-bet" data-testid="current-bet">
+							{formatChips(BET_INCREMENTS[0], locale)}
+						</span>
 					</div>
-					<button type="button" id="btn-spin" data-testid="btn-spin" class="slots-spin"
-						><span aria-hidden="true">⟳</span>{t('spin')}</button
-					>
+					<button type="button" id="btn-spin" data-testid="btn-spin" class="slots-spin">
+						<span aria-hidden="true">⟳</span>
+						{t('spin')}
+					</button>
 				</div>
 			</section>
 		</div>
 
 		<dialog id="recent-panel" class="slots-drawer" aria-labelledby="recent-title">
 			<header>
-				<h2 id="recent-title">{t('recentSpins')}</h2><form method="dialog">
-					<button class="slots-icon" aria-label={t('close')}>×</button>
+				<h2 id="recent-title">{t('recentSpins')}</h2>
+				<form method="dialog">
+					<button class="slots-icon" aria-label={t('close')}>
+						×
+					</button>
 				</form>
 			</header>
 			<div class="slots-drawer-body">
-				<ol id="recent-spins" data-testid="recent-spins" role="list"></ol><p
-					class="slots-empty-history"
-				>
-					{t('noSpins')}
-				</p>
+				<ol id="recent-spins" data-testid="recent-spins" role="list"></ol>
+				<p class="slots-empty-history">{t('noSpins')}</p>
 			</div>
 		</dialog>
 		<dialog
@@ -245,44 +254,48 @@ const clientUserId = gameSession.clientUserId;
 			aria-labelledby="paytable-title"
 		>
 			<header>
-				<h2 id="paytable-title">{t('paytable')}</h2><form method="dialog">
-					<button class="slots-icon btn-paytable-close" aria-label={t('closePaytable')}>×</button>
+				<h2 id="paytable-title">{t('paytable')}</h2>
+				<form method="dialog">
+					<button class="slots-icon btn-paytable-close" aria-label={t('closePaytable')}>
+						×
+					</button>
 				</form>
 			</header>
 			<div class="slots-drawer-body">
 				<p>{t('paytableIntro')}</p>
 				<table>
-					<thead
-						><tr
-							><th scope="col">{t('symbol')}</th><th scope="col">3</th><th scope="col">4</th><th
-								scope="col">5</th
-							></tr
-						></thead
-					><tbody>
-						{
-							SYMBOL_ORDER.map((id) => (
-								<tr>
-									<>
-										<th scope="row">
-											<span class="slots-paytable-symbol">
-												<>
-													<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
-														<use href={`/images/slots-symbols.svg#${id}`} />
-													</svg>
-													<span>{getSlotsSymbolLabel(locale, id)}</span>
-												</>
-											</span>
-										</th>
-										<td>×{PAYTABLE[id][3]}</td>
-										<td>×{PAYTABLE[id][4]}</td>
-										<td>×{PAYTABLE[id][5]}</td>
-									</>
-								</tr>
-							))
-						}
+					<thead>
+						<tr>
+							<th scope="col">{t('symbol')}</th>
+							<th scope="col">3</th>
+							<th scope="col">4</th>
+							<th scope="col">5</th>
+						</tr>
+					</thead>
+					<tbody>
+						{SYMBOL_ORDER.map((id) => (
+							<tr>
+								<>
+									<th scope="row">
+										<span class="slots-paytable-symbol">
+											<>
+												<svg class="slots-symbol" viewBox="0 0 24 24" aria-hidden="true">
+													<use href={`/images/slots-symbols.svg#${id}`} />
+												</svg>
+												<span>{getSlotsSymbolLabel(locale, id)}</span>
+											</>
+										</span>
+									</th>
+									<td>×{PAYTABLE[id][3]}</td>
+									<td>×{PAYTABLE[id][4]}</td>
+									<td>×{PAYTABLE[id][5]}</td>
+								</>
+							</tr>
+						))}
 					</tbody>
 				</table>
-				<p>{t('paytableFootnote')}</p><p>{t('freeChips')}</p>
+				<p>{t('paytableFootnote')}</p>
+				<p>{t('freeChips')}</p>
 			</div>
 		</dialog>
 		<dialog
@@ -292,21 +305,28 @@ const clientUserId = gameSession.clientUserId;
 			aria-labelledby="settings-title"
 		>
 			<header>
-				<h2 id="settings-title">{t('settings')}</h2><form method="dialog">
-					<button class="slots-icon btn-settings-close" aria-label={t('closeSettings')}>×</button>
+				<h2 id="settings-title">{t('settings')}</h2>
+				<form method="dialog">
+					<button class="slots-icon btn-settings-close" aria-label={t('closeSettings')}>
+						×
+					</button>
 				</form>
 			</header>
 			<div class="slots-drawer-body">
-				<label class="slots-setting"
-					><span>{t('spinSpeed')}</span><select id="setting-spin-speed"
-						><option value="slow">{t('speedSlow')}</option><option value="normal" selected
-							>{t('speedNormal')}</option
-						><option value="fast">{t('speedFast')}</option></select
-					></label
-				>
-				<label class="slots-setting"
-					><span>{t('sound')}</span><input type="checkbox" id="setting-sound" checked /></label
-				>
+				<label class="slots-setting">
+					<span>{t('spinSpeed')}</span>
+					<select id="setting-spin-speed">
+						<option value="slow">{t('speedSlow')}</option>
+						<option value="normal" selected>
+							{t('speedNormal')}
+						</option>
+						<option value="fast">{t('speedFast')}</option>
+					</select>
+				</label>
+				<label class="slots-setting">
+					<span>{t('sound')}</span>
+					<input type="checkbox" id="setting-sound" checked />
+				</label>
 			</div>
 		</dialog>
 		<div
@@ -314,8 +334,7 @@ const clientUserId = gameSession.clientUserId;
 			data-testid="achievement-toast"
 			class="hidden slots-achievement"
 			role="status"
-		>
-		</div>
+		></div>
 	</div>
 </CasinoLayout>
 <script>

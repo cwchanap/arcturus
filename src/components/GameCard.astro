@@ -25,31 +25,27 @@ const formattedMinBet = formatChips(minBet, locale);
 ---
 
 <a href={href} class="deco-card group block">
-	{
-		featured && (
-			<div class="absolute top-3 right-3 z-10">
-				<span class="deco-badge">{t('featured')}</span>
-			</div>
-		)
-	}
+	{featured && (
+		<div class="absolute top-3 right-3 z-10">
+			<span class="deco-badge">{t('featured')}</span>
+		</div>
+	)}
 
 	<div class="deco-emblem-frame relative h-44 border-b border-[var(--deco-brass)]/20">
-		{
-			icon ? (
-				<span
-					class="absolute inset-0 flex items-center justify-center text-6xl transition-transform duration-300 group-hover:scale-110"
-					aria-hidden="true"
-				>
-					{icon}
-				</span>
-			) : (
-				<GameEmblem
-					kind={emblem}
-					size={84}
-					class="transition-transform duration-300 group-hover:scale-110"
-				/>
-			)
-		}
+		{icon ? (
+			<span
+				class="absolute inset-0 flex items-center justify-center text-6xl transition-transform duration-300 group-hover:scale-110"
+				aria-hidden="true"
+			>
+				{icon}
+			</span>
+		) : (
+			<GameEmblem
+				kind={emblem}
+				size={84}
+				class="transition-transform duration-300 group-hover:scale-110"
+			/>
+		)}
 	</div>
 
 	<div class="p-6">

@@ -33,7 +33,9 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 						{t('playerStatistics')}
 					</h1>
 				</div>
-				<a href="/profile" class="deco-link">{t('backToProfile')}</a>
+				<a href="/profile" class="deco-link">
+					{t('backToProfile')}
+				</a>
 			</header>
 
 			<section
@@ -47,50 +49,46 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 					<div class="statistics-skeleton h-3 w-28 bg-white/10"></div>
 					<div class="statistics-skeleton mt-3 h-8 w-48 bg-white/10"></div>
 					<div class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-						{
-							Array.from({ length: 4 }, (_, index) => (
-								<div class="space-y-2">
-									<div
-										class="statistics-skeleton h-3 w-20 bg-white/10"
-										aria-label={t('summaryMetricLoading', { index: index + 1 })}
-									/>
-									<div class="statistics-skeleton h-7 w-24 bg-white/10" />
-								</div>
-							))
-						}
+						{Array.from({ length: 4 }, (_, index) => (
+							<div class="space-y-2">
+								<div
+									class="statistics-skeleton h-3 w-20 bg-white/10"
+									aria-label={t('summaryMetricLoading', { index: index + 1 })}
+								/>
+								<div class="statistics-skeleton h-7 w-24 bg-white/10" />
+							</div>
+						))}
 					</div>
 				</div>
 
 				<div class="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-					{
-						GAME_TYPES.map((gameType) => (
-							<article
-								class="deco-panel min-h-80 p-5 sm:p-6"
-								aria-label={t('gameStatisticsLoading', { game: getGameName(locale, gameType) })}
-							>
-								<div class="flex items-center gap-3">
-									<span class="text-3xl leading-none" aria-hidden="true">
-										{GAME_TYPE_ICONS[gameType]}
-									</span>
-									<div class="min-w-0 flex-1">
-										<div class="statistics-skeleton h-5 w-32 bg-white/10" />
-										<div class="statistics-skeleton mt-2 h-3 w-20 bg-white/10" />
-									</div>
+					{GAME_TYPES.map((gameType) => (
+						<article
+							class="deco-panel min-h-80 p-5 sm:p-6"
+							aria-label={t('gameStatisticsLoading', { game: getGameName(locale, gameType) })}
+						>
+							<div class="flex items-center gap-3">
+								<span class="text-3xl leading-none" aria-hidden="true">
+									{GAME_TYPE_ICONS[gameType]}
+								</span>
+								<div class="min-w-0 flex-1">
+									<div class="statistics-skeleton h-5 w-32 bg-white/10" />
+									<div class="statistics-skeleton mt-2 h-3 w-20 bg-white/10" />
 								</div>
-								<div class="mt-6 grid grid-cols-3 gap-3" aria-hidden="true">
-									<div class="statistics-skeleton h-14 bg-white/10" />
-									<div class="statistics-skeleton h-14 bg-white/10" />
-									<div class="statistics-skeleton h-14 bg-white/10" />
-								</div>
-								<div class="mt-5 grid grid-cols-2 gap-3" aria-hidden="true">
-									<div class="statistics-skeleton h-12 bg-white/10" />
-									<div class="statistics-skeleton h-12 bg-white/10" />
-									<div class="statistics-skeleton h-12 bg-white/10" />
-									<div class="statistics-skeleton h-12 bg-white/10" />
-								</div>
-							</article>
-						))
-					}
+							</div>
+							<div class="mt-6 grid grid-cols-3 gap-3" aria-hidden="true">
+								<div class="statistics-skeleton h-14 bg-white/10" />
+								<div class="statistics-skeleton h-14 bg-white/10" />
+								<div class="statistics-skeleton h-14 bg-white/10" />
+							</div>
+							<div class="mt-5 grid grid-cols-2 gap-3" aria-hidden="true">
+								<div class="statistics-skeleton h-12 bg-white/10" />
+								<div class="statistics-skeleton h-12 bg-white/10" />
+								<div class="statistics-skeleton h-12 bg-white/10" />
+								<div class="statistics-skeleton h-12 bg-white/10" />
+							</div>
+						</article>
+					))}
 				</div>
 			</section>
 
@@ -119,8 +117,7 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 					class="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3"
 					aria-label={t('statisticsByGame')}
 					data-statistics-games
-				>
-				</section>
+				></section>
 			</div>
 		</section>
 		<noscript>
@@ -130,9 +127,7 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 				}
 			</style>
 			<div class="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-				<p class="deco-panel mt-6 p-4">
-					{t('javascriptRequired')}
-				</p>
+				<p class="deco-panel mt-6 p-4">{t('javascriptRequired')}</p>
 			</div>
 		</noscript>
 	</section>

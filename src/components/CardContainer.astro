@@ -21,52 +21,50 @@ const sizes = sizeClasses[size];
 ---
 
 <div id={id} class="flex justify-center gap-2 flex-wrap items-center" data-card-container>
-	{
-		Array.from({ length: maxCards }).map((_, i) => (
+	{Array.from({ length: maxCards }).map((_, i) => (
+		<div
+			class="card-slot"
+			data-detailed={String(detailed)}
+			data-slot-index={i}
+			data-slot-state={i < 2 ? 'placeholder' : 'hidden'}
+		>
+			{/* Placeholder */}
 			<div
-				class="card-slot"
-				data-detailed={String(detailed)}
-				data-slot-index={i}
-				data-slot-state={i < 2 ? 'placeholder' : 'hidden'}
-			>
-				{/* Placeholder */}
-				<div
-					class:list={[
-						'card-placeholder',
-						sizes.card,
-						'bg-white/10 rounded-lg border-2 border-dashed border-white/20',
-						{ hidden: i >= 2 },
-					]}
-					data-placeholder
-				/>
+				class:list={[
+					'card-placeholder',
+					sizes.card,
+					'bg-white/10 rounded-lg border-2 border-dashed border-white/20',
+					{ hidden: i >= 2 },
+				]}
+				data-placeholder
+			/>
 
-				{/* Face-up card */}
-				<div class:list={['playing-card hidden', sizes.card]} data-card-face>
-					<div class="playing-card-inner">
-						<div class="card-corner card-corner-top">
-							<span class:list={['card-rank', sizes.rank]} data-rank />
-							<span class="card-suit-small" data-suit-small />
-						</div>
-						<span class:list={['card-suit-center', sizes.suit]} data-suit-center />
-						{detailed && (
-							<>
-								<div data-card-detail aria-hidden="true" />
-								<div data-face-detail class="hidden" aria-hidden="true">
-									<span data-rank />
-									<span data-suit-small />
-								</div>
-							</>
-						)}
-						<div class="card-corner card-corner-bottom">
-							<span class:list={['card-rank', sizes.rank]} data-rank />
-							<span class="card-suit-small" data-suit-small />
-						</div>
+			{/* Face-up card */}
+			<div class:list={['playing-card hidden', sizes.card]} data-card-face>
+				<div class="playing-card-inner">
+					<div class="card-corner card-corner-top">
+						<span class:list={['card-rank', sizes.rank]} data-rank />
+						<span class="card-suit-small" data-suit-small />
+					</div>
+					<span class:list={['card-suit-center', sizes.suit]} data-suit-center />
+					{detailed && (
+						<>
+							<div data-card-detail aria-hidden="true" />
+							<div data-face-detail class="hidden" aria-hidden="true">
+								<span data-rank />
+								<span data-suit-small />
+							</div>
+						</>
+					)}
+					<div class="card-corner card-corner-bottom">
+						<span class:list={['card-rank', sizes.rank]} data-rank />
+						<span class="card-suit-small" data-suit-small />
 					</div>
 				</div>
-
-				{/* Face-down card */}
-				<div class:list={['playing-card-back hidden', sizes.card]} data-card-back />
 			</div>
-		))
-	}
+
+			{/* Face-down card */}
+			<div class:list={['playing-card-back hidden', sizes.card]} data-card-back />
+		</div>
+	))}
 </div>

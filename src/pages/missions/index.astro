@@ -45,21 +45,17 @@ function formatProgress(progress: number, target: number): string {
 					<div>
 						<p class="deco-eyebrow-sm">{t('dailyLoginStreak')}</p>
 						<h2 class="deco-section-title text-2xl mt-1">
-							<span data-testid="streak-display"
-								>{
-									t('dayOfCycle', {
-										day: formatWholeNumber(initialBoard.streak.dayOfCycle, locale),
-									})
-								}</span
-							>
+							<span data-testid="streak-display">
+								{t('dayOfCycle', {
+									day: formatWholeNumber(initialBoard.streak.dayOfCycle, locale),
+								})}
+							</span>
 						</h2>
 						<p class="deco-text-dim text-sm mt-1" data-testid="streak-subtitle">
-							{
-								t('streakSummary', {
-									current: formatWholeNumber(initialBoard.streak.current, locale),
-									longest: formatWholeNumber(initialBoard.streak.longest, locale),
-								})
-							}
+							{t('streakSummary', {
+								current: formatWholeNumber(initialBoard.streak.current, locale),
+								longest: formatWholeNumber(initialBoard.streak.longest, locale),
+							})}
 						</p>
 					</div>
 					<div class="text-right">
@@ -86,129 +82,117 @@ function formatProgress(progress: number, target: number): string {
 				class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8"
 				data-testid="daily-grid"
 			>
-				{
-					initialBoard.daily.map((mission) => (
-						<div
-							class="deco-panel p-4 mission-card"
-							data-testid={`mission-${mission.missionDefId}`}
-							data-mission-id={mission.missionDefId}
-						>
-							<div class="flex items-start justify-between mb-2">
-								<div class="flex items-center gap-2">
-									<span class="text-xl">{mission.icon}</span>
-									<h3 class="font-body font-semibold">
-										{getMissionTitle(locale, mission.missionDefId)}
-									</h3>
-									{mission.isOverride && (
-										<span class="text-xs text-[var(--deco-muted)]">{t('rerolled')}</span>
-									)}
-								</div>
-								<button
-									class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
-									data-reroll-target={mission.missionDefId}
-									data-testid={`reroll-${mission.missionDefId}`}
-									style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
-									aria-label={t('rerollAriaLabel')}
-								>
-									<DecoIcon name="star" size={16} />
-								</button>
+				{initialBoard.daily.map((mission) => (
+					<div
+						class="deco-panel p-4 mission-card"
+						data-testid={`mission-${mission.missionDefId}`}
+						data-mission-id={mission.missionDefId}
+					>
+						<div class="flex items-start justify-between mb-2">
+							<div class="flex items-center gap-2">
+								<span class="text-xl">{mission.icon}</span>
+								<h3 class="font-body font-semibold">
+									{getMissionTitle(locale, mission.missionDefId)}
+								</h3>
+								{mission.isOverride && (
+									<span class="text-xs text-[var(--deco-muted)]">{t('rerolled')}</span>
+								)}
 							</div>
-							<p class="deco-text-dim text-sm mb-3">
-								{getMissionDescription(locale, mission.missionDefId, mission.target)}
-							</p>
-							<div class="flex items-center gap-2 mb-3">
-								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
-									<div
-										class="bg-[var(--deco-brass)] h-full transition-all"
-										style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
-										data-testid={`progress-${mission.missionDefId}`}
-									/>
-								</div>
-								<span
-									class="text-sm tabular-nums"
-									data-testid={`progress-text-${mission.missionDefId}`}
-								>
-									{formatProgress(mission.progress, mission.target)}
-								</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span class="text-[var(--deco-brass)] text-sm font-medium">
-									{formatChips(mission.rewardChips, locale)}
-								</span>
-								<button
-									class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
-									data-claim-target={mission.missionDefId}
-									data-testid={`claim-${mission.missionDefId}`}
-									disabled={!mission.claimable}
-								>
-									{mission.claimed
-										? t('claimed')
-										: mission.completed
-											? t('claim')
-											: t('inProgress')}
-								</button>
-							</div>
+							<button
+								class="reroll-btn text-[var(--deco-muted)] hover:text-[var(--deco-brass)] transition-colors"
+								data-reroll-target={mission.missionDefId}
+								data-testid={`reroll-${mission.missionDefId}`}
+								style={initialBoard.rerollAvailable && !mission.completed ? '' : 'display:none'}
+								aria-label={t('rerollAriaLabel')}
+							>
+								<DecoIcon name="star" size={16} />
+							</button>
 						</div>
-					))
-				}
+						<p class="deco-text-dim text-sm mb-3">
+							{getMissionDescription(locale, mission.missionDefId, mission.target)}
+						</p>
+						<div class="flex items-center gap-2 mb-3">
+							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2 overflow-hidden">
+								<div
+									class="bg-[var(--deco-brass)] h-full transition-all"
+									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+									data-testid={`progress-${mission.missionDefId}`}
+								/>
+							</div>
+							<span
+								class="text-sm tabular-nums"
+								data-testid={`progress-text-${mission.missionDefId}`}
+							>
+								{formatProgress(mission.progress, mission.target)}
+							</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-[var(--deco-brass)] text-sm font-medium">
+								{formatChips(mission.rewardChips, locale)}
+							</span>
+							<button
+								class="claim-btn btn-gold px-3 py-1.5 rounded text-sm"
+								data-claim-target={mission.missionDefId}
+								data-testid={`claim-${mission.missionDefId}`}
+								disabled={!mission.claimable}
+							>
+								{mission.claimed ? t('claimed') : mission.completed ? t('claim') : t('inProgress')}
+							</button>
+						</div>
+					</div>
+				))}
 			</div>
 
 			<!-- Weekly Goal -->
 			<h2 class="deco-section-title text-xl mb-4">{t('weeklyGoal')}</h2>
 			<div id="weekly-section" data-testid="weekly-section">
-				{
-					initialBoard.weekly.map((mission) => (
-						<div
-							class="deco-panel p-6 mission-card"
-							data-testid={`mission-${mission.missionDefId}`}
-							data-mission-id={mission.missionDefId}
-						>
-							<div class="flex items-start justify-between mb-3">
-								<div class="flex items-center gap-2">
-									<span class="text-2xl">{mission.icon}</span>
-									<h3 class="font-body font-semibold text-lg">
-										{getMissionTitle(locale, mission.missionDefId)}
-									</h3>
-								</div>
-							</div>
-							<p class="deco-text-dim text-sm mb-4">
-								{getMissionDescription(locale, mission.missionDefId, mission.target)}
-							</p>
-							<div class="flex items-center gap-3 mb-4">
-								<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
-									<div
-										class="bg-[var(--deco-brass)] h-full transition-all"
-										style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
-										data-testid={`progress-${mission.missionDefId}`}
-									/>
-								</div>
-								<span
-									class="text-sm tabular-nums"
-									data-testid={`progress-text-${mission.missionDefId}`}
-								>
-									{formatProgress(mission.progress, mission.target)}
-								</span>
-							</div>
-							<div class="flex items-center justify-between">
-								<span class="text-[var(--deco-brass)] text-sm font-medium">
-									{formatChips(mission.rewardChips, locale)}
-								</span>
-								<button
-									class="claim-btn btn-gold px-4 py-2 rounded text-sm"
-									data-claim-target={mission.missionDefId}
-									data-testid={`claim-${mission.missionDefId}`}
-									disabled={!mission.claimable}
-								>
-									{mission.claimed
-										? t('claimed')
-										: mission.completed
-											? t('claim')
-											: t('inProgress')}
-								</button>
+				{initialBoard.weekly.map((mission) => (
+					<div
+						class="deco-panel p-6 mission-card"
+						data-testid={`mission-${mission.missionDefId}`}
+						data-mission-id={mission.missionDefId}
+					>
+						<div class="flex items-start justify-between mb-3">
+							<div class="flex items-center gap-2">
+								<span class="text-2xl">{mission.icon}</span>
+								<h3 class="font-body font-semibold text-lg">
+									{getMissionTitle(locale, mission.missionDefId)}
+								</h3>
 							</div>
 						</div>
-					))
-				}
+						<p class="deco-text-dim text-sm mb-4">
+							{getMissionDescription(locale, mission.missionDefId, mission.target)}
+						</p>
+						<div class="flex items-center gap-3 mb-4">
+							<div class="flex-1 bg-[var(--deco-obsidian-2)] rounded-full h-2.5 overflow-hidden">
+								<div
+									class="bg-[var(--deco-brass)] h-full transition-all"
+									style={`width: ${Math.min(100, (mission.progress / mission.target) * 100)}%`}
+									data-testid={`progress-${mission.missionDefId}`}
+								/>
+							</div>
+							<span
+								class="text-sm tabular-nums"
+								data-testid={`progress-text-${mission.missionDefId}`}
+							>
+								{formatProgress(mission.progress, mission.target)}
+							</span>
+						</div>
+						<div class="flex items-center justify-between">
+							<span class="text-[var(--deco-brass)] text-sm font-medium">
+								{formatChips(mission.rewardChips, locale)}
+							</span>
+							<button
+								class="claim-btn btn-gold px-4 py-2 rounded text-sm"
+								data-claim-target={mission.missionDefId}
+								data-testid={`claim-${mission.missionDefId}`}
+								disabled={!mission.claimable}
+							>
+								{mission.claimed ? t('claimed') : mission.completed ? t('claim') : t('inProgress')}
+							</button>
+						</div>
+					</div>
+				))}
 			</div>
 		</div>
 	</section>

@@ -13,7 +13,10 @@ const { title, backLabel, balance, balanceLabel, tag, icon = 'dice' } = Astro.pr
 ---
 
 <header class="tc-header">
-	<a class="tc-back" href="/games"><span aria-hidden="true">‹</span>{backLabel}</a>
+	<a class="tc-back" href="/games">
+		<span aria-hidden="true">‹</span>
+		{backLabel}
+	</a>
 	<div class="tc-title">
 		<span class="tc-emblem" aria-hidden="true">
 			<svg
@@ -24,25 +27,23 @@ const { title, backLabel, balance, balanceLabel, tag, icon = 'dice' } = Astro.pr
 				stroke="currentColor"
 				stroke-width="1.4"
 			>
-				{
-					icon === 'dice' ? (
-						<g>
-							<>
-								<rect x="5" y="5" width="14" height="14" rx="2" />
-								<circle cx="9" cy="9" r="1" />
-								<circle cx="15" cy="15" r="1" />
-							</>
-						</g>
-					) : (
-						<g>
-							<>
-								<circle cx="9" cy="8" r="4" />
-								<circle cx="16" cy="15" r="4" />
-								<circle cx="6" cy="17" r="2" />
-							</>
-						</g>
-					)
-				}
+				{icon === 'dice' ? (
+					<g>
+						<>
+							<rect x="5" y="5" width="14" height="14" rx="2" />
+							<circle cx="9" cy="9" r="1" />
+							<circle cx="15" cy="15" r="1" />
+						</>
+					</g>
+				) : (
+					<g>
+						<>
+							<circle cx="9" cy="8" r="4" />
+							<circle cx="16" cy="15" r="4" />
+							<circle cx="6" cy="17" r="2" />
+						</>
+					</g>
+				)}
 			</svg>
 		</span>
 		<h1>{title}</h1>
@@ -50,10 +51,11 @@ const { title, backLabel, balance, balanceLabel, tag, icon = 'dice' } = Astro.pr
 	</div>
 	<div class="tc-tools">
 		<div class="tc-balance" title={balanceLabel}>
-			<DecoIcon name="chip" size={18} /><span class="sr-only">{balanceLabel}</span><span
-				id="chip-balance"
-				data-testid="chip-balance">{balance}</span
-			>
+			<DecoIcon name="chip" size={18} />
+			<span class="sr-only">{balanceLabel}</span>
+			<span id="chip-balance" data-testid="chip-balance">
+				{balance}
+			</span>
 		</div>
 		<slot />
 	</div>

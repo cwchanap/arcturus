@@ -46,8 +46,10 @@ const cabinet = cabinetTranslator(locale);
 					aria-haspopup="dialog"
 					aria-expanded="false"
 					aria-label={t('activeBets')}
-					title={t('activeBets')}><DecoIcon name="menu" /></button
+					title={t('activeBets')}
 				>
+					<DecoIcon name="menu" />
+				</button>
 				<button
 					type="button"
 					class="tc-icon"
@@ -55,47 +57,51 @@ const cabinet = cabinetTranslator(locale);
 					aria-haspopup="dialog"
 					aria-expanded="false"
 					aria-label={t('payoutsHeading')}
-					title={t('payoutsHeading')}>?</button
+					title={t('payoutsHeading')}
 				>
+					?
+				</button>
 			</TableCabinetHeader>
 			<div class="tc-content">
 				<div class="tc-stage craps-stage">
 					<div class="tc-rays" aria-hidden="true"></div>
 					<div class="tc-dice">
-						{
-							[1, 2].map((i) => (
-								<div
-									class="die-display"
-									id={`die${i}`}
-									data-value="0"
-									role="img"
-									aria-label={cabinet('die', { value: '—' })}
-								>
-									<>
-										<svg viewBox="0 0 60 60" aria-hidden="true">
-											<>
-												<rect width="60" height="60" rx="9" class="die-face" />
-												<g class="die-dots" id={`die${i}-dots`} />
-											</>
-										</svg>
-										<span class="die-empty" aria-hidden="true">
-											—
-										</span>
-									</>
-								</div>
-							))
-						}
+						{[1, 2].map((i) => (
+							<div
+								class="die-display"
+								id={`die${i}`}
+								data-value="0"
+								role="img"
+								aria-label={cabinet('die', { value: '—' })}
+							>
+								<>
+									<svg viewBox="0 0 60 60" aria-hidden="true">
+										<>
+											<rect width="60" height="60" rx="9" class="die-face" />
+											<g class="die-dots" id={`die${i}-dots`} />
+										</>
+									</svg>
+									<span class="die-empty" aria-hidden="true">
+										—
+									</span>
+								</>
+							</div>
+						))}
 					</div>
 					<div class="tc-diamond">
-						<strong id="roll-total">—</strong><small>{t('totalLabel')}</small>
+						<strong id="roll-total">—</strong>
+						<small>{t('totalLabel')}</small>
 					</div>
 					<div class="craps-result">
 						<div class="craps-phase">
-							<span id="phase-badge">{t('phaseComeOut')}</span><span id="point-badge" class="hidden"
-								>{t('pointLabel', { point: '—' })}</span
-							>
+							<span id="phase-badge">{t('phaseComeOut')}</span>
+							<span id="point-badge" class="hidden">
+								{t('pointLabel', { point: '—' })}
+							</span>
 						</div>
-						<div id="game-message" role="status">{t('messagePlaceBets')}</div>
+						<div id="game-message" role="status">
+							{t('messagePlaceBets')}
+						</div>
 						<div id="roll-history" data-testid="roll-history" aria-label={t('rollHistory')}>
 							<span class="roll-history-placeholder">{t('noRollsYet')}</span>
 						</div>
@@ -106,13 +112,18 @@ const cabinet = cabinetTranslator(locale);
 						id="btn-retry-settlement"
 						type="button"
 						class="tc-button"
-						data-testid="retry-settlement">{t('retrySettlement')}</button
-					><button
+						data-testid="retry-settlement"
+					>
+						{t('retrySettlement')}
+					</button>
+					<button
 						id="btn-reset-settlement"
 						type="button"
 						class="tc-button"
-						data-testid="reset-settlement">{t('resetSettlement')}</button
+						data-testid="reset-settlement"
 					>
+						{t('resetSettlement')}
+					</button>
 				</div>
 				<div class="craps-table">
 					<div class="craps-tabs">
@@ -120,56 +131,59 @@ const cabinet = cabinetTranslator(locale);
 							type="button"
 							data-craps-panel="craps-main-bets"
 							aria-controls="craps-main-bets"
-							aria-pressed="true">{cabinet('mainBets')}</button
-						><button
+							aria-pressed="true"
+						>
+							{cabinet('mainBets')}
+						</button>
+						<button
 							type="button"
 							data-craps-panel="craps-extra-bets"
 							aria-controls="craps-extra-bets"
-							aria-pressed="false">{cabinet('extraBets')}</button
+							aria-pressed="false"
 						>
+							{cabinet('extraBets')}
+						</button>
 					</div>
 					<div id="craps-main-bets" class="craps-bets">
 						<!-- Number Row: Place / Come bets per number -->
 						<div class="craps-numbers">
-							{
-								[4, 5, 6, 8, 9, 10].map((n) => (
-									<div class="number-box rounded-lg p-2 text-center" data-number={n}>
-										<div class="text-[var(--deco-ivory)] font-bold text-sm">
-											{n === 6 ? t('numberSix') : n === 8 ? t('numberEight') : n}
+							{[4, 5, 6, 8, 9, 10].map((n) => (
+								<div class="number-box rounded-lg p-2 text-center" data-number={n}>
+									<div class="text-[var(--deco-ivory)] font-bold text-sm">
+										{n === 6 ? t('numberSix') : n === 8 ? t('numberEight') : n}
+									</div>
+									<div
+										data-bet-type={`place${n}`}
+										class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
+									>
+										<div class="text-[var(--deco-muted)] text-xs">{t('placeNumber')}</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
+									</div>
+									<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
+										<div class="text-[var(--deco-sapphire)] text-xs font-bold come-display-amount" />
+									</div>
+									<div class="flex gap-1 mt-1 justify-center">
+										<div
+											data-bet-type={`buy${n}`}
+											class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-jade)] hover:bg-[var(--deco-emerald-deep)]"
+										>
+											<>
+												<span>{getCrapsBetLabel(locale, `buy${n}` as BetType)}</span>
+												<span class="bet-amount" />
+											</>
 										</div>
 										<div
-											data-bet-type={`place${n}`}
-											class="bet-zone place-zone cursor-pointer mt-1 rounded p-1 text-center"
+											data-bet-type={`lay${n}`}
+											class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-oxblood-bright)] hover:bg-[var(--deco-oxblood)]"
 										>
-											<div class="text-[var(--deco-muted)] text-xs">{t('placeNumber')}</div>
-											<div class="bet-amount text-[var(--deco-brass)] font-bold h-4 text-xs" />
-										</div>
-										<div id={`come-${n}`} class="come-bet-display mt-1 hidden">
-											<div class="text-[var(--deco-sapphire)] text-xs font-bold come-display-amount" />
-										</div>
-										<div class="flex gap-1 mt-1 justify-center">
-											<div
-												data-bet-type={`buy${n}`}
-												class="bet-zone buy-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-jade)] hover:bg-[var(--deco-emerald-deep)]"
-											>
-												<>
-													<span>{getCrapsBetLabel(locale, `buy${n}` as BetType)}</span>
-													<span class="bet-amount" />
-												</>
-											</div>
-											<div
-												data-bet-type={`lay${n}`}
-												class="bet-zone lay-zone cursor-pointer rounded px-1 py-0.5 text-xs text-[var(--deco-oxblood-bright)] hover:bg-[var(--deco-oxblood)]"
-											>
-												<>
-													<span>{getCrapsBetLabel(locale, `lay${n}` as BetType)}</span>
-													<span class="bet-amount" />
-												</>
-											</div>
+											<>
+												<span>{getCrapsBetLabel(locale, `lay${n}` as BetType)}</span>
+												<span class="bet-amount" />
+											</>
 										</div>
 									</div>
-								))
-							}
+								</div>
+							))}
 						</div>
 
 						<!-- Pass Line / Don't Pass -->
@@ -246,9 +260,7 @@ const cabinet = cabinetTranslator(locale);
 								data-bet-type="dontCome"
 								class="bet-zone dont-zone cursor-pointer select-none rounded-lg p-3 text-center transition-all"
 							>
-								<div
-									class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider"
-								>
+								<div class="text-[var(--deco-brass-bright)] font-bold text-sm uppercase tracking-wider">
 									{t('betDontCome')}
 								</div>
 								<div class="text-[var(--deco-muted)] text-xs">{t('paysBar12')}</div>
@@ -259,68 +271,60 @@ const cabinet = cabinetTranslator(locale);
 					<div id="craps-extra-bets" class="craps-bets" hidden>
 						<!-- Hardways Row -->
 						<div class="border-t border-[var(--deco-line)] pt-3">
-							<div
-								class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center"
-							>
+							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
 								{t('hardwaysHeading')}
 							</div>
 							<div class="grid grid-cols-4 gap-2">
-								{
-									(
-										[
-											{ type: 'hard4', pays: '7:1' },
-											{ type: 'hard6', pays: '9:1' },
-											{ type: 'hard8', pays: '9:1' },
-											{ type: 'hard10', pays: '7:1' },
-										] as const
-									).map((h) => (
-										<div
-											data-bet-type={h.type}
-											class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
-										>
-											<div class="text-[var(--deco-brass-bright)] font-bold text-xs">
-												{getCrapsBetLabel(locale, h.type)}
-											</div>
-											<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
-											<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
+								{(
+									[
+										{ type: 'hard4', pays: '7:1' },
+										{ type: 'hard6', pays: '9:1' },
+										{ type: 'hard8', pays: '9:1' },
+										{ type: 'hard10', pays: '7:1' },
+									] as const
+								).map((h) => (
+									<div
+										data-bet-type={h.type}
+										class="bet-zone hardway-zone cursor-pointer select-none rounded-lg p-2 text-center transition-all"
+									>
+										<div class="text-[var(--deco-brass-bright)] font-bold text-xs">
+											{getCrapsBetLabel(locale, h.type)}
 										</div>
-									))
-								}
+										<div class="text-[var(--deco-muted)] text-xs">{h.pays}</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-1 h-4 text-xs" />
+									</div>
+								))}
 							</div>
 						</div>
 
 						<!-- Proposition Bets -->
 						<div class="border-t border-[var(--deco-line)] pt-3">
-							<div
-								class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center"
-							>
+							<div class="text-[var(--deco-muted)] text-xs uppercase tracking-wider mb-2 text-center">
 								{t('propositionHeading')}
 							</div>
 							<div class="craps-props">
-								{
-									(
-										[
-											{ type: 'any7', pays: '4:1' },
-											{ type: 'anyCraps', pays: '7:1' },
-											{ type: 'aces', pays: '30:1' },
-											{ type: 'aceDeuce', pays: '15:1' },
-											{ type: 'yo', pays: '15:1' },
-											{ type: 'boxcars', pays: '30:1' },
-											{ type: 'ce', pays: '3/7:1' },
-										] as const
-									).map((p) => (
-										<div
-											data-bet-type={p.type}
-											class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
-										>
-											<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
-												{getCrapsBetLabel(locale, p.type)}
-											</div>
-											<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
-											<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
+								{(
+									[
+										{ type: 'any7', pays: '4:1' },
+										{ type: 'anyCraps', pays: '7:1' },
+										{ type: 'aces', pays: '30:1' },
+										{ type: 'aceDeuce', pays: '15:1' },
+										{ type: 'yo', pays: '15:1' },
+										{ type: 'boxcars', pays: '30:1' },
+										{ type: 'ce', pays: '3/7:1' },
+									] as const
+								).map((p) => (
+									<div
+										data-bet-type={p.type}
+										class="bet-zone prop-zone cursor-pointer select-none rounded-lg p-1.5 text-center transition-all"
+									>
+										<div class="text-[var(--deco-oxblood-bright)] font-bold text-xs leading-tight">
+											{getCrapsBetLabel(locale, p.type)}
 										</div>
-									))
-								}
+										<div class="text-[var(--deco-muted)] text-xs">{p.pays}</div>
+										<div class="bet-amount text-[var(--deco-brass)] font-bold mt-0.5 h-4 text-xs" />
+									</div>
+								))}
 							</div>
 						</div>
 						<!-- Big 6 / Big 8 -->
@@ -329,9 +333,7 @@ const cabinet = cabinetTranslator(locale);
 								data-bet-type="big6"
 								class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 							>
-								<div
-									class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider"
-								>
+								<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
 									{t('betBig6')}
 								</div>
 								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
@@ -341,9 +343,7 @@ const cabinet = cabinetTranslator(locale);
 								data-bet-type="big8"
 								class="bet-zone place-zone cursor-pointer select-none rounded-lg p-3 text-center"
 							>
-								<div
-									class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider"
-								>
+								<div class="text-[var(--deco-ivory-dim)] font-bold text-sm uppercase tracking-wider">
 									{t('betBig8')}
 								</div>
 								<div class="text-[var(--deco-muted)] text-xs">{t('paysOneToOne')}</div>
@@ -365,45 +365,52 @@ const cabinet = cabinetTranslator(locale);
 					<p class="text-[var(--deco-muted)] text-xs mt-2">{t('comeOddsHint')}</p>
 				</div>
 
-				<div class="tc-divider" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+				<div class="tc-divider" aria-hidden="true">
+					<span>◆ ◇ ◆</span>
+				</div>
 				<div class="tc-controls">
 					<div class="tc-chips">
-						<span class="tc-label">{cabinet('chip')}</span>{
-							[5, 25, 50, 100, 500].map((amount, i) => (
-								<button
-									type="button"
-									class="tc-chip chip-select"
-									data-amount={amount}
-									data-testid={`chip-${amount}`}
-									aria-label={formatChips(amount, locale)}
-									aria-pressed={i === 0 ? 'true' : 'false'}
-								>
-									{amount}
-								</button>
-							))
-						}
+						<span class="tc-label">{cabinet('chip')}</span>
+						{[5, 25, 50, 100, 500].map((amount, i) => (
+							<button
+								type="button"
+								class="tc-chip chip-select"
+								data-amount={amount}
+								data-testid={`chip-${amount}`}
+								aria-label={formatChips(amount, locale)}
+								aria-pressed={i === 0 ? 'true' : 'false'}
+							>
+								{amount}
+							</button>
+						))}
 					</div>
 					<div class="tc-stake">
-						<span>{t('totalBet')}</span><strong id="total-bet" data-testid="total-bet"
-							>{formatChips(0, locale)}</strong
-						>
+						<span>{t('totalBet')}</span>
+						<strong id="total-bet" data-testid="total-bet">
+							{formatChips(0, locale)}
+						</strong>
 					</div>
 					<button
 						type="button"
 						id="clear-bets-button"
 						data-testid="clear-bets-button"
-						class="tc-button">{t('clearBets')}</button
+						class="tc-button"
 					>
+						{t('clearBets')}
+					</button>
 					<button
 						type="button"
 						id="roll-button"
 						data-testid="roll-button"
 						class="tc-button tc-primary"
-						disabled>{t('rollButton')}</button
+						disabled
 					>
+						{t('rollButton')}
+					</button>
 				</div>
 				<details class="craps-advisor">
-					<summary>{t('aiAdvisor')}</summary><!-- LLM Advisor -->
+					<summary>{t('aiAdvisor')}</summary>
+					<!-- LLM Advisor -->
 					<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 						<div class="flex items-center justify-between mb-3">
 							<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider">
@@ -427,72 +434,61 @@ const cabinet = cabinetTranslator(locale);
 					</div>
 				</details>
 			</div>
-			<CabinetDrawer id="craps-active" title={t('activeBets')} closeLabel={cabinet('close')}
-				><div id="active-bets" data-testid="active-bets" class="space-y-3">
+			<CabinetDrawer id="craps-active" title={t('activeBets')} closeLabel={cabinet('close')}>
+				<div id="active-bets" data-testid="active-bets" class="space-y-3">
 					<span>{t('noBetsPlaced')}</span>
-				</div></CabinetDrawer
-			>
-			<CabinetDrawer id="craps-payouts" title={t('payoutsHeading')} closeLabel={cabinet('close')}
-				><!-- Payouts Reference -->
+				</div>
+			</CabinetDrawer>
+			<CabinetDrawer id="craps-payouts" title={t('payoutsHeading')} closeLabel={cabinet('close')}>
+				<!-- Payouts Reference -->
 				<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-4 border border-[var(--deco-line)]">
 					<h3 class="text-xs font-bold text-[var(--deco-muted)] uppercase tracking-wider mb-3">
 						{t('payoutsHeading')}
 					</h3>
 					<div class="space-y-1 text-xs">
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPassCome')}</span><span
-								class="text-[var(--deco-muted)]">1:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPassCome')}</span>
+							<span class="text-[var(--deco-muted)]">1:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds410')}</span><span
-								class="text-[var(--deco-muted)]">2:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds410')}</span>
+							<span class="text-[var(--deco-muted)]">2:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds59')}</span><span
-								class="text-[var(--deco-muted)]">3:2</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds59')}</span>
+							<span class="text-[var(--deco-muted)]">3:2</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds68')}</span><span
-								class="text-[var(--deco-muted)]">6:5</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutOdds68')}</span>
+							<span class="text-[var(--deco-muted)]">6:5</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace68')}</span><span
-								class="text-[var(--deco-muted)]">7:6</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace68')}</span>
+							<span class="text-[var(--deco-muted)]">7:6</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace59')}</span><span
-								class="text-[var(--deco-muted)]">7:5</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace59')}</span>
+							<span class="text-[var(--deco-muted)]">7:5</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace410')}</span><span
-								class="text-[var(--deco-muted)]">9:5</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutPlace410')}</span>
+							<span class="text-[var(--deco-muted)]">9:5</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard68')}</span><span
-								class="text-[var(--deco-muted)]">9:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard68')}</span>
+							<span class="text-[var(--deco-muted)]">9:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard410')}</span><span
-								class="text-[var(--deco-muted)]">7:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutHard410')}</span>
+							<span class="text-[var(--deco-muted)]">7:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutAny7')}</span><span
-								class="text-[var(--deco-muted)]">4:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutAny7')}</span>
+							<span class="text-[var(--deco-muted)]">4:1</span>
 						</div>
 						<div class="flex justify-between">
-							<span class="text-[var(--deco-ivory-dim)]">{t('payoutYo11')}</span><span
-								class="text-[var(--deco-muted)]">15:1</span
-							>
+							<span class="text-[var(--deco-ivory-dim)]">{t('payoutYo11')}</span>
+							<span class="text-[var(--deco-muted)]">15:1</span>
 						</div>
 					</div>
 				</div>
@@ -503,15 +499,13 @@ const cabinet = cabinetTranslator(locale);
 			id="insufficient-overlay"
 			class="fixed inset-0 bg-[var(--deco-obsidian)] backdrop-blur-sm z-50 items-center justify-center hidden"
 		>
-			<div
-				class="bg-[var(--deco-obsidian-2)] rounded-xl p-8 border border-[var(--deco-oxblood)] max-w-md text-center"
-			>
+			<div class="bg-[var(--deco-obsidian-2)] rounded-xl p-8 border border-[var(--deco-oxblood)] max-w-md text-center">
 				<div class="text-5xl mb-4">💸</div>
 				<h2 class="text-2xl font-bold text-[var(--deco-ivory)] mb-2">{t('insufficientTitle')}</h2>
 				<p class="text-[var(--deco-muted)] mb-6">{t('insufficientBody')}</p>
-				<a href="/games" class="btn-gold px-8 py-3 rounded-lg font-bold inline-block"
-					>{t('returnToLobby')}</a
-				>
+				<a href="/games" class="btn-gold px-8 py-3 rounded-lg font-bold inline-block">
+					{t('returnToLobby')}
+				</a>
 			</div>
 		</div>
 
@@ -525,7 +519,9 @@ const cabinet = cabinetTranslator(locale);
 			class="fixed bottom-4 right-4 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 			style="z-index: 9999;"
 		>
-			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
+			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">
+				🏆
+			</span>
 			<div>
 				<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
 					{t('achievementUnlocked')}
@@ -535,7 +531,8 @@ const cabinet = cabinetTranslator(locale);
 				</p>
 			</div>
 		</div>
-	</div><!-- /craps-root -->
+	</div>
+	<!-- /craps-root -->
 </CasinoLayout>
 
 <script>

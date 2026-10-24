@@ -25,11 +25,11 @@ const gameSession = createPublicGameSession(user);
 	>
 		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
+				<a href="/games" class="text-[var(--deco-muted)]">
+					← {t('backToGames')}
+				</a>
 				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'pai-gow-poker')}</h1>
-				<p class="text-[var(--deco-muted)]">
-					{t('subtitle')}
-				</p>
+				<p class="text-[var(--deco-muted)]">{t('subtitle')}</p>
 			</div>
 			<div class="deco-panel px-5 py-3">
 				<div class="text-xs text-[var(--deco-muted)]">
@@ -59,30 +59,22 @@ const gameSession = createPublicGameSession(user);
 			<div class="mb-8">
 				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">{t('dealerHigh')}</div>
 				<div class="flex justify-center gap-3 overflow-x-auto pb-2">
-					{
-						[0, 1, 2, 3, 4].map((index) => (
-							<CardSlot
-								id={`pai-gow-dealer-high-slot-${index}`}
-								size="large"
-								showPlaceholder={true}
-							/>
-						))
-					}
+					{[0, 1, 2, 3, 4].map((index) => (
+						<CardSlot
+							id={`pai-gow-dealer-high-slot-${index}`}
+							size="large"
+							showPlaceholder={true}
+						/>
+					))}
 				</div>
 			</div>
 
 			<div class="mb-8">
 				<div class="mb-2 text-center text-sm text-[var(--deco-muted)]">{t('dealerLow')}</div>
 				<div class="flex justify-center gap-3">
-					{
-						[0, 1].map((index) => (
-							<CardSlot
-								id={`pai-gow-dealer-low-slot-${index}`}
-								size="large"
-								showPlaceholder={true}
-							/>
-						))
-					}
+					{[0, 1].map((index) => (
+						<CardSlot id={`pai-gow-dealer-low-slot-${index}`} size="large" showPlaceholder={true} />
+					))}
 				</div>
 			</div>
 
@@ -92,38 +84,34 @@ const gameSession = createPublicGameSession(user);
 				data-testid="pai-gow-player-cards"
 				class="flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center"
 			>
-				{
-					[0, 1, 2, 3, 4, 5, 6].map((index) => (
-						<button
-							type="button"
-							id={`pai-gow-player-card-${index}`}
-							data-testid={`pai-gow-player-card-${index}`}
-							data-card-index={index}
-							data-low="false"
-							aria-label={t('cardAria', { number: String(index + 1) })}
-							aria-pressed="false"
-							class="shrink-0 rounded-xl border-2 border-transparent"
-						>
-							<CardSlot id={`pai-gow-player-slot-${index}`} size="large" showPlaceholder={true} />
-						</button>
-					))
-				}
+				{[0, 1, 2, 3, 4, 5, 6].map((index) => (
+					<button
+						type="button"
+						id={`pai-gow-player-card-${index}`}
+						data-testid={`pai-gow-player-card-${index}`}
+						data-card-index={index}
+						data-low="false"
+						aria-label={t('cardAria', { number: String(index + 1) })}
+						aria-pressed="false"
+						class="shrink-0 rounded-xl border-2 border-transparent"
+					>
+						<CardSlot id={`pai-gow-player-slot-${index}`} size="large" showPlaceholder={true} />
+					</button>
+				))}
 			</div>
 
 			<div class="mt-5 flex flex-wrap justify-center gap-2">
-				{
-					WAGER_OPTIONS.map((wager) => (
-						<button
-							type="button"
-							data-testid={`wager-button-${wager}`}
-							data-wager={wager}
-							aria-pressed={wager === WAGER_OPTIONS[0] ? 'true' : 'false'}
-							class="deco-btn rounded-lg px-4 py-2"
-						>
-							{formatChips(wager, locale)}
-						</button>
-					))
-				}
+				{WAGER_OPTIONS.map((wager) => (
+					<button
+						type="button"
+						data-testid={`wager-button-${wager}`}
+						data-wager={wager}
+						aria-pressed={wager === WAGER_OPTIONS[0] ? 'true' : 'false'}
+						class="deco-btn rounded-lg px-4 py-2"
+					>
+						{formatChips(wager, locale)}
+					</button>
+				))}
 			</div>
 
 			<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
@@ -176,15 +164,12 @@ const gameSession = createPublicGameSession(user);
 				id="pai-gow-recovery-host"
 				data-testid="pai-gow-recovery-host"
 				class="mt-4 flex justify-center"
-			>
-			</div>
+			></div>
 		</section>
 
 		<aside class="deco-panel mt-6 p-5">
 			<h2 class="deco-section-title text-2xl">{t('howToPlay')}</h2>
-			<p class="mt-1 text-xs text-[var(--deco-muted)]">
-				{t('howToPlayBody')}
-			</p>
+			<p class="mt-1 text-xs text-[var(--deco-muted)]">{t('howToPlayBody')}</p>
 		</aside>
 	</main>
 </CasinoLayout>

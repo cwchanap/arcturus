@@ -50,9 +50,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				</a>
 				<div class="flex flex-wrap items-center gap-3">
 					<h1 class="deco-section-title text-4xl">{t('dailyChallenge')}</h1>
-					<span
-						class="rounded-full border border-[var(--deco-brass)] bg-[var(--deco-brass-dim)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-brass-bright)]"
-					>
+					<span class="rounded-full border border-[var(--deco-brass)] bg-[var(--deco-brass-dim)] px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-[var(--deco-brass-bright)]">
 						{getGameName(locale, 'blackjack')}
 					</span>
 				</div>
@@ -63,9 +61,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 					{t('rankedEntryCloses', { time: entryClosesAt })}
 				</p>
 			</div>
-			<div
-				class="grid grid-cols-2 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4"
-			>
+			<div class="grid grid-cols-2 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4">
 				<div>
 					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">
 						{t('challengeDate')}
@@ -119,13 +115,9 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 		</div>
 
 		<section data-testid="daily-challenge-controls" hidden>
-			<div
-				class="mb-6 grid grid-cols-3 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4"
-			>
+			<div class="mb-6 grid grid-cols-3 gap-3 rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-4">
 				<div>
-					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">
-						{t('bankroll')}
-					</p>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">{t('bankroll')}</p>
 					<p
 						data-testid="daily-challenge-bankroll"
 						class="text-2xl font-bold text-[var(--deco-brass)]"
@@ -145,9 +137,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 					</p>
 				</div>
 				<div>
-					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">
-						{t('progress')}
-					</p>
+					<p class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">{t('progress')}</p>
 					<p
 						data-testid="daily-challenge-round-progress"
 						class="text-2xl font-bold text-[var(--deco-ivory)]"
@@ -159,9 +149,7 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 
 			<div class="felt-table relative mb-6 rounded-3xl p-8" style="min-height: 480px">
 				<div class="absolute top-14 left-1/2 w-full max-w-2xl -translate-x-1/2 px-4">
-					<div
-						class="rounded-2xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm"
-					>
+					<div class="rounded-2xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm">
 						<div class="mb-1 text-center">
 							<div class="text-xs uppercase tracking-wider text-[var(--deco-muted)]">
 								{t('dealer')}
@@ -176,14 +164,11 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 						<div
 							data-testid="daily-challenge-dealer-hand"
 							class="flex min-h-[64px] flex-wrap justify-center gap-2"
-						>
-						</div>
+						></div>
 					</div>
 				</div>
 				<div class="absolute bottom-6 left-1/2 w-full max-w-2xl -translate-x-1/2 px-4">
-					<div
-						class="rounded-2xl border-2 border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm"
-					>
+					<div class="rounded-2xl border-2 border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] p-3 backdrop-blur-sm">
 						<div class="mb-2 text-center text-xs uppercase tracking-wider text-[var(--deco-muted)]">
 							{t('yourHands')}
 						</div>
@@ -197,13 +182,10 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				role="status"
 				aria-live="polite"
 				class="mb-4 text-center text-lg font-semibold text-[var(--deco-brass)]"
-			>
-			</p>
+			></p>
 
 			<div class="mb-6 flex flex-wrap items-end justify-center gap-3">
-				<label
-					class="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--deco-muted)]"
-				>
+				<label class="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--deco-muted)]">
 					{t('wager')}
 					<input
 						data-testid="daily-challenge-wager"
@@ -276,23 +258,19 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				<p
 					data-testid="daily-challenge-receipt-eligibility"
 					class="text-lg font-bold text-[var(--deco-brass)]"
-				>
-				</p>
+				></p>
 				<p
 					data-testid="daily-challenge-receipt-bankroll"
 					class="mt-2 text-3xl font-bold text-[var(--deco-ivory)]"
-				>
-				</p>
+				></p>
 				<p
 					data-testid="daily-challenge-receipt-rounds"
 					class="mt-1 text-sm text-[var(--deco-muted)]"
-				>
-				</p>
+				></p>
 				<p
 					data-testid="daily-challenge-rank"
 					class="mt-2 text-xl font-bold text-[var(--deco-brass)]"
-				>
-				</p>
+				></p>
 				<p data-testid="daily-challenge-percentile" class="text-sm text-[var(--deco-muted)]"></p>
 			</section>
 		</section>
@@ -306,13 +284,11 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				data-testid="daily-challenge-current-standing"
 				class="mb-3 inline-block rounded-lg border border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)]"
 				hidden
-			>
-			</p>
+			></p>
 			<ol
 				data-testid="daily-challenge-leaderboard-rows"
 				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
-			>
-			</ol>
+			></ol>
 		</section>
 
 		<section class="mb-10" data-testid="daily-challenge-weekly-leaderboard">
@@ -325,20 +301,17 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				data-testid="daily-challenge-weekly-current-standing"
 				class="mb-3 inline-block rounded-lg border border-[var(--deco-brass-dim)] bg-[var(--deco-obsidian-2)] px-4 py-2 text-sm font-semibold text-[var(--deco-brass)]"
 				hidden
-			>
-			</p>
+			></p>
 			<p
 				data-testid="daily-challenge-weekly-error"
 				role="status"
 				class="mb-3 text-sm text-[var(--deco-muted)]"
 				hidden
-			>
-			</p>
+			></p>
 			<ol
 				data-testid="daily-challenge-weekly-leaderboard-rows"
 				class="divide-y divide-[var(--deco-line)] rounded-xl border border-[var(--deco-line)] bg-[var(--deco-obsidian-2)]"
-			>
-			</ol>
+			></ol>
 		</section>
 
 		<noscript>

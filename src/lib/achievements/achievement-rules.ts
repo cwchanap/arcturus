@@ -12,7 +12,10 @@ import type {
 	AchievementDefinition,
 	AchievementCheckContext,
 	AchievementCheckResult,
+	AchievementId,
 } from './types';
+import { GAME_TYPES } from '../game-stats/constants';
+import type { GameStats, GameType } from '../game-stats/types';
 
 /**
  * Achievement threshold constants
@@ -29,7 +32,26 @@ export const ACHIEVEMENT_THRESHOLDS = {
 	CONSISTENT_WINS: 100,
 	/** Chip balance threshold for Comeback King achievement */
 	COMEBACK_LOW_BALANCE: 1000,
+	/** Wins required in a single game for Specialist achievement */
+	SPECIALIST_WINS: 100,
+	/** Biggest single win required for Big Score achievement */
+	BIG_SCORE_WIN: 10000,
 } as const;
+
+/**
+ * Wallet-settled feat IDs and the games allowed to report each one.
+ * Compile-time checked: keys must be achievement IDs and values must be
+ * valid game types. Wallet validation enforces game eligibility at runtime.
+ */
+export const WALLET_FEAT_GAMES = {
+	royal_treatment: ['poker', 'video-poker'],
+	triple_threat: ['sic-bo'],
+	straight_up: ['roulette'],
+	big_catch: ['keno'],
+	jackpot: ['slots'],
+} as const satisfies Partial<Record<AchievementId, readonly GameType[]>>;
+
+export type WalletFeatId = keyof typeof WALLET_FEAT_GAMES;
 
 /**
  * All achievement definitions (language-neutral; names live in the i18n
@@ -60,6 +82,51 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 		id: 'comeback',
 		category: 'gameplay',
 		icon: '🔥',
+	},
+	{
+		id: 'royal_treatment',
+		category: 'gameplay',
+		icon: '👑',
+	},
+	{
+		id: 'sng_champion',
+		category: 'gameplay',
+		icon: '🏆',
+	},
+	{
+		id: 'triple_threat',
+		category: 'gameplay',
+		icon: '🎲',
+	},
+	{
+		id: 'straight_up',
+		category: 'gameplay',
+		icon: '🎯',
+	},
+	{
+		id: 'big_catch',
+		category: 'gameplay',
+		icon: '🎱',
+	},
+	{
+		id: 'jackpot',
+		category: 'gameplay',
+		icon: '🎰',
+	},
+	{
+		id: 'grand_tour',
+		category: 'milestone',
+		icon: '🧭',
+	},
+	{
+		id: 'specialist',
+		category: 'milestone',
+		icon: '🎓',
+	},
+	{
+		id: 'big_score',
+		category: 'milestone',
+		icon: '💰',
 	},
 ];
 
@@ -160,6 +227,109 @@ function checkComeback(context: AchievementCheckContext): AchievementCheckResult
 }
 
 /**
+ * Shared helper for the six reported feats (five wallet feats plus the SNG
+ * event): skip already-earned IDs and check the reported feats, attributing
+ * the current game type. Game eligibility is enforced upstream (wallet
+ * validator / SNG route), not here.
+ */
+function checkFeat(id: AchievementId): AchievementCheckFn {
+	return (context: AchievementCheckContext): AchievementCheckResult => {
+		if (context.existingAchievementIds.includes(id)) {
+			return { achievementId: id, shouldGrant: false };
+		}
+
+		const shouldGrant = context.feats?.includes(id) ?? false;
+		return { achievementId: id, shouldGrant, gameType: context.gameType };
+	};
+}
+
+/**
+ * Deterministic per-game milestone attribution: prefer the current settling
+ * game when it qualifies, otherwise the first qualifying GAME_TYPES entry.
+ */
+function attributeQualifyingGame(
+	context: AchievementCheckContext,
+	qualifies: (
+		row: Pick<GameStats, 'gameType' | 'handsPlayed' | 'totalWins' | 'biggestWin'>,
+	) => boolean,
+): GameType {
+	if (context.gameType) {
+		const current = context.gameStats.find(
+			(row) => row.gameType === context.gameType && qualifies(row),
+		);
+		if (current) return current.gameType;
+	}
+
+	return GAME_TYPES.map((game) => context.gameStats.find((row) => row.gameType === game)).find(
+		(row) => row && qualifies(row),
+	)!.gameType;
+}
+
+/**
+ * Grand Tour: play every game at least once. Global - stores no game type.
+ */
+function checkGrandTour(context: AchievementCheckContext): AchievementCheckResult {
+	const { existingAchievementIds, gameStats } = context;
+
+	if (existingAchievementIds.includes('grand_tour')) {
+		return { achievementId: 'grand_tour', shouldGrant: false };
+	}
+
+	const played = new Set(
+		gameStats.filter((row) => row.handsPlayed >= 1).map((row) => row.gameType),
+	);
+	const shouldGrant = GAME_TYPES.every((game) => played.has(game));
+
+	return { achievementId: 'grand_tour', shouldGrant };
+}
+
+/**
+ * Specialist: win 100 hands in a single game.
+ */
+function checkSpecialist(context: AchievementCheckContext): AchievementCheckResult {
+	const { existingAchievementIds, gameStats } = context;
+
+	if (existingAchievementIds.includes('specialist')) {
+		return { achievementId: 'specialist', shouldGrant: false };
+	}
+
+	const qualifies = (row: Pick<GameStats, 'totalWins'>) =>
+		row.totalWins >= ACHIEVEMENT_THRESHOLDS.SPECIALIST_WINS;
+	if (!gameStats.some(qualifies)) {
+		return { achievementId: 'specialist', shouldGrant: false };
+	}
+
+	return {
+		achievementId: 'specialist',
+		shouldGrant: true,
+		gameType: attributeQualifyingGame(context, qualifies),
+	};
+}
+
+/**
+ * Big Score: a single win of 10,000+ chips in any game.
+ */
+function checkBigScore(context: AchievementCheckContext): AchievementCheckResult {
+	const { existingAchievementIds, gameStats } = context;
+
+	if (existingAchievementIds.includes('big_score')) {
+		return { achievementId: 'big_score', shouldGrant: false };
+	}
+
+	const qualifies = (row: Pick<GameStats, 'biggestWin'>) =>
+		row.biggestWin >= ACHIEVEMENT_THRESHOLDS.BIG_SCORE_WIN;
+	if (!gameStats.some(qualifies)) {
+		return { achievementId: 'big_score', shouldGrant: false };
+	}
+
+	return {
+		achievementId: 'big_score',
+		shouldGrant: true,
+		gameType: attributeQualifyingGame(context, qualifies),
+	};
+}
+
+/**
  * Map of achievement IDs to their check functions
  */
 export const ACHIEVEMENT_CHECKS: Partial<
@@ -170,6 +340,15 @@ export const ACHIEVEMENT_CHECKS: Partial<
 	champion: checkChampion,
 	consistent: checkConsistent,
 	comeback: checkComeback,
+	royal_treatment: checkFeat('royal_treatment'),
+	sng_champion: checkFeat('sng_champion'),
+	triple_threat: checkFeat('triple_threat'),
+	straight_up: checkFeat('straight_up'),
+	big_catch: checkFeat('big_catch'),
+	jackpot: checkFeat('jackpot'),
+	grand_tour: checkGrandTour,
+	specialist: checkSpecialist,
+	big_score: checkBigScore,
 };
 
 /**

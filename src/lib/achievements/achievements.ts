@@ -104,6 +104,8 @@ export function createAchievementService(overrides: Partial<AchievementDeps> = {
 			currentChipBalance,
 			recentWinAmount: options.recentWinAmount,
 			gameType: options.gameType,
+			// shortcut: placeholder rows until the service reads getAllUserGameStats, upgrade in the settlement-wiring task
+			gameStats: [],
 			existingAchievementIds,
 		};
 	}

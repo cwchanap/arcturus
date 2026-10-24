@@ -23,21 +23,19 @@ const t = createTranslator(SHELL_MESSAGES, locale);
 const visibleLocales = [...ENABLED_LOCALES];
 ---
 
-{
-	visibleLocales.length > 1 && (
-		<select
-			class="rounded-md border border-[var(--deco-brass)] bg-transparent px-2 py-1 text-sm font-body"
-			data-locale-picker
-			aria-label={t('language')}
-		>
-			{visibleLocales.map((optionLocale) => (
-				<option value={optionLocale} selected={optionLocale === locale}>
-					{LOCALE_LABELS[optionLocale]}
-				</option>
-			))}
-		</select>
-	)
-}
+{visibleLocales.length > 1 && (
+	<select
+		class="rounded-md border border-[var(--deco-brass)] bg-transparent px-2 py-1 text-sm font-body"
+		data-locale-picker
+		aria-label={t('language')}
+	>
+		{visibleLocales.map((optionLocale) => (
+			<option value={optionLocale} selected={optionLocale === locale}>
+				{LOCALE_LABELS[optionLocale]}
+			</option>
+		))}
+	</select>
+)}
 
 <script>
 	import { LOCALE_COOKIE } from '../lib/i18n/locale';

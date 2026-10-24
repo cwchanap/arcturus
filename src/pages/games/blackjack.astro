@@ -33,16 +33,21 @@ const clientUserId = gameSession.clientUserId;
 		<div class="cabinet-interior">
 			<div class="cabinet-rays" aria-hidden="true"></div>
 			<header class="cabinet-header">
-				<a href="/games" class="cabinet-back"><span aria-hidden="true">‹</span>{t('backToGames')}</a
-				>
+				<a href="/games" class="cabinet-back">
+					<span aria-hidden="true">‹</span>
+					{t('backToGames')}
+				</a>
 				<div class="cabinet-title">
-					<span class="cabinet-star"><DecoIcon name="star" size={18} /></span><h1>
-						{getGameName(locale, 'blackjack')}
-					</h1><span class="cabinet-mode">{t('casual')}</span>
+					<span class="cabinet-star">
+						<DecoIcon name="star" size={18} />
+					</span>
+					<h1>{getGameName(locale, 'blackjack')}</h1>
+					<span class="cabinet-mode">{t('casual')}</span>
 				</div>
 				<div class="cabinet-tools">
 					<div class="cabinet-payout" title={t('payoutBlackjack')}>
-						<span>{t('pays')}</span><strong>3 : 2</strong>
+						<span>{t('pays')}</span>
+						<strong>3 : 2</strong>
 					</div>
 					<button
 						id="btn-toggle-settings"
@@ -51,60 +56,64 @@ const clientUserId = gameSession.clientUserId;
 						aria-label={t('gameSettings')}
 						aria-controls="settings-panel"
 						aria-expanded="false"
-						><svg
+					>
+						<svg
 							width="17"
 							height="17"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
 							stroke-width="1.5"
-							aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"></path></svg
-						></button
-					>
-					<details class="cabinet-menu">
-						<summary class="cabinet-icon" aria-label={t('gameRules')} title={t('gameRules')}
-							>?</summary
+							aria-hidden="true"
 						>
+							<path d="M4 7h16M4 17h16M8 4v6M16 14v6"></path>
+						</svg>
+					</button>
+					<details class="cabinet-menu">
+						<summary class="cabinet-icon" aria-label={t('gameRules')} title={t('gameRules')}>
+							?
+						</summary>
 						<div class="cabinet-popover">
 							<h2>{t('gameRules')}</h2>
 							<ul>
-								<li>{t('ruleBeatDealer')}</li><li>{t('ruleFaceCards')}</li><li>
-									{t('ruleAces')}
-								</li><li>{t('ruleBust')}</li><li>{t('dealerStands')}</li>
+								<li>{t('ruleBeatDealer')}</li>
+								<li>{t('ruleFaceCards')}</li>
+								<li>{t('ruleAces')}</li>
+								<li>{t('ruleBust')}</li>
+								<li>{t('dealerStands')}</li>
 							</ul>
 							<h2>{t('actions')}</h2>
 							<ul>
-								<li>{t('actionHitLine', { action: t('hit') })}</li><li>
-									{t('actionStandLine', { action: t('stand') })}
-								</li><li>{t('actionDoubleLine', { action: t('doubleDown') })}</li><li>
-									{t('actionSplitLine', { action: t('split') })}
-								</li>
+								<li>{t('actionHitLine', { action: t('hit') })}</li>
+								<li>{t('actionStandLine', { action: t('stand') })}</li>
+								<li>{t('actionDoubleLine', { action: t('doubleDown') })}</li>
+								<li>{t('actionSplitLine', { action: t('split') })}</li>
 							</ul>
 							<h2>{t('payouts')}</h2>
 							<ul>
-								<li>{t('payoutBlackjack')}</li><li>{t('payoutWin')}</li><li>{t('payoutPush')}</li>
+								<li>{t('payoutBlackjack')}</li>
+								<li>{t('payoutWin')}</li>
+								<li>{t('payoutPush')}</li>
 							</ul>
 						</div>
 					</details>
 					<details class="cabinet-menu">
-						<summary class="cabinet-icon" aria-label={t('moreModes')} title={t('moreModes')}
-							><DecoIcon name="menu" size={16} /></summary
-						>
+						<summary class="cabinet-icon" aria-label={t('moreModes')} title={t('moreModes')}>
+							<DecoIcon name="menu" size={16} />
+						</summary>
 						<nav class="cabinet-popover cabinet-mode-links" aria-label={t('moreModes')}>
-							{
-								user ? (
-									<a href="/games/blackjack/ranked" data-testid="ranked-blackjack-link">
-										{t('playRanked', { game: getGameName(locale, 'blackjack-ranked') })}
-									</a>
-								) : (
-									<a href="/signin" data-testid="ranked-blackjack-signin">
-										{t('rankedRequiresAccount', { game: getGameName(locale, 'blackjack-ranked') })}
-									</a>
-								)
-							}
-							<a href="/games/daily-challenge" data-testid="daily-challenge-link"
-								>{t('tryDailyChallenge')}</a
-							>
+							{user ? (
+								<a href="/games/blackjack/ranked" data-testid="ranked-blackjack-link">
+									{t('playRanked', { game: getGameName(locale, 'blackjack-ranked') })}
+								</a>
+							) : (
+								<a href="/signin" data-testid="ranked-blackjack-signin">
+									{t('rankedRequiresAccount', { game: getGameName(locale, 'blackjack-ranked') })}
+								</a>
+							)}
+							<a href="/games/daily-challenge" data-testid="daily-challenge-link">
+								{t('tryDailyChallenge')}
+							</a>
 						</nav>
 					</details>
 				</div>
@@ -116,35 +125,38 @@ const clientUserId = gameSession.clientUserId;
 				<div class="cabinet-dealer-row">
 					<div class="cabinet-dealer-plaque">
 						<div class="cabinet-dealer-emblem" aria-hidden="true">
-							<DecoIcon name="star" size={36} /><span>21</span><span class="cabinet-suits"
-								>♠ ♥ ♦ ♣</span
-							>
+							<DecoIcon name="star" size={36} />
+							<span>21</span>
+							<span class="cabinet-suits">♠ ♥ ♦ ♣</span>
 						</div>
-						<span class="cabinet-dealer-tag">{t('dealer')}</span><span class="cabinet-dealer-rule"
-							>{t('dealerStands')}</span
-						>
+						<span class="cabinet-dealer-tag">{t('dealer')}</span>
+						<span class="cabinet-dealer-rule">{t('dealerStands')}</span>
 					</div>
 					<div class="cabinet-dealer-hand">
-						<CardContainer id="dealer-cards" maxCards={10} size="normal" detailed /><div
-							class="cabinet-dealer-score"
-						>
-							<span id="dealer-value">–</span><span class="cabinet-label">{t('dealer')}</span>
+						<CardContainer id="dealer-cards" maxCards={10} size="normal" detailed />
+						<div class="cabinet-dealer-score">
+							<span id="dealer-value">–</span>
+							<span class="cabinet-label">{t('dealer')}</span>
 						</div>
 					</div>
 				</div>
 				<div class="cabinet-divider cabinet-table-divider" aria-hidden="true">
-					<i></i><i></i><i></i>
+					<i></i>
+					<i></i>
+					<i></i>
 				</div>
 				<div class="cabinet-player-row">
 					<div class="cabinet-score">
 						<div>
-							<span id="player-value">–</span><span class="cabinet-label">{t('yourHand')}</span>
+							<span id="player-value">–</span>
+							<span class="cabinet-label">{t('yourHand')}</span>
 						</div>
 					</div>
 					<div class="cabinet-player-hands">
 						<div id="player-cards-single">
 							<CardContainer id="player-cards" maxCards={10} size="normal" detailed />
-						</div><SplitHandsContainer
+						</div>
+						<SplitHandsContainer
 							id="player-cards-split"
 							maxHands={4}
 							maxCardsPerHand={10}
@@ -152,74 +164,90 @@ const clientUserId = gameSession.clientUserId;
 						/>
 					</div>
 					<div class="cabinet-wager">
-						<DecoIcon name="chip" size={28} /><div id="current-bet">
-							{t('currentBet', { amount: formatChips(0, locale) })}
-						</div><span class="cabinet-label"
-							>{gameSession.isGuest ? t('guestBalance') : t('yourBalance')}</span
-						><div id="player-balance">{formatChips(initialBalance, locale)}</div>
+						<DecoIcon name="chip" size={28} />
+						<div id="current-bet">{t('currentBet', { amount: formatChips(0, locale) })}</div>
+						<span class="cabinet-label">
+							{gameSession.isGuest ? t('guestBalance') : t('yourBalance')}
+						</span>
+						<div id="player-balance">{formatChips(initialBalance, locale)}</div>
 					</div>
 				</div>
 				<div class="cabinet-status">
-					<div id="game-status" role="status" aria-live="polite">{t('placeBet')}</div>
+					<div id="game-status" role="status" aria-live="polite">
+						{t('placeBet')}
+					</div>
 				</div>
 				<div class="cabinet-advisor">
-					<button id="btn-ai-rival" class="cabinet-advice-button" title={t('aiAdvisorTitle')}
-						><DecoIcon name="star" size={14} /><span id="btn-ai-rival-text">{t('askAiRival')}</span
-						></button
-					>
+					<button id="btn-ai-rival" class="cabinet-advice-button" title={t('aiAdvisorTitle')}>
+						<DecoIcon name="star" size={14} />
+						<span id="btn-ai-rival-text">{t('askAiRival')}</span>
+					</button>
 					<div id="ai-advice-box" class="hidden">
-						<div id="ai-advice-action"></div><div id="ai-advice-reasoning"></div>
+						<div id="ai-advice-action"></div>
+						<div id="ai-advice-reasoning"></div>
 					</div>
 				</div>
 			</section>
 			<section class="cabinet-controls" aria-label={t('actions')}>
-				<div class="cabinet-divider" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="cabinet-divider" aria-hidden="true">
+					<i></i>
+					<i></i>
+					<i></i>
+				</div>
 				<div id="betting-controls">
 					<button
 						id="btn-deal"
 						class="cabinet-button cabinet-button-gold"
 						aria-label={t('dealAriaLabel')}
-						><span aria-hidden="true">♠</span>{t('dealButton')}</button
 					>
+						<span aria-hidden="true">♠</span>
+						{t('dealButton')}
+					</button>
 				</div>
 				<div id="game-controls" class="hidden">
 					<div class="cabinet-actions">
-						<button id="btn-hit" class="cabinet-button"
-							><span aria-hidden="true">＋</span>{t('hitButton')}</button
-						>
-						<button id="btn-stand" class="cabinet-button cabinet-button-gold"
-							><span aria-hidden="true">−</span>{t('standButton')}</button
-						>
+						<button id="btn-hit" class="cabinet-button">
+							<span aria-hidden="true">＋</span>
+							{t('hitButton')}
+						</button>
+						<button id="btn-stand" class="cabinet-button cabinet-button-gold">
+							<span aria-hidden="true">−</span>
+							{t('standButton')}
+						</button>
 						<button
 							id="btn-double"
 							class="cabinet-button cabinet-button-purple"
 							title={t('doubleTip')}
 							aria-label={t('doubleAriaLabel')}
-							><span aria-hidden="true">»</span>{t('doubleButton')}</button
 						>
-						<button id="btn-split" class="cabinet-button" title={t('splitTip')}
-							><span aria-hidden="true">⑂</span>{t('splitButton')}</button
-						>
-						<button id="btn-new-round" class="hidden cabinet-button cabinet-button-gold"
-							>{t('newRoundButton')}</button
-						>
+							<span aria-hidden="true">»</span>
+							{t('doubleButton')}
+						</button>
+						<button id="btn-split" class="cabinet-button" title={t('splitTip')}>
+							<span aria-hidden="true">⑂</span>
+							{t('splitButton')}
+						</button>
+						<button id="btn-new-round" class="hidden cabinet-button cabinet-button-gold">
+							{t('newRoundButton')}
+						</button>
 					</div>
 				</div>
 				<div class="cabinet-bets">
-					<label class="cabinet-label" for="bet-amount">{t('nextBet')}</label>
-					{
-						[25, 50, 100, 200].map((amount) => (
-							<button
-								class="bet-quick cabinet-preset"
-								data-amount={amount}
-								aria-pressed={amount === 50}
-							>
-								{amount}
-							</button>
-						))
-					}
+					<label class="cabinet-label" for="bet-amount">
+						{t('nextBet')}
+					</label>
+					{[25, 50, 100, 200].map((amount) => (
+						<button
+							class="bet-quick cabinet-preset"
+							data-amount={amount}
+							aria-pressed={amount === 50}
+						>
+							{amount}
+						</button>
+					))}
 					<div class="cabinet-custom-bet">
-						<DecoIcon name="chip" size={14} /><input
+						<DecoIcon name="chip" size={14} />
+						<input
 							type="number"
 							id="bet-amount"
 							min="10"
@@ -229,10 +257,12 @@ const clientUserId = gameSession.clientUserId;
 							aria-label={t('betAmount')}
 						/>
 					</div>
-					<button id="btn-rebet" class="cabinet-preset">{t('rebet')}</button><button
-						id="btn-max-bet"
-						class="cabinet-preset">{t('maxBet')}</button
-					>
+					<button id="btn-rebet" class="cabinet-preset">
+						{t('rebet')}
+					</button>
+					<button id="btn-max-bet" class="cabinet-preset">
+						{t('maxBet')}
+					</button>
 				</div>
 				<div
 					id="settings-panel"
@@ -248,8 +278,10 @@ const clientUserId = gameSession.clientUserId;
 							<div>
 								<label
 									for="setting-starting-chips"
-									class="block text-sm text-[var(--deco-muted)] mb-1">{t('startingChips')}</label
+									class="block text-sm text-[var(--deco-muted)] mb-1"
 								>
+									{t('startingChips')}
+								</label>
 								<input
 									type="number"
 									id="setting-starting-chips"
@@ -260,9 +292,9 @@ const clientUserId = gameSession.clientUserId;
 								/>
 							</div>
 							<div>
-								<label for="setting-min-bet" class="block text-sm text-[var(--deco-muted)] mb-1"
-									>{t('minimumBet')}</label
-								>
+								<label for="setting-min-bet" class="block text-sm text-[var(--deco-muted)] mb-1">
+									{t('minimumBet')}
+								</label>
 								<input
 									type="number"
 									id="setting-min-bet"
@@ -273,9 +305,9 @@ const clientUserId = gameSession.clientUserId;
 								/>
 							</div>
 							<div>
-								<label for="setting-max-bet" class="block text-sm text-[var(--deco-muted)] mb-1"
-									>{t('maximumBet')}</label
-								>
+								<label for="setting-max-bet" class="block text-sm text-[var(--deco-muted)] mb-1">
+									{t('maximumBet')}
+								</label>
 								<input
 									type="number"
 									id="setting-max-bet"
@@ -295,14 +327,18 @@ const clientUserId = gameSession.clientUserId;
 							<div>
 								<label
 									for="setting-dealer-speed"
-									class="block text-sm text-[var(--deco-muted)] mb-1">{t('dealerSpeed')}</label
+									class="block text-sm text-[var(--deco-muted)] mb-1"
 								>
+									{t('dealerSpeed')}
+								</label>
 								<select
 									id="setting-dealer-speed"
 									class="w-full bg-[var(--deco-obsidian)] border border-[var(--deco-line)] rounded-lg px-4 py-2 text-[var(--deco-ivory)] focus:border-[var(--deco-brass)] focus:outline-none"
 								>
 									<option value="slow">{t('dealerSpeedSlow')}</option>
-									<option value="normal" selected>{t('dealerSpeedNormal')}</option>
+									<option value="normal" selected>
+										{t('dealerSpeedNormal')}
+									</option>
 									<option value="fast">{t('dealerSpeedFast')}</option>
 								</select>
 							</div>
@@ -337,12 +373,16 @@ const clientUserId = gameSession.clientUserId;
 		class="fixed bottom-4 right-4 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
 		style="z-index: 9999;"
 	>
-		<span id="achievement-icon" class="text-3xl">🏆</span>
+		<span id="achievement-icon" class="text-3xl">
+			🏆
+		</span>
 		<div>
 			<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
 				{t('achievementUnlocked')}
 			</p>
-			<p id="achievement-name" class="font-bold text-lg">Achievement Name</p>
+			<p id="achievement-name" class="font-bold text-lg">
+				Achievement Name
+			</p>
 		</div>
 	</div>
 </CasinoLayout>

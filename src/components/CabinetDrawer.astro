@@ -9,11 +9,16 @@ const { id, title, closeLabel } = Astro.props;
 
 <dialog id={id} class="tc-drawer" aria-labelledby={`${id}-title`}>
 	<header>
-		<h2 id={`${id}-title`}>{title}</h2><form method="dialog">
-			<button class="tc-icon" aria-label={closeLabel}>×</button>
+		<h2 id={`${id}-title`}>{title}</h2>
+		<form method="dialog">
+			<button class="tc-icon" aria-label={closeLabel}>
+				×
+			</button>
 		</form>
 	</header>
-	<div class="tc-drawer-body"><slot /></div>
+	<div class="tc-drawer-body">
+		<slot />
+	</div>
 </dialog>
 <script>
 	document.querySelectorAll<HTMLButtonElement>('[data-cabinet-panel]').forEach((button) => {

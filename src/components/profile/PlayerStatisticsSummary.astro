@@ -21,42 +21,42 @@ const t = profileTranslator(locale);
 				{t('playerPerformance')}
 			</h2>
 		</div>
-		<a href="/profile/statistics" class="deco-link">{t('viewDetailedStatistics')}</a>
+		<a href="/profile/statistics" class="deco-link">
+			{t('viewDetailedStatistics')}
+		</a>
 	</div>
-	{
-		state.status === 'error' ? (
-			<p class="mt-6" role="status" style="color: var(--deco-rose)">
-				{t('statisticsUnavailable')}
-			</p>
-		) : (
-			<dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-				<div>
-					<dt class="deco-eyebrow-sm">{t('totalHands')}</dt>
-					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatWholeNumber(state.summary.totalHands, locale)}
-					</dd>
-				</div>
-				<div>
-					<dt class="deco-eyebrow-sm">{t('mostPlayed')}</dt>
-					<dd class="deco-stat-value mt-1 tabular-nums">
-						{state.summary.mostPlayedGame
-							? getGameName(locale, state.summary.mostPlayedGame)
-							: t('noGamesPlayedYet')}
-					</dd>
-				</div>
-				<div>
-					<dt class="deco-eyebrow-sm">{t('overallWinRate')}</dt>
-					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatPercentage(state.summary.overallWinRate, locale)}
-					</dd>
-				</div>
-				<div>
-					<dt class="deco-eyebrow-sm">{t('netProfit')}</dt>
-					<dd class="deco-stat-value mt-1 tabular-nums">
-						{formatSignedProfit(state.summary.totalNetProfit, locale)}
-					</dd>
-				</div>
-			</dl>
-		)
-	}
+	{state.status === 'error' ? (
+		<p class="mt-6" role="status" style="color: var(--deco-rose)">
+			{t('statisticsUnavailable')}
+		</p>
+	) : (
+		<dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+			<div>
+				<dt class="deco-eyebrow-sm">{t('totalHands')}</dt>
+				<dd class="deco-stat-value mt-1 tabular-nums">
+					{formatWholeNumber(state.summary.totalHands, locale)}
+				</dd>
+			</div>
+			<div>
+				<dt class="deco-eyebrow-sm">{t('mostPlayed')}</dt>
+				<dd class="deco-stat-value mt-1 tabular-nums">
+					{state.summary.mostPlayedGame
+						? getGameName(locale, state.summary.mostPlayedGame)
+						: t('noGamesPlayedYet')}
+				</dd>
+			</div>
+			<div>
+				<dt class="deco-eyebrow-sm">{t('overallWinRate')}</dt>
+				<dd class="deco-stat-value mt-1 tabular-nums">
+					{formatPercentage(state.summary.overallWinRate, locale)}
+				</dd>
+			</div>
+			<div>
+				<dt class="deco-eyebrow-sm">{t('netProfit')}</dt>
+				<dd class="deco-stat-value mt-1 tabular-nums">
+					{formatSignedProfit(state.summary.totalNetProfit, locale)}
+				</dd>
+			</div>
+		</dl>
+	)}
 </section>

@@ -104,17 +104,15 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 								class="flex h-20 w-20 items-center justify-center rounded-sm text-3xl font-bold"
 								style="border: 1px solid var(--deco-brass); color: var(--deco-brass); background: linear-gradient(160deg, rgba(12,51,38,0.6), rgba(11,15,14,0.9)); font-family: var(--font-display)"
 							>
-								{
-									user.image ? (
-										<img
-											src={user.image}
-											alt={user.name ?? user.email ?? t('playerAvatar')}
-											class="h-20 w-20 rounded-sm object-cover"
-										/>
-									) : (
-										<span>{fallbackInitial}</span>
-									)
-								}
+								{user.image ? (
+									<img
+										src={user.image}
+										alt={user.name ?? user.email ?? t('playerAvatar')}
+										class="h-20 w-20 rounded-sm object-cover"
+									/>
+								) : (
+									<span>{fallbackInitial}</span>
+								)}
 							</div>
 							<div>
 								<p class="deco-eyebrow-sm">{t('playerProfile')}</p>
@@ -193,9 +191,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<h2 class="deco-section-title text-lg">{t('aiSettingsTitle')}</h2>
-						<p class="deco-text-dim text-sm">
-							{t('aiSettingsDescription')}
-						</p>
+						<p class="deco-text-dim text-sm">{t('aiSettingsDescription')}</p>
 					</div>
 					<p
 						id="ai-settings-feedback"
@@ -215,30 +211,29 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 							name="provider"
 							class="deco-input mt-2 w-full px-3 py-2 text-sm"
 						>
-							{
-								aiProviderOptions.map((provider) => (
-									<option value={provider} selected={initialAiProvider === provider}>
-										{providerLabels[provider]}
-									</option>
-								))
-							}
+							{aiProviderOptions.map((provider) => (
+								<option value={provider} selected={initialAiProvider === provider}>
+									{providerLabels[provider]}
+								</option>
+							))}
 						</select>
 					</div>
 					<div class="col-span-full sm:col-span-1">
-						<label for="ai-model" class="deco-label block font-medium"> {t('modelVariant')} </label>
+						<label for="ai-model" class="deco-label block font-medium">
+							{' '}
+							{t('modelVariant')}{' '}
+						</label>
 						<select
 							id="ai-model"
 							name="model"
 							class="deco-input mt-2 w-full px-3 py-2 text-sm"
 							data-model-labels={JSON.stringify(modelLabels)}
 						>
-							{
-								aiModelOptions[initialAiProvider].map((model: string) => (
-									<option value={model} selected={initialAiModel === model}>
-										{modelLabels[model] ?? model}
-									</option>
-								))
-							}
+							{aiModelOptions[initialAiProvider].map((model: string) => (
+								<option value={model} selected={initialAiModel === model}>
+									{modelLabels[model] ?? model}
+								</option>
+							))}
 						</select>
 					</div>
 
@@ -304,12 +299,8 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 											stroke-linejoin="round"
 										>
 											<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
-											<path
-												d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"
-											></path>
-											<path
-												d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"
-											></path>
+											<path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+											<path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
 											<line x1="2" x2="22" y1="2" y2="22"></line>
 										</svg>
 									</button>
@@ -375,9 +366,7 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<h2 class="deco-section-title text-lg">{t('achievementsTitle')}</h2>
-						<p class="deco-text-dim text-sm">
-							{t('achievementsDescription')}
-						</p>
+						<p class="deco-text-dim text-sm">{t('achievementsDescription')}</p>
 					</div>
 					<div class="text-right">
 						<p class="deco-stat-value text-2xl tabular-nums">
@@ -401,93 +390,88 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 					<div
 						class="deco-progress-fill h-full transition-all duration-500"
 						style={`width: ${clampedPercentage()}%`}
-					>
-					</div>
+					></div>
 				</div>
 
 				<!-- Achievements Grid -->
 				<div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-					{
-						achievements.map((achievement) => (
-							<div
-								class:list={[
-									'relative rounded-sm border p-4 transition-all',
-									!achievement.isUnlocked && 'opacity-60',
-								]}
-								style={
-									achievement.isUnlocked
-										? 'border-color: color-mix(in srgb, var(--deco-brass) 40%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--deco-brass) 10%, transparent), rgba(17,24,21,0.6))'
-										: 'border-color: color-mix(in srgb, var(--deco-brass) 12%, transparent); background: rgba(11,15,14,0.5)'
-								}
-								data-testid={`achievement-${achievement.id}`}
-							>
-								<div class="flex items-start gap-3">
-									<div
-										class={`flex h-12 w-12 items-center justify-center rounded-sm text-2xl ${
-											achievement.isUnlocked ? '' : 'grayscale'
-										}`}
-										style={
-											achievement.isUnlocked
-												? 'border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent); background: color-mix(in srgb, var(--deco-brass) 10%, transparent)'
-												: 'border: 1px solid color-mix(in srgb, var(--deco-brass) 10%, transparent); background: rgba(17,24,21,0.5)'
-										}
-									>
-										{achievement.icon}
-									</div>
-									<div class="flex-1 min-w-0">
-										<h3
-											class="font-semibold"
-											style={`color: ${achievement.isUnlocked ? 'var(--deco-ivory)' : 'var(--deco-muted)'}`}
-										>
-											{getAchievementName(locale, achievement.id)}
-										</h3>
-										<p class="deco-muted-text text-xs mt-0.5">
-											{getAchievementDescription(locale, achievement.id)}
-										</p>
-										{achievement.isUnlocked && achievement.earnedAt && (
-											<p class="deco-accent-dim text-xs mt-1">
-												{t('earnedOn', {
-													date: formatShortDate(new Date(achievement.earnedAt), locale),
-												})}
-											</p>
-										)}
-									</div>
+					{achievements.map((achievement) => (
+						<div
+							class:list={[
+								'relative rounded-sm border p-4 transition-all',
+								!achievement.isUnlocked && 'opacity-60',
+							]}
+							style={
+								achievement.isUnlocked
+									? 'border-color: color-mix(in srgb, var(--deco-brass) 40%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--deco-brass) 10%, transparent), rgba(17,24,21,0.6))'
+									: 'border-color: color-mix(in srgb, var(--deco-brass) 12%, transparent); background: rgba(11,15,14,0.5)'
+							}
+							data-testid={`achievement-${achievement.id}`}
+						>
+							<div class="flex items-start gap-3">
+								<div
+									class={`flex h-12 w-12 items-center justify-center rounded-sm text-2xl ${
+										achievement.isUnlocked ? '' : 'grayscale'
+									}`}
+									style={
+										achievement.isUnlocked
+											? 'border: 1px solid color-mix(in srgb, var(--deco-brass) 40%, transparent); background: color-mix(in srgb, var(--deco-brass) 10%, transparent)'
+											: 'border: 1px solid color-mix(in srgb, var(--deco-brass) 10%, transparent); background: rgba(17,24,21,0.5)'
+									}
+								>
+									{achievement.icon}
 								</div>
-								{achievement.isUnlocked && (
-									<div class="absolute top-2 right-2 text-[var(--deco-brass)]">
-										<svg
-											aria-hidden="true"
-											focusable="false"
-											xmlns="http://www.w3.org/2000/svg"
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-										>
-											<polyline points="20 6 9 17 4 12" />
-										</svg>
-									</div>
-								)}
+								<div class="flex-1 min-w-0">
+									<h3
+										class="font-semibold"
+										style={`color: ${achievement.isUnlocked ? 'var(--deco-ivory)' : 'var(--deco-muted)'}`}
+									>
+										{getAchievementName(locale, achievement.id)}
+									</h3>
+									<p class="deco-muted-text text-xs mt-0.5">
+										{getAchievementDescription(locale, achievement.id)}
+									</p>
+									{achievement.isUnlocked && achievement.earnedAt && (
+										<p class="deco-accent-dim text-xs mt-1">
+											{t('earnedOn', {
+												date: formatShortDate(new Date(achievement.earnedAt), locale),
+											})}
+										</p>
+									)}
+								</div>
 							</div>
-						))
-					}
+							{achievement.isUnlocked && (
+								<div class="absolute top-2 right-2 text-[var(--deco-brass)]">
+									<svg
+										aria-hidden="true"
+										focusable="false"
+										xmlns="http://www.w3.org/2000/svg"
+										width="16"
+										height="16"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										stroke-width="2"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									>
+										<polyline points="20 6 9 17 4 12" />
+									</svg>
+								</div>
+							)}
+						</div>
+					))}
 				</div>
 
-				{
-					achievementsFetchError ? (
-						<div class="mt-6 text-center py-8">
-							<p style="color: var(--deco-rose)">{t('achievementsLoadError')}</p>
-						</div>
-					) : achievements.length === 0 ? (
-						<div class="mt-6 text-center py-8">
-							<p class="deco-text-dim">{t('noAchievementsYet')}</p>
-						</div>
-					) : null
-				}
+				{achievementsFetchError ? (
+					<div class="mt-6 text-center py-8">
+						<p style="color: var(--deco-rose)">{t('achievementsLoadError')}</p>
+					</div>
+				) : achievements.length === 0 ? (
+					<div class="mt-6 text-center py-8">
+						<p class="deco-text-dim">{t('noAchievementsYet')}</p>
+					</div>
+				) : null}
 			</div>
 		</div>
 	</section>

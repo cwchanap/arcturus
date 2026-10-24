@@ -39,92 +39,84 @@ const clientUserId = gameSession.clientUserId;
 	>
 		<div class="poker-frame">
 			<header class="poker-toolbar">
-				<a href="/#games" class="poker-utility poker-back"
-					><span aria-hidden="true">‹</span><span>{t('backToGames')}</span></a
-				>
+				<a href="/#games" class="poker-utility poker-back">
+					<span aria-hidden="true">‹</span>
+					<span>{t('backToGames')}</span>
+				</a>
 				<div class="poker-title">
-					<img
-						class="poker-emblem"
-						src="/images/poker/emblem.webp"
-						alt=""
-						width="40"
-						height="40"
-					/><h1>
-						{getGameName(locale, 'poker')}
-					</h1><span class="poker-format">{NUM_PLAYERS}-Max</span>
-					{
-						!isSng && (
-							<a class="poker-format" href="/games/poker?mode=sng">
-								{t('tournamentSitGo')}
-							</a>
-						)
-					}
+					<img class="poker-emblem" src="/images/poker/emblem.webp" alt="" width="40" height="40" />
+					<h1>{getGameName(locale, 'poker')}</h1>
+					<span class="poker-format">{NUM_PLAYERS}-Max</span>
+					{!isSng && (
+						<a class="poker-format" href="/games/poker?mode=sng">
+							{t('tournamentSitGo')}
+						</a>
+					)}
 				</div>
 				<div class="poker-tools">
-					{
-						isSng ? (
-							<dl id="poker-tournament" class="poker-session" data-testid="poker-tournament">
+					{isSng ? (
+						<dl id="poker-tournament" class="poker-session" data-testid="poker-tournament">
+							<div>
+								<>
+									<dt>{t('sessionHands')}</dt>
+									<dd id="tournament-hands">0</dd>
+								</>
+							</div>
+							<div>
+								<>
+									<dt>{t('tournamentLevel')}</dt>
+									<dd id="tournament-level">—</dd>
+								</>
+							</div>
+							<div>
+								<>
+									<dt>{t('tournamentNextLevel')}</dt>
+									<dd id="tournament-next">—</dd>
+								</>
+							</div>
+							<div>
+								<>
+									<dt>{t('tournamentPlayers')}</dt>
+									<dd id="tournament-players">{formatWholeNumber(NUM_PLAYERS, locale)}</dd>
+								</>
+							</div>
+							<div id="tournament-place-row" hidden>
+								<>
+									<dt>{t('tournamentFinish')}</dt>
+									<dd id="tournament-place" />
+								</>
+							</div>
+						</dl>
+					) : (
+						<>
+							<dl id="poker-session" class="poker-session">
 								<div>
 									<>
 										<dt>{t('sessionHands')}</dt>
-										<dd id="tournament-hands">0</dd>
+										<dd id="session-hands">0</dd>
 									</>
 								</div>
 								<div>
 									<>
-										<dt>{t('tournamentLevel')}</dt>
-										<dd id="tournament-level">—</dd>
+										<dt>{t('sessionNet')}</dt>
+										<dd id="session-net" data-tone="neutral">
+											±0
+										</dd>
 									</>
 								</div>
 								<div>
 									<>
-										<dt>{t('tournamentNextLevel')}</dt>
-										<dd id="tournament-next">—</dd>
-									</>
-								</div>
-								<div>
-									<>
-										<dt>{t('tournamentPlayers')}</dt>
-										<dd id="tournament-players">{formatWholeNumber(NUM_PLAYERS, locale)}</dd>
-									</>
-								</div>
-								<div id="tournament-place-row" hidden>
-									<>
-										<dt>{t('tournamentFinish')}</dt>
-										<dd id="tournament-place" />
+										<dt>{t('sessionBest')}</dt>
+										<dd id="session-best">—</dd>
 									</>
 								</div>
 							</dl>
-						) : (
-							<>
-								<dl id="poker-session" class="poker-session">
-									<div>
-										<>
-											<dt>{t('sessionHands')}</dt>
-											<dd id="session-hands">0</dd>
-										</>
-									</div>
-									<div>
-										<>
-											<dt>{t('sessionNet')}</dt>
-											<dd id="session-net" data-tone="neutral">
-												±0
-											</dd>
-										</>
-									</div>
-									<div>
-										<>
-											<dt>{t('sessionBest')}</dt>
-											<dd id="session-best">—</dd>
-										</>
-									</div>
-								</dl>
-								<span id="session-streak" class="poker-session-streak" hidden />
-							</>
-						)
-					}
+							<span id="session-streak" class="poker-session-streak" hidden />
+						</>
+					)}
 					<div class="poker-blinds">
-						<span>{t('blinds')}</span><strong id="table-blinds">5 / 10</strong>
+						<span>{t('blinds')}</span>
+						<strong id="table-blinds">5 / 10</strong>
 					</div>
 					<button
 						id="btn-sound"
@@ -132,7 +124,8 @@ const clientUserId = gameSession.clientUserId;
 						aria-pressed="true"
 						aria-label={t('soundEffects')}
 						title={t('soundEffects')}
-						><svg
+					>
+						<svg
 							width="18"
 							height="18"
 							viewBox="0 0 24 24"
@@ -142,20 +135,23 @@ const clientUserId = gameSession.clientUserId;
 							stroke-linecap="round"
 							stroke-linejoin="round"
 							aria-hidden="true"
-							><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"></path><path
+						>
+							<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"></path>
+							<path
 								class="poker-toggle-on"
-								d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"></path><path
-								class="poker-toggle-off"
-								d="M16 9.5l5 5M21 9.5l-5 5"></path></svg
-						></button
-					>
+								d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"
+							></path>
+							<path class="poker-toggle-off" d="M16 9.5l5 5M21 9.5l-5 5"></path>
+						</svg>
+					</button>
 					<button
 						id="btn-turn-timer"
 						class="poker-utility poker-toggle"
 						aria-pressed="true"
 						aria-label={t('turnTimer')}
 						title={t('turnTimer')}
-						><svg
+					>
+						<svg
 							width="18"
 							height="18"
 							viewBox="0 0 24 24"
@@ -164,30 +160,36 @@ const clientUserId = gameSession.clientUserId;
 							stroke-width="1.6"
 							stroke-linecap="round"
 							aria-hidden="true"
-							><circle cx="12" cy="13.5" r="7.5"></circle><path d="M12 13.5V9.5M10 3h4"></path><path
-								class="poker-toggle-off"
-								d="M5 5l14 17"></path></svg
-						></button
-					>
+						>
+							<circle cx="12" cy="13.5" r="7.5"></circle>
+							<path d="M12 13.5V9.5M10 3h4"></path>
+							<path class="poker-toggle-off" d="M5 5l14 17"></path>
+						</svg>
+					</button>
 					<button
 						class="poker-utility"
 						data-open-panel="history-panel"
 						aria-label={t('handHistory')}
-						title={t('handHistory')}><DecoIcon name="menu" size={17} /></button
+						title={t('handHistory')}
 					>
+						<DecoIcon name="menu" size={17} />
+					</button>
 					<button
 						class="poker-utility"
 						data-open-panel="rules-panel"
 						aria-label={t('handRankings')}
-						title={t('handRankings')}><span aria-hidden="true">?</span></button
+						title={t('handRankings')}
 					>
+						<span aria-hidden="true">?</span>
+					</button>
 					<button
 						id="btn-toggle-settings"
 						class="poker-utility"
 						data-open-panel="settings-panel"
 						aria-label={t('configure')}
 						title={t('configure')}
-						><svg
+					>
+						<svg
 							width="18"
 							height="18"
 							viewBox="0 0 24 24"
@@ -195,70 +197,71 @@ const clientUserId = gameSession.clientUserId;
 							stroke="currentColor"
 							stroke-width="1.5"
 							aria-hidden="true"
-							><path d="M4 7h16M4 17h16"></path><circle cx="9" cy="7" r="3" fill="#070b09"
-							></circle><circle cx="15" cy="17" r="3" fill="#070b09"></circle></svg
-						></button
-					>
+						>
+							<path d="M4 7h16M4 17h16"></path>
+							<circle cx="9" cy="7" r="3" fill="#070b09"></circle>
+							<circle cx="15" cy="17" r="3" fill="#070b09"></circle>
+						</svg>
+					</button>
 				</div>
 			</header>
 			{isSng && <p class="poker-sng-notice">{t('tournamentRefreshNotice')}</p>}
 			<div class="poker-table" aria-label={getGameName(locale, 'poker')}>
-				{
-					Array.from({ length: NUM_PLAYERS - 1 }, (_, i) => i + 1).map((id) => (
-						<section
-							id={`poker-seat-${id}`}
-							class={`poker-seat poker-seat-${id}`}
-							aria-label={t('playerName', { number: String(id + 1) })}
-						>
-							<div class="poker-portrait" aria-hidden="true">
-								<>
-									<span class="poker-portrait-suit">{['♠', '♦', '♣', '♥', '♠'][id - 1]}</span>
-									<span class="poker-player-monogram">P{id + 1}</span>
-									<span class="poker-portrait-rule" />
-								</>
-							</div>
-							<span id={`rival-${id}`} class="poker-rival" />
-							<span id={`seat-delta-${id}`} class="poker-seat-delta" hidden aria-hidden="true" />
-							<div class="poker-seat-meta">
-								<>
-									<span class="poker-position" id={`position-${id}`}>
-										—
-									</span>
-									<span id={`opponent${id}-chips`}>{formatWholeNumber(500, locale)}</span>
-								</>
-							</div>
-							<div class="poker-seat-hand">
-								<>
-									<PokerCardContainer
-										id={`opponent${id}-cards`}
-										maxCards={2}
-										size="small"
-										placeholderText=""
-									/>
-									<span id={`opponent${id}-action`} class="poker-seat-action">
-										—
-									</span>
-								</>
-							</div>
-						</section>
-					))
-				}
+				{Array.from({ length: NUM_PLAYERS - 1 }, (_, i) => i + 1).map((id) => (
+					<section
+						id={`poker-seat-${id}`}
+						class={`poker-seat poker-seat-${id}`}
+						aria-label={t('playerName', { number: String(id + 1) })}
+					>
+						<div class="poker-portrait" aria-hidden="true">
+							<>
+								<span class="poker-portrait-suit">{['♠', '♦', '♣', '♥', '♠'][id - 1]}</span>
+								<span class="poker-player-monogram">P{id + 1}</span>
+								<span class="poker-portrait-rule" />
+							</>
+						</div>
+						<span id={`rival-${id}`} class="poker-rival" />
+						<span id={`seat-delta-${id}`} class="poker-seat-delta" hidden aria-hidden="true" />
+						<div class="poker-seat-meta">
+							<>
+								<span class="poker-position" id={`position-${id}`}>
+									—
+								</span>
+								<span id={`opponent${id}-chips`}>{formatWholeNumber(500, locale)}</span>
+							</>
+						</div>
+						<div class="poker-seat-hand">
+							<>
+								<PokerCardContainer
+									id={`opponent${id}-cards`}
+									maxCards={2}
+									size="small"
+									placeholderText=""
+								/>
+								<span id={`opponent${id}-action`} class="poker-seat-action">
+									—
+								</span>
+							</>
+						</div>
+					</section>
+				))}
 				<div class="poker-board">
 					<div class="poker-pot-slot">
 						<div class="poker-pot" aria-label={t('pot')}>
-							<img src="/images/poker/pot-chips.webp" alt="" width="40" height="40" /><span
-								id="pot-amount">0</span
-							>
+							<img src="/images/poker/pot-chips.webp" alt="" width="40" height="40" />
+							<span id="pot-amount">0</span>
 						</div>
 						<div id="poker-result" class="poker-result" role="status" hidden>
 							<strong id="poker-result-title"></strong>
-							<span
-								><span id="poker-result-detail"></span><span id="poker-result-delta"></span></span
-							>
+							<span>
+								<span id="poker-result-detail"></span>
+								<span id="poker-result-delta"></span>
+							</span>
 						</div>
 					</div>
 					<div id="poker-callout" class="poker-callout" aria-live="polite" hidden>
-						<span id="poker-callout-eyebrow"></span><strong id="poker-callout-hand"></strong>
+						<span id="poker-callout-eyebrow"></span>
+						<strong id="poker-callout-hand"></strong>
 					</div>
 					<div class="poker-board-tray">
 						<PokerCardContainer
@@ -270,74 +273,72 @@ const clientUserId = gameSession.clientUserId;
 						/>
 					</div>
 					<ol class="poker-streets" aria-label={t('gameStatus')}>
-						{
-							(
-								['phasePreflop', 'phaseFlop', 'phaseTurn', 'phaseRiver', 'phaseShowdown'] as const
-							).map((key, index) => (
-								<li data-street={index} title={t(key)}>
-									<span class="sr-only">{t(key)}</span>
-								</li>
-							))
-						}
+						{(
+							['phasePreflop', 'phaseFlop', 'phaseTurn', 'phaseRiver', 'phaseShowdown'] as const
+						).map((key, index) => (
+							<li data-street={index} title={t(key)}>
+								<span class="sr-only">{t(key)}</span>
+							</li>
+						))}
 					</ol>
-					<span id="poker-phase" class="poker-phase">{t('phaseIdle')}</span>
+					<span id="poker-phase" class="poker-phase">
+						{t('phaseIdle')}
+					</span>
 					<div id="game-status" class="poker-status" role="status" aria-live="polite">
 						{t('startHint', { deal: t('dealNewHand') })}
 					</div>
-					{
-						isSng && (
-							<div id="poker-terminal" class="poker-terminal" data-testid="poker-terminal" hidden>
-								<strong class="poker-terminal-title">{t('tournamentCompleteTitle')}</strong>
-								<p id="poker-terminal-place" class="poker-terminal-place" />
-								<nav class="poker-terminal-links">
-									<a href="/games/poker?mode=sng">{t('tournamentNew')}</a>
-									<a href="/games/poker">{t('tournamentCashPoker')}</a>
-								</nav>
-							</div>
-						)
-					}
+					{isSng && (
+						<div id="poker-terminal" class="poker-terminal" data-testid="poker-terminal" hidden>
+							<strong class="poker-terminal-title">{t('tournamentCompleteTitle')}</strong>
+							<p id="poker-terminal-place" class="poker-terminal-place" />
+							<nav class="poker-terminal-links">
+								<a href="/games/poker?mode=sng">{t('tournamentNew')}</a>
+								<a href="/games/poker">{t('tournamentCashPoker')}</a>
+							</nav>
+						</div>
+					)}
 				</div>
 			</div>
 			<section id="poker-seat-0" class="poker-human" aria-label={t('yourHand')}>
-				{
-					!gameSession.isGuest && !isSng && (
-						<div
-							id="poker-missions"
-							class="poker-missions"
-							role="group"
-							aria-label={t('missionsLabel')}
-							hidden
-						>
-							<div class="poker-mission-tokens" data-mission-tokens />
-							<span class="sr-only" aria-live="polite" data-mission-announcer />
-						</div>
-					)
-				}
+				{!gameSession.isGuest && !isSng && (
+					<div
+						id="poker-missions"
+						class="poker-missions"
+						role="group"
+						aria-label={t('missionsLabel')}
+						hidden
+					>
+						<div class="poker-mission-tokens" data-mission-tokens />
+						<span class="sr-only" aria-live="polite" data-mission-announcer />
+					</div>
+				)}
 				<span id="seat-delta-0" class="poker-seat-delta" hidden aria-hidden="true"></span>
 				<div class="poker-bankroll">
-					<span class="poker-small-label"
-						>{isSng ? t('tournamentChips') : getBalanceLabel(locale, gameSession.isGuest)}</span
-					><strong
+					<span class="poker-small-label">
+						{isSng ? t('tournamentChips') : getBalanceLabel(locale, gameSession.isGuest)}
+					</span>
+					<strong
 						id="player-balance"
 						data-testid="player-balance"
 						data-balance={hasInitialBalance ? String(initialBalance) : ''}
 						data-balance-available={gameSession.balanceAvailableValue}
 						data-guest-mode={gameSession.guestModeValue}
 						data-user-id={clientUserId}
-						>{isSng ? formatChips(SNG_START_STACK, locale) : initialBalanceLabel}</strong
-					><span class="poker-your-bet"
-						>{t('yourBet')} <span id="current-bet">{formatChips(0, locale)}</span></span
 					>
+						{isSng ? formatChips(SNG_START_STACK, locale) : initialBalanceLabel}
+					</strong>
+					<span class="poker-your-bet">
+						{t('yourBet')} <span id="current-bet">{formatChips(0, locale)}</span>
+					</span>
 				</div>
 				<div class="poker-hole">
-					<span id="position-0" class="poker-position">BTN</span><div
-						id="poker-turn-timer"
-						class="poker-turn-timer"
-						role="timer"
-						hidden
-					>
+					<span id="position-0" class="poker-position">
+						BTN
+					</span>
+					<div id="poker-turn-timer" class="poker-turn-timer" role="timer" hidden>
 						<span id="poker-turn-seconds" aria-hidden="true"></span>
-					</div><PokerCardContainer
+					</div>
+					<PokerCardContainer
 						id="player-cards"
 						maxCards={2}
 						size="normal"
@@ -346,38 +347,52 @@ const clientUserId = gameSession.clientUserId;
 					/>
 				</div>
 				<div class="poker-hand-strength">
-					<span id="hand-strength">—</span><div class="poker-strength-bars" aria-hidden="true">
-						{Array.from({ length: 10 }, () => <span />)}
-					</div><span id="hand-detail" class="poker-hand-detail"></span>
+					<span id="hand-strength">—</span>
+					<div class="poker-strength-bars" aria-hidden="true">
+						{Array.from({ length: 10 }, () => (
+							<span />
+						))}
+					</div>
+					<span id="hand-detail" class="poker-hand-detail"></span>
 				</div>
 			</section>
 			<div class="poker-controls">
-				<div class="poker-divider" aria-hidden="true"><span>◆ ◇ ◆</span></div>
+				<div class="poker-divider" aria-hidden="true">
+					<span>◆ ◇ ◆</span>
+				</div>
 				<p id="poker-to-call" class="poker-to-call" hidden></p>
 				<div class="poker-actions">
-					<button id="btn-fold" class="poker-action poker-fold" disabled
-						><span aria-hidden="true">×</span><span>{t('fold')}</span></button
-					>
-					<button id="btn-check" class="poker-action" disabled
-						><span aria-hidden="true">✓</span><span>{t('check')}</span></button
-					>
-					<button id="btn-call" class="poker-action" disabled hidden
-						><span aria-hidden="true">✓</span><span>{t('call')} <span id="call-amount"></span></span
-						></button
-					>
-					<button id="btn-raise" class="poker-action poker-gold" disabled
-						><span aria-hidden="true">↑</span><span
-							>{t('raise')} <span id="bet-amount">20</span></span
-						></button
-					>
-					<button id="btn-deal" class="poker-action poker-gold">{t('dealNewHand')}</button>
+					<button id="btn-fold" class="poker-action poker-fold" disabled>
+						<span aria-hidden="true">×</span>
+						<span>{t('fold')}</span>
+					</button>
+					<button id="btn-check" class="poker-action" disabled>
+						<span aria-hidden="true">✓</span>
+						<span>{t('check')}</span>
+					</button>
+					<button id="btn-call" class="poker-action" disabled hidden>
+						<span aria-hidden="true">✓</span>
+						<span>
+							{t('call')} <span id="call-amount"></span>
+						</span>
+					</button>
+					<button id="btn-raise" class="poker-action poker-gold" disabled>
+						<span aria-hidden="true">↑</span>
+						<span>
+							{t('raise')} <span id="bet-amount">20</span>
+						</span>
+					</button>
+					<button id="btn-deal" class="poker-action poker-gold">
+						{t('dealNewHand')}
+					</button>
 					<button
 						id="btn-recap"
 						class="poker-action poker-recap-button"
 						aria-label={t('handRecap')}
 						title={t('handRecap')}
 						hidden
-						><svg
+					>
+						<svg
 							width="20"
 							height="20"
 							viewBox="0 0 24 24"
@@ -387,42 +402,43 @@ const clientUserId = gameSession.clientUserId;
 							stroke-linecap="round"
 							stroke-linejoin="round"
 							aria-hidden="true"
-							><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"></path><path d="M3 3.5V8h4.5"></path><path
-								d="M12 8v4.5l3 2"></path></svg
-						></button
-					>
-					<label id="auto-deal-label" class="poker-auto-deal"
-						><input type="checkbox" id="auto-deal-toggle" /><span>{t('autoDeal')}</span></label
-					>
-					{
-						!isSng && (
-							<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden>
-								{t('rebuyChips')}
-							</button>
-						)
-					}
+						>
+							<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"></path>
+							<path d="M3 3.5V8h4.5"></path>
+							<path d="M12 8v4.5l3 2"></path>
+						</svg>
+					</button>
+					<label id="auto-deal-label" class="poker-auto-deal">
+						<input type="checkbox" id="auto-deal-toggle" />
+						<span>{t('autoDeal')}</span>
+					</label>
+					{!isSng && (
+						<button id="btn-rebuy" data-testid="btn-rebuy" class="poker-action poker-gold" hidden>
+							{t('rebuyChips')}
+						</button>
+					)}
 				</div>
 				<div class="poker-bet-picker">
-					{
-						(['halfPot', 'twoThirdsPot', 'fullPot', 'maxRaise'] as const).map((key, index) => (
-							<button
-								class="quick-bet-chip poker-preset"
-								data-preset={index}
-								title={t(key)}
-								aria-label={t(key)}
-								aria-pressed="false"
-							>
-								<>
-									<span class="poker-preset-label">
-										{['½', '⅔', t('presetPot'), t('max')][index]}
-									</span>
-									<span data-preset-amount>—</span>
-								</>
-							</button>
-						))
-					}
-					<label class="poker-custom"
-						><DecoIcon name="chip" size={16} /><span class="sr-only">{t('customRaise')}</span><input
+					{(['halfPot', 'twoThirdsPot', 'fullPot', 'maxRaise'] as const).map((key, index) => (
+						<button
+							class="quick-bet-chip poker-preset"
+							data-preset={index}
+							title={t(key)}
+							aria-label={t(key)}
+							aria-pressed="false"
+						>
+							<>
+								<span class="poker-preset-label">
+									{['½', '⅔', t('presetPot'), t('max')][index]}
+								</span>
+								<span data-preset-amount>—</span>
+							</>
+						</button>
+					))}
+					<label class="poker-custom">
+						<DecoIcon name="chip" size={16} />
+						<span class="sr-only">{t('customRaise')}</span>
+						<input
 							id="bet-input"
 							type="number"
 							min="10"
@@ -430,8 +446,8 @@ const clientUserId = gameSession.clientUserId;
 							step="1"
 							value="20"
 							inputmode="numeric"
-						/></label
-					>
+						/>
+					</label>
 					<input
 						id="bet-slider"
 						aria-label={t('customRaise')}
@@ -445,10 +461,15 @@ const clientUserId = gameSession.clientUserId;
 			</div>
 			<div id="llm-overlay" class="hidden poker-llm-overlay">
 				<div>
-					<h2>{t('llmOverlayTitle')}</h2><p>{t('llmOverlaySubtitle')}</p><p>
-						{t('llmOverlayBody')}
-					</p><a class="poker-action poker-gold" href="/profile">{t('llmOverlayConfigure')}</a
-					><button id="llm-overlay-close" class="poker-action">{t('llmOverlayPlayWithout')}</button>
+					<h2>{t('llmOverlayTitle')}</h2>
+					<p>{t('llmOverlaySubtitle')}</p>
+					<p>{t('llmOverlayBody')}</p>
+					<a class="poker-action poker-gold" href="/profile">
+						{t('llmOverlayConfigure')}
+					</a>
+					<button id="llm-overlay-close" class="poker-action">
+						{t('llmOverlayPlayWithout')}
+					</button>
 				</div>
 			</div>
 		</div>
@@ -457,94 +478,97 @@ const clientUserId = gameSession.clientUserId;
 				<h2 id="recap-title">
 					{t('handRecap')}
 					<span id="recap-hand" class="poker-recap-number"></span>
-				</h2><span id="recap-delta" class="poker-recap-delta" hidden></span><button
-					data-close-panel
-					aria-label={t('close')}
-					class="poker-utility">×</button
-				>
-			</header><div class="poker-drawer-body">
+				</h2>
+				<span id="recap-delta" class="poker-recap-delta" hidden></span>
+				<button data-close-panel aria-label={t('close')} class="poker-utility">
+					×
+				</button>
+			</header>
+			<div class="poker-drawer-body">
 				<ol id="poker-recap" class="poker-recap"></ol>
 			</div>
 		</dialog>
 		<dialog id="history-panel" class="poker-drawer" aria-labelledby="history-title">
 			<header>
-				<h2 id="history-title">{t('handHistory')}</h2><button
-					data-close-panel
-					aria-label={t('close')}
-					class="poker-utility">×</button
-				>
-			</header><div class="poker-drawer-body">
-				<p id="poker-history-empty">{t('historyEmpty')}</p><ol id="poker-history"></ol>
+				<h2 id="history-title">{t('handHistory')}</h2>
+				<button data-close-panel aria-label={t('close')} class="poker-utility">
+					×
+				</button>
+			</header>
+			<div class="poker-drawer-body">
+				<p id="poker-history-empty">{t('historyEmpty')}</p>
+				<ol id="poker-history"></ol>
 			</div>
 		</dialog>
 		<dialog id="rules-panel" class="poker-drawer" aria-labelledby="rules-title">
 			<header>
-				<h2 id="rules-title">{t('handRankings')}</h2><button
-					data-close-panel
-					aria-label={t('close')}
-					class="poker-utility">×</button
-				>
-			</header><div class="poker-drawer-body">
+				<h2 id="rules-title">{t('handRankings')}</h2>
+				<button data-close-panel aria-label={t('close')} class="poker-utility">
+					×
+				</button>
+			</header>
+			<div class="poker-drawer-body">
 				<ol class="poker-rankings">
-					{
-						Object.keys(HAND_RANKINGS)
-							.reverse()
-							.map((key) => (
-								<li>
-									<>
-										<span>{getPokerHandName(locale, key as keyof typeof HAND_RANKINGS)}</span>
-										<span aria-hidden="true">
+					{Object.keys(HAND_RANKINGS)
+						.reverse()
+						.map((key) => (
+							<li>
+								<>
+									<span>{getPokerHandName(locale, key as keyof typeof HAND_RANKINGS)}</span>
+									<span aria-hidden="true">
+										{
 											{
-												{
-													ROYAL_FLUSH: 'A K Q J 10 ♠',
-													STRAIGHT_FLUSH: '9 8 7 6 5 ♥',
-													FOUR_OF_A_KIND: 'Q Q Q Q 3',
-													FULL_HOUSE: 'J J J 8 8',
-													FLUSH: 'A 10 8 6 3 ♦',
-													STRAIGHT: '9 8 7 6 5',
-													THREE_OF_A_KIND: '7 7 7 K 2',
-													TWO_PAIR: 'K K 6 6 9',
-													PAIR: 'A A Q 8 3',
-													HIGH_CARD: 'A J 9 5 2',
-												}[key]
-											}
-										</span>
-									</>
-								</li>
-							))
-					}
-				</ol><h3>{t('gameRules')}</h3><ul class="poker-rules">
-					{
-						(
-							[
-								'ruleHoleCards',
-								'ruleCommunityCards',
-								'ruleBestHand',
-								'ruleHighestWins',
-								'betFoldRule',
-								'betCheckRule',
-							] as const
-						).map((key) => <li>{t(key)}</li>)
-					}<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li><li>
-						{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}
-					</li><li>{t('shortcutsHint')}</li>
+												ROYAL_FLUSH: 'A K Q J 10 ♠',
+												STRAIGHT_FLUSH: '9 8 7 6 5 ♥',
+												FOUR_OF_A_KIND: 'Q Q Q Q 3',
+												FULL_HOUSE: 'J J J 8 8',
+												FLUSH: 'A 10 8 6 3 ♦',
+												STRAIGHT: '9 8 7 6 5',
+												THREE_OF_A_KIND: '7 7 7 K 2',
+												TWO_PAIR: 'K K 6 6 9',
+												PAIR: 'A A Q 8 3',
+												HIGH_CARD: 'A J 9 5 2',
+											}[key]
+										}
+									</span>
+								</>
+							</li>
+						))}
+				</ol>
+				<h3>{t('gameRules')}</h3>
+				<ul class="poker-rules">
+					{(
+						[
+							'ruleHoleCards',
+							'ruleCommunityCards',
+							'ruleBestHand',
+							'ruleHighestWins',
+							'betFoldRule',
+							'betCheckRule',
+						] as const
+					).map((key) => (
+						<li>{t(key)}</li>
+					))}
+					<li>{t('betMinimum', { amount: formatChips(MIN_BET, locale) })}</li>
+					<li>{t('betMaximum', { amount: formatChips(MAX_BET, locale) })}</li>
+					<li>{t('shortcutsHint')}</li>
 				</ul>
 			</div>
 		</dialog>
 		<dialog id="settings-panel" class="poker-drawer" aria-labelledby="settings-title">
 			<header>
-				<h2 id="settings-title">{t('gameSettings')}</h2><button
-					data-close-panel
-					aria-label={t('close')}
-					class="poker-utility">×</button
-				>
-			</header><div class="poker-drawer-body">
+				<h2 id="settings-title">{t('gameSettings')}</h2>
+				<button data-close-panel aria-label={t('close')} class="poker-utility">
+					×
+				</button>
+			</header>
+			<div class="poker-drawer-body">
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<!-- Starting Chips (cash only; tournament stacks are fixed) -->
 					<div hidden={isSng}>
-						<label for="setting-starting-chips" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('startingChips')}</label
-						>
+						<label for="setting-starting-chips" class="block text-xs text-[var(--deco-muted)] mb-1">
+							{t('startingChips')}
+						</label>
 						<input
 							type="number"
 							id="setting-starting-chips"
@@ -557,9 +581,9 @@ const clientUserId = gameSession.clientUserId;
 
 					<!-- Small Blind (cash only) -->
 					<div hidden={isSng}>
-						<label for="setting-small-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('smallBlind')}</label
-						>
+						<label for="setting-small-blind" class="block text-xs text-[var(--deco-muted)] mb-1">
+							{t('smallBlind')}
+						</label>
 						<input
 							type="number"
 							id="setting-small-blind"
@@ -572,9 +596,9 @@ const clientUserId = gameSession.clientUserId;
 
 					<!-- Big Blind (cash only) -->
 					<div hidden={isSng}>
-						<label for="setting-big-blind" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('bigBlind')}</label
-						>
+						<label for="setting-big-blind" class="block text-xs text-[var(--deco-muted)] mb-1">
+							{t('bigBlind')}
+						</label>
 						<input
 							type="number"
 							id="setting-big-blind"
@@ -587,9 +611,9 @@ const clientUserId = gameSession.clientUserId;
 
 					<!-- AI Speed -->
 					<div>
-						<label for="setting-ai-speed" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('aiSpeed')}</label
-						>
+						<label for="setting-ai-speed" class="block text-xs text-[var(--deco-muted)] mb-1">
+							{t('aiSpeed')}
+						</label>
 						<select
 							id="setting-ai-speed"
 							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
@@ -602,9 +626,12 @@ const clientUserId = gameSession.clientUserId;
 
 					<!-- AI Player 2 Difficulty -->
 					<div>
-						<label for="setting-ai-difficulty-1" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('player2Difficulty')}</label
+						<label
+							for="setting-ai-difficulty-1"
+							class="block text-xs text-[var(--deco-muted)] mb-1"
 						>
+							{t('player2Difficulty')}
+						</label>
 						<select
 							id="setting-ai-difficulty-1"
 							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
@@ -617,9 +644,12 @@ const clientUserId = gameSession.clientUserId;
 
 					<!-- AI Player 3 Difficulty -->
 					<div>
-						<label for="setting-ai-difficulty-2" class="block text-xs text-[var(--deco-muted)] mb-1"
-							>{t('player3Difficulty')}</label
+						<label
+							for="setting-ai-difficulty-2"
+							class="block text-xs text-[var(--deco-muted)] mb-1"
 						>
+							{t('player3Difficulty')}
+						</label>
 						<select
 							id="setting-ai-difficulty-2"
 							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
@@ -634,8 +664,10 @@ const clientUserId = gameSession.clientUserId;
 					<div>
 						<label
 							for="setting-ai-personality-1"
-							class="block text-xs text-[var(--deco-muted)] mb-1">{t('player2Style')}</label
+							class="block text-xs text-[var(--deco-muted)] mb-1"
 						>
+							{t('player2Style')}
+						</label>
 						<select
 							id="setting-ai-personality-1"
 							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
@@ -651,8 +683,10 @@ const clientUserId = gameSession.clientUserId;
 					<div>
 						<label
 							for="setting-ai-personality-2"
-							class="block text-xs text-[var(--deco-muted)] mb-1">{t('player3Style')}</label
+							class="block text-xs text-[var(--deco-muted)] mb-1"
 						>
+							{t('player3Style')}
+						</label>
 						<select
 							id="setting-ai-personality-2"
 							class="w-full bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] px-3 py-2 rounded border border-[var(--deco-line)] focus:border-[var(--deco-brass)] focus:outline-none"
@@ -700,23 +734,23 @@ const clientUserId = gameSession.clientUserId;
 				</div>
 
 				<p class="text-xs text-[var(--deco-muted)]">{t('settingsApplyHint')}</p>
-				<p>{t('opponentDefaults')}</p><section class="poker-ai-settings" hidden={isSng}>
-					<h3>{t('aiRival')}</h3><p id="ai-rival-status">
-						{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}
-					</p><button id="btn-ai-move" class="poker-action" disabled={gameSession.isGuest}
-						>{t('askAiRival')}</button
-					><p>
-						{
-							gameSession.isGuest ? (
-								t('aiGuestHint2')
-							) : (
-								<>
-									{aiProfileHintParts[0]}
-									<a href="/profile">{t('aiProfileSettings')}</a>
-									{aiProfileHintParts[1]}
-								</>
-							)
-						}
+				<p>{t('opponentDefaults')}</p>
+				<section class="poker-ai-settings" hidden={isSng}>
+					<h3>{t('aiRival')}</h3>
+					<p id="ai-rival-status">{gameSession.isGuest ? t('aiGuestHint') : t('aiLoadingHint')}</p>
+					<button id="btn-ai-move" class="poker-action" disabled={gameSession.isGuest}>
+						{t('askAiRival')}
+					</button>
+					<p>
+						{gameSession.isGuest ? (
+							t('aiGuestHint2')
+						) : (
+							<>
+								{aiProfileHintParts[0]}
+								<a href="/profile">{t('aiProfileSettings')}</a>
+								{aiProfileHintParts[1]}
+							</>
+						)}
 					</p>
 				</section>
 			</div>

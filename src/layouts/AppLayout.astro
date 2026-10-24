@@ -75,24 +75,26 @@ const formattedChipBalance = chipBalance === null ? null : formatChips(chipBalan
 						</a>
 
 						<nav class="hidden md:flex items-center gap-8">
-							<a href="/missions" class="deco-link">{t('missions')}</a>
-							<a href="/games/leaderboard" class="deco-link">{t('leaderboard')}</a>
+							<a href="/missions" class="deco-link">
+								{t('missions')}
+							</a>
+							<a href="/games/leaderboard" class="deco-link">
+								{t('leaderboard')}
+							</a>
 						</nav>
 
 						<div class="flex items-center gap-4">
 							<LanguagePicker />
-							{
-								user && (
-									<div class="hidden md:block">
-										<div class="deco-chip-pill">
-											<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
-											<span class="font-body font-medium tabular-nums" data-chip-balance>
-												{formattedChipBalance ?? formatChips(0, locale)}
-											</span>
-										</div>
+							{user && (
+								<div class="hidden md:block">
+									<div class="deco-chip-pill">
+										<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
+										<span class="font-body font-medium tabular-nums" data-chip-balance>
+											{formattedChipBalance ?? formatChips(0, locale)}
+										</span>
 									</div>
-								)
-							}
+								</div>
+							)}
 							<UserNav />
 						</div>
 					</div>
@@ -108,32 +110,56 @@ const formattedChipBalance = chipBalance === null ? null : formatChips(chipBalan
 						<div>
 							<h3 class="deco-heading text-lg mb-4">{t('games')}</h3>
 							<ul class="space-y-2">
-								<li><a href="/#games" class="deco-footer-link">{t('allGames')}</a></li>
 								<li>
-									<a href="/games/poker" class="deco-footer-link">{getGameName(locale, 'poker')}</a>
+									<a href="/#games" class="deco-footer-link">
+										{t('allGames')}
+									</a>
 								</li>
 								<li>
-									<a href="/games/blackjack" class="deco-footer-link"
-										>{getGameName(locale, 'blackjack')}</a
-									>
+									<a href="/games/poker" class="deco-footer-link">
+										{getGameName(locale, 'poker')}
+									</a>
+								</li>
+								<li>
+									<a href="/games/blackjack" class="deco-footer-link">
+										{getGameName(locale, 'blackjack')}
+									</a>
 								</li>
 							</ul>
 						</div>
 						<div>
 							<h3 class="deco-heading text-lg mb-4">Arcturus</h3>
 							<ul class="space-y-2">
-								<li><a href="/missions" class="deco-footer-link">{t('missions')}</a></li>
 								<li>
-									<a href="/games/leaderboard" class="deco-footer-link">{t('leaderboard')}</a>
+									<a href="/missions" class="deco-footer-link">
+										{t('missions')}
+									</a>
 								</li>
-								<li><a href="/profile" class="deco-footer-link">{t('profile')}</a></li>
+								<li>
+									<a href="/games/leaderboard" class="deco-footer-link">
+										{t('leaderboard')}
+									</a>
+								</li>
+								<li>
+									<a href="/profile" class="deco-footer-link">
+										{t('profile')}
+									</a>
+								</li>
 							</ul>
 						</div>
 						<div>
 							<h3 class="deco-heading text-lg mb-4">{t('legal')}</h3>
 							<ul class="space-y-2">
-								<li><a href="#" class="deco-footer-link">{t('responsibleGaming')}</a></li>
-								<li><a href="#" class="deco-footer-link">{t('adultsOnly')}</a></li>
+								<li>
+									<a href="#" class="deco-footer-link">
+										{t('responsibleGaming')}
+									</a>
+								</li>
+								<li>
+									<a href="#" class="deco-footer-link">
+										{t('adultsOnly')}
+									</a>
+								</li>
 							</ul>
 						</div>
 					</div>

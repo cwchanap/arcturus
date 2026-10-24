@@ -52,7 +52,9 @@ const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] =
 	>
 		<header class="mb-6 flex flex-wrap items-end justify-between gap-4">
 			<div>
-				<a href="/games" class="text-[var(--deco-muted)]">← {t('backToGames')}</a>
+				<a href="/games" class="text-[var(--deco-muted)]">
+					← {t('backToGames')}
+				</a>
 				<h1 class="deco-section-title text-4xl">{getGameName(locale, 'video-poker')}</h1>
 				<p class="text-[var(--deco-muted)]">{t('subtitle')}</p>
 			</div>
@@ -74,22 +76,20 @@ const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] =
 			</div>
 
 			<div class="flex w-full justify-start gap-3 overflow-x-auto pb-2 sm:justify-center">
-				{
-					Array.from({ length: 5 }, (_, index) => (
-						<div class="relative h-28 w-20 shrink-0">
-							<CardSlot id={`video-poker-slot-${index}`} size="large" showPlaceholder={true} />
-							<button
-								type="button"
-								data-card-index={index}
-								data-card-id=""
-								aria-label={t('cardAria', { number: String(index + 1) })}
-								aria-pressed="false"
-								disabled
-								class="card-hold-toggle absolute inset-0 rounded-xl border-2 border-transparent"
-							/>
-						</div>
-					))
-				}
+				{Array.from({ length: 5 }, (_, index) => (
+					<div class="relative h-28 w-20 shrink-0">
+						<CardSlot id={`video-poker-slot-${index}`} size="large" showPlaceholder={true} />
+						<button
+							type="button"
+							data-card-index={index}
+							data-card-id=""
+							aria-label={t('cardAria', { number: String(index + 1) })}
+							aria-pressed="false"
+							disabled
+							class="card-hold-toggle absolute inset-0 rounded-xl border-2 border-transparent"
+						/>
+					</div>
+				))}
 			</div>
 
 			<div
@@ -97,22 +97,19 @@ const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] =
 				role="status"
 				aria-live="polite"
 				class="mt-4 min-h-6 text-center"
-			>
-			</div>
+			></div>
 
 			<div class="mt-5 flex flex-wrap justify-center gap-2">
-				{
-					WAGER_OPTIONS.map((wager) => (
-						<button
-							type="button"
-							data-wager={wager}
-							aria-pressed={wager === 1 ? 'true' : 'false'}
-							class="deco-btn rounded-lg px-4 py-2"
-						>
-							{formatChips(wager, locale)}
-						</button>
-					))
-				}
+				{WAGER_OPTIONS.map((wager) => (
+					<button
+						type="button"
+						data-wager={wager}
+						aria-pressed={wager === 1 ? 'true' : 'false'}
+						class="deco-btn rounded-lg px-4 py-2"
+					>
+						{formatChips(wager, locale)}
+					</button>
+				))}
 			</div>
 
 			<div class="mt-5 flex justify-center">
@@ -126,16 +123,14 @@ const PAYTABLE_PAYOUT_KEYS: readonly MessageKey<typeof VIDEO_POKER_MESSAGES>[] =
 		<aside class="deco-panel mt-6 p-5">
 			<h2 class="deco-section-title text-2xl">{t('paytable')}</h2>
 			<div class="mt-3 grid gap-2">
-				{
-					PAYTABLE_ROWS.map((_row, index) => (
-						<div class="flex justify-between gap-4">
-							<>
-								<span>{t(PAYTABLE_LABEL_KEYS[index]!)}</span>
-								<span>{t(PAYTABLE_PAYOUT_KEYS[index]!)}</span>
-							</>
-						</div>
-					))
-				}
+				{PAYTABLE_ROWS.map((_row, index) => (
+					<div class="flex justify-between gap-4">
+						<>
+							<span>{t(PAYTABLE_LABEL_KEYS[index]!)}</span>
+							<span>{t(PAYTABLE_PAYOUT_KEYS[index]!)}</span>
+						</>
+					</div>
+				))}
 			</div>
 		</aside>
 	</main>

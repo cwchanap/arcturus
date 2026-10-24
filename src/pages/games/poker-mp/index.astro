@@ -12,9 +12,7 @@ const t = multiplayerPokerTranslator(locale);
 	<div class="max-w-xl mx-auto p-8 space-y-6">
 		<h1 class="deco-section-title text-3xl">{getGameName(locale, 'poker-mp')}</h1>
 
-		<section
-			class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4"
-		>
+		<section class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4">
 			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">{t('createPrivateRoom')}</h2>
 			<form id="create-form" class="space-y-3">
 				<label class="block text-[var(--deco-ivory-dim)]">
@@ -24,7 +22,9 @@ const t = multiplayerPokerTranslator(locale);
 						class="ml-2 bg-[var(--deco-obsidian-2)] text-[var(--deco-ivory)] border border-[var(--deco-line)] p-1 rounded"
 					>
 						<option value="2">{t('headsUp')}</option>
-						<option value="4" selected>4</option>
+						<option value="4" selected>
+							4
+						</option>
 						<option value="6">6</option>
 					</select>
 				</label>
@@ -58,9 +58,7 @@ const t = multiplayerPokerTranslator(locale);
 			</form>
 		</section>
 
-		<section
-			class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4"
-		>
+		<section class="bg-[var(--deco-obsidian-2)] border border-[var(--deco-brass-dim)] p-6 rounded-lg space-y-4">
 			<h2 class="text-xl font-semibold text-[var(--deco-brass)]">{t('joinWithCode')}</h2>
 			<form id="join-form" class="space-y-3">
 				<input

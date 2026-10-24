@@ -70,7 +70,9 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 				balance={formatChips(gameSession.initialBalance, locale)}
 				balanceLabel={getBalanceLabel(locale, gameSession.isGuest)}
 			>
-				<span class="tc-top">{cabinet('top')} <strong>50 : 1</strong></span>
+				<span class="tc-top">
+					{cabinet('top')} <strong>50 : 1</strong>
+				</span>
 				<button
 					type="button"
 					aria-haspopup="dialog"
@@ -79,8 +81,10 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					aria-controls="sic-bo-history"
 					aria-expanded="false"
 					aria-label={cabinet('history')}
-					title={cabinet('history')}><DecoIcon name="menu" size={17} /></button
+					title={cabinet('history')}
 				>
+					<DecoIcon name="menu" size={17} />
+				</button>
 				<button
 					type="button"
 					aria-haspopup="dialog"
@@ -89,110 +93,112 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 					aria-controls="sic-bo-paytable"
 					aria-expanded="false"
 					aria-label={t('paytableA')}
-					title={t('paytableA')}>?</button
+					title={t('paytableA')}
 				>
+					?
+				</button>
 			</TableCabinetHeader>
 			<section class="tc-stage" aria-label={t('subtitle')}>
 				<div class="tc-rays" aria-hidden="true"></div>
 				<div class="tc-dice">
-					{
-						[0, 1, 2].map((i) => (
-							<div
-								id={`sic-bo-die-${i}`}
-								data-testid={`sic-bo-die-${i}`}
-								data-value="0"
-								class="tc-die"
-							>
-								<span data-die-value>—</span>
-								{Array.from({ length: 9 }, () => (
-									<i class="tc-pip" aria-hidden="true" />
-								))}
-							</div>
-						))
-					}
+					{[0, 1, 2].map((i) => (
+						<div
+							id={`sic-bo-die-${i}`}
+							data-testid={`sic-bo-die-${i}`}
+							data-value="0"
+							class="tc-die"
+						>
+							<span data-die-value>—</span>
+							{Array.from({ length: 9 }, () => (
+								<i class="tc-pip" aria-hidden="true" />
+							))}
+						</div>
+					))}
 				</div>
 				<div class="sic-bo-total">
 					<div class="tc-diamond">
-						<strong id="sic-bo-total">—</strong><small>{cabinet('total')}</small>
-					</div><div
+						<strong id="sic-bo-total">—</strong>
+						<small>{cabinet('total')}</small>
+					</div>
+					<div
 						id="sic-bo-result"
 						data-testid="sic-bo-result"
 						role="status"
 						aria-live="polite"
-					>
-					</div>
+					></div>
 				</div>
 			</section>
 			<section class="tc-content">
 				<div class="sic-bo-primary">
-					{
-						primaryBets.map((bet) => (
-							<button
-								type="button"
-								data-bet-key={bet.key}
-								aria-pressed="false"
-								class="sic-bo-bet-button"
-							>
-								<>
-									<span class="sic-bo-bet-label">{t(PRIMARY_BET_LABEL_KEYS[bet.key])}</span>
-									<span class="sic-bo-bet-odds">{bet.odds}</span>
-									<span class="sic-bo-bet-amount" data-bet-amount />
-								</>
-							</button>
-						))
-					}
+					{primaryBets.map((bet) => (
+						<button
+							type="button"
+							data-bet-key={bet.key}
+							aria-pressed="false"
+							class="sic-bo-bet-button"
+						>
+							<>
+								<span class="sic-bo-bet-label">{t(PRIMARY_BET_LABEL_KEYS[bet.key])}</span>
+								<span class="sic-bo-bet-odds">{bet.odds}</span>
+								<span class="sic-bo-bet-amount" data-bet-amount />
+							</>
+						</button>
+					))}
 				</div>
 				<div class="sic-bo-totals">
-					{
-						totalBets.map((bet) => (
-							<button
-								type="button"
-								data-bet-key={bet.key}
-								aria-pressed="false"
-								class="sic-bo-bet-button"
-							>
-								<>
-									<span class="sic-bo-bet-label">{bet.label}</span>
-									<span class="sic-bo-bet-odds">{bet.odds}</span>
-									<span class="sic-bo-bet-amount" data-bet-amount />
-								</>
-							</button>
-						))
-					}
+					{totalBets.map((bet) => (
+						<button
+							type="button"
+							data-bet-key={bet.key}
+							aria-pressed="false"
+							class="sic-bo-bet-button"
+						>
+							<>
+								<span class="sic-bo-bet-label">{bet.label}</span>
+								<span class="sic-bo-bet-odds">{bet.odds}</span>
+								<span class="sic-bo-bet-amount" data-bet-amount />
+							</>
+						</button>
+					))}
 				</div>
-				<div class="tc-divider" aria-hidden="true">◆ ◇ ◆</div>
+				<div class="tc-divider" aria-hidden="true">
+					◆ ◇ ◆
+				</div>
 				<div class="tc-controls">
 					<div class="tc-chips">
-						<span class="tc-label">{cabinet('chip')}</span>{
-							SIC_BO_CHIP_DENOMINATIONS.map((amount) => (
-								<button
-									type="button"
-									data-denomination={amount}
-									aria-pressed="false"
-									class="tc-chip"
-									aria-label={formatChips(amount, locale)}
-								>
-									{amount}
-								</button>
-							))
-						}
+						<span class="tc-label">{cabinet('chip')}</span>
+						{SIC_BO_CHIP_DENOMINATIONS.map((amount) => (
+							<button
+								type="button"
+								data-denomination={amount}
+								aria-pressed="false"
+								class="tc-chip"
+								aria-label={formatChips(amount, locale)}
+							>
+								{amount}
+							</button>
+						))}
 					</div>
-					<span id="sic-bo-total-stake" data-testid="sic-bo-total-stake" class="tc-stake"
-						>{t('totalStake', { amount: formatChips(0, locale) })}</span
-					>
+					<span id="sic-bo-total-stake" data-testid="sic-bo-total-stake" class="tc-stake">
+						{t('totalStake', { amount: formatChips(0, locale) })}
+					</span>
 					<button
 						type="button"
 						id="sic-bo-clear-bets"
 						data-testid="sic-bo-clear-bets"
-						class="tc-button">{t('clearBets')}</button
+						class="tc-button"
 					>
+						{t('clearBets')}
+					</button>
 					<button
 						type="button"
 						id="sic-bo-action"
 						data-testid="sic-bo-action"
 						class="tc-primary"
-						disabled>{t('roll')}</button
+						disabled
 					>
+						{t('roll')}
+					</button>
 				</div>
 				<div
 					id="sic-bo-status"
@@ -208,25 +214,31 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 		</div>
 		<CabinetDrawer id="sic-bo-paytable" title={t('paytableA')} closeLabel={cabinet('close')}>
 			<p class="tc-empty">{t('paytableNote')}</p>
-			<div class="tc-pay-row"><span>{t('paytablePrimary')}</span><span>1:1</span></div>
-			<div class="tc-pay-row"><span>{t('paytableAnyTriple')}</span><span>24:1</span></div>
-			{
-				paytableTotalRows.map((row) => (
-					<div class="tc-pay-row">
-						<>
-							<span>{t('paytableTotal', { value: row.label })}</span>
-							<span>{row.odds}</span>
-						</>
-					</div>
-				))
-			}
 			<div class="tc-pay-row">
-				<span>{t('paytableTotal', { value: '9–12' })}</span><span>6:1</span>
+				<span>{t('paytablePrimary')}</span>
+				<span>1:1</span>
+			</div>
+			<div class="tc-pay-row">
+				<span>{t('paytableAnyTriple')}</span>
+				<span>24:1</span>
+			</div>
+			{paytableTotalRows.map((row) => (
+				<div class="tc-pay-row">
+					<>
+						<span>{t('paytableTotal', { value: row.label })}</span>
+						<span>{row.odds}</span>
+					</>
+				</div>
+			))}
+			<div class="tc-pay-row">
+				<span>{t('paytableTotal', { value: '9–12' })}</span>
+				<span>6:1</span>
 			</div>
 		</CabinetDrawer>
-		<CabinetDrawer id="sic-bo-history" title={cabinet('history')} closeLabel={cabinet('close')}
-			><ol id="sic-bo-recent"></ol><p class="tc-empty">{cabinet('noHistory')}</p></CabinetDrawer
-		>
+		<CabinetDrawer id="sic-bo-history" title={cabinet('history')} closeLabel={cabinet('close')}>
+			<ol id="sic-bo-recent"></ol>
+			<p class="tc-empty">{cabinet('noHistory')}</p>
+		</CabinetDrawer>
 	</div>
 </CasinoLayout>
 <script>

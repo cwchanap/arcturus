@@ -135,6 +135,8 @@ describe('POST /api/roulette/spin', () => {
 		expect(body.newBalance).toBe(1_350);
 		expect(body.previousBalance).toBe(1_000);
 		expect(body.syncId).toBe('spin-1');
+		// The winning straight-up bet is server-evaluated, so the feat rides on
+		// the same server-built command.
 		expect(calls).toEqual([
 			{
 				d1,
@@ -143,11 +145,20 @@ describe('POST /api/roulette/spin', () => {
 					settlementId: 'spin-1',
 					game: 'roulette',
 					delta: 350,
+					feats: ['straight_up'],
 					stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 350 },
 				},
 				requiredFunds: 10,
 			},
 		]);
+	});
+
+	test('emits no feats when no straight bet won, even on a winning spin', async () => {
+		const { handler, calls } = createHandler({ winningNumber: 17 });
+		await handler(context({ body: { syncId: 'spin-black', bets: [makeBet('black', 10)] } }));
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.command.delta).toBe(10); // red 17 won
+		expect('feats' in (calls[0]?.command ?? {})).toBe(false);
 	});
 
 	test('passes totalBet as requiredFunds so the wallet can reject underfunded bets', async () => {

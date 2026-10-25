@@ -1,6 +1,6 @@
 # HPA-172 — Game-specific achievements: implementation plan
 
-**Status:** Proposed; no production code changed by this planning PR yet.  
+**Status:** Implemented in this PR; all checklist items verified, awaiting merge.  
 **Linear:** https://linear.app/cwchanap/issue/HPA-172/achievements-game-specific-badges  
 **Design:** [2026-10-23-game-specific-achievements-design.md](../specs/2026-10-23-game-specific-achievements-design.md)
 
@@ -102,13 +102,13 @@ Before coding, confirm `main` has not changed relevant achievement/wallet/SNG bo
 
 ## Completion checklist
 
-- [ ] Nine badges and four locales, unchanged existing checks, Specialist = 100 in one game
-- [ ] Single `WALLET_FEAT_GAMES` table using `as const satisfies`, closed `WalletFeatId`, and one shared feat-check helper
-- [ ] One `game_stats` read per achievement evaluation, aggregate locally, pass rows directly
-- [ ] Optional feats on existing wallet command/controller; invalid/duplicate/forbidden claims rejected before writes
-- [ ] One controller regression for all feat-free callers, no TCS/PGP game changes
-- [ ] Five wallet feats (Poker royal at showdown only), three milestones, one wallet-free SNG feat
-- [ ] SNG empty POST uses authenticated chip balance and existing toast, allows other newly earned badges
-- [ ] Sic Bo mocked-settlement toast E2E, locked-profile E2E, SNG route/engine tests
-- [ ] No migration, new art, verification engine, event log or unrelated refactor
-- [ ] Full tests, lint, format, build; implementation in **this PR**, linked to HPA-172
+- [x] Nine badges and four locales, unchanged existing checks, Specialist = 100 in one game
+- [x] Single `WALLET_FEAT_GAMES` table using `as const satisfies`, closed `WalletFeatId`, and one shared feat-check helper
+- [x] One `game_stats` read per achievement evaluation, aggregate locally, pass rows directly
+- [x] Optional feats on existing wallet command/controller; invalid/duplicate/forbidden claims rejected before writes
+- [x] One controller regression for all feat-free callers, no TCS/PGP game changes
+- [x] Five wallet feats (Poker royal at showdown only), three milestones, one wallet-free SNG feat
+- [x] SNG empty POST uses authenticated chip balance and existing toast, allows other newly earned badges
+- [x] Sic Bo mocked-settlement toast E2E, locked-profile E2E, SNG route/engine tests
+- [x] No migration, new art, verification engine, event log or unrelated refactor
+- [x] Full tests, lint, format, build; implementation in **this PR**, linked to HPA-172

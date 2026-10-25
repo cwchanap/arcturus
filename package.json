@@ -40,7 +40,7 @@
 		]
 	},
 	"dependencies": {
-		"@astrojs/mdx": "^4.3.6",
+		"@astrojs/mdx": "^8.1.1",
 		"@libsql/client": "^0.18.0",
 		"@noble/hashes": "^2.4.0",
 		"@tailwindcss/vite": "^4.3.3",

@@ -220,7 +220,7 @@ describe('wallet settlement validation', () => {
 });
 
 describe('settleWalletRound', () => {
-	test('returns an existing receipt as a duplicate without reading balance again', async () => {
+	test('returns an existing receipt as a duplicate without writing again', async () => {
 		const calls: string[] = [];
 		const d1 = {
 			prepare(sql: string) {
@@ -229,6 +229,9 @@ describe('settleWalletRound', () => {
 					bind() {
 						return {
 							first: async () => ({ balance: 1200, attemptId: 'winner' }),
+							all: async () => [],
+							raw: async () => [],
+							run: async () => ({}),
 						};
 					},
 				};
@@ -239,7 +242,9 @@ describe('settleWalletRound', () => {
 			balance: 1200,
 			duplicate: true,
 		});
-		expect(calls).toHaveLength(1);
+		// Receipt lookup plus the best-effort achievement reads; nothing writes.
+		expect(calls.length).toBeGreaterThan(0);
+		expect(calls.every((sql) => sql.trimStart().toUpperCase().startsWith('SELECT'))).toBe(true);
 	});
 
 	test('rejects invalid feats before any receipt lookup or write', async () => {
@@ -548,5 +553,60 @@ describe('settleWalletRound (Miniflare D1 integration)', () => {
 		);
 
 		expect(result.newAchievements?.map((achievement) => achievement.id)).toContain('jackpot');
+	});
+
+	test('a retried settlement still evaluates feats on the duplicate path', async () => {
+		const userId = 'feat-retry';
+		await insertIntegrationUser(d1!, userId);
+
+		// The committed attempt carried no feats (its achievement evaluation was
+		// lost); the retried command still reports them, so the duplicate path
+		// re-evaluates and the feat is not lost for good.
+		const first = await settleWalletRound(
+			d1!,
+			userId,
+			command({
+				settlementId: 'slots-feat-round-2',
+				game: 'slots',
+				delta: 50,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 50 },
+			}),
+		);
+		expect(first.duplicate).toBe(false);
+
+		const retry = await settleWalletRound(
+			d1!,
+			userId,
+			command({
+				settlementId: 'slots-feat-round-2',
+				game: 'slots',
+				delta: 50,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 50 },
+				feats: ['jackpot'],
+			}),
+		);
+
+		expect(retry.duplicate).toBe(true);
+		expect(retry.newAchievements?.map((achievement) => achievement.id)).toContain('jackpot');
+	});
+
+	test('a duplicate retry never re-grants already-earned feats', async () => {
+		const userId = 'feat-retry-idempotent';
+		await insertIntegrationUser(d1!, userId);
+
+		const cmd = command({
+			settlementId: 'slots-feat-round-3',
+			game: 'slots',
+			delta: 50,
+			stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 50 },
+			feats: ['jackpot'],
+		});
+		await settleWalletRound(d1!, userId, cmd);
+
+		const retry = await settleWalletRound(d1!, userId, cmd);
+		expect(retry.duplicate).toBe(true);
+		expect(retry.newAchievements?.map((achievement) => achievement.id) ?? []).not.toContain(
+			'jackpot',
+		);
 	});
 });

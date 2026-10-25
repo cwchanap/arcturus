@@ -119,3 +119,25 @@ export function initAchievementToast(
 		},
 	};
 }
+
+/**
+ * Wire the shared AchievementToast markup (mounted once by CasinoLayout) to
+ * the 'achievement-earned' window event that settlement layers dispatch.
+ * Returns null when the markup is absent so non-casino hosts stay silent.
+ */
+export function bindAchievementToast(
+	root: Pick<Document, 'getElementById'> = document,
+): AchievementToastController | null {
+	const toast = root.getElementById('achievement-toast');
+	const icon = root.getElementById('achievement-icon');
+	const name = root.getElementById('achievement-name');
+	if (!toast || !icon || !name) return null;
+
+	const controller = initAchievementToast(() => ({ toast, icon, name }));
+	window.addEventListener('achievement-earned', (event: Event) => {
+		const { achievements } = (event as CustomEvent<{ achievements: AchievementToastEntry[] }>)
+			.detail;
+		if (Array.isArray(achievements)) controller.enqueue(achievements);
+	});
+	return controller;
+}

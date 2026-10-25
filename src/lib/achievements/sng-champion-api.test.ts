@@ -73,7 +73,7 @@ describe('POST /api/achievements/sng-champion', () => {
 
 		expect(response.status).toBe(200);
 		expect(await json(response)).toEqual({
-			newAchievements: [{ id: 'sng_champion', icon: '🏆' }],
+			newAchievements: [{ id: 'sng_champion', icon: CHAMPION.icon }],
 		});
 		expect(calls).toHaveLength(1);
 		expect(calls[0].userId).toBe('user-1');
@@ -97,7 +97,7 @@ describe('POST /api/achievements/sng-champion', () => {
 
 		const first = await handler(context());
 		expect(await json(first)).toEqual({
-			newAchievements: [{ id: 'sng_champion', icon: '🏆' }],
+			newAchievements: [{ id: 'sng_champion', icon: CHAMPION.icon }],
 		});
 
 		const second = await handler(context());
@@ -111,8 +111,8 @@ describe('POST /api/achievements/sng-champion', () => {
 		expect(response.status).toBe(200);
 		expect(await json(response)).toEqual({
 			newAchievements: [
-				{ id: 'sng_champion', icon: '🏆' },
-				{ id: 'big_score', icon: '💰' },
+				{ id: 'sng_champion', icon: CHAMPION.icon },
+				{ id: 'big_score', icon: BIG_SCORE.icon },
 			],
 		});
 	});

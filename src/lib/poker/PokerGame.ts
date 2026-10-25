@@ -192,7 +192,12 @@ export class PokerGame {
 	private readonly t: ReturnType<typeof pokerTranslator>;
 	private static readonly GUEST_BANKROLL_GAME_KEY = 'poker';
 
-	constructor(aiRandom?: () => number, settlementGate?: SettlementGate, sound?: PokerSound) {
+	constructor(
+		aiRandom?: () => number,
+		settlementGate?: SettlementGate,
+		sound?: PokerSound,
+		deckRandom?: () => number,
+	) {
 		this.aiRandom = aiRandom;
 		this.settlementGate = settlementGate ?? createSettlementGate();
 		this.sound = sound ?? pokerSound;
@@ -215,7 +220,10 @@ export class PokerGame {
 			isGuestModeValue(rootEl?.dataset?.guestMode);
 		this.mode = rootEl?.dataset?.pokerMode === 'sng' ? 'sng' : 'cash';
 
-		this.deck = new DeckManager(this.aiRandom);
+		// Deck randomness is a separate seam from AI decisions: a test can pin
+		// the deal, the AI, or both. The SNG whole-tournament sim passes the
+		// same seeded stream to both to reproduce a fixed tournament.
+		this.deck = new DeckManager(deckRandom);
 		this.ui = new PokerUIRenderer(this.mode);
 		this.aiRival = new AIRivalAssistant();
 		this.settingsManager = new GameSettingsManager();

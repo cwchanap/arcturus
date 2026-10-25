@@ -87,7 +87,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		champion: 'Reach #1 position on the leaderboard',
 		consistent: 'Win {wins} hands across all games',
 		comeback: 'Win after dropping below {threshold}',
-		royal_treatment: 'Show a royal flush at a contested showdown',
+		royal_treatment: 'Get a royal flush in Poker or Video Poker',
 		sng_champion: 'Finish 1st in a Sit & Go tournament',
 		triple_threat: 'Roll three matching dice and win a bet in Sic Bo',
 		straight_up: 'Win a straight-up number bet in Roulette',
@@ -95,7 +95,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		jackpot: 'Line up five sevens in Slots',
 		grand_tour: 'Play every game at least once',
 		specialist: 'Win {wins} hands in a single game',
-		big_score: 'Win {threshold} or more in a single game',
+		big_score: 'Win {threshold} or more in a single round',
 	} satisfies Record<AchievementId, string>,
 	'zh-Hant': {
 		rising_star: '進入排行榜前 {rank} 名',
@@ -103,7 +103,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		champion: '登上排行榜第 1 名',
 		consistent: '在所有遊戲中贏得 {wins} 局',
 		comeback: '在跌破 {threshold} 後贏得一局',
-		royal_treatment: '在攤牌時亮出皇家同花順',
+		royal_treatment: '在德州撲克或影音撲克中拿到皇家同花順',
 		sng_champion: '在錦標賽中奪得第 1 名',
 		triple_threat: '在骰寶擲出三顆相同骰子並贏得一注',
 		straight_up: '在輪盤贏得單號下注',
@@ -111,7 +111,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		jackpot: '在老虎機連成五個七',
 		grand_tour: '每款遊戲都至少遊玩一次',
 		specialist: '在單一遊戲中贏得 {wins} 局',
-		big_score: '在單一遊戲中贏得 {threshold} 或更多',
+		big_score: '在單一回合贏得 {threshold} 或更多',
 	},
 	'zh-Hans': {
 		rising_star: '进入排行榜前 {rank} 名',
@@ -119,7 +119,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		champion: '登上排行榜第 1 名',
 		consistent: '在所有游戏中赢得 {wins} 局',
 		comeback: '在跌破 {threshold} 后赢得一局',
-		royal_treatment: '在摊牌时亮出皇家同花顺',
+		royal_treatment: '在德州扑克或视频扑克中拿到皇家同花顺',
 		sng_champion: '在锦标赛中夺得第 1 名',
 		triple_threat: '在骰宝掷出三颗相同骰子并赢得一注',
 		straight_up: '在轮盘赢得单号下注',
@@ -127,7 +127,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		jackpot: '在老虎机连成五个七',
 		grand_tour: '每款游戏都至少游玩一次',
 		specialist: '在单一游戏中赢得 {wins} 局',
-		big_score: '在单一游戏中赢得 {threshold} 或更多',
+		big_score: '在单一回合赢得 {threshold} 或更多',
 	},
 	ja: {
 		rising_star: 'リーダーボード上位 {rank} 位にランクイン',
@@ -135,7 +135,7 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		champion: 'リーダーボード 1 位に到達',
 		consistent: '全ゲームで合計 {wins} 回勝利',
 		comeback: '{threshold}を下回った後に勝利する',
-		royal_treatment: 'ショーダウンでロイヤルフラッシュを見せる',
+		royal_treatment: 'ポーカーまたはビデオポーカーでロイヤルフラッシュを出す',
 		sng_champion: 'SNGトーナメントで1位になる',
 		triple_threat: 'シックボーで3つの同じ目を出して賭けに勝つ',
 		straight_up: 'ルーレットのストレート（単一数字）に勝つ',
@@ -143,9 +143,28 @@ const ACHIEVEMENT_DESCRIPTIONS = defineMessages({
 		jackpot: 'スロットでセブンを5つ揃える',
 		grand_tour: 'すべてのゲームを1回以上プレイする',
 		specialist: '1つのゲームで {wins} 回勝利',
-		big_score: '1つのゲームで {threshold} 以上勝利する',
+		big_score: '1ラウンドで {threshold} 以上勝利する',
 	},
 });
+
+const ACHIEVEMENT_TOAST_MESSAGES = defineMessages({
+	en: {
+		unlockedTitle: 'Achievement Unlocked',
+	},
+	'zh-Hant': {
+		unlockedTitle: '成就解鎖',
+	},
+	'zh-Hans': {
+		unlockedTitle: '成就解锁',
+	},
+	ja: {
+		unlockedTitle: '実績アンロック',
+	},
+});
+
+export function getAchievementToastTitle(locale: Locale): string {
+	return createTranslator(ACHIEVEMENT_TOAST_MESSAGES, locale)('unlockedTitle');
+}
 
 export function getAchievementName(locale: Locale, id: AchievementId): string {
 	return createTranslator(ACHIEVEMENT_NAMES, locale)(id);
@@ -178,7 +197,22 @@ export function getAchievementDescription(locale: Locale, id: AchievementId): st
 			return translate(id, {
 				threshold: formatChips(ACHIEVEMENT_THRESHOLDS.BIG_SCORE_WIN, locale),
 			});
-		default:
+		case 'champion':
+		case 'royal_treatment':
+		case 'sng_champion':
+		case 'triple_threat':
+		case 'straight_up':
+		case 'big_catch':
+		case 'jackpot':
+		case 'grand_tour':
 			return translate(id);
+		default:
+			// Exhaustiveness check: a new AchievementId without a case fails to
+			// compile here rather than leaking a raw {placeholder} template.
+			return assertUnreachable(id);
 	}
+}
+
+function assertUnreachable(value: never): never {
+	throw new Error(`Unhandled achievement id: ${String(value)}`);
 }

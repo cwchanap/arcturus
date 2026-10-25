@@ -71,7 +71,8 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 				balanceLabel={getBalanceLabel(locale, gameSession.isGuest)}
 			>
 				<span class="tc-top">
-					{cabinet('top')} <strong>50 : 1</strong>
+					{cabinet('top')}
+					<strong>50 : 1</strong>
 				</span>
 				<button
 					type="button"
@@ -239,26 +240,6 @@ const paytableTotalRows: Array<{ label: string; odds: string }> = [4, 5, 6, 7, 8
 			<ol id="sic-bo-recent"></ol>
 			<p class="tc-empty">{cabinet('noHistory')}</p>
 		</CabinetDrawer>
-		<!-- Achievement Toast -->
-		<div
-			id="achievement-toast"
-			data-testid="achievement-toast"
-			role="status"
-			aria-live="polite"
-			aria-atomic="true"
-			class="fixed bottom-4 right-4 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
-			style="z-index: 9999;"
-		>
-			<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl">🏆</span>
-			<div>
-				<p class="text-xs font-semibold uppercase tracking-wider opacity-80">
-					{t('achievementUnlocked')}
-				</p>
-				<p id="achievement-name" data-testid="achievement-name" class="font-bold text-lg">
-					Achievement Name
-				</p>
-			</div>
-		</div>
 	</div>
 </CasinoLayout>
 <script>

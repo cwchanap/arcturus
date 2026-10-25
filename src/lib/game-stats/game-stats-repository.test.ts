@@ -17,7 +17,6 @@ let updateGameStats!: GameStatsRepositoryModule['updateGameStats'];
 let getGameStats!: GameStatsRepositoryModule['getGameStats'];
 let initializeGameStats!: GameStatsRepositoryModule['initializeGameStats'];
 let getTopPlayersForGame!: GameStatsRepositoryModule['getTopPlayersForGame'];
-let getAggregateUserStats!: GameStatsRepositoryModule['getAggregateUserStats'];
 let getBulkUserWinsRanks!: (db: Database, userId: string) => Promise<Map<GameType, number>>;
 
 beforeAll(async () => {
@@ -32,7 +31,6 @@ beforeAll(async () => {
 	getGameStats = repository.getGameStats;
 	initializeGameStats = repository.initializeGameStats;
 	getTopPlayersForGame = repository.getTopPlayersForGame;
-	getAggregateUserStats = repository.getAggregateUserStats;
 	getBulkUserWinsRanks = repository.getBulkUserWinsRanks;
 });
 
@@ -680,45 +678,5 @@ describe('getTopPlayersForGame', () => {
 		const whereText = drizzleSqlText(capturedWhere.where);
 		// Only the gameType filter should be present, not the decided-hands threshold
 		expect(whereText).not.toContain(String(MIN_HANDS_FOR_WIN_RATE));
-	});
-});
-
-describe('getAggregateUserStats', () => {
-	test('aggregates stats across games', async () => {
-		const mockDb = createMockDb({
-			userStats: null,
-			allStats: [
-				{
-					userId: 'user1',
-					gameType: 'blackjack',
-					totalWins: 2,
-					totalLosses: 1,
-					handsPlayed: 3,
-					biggestWin: 200,
-					netProfit: 50,
-					updatedAt: new Date(),
-				},
-				{
-					userId: 'user1',
-					gameType: 'poker',
-					totalWins: 5,
-					totalLosses: 5,
-					handsPlayed: 10,
-					biggestWin: 500,
-					netProfit: -20,
-					updatedAt: new Date(),
-				},
-			],
-			defaultCount: 0,
-		});
-
-		const result = await getAggregateUserStats(mockDb, 'user1');
-		expect(result).toEqual({
-			totalWins: 7,
-			totalLosses: 6,
-			totalHandsPlayed: 13,
-			biggestWin: 500,
-			totalNetProfit: 30,
-		});
 	});
 });

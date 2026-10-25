@@ -63,23 +63,28 @@ export function getBetOdds(key: SicBoBetKey): number {
 	}
 }
 
+/** Whether all three dice show the same face. */
+export function isTriple(roll: SicBoRoll): boolean {
+	return roll[0] === roll[1] && roll[1] === roll[2];
+}
+
 /** Whether a bet wins on a given roll. Big/Small/Odd/Even lose on every triple. */
 export function isWinningBet(key: SicBoBetKey, roll: SicBoRoll): boolean {
 	if (!isSupportedBetKey(key)) throw new Error(`Unsupported Sic Bo bet key: ${key}`);
 	const [a, b, c] = roll;
 	const sum = a + b + c;
-	const isTriple = a === b && b === c;
+	const triple = isTriple(roll);
 	switch (key) {
 		case 'big':
-			return !isTriple && sum >= 11;
+			return !triple && sum >= 11;
 		case 'small':
-			return !isTriple && sum <= 10;
+			return !triple && sum <= 10;
 		case 'odd':
-			return !isTriple && sum % 2 === 1;
+			return !triple && sum % 2 === 1;
 		case 'even':
-			return !isTriple && sum % 2 === 0;
+			return !triple && sum % 2 === 0;
 		case 'any-triple':
-			return isTriple;
+			return triple;
 		default:
 			return sum === Number(key.slice('total:'.length));
 	}

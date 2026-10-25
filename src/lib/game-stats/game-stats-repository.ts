@@ -10,7 +10,6 @@ import { gameStats, user } from '../../db/schema';
 import type { Database } from '../db';
 import type { GameType, GameStats, RankingMetric } from './types';
 import { isValidGameType, MIN_HANDS_FOR_WIN_RATE } from './constants';
-import { aggregateGameStats } from './aggregation';
 
 /**
  * Raw player data from game stats query
@@ -355,15 +354,4 @@ export async function getTotalPlayersForGame(
 		.where(whereClause);
 
 	return result?.count ?? 0;
-}
-
-/**
- * Get aggregate stats across all games for a user
- */
-export async function getAggregateUserStats(
-	db: Database,
-	userId: string,
-): Promise<ReturnType<typeof aggregateGameStats>> {
-	const allStats = await getAllUserGameStats(db, userId);
-	return aggregateGameStats(allStats);
 }

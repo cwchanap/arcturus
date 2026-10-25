@@ -1,5 +1,6 @@
 ---
 import AppLayout from './AppLayout.astro';
+import AchievementToast from '../components/AchievementToast.astro';
 
 interface Props {
 	title?: string;
@@ -18,4 +19,7 @@ const { title = 'Arcturus Casino', headerSticky, bodyClass, footerClass } = Astr
 	footerClass={footerClass}
 >
 	<slot />
+	<!-- Shared achievement toast: every casino page gets the listener and
+	     markup, so badges granted on any settled round render feedback. -->
+	<AchievementToast />
 </AppLayout>

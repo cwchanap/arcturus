@@ -4909,7 +4909,10 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 
 		const timers = mockTrackedTimers();
 		try {
-			const game = new PokerGame(seededRandom(20261021), gate) as unknown as SimGame;
+			// One seeded stream drives both AI decisions and the deck so the
+			// whole tournament replays identically on every run.
+			const rng = seededRandom(20261021);
+			const game = new PokerGame(rng, gate, undefined, rng) as unknown as SimGame;
 			const TOTAL = 6 * SNG_START_STACK;
 
 			const humanCanAct = () => {

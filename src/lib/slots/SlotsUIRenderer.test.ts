@@ -145,7 +145,6 @@ interface DomFixtures {
 	paylines: FakeElement[];
 	recent: FakeElement;
 	status: FakeElement;
-	toast: FakeElement;
 	cell: (reel: number, row: number) => FakeElement | null;
 	glyph: (reel: number, row: number) => FakeElement | null;
 }
@@ -177,7 +176,6 @@ function setupSlotsDom(betIncrements: number[] = [1, 5, 10, 25, 50, 100]): DomFi
 	);
 	const recent = make('ol', { id: 'recent-spins' });
 	const status = make('div', { id: 'game-status', classes: ['hidden'] });
-	const toast = make('div', { id: 'achievement-toast', classes: ['hidden'] });
 
 	const betChips = betIncrements.map((amount) =>
 		make('button', { dataset: { bet: String(amount) }, classes: ['bet-chip'] }),
@@ -238,7 +236,6 @@ function setupSlotsDom(betIncrements: number[] = [1, 5, 10, 25, 50, 100]): DomFi
 		paylines,
 		recent,
 		status,
-		toast,
 		cell: findCell,
 		glyph: (reel, row) => {
 			const c = findCell(reel, row);
@@ -511,51 +508,6 @@ describe('SlotsUIRenderer', () => {
 		for (const speed of ['slow', 'normal', 'fast'] as const) {
 			const settings: SlotSettings = { spinSpeed: speed, soundEnabled: true, quickSpin: false };
 			expect(r.getSpinDurationMs(settings)).toBe(constantsGetSpinDurationMs(speed));
-		}
-	});
-
-	test('showAchievement reveals the toast with the provided text', () => {
-		const r = new SlotsUIRenderer();
-		r.showAchievement('Big win!');
-		expect(fx.toast.textContent).toBe('Big win!');
-		expect(fx.toast.hasClass('hidden')).toBe(false);
-	});
-
-	test('showAchievement clears the previous hide timer so a newer toast is not hidden early', () => {
-		const timers: Array<() => void> = [];
-		const originalSetTimeout = globalThis.setTimeout;
-		const originalClearTimeout = globalThis.clearTimeout;
-		const cleared: number[] = [];
-		let timerIdCounter = 0;
-
-		(globalThis as any).setTimeout = (fn: () => void) => {
-			const id = ++timerIdCounter;
-			timers[id] = fn;
-			return id;
-		};
-		(globalThis as any).clearTimeout = (id: number) => {
-			cleared.push(id);
-			delete timers[id];
-		};
-
-		try {
-			const r = new SlotsUIRenderer();
-			r.showAchievement('First!');
-			r.showAchievement('Second!');
-
-			// The first timer must have been cleared so it can't hide the
-			// second toast early.
-			expect(cleared).toContain(1);
-			expect(fx.toast.textContent).toBe('Second!');
-			expect(fx.toast.hasClass('hidden')).toBe(false);
-
-			// Firing the first timer (if it were still active) should not
-			// exist anymore — only the second timer should fire.
-			timers[2]?.();
-			expect(fx.toast.hasClass('hidden')).toBe(true);
-		} finally {
-			(globalThis as any).setTimeout = originalSetTimeout;
-			(globalThis as any).clearTimeout = originalClearTimeout;
 		}
 	});
 });

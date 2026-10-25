@@ -619,19 +619,6 @@
 	width: 18px;
 	height: 18px;
 }
-.slots-achievement {
-	position: fixed;
-	bottom: 22px;
-	left: 50%;
-	transform: translateX(-50%);
-	z-index: 40;
-	width: max-content;
-	max-width: calc(100vw - 32px);
-	border: 1px solid #c8a55c;
-	background: #0b120f;
-	padding: 14px 22px;
-	color: #e4c988;
-}
 .slots-cabinet .hidden {
 	display: none;
 }

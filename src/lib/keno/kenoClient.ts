@@ -316,7 +316,7 @@ export function initKenoClient(): void {
 }
 
 function toast(message: string): void {
-	const el = document.getElementById('achievement-toast');
+	const el = document.getElementById('keno-toast');
 	if (!el) return;
 	el.textContent = message;
 	el.classList.remove('hidden');

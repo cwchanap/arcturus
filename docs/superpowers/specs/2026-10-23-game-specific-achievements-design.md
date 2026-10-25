@@ -1,6 +1,6 @@
 # HPA-172 — Game-specific achievements: design
 
-**Status:** Proposed; documentation-only draft for review  
+**Status:** Implemented  
 **Linear:** https://linear.app/cwchanap/issue/HPA-172/achievements-game-specific-badges  
 **Implementation plan:** [2026-10-23-game-specific-achievements.md](../plans/2026-10-23-game-specific-achievements.md)
 

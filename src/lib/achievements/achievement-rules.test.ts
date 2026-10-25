@@ -165,7 +165,7 @@ describe('achievement presentation catalog', () => {
 		expect(getAchievementName('en', 'big_score')).toBe('Big Score');
 
 		expect(getAchievementDescription('en', 'royal_treatment')).toBe(
-			'Show a royal flush at a contested showdown',
+			'Get a royal flush in Poker or Video Poker',
 		);
 		expect(getAchievementDescription('en', 'sng_champion')).toBe(
 			'Finish 1st in a Sit & Go tournament',
@@ -173,7 +173,7 @@ describe('achievement presentation catalog', () => {
 		expect(getAchievementDescription('en', 'grand_tour')).toBe('Play every game at least once');
 		expect(getAchievementDescription('en', 'specialist')).toBe('Win 100 hands in a single game');
 		expect(getAchievementDescription('en', 'big_score')).toBe(
-			'Win 10,000 chips or more in a single game',
+			'Win 10,000 chips or more in a single round',
 		);
 	});
 
@@ -548,6 +548,16 @@ describe('Achievement check functions', () => {
 			});
 			expect(runAchievementCheck('specialist', context).shouldGrant).toBe(false);
 		});
+
+		test('does not grant or throw when only a removed game qualifies', () => {
+			// A stale game_stats row for a removed game type cannot be attributed
+			// to a current GAME_TYPES entry; the milestone stays unearned rather
+			// than throwing on every settlement.
+			const context = createContext({
+				gameStats: [gameStatRow('retired-game' as GameType, { totalWins: 100 })],
+			});
+			expect(runAchievementCheck('specialist', context).shouldGrant).toBe(false);
+		});
 	});
 
 	describe('big_score', () => {
@@ -596,6 +606,13 @@ describe('Achievement check functions', () => {
 			const context = createContext({
 				gameStats: [gameStatRow('slots', { biggestWin: 10000 })],
 				existingAchievementIds: ['big_score'],
+			});
+			expect(runAchievementCheck('big_score', context).shouldGrant).toBe(false);
+		});
+
+		test('does not grant or throw when only a removed game qualifies', () => {
+			const context = createContext({
+				gameStats: [gameStatRow('retired-game' as GameType, { biggestWin: 10000 })],
 			});
 			expect(runAchievementCheck('big_score', context).shouldGrant).toBe(false);
 		});

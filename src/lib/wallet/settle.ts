@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import { checkAndGrantAchievements } from '../achievements/achievements';
 import { WALLET_FEAT_GAMES } from '../achievements/achievement-rules';
+import type { AchievementId } from '../achievements/types';
 import { isValidGameType } from '../game-stats/constants';
 import { createDb } from '../db';
 import { SETTLEMENT_ID_RE } from './settlement-id';
@@ -71,10 +72,12 @@ export function validate(command: unknown): asserts command is SettleRoundComman
 		const seen = new Set<string>();
 		for (const feat of feats) {
 			if (typeof feat !== 'string' || seen.has(feat)) return invalidCommand();
-			const allowedGames = (WALLET_FEAT_GAMES as Record<string, readonly string[]>)[feat];
-			// Array.isArray also rejects inherited Object.prototype members (e.g. 'constructor')
-			// that bracket access resolves on untrusted feat IDs.
-			if (!Array.isArray(allowedGames) || !allowedGames.includes(command.game as string)) {
+			// Own-property check rejects unknown IDs and inherited
+			// Object.prototype members (e.g. 'constructor') directly.
+			if (!Object.hasOwn(WALLET_FEAT_GAMES, feat)) return invalidCommand();
+			const allowedGames: readonly string[] =
+				WALLET_FEAT_GAMES[feat as keyof typeof WALLET_FEAT_GAMES];
+			if (!allowedGames.includes(command.game)) {
 				return invalidCommand();
 			}
 			seen.add(feat);
@@ -127,37 +130,64 @@ export function validateNextBalance(nextBalance: number): void {
 	}
 }
 
+/**
+ * Best-effort achievement evaluation. Runs AFTER the wallet batch commits
+ * (or when a persisted receipt proves an earlier attempt committed). If it
+ * throws (transient D1 error), log the failure and still return the settled
+ * result: stat- and rank-based checks re-evaluate on the user's next
+ * completed round, and one-shot feats re-evaluate when the same settlement
+ * is retried, because the duplicate-receipt path runs this evaluation too.
+ */
+async function evaluateAchievements(
+	d1: D1Database,
+	userId: string,
+	command: SettleRoundCommand,
+	balance: number,
+): Promise<Array<{ id: AchievementId; icon: string }>> {
+	try {
+		const earned = await checkAndGrantAchievements(createDb(d1), userId, balance, {
+			recentWinAmount: command.stats.biggestWin > 0 ? command.stats.biggestWin : undefined,
+			gameType: command.game,
+			feats: command.feats,
+		});
+		return earned.map((achievement) => ({
+			id: achievement.id,
+			icon: achievement.icon,
+		}));
+	} catch (error) {
+		console.error('[WALLET_SETTLEMENT] Achievement evaluation failed (best-effort):', error);
+		return [];
+	}
+}
+
 async function buildFreshResult(
 	d1: D1Database,
 	userId: string,
 	command: SettleRoundCommand,
 	nextBalance: number,
 ): Promise<SettleRoundResult> {
-	// Achievement evaluation runs AFTER the atomic wallet batch commits.
-	// If it throws (transient D1 error), the receipt is already persisted, so a
-	// client retry would hit the duplicate path and never re-run achievements.
-	// Treat achievement evaluation as best-effort: log the failure and still
-	// return the successful settlement. Achievements are re-evaluated naturally
-	// on the user's next completed round because checkAndGrantAchievements
-	// reads current state each time.
-	let newAchievements: SettleRoundResult['newAchievements'] = [];
-	try {
-		const earned = await checkAndGrantAchievements(createDb(d1), userId, nextBalance, {
-			recentWinAmount: command.stats.biggestWin > 0 ? command.stats.biggestWin : undefined,
-			gameType: command.game,
-			feats: command.feats,
-		});
-		newAchievements = earned.map((achievement) => ({
-			id: achievement.id,
-			icon: achievement.icon,
-		}));
-	} catch (error) {
-		console.error('[WALLET_SETTLEMENT] Achievement evaluation failed (best-effort):', error);
-	}
-
+	const newAchievements = await evaluateAchievements(d1, userId, command, nextBalance);
 	return {
 		balance: nextBalance,
 		duplicate: false,
+		...(newAchievements.length > 0 ? { newAchievements } : {}),
+	};
+}
+
+async function buildDuplicateResult(
+	d1: D1Database,
+	userId: string,
+	command: SettleRoundCommand,
+	balance: number,
+): Promise<SettleRoundResult> {
+	// A retry of a settlement whose response was lost (or whose achievement
+	// evaluation failed after the commit) still carries its feats, so this is
+	// the path that can still grant them. Idempotent: already-earned
+	// achievements are filtered out by the check functions.
+	const newAchievements = await evaluateAchievements(d1, userId, command, balance);
+	return {
+		balance,
+		duplicate: true,
 		...(newAchievements.length > 0 ? { newAchievements } : {}),
 	};
 }
@@ -176,7 +206,7 @@ export async function settleWalletRound(
 
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const receipt = await findWalletSettlement(d1, userId, command.settlementId);
-		if (receipt) return { balance: receipt.balance, duplicate: true };
+		if (receipt) return buildDuplicateResult(d1, userId, command, receipt.balance);
 
 		const balance = await readWalletBalance(d1, userId);
 		if (balance === null) throw new WalletSettlementDomainError('USER_NOT_FOUND');
@@ -201,7 +231,7 @@ export async function settleWalletRound(
 		if (applied) return buildFreshResult(d1, userId, command, nextBalance);
 
 		const racedReceipt = await findWalletSettlement(d1, userId, command.settlementId);
-		if (racedReceipt) return { balance: racedReceipt.balance, duplicate: true };
+		if (racedReceipt) return buildDuplicateResult(d1, userId, command, racedReceipt.balance);
 	}
 
 	throw new WalletSettlementDomainError('SETTLEMENT_CONFLICT');

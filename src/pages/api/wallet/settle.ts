@@ -39,7 +39,12 @@ export function createPostHandler({
 		}
 
 		try {
-			const result = await settle(d1, userId, body as Parameters<SettleWalletRound>[2]);
+			// Gate-based clients retry by resubmitting the identical stored
+			// command, so a duplicate receipt means this body replays the
+			// committed outcome and its feats stay eligible for evaluation.
+			const result = await settle(d1, userId, body as Parameters<SettleWalletRound>[2], undefined, {
+				replaysCommittedOutcome: true,
+			});
 			return Response.json(result);
 		} catch (error) {
 			if (error instanceof WalletSettlementDomainError) {

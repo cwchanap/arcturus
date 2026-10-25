@@ -131,6 +131,23 @@ export function validateNextBalance(nextBalance: number): void {
 }
 
 /**
+ * Options for {@link settleWalletRound}.
+ */
+export interface SettleWalletRoundOptions {
+	/**
+	 * Whether a duplicate receipt means this command replays the outcome that
+	 * actually committed. Gate-based clients resubmit the identical stored
+	 * body and blackjack-run rebuilds its command from persisted run state,
+	 * so they pass true. Roulette's endpoint rerolls the winning number per
+	 * request, so a repeated syncId carries a phantom outcome; feats and
+	 * recentWinAmount are then withheld from duplicate-path evaluation.
+	 * Defaults to false: callers opt in only when a retry provably replays
+	 * the committed command.
+	 */
+	readonly replaysCommittedOutcome?: boolean;
+}
+
+/**
  * Best-effort achievement evaluation. Runs AFTER the wallet batch commits
  * (or when a persisted receipt proves an earlier attempt committed). If it
  * throws (transient D1 error), log the failure and still return the settled
@@ -179,12 +196,21 @@ async function buildDuplicateResult(
 	userId: string,
 	command: SettleRoundCommand,
 	balance: number,
+	replaysCommittedOutcome: boolean,
 ): Promise<SettleRoundResult> {
 	// A retry of a settlement whose response was lost (or whose achievement
 	// evaluation failed after the commit) still carries its feats, so this is
-	// the path that can still grant them. Idempotent: already-earned
-	// achievements are filtered out by the check functions.
-	const newAchievements = await evaluateAchievements(d1, userId, command, balance);
+	// the path that can still grant them — but only when the command replays
+	// the committed outcome. Roulette's endpoint regenerates the winning
+	// number per request, so its repeated commands describe a phantom round:
+	// evaluating its feats or biggestWin could grant badges for a spin that
+	// never settled. Untrusted commands keep stat-derived checks (they read
+	// persisted game_stats) but lose the per-round outcome inputs. Idempotent
+	// either way: already-earned achievements are filtered out by the checks.
+	const evalCommand = replaysCommittedOutcome
+		? command
+		: { ...command, feats: undefined, stats: { ...command.stats, biggestWin: 0 } };
+	const newAchievements = await evaluateAchievements(d1, userId, evalCommand, balance);
 	return {
 		balance,
 		duplicate: true,
@@ -197,6 +223,7 @@ export async function settleWalletRound(
 	userId: string,
 	command: SettleRoundCommand,
 	requiredFunds?: number,
+	options?: SettleWalletRoundOptions,
 ): Promise<SettleRoundResult> {
 	validate(command);
 
@@ -204,9 +231,13 @@ export async function settleWalletRound(
 		throw new WalletSettlementDomainError('INVALID_COMMAND');
 	}
 
+	const replaysCommittedOutcome = options?.replaysCommittedOutcome === true;
+
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const receipt = await findWalletSettlement(d1, userId, command.settlementId);
-		if (receipt) return buildDuplicateResult(d1, userId, command, receipt.balance);
+		if (receipt) {
+			return buildDuplicateResult(d1, userId, command, receipt.balance, replaysCommittedOutcome);
+		}
 
 		const balance = await readWalletBalance(d1, userId);
 		if (balance === null) throw new WalletSettlementDomainError('USER_NOT_FOUND');
@@ -231,7 +262,15 @@ export async function settleWalletRound(
 		if (applied) return buildFreshResult(d1, userId, command, nextBalance);
 
 		const racedReceipt = await findWalletSettlement(d1, userId, command.settlementId);
-		if (racedReceipt) return buildDuplicateResult(d1, userId, command, racedReceipt.balance);
+		if (racedReceipt) {
+			return buildDuplicateResult(
+				d1,
+				userId,
+				command,
+				racedReceipt.balance,
+				replaysCommittedOutcome,
+			);
+		}
 	}
 
 	throw new WalletSettlementDomainError('SETTLEMENT_CONFLICT');

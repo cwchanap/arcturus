@@ -195,14 +195,17 @@ interface FetchConfig {
 	settlement?: MockResponse | ((call: number) => MockResponse);
 }
 
-function installFetch(config: FetchConfig = {}): { calls: Array<{ url: string }> } {
-	const calls: Array<{ url: string }> = [];
+function installFetch(config: FetchConfig = {}): {
+	calls: Array<{ url: string; body: string }>;
+} {
+	const calls: Array<{ url: string; body: string }> = [];
 	let settlementCall = 0;
 	(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = (async (
 		url: string | URL | Request,
+		init?: RequestInit,
 	) => {
 		const urlStr = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
-		calls.push({ url: urlStr });
+		calls.push({ url: urlStr, body: init?.body ? String(init.body) : '' });
 		if (urlStr === '/api/wallet/settle') {
 			const settlement = config.settlement;
 			if (typeof settlement === 'function') {
@@ -242,6 +245,41 @@ function cardButton(index: number): HTMLButtonElement {
 
 function wagerButton(wager: number): HTMLButtonElement {
 	return document.querySelector<HTMLButtonElement>(`[data-wager="${wager}"]`)!;
+}
+
+/** createDeck() positions of the heart royal (T,J,Q,K,A): hearts are dealt first. */
+const HEART_ROYAL = [8, 9, 10, 11, 12];
+
+/**
+ * Math.random stub whose Fisher–Yates walk lands the heart royal in deck
+ * positions 5–9: the deal shows five junk cards and holding nothing draws
+ * all five replacements, so the final hand is the royal.
+ */
+function randomSequenceDealingDrawnRoyal(): () => number {
+	const others: number[] = [];
+	for (let index = 0; index < 52; index++) {
+		if (!HEART_ROYAL.includes(index)) others.push(index);
+	}
+	const target = [
+		others[0],
+		others[1],
+		others[2],
+		others[3],
+		others[4],
+		...HEART_ROYAL,
+		...others.slice(5),
+	];
+	// Invert Fisher–Yates (src/lib/cards.ts): at step i the value that must
+	// end at position i sits at p, so j_i = p and r_i ∈ [p/(i+1), (p+1)/(i+1)).
+	const working = Array.from({ length: 52 }, (_, index) => index);
+	const sequence: number[] = [];
+	for (let i = 51; i >= 1; i--) {
+		const p = working.indexOf(target[i]);
+		[working[i], working[p]] = [working[p], working[i]];
+		sequence.push((p + 0.5) / (i + 1));
+	}
+	let call = 0;
+	return () => sequence[call++] ?? 0.5;
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +601,71 @@ describe('initVideoPokerClient — authenticated settlement', () => {
 			expect(
 				document.getElementById('video-poker-settlement-recovery')?.classList.contains('hidden'),
 			).toBe(false);
+		} finally {
+			root.remove();
+		}
+	});
+
+	test('reports royal_treatment when the draw completes a royal flush', async () => {
+		localStorage.clear();
+		const { calls } = installFetch({
+			settlement: makeResponse(200, { balance: 1234, duplicate: false }),
+		});
+		const origRandom = Math.random;
+		Math.random = randomSequenceDealingDrawnRoyal();
+		const root = buildVideoPokerDOM({
+			guestMode: false,
+			userId: 'vp-royal-1',
+			initialBalance: 1000,
+		});
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			// Hold nothing: all five replacements come from deck positions 5–9.
+			actionButton().click();
+			await waitFor(
+				() =>
+					(document.getElementById('chip-balance') as HTMLElement).textContent === '1,234 chips',
+			);
+
+			const settlementCalls = calls.filter((call) => call.url === '/api/wallet/settle');
+			expect(settlementCalls).toHaveLength(1);
+			const command = JSON.parse(settlementCalls[0].body) as {
+				feats?: string[];
+				delta: number;
+			};
+			expect(command.feats).toEqual(['royal_treatment']);
+			expect(command.delta).toBe(249); // royal pays 250 at wager 1
+		} finally {
+			Math.random = origRandom;
+			root.remove();
+		}
+	});
+
+	test('reports no feats for an ordinary losing draw', async () => {
+		localStorage.clear();
+		const { calls } = installFetch({
+			settlement: makeResponse(200, { balance: 999, duplicate: false }),
+		});
+		const root = buildVideoPokerDOM({
+			guestMode: false,
+			userId: 'vp-royal-2',
+			initialBalance: 1000,
+		});
+		try {
+			initVideoPokerClient();
+			actionButton().click();
+			await waitFor(() => actionButton().textContent === 'Draw');
+			actionButton().click();
+			await waitFor(
+				() => (document.getElementById('chip-balance') as HTMLElement).textContent === '999 chips',
+			);
+
+			const settlementCalls = calls.filter((call) => call.url === '/api/wallet/settle');
+			expect(settlementCalls).toHaveLength(1);
+			const command = JSON.parse(settlementCalls[0].body) as { feats?: string[] };
+			expect('feats' in command).toBe(false);
 		} finally {
 			root.remove();
 		}

@@ -229,7 +229,12 @@ export function initVideoPokerClient(): void {
 				return;
 			}
 
-			await settlement.completeRound(round.netDelta, game.getState().balance);
+			// Royal draw earns the wallet feat; the command stays clean otherwise.
+			await settlement.completeRound(
+				round.netDelta,
+				game.getState().balance,
+				round.evaluation.category === 'royal-flush' ? (['royal_treatment'] as const) : undefined,
+			);
 			return;
 		}
 

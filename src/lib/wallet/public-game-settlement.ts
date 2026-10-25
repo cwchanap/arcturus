@@ -1,3 +1,4 @@
+import type { WalletFeatId } from '../achievements/achievement-rules';
 import type { GameType } from '../game-stats/types';
 import { isGuestModeValue, loadGuestBankroll, persistGuestBankroll } from '../public-game-session';
 import { getDocumentLocale } from '../i18n/locale';
@@ -17,11 +18,14 @@ export function buildRoundSettlementCommand(
 	game: GameType,
 	settlementId: string,
 	netDelta: number,
+	feats?: readonly WalletFeatId[],
 ): SettleRoundCommand {
 	return {
 		settlementId,
 		game,
 		delta: netDelta,
+		// Omitted when not earned so unearned rounds never carry a feats key.
+		...(feats && feats.length > 0 ? { feats } : {}),
 		stats: {
 			rounds: 1,
 			wins: netDelta > 0 ? 1 : 0,
@@ -45,7 +49,11 @@ export interface PublicGameSettlementController {
 	readonly isBlocked: boolean;
 	readonly statusMessage: string | null;
 	syncBalance(balance: number): void;
-	completeRound(netDelta: number, localBalance: number): Promise<void>;
+	completeRound(
+		netDelta: number,
+		localBalance: number,
+		feats?: readonly WalletFeatId[],
+	): Promise<void>;
 }
 
 export function createPublicGameSettlementController(options: {
@@ -134,7 +142,11 @@ export function createPublicGameSettlementController(options: {
 		options.render();
 	});
 
-	async function completeRound(netDelta: number, localBalance: number): Promise<void> {
+	async function completeRound(
+		netDelta: number,
+		localBalance: number,
+		feats?: readonly WalletFeatId[],
+	): Promise<void> {
 		if (isGuestMode) {
 			persistGuestBankroll(options.gameKey, clientUserId, localBalance);
 			return;
@@ -143,7 +155,12 @@ export function createPublicGameSettlementController(options: {
 		let result: SettleRoundResult;
 		try {
 			const pending = gate.settle(
-				buildRoundSettlementCommand(options.gameKey, newSettlementId(options.gameKey), netDelta),
+				buildRoundSettlementCommand(
+					options.gameKey,
+					newSettlementId(options.gameKey),
+					netDelta,
+					feats,
+				),
 			);
 			options.render();
 			result = await pending;

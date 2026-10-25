@@ -20,6 +20,60 @@ describe('buildRoundSettlementCommand', () => {
 			stats: { rounds: 1, ...stats },
 		});
 	});
+
+	test('attaches feats only when earned', () => {
+		const withFeats = buildRoundSettlementCommand('video-poker', 'round-royal', 249, [
+			'royal_treatment',
+		]);
+		expect(withFeats.feats).toEqual(['royal_treatment']);
+
+		const withoutFeats = buildRoundSettlementCommand('sic-bo', 'round-2', -10);
+		expect('feats' in withoutFeats).toBe(false);
+	});
+
+	// One controller-level guard for every public-game consumer: the no-feats
+	// call path must not grow a feats key (validation treats unknown feats as
+	// INVALID_COMMAND, and TCS/PGP never emit any).
+	test('completeRound without a third argument emits no feats for all four consumers', async () => {
+		const consumers = ['video-poker', 'sic-bo', 'three-card-showdown', 'pai-gow-poker'] as const;
+		const { commands } = installFetch();
+
+		for (const gameKey of consumers) {
+			const root = document.createElement('main');
+			root.dataset.userId = `anon-${gameKey}`;
+			root.dataset.guestMode = 'false';
+			root.dataset.initialBalance = '1000';
+			const recoveryHost = document.createElement('div');
+			recoveryHost.id = `${gameKey}-recovery-host`;
+			root.appendChild(recoveryHost);
+			document.body.appendChild(root);
+
+			const settlement = createPublicGameSettlementController({
+				gameKey,
+				root,
+				recoveryHost,
+				resetLabel: 'Reset round',
+				messages: {
+					failed: 'failed',
+					retrying: 'retrying',
+					retryFailed: 'retry failed',
+					retryLabel: 'Retry',
+				},
+				render: () => {},
+				onAdoptBalance: () => {},
+				onResetRound: () => {},
+			});
+			await settlement.completeRound(-10, 990);
+			root.remove();
+		}
+
+		expect(commands).toHaveLength(consumers.length);
+		for (const [index, gameKey] of consumers.entries()) {
+			const body = JSON.parse(commands[index]) as Record<string, unknown>;
+			expect(body.game).toBe(gameKey);
+			expect('feats' in body).toBe(false);
+		}
+	});
 });
 
 // ---------------------------------------------------------------------------

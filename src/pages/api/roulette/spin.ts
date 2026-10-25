@@ -177,6 +177,11 @@ async function handleSpinRequest(
 	const totalPayout = results.reduce((sum, result) => sum + result.payout, 0);
 	const netDelta = totalPayout - totalBet;
 
+	// Server-evaluated feat: a winning straight-up bet on this spin.
+	const feats = results.some((result) => result.won && result.bet.type === 'straight')
+		? (['straight_up'] as const)
+		: undefined;
+
 	let walletResult;
 	try {
 		walletResult = await settleWalletRoundImpl(
@@ -186,6 +191,8 @@ async function handleSpinRequest(
 				settlementId: syncId,
 				game: 'roulette',
 				delta: netDelta,
+				// Omitted when not earned so unearned spins never carry a feats key.
+				...(feats ? { feats } : {}),
 				stats: {
 					rounds: 1,
 					wins: netDelta > 0 ? 1 : 0,

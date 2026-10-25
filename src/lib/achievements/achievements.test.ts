@@ -207,6 +207,35 @@ describe('achievements orchestration', () => {
 		expect(progress.percentage).toBeCloseTo((1 / ACHIEVEMENTS.length) * 100);
 	});
 
+	test('getAchievementsWithStatus reports locked badges, per-game attribution, and grand_tour as global', async () => {
+		const db = createMockDb();
+		const earned: UserAchievementRecord[] = [
+			{
+				achievementId: 'jackpot',
+				earnedAt: new Date('2025-02-01'),
+				gameType: 'slots' as GameType,
+			},
+			{ achievementId: 'grand_tour', earnedAt: new Date('2025-02-02'), gameType: null },
+		];
+		const service = createAchievementService({ getUserAchievements: async () => earned });
+
+		const results = await service.getAchievementsWithStatus(db, 'user1');
+
+		const jackpot = results.find((a) => a.id === 'jackpot');
+		expect(jackpot?.isUnlocked).toBe(true);
+		expect(jackpot?.gameType).toBe('slots');
+
+		// Grand Tour is global: unlocked with no game attribution.
+		const grandTour = results.find((a) => a.id === 'grand_tour');
+		expect(grandTour?.isUnlocked).toBe(true);
+		expect(grandTour?.gameType).toBeNull();
+
+		const tripleThreat = results.find((a) => a.id === 'triple_threat');
+		expect(tripleThreat?.isUnlocked).toBe(false);
+		expect(tripleThreat?.earnedAt).toBeNull();
+		expect(tripleThreat?.gameType).toBeNull();
+	});
+
 	test('wraps repository failures as DatabaseError', async () => {
 		const db = createMockDb();
 		const service = createAchievementService({

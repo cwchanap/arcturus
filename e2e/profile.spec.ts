@@ -34,6 +34,13 @@ test.describe('Profile Page', () => {
 		await expect(accountDetails.getByText('Email Status')).toBeVisible();
 	});
 
+	test('shows an unearned game-specific badge as locked', async ({ page }) => {
+		const badge = page.locator('[data-testid="achievement-triple_threat"]');
+		await expect(badge).toBeVisible();
+		await expect(badge).toHaveClass(/opacity-60/);
+		await expect(badge.getByRole('heading', { name: 'Triple Threat' })).toBeVisible();
+	});
+
 	test('displays casino tips section', async ({ page }) => {
 		// Check Casino Tips are visible
 		await expect(page.locator('text=Claim your daily chip bonus')).toBeVisible();

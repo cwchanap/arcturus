@@ -1,5 +1,5 @@
 import { createPublicGameSettlementController } from '../wallet';
-import { initAchievementToast } from '../achievement-toast';
+import { initAchievementToast, type AchievementToastEntry } from '../achievement-toast';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { cabinetTranslator } from '../i18n/messages/cabinet';
@@ -234,9 +234,8 @@ export function initSicBoClient(): void {
 		}));
 
 		window.addEventListener('achievement-earned', (event: Event) => {
-			const { achievements } = (
-				event as CustomEvent<{ achievements: Array<{ id: string; icon: string }> }>
-			).detail;
+			const { achievements } = (event as CustomEvent<{ achievements: AchievementToastEntry[] }>)
+				.detail;
 			if (Array.isArray(achievements)) enqueue(achievements);
 		});
 	}

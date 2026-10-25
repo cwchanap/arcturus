@@ -3,7 +3,6 @@ import { RouletteUIRenderer } from './RouletteUIRenderer';
 import { CHIP_DENOMINATIONS, SPIN_ANIMATION_MS } from './constants';
 import type { BetType, RouletteBet, RouletteGameState, SpinResult } from './types';
 import type { AchievementId } from '../achievements/types';
-import { initAchievementToast } from '../achievement-toast';
 import {
 	GUEST_CLIENT_USER_ID,
 	isGuestModeValue,
@@ -304,21 +303,6 @@ export function initRouletteClient(): void {
 		ui.clearResult();
 		updateAndPersist();
 	});
-
-	const achievementToast = document.getElementById('achievement-toast');
-	const achievementIconEl = document.getElementById('achievement-icon');
-	const achievementNameEl = document.getElementById('achievement-name');
-	if (achievementToast && achievementIconEl && achievementNameEl) {
-		const { enqueue } = initAchievementToast(() => ({
-			toast: achievementToast as HTMLElement,
-			icon: achievementIconEl as HTMLElement,
-			name: achievementNameEl as HTMLElement,
-		}));
-		window.addEventListener('achievement-earned', (event) => {
-			const { achievements } = (event as CustomEvent).detail;
-			if (Array.isArray(achievements)) enqueue(achievements);
-		});
-	}
 
 	if (betsDroppedOnRefresh) showMessage(t('betsClearedOnRefresh'));
 }

@@ -8,6 +8,7 @@ export {
 	TOTAL_ODDS,
 	getBetOdds,
 	isSupportedBetKey,
+	isTriple,
 	isWinningBet,
 	resolveBet,
 } from './rules';

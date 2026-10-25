@@ -76,7 +76,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 	{
 		id: 'consistent',
 		category: 'milestone',
-		icon: '🎯',
+		icon: '🏅',
 	},
 	{
 		id: 'comeback',
@@ -91,7 +91,7 @@ export const ACHIEVEMENTS: AchievementDefinition[] = [
 	{
 		id: 'sng_champion',
 		category: 'gameplay',
-		icon: '🏆',
+		icon: '🥇',
 	},
 	{
 		id: 'triple_threat',
@@ -246,13 +246,16 @@ function checkFeat(id: AchievementId): AchievementCheckFn {
 /**
  * Deterministic per-game milestone attribution: prefer the current settling
  * game when it qualifies, otherwise the first qualifying GAME_TYPES entry.
+ * Returns undefined when no qualifying row maps to a current game type —
+ * stats rows for removed games can qualify but are not attributable, so the
+ * milestone does not grant rather than throwing on the lookup.
  */
 function attributeQualifyingGame(
 	context: AchievementCheckContext,
 	qualifies: (
 		row: Pick<GameStats, 'gameType' | 'handsPlayed' | 'totalWins' | 'biggestWin'>,
 	) => boolean,
-): GameType {
+): GameType | undefined {
 	if (context.gameType) {
 		const current = context.gameStats.find(
 			(row) => row.gameType === context.gameType && qualifies(row),
@@ -262,7 +265,7 @@ function attributeQualifyingGame(
 
 	return GAME_TYPES.map((game) => context.gameStats.find((row) => row.gameType === game)).find(
 		(row) => row && qualifies(row),
-	)!.gameType;
+	)?.gameType;
 }
 
 /**
@@ -284,48 +287,27 @@ function checkGrandTour(context: AchievementCheckContext): AchievementCheckResul
 }
 
 /**
- * Specialist: win 100 hands in a single game.
+ * Per-game milestone checks (Specialist, Big Score): skip already-earned IDs
+ * and grant only when a qualifying stats row exists that can be attributed
+ * to a current game type.
  */
-function checkSpecialist(context: AchievementCheckContext): AchievementCheckResult {
-	const { existingAchievementIds, gameStats } = context;
+function checkPerGameMilestone(
+	id: AchievementId,
+	qualifies: (
+		row: Pick<GameStats, 'gameType' | 'handsPlayed' | 'totalWins' | 'biggestWin'>,
+	) => boolean,
+): AchievementCheckFn {
+	return (context: AchievementCheckContext): AchievementCheckResult => {
+		if (context.existingAchievementIds.includes(id)) {
+			return { achievementId: id, shouldGrant: false };
+		}
 
-	if (existingAchievementIds.includes('specialist')) {
-		return { achievementId: 'specialist', shouldGrant: false };
-	}
+		const gameType = attributeQualifyingGame(context, qualifies);
+		if (gameType === undefined) {
+			return { achievementId: id, shouldGrant: false };
+		}
 
-	const qualifies = (row: Pick<GameStats, 'totalWins'>) =>
-		row.totalWins >= ACHIEVEMENT_THRESHOLDS.SPECIALIST_WINS;
-	if (!gameStats.some(qualifies)) {
-		return { achievementId: 'specialist', shouldGrant: false };
-	}
-
-	return {
-		achievementId: 'specialist',
-		shouldGrant: true,
-		gameType: attributeQualifyingGame(context, qualifies),
-	};
-}
-
-/**
- * Big Score: a single win of 10,000+ chips in any game.
- */
-function checkBigScore(context: AchievementCheckContext): AchievementCheckResult {
-	const { existingAchievementIds, gameStats } = context;
-
-	if (existingAchievementIds.includes('big_score')) {
-		return { achievementId: 'big_score', shouldGrant: false };
-	}
-
-	const qualifies = (row: Pick<GameStats, 'biggestWin'>) =>
-		row.biggestWin >= ACHIEVEMENT_THRESHOLDS.BIG_SCORE_WIN;
-	if (!gameStats.some(qualifies)) {
-		return { achievementId: 'big_score', shouldGrant: false };
-	}
-
-	return {
-		achievementId: 'big_score',
-		shouldGrant: true,
-		gameType: attributeQualifyingGame(context, qualifies),
+		return { achievementId: id, shouldGrant: true, gameType };
 	};
 }
 
@@ -347,8 +329,16 @@ export const ACHIEVEMENT_CHECKS: Partial<
 	big_catch: checkFeat('big_catch'),
 	jackpot: checkFeat('jackpot'),
 	grand_tour: checkGrandTour,
-	specialist: checkSpecialist,
-	big_score: checkBigScore,
+	// Specialist: win 100 hands in a single game.
+	specialist: checkPerGameMilestone(
+		'specialist',
+		(row) => row.totalWins >= ACHIEVEMENT_THRESHOLDS.SPECIALIST_WINS,
+	),
+	// Big Score: a single win of 10,000+ chips in any game.
+	big_score: checkPerGameMilestone(
+		'big_score',
+		(row) => row.biggestWin >= ACHIEVEMENT_THRESHOLDS.BIG_SCORE_WIN,
+	),
 };
 
 /**

@@ -1,0 +1,28 @@
+---
+import { getAchievementToastTitle } from '../lib/i18n/messages/achievements';
+
+const title = getAchievementToastTitle(Astro.locals.locale);
+---
+
+<div
+	id="achievement-toast"
+	data-testid="achievement-toast"
+	role="status"
+	aria-live="polite"
+	aria-atomic="true"
+	class="fixed bottom-4 right-4 bg-linear-to-r from-[var(--deco-brass-bright)] to-[var(--deco-brass)] text-[var(--deco-obsidian)] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 transition-all duration-300 opacity-0 pointer-events-none translate-y-4"
+	style="z-index: 9999;"
+>
+	<!-- Icon and name start empty: placeholder copy inside an aria-live region
+	     would be announced by screen readers before any achievement exists. -->
+	<span id="achievement-icon" data-testid="achievement-icon" class="text-3xl"></span>
+	<div>
+		<p class="text-xs font-semibold uppercase tracking-wider opacity-80">{title}</p>
+		<p id="achievement-name" data-testid="achievement-name" class="font-bold text-lg"></p>
+	</div>
+</div>
+
+<script>
+	import { bindAchievementToast } from '../lib/achievement-toast';
+	bindAchievementToast();
+</script>

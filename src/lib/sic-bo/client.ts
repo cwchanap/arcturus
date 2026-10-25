@@ -1,12 +1,11 @@
 import { createPublicGameSettlementController } from '../wallet';
-import { initAchievementToast, type AchievementToastEntry } from '../achievement-toast';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { cabinetTranslator } from '../i18n/messages/cabinet';
 import { sicBoTranslator, formatSicBoNet, type SIC_BO_MESSAGES } from '../i18n/messages/sic-bo';
 import type { MessageKey } from '../i18n/translate';
 import { SicBoGame } from './game';
-import { SIC_BO_CHIP_DENOMINATIONS } from './rules';
+import { SIC_BO_CHIP_DENOMINATIONS, isTriple } from './rules';
 import type { SicBoBetErrorCode, SicBoBetKey, SicBoRoundResult } from './types';
 
 const BET_ERROR_KEYS: Record<SicBoBetErrorCode, MessageKey<typeof SIC_BO_MESSAGES>> = {
@@ -202,11 +201,12 @@ export function initSicBoClient(): void {
 			render();
 
 			// Triple with any winning placed bet earns the feat, even at a net loss.
-			const isTriple = result.roll[0] === result.roll[1] && result.roll[1] === result.roll[2];
 			await settlement.completeRound(
 				result.netDelta,
 				game.getState().balance,
-				isTriple && result.results.some((r) => r.won) ? (['triple_threat'] as const) : undefined,
+				isTriple(result.roll) && result.results.some((r) => r.won)
+					? (['triple_threat'] as const)
+					: undefined,
 			);
 			return;
 		}
@@ -220,25 +220,6 @@ export function initSicBoClient(): void {
 		}
 		render();
 	});
-
-	// Achievement toast: the shared settlement controller emits
-	// 'achievement-earned'; render it with the existing toast module.
-	const achievementToast = document.getElementById('achievement-toast');
-	const achievementIcon = document.getElementById('achievement-icon');
-	const achievementName = document.getElementById('achievement-name');
-	if (achievementToast && achievementIcon && achievementName) {
-		const { enqueue } = initAchievementToast(() => ({
-			toast: achievementToast,
-			icon: achievementIcon,
-			name: achievementName,
-		}));
-
-		window.addEventListener('achievement-earned', (event: Event) => {
-			const { achievements } = (event as CustomEvent<{ achievements: AchievementToastEntry[] }>)
-				.detail;
-			if (Array.isArray(achievements)) enqueue(achievements);
-		});
-	}
 
 	render();
 }

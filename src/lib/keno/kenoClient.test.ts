@@ -180,7 +180,7 @@ function makeKenoRoot(opts: { guestMode?: string; initialBalance?: string } = {}
 			<button id="btn-paytable-close" data-testid="btn-paytable-close">&times;</button>
 			<div id="paytable-modal-body" data-testid="paytable-modal-body"></div>
 		</div>
-		<div id="achievement-toast" data-testid="achievement-toast" class="hidden"></div>
+		<div id="keno-toast" data-testid="keno-toast" class="hidden"></div>
 	`;
 	document.body.appendChild(root);
 	return root;

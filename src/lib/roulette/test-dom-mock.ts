@@ -230,7 +230,7 @@ export function installMockDocument(ids: string[] = []): MockDocumentSetup {
 	(globalThis as unknown as { document: MockDocument }).document = document;
 	// Some code paths cast to HTMLButtonElement; provide a no-op ctor.
 	(globalThis as typeof globalThis & { HTMLButtonElement: unknown }).HTMLButtonElement =
-		class MockHTMLButtonElement {} as unknown;
+		class MockHTMLButtonElement {} as unknown as typeof HTMLButtonElement;
 
 	return {
 		document,
@@ -245,7 +245,6 @@ export function installMockDocument(ids: string[] = []): MockDocumentSetup {
 
 /** Append a child element with the given className to `body` (for querySelector). */
 export function attachToBody(el: MockElement): MockElement {
-	// @ts-expect-error document is mocked above
 	const doc = (globalThis as unknown as { document: MockDocument }).document;
 	doc.body.appendChild(el);
 	return el;
@@ -289,7 +288,8 @@ export function makeFetchResponse(
 export interface FetchMock {
 	(url: string, init?: RequestInit): Promise<MockFetchResponse>;
 	calls: Array<{ url: string; init?: RequestInit }>;
-	impl: ((url: string, init?: RequestInit) => Promise<MockFetchResponse>) | null;
+	impl:
+		((url: string, init?: RequestInit) => MockFetchResponse | Promise<MockFetchResponse>) | null;
 }
 
 export function installMockFetch(
@@ -336,9 +336,9 @@ export function installMockTimers(): TimerMock {
 	};
 	const originalSetTimeout = globalThis.setTimeout;
 	const originalClearTimeout = globalThis.clearTimeout;
-	(globalThis as unknown as { setTimeout: typeof timerMock.setTimeout }).setTimeout =
+	(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout =
 		timerMock.setTimeout as unknown as typeof setTimeout;
-	(globalThis as unknown as { clearTimeout: typeof timerMock.clearTimeout }).clearTimeout =
+	(globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout =
 		timerMock.clearTimeout as unknown as typeof clearTimeout;
 	// Attach restore so callers (or afterEach) can revert to real timers,
 	// preventing leakage into tests that need real timers (e.g. Miniflare).
@@ -402,7 +402,7 @@ export function installMockCrypto(overrides?: {
 				return buf;
 			}),
 	};
-	(globalThis as typeof globalThis & { crypto: typeof crypto }).crypto = crypto;
+	(globalThis as unknown as { crypto: typeof crypto }).crypto = crypto;
 }
 
 export function installMockLocalStorage(initial: Record<string, string> = {}): Storage {

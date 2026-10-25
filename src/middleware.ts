@@ -112,7 +112,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 			context.locals.session = session
 				? {
 						...session,
-						user: enrichedUser ?? session.user,
+						user: enrichedUser ?? { ...session.user, chipBalance: 0 },
 					}
 				: null;
 			context.locals.user = enrichedUser ?? (session?.user as App.Locals['user']);

@@ -478,7 +478,7 @@ describe('initSicBoClient — bet and roll error handling', () => {
 
 			// Action is disabled (empty slip) — dispatch a click event directly
 			// to bypass the disabled guard and exercise the roll() catch.
-			actionButton().dispatchEvent(new happyWindow.Event('click'));
+			actionButton().dispatchEvent(new happyWindow.Event('click') as unknown as Event);
 
 			expect(document.getElementById('sic-bo-status')!.textContent).toBe('Place at least one bet');
 		} finally {

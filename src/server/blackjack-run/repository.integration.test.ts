@@ -445,7 +445,7 @@ describe('daily command appends', () => {
 			{ sequence: 0, command: 'start-round', wager: 100 },
 			{ sequence: 1, command: 'hit' },
 			{ sequence: 2, command: 'stand' },
-		];
+		] as const;
 		for (let index = 0; index < commands.length; index += 1) {
 			const result = await repository.appendDailyCommand({
 				userId: 'daily-user-3',

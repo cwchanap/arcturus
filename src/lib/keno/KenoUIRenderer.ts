@@ -87,7 +87,8 @@ export class KenoUIRenderer {
 			const badge = document.createElement('span');
 			badge.className = 'pick-order';
 			badge.setAttribute('aria-hidden', 'true');
-			cell.append(label, badge);
+			cell.appendChild(label);
+			cell.appendChild(badge);
 			this.grid.appendChild(cell);
 		}
 	}
@@ -356,7 +357,8 @@ export class KenoUIRenderer {
 			const tdMult = document.createElement('td');
 			tdMult.className = 'text-right py-2 text-[var(--deco-brass)]';
 			tdMult.textContent = `×${v}`;
-			tr.append(tdLabel, tdMult);
+			tr.appendChild(tdLabel);
+			tr.appendChild(tdMult);
 			tbody.appendChild(tr);
 		}
 		table.appendChild(tbody);

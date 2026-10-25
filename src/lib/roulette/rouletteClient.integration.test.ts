@@ -121,7 +121,9 @@ function setup(options: SetupOptions = {}): SetupResult {
 	if (options.session) {
 		storage.setItem(`roulette-session:${userId}`, JSON.stringify(options.session));
 	}
-	const fetchMock = installMockFetch(options.fetchImpl as FetchMock['impl'] | undefined);
+	const fetchMock = installMockFetch(
+		options.fetchImpl as NonNullable<FetchMock['impl']> | undefined,
+	);
 	initRouletteClient();
 	return {
 		doc,

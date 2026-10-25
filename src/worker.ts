@@ -61,7 +61,7 @@ export function createExports(manifest: AstroManifest) {
 		return await handle(
 			manifest as Parameters<typeof handle>[0],
 			app,
-			request,
+			request as unknown as Parameters<typeof handle>[2],
 			env as Parameters<typeof handle>[3],
 			context,
 		);

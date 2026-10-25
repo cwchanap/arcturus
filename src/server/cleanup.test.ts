@@ -76,11 +76,11 @@ describe('runRetentionCleanup', () => {
 		const fixedMs = Date.UTC(2026, 6, 15, 12, 30, 0);
 		const RealDate = globalThis.Date;
 		globalThis.Date = class extends RealDate {
-			constructor(...args: number[]) {
+			constructor(...args: unknown[]) {
 				if (args.length === 0) {
 					super(fixedMs);
 				} else {
-					super(...args);
+					super(...(args as ConstructorParameters<DateConstructor>));
 				}
 			}
 			static now() {

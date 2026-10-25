@@ -97,13 +97,16 @@ describe('VideoPokerGame', () => {
 		if (snapshot.hand[0]) snapshot.hand[0].rank = 2;
 		if (snapshot.hand[0]) snapshot.hand[0].suit = 'clubs';
 		// Mutate the arrays themselves to expose shared references
-		snapshot.hand.push({ rank: 99, suit: 'hearts' });
-		snapshot.heldIndexes.push(99);
-		snapshot.heldIndexes.length = 0;
+		(snapshot.hand as { rank: number; suit: string }[]).push({ rank: 99, suit: 'hearts' });
+		(snapshot.heldIndexes as number[]).push(99);
+		(snapshot.heldIndexes as number[]).length = 0;
 		if (snapshot.result) {
 			snapshot.result.evaluation.category = 'royal-flush';
 			snapshot.result.evaluation.label = 'tampered';
-			snapshot.result.finalHand.push({ rank: 99, suit: 'hearts' });
+			(snapshot.result.finalHand as { rank: number; suit: string }[]).push({
+				rank: 99,
+				suit: 'hearts',
+			});
 			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].rank = 14;
 			if (snapshot.result.finalHand[0]) snapshot.result.finalHand[0].suit = 'spades';
 		}

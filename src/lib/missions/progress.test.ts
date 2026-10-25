@@ -261,7 +261,7 @@ describe('receipt-gated mission progress', () => {
 			null,
 			1,
 			{ settlementId: 's', attemptId: 'a' },
-		);
+		) as unknown as { sql: string; args: unknown[] };
 		expect(statement.sql).toContain('FROM wallet_settlement');
 		expect(statement.sql).not.toContain('FROM ?');
 		expect(statement.args).toEqual(['user-id', 'mission', 'daily', 1, null, 'user-id', 's', 'a']);

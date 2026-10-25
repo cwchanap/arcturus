@@ -69,11 +69,15 @@ describe('auth configuration', () => {
 
 	test('builds Google-only Better Auth options', () => {
 		const config = buildAuthConfig(drizzleDb, completeEnv, 'http://localhost:2000');
+		// better-auth types socialProviders.google as an options-or-factory union;
+		// buildAuthConfig always supplies the options object.
+		const googleProvider = config.socialProviders?.google as
+			{ clientId: string; clientSecret: string } | undefined;
 
 		expect(config.secret).toBe('test-better-auth-secret');
 		expect(config.emailAndPassword).toEqual({ enabled: false });
-		expect(config.socialProviders?.google?.clientId).toBe('test-google-client-id');
-		expect(config.socialProviders?.google?.clientSecret).toBe('test-google-client-secret');
+		expect(googleProvider?.clientId).toBe('test-google-client-id');
+		expect(googleProvider?.clientSecret).toBe('test-google-client-secret');
 		expect(config.baseURL).toBe('http://localhost:2000');
 		expect(config.trustedOrigins).toEqual(['http://localhost:2000']);
 	});

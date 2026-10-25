@@ -31,7 +31,7 @@ const REAL_HTML_BUTTON_ELEMENT = (globalThis as { HTMLButtonElement?: unknown })
 
 afterEach(() => {
 	(globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = REAL_TIMERS.setTimeout;
-	(globalThis as unknown as { clearTimeout: typeof setTimeout }).clearTimeout =
+	(globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout =
 		REAL_TIMERS.clearTimeout;
 	(globalThis as unknown as { fetch: typeof fetch }).fetch = REAL_FETCH;
 	(globalThis as typeof globalThis & { crypto: typeof crypto }).crypto = REAL_CRYPTO;
@@ -447,7 +447,7 @@ describe('installMockCrypto', () => {
 
 	it('randomUUID uses provided override', () => {
 		installMockCrypto({ randomUUID: () => 'fixed-uuid' });
-		expect(crypto.randomUUID()).toBe('fixed-uuid');
+		expect(crypto.randomUUID() as string).toBe('fixed-uuid');
 	});
 
 	it('getRandomValues fills the buffer', () => {

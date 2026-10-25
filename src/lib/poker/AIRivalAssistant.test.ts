@@ -113,7 +113,7 @@ describe('AIRivalAssistant - Prompt Building', () => {
 					status: 200,
 				}),
 			),
-		);
+		) as unknown as typeof fetch;
 		assistant = new AIRivalAssistant();
 	});
 
@@ -184,7 +184,7 @@ describe('AIRivalAssistant - Response Parsing', () => {
 					status: 200,
 				}),
 			),
-		);
+		) as unknown as typeof fetch;
 		assistant = new AIRivalAssistant();
 	});
 
@@ -307,7 +307,7 @@ describe('AIRivalAssistant - Raise Amount Clamping', () => {
 					status: 200,
 				}),
 			),
-		);
+		) as unknown as typeof fetch;
 		assistant = new AIRivalAssistant();
 	});
 
@@ -398,9 +398,9 @@ describe('AIRivalAssistant - Settings Management', () => {
 					status: 200,
 				}),
 			),
-		);
+		) as unknown as typeof fetch;
 		assistant = new AIRivalAssistant();
-		globalThis.fetch = mock(() => Promise.resolve(new Response()));
+		globalThis.fetch = mock(() => Promise.resolve(new Response())) as unknown as typeof fetch;
 	});
 
 	test('extracts OpenAI key from settings', () => {
@@ -453,7 +453,7 @@ describe('AIRivalAssistant - Integration Logic', () => {
 					status: 200,
 				}),
 			),
-		);
+		) as unknown as typeof fetch;
 		assistant = new AIRivalAssistant();
 	});
 

@@ -36,15 +36,15 @@ beforeAll(() => {
 afterAll(() => {
 	happyWindow.close();
 	if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
-	else delete (globalThis as typeof globalThis & { window?: unknown }).window;
+	else delete (globalThis as { window?: unknown }).window;
 	if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
-	else delete (globalThis as typeof globalThis & { document?: unknown }).document;
+	else delete (globalThis as { document?: unknown }).document;
 	if (originalFetch) Object.defineProperty(globalThis, 'fetch', originalFetch);
-	else delete (globalThis as typeof globalThis & { fetch?: unknown }).fetch;
+	else delete (globalThis as { fetch?: unknown }).fetch;
 	if (originalLocalStorage) Object.defineProperty(globalThis, 'localStorage', originalLocalStorage);
-	else delete (globalThis as typeof globalThis & { localStorage?: unknown }).localStorage;
+	else delete (globalThis as { localStorage?: unknown }).localStorage;
 	if (originalCustomEvent) Object.defineProperty(globalThis, 'CustomEvent', originalCustomEvent);
-	else delete (globalThis as typeof globalThis & { CustomEvent?: unknown }).CustomEvent;
+	else delete (globalThis as { CustomEvent?: unknown }).CustomEvent;
 });
 
 function makeCardSlot(id: string): HTMLElement {

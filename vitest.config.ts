@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { getViteConfig } from 'astro/config';
 
 export default getViteConfig(
@@ -9,6 +10,6 @@ export default getViteConfig(
 	},
 	{
 		configFile: false,
-		root: new URL('.', import.meta.url),
+		root: new URL('.', import.meta.url).pathname,
 	},
 );

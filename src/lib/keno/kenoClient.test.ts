@@ -394,7 +394,7 @@ describe('kenoClient gameplay coverage', () => {
 			globalThis.fetch = (() => {
 				calls.push({ url: 'should-not-be-called', body: {} });
 				return Promise.resolve(makeRes({ status: 200, body: { balance: 0 } }));
-			}) as typeof fetch;
+			}) as unknown as typeof fetch;
 
 			initKenoClient();
 			clickQuickPick();
@@ -564,7 +564,9 @@ describe('kenoClient gameplay coverage', () => {
 			installFetch([{ status: 200, body: { balance: 1000 } }]);
 			initKenoClient();
 			clickQuickPick();
-			const picksBefore = Array.from(document.querySelectorAll('button.keno-cell.selected'))
+			const picksBefore = Array.from(
+				document.querySelectorAll<HTMLElement>('button.keno-cell.selected'),
+			)
 				.map((c) => Number(c.dataset.number))
 				.sort((a, b) => a - b);
 			clickDraw();
@@ -573,7 +575,9 @@ describe('kenoClient gameplay coverage', () => {
 			(document.getElementById('btn-clear') as HTMLButtonElement).click();
 			expect(document.querySelectorAll('button.keno-cell.selected')).toHaveLength(0);
 			(document.getElementById('btn-repeat') as HTMLButtonElement).click();
-			const picksAfter = Array.from(document.querySelectorAll('button.keno-cell.selected'))
+			const picksAfter = Array.from(
+				document.querySelectorAll<HTMLElement>('button.keno-cell.selected'),
+			)
 				.map((c) => Number(c.dataset.number))
 				.sort((a, b) => a - b);
 			expect(picksAfter).toEqual(picksBefore);

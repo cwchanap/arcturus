@@ -40,7 +40,7 @@ const visibleLocales = [...ENABLED_LOCALES];
 <script>
 	import { LOCALE_COOKIE } from '../lib/i18n/locale';
 
-	const picker = document.querySelector<HTMLSelectElement>('[data-locale-picker]');
+	const picker = document.querySelector('[data-locale-picker]') as HTMLSelectElement | null;
 	picker?.addEventListener('change', () => {
 		document.cookie =
 			LOCALE_COOKIE + '=' + picker.value + '; Max-Age=31536000; Path=/; SameSite=Lax';

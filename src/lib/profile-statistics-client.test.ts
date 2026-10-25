@@ -124,7 +124,8 @@ describe('player statistics client', () => {
 		const redirects: string[] = [];
 
 		await initPlayerStatisticsClient(root, {
-			fetchImpl: (async () => jsonResponse({ error: 'Unauthorized' }, 401)) as typeof fetch,
+			fetchImpl: (async () =>
+				jsonResponse({ error: 'Unauthorized' }, 401)) as unknown as typeof fetch,
 			redirect: (href) => redirects.push(href),
 		});
 
@@ -138,7 +139,7 @@ describe('player statistics client', () => {
 		['malformed payload', async () => jsonResponse({ summary: {}, games: [] })],
 	])('shows one retryable error state for %s', async (_label, responseFactory) => {
 		await initPlayerStatisticsClient(root, {
-			fetchImpl: (async () => responseFactory()) as typeof fetch,
+			fetchImpl: (async () => responseFactory()) as unknown as typeof fetch,
 		});
 
 		expect(root.getAttribute('aria-busy')).toBe('false');
@@ -154,7 +155,7 @@ describe('player statistics client', () => {
 				attempt += 1;
 				if (attempt === 1) throw new Error('offline');
 				return jsonResponse(createDashboard());
-			}) as typeof fetch,
+			}) as unknown as typeof fetch,
 		});
 
 		root.querySelector<HTMLButtonElement>('[data-statistics-retry]')!.click();
@@ -171,7 +172,7 @@ describe('player statistics client', () => {
 		await initPlayerStatisticsClient(root, {
 			fetchImpl: (async () => {
 				throw new Error('offline');
-			}) as typeof fetch,
+			}) as unknown as typeof fetch,
 		});
 
 		root.querySelector<HTMLButtonElement>('[data-statistics-retry]')!.click();

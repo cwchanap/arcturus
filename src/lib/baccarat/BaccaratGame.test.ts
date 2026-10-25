@@ -362,7 +362,7 @@ describe('BaccaratGame', () => {
 			expect(secondOutcome).not.toBeNull();
 			expect(secondOutcome).not.toBe(firstOutcome);
 
-			expect(game.getWinner()).toBe(secondOutcome?.winner);
+			expect(game.getWinner()).toBe(secondOutcome?.winner ?? null);
 		});
 
 		test('getLastOutcome returns null before any round is dealt', () => {

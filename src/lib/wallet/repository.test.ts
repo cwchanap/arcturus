@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, mock, test } from 'bun:test';
 import { Database as SQLiteDatabase } from 'bun:sqlite';
+import type { SQLQueryBindings } from 'bun:sqlite';
 import type { D1Database } from '@cloudflare/workers-types';
 import type { MissionGameEvent } from '../missions/types';
 import type { SettleRoundCommand } from './types';
@@ -98,7 +99,7 @@ function createDatabase(): D1Database {
 	return {
 		prepare(sql: string) {
 			return {
-				bind(...args: unknown[]) {
+				bind(...args: SQLQueryBindings[]) {
 					return {
 						async first<T = Record<string, unknown>>(): Promise<T | null> {
 							return (sqlite.query(sql).get(...args) as T | null) ?? null;
@@ -109,7 +110,9 @@ function createDatabase(): D1Database {
 						async run(): Promise<{ meta: { changes: number }; rowsAffected: number }> {
 							sqlite.run(sql, args);
 							const changes = Number(
-								sqlite.query('SELECT changes() AS changes').get()?.changes ?? 0,
+								sqlite
+									.query<{ changes: number }, SQLQueryBindings[]>('SELECT changes() AS changes')
+									.get()?.changes ?? 0,
 							);
 							return { meta: { changes }, rowsAffected: changes };
 						},
@@ -328,7 +331,9 @@ describe('wallet settlement repository', () => {
 		});
 		expect(applied).toBe(false);
 		expect(
-			await db!.prepare('SELECT * FROM game_stats WHERE userId = ?').bind(userId).all(),
+			(await db!.prepare('SELECT * FROM game_stats WHERE userId = ?').bind(userId).all()) as {
+				results: Record<string, unknown>[];
+			},
 		).toEqual({ results: [] });
 	});
 

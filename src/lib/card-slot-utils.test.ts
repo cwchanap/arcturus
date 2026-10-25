@@ -36,6 +36,8 @@ test('detailed card slots replace numeric pips with face detail and back visibil
 
 // Mock types for DOM elements
 type MockElement = {
+	// Mock-only fields (_placeholder, _attr_*, ...) are stored by string key
+	[key: string]: any;
 	classList: {
 		add: (...classes: string[]) => void;
 		remove: (...classes: string[]) => void;
@@ -109,7 +111,7 @@ function createMockElement(tagName: string, attributes: Record<string, string> =
 // Mock document.getElementById
 global.document = {
 	getElementById: (id: string) => {
-		if (id === 'test-container') return globalThis['_mockContainer'] || null;
+		if (id === 'test-container') return (globalThis as any)['_mockContainer'] || null;
 		return null;
 	},
 } as any;
@@ -155,12 +157,12 @@ describe('card-slot-utils', () => {
 
 		// Set up container with slots
 		mockContainer['_slots'] = mockSlots;
-		globalThis['_mockContainer'] = mockContainer;
+		(globalThis as any)['_mockContainer'] = mockContainer;
 	});
 
 	describe('setSlotState', () => {
 		test('should set slot to hidden state', () => {
-			setSlotState(mockSlots[0], 'hidden');
+			setSlotState(mockSlots[0] as unknown as Element, 'hidden');
 
 			expect(mockSlots[0].classList.contains('hidden')).toBe(true);
 			expect(mockSlots[0].getAttribute('data-slot-state')).toBe('hidden');
@@ -175,7 +177,7 @@ describe('card-slot-utils', () => {
 		});
 
 		test('should set slot to placeholder state', () => {
-			setSlotState(mockSlots[0], 'placeholder');
+			setSlotState(mockSlots[0] as unknown as Element, 'placeholder');
 
 			expect(mockSlots[0].classList.contains('hidden')).toBe(false);
 			expect(mockSlots[0].getAttribute('data-slot-state')).toBe('placeholder');
@@ -190,7 +192,7 @@ describe('card-slot-utils', () => {
 		});
 
 		test('should set slot to facedown state', () => {
-			setSlotState(mockSlots[0], 'facedown');
+			setSlotState(mockSlots[0] as unknown as Element, 'facedown');
 
 			expect(mockSlots[0].classList.contains('hidden')).toBe(false);
 			expect(mockSlots[0].getAttribute('data-slot-state')).toBe('facedown');
@@ -206,7 +208,7 @@ describe('card-slot-utils', () => {
 
 		test('should set slot to card state with red suit', () => {
 			const card: CardData = { rank: 'A', suit: 'hearts' };
-			setSlotState(mockSlots[0], 'card', card);
+			setSlotState(mockSlots[0] as unknown as Element, 'card', card);
 
 			expect(mockSlots[0].classList.contains('hidden')).toBe(false);
 			expect(mockSlots[0].getAttribute('data-slot-state')).toBe('card');
@@ -232,7 +234,7 @@ describe('card-slot-utils', () => {
 
 		test('should set slot to card state with black suit', () => {
 			const card: CardData = { rank: 'K', suit: 'spades' };
-			setSlotState(mockSlots[0], 'card', card);
+			setSlotState(mockSlots[0] as unknown as Element, 'card', card);
 
 			const cardFace = mockSlots[0].querySelector('[data-card-face]') as MockElement;
 			expect(cardFace?.classList.contains('card-red')).toBe(false);
@@ -244,7 +246,7 @@ describe('card-slot-utils', () => {
 
 		test('should handle unknown suit gracefully', () => {
 			const card: CardData = { rank: '7', suit: 'unknown' };
-			setSlotState(mockSlots[0], 'card', card);
+			setSlotState(mockSlots[0] as unknown as Element, 'card', card);
 
 			const cardFace = mockSlots[0].querySelector('[data-card-face]') as MockElement;
 			const suitEls = cardFace?.querySelectorAll('[data-suit-small], [data-suit-center]');

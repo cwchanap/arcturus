@@ -687,7 +687,7 @@ describe('Blackjack client initialization and settlement flow', () => {
 		expect(betAmountInput.value).toBe('100');
 		expect(hundredBtn?.getAttribute('aria-pressed')).toBe('true');
 		betAmountInput.value = '75';
-		betAmountInput.dispatchEvent(new happyWindow.Event('input'));
+		betAmountInput.dispatchEvent(new happyWindow.Event('input') as unknown as Event);
 		expect(hundredBtn?.getAttribute('aria-pressed')).toBe('false');
 
 		root.remove();
@@ -752,7 +752,10 @@ describe('Blackjack client initialization and settlement flow', () => {
 		expect(settingsPanel.classList.contains('hidden')).toBe(false);
 
 		settingsPanel.dispatchEvent(
-			new happyWindow.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+			new happyWindow.KeyboardEvent('keydown', {
+				key: 'Escape',
+				bubbles: true,
+			}) as unknown as Event,
 		);
 		expect(settingsPanel.classList.contains('hidden')).toBe(true);
 		expect(btnToggle.getAttribute('aria-expanded')).toBe('false');

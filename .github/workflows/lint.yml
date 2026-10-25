@@ -35,6 +35,9 @@ jobs:
           done
           exit 1
 
+      - name: Type-check with astro check
+        run: bunx --bun astro check
+
       - name: Run ESLint
         run: bun run lint
 

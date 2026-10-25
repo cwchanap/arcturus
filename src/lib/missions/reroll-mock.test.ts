@@ -82,7 +82,7 @@ describe('performReroll (mocked D1)', () => {
 		expect(result.originalMissionDefId).toBe('daily-blackjack-5');
 		expect(result.replacementMissionDefId).toBeDefined();
 		// Replacement must come from the registry reroll pool.
-		expect(REROLL_POOL_DAILY.map((d) => d.id)).toContain(result.replacementMissionDefId);
+		expect<string[]>(REROLL_POOL_DAILY.map((d) => d.id)).toContain(result.replacementMissionDefId!);
 	});
 
 	test('returns reroll-used when the INSERT ON CONFLICT reports 0 rows (race loser)', async () => {

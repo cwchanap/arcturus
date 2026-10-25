@@ -335,7 +335,7 @@ describe('KenoUIRenderer', () => {
 			const origSet = window.setTimeout;
 			const origClear = window.clearTimeout;
 			(happyWindow as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
-				cb: TimerHandler,
+				cb: () => void,
 			) => {
 				const id = timeouts.length + 1;
 				timeouts.push(id);

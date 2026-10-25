@@ -143,7 +143,7 @@ async function progressLabel(page: Page): Promise<string> {
  * and ranked commands render before pending releases, so the poll can never
  * race a stale pre-click render.
  */
-async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled'> {
+async function waitForTurnOrSettled(page: Page): Promise<'turn' | 'settled' | 'waiting'> {
 	let state: 'turn' | 'settled' | 'waiting' = 'waiting';
 	await expect
 		.poll(async () => {

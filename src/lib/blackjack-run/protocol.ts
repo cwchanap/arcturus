@@ -59,6 +59,11 @@ export const blackjackRunCommandSchema = z.discriminatedUnion('command', [
 ]);
 export type BlackjackRunCommand = z.infer<typeof blackjackRunCommandSchema>;
 
+// Omit must distribute over the discriminated union, otherwise keyof collapses
+// to the shared members and drops `wager` from the start-round input.
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+export type BlackjackRunCommandInput = DistributiveOmit<BlackjackRunCommand, 'sequence'>;
+
 // --- Public state: closed ranked | daily union, every member strict ---
 
 const cardSchema = z

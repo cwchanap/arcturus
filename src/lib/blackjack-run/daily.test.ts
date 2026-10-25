@@ -466,8 +466,8 @@ describe('DAILY_RUN_CONFIG', () => {
 	});
 
 	test('exposes a 30-minute attempt TTL and entry cutoff', () => {
-		expect(DAILY_RUN_CONFIG.attemptTtlSeconds).toBe(30 * 60);
-		expect(DAILY_RUN_CONFIG.rankedEntryCloseOffsetSeconds).toBe(30 * 60);
+		expect(DAILY_RUN_CONFIG.attemptTtlSeconds).toBe((30 * 60) as 1800);
+		expect(DAILY_RUN_CONFIG.rankedEntryCloseOffsetSeconds).toBe((30 * 60) as 1800);
 	});
 });
 

@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('getBaccaratAdvice', () => {
 	test('uses the shared client and parses a banker recommendation', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(
 				JSON.stringify({
 					choices: [
@@ -37,7 +37,7 @@ describe('getBaccaratAdvice', () => {
 					],
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
-			);
+			)) as unknown as typeof fetch;
 
 		const result = await getBaccaratAdvice(context, settings);
 
@@ -45,11 +45,11 @@ describe('getBaccaratAdvice', () => {
 	});
 
 	test('throws when the shared client cannot parse provider JSON', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(JSON.stringify({ choices: [{ message: { content: 'not JSON' } }] }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' },
-			});
+			})) as unknown as typeof fetch;
 
 		await expect(getBaccaratAdvice(context, settings)).rejects.toThrow(
 			'Provider returned no valid JSON object',
@@ -57,7 +57,7 @@ describe('getBaccaratAdvice', () => {
 	});
 
 	test('filters invalid suggested bet values from a parsed provider response', async () => {
-		globalThis.fetch = async () =>
+		globalThis.fetch = (async () =>
 			new Response(
 				JSON.stringify({
 					choices: [
@@ -70,7 +70,7 @@ describe('getBaccaratAdvice', () => {
 					],
 				}),
 				{ status: 200, headers: { 'content-type': 'application/json' } },
-			);
+			)) as unknown as typeof fetch;
 
 		const result = await getBaccaratAdvice(context, settings);
 

@@ -20,6 +20,7 @@ import {
 	periodKeySchema,
 	type BlackjackAction,
 	type BlackjackRunCommand,
+	type BlackjackRunCommandInput,
 	type BlackjackRunPublicState,
 } from './protocol';
 
@@ -253,7 +254,10 @@ export interface DailyRunRenderer {
 	renderError(message: string): void;
 }
 
-function requireElement<T extends Element>(root: ParentNode, testId: string): T {
+function requireElement<T extends HTMLElement = HTMLElement>(
+	root: Element | Document,
+	testId: string,
+): T {
 	const element = root.querySelector<T>(`[data-testid="${testId}"]`);
 	if (!element) throw new Error(`Daily Challenge is missing [data-testid="${testId}"]`);
 	return element;
@@ -648,7 +652,7 @@ export function createDailyPracticeController(
 	let seed = createSeed();
 	let commands: BlackjackRunCommand[] = [];
 
-	const apply = (command: Omit<BlackjackRunCommand, 'sequence'>): void => {
+	const apply = (command: BlackjackRunCommandInput): void => {
 		const candidate: BlackjackRunCommand[] = [
 			...commands,
 			{ sequence: commands.length, ...command },

@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import {
 	BlackjackRunError,
 	blackjackRunPublicStateSchema,
+	type BlackjackActiveRound,
 	type BlackjackRunCommand,
+	type BlackjackRunErrorCode,
 	type BlackjackRunPublicState,
 	type BlackjackRunStart,
 } from '../../lib/blackjack-run/protocol';
-import type { BlackjackRunService } from './service';
+import type { BlackjackRunService, BlackjackRunServiceErrorCode } from './service';
 import {
 	BLACKJACK_RUN_ERROR_STATUS,
 	blackjackRunJsonError,
@@ -20,7 +22,7 @@ const RUN_ID = 'HwcHHwcHHwcHHwcHHwcHHw';
 const PERIOD_KEY = '2027-01-15';
 const START_BODY = { mode: 'ranked', requestId: 'request-00000001', wager: 100 } as const;
 
-function activeRoundFixture() {
+function activeRoundFixture(): BlackjackActiveRound {
 	return {
 		phase: 'player-turn',
 		playerHands: [
@@ -41,7 +43,7 @@ function activeRoundFixture() {
 		committedWager: 100,
 		availableActions: ['hit', 'stand'],
 		outcome: null,
-	} as const;
+	};
 }
 
 function rankedActiveState(): BlackjackRunPublicState {
@@ -600,8 +602,8 @@ describe('blackjack run HTTP stable error contract', () => {
 		'maps %s to HTTP %d with a stable body',
 		async (code, status) => {
 			const error = coreCodes.has(code)
-				? new BlackjackRunError(code)
-				: new BlackjackRunServiceError(code);
+				? new BlackjackRunError(code as BlackjackRunErrorCode)
+				: new BlackjackRunServiceError(code as BlackjackRunServiceErrorCode);
 
 			const response = blackjackRunJsonError(error);
 

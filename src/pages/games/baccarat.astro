@@ -458,7 +458,7 @@ const clientUserId = gameSession.clientUserId;
 		createBetResult,
 	} from '../../lib/dom-utils';
 	import { buildBaccaratSettlementCommand } from '../../lib/baccarat/settlement';
-	import { initAchievementToast } from '../../lib/achievement-toast';
+	import { initAchievementToast, type AchievementToastEntry } from '../../lib/achievement-toast';
 	import { setSlotState } from '../../lib/card-slot-utils';
 	import { getDocumentLocale } from '../../lib/i18n/locale';
 	import { formatChips } from '../../lib/i18n/messages/common';
@@ -983,7 +983,7 @@ const clientUserId = gameSession.clientUserId;
 	const achievementIconEl = document.getElementById('achievement-icon');
 	const achievementNameEl = document.getElementById('achievement-name');
 
-	let enqueue: (achievements: Array<{ id: string; icon: string }>) => void;
+	let enqueue: (achievements: AchievementToastEntry[]) => void;
 
 	if (achievementToast && achievementIconEl && achievementNameEl) {
 		const controller = initAchievementToast(() => ({
@@ -999,7 +999,7 @@ const clientUserId = gameSession.clientUserId;
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{
-			achievements: Array<{ id: string; icon: string }>;
+			achievements: AchievementToastEntry[];
 		}>;
 		const { achievements } = customEvent.detail;
 		// Validate achievements is an array before calling enqueue

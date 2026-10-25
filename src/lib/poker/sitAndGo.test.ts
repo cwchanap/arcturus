@@ -41,7 +41,9 @@ describe('levelFor()', () => {
 		];
 		for (const [handNumber, level, blinds] of cases) {
 			expect(levelFor(handNumber)).toBe(level);
-			expect(SNG_BLINDS[levelFor(handNumber)]).toEqual(blinds);
+			expect(SNG_BLINDS[levelFor(handNumber)]).toEqual(
+				blinds as unknown as (typeof SNG_BLINDS)[number],
+			);
 		}
 	});
 

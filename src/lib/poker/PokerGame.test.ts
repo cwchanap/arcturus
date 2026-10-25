@@ -2045,6 +2045,7 @@ describe('Poker wallet settlement commands', () => {
 			gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 			bettingRound: string | null;
 			pot: number;
+			handNumber: number;
 			humanChipsBefore: number;
 			handStartChips: number;
 			handInProgress: boolean;
@@ -2080,6 +2081,7 @@ describe('Poker wallet settlement commands', () => {
 			gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
 			bettingRound: string | null;
 			pot: number;
+			handNumber: number;
 			humanChipsBefore: number;
 			handStartChips: number;
 			handInProgress: boolean;

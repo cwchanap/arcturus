@@ -196,21 +196,34 @@ function clickDraw(): void {
 
 describe('Keno wallet settlement client', () => {
 	test('builds one wallet command from a draw result', () => {
-		expect(buildKenoSettlementCommand('keno-win', { netDelta: 120 })).toEqual({
+		expect(buildKenoSettlementCommand('keno-win', { netDelta: 120, multiplier: 4 })).toEqual({
 			settlementId: 'keno-win',
 			game: 'keno',
 			delta: 120,
 			stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 120 },
 		});
+		expect(
+			'feats' in buildKenoSettlementCommand('keno-win', { netDelta: 120, multiplier: 4 }),
+		).toBe(false);
 	});
 
 	test('records a losing draw without a biggest win', () => {
-		expect(buildKenoSettlementCommand('keno-loss', { netDelta: -5 }).stats).toEqual({
+		expect(buildKenoSettlementCommand('keno-loss', { netDelta: -5, multiplier: 0 }).stats).toEqual({
 			rounds: 1,
 			wins: 0,
 			losses: 1,
 			biggestWin: 0,
 		});
+	});
+
+	test('reports the big catch feat once the multiplier reaches 100', () => {
+		const command = buildKenoSettlementCommand('keno-big', { netDelta: 990, multiplier: 100 });
+		expect(command.feats).toEqual(['big_catch']);
+	});
+
+	test('reports no big catch feat below a 100 multiplier', () => {
+		const command = buildKenoSettlementCommand('keno-close', { netDelta: 495, multiplier: 99 });
+		expect('feats' in command).toBe(false);
 	});
 
 	test('blocks an authenticated draw while the shared gate is blocked', () => {

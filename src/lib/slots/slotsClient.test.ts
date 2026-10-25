@@ -83,12 +83,34 @@ function makeSlotsRoot(): HTMLElement {
 
 describe('Slots wallet settlement client', () => {
 	test('builds one wallet command from a spin result', () => {
-		expect(buildSlotsSettlementCommand('slots-win', { netDelta: 120 })).toEqual({
+		expect(buildSlotsSettlementCommand('slots-win', { netDelta: 120, lineWins: [] })).toEqual({
 			settlementId: 'slots-win',
 			game: 'slots',
 			delta: 120,
 			stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 120 },
 		});
+		expect(
+			'feats' in buildSlotsSettlementCommand('slots-win', { netDelta: 120, lineWins: [] }),
+		).toBe(false);
+	});
+
+	test('reports the jackpot feat for a 5× seven line win', () => {
+		const command = buildSlotsSettlementCommand('slots-jackpot', {
+			netDelta: 500,
+			lineWins: [
+				{ paylineIndex: 0, symbol: 'cherry', count: 3, multiplier: 1, payout: 5 },
+				{ paylineIndex: 2, symbol: 'seven', count: 5, multiplier: 50, payout: 250 },
+			],
+		});
+		expect(command.feats).toEqual(['jackpot']);
+	});
+
+	test('reports no jackpot feat for a 4× seven line win', () => {
+		const command = buildSlotsSettlementCommand('slots-four', {
+			netDelta: 20,
+			lineWins: [{ paylineIndex: 1, symbol: 'seven', count: 4, multiplier: 10, payout: 20 }],
+		});
+		expect('feats' in command).toBe(false);
 	});
 
 	test('blocks an authenticated spin while the shared gate is blocked', () => {

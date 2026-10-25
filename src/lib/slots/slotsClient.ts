@@ -23,12 +23,16 @@ import {
 /** Build the one wallet command produced by a completed Slots spin. */
 export function buildSlotsSettlementCommand(
 	settlementId: string,
-	spin: Pick<SpinResult, 'netDelta'>,
+	spin: Pick<SpinResult, 'netDelta' | 'lineWins'>,
 ): SettleRoundCommand {
 	return {
 		settlementId,
 		game: 'slots',
 		delta: spin.netDelta,
+		// Omitted when not earned so unearned spins never carry a feats key.
+		...(spin.lineWins.some((win) => win.symbol === 'seven' && win.count === 5)
+			? { feats: ['jackpot'] as const }
+			: {}),
 		stats: {
 			rounds: 1,
 			wins: spin.netDelta > 0 ? 1 : 0,

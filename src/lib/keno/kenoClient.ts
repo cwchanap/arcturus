@@ -24,12 +24,14 @@ const GAME_KEY = 'keno';
 /** Build the one wallet command produced by a completed Keno draw. */
 export function buildKenoSettlementCommand(
 	settlementId: string,
-	draw: Pick<DrawResult, 'netDelta'>,
+	draw: Pick<DrawResult, 'netDelta' | 'multiplier'>,
 ): SettleRoundCommand {
 	return {
 		settlementId,
 		game: 'keno',
 		delta: draw.netDelta,
+		// Omitted when not earned so unearned draws never carry a feats key.
+		...(draw.multiplier >= 100 ? { feats: ['big_catch'] as const } : {}),
 		stats: {
 			rounds: 1,
 			wins: draw.netDelta > 0 ? 1 : 0,

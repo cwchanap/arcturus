@@ -363,6 +363,63 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			root.remove();
 		}
 	});
+
+	/** Roll [1,1,1] after placing `bets` (key, denomination pairs); returns the settled command. */
+	function rollTripleAndCapture(bets: Array<[string, number]>): {
+		feats?: string[];
+		delta: number;
+	} {
+		const bodies: string[] = [];
+		const origFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			writable: true,
+			value: async (_url: unknown, init?: RequestInit) => {
+				bodies.push(String(init?.body ?? ''));
+				return { ok: true, status: 200, json: async () => ({ balance: 1024, duplicate: false }) };
+			},
+		});
+		const origRandom = Math.random;
+		Math.random = () => 0; // Constant 0 → dice [1,1,1].
+		const root = makeSicBoRoot({ guestMode: false, initialBalance: 1000 });
+		try {
+			initSicBoClient();
+			for (const [key, denomination] of bets) {
+				denomButton(denomination).click();
+				betButton(key).click();
+			}
+			actionButton().click();
+			expect(bodies).toHaveLength(1);
+			return JSON.parse(bodies[0]) as { feats?: string[]; delta: number };
+		} finally {
+			Math.random = origRandom;
+			restore(origFetchDescriptor, 'fetch');
+			root.remove();
+		}
+	}
+
+	test('reports triple_threat when a triple rolls and a placed bet won', () => {
+		const command = rollTripleAndCapture([['any-triple', 1]]);
+		expect(command.feats).toEqual(['triple_threat']);
+		expect(command.delta).toBe(24); // gross 25 on a 1-chip any-triple
+	});
+
+	test('reports triple_threat even when the round settles at a net loss', () => {
+		// any-triple wins 25 gross, but the 100-chip big bet loses on a triple.
+		const command = rollTripleAndCapture([
+			['any-triple', 1],
+			['big', 100],
+		]);
+		expect(command.delta).toBe(-76);
+		expect(command.feats).toEqual(['triple_threat']);
+	});
+
+	test('reports no triple_threat when every placed bet lost', () => {
+		// Big/small/odd/even all lose on a triple, so nothing won.
+		const command = rollTripleAndCapture([['big', 10]]);
+		expect(command.delta).toBe(-10);
+		expect('feats' in command).toBe(false);
+	});
 });
 
 describe('initSicBoClient — guest round flow', () => {

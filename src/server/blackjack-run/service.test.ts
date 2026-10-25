@@ -499,6 +499,28 @@ describe('ranked lifecycle', () => {
 		);
 	});
 
+	test('10b: replaying an identical daily start-round command is idempotent', async () => {
+		const { service } = makeService(randomBytesOf(seedOf(0)));
+		const run = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0031')));
+		const first = isDailyState(
+			await service.command(USER_ID, run.runId, {
+				sequence: 0,
+				command: 'start-round',
+				wager: 10,
+			}),
+		);
+		// Same sequence, same command, same wager: replays the state, no error.
+		const replay = isDailyState(
+			await service.command(USER_ID, run.runId, {
+				sequence: 0,
+				command: 'start-round',
+				wager: 10,
+			}),
+		);
+		expect(replay.activeRound).toEqual(first.activeRound);
+		expect(replay.nextCommandSequence).toBe(first.nextCommandSequence);
+	});
+
 	test('11: terminal settlement uses a stable ID, delta=payout, netProfit=gameNetDelta', async () => {
 		const { service, spy } = makeService(randomBytesOf(seedOf(1)));
 		const state = isRankedState(

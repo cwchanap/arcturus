@@ -41,6 +41,7 @@ import {
 	POKER_HAND_SETTLED_EVENT,
 } from './constants';
 import { readHand } from './handReadout';
+import type { WalletFeatId } from '../achievements/achievement-rules';
 import {
 	loadSessionStats,
 	recordHand,
@@ -92,11 +93,14 @@ export type PokerSettlementOutcome = 'win' | 'loss' | 'push';
 export function buildPokerSettlementCommand(
 	delta: number,
 	outcome: PokerSettlementOutcome,
+	feats?: readonly WalletFeatId[],
 ): SettleRoundCommand {
 	return {
 		settlementId: newSettlementId('poker'),
 		game: 'poker',
 		delta,
+		// Omitted when not earned so unearned hands never carry a feats key.
+		...(feats && feats.length > 0 ? { feats } : {}),
 		stats: {
 			rounds: 1,
 			wins: outcome === 'win' ? 1 : 0,
@@ -830,7 +834,10 @@ export class PokerGame {
 		this.serverSyncedBalance = persistedChips;
 	}
 
-	private settleHand(outcome: PokerSettlementOutcome = 'push'): void {
+	private settleHand(
+		outcome: PokerSettlementOutcome = 'push',
+		feats?: readonly WalletFeatId[],
+	): void {
 		// Freeze the hand-local result first: every call site reaches settleHand
 		// exactly when the human's outcome becomes final (fold, walkover, or
 		// showdown awards), before the async reconcile can replace the stack.
@@ -851,7 +858,7 @@ export class PokerGame {
 		}
 
 		const delta = this.players[0].chips - this.humanChipsBefore;
-		const command = buildPokerSettlementCommand(delta, outcome);
+		const command = buildPokerSettlementCommand(delta, outcome, feats);
 		this.humanChipsBefore = 0;
 		void this.settleAuthenticatedRound(command);
 	}
@@ -1629,7 +1636,13 @@ export class PokerGame {
 					const humanDelta = this.players[0].chips - this.humanChipsBefore;
 					const outcome: PokerSettlementOutcome =
 						humanDelta > 0 ? 'win' : humanDelta < 0 ? 'loss' : 'push';
-					this.settleHand(outcome);
+					// Feat only at a contested showdown (walkovers never reach this
+					// branch); a board-only royal counts, winning the pot does not matter.
+					const feats =
+						readHand(this.players[0].hand, this.communityCards)?.key === 'ROYAL_FLUSH'
+							? (['royal_treatment'] as const)
+							: undefined;
+					this.settleHand(outcome, feats);
 				}
 				this.presentHandResult(awards, tierResults, true);
 			}

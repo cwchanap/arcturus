@@ -25,7 +25,7 @@ import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
 import { DEFAULT_SETTINGS } from './types';
 import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
-import type { SettlementGate, SettleRoundResult } from '../wallet';
+import type { SettlementGate, SettleRoundCommand, SettleRoundResult } from '../wallet';
 
 let windowListeners: Record<string, (() => void) | undefined> = {};
 
@@ -2026,6 +2026,183 @@ describe('Poker wallet settlement commands', () => {
 			delta: 150,
 			stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 150 },
 		});
+		expect('feats' in command).toBe(false);
+	});
+
+	test('carries a royal_treatment feat only when one is reported', () => {
+		const withFeats = buildPokerSettlementCommand(150, 'win', ['royal_treatment']);
+		expect(withFeats.feats).toEqual(['royal_treatment']);
+
+		const withoutFeats = buildPokerSettlementCommand(-40, 'loss', undefined);
+		expect('feats' in withoutFeats).toBe(false);
+	});
+
+	/** Authenticated cash table with a capturing settlement gate. */
+	function royalShowdownFixture(gate: SettlementGate): {
+		game: {
+			players: Player[];
+			communityCards: Card[];
+			gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+			bettingRound: string | null;
+			pot: number;
+			humanChipsBefore: number;
+			handStartChips: number;
+			handInProgress: boolean;
+			nextPhase: () => void;
+		};
+	} {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ settings: null }),
+		})) as unknown as typeof fetch;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '1000', balanceAvailable: 'true', userId: 'royal-user' },
+			innerHTML: '',
+			textContent: '1000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame(undefined, gate) as unknown as {
+			players: Player[];
+			communityCards: Card[];
+			gamePhase: 'preflop' | 'flop' | 'turn' | 'river' | 'showdown';
+			bettingRound: string | null;
+			pot: number;
+			humanChipsBefore: number;
+			handStartChips: number;
+			handInProgress: boolean;
+			nextPhase: () => void;
+		};
+		game.handNumber = 1;
+		game.humanChipsBefore = 1000;
+		game.handStartChips = 1000;
+		game.handInProgress = true;
+		game.gamePhase = 'river';
+		game.bettingRound = 'river';
+		// Royal on board except the T/J the human holds: a board-only royal
+		// also counts, and the human here wins the contested showdown.
+		game.communityCards = [
+			card('Q', 'hearts', 12),
+			card('K', 'hearts', 13),
+			card('A', 'hearts', 14),
+			card('4', 'clubs', 4),
+			card('5', 'clubs', 5),
+		];
+		game.pot = 200;
+		game.players[0] = {
+			...game.players[0],
+			chips: 900,
+			folded: false,
+			hasActed: true,
+			currentBet: 100,
+			totalBet: 100,
+			hand: [card('10', 'hearts', 10), card('J', 'hearts', 11)],
+		};
+		game.players[1] = {
+			...game.players[1],
+			chips: 900,
+			folded: false,
+			hasActed: true,
+			currentBet: 100,
+			totalBet: 100,
+			hand: [card('2', 'spades', 2), card('3', 'diamonds', 3)],
+		};
+		for (const seat of [2, 3, 4, 5]) {
+			game.players[seat] = { ...game.players[seat], folded: true, hasActed: true };
+		}
+		return { game };
+	}
+
+	test('reports royal_treatment at a contested showdown with a human royal', async () => {
+		const commands: SettleRoundCommand[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			async settle(command) {
+				commands.push(command);
+				return { balance: 1000 + command.delta, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+		const { game } = royalShowdownFixture(gate);
+
+		game.nextPhase();
+		await flushAsyncWork();
+
+		expect(commands).toHaveLength(1);
+		expect(commands[0].game).toBe('poker');
+		expect(commands[0].delta).toBe(100);
+		expect(commands[0].feats).toEqual(['royal_treatment']);
+	});
+
+	test('reports no feat at a contested showdown without a royal', async () => {
+		const commands: SettleRoundCommand[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			async settle(command) {
+				commands.push(command);
+				return { balance: 1000 + command.delta, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+		const { game } = royalShowdownFixture(gate);
+		// Trip kings beat the opponent's pair of queens but earn no wallet feat.
+		game.players[0] = {
+			...game.players[0],
+			hand: [card('K', 'spades', 13), card('K', 'clubs', 13)],
+		};
+		game.players[1] = {
+			...game.players[1],
+			hand: [card('Q', 'spades', 12), card('Q', 'diamonds', 12)],
+		};
+
+		game.nextPhase();
+		await flushAsyncWork();
+
+		expect(commands).toHaveLength(1);
+		expect(commands[0].delta).toBe(100);
+		expect('feats' in commands[0]).toBe(false);
+	});
+
+	test('reports no feat when the hand ends in a walkover, even with a royal', async () => {
+		const commands: SettleRoundCommand[] = [];
+		const gate: SettlementGate = {
+			pending: null,
+			isBlocked: false,
+			async settle(command) {
+				commands.push(command);
+				return { balance: 1000 + command.delta, duplicate: false };
+			},
+			retry: async () => null,
+			reset: () => {},
+		};
+		const { game } = royalShowdownFixture(gate);
+		// Everyone else folds: the human takes the pot uncontested on the river.
+		for (const seat of [1, 2, 3, 4, 5]) {
+			game.players[seat] = { ...game.players[seat], folded: true, hasActed: true };
+		}
+
+		game.nextPhase();
+		await flushAsyncWork();
+
+		expect(commands).toHaveLength(1);
+		expect(commands[0].delta).toBe(100);
+		expect('feats' in commands[0]).toBe(false);
 	});
 
 	test('does not auto-deal while the shared settlement gate is blocked', async () => {

@@ -175,7 +175,14 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		this.db = deps.db;
 		this.now = deps.now;
 		this.randomBytes = deps.randomBytes;
-		this.settleWallet = deps.settleWallet ?? settleWalletRound;
+		this.settleWallet =
+			deps.settleWallet ??
+			((db, userId, command) =>
+				// Run settlements rebuild the command from persisted run state, so a
+				// duplicate receipt means this command replays the committed outcome.
+				settleWalletRound(db, userId, command, undefined, {
+					replaysCommittedOutcome: true,
+				}));
 		this.readBalance = deps.readBalance ?? readWalletBalance;
 	}
 

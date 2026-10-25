@@ -584,10 +584,58 @@ describe('settleWalletRound (Miniflare D1 integration)', () => {
 				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 50 },
 				feats: ['jackpot'],
 			}),
+			undefined,
+			{ replaysCommittedOutcome: true },
 		);
 
 		expect(retry.duplicate).toBe(true);
 		expect(retry.newAchievements?.map((achievement) => achievement.id)).toContain('jackpot');
+	});
+
+	test('a regenerated duplicate command never grants phantom outcome badges', async () => {
+		const userId = 'phantom-outcome';
+		await insertIntegrationUser(d1!, userId);
+
+		// Roulette's endpoint rerolls the winning number per request: a repeated
+		// syncId rebuilds feats and biggestWin from a spin that never settled.
+		// Without replaysCommittedOutcome the duplicate path must withhold them.
+		const first = await settleWalletRound(
+			d1!,
+			userId,
+			command({
+				settlementId: 'roulette-reroll-1',
+				game: 'roulette',
+				delta: -50,
+				stats: { rounds: 1, wins: 0, losses: 1, biggestWin: 0 },
+			}),
+		);
+		expect(first.duplicate).toBe(false);
+
+		// The committed round was a loss leaving balance 50. The rerolled
+		// command claims a straight_up feat and a 999999 win — unsanitized that
+		// would also trip comeback (50 - 999999 < COMEBACK_LOW_BALANCE).
+		const retry = await settleWalletRound(
+			d1!,
+			userId,
+			command({
+				settlementId: 'roulette-reroll-1',
+				game: 'roulette',
+				delta: 999950,
+				stats: { rounds: 1, wins: 1, losses: 0, biggestWin: 999999 },
+				feats: ['straight_up'],
+			}),
+		);
+
+		expect(retry.duplicate).toBe(true);
+		expect(retry.newAchievements).toBeUndefined();
+
+		const earned = await d1!
+			.prepare('SELECT achievementId FROM user_achievement WHERE userId = ?')
+			.bind(userId)
+			.all<{ achievementId: string }>();
+		const earnedIds = (earned.results ?? []).map((row) => row.achievementId);
+		expect(earnedIds).not.toContain('straight_up');
+		expect(earnedIds).not.toContain('comeback');
 	});
 
 	test('a duplicate retry never re-grants already-earned feats', async () => {
@@ -603,7 +651,9 @@ describe('settleWalletRound (Miniflare D1 integration)', () => {
 		});
 		await settleWalletRound(d1!, userId, cmd);
 
-		const retry = await settleWalletRound(d1!, userId, cmd);
+		const retry = await settleWalletRound(d1!, userId, cmd, undefined, {
+			replaysCommittedOutcome: true,
+		});
 		expect(retry.duplicate).toBe(true);
 		expect(retry.newAchievements?.map((achievement) => achievement.id) ?? []).not.toContain(
 			'jackpot',

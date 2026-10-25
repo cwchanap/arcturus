@@ -633,12 +633,34 @@ export class PokerGame {
 							.map((player) => this.handStartStacks.get(player.id) ?? 0),
 					);
 		this.finishedPlace = place;
+		// Single-fire branch above makes this exactly one report per tournament;
+		// guests never report the wallet-free champion badge.
+		if (place === 1 && !this.isGuestMode) this.reportSngChampion();
 		// Localized once for both the status line and the plain-link panel.
 		const finished = this.t('tournamentFinished', {
 			place: placeLabel(this.locale, place),
 		});
 		this.updateGameStatus(finished);
 		this.ui.showTournamentTerminal(finished);
+	}
+
+	/**
+	 * One empty-body POST for a signed-in Sit & Go winner. Fire and forget:
+	 * the badge report is cosmetic, so a network failure never blocks or
+	 * breaks the already-rendered tournament result.
+	 */
+	private reportSngChampion(): void {
+		void fetch('/api/achievements/sng-champion', { method: 'POST' })
+			.then(async (response) => {
+				if (!response.ok) return;
+				const result = (await response.json()) as {
+					newAchievements?: Array<{ id: string; icon: string }>;
+				};
+				this.dispatchEarnedAchievements(result.newAchievements);
+			})
+			.catch((error: unknown) => {
+				console.error('[SNG_CHAMPION] Badge report failed:', error);
+			});
 	}
 
 	/** Celebrate when a new street improves the human to two pair or better. */

@@ -4635,6 +4635,170 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 	});
 });
 
+describe('PokerGame SNG champion badge report (HPA-172)', () => {
+	type ChampionGame = {
+		players: Player[];
+		handNumber: number;
+		finishedPlace: number | null;
+		handStartStacks: Map<number, number>;
+		updateGameStatus: (message: string) => void;
+		finishHand: () => void;
+	};
+
+	type RecordedRequest = { url: string; init?: RequestInit };
+
+	function championTable({ guest = false }: { guest?: boolean } = {}) {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		const requests: RecordedRequest[] = [];
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(
+			async (input: string | URL | Request, init?: RequestInit) => {
+				requests.push({ url: String(input), init });
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({
+						newAchievements: [
+							{ id: 'sng_champion', icon: '🏆' },
+							{ id: 'big_score', icon: '💰' },
+						],
+					}),
+				};
+			},
+		) as unknown as typeof fetch;
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { guestMode: String(guest), pokerMode: 'sng' },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: {
+				balance: '2500',
+				balanceAvailable: 'true',
+				guestMode: String(guest),
+				userId: guest ? 'anonymous' : 'u_champion',
+			},
+			innerHTML: '',
+			textContent: '$2,500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const game = new PokerGame() as unknown as ChampionGame;
+		return { elements, game, requests };
+	}
+
+	function setChampionStacks(game: ChampionGame, chips: number[], startStacks: number[]): void {
+		game.players = game.players.map((player, seat) => ({ ...player, chips: chips[seat] }));
+		game.handStartStacks = new Map(startStacks.map((stack, seat) => [seat, stack]));
+	}
+
+	function captureEarnedEvents(): Array<{ type: string; detail: unknown }> {
+		const events: Array<{ type: string; detail: unknown }> = [];
+		(
+			globalThis as unknown as {
+				window: { dispatchEvent: (event: { type: string; detail?: unknown }) => boolean };
+			}
+		).window.dispatchEvent = (event) => {
+			events.push({ type: event.type, detail: event.detail });
+			return true;
+		};
+		return events;
+	}
+
+	test('a signed-in first place sends exactly one empty badge POST and toasts returned badges', async () => {
+		const { game, requests } = championTable();
+		const events = captureEarnedEvents();
+		setChampionStacks(game, [3000, 0, 0, 0, 0, 0], [500, 500, 500, 500, 500, 500]);
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		game.finishHand();
+		game.finishHand(); // single-fire: a second end-of-hand sweep adds no request
+		await flushAsyncWork();
+
+		expect(game.finishedPlace).toBe(1);
+		expect(statuses).toEqual(['You finished 1st']);
+		expect(requests).toHaveLength(1);
+		expect(requests[0].url).toBe('/api/achievements/sng-champion');
+		expect(requests[0].init?.method).toBe('POST');
+		expect(requests[0].init?.body).toBeUndefined();
+		expect(events).toEqual([
+			{
+				type: 'achievement-earned',
+				detail: {
+					achievements: [
+						{ id: 'sng_champion', icon: '🏆' },
+						{ id: 'big_score', icon: '💰' },
+					],
+				},
+			},
+		]);
+	});
+
+	test('a lower-place finish sends no badge request', async () => {
+		const { game, requests } = championTable();
+		setChampionStacks(game, [0, 3000, 0, 0, 0, 0], [500, 500, 0, 0, 0, 0]);
+
+		game.finishHand();
+		game.finishHand();
+		await flushAsyncWork();
+
+		expect(game.finishedPlace).toBe(2);
+		expect(requests).toHaveLength(0);
+	});
+
+	test('a guest first place sends no badge request', async () => {
+		const { game, requests } = championTable({ guest: true });
+		setChampionStacks(game, [3000, 0, 0, 0, 0, 0], [500, 500, 500, 500, 500, 500]);
+
+		game.finishHand();
+		await flushAsyncWork();
+
+		expect(game.finishedPlace).toBe(1);
+		expect(requests).toHaveLength(0);
+	});
+
+	test('an unfinished tournament sends no badge request', async () => {
+		const { game, requests } = championTable();
+		setChampionStacks(game, [400, 0, 0, 900, 700, 0], [500, 300, 200, 500, 700, 300]);
+
+		game.finishHand();
+		await flushAsyncWork();
+
+		expect(game.finishedPlace).toBeNull();
+		expect(requests).toHaveLength(0);
+	});
+
+	test('a rejected badge POST leaves the tournament result intact', async () => {
+		const { game } = championTable();
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => {
+			throw new Error('offline');
+		}) as unknown as typeof fetch;
+		setChampionStacks(game, [3000, 0, 0, 0, 0, 0], [500, 500, 500, 500, 500, 500]);
+		const statuses: string[] = [];
+		game.updateGameStatus = (message) => statuses.push(message);
+
+		game.finishHand();
+		await flushAsyncWork();
+
+		expect(game.finishedPlace).toBe(1);
+		expect(statuses).toEqual(['You finished 1st']);
+	});
+});
+
 describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 	type SimGame = {
 		players: Player[];

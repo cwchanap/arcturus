@@ -6,8 +6,10 @@ import type { Card, Suit } from './types';
 
 export class DeckManager {
 	private deck: Card[] = [];
+	private readonly random: () => number;
 
-	constructor() {
+	constructor(random: () => number = Math.random) {
+		this.random = random;
 		this.initDeck();
 		this.shuffle();
 	}
@@ -26,7 +28,7 @@ export class DeckManager {
 
 	public shuffle() {
 		for (let i = this.deck.length - 1; i > 0; i--) {
-			const j = Math.floor(Math.random() * (i + 1));
+			const j = Math.floor(this.random() * (i + 1));
 			[this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
 		}
 	}

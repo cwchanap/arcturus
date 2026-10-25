@@ -215,7 +215,7 @@ export class PokerGame {
 			isGuestModeValue(rootEl?.dataset?.guestMode);
 		this.mode = rootEl?.dataset?.pokerMode === 'sng' ? 'sng' : 'cash';
 
-		this.deck = new DeckManager();
+		this.deck = new DeckManager(this.aiRandom);
 		this.ui = new PokerUIRenderer(this.mode);
 		this.aiRival = new AIRivalAssistant();
 		this.settingsManager = new GameSettingsManager();

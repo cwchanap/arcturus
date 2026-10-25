@@ -4813,7 +4813,7 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 		dealNewHand: () => Promise<void>;
 	};
 
-	/** Deterministic LCG so every run plays the same tournament. */
+	/** Deterministic LCG seeds AI decisions and the deck, so every run plays the same tournament. */
 	function seededRandom(seed: number): () => number {
 		let state = seed >>> 0;
 		return () => {
@@ -5004,9 +5004,10 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 			const humanFinal = game.players[0].chips;
 			expect(humanFinal === 0 || humanFinal === TOTAL).toBe(true);
 
-			// Zero cash side effects across the entire run.
+			// Zero cash side effects across the entire run; a winning human may
+			// fire only the wallet-free champion badge report.
 			expect(settlements).toHaveLength(0);
-			expect(fetchCalls).toHaveLength(0);
+			expect(fetchCalls.every((url) => url === '/api/achievements/sng-champion')).toBe(true);
 			expect(dispatched).not.toContain('poker-hand-settled');
 			expect(sessionWrites).toEqual([]);
 			expect(storage).toEqual({});

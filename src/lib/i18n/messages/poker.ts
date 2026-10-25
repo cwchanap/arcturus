@@ -257,6 +257,7 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentSitGo: 'Sit & Go',
 		tournamentRefreshNotice: 'Tournament chips only — refreshing the page restarts the tournament',
 		eliminatedBadge: 'ELIMINATED',
+		achievementUnlocked: 'Achievement Unlocked',
 	},
 	'zh-Hant': {
 		blinds: '盲注',
@@ -498,6 +499,7 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentSitGo: 'Sit & Go 錦標賽',
 		tournamentRefreshNotice: '僅限錦標賽籌碼 — 重新整理頁面會重新開始錦標賽',
 		eliminatedBadge: '已淘汰',
+		achievementUnlocked: '已解鎖成就',
 	},
 	'zh-Hans': {
 		blinds: '盲注',
@@ -739,6 +741,7 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentSitGo: 'Sit & Go 锦标赛',
 		tournamentRefreshNotice: '仅为锦标赛筹码 — 刷新页面会重新开始锦标赛',
 		eliminatedBadge: '已淘汰',
+		achievementUnlocked: '已解锁成就',
 	},
 	ja: {
 		blinds: 'ブラインド',
@@ -987,6 +990,7 @@ export const POKER_MESSAGES = defineMessages({
 		tournamentRefreshNotice:
 			'トーナメントチップ限定 — ページを更新するとトーナメントは最初からやり直しになります',
 		eliminatedBadge: '脱落',
+		achievementUnlocked: '実績を解放しました',
 	},
 });
 

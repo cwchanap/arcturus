@@ -1,4 +1,5 @@
 import { setSlotState } from '../card-slot-utils';
+import { initAchievementToast, type AchievementToastEntry } from '../achievement-toast';
 import { createPublicGameSettlementController } from '../wallet';
 import { VideoPokerGame } from './game';
 import { MIN_WAGER, MAX_WAGER } from './paytable';
@@ -252,5 +253,25 @@ export function initVideoPokerClient(): void {
 	action?.addEventListener('click', () => {
 		void onPrimaryAction();
 	});
+
+	// Achievement toast: the shared settlement controller emits
+	// 'achievement-earned'; render it with the existing toast module.
+	const achievementToast = document.getElementById('achievement-toast');
+	const achievementIcon = document.getElementById('achievement-icon');
+	const achievementName = document.getElementById('achievement-name');
+	if (achievementToast && achievementIcon && achievementName) {
+		const { enqueue } = initAchievementToast(() => ({
+			toast: achievementToast,
+			icon: achievementIcon,
+			name: achievementName,
+		}));
+
+		window.addEventListener('achievement-earned', (event: Event) => {
+			const { achievements } = (event as CustomEvent<{ achievements: AchievementToastEntry[] }>)
+				.detail;
+			if (Array.isArray(achievements)) enqueue(achievements);
+		});
+	}
+
 	render();
 }

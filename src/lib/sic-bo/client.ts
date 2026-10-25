@@ -1,4 +1,5 @@
 import { createPublicGameSettlementController } from '../wallet';
+import { initAchievementToast } from '../achievement-toast';
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { cabinetTranslator } from '../i18n/messages/cabinet';
@@ -219,6 +220,26 @@ export function initSicBoClient(): void {
 		}
 		render();
 	});
+
+	// Achievement toast: the shared settlement controller emits
+	// 'achievement-earned'; render it with the existing toast module.
+	const achievementToast = document.getElementById('achievement-toast');
+	const achievementIcon = document.getElementById('achievement-icon');
+	const achievementName = document.getElementById('achievement-name');
+	if (achievementToast && achievementIcon && achievementName) {
+		const { enqueue } = initAchievementToast(() => ({
+			toast: achievementToast,
+			icon: achievementIcon,
+			name: achievementName,
+		}));
+
+		window.addEventListener('achievement-earned', (event: Event) => {
+			const { achievements } = (
+				event as CustomEvent<{ achievements: Array<{ id: string; icon: string }> }>
+			).detail;
+			if (Array.isArray(achievements)) enqueue(achievements);
+		});
+	}
 
 	render();
 }

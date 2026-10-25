@@ -116,6 +116,38 @@ test.describe('Sic Bo wallet', () => {
 		}
 	});
 
+	test('earned achievement toast displays the localized badge name', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await createIsolatedSicBoPage(browser, baseURL);
+		try {
+			await page.route('**/api/wallet/settle', async (route) => {
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						balance: 4242,
+						duplicate: false,
+						newAchievements: [{ id: 'triple_threat', icon: '🎲' }],
+					}),
+				});
+			});
+
+			await placeBigBet(page);
+			await page.getByTestId('sic-bo-action').click();
+
+			// The settlement response reports the feat; the existing toast shows it.
+			const toast = page.getByTestId('achievement-toast');
+			await expect(toast).toBeVisible();
+			await expect(toast).toHaveClass(/opacity-100/);
+			await expect(toast.getByTestId('achievement-icon')).toHaveText('🎲');
+			await expect(toast.getByTestId('achievement-name')).toHaveText('Triple Threat');
+		} finally {
+			await context.close();
+		}
+	});
+
 	test('failed settlement shows recovery and Retry reuses the exact command', async ({
 		browser,
 		baseURL,

@@ -61,7 +61,9 @@ function makeRoot(): HTMLElement {
 	const empty = document.createElement('aside');
 	empty.setAttribute('data-statistics-empty', '');
 	empty.hidden = true;
-	root.append(summary, games, empty);
+	root.appendChild(summary);
+	root.appendChild(games);
+	root.appendChild(empty);
 	document.body.appendChild(root);
 	return root;
 }

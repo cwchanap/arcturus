@@ -77,7 +77,7 @@ function createRandomSource(seed: Uint8Array): { nextInt(exclusiveUpperBound: nu
 	assertSeed(seed);
 	const ownedSeed = seed.slice();
 	let counter = 0n;
-	let block = new Uint8Array();
+	let block: Uint8Array = new Uint8Array();
 	let offset = 0;
 
 	const nextUint32 = (): number => {
@@ -156,7 +156,7 @@ export interface BlackjackHandOutcome {
 
 export interface BlackjackRoundOutcome {
 	readonly result: BlackjackSessionResult;
-	readonly hands: readonly BlackjackHandOutcome[];
+	readonly hands: BlackjackHandOutcome[];
 	readonly committedWager: number;
 	readonly payout: number;
 	readonly gameNetDelta: number;
@@ -170,24 +170,24 @@ export interface BlackjackRoundReplay {
 }
 
 export interface BlackjackPublicHand {
-	readonly cards: readonly Card[];
+	readonly cards: Card[];
 	readonly wager: number;
 	readonly value: HandValue;
 }
 
 export interface BlackjackPublicDealer {
-	readonly cards: readonly Card[];
+	readonly cards: Card[];
 	readonly value: HandValue;
 }
 
 export interface BlackjackPublicRoundState {
 	readonly phase: 'player-turn' | 'complete';
-	readonly playerHands: readonly BlackjackPublicHand[];
+	readonly playerHands: BlackjackPublicHand[];
 	readonly activeHandIndex: number;
 	readonly dealer: BlackjackPublicDealer;
 	readonly committedWager: number;
 	readonly nextSequence: number;
-	readonly availableActions: readonly BlackjackAction[];
+	readonly availableActions: BlackjackAction[];
 	readonly outcome: BlackjackRoundOutcome | null;
 }
 

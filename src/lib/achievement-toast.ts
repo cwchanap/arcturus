@@ -34,20 +34,19 @@ export function initAchievementToast(
 	const timeoutIds: number[] = [];
 
 	const clearPendingTimeouts = () => {
-		timeoutIds.forEach((id) => clearTimeout(id));
+		timeoutIds.forEach((id) => clearTimeout(id as unknown as number));
 		timeoutIds.length = 0;
 	};
 
-	const safeGetElements = (): AchievementToastElements | null => {
-		const elements = getElements();
-		if (
-			!elements.toast?.isConnected ||
-			!elements.icon?.isConnected ||
-			!elements.name?.isConnected
-		) {
-			return null;
-		}
-		return elements;
+	const safeGetElements = (): {
+		toast: HTMLElement;
+		icon: HTMLElement;
+		name: HTMLElement;
+	} | null => {
+		const { toast, icon, name } = getElements();
+		if (toast === null || icon === null || name === null) return null;
+		if (!toast.isConnected || !icon.isConnected || !name.isConnected) return null;
+		return { toast, icon, name };
 	};
 
 	const showNextToast = () => {
@@ -101,9 +100,9 @@ export function initAchievementToast(
 				}
 				showNextToast();
 			}, transitionDurationMs);
-			timeoutIds.push(nextTimeoutId);
+			timeoutIds.push(nextTimeoutId as unknown as number);
 		}, showDurationMs);
-		timeoutIds.push(hideTimeoutId);
+		timeoutIds.push(hideTimeoutId as unknown as number);
 	};
 
 	return {

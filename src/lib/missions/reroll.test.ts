@@ -214,20 +214,20 @@ describe('performReroll (Miniflare D1 integration)', () => {
 		await insertUser(db!, userId);
 
 		const periodKey = getDailyPeriodKey();
-		const poolIds = REROLL_POOL_DAILY.map((d) => d.id);
+		const poolIds: string[] = REROLL_POOL_DAILY.map((d) => d.id);
 
 		const result = await performReroll(db!, userId, 'daily-blackjack-5');
 		expect(result.status).toBe('rerolled');
 		expect(result.originalMissionDefId).toBe('daily-blackjack-5');
 		expect(result.replacementMissionDefId).toBeDefined();
 		// Replacement must come from the registry reroll pool.
-		expect(poolIds).toContain(result.replacementMissionDefId);
+		expect(poolIds).toContain(result.replacementMissionDefId!);
 
 		// Override row persisted with the correct mapping.
 		const rows = await getOverrideRows(db!, userId, periodKey);
 		expect(rows).toHaveLength(1);
 		expect(rows[0]!.originalMissionDefId).toBe('daily-blackjack-5');
-		expect(rows[0]!.replacementMissionDefId).toBe(result.replacementMissionDefId);
+		expect(rows[0]!.replacementMissionDefId).toBe(result.replacementMissionDefId!);
 		expect(rows[0]!.rerolledAt).toBeGreaterThan(0);
 
 		// Second reroll the same day must be blocked by the one-per-day guard.

@@ -99,6 +99,7 @@ if (!code || !isValidRoomCode(code)) {
 	import { getDocumentLocale, type Locale } from '../../../lib/i18n/locale';
 	import { formatChips } from '../../../lib/i18n/messages/common';
 	import { getPokerCardName } from '../../../lib/i18n/messages/poker';
+	import type { Card } from '../../../lib/poker/types';
 	import {
 		getMpErrorLabel,
 		multiplayerPokerTranslator,
@@ -123,7 +124,7 @@ if (!code || !isValidRoomCode(code)) {
 	let latestRoomState: RoomStateMessage | null = null;
 	let dealerSeat: number | null = null;
 
-	function createCardEl(c: { value: string; suit: string; rank: number }): HTMLSpanElement {
+	function createCardEl(c: Card): HTMLSpanElement {
 		const glyph = getSuitGlyph(c.suit);
 		const color = isRedSuit(c.suit)
 			? 'text-[var(--deco-oxblood-bright)]'
@@ -220,7 +221,7 @@ if (!code || !isValidRoomCode(code)) {
 			entry.textContent = showdown
 				? t('handEndedShowdown', { winners: w, showdown })
 				: t('handEnded', { winners: w });
-			logEl.prepend(entry);
+			logEl.insertBefore(entry, logEl.firstChild);
 			dealerSeat = null;
 			// Clear stale hole cards once the hand is over
 			holeEl.textContent = '';
@@ -228,7 +229,7 @@ if (!code || !isValidRoomCode(code)) {
 			const errDiv = document.createElement('div');
 			errDiv.className = 'text-[var(--deco-oxblood-bright)]';
 			errDiv.textContent = t('errorLine', { label: getMpErrorLabel(locale, msg.code) });
-			logEl.prepend(errDiv);
+			logEl.insertBefore(errDiv, logEl.firstChild);
 		}
 	});
 

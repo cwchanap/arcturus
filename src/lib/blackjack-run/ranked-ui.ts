@@ -38,7 +38,10 @@ export interface RankedRunRenderer {
 
 const ACTIONS: readonly BlackjackAction[] = ['hit', 'stand', 'double-down', 'split'];
 
-function requireElement<T extends Element>(root: ParentNode, selector: string): T {
+function requireElement<T extends HTMLElement = HTMLElement>(
+	root: Element | Document,
+	selector: string,
+): T {
 	const element = root.querySelector<T>(selector);
 	if (!element) throw new Error(`Ranked Blackjack is missing ${selector}`);
 	return element;

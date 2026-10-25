@@ -11,7 +11,7 @@ import type {
 	PlayerStatisticsSourceRow,
 	PlayerStatisticsSummary,
 } from './player-statistics-types';
-import type { GameStats, GameType } from './types';
+import type { GameType } from './types';
 
 const updatedAt = new Date('2026-07-30T00:00:00Z');
 
@@ -138,7 +138,7 @@ type PlayerStatisticsService = {
 };
 
 type PlayerStatisticsServiceFactory = (overrides: {
-	getAllUserGameStats: (db: Database, userId: string) => Promise<GameStats[]>;
+	getAllUserGameStats: (db: Database, userId: string) => Promise<PlayerStatisticsSourceRow[]>;
 	getBulkUserWinsRanks: (db: Database, userId: string) => Promise<Map<GameType, number>>;
 }) => PlayerStatisticsService;
 
@@ -188,9 +188,9 @@ describe('createPlayerStatisticsService', () => {
 		if (!factory) return;
 
 		const started: string[] = [];
-		let resolveRows!: (rows: GameStats[]) => void;
+		let resolveRows!: (rows: PlayerStatisticsSourceRow[]) => void;
 		let resolveRanks!: (ranks: Map<GameType, number>) => void;
-		const rows = new Promise<GameStats[]>((resolve) => {
+		const rows = new Promise<PlayerStatisticsSourceRow[]>((resolve) => {
 			resolveRows = resolve;
 		});
 		const ranks = new Promise<Map<GameType, number>>((resolve) => {

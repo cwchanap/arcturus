@@ -255,11 +255,10 @@ export function initRouletteClient(): void {
 				try {
 					const data = (await response.json()) as SpinResponse;
 					if (!response.ok) {
+						const errorValue = (data as { error?: unknown }).error;
 						throw new SpinHttpError(
 							response.status,
-							typeof (data as { error?: unknown }).error === 'string'
-								? (data as { error: string }).error
-								: `HTTP ${response.status}`,
+							typeof errorValue === 'string' ? errorValue : `HTTP ${response.status}`,
 						);
 					}
 					if (data.duplicate) {

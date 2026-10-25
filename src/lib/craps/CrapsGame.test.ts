@@ -843,7 +843,7 @@ describe('CrapsGame — reset and restoreState edge cases', () => {
 		const g = makeGame();
 		expect(
 			g.restoreState({
-				phase: 'invalid',
+				phase: 'invalid' as unknown as 'come-out',
 				point: null,
 				chipBalance: 1000,
 				activeBets: [],

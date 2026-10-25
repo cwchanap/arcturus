@@ -259,7 +259,7 @@ const chipColors: Array<'red' | 'blue' | 'green' | 'gold' | 'black'> = [
 										aria-label={t('betColumn', { number: String(3 - ci) })}
 									>
 										<>
-											<span>{t(['ordinal3rd', 'ordinal2nd', 'ordinal1st'][ci])}</span>
+											<span>{t((['ordinal3rd', 'ordinal2nd', 'ordinal1st'] as const)[ci])}</span>
 											<strong>2:1</strong>
 										</>
 									</button>

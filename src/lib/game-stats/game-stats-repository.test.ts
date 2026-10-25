@@ -70,10 +70,12 @@ function createMockDb({
 
 			return {
 				from: (table: any) => {
+					let lastWhereClause: unknown;
 					const chain = {
-						where: (condition: any) => {
+						where: (whereClause: any) => {
+							lastWhereClause = whereClause;
 							if (hasCountColumn) {
-								const count = countResolver ? countResolver(condition) : defaultCount;
+								const count = countResolver ? countResolver(whereClause) : defaultCount;
 								return Promise.resolve([{ count }]);
 							}
 
@@ -93,7 +95,7 @@ function createMockDb({
 									capturedOrder.orderBy = orderByClause;
 								}
 								if (capturedWhere) {
-									capturedWhere.where = whereClause;
+									capturedWhere.where = lastWhereClause;
 								}
 								return Promise.resolve(allStats);
 							},

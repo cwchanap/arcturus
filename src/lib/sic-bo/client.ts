@@ -39,7 +39,7 @@ export function initSicBoClient(): void {
 	const recoveryHost = document.getElementById('sic-bo-recovery-host');
 	const dieCells = [0, 1, 2].map((i) => document.getElementById(`sic-bo-die-${i}`));
 
-	let selectedDenomination = SIC_BO_CHIP_DENOMINATIONS[0];
+	let selectedDenomination: number = SIC_BO_CHIP_DENOMINATIONS[0];
 	const recent: SicBoRoundResult[] = [];
 
 	function setStatus(message: string): void {

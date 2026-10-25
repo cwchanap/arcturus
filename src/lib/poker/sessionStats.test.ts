@@ -63,7 +63,7 @@ describe('session persistence', () => {
 	});
 
 	test('falls back to an empty tally when storage is unavailable', () => {
-		globalWithStorage.sessionStorage = undefined;
+		(globalWithStorage as { sessionStorage?: Storage | undefined }).sessionStorage = undefined;
 		expect(loadSessionStats()).toEqual(EMPTY_SESSION_STATS);
 		expect(() => saveSessionStats(EMPTY_SESSION_STATS)).not.toThrow();
 	});

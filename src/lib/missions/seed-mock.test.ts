@@ -94,7 +94,7 @@ describe('seedStreakFromOldMission (mocked D1)', () => {
 		mock.onFirst('SELECT completedDate FROM mission', () => ({
 			completedDate: todayMidnightSeconds,
 		}));
-		let insertArgs: unknown[] | null = null;
+		let insertArgs = null as unknown[] | null;
 		mock.onRun('INSERT INTO login_streak', (args) => {
 			insertArgs = args;
 			return { meta: { changes: 1 } };

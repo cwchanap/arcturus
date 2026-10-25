@@ -29,11 +29,13 @@ describe('DrawManager.draw', () => {
 	test('default path retries rejected crypto bytes before using accepted values', () => {
 		const values = [255, ...Array.from({ length: KENO_DRAW_SIZE }, (_, i) => i)];
 		let readIndex = 0;
-		const cryptoSpy = spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array) => {
-			const bytes = array as Uint8Array;
-			bytes[0] = values[readIndex++];
-			return array;
-		});
+		const cryptoSpy = spyOn(globalThis.crypto, 'getRandomValues').mockImplementation(
+			(array: Uint8Array) => {
+				const bytes = array as Uint8Array;
+				bytes[0] = values[readIndex++];
+				return array;
+			},
+		);
 
 		try {
 			const drawn = new DrawManager().draw();

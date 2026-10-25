@@ -33,7 +33,7 @@ let windowListeners: Record<string, (() => void) | undefined> = {};
 function mockPokerGameDOM() {
 	interface MockElement {
 		addEventListener: (event: string, handler?: () => void) => void;
-		click: () => void;
+		click?: () => void;
 		close?: () => void;
 		dataset?: Record<string, string>;
 		innerHTML?: string;
@@ -623,7 +623,7 @@ describe('PokerGame bankroll and auto-deal guards', () => {
 			expect(game.humanChipsBefore).toBe(0);
 			expect(game.players[0].chips).toBe(1050);
 		} finally {
-			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 		}
 	});
 
@@ -1381,7 +1381,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 			expect(result).toBeNull();
 			expect(fetchCalls).toEqual([]);
 		} finally {
-			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 		}
 	});
 
@@ -1426,7 +1426,7 @@ describe('PokerGame guest LLM, showdown messaging, and position', () => {
 		} finally {
 			(globalThis as typeof globalThis & { localStorage: Storage }).localStorage =
 				originalLocalStorage;
-			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 		}
 	});
 
@@ -1821,7 +1821,7 @@ describe('PokerGame settings save/reset with difficulty', () => {
 		elements['setting-use-llm-ai'].checked = false;
 
 		// Click save.
-		elements['btn-save-settings'].click();
+		elements['btn-save-settings'].click?.();
 
 		expect(game.aiConfigs.get(1)).toMatchObject({
 			personality: 'tight-passive',
@@ -1860,7 +1860,7 @@ describe('PokerGame settings save/reset with difficulty', () => {
 		elements['setting-ai-difficulty-2'].value = '';
 		elements['setting-use-llm-ai'].checked = false;
 
-		elements['btn-save-settings'].click();
+		elements['btn-save-settings'].click?.();
 
 		// Defaults are 'medium' for both difficulties.
 		expect(game.aiConfigs.get(1)?.difficulty).toBe('medium');
@@ -1883,7 +1883,7 @@ describe('PokerGame settings save/reset with difficulty', () => {
 			pendingChipReset: boolean;
 		};
 
-		elements['btn-reset-settings'].click();
+		elements['btn-reset-settings'].click?.();
 
 		const defaults = DEFAULT_SETTINGS;
 		expect(game.aiConfigs.get(1)).toMatchObject({
@@ -1927,7 +1927,7 @@ describe('PokerGame human call all-in via UI', () => {
 		// Prevent the async AI turn from leaking out of this test.
 		game.processAITurn = async () => {};
 
-		elements['btn-call'].click();
+		elements['btn-call'].click?.();
 
 		// placeBet clamps to 30 chips and marks all-in.
 		expect(game.players[0].chips).toBe(0);
@@ -2384,7 +2384,7 @@ describe('Poker wallet settlement commands', () => {
 		expect(elements['game-status']?.textContent).toContain('Settlement failed');
 
 		// Click retry — the retry handler calls gate.retry() and adopts the result.
-		elements['btn-retry-settlement'].click();
+		elements['btn-retry-settlement'].click?.();
 		await flushAsyncWork();
 
 		expect(retryCalls).toBe(1);
@@ -2448,10 +2448,10 @@ describe('Poker wallet settlement commands', () => {
 		}) => {
 			dispatched.push(event.type);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		// Click reset — the reset handler clears the gate and restores balance.
-		elements['btn-reset-settlement'].click();
+		elements['btn-reset-settlement'].click?.();
 
 		expect(resetCalls).toBe(1);
 		expect(game.players[0].chips).toBe(game.serverSyncedBalance);
@@ -2493,7 +2493,7 @@ describe('Poker wallet settlement commands', () => {
 		}) => {
 			dispatched.push(event);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		try {
 			const gate: SettlementGate = {
@@ -2502,7 +2502,7 @@ describe('Poker wallet settlement commands', () => {
 				settle: async () => ({
 					balance: 650,
 					duplicate: false,
-					newAchievements: [{ id: 'big-win', icon: '🎉' }],
+					newAchievements: [{ id: 'rising_star', icon: '🎉' }],
 				}),
 				retry: async () => null,
 				reset: () => {},
@@ -2521,7 +2521,7 @@ describe('Poker wallet settlement commands', () => {
 			expect(dispatched.some((e) => e.type === 'achievement-earned')).toBe(true);
 			const achEvent = dispatched.find((e) => e.type === 'achievement-earned');
 			expect((achEvent?.detail as { achievements: unknown[] }).achievements).toEqual([
-				{ id: 'big-win', icon: '🎉' },
+				{ id: 'rising_star', icon: '🎉' },
 			]);
 		} finally {
 			(globalThis as typeof globalThis & { window: Window }).window.dispatchEvent = origDispatch;
@@ -2563,7 +2563,7 @@ describe('Poker wallet settlement commands', () => {
 		win.dispatchEvent = ((event: { type: string }) => {
 			dispatched.push(event.type);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		try {
 			const gate: SettlementGate = {
@@ -2599,7 +2599,7 @@ describe('Poker wallet settlement commands', () => {
 		win.dispatchEvent = ((event: { type: string }) => {
 			dispatched.push(event.type);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		try {
 			const gate: SettlementGate = {
@@ -2640,7 +2640,7 @@ describe('Poker wallet settlement commands', () => {
 		win.dispatchEvent = ((event: { type: string }) => {
 			dispatched.push(event.type);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		try {
 			let blocked = false;
@@ -2674,7 +2674,7 @@ describe('Poker wallet settlement commands', () => {
 			game.players[0] = { ...game.players[0], chips: 480 };
 			game.settleHand('loss');
 			await flushAsyncWork();
-			elements['btn-reset-settlement'].click();
+			elements['btn-reset-settlement'].click?.();
 			expect(dispatched).not.toContain('poker-hand-settled');
 
 			game.finishHand();
@@ -2692,7 +2692,7 @@ describe('Poker wallet settlement commands', () => {
 		win.dispatchEvent = ((event: { type: string }) => {
 			dispatched.push(event.type);
 			return true;
-		}) as typeof window.dispatchEvent;
+		}) as unknown as typeof window.dispatchEvent;
 
 		try {
 			const gate: SettlementGate = {
@@ -2834,12 +2834,12 @@ describe('Poker six-max table controls', () => {
 		expect(slider.max).toBe('105');
 		for (const value of ['NaN', '0', '29', '106', '30.5']) {
 			slider.value = value;
-			elements['btn-raise'].click();
+			elements['btn-raise'].click?.();
 			expect(game.players[0].chips).toBe(125);
 			expect(game.pot).toBe(0);
 		}
 		slider.value = '105';
-		elements['btn-raise'].click();
+		elements['btn-raise'].click?.();
 		expect(game.players[0].chips).toBe(0);
 		expect(game.players[0].currentBet).toBe(130);
 		expect(game.players[0].isAllIn).toBe(true);
@@ -2955,10 +2955,10 @@ describe('Poker betting control regressions', () => {
 		game.updateActionButtons();
 		await game.dealNewHand();
 		expect(button('deal').disabled).toBe(true);
-		button('reset-settlement').click();
+		button('reset-settlement').click?.();
 		expect(blocked).toBe(false);
 		expect(button('deal').disabled).toBe(false);
-		button('deal').click();
+		button('deal').click?.();
 		expect(game).toMatchObject({ bettingRound: 'preflop' });
 		expect(game.players.every((player) => player.hand.length === 2)).toBe(true);
 	});
@@ -2975,7 +2975,7 @@ describe('Poker betting control regressions', () => {
 			expect(game.lastRaiseAmount).toBe(10);
 			expect(input('bet-slider').min).toBe('10');
 			input('bet-slider').value = '10';
-			button('raise').click();
+			button('raise').click?.();
 			expect(game.players[0].currentBet).toBe(10);
 			expect(game.players[0].chips).toBe(990);
 		},
@@ -2989,7 +2989,7 @@ describe('Poker betting control regressions', () => {
 		expect(button('raise').disabled).toBe(false);
 		expect(input('bet-slider').min).toBe('25');
 		expect(input('bet-slider').max).toBe('25');
-		button('raise').click();
+		button('raise').click?.();
 		expect(game.players[0].chips).toBe(0);
 		expect(game.players[0].currentBet).toBe(75);
 		expect(game.players[0].isAllIn).toBe(true);
@@ -3043,7 +3043,7 @@ describe('Poker betting control regressions', () => {
 		};
 		game.updateActionButtons();
 		input('bet-slider').value = String(shove - 50);
-		button('raise').click();
+		button('raise').click?.();
 		expect(aiTurn).toBeDefined();
 		await aiTurn;
 		expect(game.players[0].isAllIn).toBe(true);
@@ -3099,9 +3099,9 @@ describe('Poker betting control regressions', () => {
 			expect(button('fold').disabled).toBe(false);
 			if (!canRaise) {
 				button('raise').disabled = false;
-				button('raise').click();
+				button('raise').click?.();
 				expect(game.players[0].currentBet).toBe(paid);
-				button('call').click();
+				button('call').click?.();
 				expect(game.players[0].currentBet).toBe(highest);
 			}
 		},
@@ -3117,7 +3117,7 @@ describe('Poker betting control regressions', () => {
 			expect(input('bet-slider').disabled).toBe(true);
 			// The handler must also reject an attempted raise independently of disabled UI.
 			button('raise').disabled = false;
-			button('raise').click();
+			button('raise').click?.();
 			expect(game.players[0].chips).toBe(stack);
 		}
 	});
@@ -3140,7 +3140,7 @@ describe('Poker betting control regressions', () => {
 		expect(input('bet-input').value).toBe(String(actual));
 		expect(document.getElementById('bet-amount')?.textContent).toBe(String(actual));
 		expect(document.getElementById('ai-rival-status')?.textContent).toContain(`${actual} chips`);
-		button('raise').click();
+		button('raise').click?.();
 		expect(game.players[0].chips).toBe(1000 - 200 - actual);
 	});
 
@@ -3177,7 +3177,7 @@ describe('Poker betting control regressions', () => {
 			expect(game.players[1].chips).toBe(5);
 			expect(document.getElementById('game-status')?.textContent).toContain('checks');
 		} finally {
-			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 			localStorage.removeItem('arcturus-ai-settings');
 		}
 	});
@@ -3298,7 +3298,7 @@ describe('Poker table sound, turn timer and hand recap', () => {
 			const { elements, game, played } = setup();
 			game.recap.start(1, game.players[0].hand);
 			humanTurn(game, 20);
-			elements['btn-fold'].click();
+			elements['btn-fold'].click?.();
 			// Everyone but seat 1 has folded: seat 1 takes the pot uncontested.
 			game.players = game.players.map((player) =>
 				player.id === 1 ? player : { ...player, folded: true },
@@ -3639,7 +3639,7 @@ describe('Poker all-in runout and dead-seat defects (HPA-176)', () => {
 			expect(elements['btn-call']?.disabled).toBe(false);
 			expect(elements['btn-fold']?.disabled).toBe(false);
 
-			elements['btn-call']?.click();
+			elements['btn-call']?.click?.();
 			expect(game.players[0].isAllIn).toBe(true);
 			expect(game.players[0].currentBet).toBe(500);
 			// The runout proceeds on timers rather than skipping the showdown.
@@ -3912,7 +3912,7 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		elements['setting-big-blind']!.value = '3';
 		elements['setting-use-llm-ai']!.checked = false;
 		elements['setting-ai-speed']!.value = 'fast';
-		elements['btn-save-settings'].click();
+		elements['btn-save-settings'].click?.();
 
 		const saved = JSON.parse(storage['poker_game_settings']);
 		expect(saved.startingChips).toBe(777);
@@ -3936,7 +3936,7 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		});
 
 		new PokerGame();
-		elements['btn-reset-settings'].click();
+		elements['btn-reset-settings'].click?.();
 
 		const saved = JSON.parse(storage['poker_game_settings']);
 		expect(saved.startingChips).toBe(777);
@@ -3954,8 +3954,8 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		const statuses: string[] = [];
 		game.updateGameStatus = (message) => statuses.push(message);
 
-		elements['btn-save-settings'].click();
-		elements['btn-reset-settings'].click();
+		elements['btn-save-settings'].click?.();
+		elements['btn-reset-settings'].click?.();
 
 		expect(statuses).toEqual([]);
 	});
@@ -3986,7 +3986,7 @@ describe('PokerGame Sit & Go mode (HPA-176)', () => {
 		const spy = mock(async () => {});
 		game.aiRival.requestAiMove = spy as unknown as AIRivalAssistant['requestAiMove'];
 
-		elements['btn-ai-move'].click();
+		elements['btn-ai-move'].click?.();
 
 		expect(spy).not.toHaveBeenCalled();
 	});
@@ -4029,6 +4029,7 @@ describe('PokerGame Sit & Go tournament lifecycle (HPA-176)', () => {
 		bigBlindIndex: number;
 		currentPlayerIndex: number;
 		isProcessingAction: boolean;
+		handInProgress: boolean;
 		serverSyncedBalance: number;
 		pendingChipReset: boolean;
 		processAITurn: () => Promise<void>;
@@ -4379,7 +4380,7 @@ describe('PokerGame Sit & Go terminal place and deal stop (HPA-176)', () => {
 			expect(timers.scheduledTimers.filter((timer) => !timer.cleared)).toHaveLength(0);
 
 			// ...and neither the manual deal button nor a fired auto-deal deal again.
-			elements['btn-deal'].click();
+			elements['btn-deal'].click?.();
 			await flushAsyncWork();
 			await game.dealNewHand();
 			expect(game.handNumber).toBe(0);
@@ -4614,11 +4615,11 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 				if (handIndex % 3 === 0 && !human.hasActed && available > 0) {
 					const slider = elements['bet-slider'];
 					slider!.value = String(Math.min(1000, available));
-					elements['btn-raise'].click(); // shove
+					elements['btn-raise'].click?.(); // shove
 				} else if (call > 0) {
-					elements['btn-call'].click();
+					elements['btn-call'].click?.();
 				} else {
-					elements['btn-check'].click();
+					elements['btn-check'].click?.();
 				}
 			};
 
@@ -4647,7 +4648,7 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 					assertStep(bustedSeats, foldedChips);
 				}
 				// Every hand completes and pays out its whole pot.
-				expect(game.handInProgress).toBe(false);
+				expect(game.handInProgress as boolean).toBe(false);
 				expect(game.pot).toBe(0);
 
 				const humanChips = game.players[0].chips;
@@ -4668,9 +4669,9 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 			expect(storage).toEqual({});
 		} finally {
 			timers.restore();
-			(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = originalFetch;
+			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 			win.dispatchEvent = originalDispatch;
-			delete globalThisWithSession.sessionStorage;
+			delete (globalThisWithSession as { sessionStorage?: unknown }).sessionStorage;
 		}
 	}, 30000);
 });

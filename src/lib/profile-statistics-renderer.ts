@@ -51,8 +51,9 @@ function appendMetric(
 			: 'mt-1 text-base font-semibold text-[var(--deco-ivory)] break-words tabular-nums',
 	);
 	if (options.valueAttribute) description.setAttribute(options.valueAttribute, '');
-	item.append(term, description);
-	list.append(item);
+	item.appendChild(term);
+	item.appendChild(description);
+	list.appendChild(item);
 	return description;
 }
 
@@ -111,9 +112,11 @@ function renderGameCard(
 		'mt-1 text-sm text-[var(--deco-ivory-dim)]',
 	);
 	status.setAttribute('data-statistics-status', '');
-	titleGroup.append(title, status);
-	identity.append(icon, titleGroup);
-	header.append(identity);
+	titleGroup.appendChild(title);
+	titleGroup.appendChild(status);
+	identity.appendChild(icon);
+	identity.appendChild(titleGroup);
+	header.appendChild(identity);
 
 	const primary = element('dl', 'mt-6 grid grid-cols-3 gap-3');
 	appendMetric(primary, t('handsPlayed'), formatWholeNumber(game.handsPlayed, locale), {
@@ -153,9 +156,13 @@ function renderGameCard(
 	const play = textElement('a', t('playGame', { game: label }), 'deco-btn deco-btn-outline');
 	play.setAttribute('href', `/games/${gameType}`);
 	play.setAttribute('data-statistics-play', '');
-	actions.append(leaderboard, play);
+	actions.appendChild(leaderboard);
+	actions.appendChild(play);
 
-	card.append(header, primary, secondary, actions);
+	card.appendChild(header);
+	card.appendChild(primary);
+	card.appendChild(secondary);
+	card.appendChild(actions);
 	return card;
 }
 

@@ -23,6 +23,7 @@ import {
 	blackjackRunCommandSchema,
 	blackjackRunStartSchema,
 	BlackjackRunError,
+	type BlackjackAction,
 	type BlackjackRunCommand,
 	type BlackjackRunPublicState,
 	type BlackjackRunStart,
@@ -99,6 +100,16 @@ const BASE64URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 const BASE64URL_PATTERN = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2}|[A-Za-z0-9_-]{3})?$/;
 const SEED_LENGTH = 32;
 const SNAPSHOT_ATTEMPTS = 3;
+
+// Idempotent replay equality: same command, plus same wager for start-round
+// (the only command that carries one).
+function sameCommand(a: BlackjackRunCommand, b: BlackjackRunCommand): boolean {
+	if (a.command !== b.command) return false;
+	if (a.command === 'start-round') {
+		return b.command === 'start-round' && a.wager === b.wager;
+	}
+	return true;
+}
 
 function encodeBase64Url(bytes: Uint8Array): string {
 	let encoded = '';
@@ -556,7 +567,7 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		}
 		if (command.sequence < run.nextSequence) {
 			const stored = run.commands[command.sequence];
-			if (stored && stored.command === command.command && stored.wager === command.wager) {
+			if (stored && sameCommand(stored, command)) {
 				return this.renderRunState(userId, run);
 			}
 			throw new BlackjackRunServiceError('IDENTIFIER_REUSE_MISMATCH');
@@ -599,7 +610,7 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 			if (this.nowSeconds() >= current.expiresAt) return this.renderRunState(userId, current);
 			if (current.nextSequence > command.sequence) {
 				const stored = current.commands[command.sequence];
-				if (stored && stored.command === command.command && stored.wager === command.wager) {
+				if (stored && sameCommand(stored, command)) {
 					return this.renderRunState(userId, current);
 				}
 				throw new BlackjackRunServiceError('IDENTIFIER_REUSE_MISMATCH');
@@ -714,7 +725,8 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 		return {
 			mode: 'daily',
 			runId: run.id,
-			status: run.status,
+			// Domain invariant: daily runs never carry the ranked-only 'settled' status.
+			status: run.status as 'active' | 'completed' | 'forfeited' | 'expired',
 			terminalReason: expired ? 'expired' : replay.terminalReason,
 			eligible: expired ? null : replay.eligible,
 			expiresAt: run.expiresAt,
@@ -921,7 +933,12 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 			initialWager: run.initialWager,
 			// The repository persists the sequenced command log; the ranked
 			// engine replays plain actions.
-			actions: run.commands.map(({ command }) => command),
+			actions: run.commands
+				.map(({ command }) => command)
+				.filter(
+					(command): command is BlackjackAction =>
+						command !== 'start-round' && command !== 'forfeit',
+				),
 		});
 	}
 

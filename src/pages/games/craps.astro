@@ -553,7 +553,7 @@ const cabinet = cabinetTranslator(locale);
 		GamePhase,
 	} from '../../lib/craps/types';
 	import { loadAiSettings } from '../../lib/ai';
-	import { initAchievementToast } from '../../lib/achievement-toast';
+	import { initAchievementToast, type AchievementToastEntry } from '../../lib/achievement-toast';
 	import { getDocumentLocale } from '../../lib/i18n/locale';
 	import { formatChips } from '../../lib/i18n/messages/common';
 	import { cabinetTranslator } from '../../lib/i18n/messages/cabinet';
@@ -1560,9 +1560,8 @@ const cabinet = cabinetTranslator(locale);
 			}));
 
 			window.addEventListener('achievement-earned', (event: Event) => {
-				const { achievements } = (
-					event as CustomEvent<{ achievements: Array<{ id: string; icon: string }> }>
-				).detail;
+				const { achievements } = (event as CustomEvent<{ achievements: AchievementToastEntry[] }>)
+					.detail;
 				// Validate achievements is an array before calling enqueue
 				if (Array.isArray(achievements)) {
 					enqueue(achievements);

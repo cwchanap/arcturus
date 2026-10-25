@@ -818,7 +818,7 @@ describe('daily lifecycle', () => {
 		const definition = await db
 			.prepare('SELECT periodKey, seed FROM blackjack_daily WHERE periodKey = ?')
 			.bind(PERIOD_KEY)
-			.first<{ periodKey: string; seed: string }>();
+			.first<{ periodKey: string; seed: string | undefined }>();
 		expect(definition).toEqual({ periodKey: PERIOD_KEY, seed: firstRun?.seed });
 		const count = await db
 			.prepare('SELECT COUNT(*) AS count FROM blackjack_daily WHERE periodKey = ?')

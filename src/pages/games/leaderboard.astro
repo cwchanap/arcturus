@@ -38,9 +38,11 @@ const dbBinding = Astro.locals.runtime.env.DB;
 const selectedTabRaw = Astro.url.searchParams.get('game') || 'all';
 const selectedMetric = Astro.url.searchParams.get('metric') || 'wins';
 
-// Validate and normalize parameters
-const isGameTab = selectedTabRaw !== 'all' && isValidGameType(selectedTabRaw);
-const selectedTab = isGameTab ? selectedTabRaw : 'all';
+// Validate and normalize parameters. selectedTab stays narrowed to
+// GameType | 'all' so `isGameTab` narrows it in every branch below.
+const selectedTab =
+	selectedTabRaw !== 'all' && isValidGameType(selectedTabRaw) ? selectedTabRaw : 'all';
+const isGameTab = selectedTab !== 'all';
 const validMetric = isValidRankingMetric(selectedMetric) ? selectedMetric : 'wins';
 
 // Fetch leaderboard data server-side
@@ -54,7 +56,7 @@ try {
 	if (isGameTab) {
 		// Fetch game-specific leaderboard
 		gameLeaderboardData = await getGameLeaderboardData(db, {
-			gameType: selectedTab as (typeof GAME_TYPES)[number],
+			gameType: selectedTab,
 			rankingMetric: validMetric as (typeof RANKING_METRICS)[number],
 			limit: 50,
 			currentUserId: user.id,

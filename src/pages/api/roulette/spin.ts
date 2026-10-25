@@ -50,7 +50,7 @@ export function isValidBet(b: unknown): b is RouletteBet {
 /** Keep only fields used by the authoritative evaluator. */
 export function normalizeBet(b: unknown): RouletteBet | null {
 	if (!isValidBet(b)) return null;
-	const bet = b as Record<string, unknown>;
+	const bet = b as unknown as Record<string, unknown>;
 	const normalized: RouletteBet = {
 		id: bet.id as string,
 		type: bet.type as BetType,

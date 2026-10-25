@@ -389,7 +389,7 @@ const clientUserId = gameSession.clientUserId;
 
 <script>
 	import { initBlackjackClient } from '../../lib/blackjack/blackjackClient';
-	import { initAchievementToast } from '../../lib/achievement-toast';
+	import { initAchievementToast, type AchievementToastEntry } from '../../lib/achievement-toast';
 
 	initBlackjackClient();
 
@@ -398,7 +398,7 @@ const clientUserId = gameSession.clientUserId;
 	const achievementIcon = document.getElementById('achievement-icon');
 	const achievementName = document.getElementById('achievement-name');
 
-	let enqueue: (achievements: Array<{ id: string; icon: string }>) => void;
+	let enqueue: (achievements: AchievementToastEntry[]) => void;
 
 	if (achievementToast && achievementIcon && achievementName) {
 		const controller = initAchievementToast(() => ({
@@ -414,7 +414,7 @@ const clientUserId = gameSession.clientUserId;
 
 	window.addEventListener('achievement-earned', (event: Event) => {
 		const customEvent = event as CustomEvent<{
-			achievements: Array<{ id: string; icon: string }>;
+			achievements: AchievementToastEntry[];
 		}>;
 		const { achievements } = customEvent.detail;
 		// Validate achievements is an array before calling enqueue

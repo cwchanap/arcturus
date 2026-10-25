@@ -61,7 +61,7 @@ const locals: App.Locals = {
 	user,
 };
 
-function normalizedText(element: Element | null): string {
+function normalizedText(element: Element | null | undefined): string {
 	return element?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 }
 
@@ -87,7 +87,7 @@ describe('profile route statistics failure isolation', () => {
 
 			const statisticsSection = window.document.querySelector(
 				'section[aria-labelledby="player-performance-heading"]',
-			);
+			) as unknown as Element | null;
 
 			expect(response.status).toBe(200);
 			expect(getPlayerStatisticsSummary).toHaveBeenCalledOnce();
@@ -100,7 +100,9 @@ describe('profile route statistics failure isolation', () => {
 			expect(statisticsSection?.querySelector('dl')).toBeNull();
 			expect(normalizedText(statisticsSection)).not.toContain('Total Hands');
 
-			const profileText = normalizedText(window.document.querySelector('main'));
+			const profileText = normalizedText(
+				window.document.querySelector('main') as unknown as Element | null,
+			);
 			expect(profileText).toContain('Integration Player');
 			expect(profileText).toContain('Account Details');
 			expect(profileText).toContain('Casino Tips');

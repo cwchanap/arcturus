@@ -200,7 +200,13 @@ export function initSicBoClient(): void {
 			recent.splice(20);
 			render();
 
-			await settlement.completeRound(result.netDelta, game.getState().balance);
+			// Triple with any winning placed bet earns the feat, even at a net loss.
+			const isTriple = result.roll[0] === result.roll[1] && result.roll[1] === result.roll[2];
+			await settlement.completeRound(
+				result.netDelta,
+				game.getState().balance,
+				isTriple && result.results.some((r) => r.won) ? (['triple_threat'] as const) : undefined,
+			);
 			return;
 		}
 

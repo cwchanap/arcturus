@@ -15,7 +15,7 @@
 | Balance and game stats reads | `readWalletBalance`, `readGameStats`, `insertUser`, `command` in repository test | Reuse |
 | Progress gate | `src/lib/missions/progress.ts:buildReceiptGateSql` | No production edits expected |
 | Fixed mission definitions | `src/lib/missions/registry.ts`: `daily-blackjack-5` and `daily-win-3` | Assert concrete progress |
-| Zero-delta receipt blocking | `repository.ts` guarded UPDATE `NOT EXISTS` check | Extend the existing duplicate push assertion |
+| Zero-delta receipt blocking | `repository.ts` guarded UPDATE `NOT EXISTS` check | Replace the existing duplicate push test with a fresh-push-then-replay test |
 | Other wallet behaviors | Existing repository tests | Do not touch |
 
 ## Task 1 — Add real-SQL duplicate-win assertion
@@ -31,13 +31,13 @@
 
 **Test design note:** Avoid testing `prepareMissionProgressStatements` with a stubbed `onRun` callback: its side effects must be validated by executing real SQL from the repository's D1 batch. The existing fixture DB is shared; distinct user IDs keep assertions independent.
 
-## Task 2 — Extend zero-delta duplicate protection
+## Task 2 — Replace zero-delta duplicate test with full-batch replay
 
-**Same file.** Extend the existing `guards a zero-delta duplicate even though the balance is unchanged` test or replace it with a fresh-push-then-replay test.
+**Same file.** Replace the existing `guards a zero-delta duplicate even though the balance is unchanged` test, which pre-seeds the receipt and misses the batch's initial INSERT-then-gate ordering, with a fresh-push-then-replay test.
 
 - [ ] For a new user, submit a genuine zero-delta Blackjack push (`rounds: 1, wins: 0, losses: 0`) with a unique settlement ID and `attemptId: 'push-winner'`; expect `true`, unchanged wallet, `handsPlayed: 1`, and `daily-blackjack-5: 1`.
 - [ ] Replay the same settlement ID with a different attempt ID, unchanged `expectedBalance` and `nextBalance`, and expect `false`.
-- [ ] Confirm only one receipt, one hand in `game_stats`, and `daily-blackjack-5` remains at `1` (not `2`). Keep or strengthen the current zero-delta assertion; do not duplicate overlapping test setups unnecessarily.
+- [ ] Confirm only one receipt, one hand in `game_stats`, and `daily-blackjack-5` remains at `1` (not `2`). Remove the pre-seeded-receipt setup rather than retaining a weaker overlapping case.
 
 ## Task 3 — Verify, then finish on this branch
 

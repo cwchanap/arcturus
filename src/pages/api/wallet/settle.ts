@@ -40,8 +40,12 @@ export function createPostHandler({
 
 		try {
 			// Gate-based clients retry by resubmitting the identical stored
-			// command, so a duplicate receipt means this body replays the
+			// command, so a duplicate receipt is treated as replaying the
 			// committed outcome and its feats stay eligible for evaluation.
+			// The receipt does not persist the command, so a forged duplicate
+			// could substitute outcome inputs — but feats and biggestWin are
+			// already client-reported on fresh settlements, so accepting them
+			// here adds no capability an altered fresh command would lack.
 			const result = await settle(d1, userId, body as Parameters<SettleWalletRound>[2], undefined, {
 				replaysCommittedOutcome: true,
 			});

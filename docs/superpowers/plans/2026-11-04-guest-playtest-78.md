@@ -115,14 +115,15 @@ Files:
 - `src/lib/blackjack-run/daily-ui.ts`
 - `src/lib/blackjack-run/daily.test.ts`
 - `src/lib/blackjack-run/daily-ui.test.ts`
-- Service/protocol mock fixtures and `e2e/daily-challenge.spec.ts` as appropriate
+- `src/server/blackjack-run/http.test.ts`, `src/lib/blackjack-run/protocol.test.ts`, and any other strict daily-state fixtures
+- `e2e/daily-challenge.spec.ts` as appropriate
 
 Work:
 1. In pure `snapshotReplay` (`daily.ts`), derive `lastCompletedRoundPublic` from `rounds.at(-1)` via `projectBlackjackRoundReplay` (terminal projection reveals final dealer cards and `outcome`). Omit internal `nextSequence` and produce `null` if no round completed; add unit tests for both natural-at-start and stand-settled rounds.
-2. Add **required nullable** `lastRound` to the daily branch of `blackjackRunPublicStateSchema` (`protocol.ts`). In `service.ts`'s `renderDailyState`, expose the projection as `lastRound` while honoring the current expired-run policy; update daily test fixtures and mocked API states. No migrations or new HTTP endpoints.
+2. Add **required nullable** `lastRound` to the daily branch of `blackjackRunPublicStateSchema` (`protocol.ts`). In `service.ts`'s `renderDailyState`, expose the projection as `lastRound` while honoring the current expired-run policy. Because the daily schema is `.strict()` and the field is required, explicitly update `dailyState()` (`src/lib/blackjack-run/daily-ui.test.ts`), `dailyActiveState()` (`src/server/blackjack-run/http.test.ts`), and `dailyPublicSample` (`src/lib/blackjack-run/protocol.test.ts`) to include `lastRound: null` by default; search for other daily-state fixtures and update them too. Verify Zod parse tests accept null and reject missing or malformed `lastRound`. No migrations or new HTTP endpoints.
 3. Update `daily-ui.ts` to display `activeRound ?? lastRound` in **both practice and ranked** via the existing `renderActiveRound`. Keep enabled actions, Start Round, and Forfeit based **only on real `activeRound`**, never on last-completed presentation data.
-4. Render a visible completed outcome and net value using existing `blackjackTranslator` `resultWin`/`resultLoss`/`resultPush` and `formatBlackjackNet` as already done in `ranked-ui.ts`. Reuse those messages; do not create duplicate Daily translations or alter forfeit/receipt semantics.
-5. Add deterministic renderer/controller coverage for natural and stand-settled rounds in both modes: dealer and player cards remain visible, result/net matches replay, next Start Round stays available if the attempt remains active, no extra API write occurs, and bankroll/score remain unchanged by presentation work. Cover moving to next round and restarting practice.
+4. Render a visible completed outcome and net value using existing `blackjackTranslator` `resultWin`/`resultLoss`/`resultPush` and `formatBlackjackNet` as already done in `ranked-ui.ts`. **Do not unconditionally overwrite `statusEl` when `lastRound` exists.** Practice `status === 'active'` with no active hand may show the last outcome there; practice `status === 'completed'`/`'forfeited'` must keep the existing `practiceComplete`/`practiceForfeited` status text (or render outcome separately). Keep ranked terminal receipt/terminal status visible, including when a prior settled hand is displayed. No duplicate Daily translations or changes to forfeit/receipt semantics.
+5. Add deterministic renderer/controller coverage for natural and stand-settled rounds in both modes: dealer and player cards remain visible, result/net matches replay, next Start Round stays available if the attempt remains active, no extra API write occurs, and bankroll/score remain unchanged by presentation work. Cover moving to next round and restarting practice. **Regression:** the existing `daily-ui.test.ts` terminal-practice test must still show exact `Practice forfeited.` (and completion copy when completed), the ranked terminal receipt stays visible, and strict daily protocol/HTTP fixtures pass with `lastRound: null`.
 6. Do not add debouncing, automatic forfeits or a second game state machine based on the unreproduced double-click speculation. If a separate reproducible rapid-click test demonstrates a bug, resolve it minimally in this PR.
 
 Done when: completed practice and ranked hands remain readable until the next round (or restart), with no changes to gameplay or one-attempt rules.
@@ -132,7 +133,7 @@ Done when: completed practice and ranked hands remain readable until the next ro
 Run the scoped checks during implementation:
 
 ```bash
-bun test src/lib/sic-bo/game.test.ts src/lib/pai-gow-poker/rules.test.ts src/lib/blackjack-run/daily.test.ts src/lib/blackjack-run/daily-ui.test.ts
+bun test src/lib/sic-bo/game.test.ts src/lib/pai-gow-poker/rules.test.ts src/lib/blackjack-run/daily.test.ts src/lib/blackjack-run/daily-ui.test.ts src/lib/blackjack-run/protocol.test.ts src/server/blackjack-run/http.test.ts
 bun run test:unit
 bun run lint
 bun run format:check
@@ -145,7 +146,8 @@ Playwright's authenticated setup needs the repository's documented local/CI test
 Final review checklist:
 - [ ] All five actionable findings addressed, with CardSlot legibility checked in all three affected games.
 - [ ] Pai Gow policy clarified without evaluator changes.
-- [ ] Completed Daily practice **and ranked** hands (including naturals and stand-settled hands) remain visible.
+- [ ] Completed Daily practice **and ranked** hands (including naturals and stand-settled hands) remain visible without clobbering terminal/forfeit status text or ranked receipts.
+- [ ] All strict daily schema and test fixtures include `lastRound` (null by default); protocol parsing and HTTP mocks pass.
 - [ ] Tests previously expecting Sic Bo retained bets are corrected, not skipped.
 - [ ] All four locales covered for changed copy.
 - [ ] No extra backend/persistence service, generated artwork, or migration.

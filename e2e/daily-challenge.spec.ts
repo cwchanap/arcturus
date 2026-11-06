@@ -189,6 +189,18 @@ async function playRankedRound(
 			return (await progressLabel(page)) === roundLabel(round) ? 'done' : 'pending';
 		})
 		.toBe('done');
+	await assertCompletedHandVisible(page);
+}
+
+async function assertCompletedHandVisible(page: Page): Promise<void> {
+	await expect(page.getByTestId('daily-challenge-player-card').first()).toBeVisible();
+	await expect(page.getByTestId('daily-challenge-dealer-card').nth(1)).toBeVisible();
+	await expect(page.getByTestId('daily-challenge-round-result')).toBeVisible();
+	await expect(page.getByTestId('daily-challenge-round-result')).toHaveText(
+		/^(Win|Loss|Push) · [−+]?[\d,]+ chips$/,
+	);
+	await expect(page.getByTestId('daily-challenge-action-stand')).toBeDisabled();
+	await expect(page.getByTestId('daily-challenge-forfeit')).toBeHidden();
 }
 
 async function assertNoLegacyDailyUi(page: Page): Promise<void> {
@@ -271,11 +283,16 @@ test.describe('daily challenge — guest surface and browser-local practice', ()
 				await page.getByTestId('daily-challenge-action-stand').click();
 			}
 			await expect.poll(() => progressLabel(page)).toBe(roundLabel(1));
+			await assertCompletedHandVisible(page);
+			await expect(page.getByTestId('daily-challenge-start-round')).toBeEnabled();
 
 			// Restart deals a fresh browser-local scenario.
 			await page.getByTestId('daily-challenge-restart-practice').click();
 			await expect(page.getByTestId('daily-challenge-bankroll')).toHaveText(formatCurrency(1000));
 			await expect(page.getByTestId('daily-challenge-round-progress')).toHaveText(roundLabel(0));
+			await expect(page.getByTestId('daily-challenge-round-result')).toBeHidden();
+			await expect(page.getByTestId('daily-challenge-player-card')).toHaveCount(0);
+			await expect(page.getByTestId('daily-challenge-dealer-card')).toHaveCount(0);
 			await page.getByTestId('daily-challenge-start-round').click();
 			state = await waitForTurnOrSettled(page);
 			if (state === 'turn') {
@@ -385,6 +402,7 @@ test.describe('daily challenge — authenticated ranked attempt', () => {
 			expect(started.availableBankroll).toBe(1000);
 			expect(started.roundsCompleted).toBe(0);
 			expect(started.activeRound).toBeNull();
+			expect(started.lastRound).toBeNull();
 
 			// The active attempt routes all controls to the server and hides
 			// the start button.

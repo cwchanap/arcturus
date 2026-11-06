@@ -730,6 +730,55 @@ describe('ranked lifecycle', () => {
 // --- Step 4.2: Daily lifecycle tests ---
 
 describe('daily lifecycle', () => {
+	test.each([
+		{ name: 'natural', seed: 22, stand: false, bankroll: 1015, result: 'win', net: 15 },
+		{ name: 'stand-settled', seed: 0, stand: true, bankroll: 990, result: 'loss', net: -10 },
+	])('exposes the $name hand until the next round, but redacts it on expiry', async (scenario) => {
+		const { service, spy, setNow, repository } = makeService(randomBytesOf(seedOf(scenario.seed)));
+		const run = isDailyState(await service.start(USER_ID, dailyStart('request-last-round-01')));
+		expect(run.lastRound).toBeNull();
+		let state = isDailyState(
+			await service.command(USER_ID, run.runId, { sequence: 0, command: 'start-round', wager: 10 }),
+		);
+		if (scenario.stand)
+			state = isDailyState(
+				await service.command(USER_ID, run.runId, { sequence: 1, command: 'stand' }),
+			);
+		expect(state.activeRound).toBeNull();
+		expect(state.lastRound?.phase).toBe('complete');
+		expect(state.lastRound?.dealer.cards.length).toBeGreaterThanOrEqual(2);
+		expect(state.lastRound?.outcome).toMatchObject({
+			result: scenario.result,
+			gameNetDelta: scenario.net,
+		});
+		expect(state.lastRound).not.toHaveProperty('nextSequence');
+		expect(state.availableBankroll).toBe(scenario.bankroll);
+		expect(state.roundsCompleted).toBe(1);
+		const storedBefore = await repository.findOwnedRun(USER_ID, run.runId);
+		expect(isDailyState(await service.get(USER_ID, run.runId))).toEqual(state);
+		expect(await repository.findOwnedRun(USER_ID, run.runId)).toEqual(storedBefore);
+		const next = isDailyState(
+			await service.command(USER_ID, run.runId, {
+				sequence: state.nextCommandSequence,
+				command: 'start-round',
+				wager: 10,
+			}),
+		);
+		expect(next.activeRound?.phase).toBe('player-turn');
+		expect(next.activeRound?.dealer.cards).toHaveLength(1);
+		expect(next.lastRound).toEqual(state.lastRound);
+		setNow(run.expiresAt);
+		const expired = isDailyState(await service.get(USER_ID, run.runId));
+		expect(expired.status).toBe('expired');
+		expect(expired.activeRound).toBeNull();
+		expect(expired.lastRound).toBeNull();
+		expect(expired.eligible).toBeNull();
+		expect(expired.rank).toBeNull();
+		expect(expired.percentile).toBeNull();
+		expect(await readChipBalance()).toBe(1000);
+		expect(spy.calls).toHaveLength(0);
+	});
+
 	test('current period/window drives daily start and current lookups', async () => {
 		const { service, spy } = makeService(randomBytesOf(seedOf(0)));
 		const state = isDailyState(await service.start(USER_ID, dailyStart('request-daily-0001')));

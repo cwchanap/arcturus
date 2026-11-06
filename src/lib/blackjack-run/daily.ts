@@ -149,6 +149,7 @@ export interface DailyRunReplay {
 	readonly rounds: readonly DailyRound[];
 	readonly activeRound: DailyRound | null;
 	readonly activeRoundPublic: Omit<BlackjackPublicRoundState, 'nextSequence'> | null;
+	readonly lastCompletedRoundPublic: Omit<BlackjackPublicRoundState, 'nextSequence'> | null;
 	readonly nextCommandSequence: number;
 	readonly status: 'active' | 'completed' | 'forfeited';
 	readonly terminalReason: 'completed' | 'bankroll-below-minimum' | 'forfeited' | null;
@@ -298,6 +299,15 @@ function projectActiveRound(
 }
 
 function snapshotReplay(state: MutableReplayState): DailyRunReplay {
+	const lastCompletedRound = state.rounds.at(-1);
+	let lastCompletedRoundPublic: DailyRunReplay['lastCompletedRoundPublic'] = null;
+	if (lastCompletedRound) {
+		const { nextSequence: _omitted, ...publicState } = projectBlackjackRoundReplay(
+			lastCompletedRound.replay,
+			state.availableBankroll,
+		);
+		lastCompletedRoundPublic = publicState;
+	}
 	const frozenRounds = state.rounds.map((round) => ({
 		roundIndex: round.roundIndex,
 		initialWager: round.initialWager,
@@ -319,6 +329,7 @@ function snapshotReplay(state: MutableReplayState): DailyRunReplay {
 		rounds: frozenRounds,
 		activeRound: frozenActive,
 		activeRoundPublic: projectActiveRound(state),
+		lastCompletedRoundPublic,
 		nextCommandSequence: state.nextCommandSequence,
 		status: state.status,
 		terminalReason: state.terminalReason,

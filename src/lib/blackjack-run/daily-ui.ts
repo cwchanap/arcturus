@@ -6,6 +6,7 @@ import {
 	dailyChallengeTranslator,
 } from '../i18n/messages/daily-challenge';
 import { formatChips } from '../i18n/messages/common';
+import { blackjackTranslator, formatBlackjackNet } from '../i18n/messages/blackjack';
 import { getDocumentLocale, type Locale } from '../i18n/locale';
 import type { MessageKey } from '../i18n/translate';
 import {
@@ -305,6 +306,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 	const dealerHandEl = requireElement(root, 'daily-challenge-dealer-hand');
 	const playerHandsEl = requireElement(root, 'daily-challenge-player-hands');
 	const statusEl = requireElement(root, 'daily-challenge-status');
+	const roundResultEl = requireElement(root, 'daily-challenge-round-result');
 	const wagerEl = requireElement<HTMLInputElement>(root, 'daily-challenge-wager');
 	const startRankedEl = requireElement<HTMLButtonElement>(root, 'daily-challenge-start-ranked');
 	const startRoundEl = requireElement<HTMLButtonElement>(root, 'daily-challenge-start-round');
@@ -383,6 +385,32 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		playerHandsEl.replaceChildren();
 	};
 
+	const renderPresentedRound = (round: DailyRunState['activeRound']): void => {
+		const outcome = round?.outcome;
+		roundResultEl.hidden = !outcome;
+		roundResultEl.textContent = '';
+		if (!round) return;
+		renderActiveRound(
+			root.ownerDocument,
+			round,
+			dealerHandEl,
+			dealerValueEl,
+			playerHandsEl,
+			locale,
+		);
+		if (outcome) {
+			const bt = blackjackTranslator(locale);
+			const result = bt(
+				outcome.result === 'win'
+					? 'resultWin'
+					: outcome.result === 'loss'
+						? 'resultLoss'
+						: 'resultPush',
+			);
+			roundResultEl.textContent = `${result} · ${formatBlackjackNet(locale, outcome.gameNetDelta)}`;
+		}
+	};
+
 	const renderReceipt = (state: DailyRunState): void => {
 		receiptEl.hidden = false;
 		receiptEligibilityEl.textContent =
@@ -405,6 +433,8 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		forfeitConfirmVisible = false;
 		controlsEl.hidden = false;
 		clearHands();
+		roundResultEl.hidden = true;
+		roundResultEl.textContent = '';
 		receiptEl.hidden = true;
 		syncModeVisibility();
 		syncControls();
@@ -417,15 +447,8 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				? formatChips(replay.activeRoundPublic.committedWager, locale)
 				: '\u2014';
 			roundProgressEl.textContent = roundProgressLabel(replay.roundsCompleted);
+			renderPresentedRound(replay.activeRoundPublic ?? replay.lastCompletedRoundPublic);
 			if (replay.activeRoundPublic) {
-				renderActiveRound(
-					root.ownerDocument,
-					replay.activeRoundPublic,
-					dealerHandEl,
-					dealerValueEl,
-					playerHandsEl,
-					locale,
-				);
 				statusEl.textContent = '';
 			} else if (replay.status === 'completed') {
 				statusEl.textContent = t('practiceComplete');
@@ -451,15 +474,8 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			? formatChips(state.activeRound.committedWager, locale)
 			: '\u2014';
 		roundProgressEl.textContent = roundProgressLabel(state.roundsCompleted);
+		renderPresentedRound(state.activeRound ?? state.lastRound);
 		if (state.activeRound) {
-			renderActiveRound(
-				root.ownerDocument,
-				state.activeRound,
-				dealerHandEl,
-				dealerValueEl,
-				playerHandsEl,
-				locale,
-			);
 			statusEl.textContent = '';
 		}
 		if (state.status !== 'active') {

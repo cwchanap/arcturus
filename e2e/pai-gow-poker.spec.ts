@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { RED_CARD_COLOR, expectLegibleCardFaces, readVisibleCardFaces } from './card-legibility';
 
 test.describe('Pai Gow Poker guest', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
@@ -70,6 +71,29 @@ test.describe('Pai Gow Poker guest', () => {
 		await expect(page.getByTestId('chip-balance')).toHaveText('1,000 chips');
 		await page.waitForLoadState('networkidle');
 		expect(walletRequests).toEqual([]);
+	});
+
+	test('dealt player cards render legible ranks and suits', async ({ page }) => {
+		await page.addInitScript(() => {
+			localStorage.removeItem('pai-gow-poker-bankroll:anonymous');
+			Math.random = () => 0;
+		});
+		await page.goto('/games/pai-gow-poker', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.getByTestId('pai-gow-root')).toHaveAttribute('data-guest-mode', 'true');
+		await page.locator('[data-wager="20"]').click();
+		await page.getByTestId('deal-button').click();
+		await expect(page.locator('[id^="pai-gow-player-slot-"][data-slot-state="card"]')).toHaveCount(
+			7,
+		);
+
+		const faces = await readVisibleCardFaces(page.locator('[id^="pai-gow-player-slot-"]'));
+		expect(faces).toHaveLength(7);
+		expectLegibleCardFaces(faces);
+		// random=0 deals a seven-heart run, so every face uses the red contract color.
+		for (const face of faces) {
+			expect(face.textColor).toBe(RED_CARD_COLOR);
+		}
 	});
 
 	test('plays a deterministic guest Win with payout and persisted balance', async ({ page }) => {

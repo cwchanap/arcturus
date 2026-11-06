@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
+import { RED_CARD_COLOR, expectLegibleCardFaces, readVisibleCardFaces } from './card-legibility';
 import { createIsolatedPage } from './isolated-page';
 
 const createIsolatedThreeCardShowdownPage = (browser: Browser, baseURL?: string) =>
@@ -50,6 +51,17 @@ test.describe('Three-Card Showdown guest', () => {
 		await expect(
 			page.locator('[id^="three-card-showdown-dealer-slot-"][data-slot-state="card"]'),
 		).toHaveCount(3);
+
+		// Legibility smoke: revealed dealer cards show readable ranks and suits.
+		const dealerFaces = await readVisibleCardFaces(
+			page.locator('[id^="three-card-showdown-dealer-slot-"]'),
+		);
+		expect(dealerFaces).toHaveLength(3);
+		expectLegibleCardFaces(dealerFaces);
+		// random=0 reveals the dealer's 6♥7♥8♥ run, so each face uses the red color.
+		for (const face of dealerFaces) {
+			expect(face.textColor).toBe(RED_CARD_COLOR);
+		}
 		expect(walletRequests).toEqual([]);
 	});
 });

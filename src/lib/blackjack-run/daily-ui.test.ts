@@ -1057,6 +1057,41 @@ describe('daily run renderer — direct DOM behavior', () => {
 		},
 	);
 
+	test.each(['practice', 'ranked'] as const)(
+		'presents the abandoned hand of a mid-round %s forfeit without an active highlight',
+		(mode) => {
+			const replay = replayDailyRun(new Uint8Array(32), [
+				{ sequence: 0, command: 'start-round', wager: 10 },
+				{ sequence: 1, command: 'forfeit' },
+			]);
+			expect(replay.status).toBe('forfeited');
+			expect(replay.lastRoundPublic?.phase).toBe('player-turn');
+
+			if (mode === 'practice') {
+				renderer.renderPractice(replay);
+			} else {
+				renderer.renderRanked(
+					dailyState({
+						status: 'forfeited',
+						terminalReason: 'forfeited',
+						eligible: false,
+						availableBankroll: replay.availableBankroll,
+						nextCommandSequence: replay.nextCommandSequence,
+						lastRound: replay.lastRoundPublic,
+					}),
+				);
+			}
+
+			expect(
+				root.querySelectorAll('[data-testid="daily-challenge-player-card"]').length,
+			).toBeGreaterThan(0);
+			expect(
+				root.querySelectorAll('[data-testid="daily-challenge-player-hand"][data-active="true"]'),
+				'abandoned round must not highlight an active hand',
+			).toHaveLength(0);
+		},
+	);
+
 	test('disables every control while pending', () => {
 		renderer.renderRanked(
 			dailyState({

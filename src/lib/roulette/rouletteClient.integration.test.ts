@@ -71,6 +71,8 @@ interface SetupOptions {
 	userId?: string;
 	guestMode?: boolean;
 	guestBankroll?: number;
+	/** Deterministic winning number for local guest spins (default 17). */
+	winningNumber?: number;
 	/** Document locale set before the client initializes (default: en). */
 	locale?: string;
 	session?: Record<string, unknown>;
@@ -84,11 +86,14 @@ interface SetupResult {
 	timers: TimerMock;
 	win: WindowMock;
 	spinBtn: MockElement;
-	betCells: { red: MockElement };
+	betCells: { red: MockElement; black: MockElement };
 	balanceEl: MockElement;
 	gameMessage: MockElement;
 	roundResult: MockElement;
 	gamePhase: MockElement;
+	netDelta: MockElement;
+	betResults: MockElement;
+	newRoundBtn: MockElement;
 }
 
 function setup(options: SetupOptions = {}): SetupResult {
@@ -101,7 +106,7 @@ function setup(options: SetupOptions = {}): SetupResult {
 	installMockCrypto({
 		randomUUID: () => 'spin-id-1',
 		getRandomValues: (buf) => {
-			buf[0] = 17;
+			buf[0] = options.winningNumber ?? 17;
 			return buf;
 		},
 	});
@@ -115,6 +120,9 @@ function setup(options: SetupOptions = {}): SetupResult {
 	const redCell = new MockElement('div');
 	redCell.dataset.betType = 'red';
 	attachToBody(redCell);
+	const blackCell = new MockElement('div');
+	blackCell.dataset.betType = 'black';
+	attachToBody(blackCell);
 	if (options.guestBankroll !== undefined) {
 		storage.setItem(`roulette-bankroll:${userId}`, String(options.guestBankroll));
 	}
@@ -132,11 +140,14 @@ function setup(options: SetupOptions = {}): SetupResult {
 		timers,
 		win,
 		spinBtn: doc.elements['spin-button'],
-		betCells: { red: redCell },
+		betCells: { red: redCell, black: blackCell },
 		balanceEl: doc.elements['chip-balance'],
 		gameMessage: doc.elements['game-message'],
 		roundResult: doc.elements['wheel-result'],
 		gamePhase: doc.elements['game-phase'],
+		netDelta: doc.elements['net-delta'],
+		betResults: doc.elements['bet-results'],
+		newRoundBtn: doc.elements['new-round-button'],
 	};
 }
 
@@ -145,7 +156,7 @@ async function flush(): Promise<void> {
 }
 
 describe('roulette client guest flow', () => {
-	it('uses the local guest bankroll and persists a completed spin', async () => {
+	it('persists a lost guest spin immediately and reveals number and negative NET together', async () => {
 		const s = setup({ guestMode: true, userId: 'guest-1', guestBankroll: 500 });
 		expect(s.balanceEl.textContent).toContain('500');
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
@@ -153,8 +164,75 @@ describe('roulette client guest flow', () => {
 		await flush();
 
 		expect(s.fetchMock.calls).toHaveLength(0);
-		expect(s.gamePhase.textContent).toBe('Round Complete');
+		// Settlement and persistence happen immediately, before the reveal.
 		expect(s.storage.getItem('roulette-bankroll:guest-1')).toBe('495');
+		expect(s.storage.getItem('roulette-session:guest-1')).toContain('"phase":"settled"');
+		// 17 is black, so the red bet loses — nothing settled is shown yet.
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+		expect(s.roundResult.children).toHaveLength(0);
+		expect(s.netDelta.textContent).toBe('');
+
+		s.timers.flush();
+		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(s.balanceEl.textContent).toBe('495 chips');
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 17 Black');
+		expect(s.netDelta.textContent).toBe('\u22125 chips');
+		expect(s.betResults.children[0]?.children[0]?.textContent).toBe('Red');
+	});
+
+	it('locks guest controls on the pre-spin view until the reveal', async () => {
+		const s = setup({
+			guestMode: true,
+			userId: 'guest-win',
+			guestBankroll: 1000,
+			winningNumber: 1,
+		});
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+
+		// While the wheel animates every control stays locked on the pre-spin
+		// view: betting cells and Spin disabled, New Round hidden, and no
+		// settled balance/result leaked before the wheel stops.
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+		expect(s.betCells.red.disabled).toBe(true);
+		expect(s.spinBtn.disabled).toBe(true);
+		expect(s.newRoundBtn.hidden).toBe(true);
+		expect(s.balanceEl.textContent).toBe('995 chips');
+		expect(s.roundResult.children).toHaveLength(0);
+		expect(s.netDelta.textContent).toBe('');
+		expect(s.betResults.children).toHaveLength(0);
+
+		s.timers.flush();
+		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(s.newRoundBtn.hidden).toBe(false);
+		// Red pays 2x, so 995 staked + 10 payout settles at 1,005.
+		expect(s.balanceEl.textContent).toBe('1,005 chips');
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 1 Red');
+		expect(s.netDelta.textContent).toBe('+5 chips');
+		expect(s.betResults.children[0]?.children[1]?.textContent).toBe('+10 chips');
+	});
+
+	it('reveals a zero-net guest hedge without an intermediate settled balance', async () => {
+		const s = setup({
+			guestMode: true,
+			userId: 'guest-hedge',
+			guestBankroll: 1000,
+			winningNumber: 1,
+		});
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.betCells.black.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+		expect(s.balanceEl.textContent).toBe('990 chips');
+		expect(s.netDelta.textContent).toBe('');
+
+		s.timers.flush();
+		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(s.balanceEl.textContent).toBe('1,000 chips');
+		expect(s.netDelta.textContent).toBe('0 chips');
 	});
 
 	it('renders the chip balance phrase in Japanese for a ja document locale', () => {
@@ -194,9 +272,14 @@ describe('roulette client authenticated flow', () => {
 		await flush();
 
 		expect(s.fetchMock.calls.map((call) => call.url)).toEqual(['/api/roulette/spin']);
+		// Settlement is applied immediately but the view stays on spinning
+		// until the reveal.
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+		expect(earned).toBe(1);
+
+		s.timers.flush();
 		expect(s.balanceEl.textContent).toContain('995');
 		expect(s.gamePhase.textContent).toBe('Round Complete');
-		expect(earned).toBe(1);
 	});
 
 	it('duplicate settlement adopts balance, clears bets, and shows no historical result', async () => {
@@ -365,7 +448,40 @@ describe('roulette client authenticated flow', () => {
 		expect(s.gameMessage.textContent).toContain('Session expired');
 	});
 
-	it('cancels the pending result timer when starting a new round', async () => {
+	it('defers the settled balance, number, NET and breakdown to one reveal', async () => {
+		const s = setup({
+			fetchImpl: async (url) =>
+				url === '/api/roulette/spin'
+					? makeFetchResponse(200, {
+							winningNumber: 1,
+							netDelta: 5,
+							results: [{ bet: { id: 'b', type: 'red', amount: 5 }, won: true, payout: 10 }],
+							newBalance: 1005,
+						})
+					: makeFetchResponse(404, {}),
+		});
+		s.betCells.red.dispatchEvent(new MockEvent('click'));
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+
+		// The wheel is animating: still spinning, still pre-settlement balance,
+		// no result and no New Round button.
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+		expect(s.balanceEl.textContent).toBe('995 chips');
+		expect(s.newRoundBtn.hidden).toBe(true);
+		expect(s.roundResult.children).toHaveLength(0);
+		expect(s.netDelta.textContent).toBe('');
+
+		s.timers.flush();
+		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(s.balanceEl.textContent).toBe('1,005 chips');
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 1 Red');
+		expect(s.netDelta.textContent).toBe('+5 chips');
+		expect(s.betResults.children[0]?.children[0]?.textContent).toBe('Red');
+		expect(s.newRoundBtn.hidden).toBe(false);
+	});
+
+	it('keeps New Round hidden until the reveal and clears the round on click', async () => {
 		const s = setup({
 			fetchImpl: async (url) =>
 				url === '/api/roulette/spin'
@@ -381,10 +497,20 @@ describe('roulette client authenticated flow', () => {
 		s.spinBtn.dispatchEvent(new MockEvent('click'));
 		await flush();
 
-		// The pending result timer is scheduled; clicking new-round should cancel it.
-		const newRoundBtn = s.doc.elements['new-round-button'];
-		newRoundBtn.dispatchEvent(new MockEvent('click'));
+		// New Round cannot preempt the reveal.
+		expect(s.newRoundBtn.hidden).toBe(true);
+		expect(s.gamePhase.textContent).toBe('No More Bets');
+
+		s.timers.flush();
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 17 Black');
+
+		s.newRoundBtn.dispatchEvent(new MockEvent('click'));
 		expect(s.gamePhase.textContent).toBe('Place Your Bets');
-		expect(s.roundResult.textContent).toBe('');
+		expect(s.roundResult.children).toHaveLength(0);
+		expect(s.roundResult.attributes['aria-label']).toBeUndefined();
+		expect(s.netDelta.textContent).toBe('');
+		expect(s.newRoundBtn.hidden).toBe(true);
+		expect(s.balanceEl.textContent).toBe('995 chips');
 	});
 });

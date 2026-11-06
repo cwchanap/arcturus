@@ -321,10 +321,11 @@ describe('initSicBoClient — authenticated settlement window', () => {
 			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(false);
 
-			// New Round is usable again: back to betting with the retained slip.
+			// New Round returns to betting with a clean, empty slip.
 			actionButton().click();
 			expect(actionButton().textContent).toBe('Roll');
-			expect(actionButton().disabled).toBe(false);
+			expect(actionButton().disabled).toBe(true);
+			expect(betAmount('any-triple').textContent).toBe('');
 		} finally {
 			Math.random = origRandom;
 			root.remove();
@@ -485,11 +486,11 @@ describe('initSicBoClient — guest round flow', () => {
 			expect(actionButton().textContent).toBe('New Round');
 			expect(actionButton().disabled).toBe(false);
 
-			// New Round returns to betting with the retained slip.
+			// New Round returns to betting with a clean, empty slip.
 			actionButton().click();
 			expect(actionButton().textContent).toBe('Roll');
-			expect(actionButton().disabled).toBe(false);
-			expect(betAmount('any-triple').textContent).toBe('1 chip');
+			expect(actionButton().disabled).toBe(true);
+			expect(betAmount('any-triple').textContent).toBe('');
 		} finally {
 			Math.random = origRandom;
 			root.remove();

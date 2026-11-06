@@ -79,34 +79,27 @@ describe('SicBoGame denomination and clearing', () => {
 	});
 });
 
-describe('SicBoGame retained slip recovery', () => {
-	test('kept bets stay after reset and Roll stays disabled until the slip fits', () => {
+describe('SicBoGame reset clears the slip', () => {
+	test('reset after a profitable round empties the slip and reports no-bets', () => {
 		const game = new SicBoGame(100, sequenceRandom([0, 0.5, 0.9]));
-		game.setBet('big', 10);
-		game.setBet('small', 5);
-		game.roll();
-		expect(game.getState().phase).toBe('complete');
+		game.setBet('big', 10); // [1,4,6] total 11: big wins, net +10
+		expect(game.roll().netDelta).toBe(10);
 
 		game.resetRound();
 		expect(game.getState().phase).toBe('betting');
-		expect(game.getTotalStake()).toBe(15);
-		expect(game.getState().bets).toEqual({ big: 10, small: 5 });
-
-		game.setBalance(5);
-		expect(game.getRollError()).toBe('insufficient-balance');
-		game.clearBet('small'); // stake 10, still above the new balance
-		expect(game.getRollError()).toBe('insufficient-balance');
+		expect(game.getState().bets).toEqual({});
+		expect(game.getTotalStake()).toBe(0);
+		expect(game.getRollError()).toBe('no-bets');
 	});
 
-	test('clearBets unlocks rolling after adopting a smaller balance', () => {
+	test('reset after an unprofitable round empties the slip and reports no-bets', () => {
 		const game = new SicBoGame(100, sequenceRandom([0, 0.5, 0.9]));
-		game.setBet('big', 10);
-		game.setBet('small', 5);
-		game.roll();
+		game.setBet('small', 10); // [1,4,6] total 11: small loses, net -10
+		expect(game.roll().netDelta).toBe(-10);
+
 		game.resetRound();
-		game.setBalance(5);
-		expect(game.getRollError()).toBe('insufficient-balance');
-		game.clearBets();
+		expect(game.getState().phase).toBe('betting');
+		expect(game.getState().bets).toEqual({});
 		expect(game.getTotalStake()).toBe(0);
 		expect(game.getRollError()).toBe('no-bets');
 	});
@@ -134,7 +127,7 @@ describe('SicBoGame lifecycle', () => {
 		expect(() => game.clearBets()).toThrow();
 	});
 
-	test('resetRound clears result and dice but keeps bets', () => {
+	test('resetRound clears result, dice, and bets', () => {
 		const game = new SicBoGame(100, sequenceRandom([0, 0.5, 0.9]));
 		game.setBet('big', 10);
 		game.roll();
@@ -143,8 +136,8 @@ describe('SicBoGame lifecycle', () => {
 		const state = game.getState();
 		expect(state.phase).toBe('betting');
 		expect(state.result).toBeNull();
-		expect(state.bets['big']).toBe(10);
-		expect(game.getTotalStake()).toBe(10);
+		expect(state.bets).toEqual({});
+		expect(game.getTotalStake()).toBe(0);
 	});
 
 	test('getState returns a deep copy', () => {

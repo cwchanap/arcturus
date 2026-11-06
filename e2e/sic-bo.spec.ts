@@ -23,7 +23,7 @@ async function placeBigBet(page: Page): Promise<void> {
 test.describe('Sic Bo guest', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
-	test('deterministic win round shows the roll, pays out, and retains the slip', async ({
+	test('deterministic win round shows the roll, pays out, and clears the slip', async ({
 		page,
 	}) => {
 		const walletRequests: string[] = [];
@@ -68,14 +68,19 @@ test.describe('Sic Bo guest', () => {
 		await expect(page.getByTestId('sic-bo-action')).toHaveText('New Round');
 		await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
 
-		// 6. New Round returns to betting with the retained Big wager.
+		// 6. New Round returns to betting with an empty slip and disabled Roll.
 		await page.getByTestId('sic-bo-action').click();
 		await expect(page.getByTestId('sic-bo-action')).toHaveText('Roll');
-		await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('5 chips');
-		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 5 chips');
+		await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('');
+		await expect(page.locator('[data-bet-key="big"]')).toHaveAttribute('aria-pressed', 'false');
+		await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 0 chips');
+		await expect(page.getByTestId('sic-bo-action')).toBeDisabled();
+
+		// 7. Placing a new bet enables Roll again.
+		await placeBigBet(page);
 		await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
 
-		// 7. No wallet request was made.
+		// 8. No wallet request was made.
 		expect(walletRequests).toEqual([]);
 	});
 });
@@ -193,6 +198,13 @@ test.describe('Sic Bo wallet', () => {
 			// The authoritative balance is adopted and New Round becomes enabled.
 			await expect(page.getByTestId('chip-balance')).toHaveText('4,242 chips');
 			await expect(page.getByTestId('sic-bo-action')).toBeEnabled();
+
+			// New Round starts from a clean slip: no carryover bet, zero stake.
+			await page.getByTestId('sic-bo-action').click();
+			await expect(page.getByTestId('sic-bo-action')).toHaveText('Roll');
+			await expect(page.locator('[data-bet-key="big"] [data-bet-amount]')).toHaveText('');
+			await expect(page.getByTestId('sic-bo-total-stake')).toHaveText('Total stake: 0 chips');
+			await expect(page.getByTestId('sic-bo-action')).toBeDisabled();
 		} finally {
 			await context.close();
 		}

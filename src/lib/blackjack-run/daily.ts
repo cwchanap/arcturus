@@ -149,7 +149,7 @@ export interface DailyRunReplay {
 	readonly rounds: readonly DailyRound[];
 	readonly activeRound: DailyRound | null;
 	readonly activeRoundPublic: Omit<BlackjackPublicRoundState, 'nextSequence'> | null;
-	readonly lastCompletedRoundPublic: Omit<BlackjackPublicRoundState, 'nextSequence'> | null;
+	readonly lastRoundPublic: Omit<BlackjackPublicRoundState, 'nextSequence'> | null;
 	readonly nextCommandSequence: number;
 	readonly status: 'active' | 'completed' | 'forfeited';
 	readonly terminalReason: 'completed' | 'bankroll-below-minimum' | 'forfeited' | null;
@@ -287,27 +287,33 @@ function applyForfeit(state: MutableReplayState): void {
 	state.eligible = false;
 }
 
+function projectPublicRound(
+	round: Pick<MutableRound, 'replay'>,
+	availableBankroll: number,
+): Omit<BlackjackPublicRoundState, 'nextSequence'> {
+	const { nextSequence: _omitted, ...publicState } = projectBlackjackRoundReplay(
+		round.replay,
+		availableBankroll,
+	);
+	void _omitted;
+	return publicState;
+}
+
 function projectActiveRound(
 	state: MutableReplayState,
 ): Omit<BlackjackPublicRoundState, 'nextSequence'> | null {
 	const round = state.activeRound;
 	if (!round || state.status !== 'active') return null;
-	const projected = projectBlackjackRoundReplay(round.replay, state.availableBankroll);
-	const { nextSequence: _omitted, ...publicState } = projected;
-	void _omitted;
-	return publicState;
+	return projectPublicRound(round, state.availableBankroll);
 }
 
 function snapshotReplay(state: MutableReplayState): DailyRunReplay {
-	const lastCompletedRound = state.rounds.at(-1);
-	let lastCompletedRoundPublic: DailyRunReplay['lastCompletedRoundPublic'] = null;
-	if (lastCompletedRound) {
-		const { nextSequence: _omitted, ...publicState } = projectBlackjackRoundReplay(
-			lastCompletedRound.replay,
-			state.availableBankroll,
-		);
-		lastCompletedRoundPublic = publicState;
-	}
+	// The presented round is normally the newest settled one. On forfeit the
+	// in-flight round is abandoned in activeRound without joining `rounds`;
+	// it is the hand the player last saw, so it becomes the presented round.
+	const lastRound =
+		state.status === 'active' ? state.rounds.at(-1) : (state.activeRound ?? state.rounds.at(-1));
+	const lastRoundPublic = lastRound ? projectPublicRound(lastRound, state.availableBankroll) : null;
 	const frozenRounds = state.rounds.map((round) => ({
 		roundIndex: round.roundIndex,
 		initialWager: round.initialWager,
@@ -329,7 +335,7 @@ function snapshotReplay(state: MutableReplayState): DailyRunReplay {
 		rounds: frozenRounds,
 		activeRound: frozenActive,
 		activeRoundPublic: projectActiveRound(state),
-		lastCompletedRoundPublic,
+		lastRoundPublic,
 		nextCommandSequence: state.nextCommandSequence,
 		status: state.status,
 		terminalReason: state.terminalReason,

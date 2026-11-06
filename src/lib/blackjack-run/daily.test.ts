@@ -234,7 +234,7 @@ describe('replayDailyRun last completed round projection', () => {
 
 		const replay = replayDailyRun(MASTER_SEED, [startRound(0, 100)], singleDeckSource(deck));
 
-		expect(replay.lastCompletedRoundPublic).toBeNull();
+		expect(replay.lastRoundPublic).toBeNull();
 	});
 
 	test('projects a natural settled on the deal with the full dealer hand and no nextSequence', () => {
@@ -247,7 +247,7 @@ describe('replayDailyRun last completed round projection', () => {
 
 		const replay = replayDailyRun(MASTER_SEED, [startRound(0, 15)], singleDeckSource(deck));
 
-		const projection = replay.lastCompletedRoundPublic;
+		const projection = replay.lastRoundPublic;
 		expect(projection).not.toBeNull();
 		expect(projection?.phase).toBe('complete');
 		// The terminal projection reveals the dealer's hole card.
@@ -286,8 +286,8 @@ describe('replayDailyRun last completed round projection', () => {
 		const deckSource = (roundIndex: number): Card[] => decks[roundIndex] as Card[];
 
 		const first = replayDailyRun(MASTER_SEED, [startRound(0, 100), cmd(1, 'stand')], deckSource);
-		expect(first.lastCompletedRoundPublic?.outcome?.result).toBe('win');
-		expect(first.lastCompletedRoundPublic?.dealer.cards).toEqual([
+		expect(first.lastRoundPublic?.outcome?.result).toBe('win');
+		expect(first.lastRoundPublic?.dealer.cards).toEqual([
 			{ rank: '10', suit: 'clubs' },
 			{ rank: '8', suit: 'spades' },
 		]);
@@ -297,7 +297,7 @@ describe('replayDailyRun last completed round projection', () => {
 			[startRound(0, 100), cmd(1, 'stand'), startRound(2, 100), cmd(3, 'stand')],
 			deckSource,
 		);
-		expect(second.lastCompletedRoundPublic?.outcome).toMatchObject({
+		expect(second.lastRoundPublic?.outcome).toMatchObject({
 			result: 'push',
 			committedWager: 100,
 			payout: 100,
@@ -322,7 +322,39 @@ describe('replayDailyRun last completed round projection', () => {
 		);
 
 		expect(replay.status).toBe('forfeited');
-		expect(replay.lastCompletedRoundPublic?.outcome?.result).toBe('win');
+		expect(replay.lastRoundPublic?.outcome?.result).toBe('win');
+	});
+
+	test('presents the abandoned in-flight hand on a mid-round forfeit', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+			card('2', 'hearts'),
+		);
+
+		const replay = replayDailyRun(
+			MASTER_SEED,
+			[startRound(0, 100), cmd(1, 'hit'), cmd(2, 'forfeit')],
+			singleDeckSource(deck),
+		);
+
+		expect(replay.status).toBe('forfeited');
+		expect(replay.roundsCompleted).toBe(0);
+		expect(replay.activeRoundPublic).toBeNull();
+		const abandoned = replay.lastRoundPublic;
+		expect(abandoned?.phase).toBe('player-turn');
+		expect(abandoned?.playerHands[0]?.cards).toEqual([
+			{ rank: '10', suit: 'hearts' },
+			{ rank: '7', suit: 'diamonds' },
+			{ rank: '2', suit: 'hearts' },
+		]);
+		// The abandoned round is still mid-turn: no outcome, and only the
+		// dealer's visible card is shown.
+		expect(abandoned?.outcome).toBeNull();
+		expect(abandoned?.dealer.cards).toEqual([{ rank: '9', suit: 'clubs' }]);
+		expect((abandoned as { nextSequence?: number }).nextSequence).toBeUndefined();
 	});
 });
 

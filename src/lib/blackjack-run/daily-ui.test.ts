@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, tes
 import { Window } from 'happy-dom';
 import type { BlackjackRunClient, BlackjackRunClientCommand } from './client';
 import { DAILY_RUN_CONFIG, replayDailyRun } from './daily';
-import type { BlackjackAction, BlackjackRunPublicState } from './protocol';
+import type { BlackjackAction, BlackjackRunCommand, BlackjackRunPublicState } from './protocol';
 import {
 	createDailyRunRenderer,
 	DAILY_LEADERBOARD_PATH_PREFIX,
@@ -94,6 +94,7 @@ function dailyState(overrides: Partial<DailyRunState> = {}): DailyRunState {
 		availableBankroll: 1000,
 		roundsCompleted: 0,
 		activeRound: null,
+		lastRound: null,
 		rank: null,
 		percentile: null,
 		...overrides,
@@ -165,6 +166,7 @@ function makeRoot(authenticated: boolean): HTMLElement {
 			<span data-testid="daily-challenge-dealer-value">?</span>
 			<div data-testid="daily-challenge-player-hands"></div>
 			<p data-testid="daily-challenge-status"></p>
+			<p data-testid="daily-challenge-round-result" hidden></p>
 			<input data-testid="daily-challenge-wager" type="number" value="100">
 			<button data-testid="daily-challenge-start-ranked">Start Ranked</button>
 			<button data-testid="daily-challenge-start-round">Start Round</button>
@@ -384,6 +386,144 @@ function createSeedQueue(spy: { count: number }): () => Uint8Array {
 }
 
 const postedRequests = (): FetchLog[] => fetchLog.filter((entry) => entry.method === 'POST');
+
+describe('daily completed-hand presentation through page controllers', () => {
+	const cases = [
+		{
+			name: 'player natural',
+			seed: 13,
+			stand: false,
+			dealer: ['5♦', 'Q♣'],
+			player: ['10♥', 'A♥'],
+			result: 'Win · +15 chips',
+			bankroll: 1015,
+		},
+		{
+			name: 'stand win',
+			seed: 4,
+			stand: true,
+			dealer: ['8♣', 'K♥'],
+			player: ['K♣', '10♥'],
+			result: 'Win · +10 chips',
+			bankroll: 1010,
+		},
+		{
+			name: 'stand loss',
+			seed: 0,
+			stand: true,
+			dealer: ['4♣', '10♦', '3♣'],
+			player: ['2♣', '6♣'],
+			result: 'Loss · −10 chips',
+			bankroll: 990,
+		},
+		{
+			name: 'stand push',
+			seed: 34,
+			stand: true,
+			dealer: ['5♦', 'A♥', '2♦'],
+			player: ['8♥', '10♠'],
+			result: 'Push · 0 chips',
+			bankroll: 1000,
+		},
+	];
+
+	for (const mode of ['practice', 'ranked'] as const) {
+		for (const scenario of cases) {
+			test(`${mode}: ${scenario.name} remains readable without extra writes, then next hand replaces it`, async () => {
+				const root = makeRoot(mode === 'ranked');
+				const seed = new Uint8Array(32).fill(scenario.seed);
+				const commands: BlackjackRunCommand[] = [
+					{ sequence: 0, command: 'start-round', wager: 10 },
+				];
+				if (scenario.stand) commands.push({ sequence: 1, command: 'stand' });
+				const nextCommands: BlackjackRunCommand[] = [
+					...commands,
+					{ sequence: commands.length, command: 'start-round', wager: 10 },
+				];
+				const toState = (log: BlackjackRunCommand[]): DailyRunState => {
+					const replay = replayDailyRun(seed, log);
+					return dailyState({
+						availableBankroll: replay.availableBankroll,
+						roundsCompleted: replay.roundsCompleted,
+						nextCommandSequence: replay.nextCommandSequence,
+						activeRound: replay.activeRoundPublic,
+						lastRound: replay.lastCompletedRoundPublic,
+					});
+				};
+				const client = createMockClient({
+					loadCurrent: mode === 'ranked' ? dailyState() : null,
+					states: [
+						toState(commands.slice(0, 1)),
+						...(scenario.stand ? [toState(commands)] : []),
+						toState(nextCommands),
+					],
+				});
+				await initDailyChallengePage(root, { client, createSeed: () => seed });
+				(get(root, 'daily-challenge-wager') as HTMLInputElement).value = '10';
+				button(root, 'daily-challenge-start-round').click();
+				await flush();
+				if (scenario.stand) {
+					button(root, 'daily-challenge-action-stand').click();
+					await flush();
+				}
+				const cardTexts = (kind: string) =>
+					Array.from(
+						root.querySelectorAll(`[data-testid="daily-challenge-${kind}-card"]`),
+						(el) => el.textContent,
+					);
+				expect(cardTexts('dealer')).toEqual(scenario.dealer);
+				expect(cardTexts('player')).toEqual(scenario.player);
+				expect(get(root, 'daily-challenge-round-result').hidden).toBe(false);
+				expect(get(root, 'daily-challenge-round-result').textContent).toBe(scenario.result);
+				expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
+					formatCurrency(scenario.bankroll),
+				);
+				expect(get(root, 'daily-challenge-round-progress').textContent).toBe('Round 2 of 10');
+				expect(button(root, 'daily-challenge-start-round').disabled).toBe(false);
+				expect(get(root, 'daily-challenge-forfeit').hidden).toBe(true);
+				for (const action of ['hit', 'stand', 'double-down', 'split']) {
+					expect(button(root, `daily-challenge-action-${action}`).disabled).toBe(true);
+				}
+				// Mode switching re-renders presentation, not another command or settlement.
+				button(root, 'daily-challenge-mode-practice').click();
+				if (mode === 'ranked') button(root, 'daily-challenge-mode-ranked').click();
+				expect(get(root, 'daily-challenge-round-result').textContent).toBe(scenario.result);
+				expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
+					formatCurrency(scenario.bankroll),
+				);
+				expect(client.calls.command).toEqual(
+					mode === 'ranked'
+						? commands.map(({ sequence: _sequence, ...command }) => [RUN_ID, command])
+						: [],
+				);
+				expect(client.calls.startDaily).toHaveLength(0);
+				expect(postedRequests()).toHaveLength(0);
+
+				button(root, 'daily-challenge-start-round').click();
+				await flush();
+				const next = toState(nextCommands);
+				expect(next.activeRound).not.toBeNull();
+				expect(cardTexts('dealer')).toHaveLength(1);
+				expect(cardTexts('player')).not.toEqual(scenario.player);
+				expect(get(root, 'daily-challenge-round-result').hidden).toBe(true);
+				expect(get(root, 'daily-challenge-round-result').textContent).toBe('');
+				expect(button(root, 'daily-challenge-start-round').disabled).toBe(true);
+				expect(button(root, 'daily-challenge-action-stand').disabled).toBe(false);
+				expect(get(root, 'daily-challenge-forfeit').hidden).toBe(false);
+				if (mode === 'practice') {
+					button(root, 'daily-challenge-action-stand').click();
+					await flush();
+					expect(get(root, 'daily-challenge-round-result').hidden).toBe(false);
+					button(root, 'daily-challenge-restart-practice').click();
+					expect(cardTexts('dealer')).toEqual([]);
+					expect(cardTexts('player')).toEqual([]);
+					expect(get(root, 'daily-challenge-round-result').hidden).toBe(true);
+					expect(get(root, 'daily-challenge-bankroll').textContent).toBe('1,000 chips');
+				}
+			});
+		}
+	}
+});
 
 describe('daily page — guest bootstrap and local practice', () => {
 	test('renders practice with the sign-in CTA from the 404 guest current surface', async () => {
@@ -840,6 +980,65 @@ describe('daily run renderer — direct DOM behavior', () => {
 		root = makeRoot(true);
 		renderer = createDailyRunRenderer(root);
 	});
+
+	test.each(['completed', 'forfeited'] as const)(
+		'keeps practice %s copy alongside the final hand outcome',
+		(status) => {
+			const commands: BlackjackRunCommand[] = [
+				{ sequence: 0, command: 'start-round', wager: status === 'completed' ? 1000 : 10 },
+				{ sequence: 1, command: 'stand' },
+			];
+			if (status === 'forfeited') commands.push({ sequence: 2, command: 'forfeit' });
+			const replay = replayDailyRun(new Uint8Array(32), commands);
+			expect(replay.status).toBe(status);
+			renderer.renderPractice(replay);
+			expect(get(root, 'daily-challenge-status').textContent).toBe(
+				status === 'completed' ? 'Practice complete.' : 'Practice forfeited.',
+			);
+			expect(get(root, 'daily-challenge-round-result').textContent).toBe(
+				status === 'completed' ? 'Loss · −1,000 chips' : 'Loss · −10 chips',
+			);
+			expect(root.querySelectorAll('[data-testid="daily-challenge-dealer-card"]')).toHaveLength(3);
+			expect(get(root, 'daily-challenge-receipt').hidden).toBe(true);
+		},
+	);
+
+	test.each(['completed', 'forfeited'] as const)(
+		'keeps ranked %s receipt and terminal status alongside the prior hand',
+		(status) => {
+			const commands: BlackjackRunCommand[] = [
+				{ sequence: 0, command: 'start-round', wager: status === 'completed' ? 1000 : 10 },
+				{ sequence: 1, command: 'stand' },
+			];
+			if (status === 'forfeited') commands.push({ sequence: 2, command: 'forfeit' });
+			const replay = replayDailyRun(new Uint8Array(32), commands);
+			get(root, 'daily-challenge-status').textContent = 'Terminal status';
+			renderer.renderRanked(
+				dailyState({
+					status,
+					terminalReason: replay.terminalReason,
+					eligible: replay.eligible,
+					availableBankroll: replay.availableBankroll,
+					roundsCompleted: 1,
+					lastRound: replay.lastCompletedRoundPublic,
+					rank: status === 'completed' ? 1 : null,
+					percentile: status === 'completed' ? 100 : null,
+				}),
+			);
+			expect(get(root, 'daily-challenge-status').textContent).toBe('Terminal status');
+			expect(get(root, 'daily-challenge-round-result').textContent).toBe(
+				status === 'completed' ? 'Loss · −1,000 chips' : 'Loss · −10 chips',
+			);
+			expect(get(root, 'daily-challenge-receipt').hidden).toBe(false);
+			expect(get(root, 'daily-challenge-receipt-bankroll').textContent).toBe(
+				status === 'completed' ? '0 chips' : '990 chips',
+			);
+			expect(get(root, 'daily-challenge-receipt-eligibility').textContent).toBe(
+				status === 'completed' ? 'Eligible for ranking' : 'Not eligible for ranking',
+			);
+			expect(button(root, 'daily-challenge-start-ranked').disabled).toBe(true);
+		},
+	);
 
 	test('disables every control while pending', () => {
 		renderer.renderRanked(

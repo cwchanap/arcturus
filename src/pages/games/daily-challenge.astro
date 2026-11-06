@@ -184,6 +184,14 @@ const entryClosesAt = new Date(currentWindow.rankedEntryClosesAt * 1000)
 				class="mb-4 text-center text-lg font-semibold text-[var(--deco-brass)]"
 			></p>
 
+			<p
+				data-testid="daily-challenge-round-result"
+				role="status"
+				aria-live="polite"
+				class="mb-4 text-center text-lg font-semibold text-[var(--deco-brass)]"
+				hidden
+			></p>
+
 			<div class="mb-6 flex flex-wrap items-end justify-center gap-3">
 				<label class="flex flex-col gap-1 text-xs uppercase tracking-wider text-[var(--deco-muted)]">
 					{t('wager')}

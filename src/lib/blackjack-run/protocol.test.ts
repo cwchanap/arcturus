@@ -290,6 +290,7 @@ const dailyPublicSample = {
 	availableBankroll: 1200,
 	roundsCompleted: 10,
 	activeRound: null,
+	lastRound: null,
 	rank: 3,
 	percentile: 95,
 };
@@ -299,8 +300,45 @@ describe('blackjackRunPublicStateSchema', () => {
 		expect(blackjackRunPublicStateSchema.safeParse(rankedPublicSample).success).toBe(true);
 	});
 
-	test('accepts a terminal daily public state', () => {
+	test('accepts a terminal daily public state with lastRound null', () => {
 		expect(blackjackRunPublicStateSchema.safeParse(dailyPublicSample).success).toBe(true);
+	});
+
+	test('requires lastRound even when no round has completed', () => {
+		const { lastRound: _omitted, ...missingLastRound } = dailyPublicSample;
+		expect(blackjackRunPublicStateSchema.safeParse(missingLastRound).success).toBe(false);
+	});
+
+	test('accepts a completed lastRound and rejects malformed or internal round fields', () => {
+		const lastRound = {
+			phase: 'complete',
+			playerHands: rankedPublicSample.playerHands,
+			activeHandIndex: 0,
+			dealer: rankedPublicSample.dealer,
+			committedWager: 100,
+			availableActions: [],
+			outcome: {
+				result: 'push',
+				hands: [{ handIndex: 0, result: 'push', wager: 100, payout: 100 }],
+				committedWager: 100,
+				payout: 100,
+				gameNetDelta: 0,
+			},
+		};
+		expect(
+			blackjackRunPublicStateSchema.safeParse({ ...dailyPublicSample, lastRound }).success,
+		).toBe(true);
+		for (const malformed of [
+			{},
+			{ ...lastRound, nextSequence: 1 },
+			{ ...lastRound, dealer: { cards: 'hidden' } },
+			{ ...lastRound, outcome: { ...lastRound.outcome, gameNetDelta: '0' } },
+		]) {
+			expect(
+				blackjackRunPublicStateSchema.safeParse({ ...dailyPublicSample, lastRound: malformed })
+					.success,
+			).toBe(false);
+		}
 	});
 
 	test.each([
@@ -338,7 +376,7 @@ describe('blackjackRunPublicStateSchema', () => {
 
 	test('rejects a daily active round leaking nextSequence', () => {
 		const leaked = {
-			...rankedPublicSample,
+			...dailyPublicSample,
 			mode: 'daily',
 			status: 'active',
 			terminalReason: null,

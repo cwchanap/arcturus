@@ -152,6 +152,7 @@ export const blackjackRunPublicStateSchema = z.discriminatedUnion('mode', [
 			availableBankroll: balanceSchema,
 			roundsCompleted: safeIntegerSchema.min(0),
 			activeRound: blackjackActiveRoundSchema.nullable(),
+			lastRound: blackjackActiveRoundSchema.nullable(),
 			rank: safeIntegerSchema.min(1).nullable(),
 			// calculateDailyPercentile emits integers clamped to 1-100.
 			percentile: safeIntegerSchema.min(1).max(100).nullable(),

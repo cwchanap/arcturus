@@ -223,6 +223,109 @@ describe('replayDailyRun bankroll and wager handling', () => {
 	});
 });
 
+describe('replayDailyRun last completed round projection', () => {
+	test('is null before any round has completed', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+		);
+
+		const replay = replayDailyRun(MASTER_SEED, [startRound(0, 100)], singleDeckSource(deck));
+
+		expect(replay.lastCompletedRoundPublic).toBeNull();
+	});
+
+	test('projects a natural settled on the deal with the full dealer hand and no nextSequence', () => {
+		const deck = deckWithDraws(
+			card('A', 'hearts'),
+			card('K', 'spades'),
+			card('10', 'diamonds'),
+			card('9', 'clubs'),
+		);
+
+		const replay = replayDailyRun(MASTER_SEED, [startRound(0, 15)], singleDeckSource(deck));
+
+		const projection = replay.lastCompletedRoundPublic;
+		expect(projection).not.toBeNull();
+		expect(projection?.phase).toBe('complete');
+		// The terminal projection reveals the dealer's hole card.
+		expect(projection?.dealer.cards).toEqual([
+			{ rank: '10', suit: 'diamonds' },
+			{ rank: '9', suit: 'clubs' },
+		]);
+		expect(projection?.playerHands[0]?.cards).toEqual([
+			{ rank: 'A', suit: 'hearts' },
+			{ rank: 'K', suit: 'spades' },
+		]);
+		expect(projection?.availableActions).toEqual([]);
+		expect(projection?.outcome).toMatchObject({
+			result: 'win',
+			committedWager: 15,
+			payout: 37,
+			gameNetDelta: 22,
+		});
+		expect((projection as { nextSequence?: number }).nextSequence).toBeUndefined();
+	});
+
+	test('projects the newest stand-settled round as rounds accumulate', () => {
+		const winDeck = deckWithDraws(
+			card('10', 'hearts'),
+			card('Q', 'diamonds'),
+			card('10', 'clubs'),
+			card('8', 'spades'),
+		);
+		const pushDeck = deckWithDraws(
+			card('10', 'hearts'),
+			card('7', 'diamonds'),
+			card('9', 'clubs'),
+			card('8', 'spades'),
+		);
+		const decks = [winDeck, pushDeck];
+		const deckSource = (roundIndex: number): Card[] => decks[roundIndex] as Card[];
+
+		const first = replayDailyRun(MASTER_SEED, [startRound(0, 100), cmd(1, 'stand')], deckSource);
+		expect(first.lastCompletedRoundPublic?.outcome?.result).toBe('win');
+		expect(first.lastCompletedRoundPublic?.dealer.cards).toEqual([
+			{ rank: '10', suit: 'clubs' },
+			{ rank: '8', suit: 'spades' },
+		]);
+
+		const second = replayDailyRun(
+			MASTER_SEED,
+			[startRound(0, 100), cmd(1, 'stand'), startRound(2, 100), cmd(3, 'stand')],
+			deckSource,
+		);
+		expect(second.lastCompletedRoundPublic?.outcome).toMatchObject({
+			result: 'push',
+			committedWager: 100,
+			payout: 100,
+			gameNetDelta: 0,
+		});
+		// Only the newest completed round is presented; the active round stays null.
+		expect(second.activeRoundPublic).toBeNull();
+	});
+
+	test('keeps the last completed hand readable after a forfeit', () => {
+		const deck = deckWithDraws(
+			card('10', 'hearts'),
+			card('Q', 'diamonds'),
+			card('10', 'clubs'),
+			card('8', 'spades'),
+		);
+
+		const replay = replayDailyRun(
+			MASTER_SEED,
+			[startRound(0, 100), cmd(1, 'stand'), cmd(2, 'forfeit')],
+			singleDeckSource(deck),
+		);
+
+		expect(replay.status).toBe('forfeited');
+		expect(replay.lastCompletedRoundPublic?.outcome?.result).toBe('win');
+	});
+});
+
 describe('replayDailyRun terminal precedence', () => {
 	const lossDeck = () =>
 		deckWithDraws(

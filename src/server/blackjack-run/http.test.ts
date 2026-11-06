@@ -70,6 +70,7 @@ function dailyActiveState(): BlackjackRunPublicState {
 		availableBankroll: 1000,
 		roundsCompleted: 0,
 		activeRound: { ...activeRoundFixture() },
+		lastRound: null,
 		rank: null,
 		percentile: null,
 	};

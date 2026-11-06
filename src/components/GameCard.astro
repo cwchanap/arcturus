@@ -1,7 +1,6 @@
 ---
 import GameEmblem from './GameEmblem.astro';
 import DecoIcon from './DecoIcon.astro';
-import { formatWholeNumber } from '../lib/formatting';
 import { formatChips } from '../lib/i18n/messages/common';
 import { gameCardTranslator } from '../lib/i18n/messages/home';
 import { getGameName, type GameNameKey } from '../lib/i18n/messages/games';
@@ -9,18 +8,16 @@ import { getGameName, type GameNameKey } from '../lib/i18n/messages/games';
 interface Props {
 	gameKey: GameNameKey;
 	emblem: 'cards' | 'dice' | 'wheel' | 'spark';
-	players: number;
 	minBet: number;
 	href: string;
 	featured?: boolean;
 	icon?: string;
 }
 
-const { gameKey, emblem, players, minBet, href, featured = false, icon } = Astro.props;
+const { gameKey, emblem, minBet, href, featured = false, icon } = Astro.props;
 const locale = Astro.locals.locale;
 const t = gameCardTranslator(locale);
 const name = getGameName(locale, gameKey);
-const formattedPlayers = formatWholeNumber(players, locale);
 const formattedMinBet = formatChips(minBet, locale);
 ---
 
@@ -52,10 +49,6 @@ const formattedMinBet = formatChips(minBet, locale);
 		<h3 class="deco-section-title mb-3 text-xl">{name}</h3>
 
 		<div class="mb-5 flex items-center gap-5 text-sm" style="color: var(--deco-ivory-dim)">
-			<span class="flex items-center gap-1.5">
-				<DecoIcon name="user" size={15} class="text-[var(--deco-brass)]" />
-				<span class="tabular-nums">{t('playersPlaying', { count: formattedPlayers })}</span>
-			</span>
 			<span class="flex items-center gap-1.5">
 				<DecoIcon name="chip" size={15} class="text-[var(--deco-brass)]" />
 				<span class="tabular-nums">{t('minBet', { minBet: formattedMinBet })}</span>

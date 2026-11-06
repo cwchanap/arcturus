@@ -1,0 +1,38 @@
+---
+import CasinoLayout from '../layouts/casino.astro';
+import DecoDivider from '../components/DecoDivider.astro';
+import { responsiblePlayTranslator } from '../lib/i18n/messages/responsible-play';
+
+// Public informational page: no session required, no data access.
+const locale = Astro.locals.locale;
+const t = responsiblePlayTranslator(locale);
+---
+
+<CasinoLayout title={t('pageTitle')}>
+	<section class="deco-atmosphere relative overflow-hidden">
+		<div class="relative max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+			<div class="deco-panel deco-frame">
+				<div class="flex flex-col gap-8 p-8 sm:p-12">
+					<div>
+						<h1 class="deco-section-title text-3xl">{t('title')}</h1>
+						<p class="deco-text-dim mt-4">{t('intro')}</p>
+					</div>
+
+					<section id="responsible-gaming" class="scroll-mt-24">
+						<h2 class="deco-heading text-xl">{t('playMoneyTitle')}</h2>
+						<p class="deco-text-dim mt-4">{t('playMoneyBody')}</p>
+						<h2 class="deco-heading mt-8 text-xl">{t('breaksTitle')}</h2>
+						<p class="deco-text-dim mt-4">{t('breaksBody')}</p>
+					</section>
+
+					<DecoDivider />
+
+					<section id="age-guidance" class="scroll-mt-24">
+						<h2 class="deco-heading text-xl">{t('adultTitle')}</h2>
+						<p class="deco-text-dim mt-4">{t('adultBody')}</p>
+					</section>
+				</div>
+			</div>
+		</div>
+	</section>
+</CasinoLayout>

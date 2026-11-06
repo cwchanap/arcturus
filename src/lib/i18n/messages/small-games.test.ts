@@ -139,6 +139,17 @@ describe('pai gow poker message catalog', () => {
 		expect(getPaiGowCardName('ja', { rank: 13, suit: 'diamonds' })).toBe('ダイヤのキング');
 	});
 
+	test('how-to-play copy explains the Joker policy', () => {
+		const en = paiGowPokerTranslator('en')('howToPlayBody');
+		expect(en).toContain(
+			'In the five-card hand a Joker completes a straight, flush, straight flush, or royal flush when possible, and otherwise counts as an Ace; in the two-card hand a Joker always counts as an Ace',
+		);
+		expect(en).toContain('Four Aces plus the Joker make Five Aces, the highest hand');
+		expect(paiGowPokerTranslator('zh-Hant')('howToPlayBody')).toContain('小丑牌');
+		expect(paiGowPokerTranslator('zh-Hans')('howToPlayBody')).toContain('小丑牌');
+		expect(paiGowPokerTranslator('ja')('howToPlayBody')).toContain('ジョーカー');
+	});
+
 	test('wager and arrangement error codes', () => {
 		const t = paiGowPokerTranslator('en');
 		expect(t('errorWholeNumber')).toBe('Wager must be a whole number of chips');

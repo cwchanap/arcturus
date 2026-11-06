@@ -67,7 +67,7 @@ export const PAI_GOW_POKER_MESSAGES = defineMessages({
 		errorHighHandRank: 'High hand must rank at least as high as Low hand',
 		howToPlay: 'How to Play',
 		howToPlayBody:
-			'Choose two cards for the Low hand; the remaining five cards form the High hand. The High hand must rank at least as high as the Low hand. Winning both hands wins the wager less a 5% commission, while winning one hand each results in a push.',
+			'Choose two cards for the Low hand; the remaining five cards form the High hand. The High hand must rank at least as high as the Low hand. In the five-card hand a Joker completes a straight, flush, straight flush, or royal flush when possible, and otherwise counts as an Ace; in the two-card hand a Joker always counts as an Ace. Four Aces plus the Joker make Five Aces, the highest hand. Winning both hands wins the wager less a 5% commission, while winning one hand each results in a push.',
 		retrySettlement: 'Retry settlement',
 		resetRound: 'Reset round',
 		settlementFailed: 'Settlement failed. Retry or reset before starting another round.',
@@ -128,7 +128,7 @@ export const PAI_GOW_POKER_MESSAGES = defineMessages({
 		errorHighHandRank: '高手牌必須至少與低手牌同等級',
 		howToPlay: '玩法說明',
 		howToPlayBody:
-			'為低手牌選擇兩張牌；其餘五張牌組成高手牌。高手牌必須至少與低手牌同等級。兩手皆贏時，贏得扣除 5% 佣金後的下注額；各贏一手則為和局。',
+			'為低手牌選擇兩張牌；其餘五張牌組成高手牌。高手牌必須至少與低手牌同等級。在五張牌的高手牌中，小丑牌可補成順子、同花、同花順或皇家同花順，否則視為 A；在兩張牌的低手牌中，小丑牌一律視為 A。四張 A 加小丑牌即組成最高的五張A。兩手皆贏時，贏得扣除 5% 佣金後的下注額；各贏一手則為和局。',
 		retrySettlement: '重試結算',
 		resetRound: '重設本局',
 		settlementFailed: '結算失敗。請重試或重設後再開始新一局。',
@@ -189,7 +189,7 @@ export const PAI_GOW_POKER_MESSAGES = defineMessages({
 		errorHighHandRank: '高手牌必须至少与低手牌同等级',
 		howToPlay: '玩法说明',
 		howToPlayBody:
-			'为低手牌选择两张牌；其余五张牌组成高手牌。高手牌必须至少与低手牌同等级。两手皆赢时，赢得扣除 5% 佣金后的下注额；各赢一手则为和局。',
+			'为低手牌选择两张牌；其余五张牌组成高手牌。高手牌必须至少与低手牌同等级。在五张牌的高手牌中，小丑牌可补成顺子、同花、同花顺或皇家同花顺，否则视为 A；在两张牌的低手牌中，小丑牌一律视为 A。四张 A 加小丑牌即组成最高的五张A。两手皆赢时，赢得扣除 5% 佣金后的下注额；各赢一手则为和局。',
 		retrySettlement: '重试结算',
 		resetRound: '重置本局',
 		settlementFailed: '结算失败。请重试或重置后再开始新一局。',
@@ -250,7 +250,7 @@ export const PAI_GOW_POKER_MESSAGES = defineMessages({
 		errorHighHandRank: 'ハイハンドはローハンドと同等以上でなければなりません',
 		howToPlay: '遊び方',
 		howToPlayBody:
-			'ローハンド用に 2 枚を選び、残りの 5 枚がハイハンドになります。ハイハンドはローハンドと同等以上でなければなりません。両方のハンドで勝つと、5% の手数料を差し引いた賭け金を獲得。1 つずつ勝つとプッシュです。',
+			'ローハンド用に 2 枚を選び、残りの 5 枚がハイハンドになります。ハイハンドはローハンドと同等以上でなければなりません。5 枚のハイハンドでは、ジョーカーは可能な場合にストレート・フラッシュ・ストレートフラッシュ・ロイヤルストレートフラッシュを完成させ、それ以外ではエースとして扱われます。2 枚のローハンドでは、ジョーカーは常にエースです。エース 4 枚とジョーカーで最強のファイブエースになります。両方のハンドで勝つと、5% の手数料を差し引いた賭け金を獲得。1 つずつ勝つとプッシュです。',
 		retrySettlement: '決済を再試行',
 		resetRound: 'ラウンドをリセット',
 		settlementFailed:

@@ -14,8 +14,12 @@ export const CARD_MIN_CONTRAST = 4.5; // WCAG AA normal text
 export type VisibleCardFace = {
 	rankText: string;
 	suitText: string;
+	/** Computed color of the rank element (also asserted directly by some specs). */
 	textColor: string;
+	/** Computed color of the suit element, checked independently from the rank. */
+	suitColor: string;
 	backgroundColor: string;
+	/** Both the rank and the suit render with a non-zero box. */
 	visible: boolean;
 };
 
@@ -26,13 +30,18 @@ export async function readVisibleCardFaces(root: Locator): Promise<VisibleCardFa
 			const face = node as HTMLElement;
 			const rank = face.querySelector<HTMLElement>('[data-rank]');
 			const suit = face.querySelector<HTMLElement>('[data-suit-center]');
-			const rankBox = rank?.getBoundingClientRect();
+			const isRendered = (el: HTMLElement | null): boolean => {
+				if (!el) return false;
+				const box = el.getBoundingClientRect();
+				return box.width > 0 && box.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+			};
 			return {
 				rankText: (rank?.textContent ?? '').trim(),
 				suitText: (suit?.textContent ?? '').trim(),
 				textColor: getComputedStyle(rank ?? face).color,
+				suitColor: getComputedStyle(suit ?? face).color,
 				backgroundColor: getComputedStyle(face).backgroundColor,
-				visible: !!rank && !!suit && !!rankBox && rankBox.width > 0 && rankBox.height > 0,
+				visible: isRendered(rank) && isRendered(suit),
 			};
 		}),
 	);
@@ -60,13 +69,19 @@ export function expectLegibleCardFaces(faces: VisibleCardFace[]): void {
 		expect(face.visible, 'rank and suit elements are visible').toBe(true);
 		expect(face.rankText, 'rank text is non-empty').not.toBe('');
 		expect(face.suitText, 'suit text is non-empty').not.toBe('');
-		expect(
-			CARD_FACE_TEXT_COLORS,
-			`face text color must be a CardSlot contract color, got ${face.textColor}`,
-		).toContain(face.textColor);
-		expect(
-			contrastRatio(face.textColor, face.backgroundColor),
-			`contrast of ${face.textColor} on ${face.backgroundColor}`,
-		).toBeGreaterThanOrEqual(CARD_MIN_CONTRAST);
+		const parts = [
+			['rank', face.textColor],
+			['suit', face.suitColor],
+		] as const;
+		for (const [label, color] of parts) {
+			expect(
+				CARD_FACE_TEXT_COLORS,
+				`${label} text color must be a CardSlot contract color, got ${color}`,
+			).toContain(color);
+			expect(
+				contrastRatio(color, face.backgroundColor),
+				`contrast of ${label} ${color} on ${face.backgroundColor}`,
+			).toBeGreaterThanOrEqual(CARD_MIN_CONTRAST);
+		}
 	}
 }

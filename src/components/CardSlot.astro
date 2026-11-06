@@ -50,3 +50,57 @@ const cardSize = sizeClasses[size];
 	<!-- Face-down card (hidden by default) -->
 	<div class:list={['playing-card-back', cardSize, 'hidden']} data-card-back></div>
 </div>
+
+<style>
+	/* Minimal legibility contract copied from poker.css' card block. Astro scopes
+	   these rules to this component's markup, so the Poker and Blackjack cabinets
+	   keep styling their own card components. */
+	.playing-card {
+		background: white;
+		border: 1px solid #c8a55cb3;
+		box-shadow: 0 12px 28px #000b;
+		color: #141414;
+		overflow: hidden;
+	}
+	.playing-card-inner {
+		position: relative;
+		width: 100%;
+		height: 100%;
+	}
+	.card-corner {
+		position: absolute;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		line-height: 0.9;
+	}
+	.card-corner-top {
+		top: 5px;
+		left: 5px;
+	}
+	.card-corner-bottom {
+		bottom: 5px;
+		right: 5px;
+		transform: rotate(180deg);
+	}
+	.card-rank {
+		font:
+			700 15px/0.9 'Playfair Display',
+			serif;
+	}
+	.card-suit-small {
+		font-size: 11px;
+	}
+	.card-suit-center {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		font:
+			28px Georgia,
+			serif;
+	}
+	.card-red {
+		color: #a3161c;
+	}
+</style>

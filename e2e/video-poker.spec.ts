@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
+import {
+	BLACK_CARD_COLOR,
+	RED_CARD_COLOR,
+	expectLegibleCardFaces,
+	readVisibleCardFaces,
+} from './card-legibility';
 import { createIsolatedPage } from './isolated-page';
 
 async function gotoVideoPoker(page: Page): Promise<void> {
@@ -113,6 +119,63 @@ test.describe('Video Poker guest', () => {
 		await expect(page.locator('#video-poker-action')).toHaveText('Deal');
 		expect(walletRequests).toEqual([]);
 	});
+
+	test('dealt cards render legible ranks and suits in both suit colors', async ({ page }) => {
+		// random=0.2 deals 8♦ 7♠ 3♦ 2♥ K♦ — red and black suits in one hand.
+		await page.addInitScript(() => {
+			Math.random = () => 0.2;
+		});
+		await gotoVideoPoker(page);
+
+		await expect(page.getByTestId('video-poker-root')).toHaveAttribute('data-guest-mode', 'true');
+		await page.locator('[data-wager="2"]').click();
+		await page.locator('#video-poker-action').click(); // Deal
+		await expect(page.locator('#video-poker-action')).toHaveText('Draw');
+
+		const faces = await readVisibleCardFaces(page.locator('[id^="video-poker-slot-"]'));
+		expect(faces).toHaveLength(5);
+		expectLegibleCardFaces(faces);
+		expect(faces[0].textColor).toBe(RED_CARD_COLOR);
+		expect(faces[0].rankText).toBe('8');
+		expect(faces[1].textColor).toBe(BLACK_CARD_COLOR);
+		expect(faces[1].rankText).toBe('7');
+
+		const layout = await page
+			.locator('[id^="video-poker-slot-"] [data-card-face]:not(.hidden)')
+			.first()
+			.evaluate((node) => {
+				const face = node as HTMLElement;
+				const card = face.getBoundingClientRect();
+				const cornerTop = face.querySelector<HTMLElement>('.card-corner-top');
+				const cornerBottom = face.querySelector<HTMLElement>('.card-corner-bottom');
+				const suit = face.querySelector<HTMLElement>('[data-suit-center]');
+				const topBox = cornerTop?.getBoundingClientRect();
+				const suitBox = suit?.getBoundingClientRect();
+				return {
+					cornerPosition: cornerTop ? getComputedStyle(cornerTop).position : null,
+					cornerFlexDirection: cornerTop ? getComputedStyle(cornerTop).flexDirection : null,
+					cornerTopInset: topBox
+						? { top: topBox.top - card.top, left: topBox.left - card.left }
+						: null,
+					cornerBottomTransform: cornerBottom ? getComputedStyle(cornerBottom).transform : null,
+					suitOffsetFromCenter: suitBox
+						? {
+								x: suitBox.x + suitBox.width / 2 - (card.x + card.width / 2),
+								y: suitBox.y + suitBox.height / 2 - (card.y + card.height / 2),
+							}
+						: null,
+				};
+			});
+		expect(layout.cornerPosition).toBe('absolute');
+		expect(layout.cornerFlexDirection).toBe('column');
+		expect(layout.cornerTopInset?.top).toBeGreaterThanOrEqual(4);
+		expect(layout.cornerTopInset?.top).toBeLessThanOrEqual(8);
+		expect(layout.cornerTopInset?.left).toBeGreaterThanOrEqual(4);
+		expect(layout.cornerTopInset?.left).toBeLessThanOrEqual(8);
+		expect(layout.cornerBottomTransform).toBe('matrix(-1, 0, 0, -1, 0, 0)'); // rotate(180deg)
+		expect(Math.abs(layout.suitOffsetFromCenter?.x ?? 99)).toBeLessThanOrEqual(2);
+		expect(Math.abs(layout.suitOffsetFromCenter?.y ?? 99)).toBeLessThanOrEqual(2);
+	});
 });
 
 test.describe('Video Poker narrow layout', () => {
@@ -168,6 +231,11 @@ test.describe('Video Poker narrow layout', () => {
 		for (let index = 1; index < geometry.length; index += 1) {
 			expect(geometry[index - 1].card!.right).toBeLessThanOrEqual(geometry[index].card!.left + 1);
 		}
+
+		// Legibility holds on the narrow viewport too.
+		const faces = await readVisibleCardFaces(page.locator('[id^="video-poker-slot-"]'));
+		expect(faces).toHaveLength(5);
+		expectLegibleCardFaces(faces);
 	});
 });
 

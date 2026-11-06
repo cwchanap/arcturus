@@ -1,6 +1,6 @@
 # Issue #78 — Guest playtest fixes: implementation plan
 
-Status: proposed / not implemented  
+Status: steps 1–7 implemented in PR #79; final review fixes and delivery verification in progress\
 Design: [2026-11-04 guest playtest design](../specs/2026-11-04-guest-playtest-78-design.md)  
 Issue: [#78](https://github.com/cwchanap/arcturus/issues/78)  
 PR policy: **one PR only** for issue #78. This docs-only draft becomes the implementation PR; no per-finding PR split.

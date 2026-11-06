@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
+import { Window } from 'happy-dom';
 import { initRouletteClient } from './rouletteClient';
 import { CHIP_DENOMINATIONS } from './constants';
 import {
@@ -249,6 +250,79 @@ describe('roulette client guest flow', () => {
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
 		expect(s.spinBtn.disabled).toBe(false);
 	});
+});
+
+describe('roulette Active Bets reveal guard', () => {
+	it.each([
+		{ mode: 'guest', guestMode: true, child: 'label', childIndex: 0 },
+		{ mode: 'guest', guestMode: true, child: 'amount', childIndex: 1 },
+		{ mode: 'authenticated', guestMode: false, child: 'label', childIndex: 0 },
+		{ mode: 'authenticated', guestMode: false, child: 'amount', childIndex: 1 },
+	])(
+		'ignores a bubbled $child click during the $mode reveal interval',
+		async ({ guestMode, childIndex }) => {
+			const win = new Window();
+			try {
+				Object.assign(globalThis, { document: win.document, window: win });
+				installMockLocalStorage();
+				const timers = installMockTimers();
+				installMockCrypto({
+					getRandomValues: (buf) => {
+						buf[0] = 1;
+						return buf;
+					},
+				});
+				installMockFetch(async () =>
+					makeFetchResponse(200, {
+						winningNumber: 1,
+						netDelta: 5,
+						results: [{ bet: { id: 'b', type: 'red', amount: 5 }, won: true, payout: 10 }],
+						newBalance: 1005,
+					}),
+				);
+				win.document.body.innerHTML =
+					ALL_IDS.map((id) => {
+						const tag = id.endsWith('-button') ? 'button' : 'div';
+						return `<${tag} id="${id}"></${tag}>`;
+					}).join('') + '<button data-bet-type="red"></button>';
+				const root = win.document.getElementById('roulette-root')!;
+				root.dataset.guestMode = String(guestMode);
+				initRouletteClient();
+				const el = (id: string) => win.document.getElementById(id)!;
+				win.document.querySelector<HTMLButtonElement>('[data-bet-type]')!.click();
+				el('spin-button').click();
+				await flush();
+
+				const betButton = el('active-bets').querySelector('button')!;
+				expect(betButton.disabled).toBe(true);
+				// Dispatch on the real child so the click bubbles to the delegated listener.
+				betButton.children[childIndex].dispatchEvent(
+					new win.MouseEvent('click', { bubbles: true }),
+				);
+
+				expect(el('game-phase').textContent).toBe('No More Bets');
+				expect(el('chip-balance').textContent).toBe('995 chips');
+				expect(el('round-history').textContent).toBe('No rounds yet');
+				expect(el('new-round-button').hidden).toBe(true);
+				expect(el('wheel-result').children).toHaveLength(0);
+				expect(el('net-delta').textContent).toBe('');
+
+				timers.flush();
+				expect(el('game-phase').textContent).toBe('Round Complete');
+				expect(el('chip-balance').textContent).toBe('1,005 chips');
+				expect(el('wheel-result').getAttribute('aria-label')).toBe('Winning number: 1 Red');
+				expect(el('net-delta').textContent).toBe('+5 chips');
+				expect(el('new-round-button').hidden).toBe(false);
+				el('new-round-button').click();
+				timers.flush();
+				expect(el('game-phase').textContent).toBe('Place Your Bets');
+				expect(el('wheel-result').children).toHaveLength(0);
+				expect(el('net-delta').textContent).toBe('');
+			} finally {
+				win.close();
+			}
+		},
+	);
 });
 
 describe('roulette client authenticated flow', () => {

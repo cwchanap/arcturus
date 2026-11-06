@@ -1,6 +1,6 @@
 # Issue #78 — Guest playtest follow-up: design
 
-Status: proposed; planning-only draft PR, 2026-11-04  
+Status: implemented in PR #79; final review fixes and delivery verification in progress, 2026-11-04\
 Source: [GitHub issue #78](https://github.com/cwchanap/arcturus/issues/78) (guest playthrough on 2026-10-30)  
 Reviewed against: `main` at `1011c39e9bc8b2589b61cb34713e0ce2b54999ae`  
 Implementation policy: **one PR for the entire issue**; extend this draft PR after design approval rather than opening separate code PRs.

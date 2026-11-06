@@ -231,6 +231,7 @@ export function initRouletteClient(): void {
 	});
 
 	document.getElementById('active-bets')?.addEventListener('click', (event) => {
+		if (game.getState().phase !== 'betting') return;
 		const target = event.target as HTMLElement;
 		const betEntry = target.closest('[id^="active-bet-"]');
 		if (!betEntry) return;

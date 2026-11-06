@@ -56,16 +56,21 @@ describe('home hero stats copy', () => {
 });
 
 describe('lobby surfaces make no presence claims', () => {
-	test('home page has no player literals and its hero count is games.length', () => {
+	test('home page has no presence stat or players field and its hero count is games.length', () => {
 		const page = readSource('src/pages/index.astro');
-		expect(page).not.toContain('players');
+		// Assert the removed presence-claim artifacts — the fabricated count,
+		// its message key, and a `players` registry field/prop — rather than
+		// the bare word "players", which unrelated copy could legitimately use.
+		expect(page).not.toContain('statPlayersOnline');
+		expect(page).not.toContain('5,680');
+		expect(page).not.toMatch(/players\s*[=:]/);
 		expect(page).toContain('formatWholeNumber(games.length');
 	});
 
 	test('game card keeps the minimum wager but no player count', () => {
 		const card = readSource('src/components/GameCard.astro');
-		expect(card).not.toContain('players');
-		expect(card).not.toContain('Playing');
+		expect(card).not.toContain('playersPlaying');
+		expect(card).not.toMatch(/players\s*[=:]/);
 		expect(card).toContain(`t('minBet'`);
 	});
 });

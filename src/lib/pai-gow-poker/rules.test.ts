@@ -183,6 +183,18 @@ describe('Pai Gow hand ranking', () => {
 			]),
 		).toEqual({ category: 'flush', tieBreakers: [14, 13, 8, 5, 2] });
 	});
+
+	test('ranks the reported 9♣ K♣ 7♣ 5♥ + Joker as high card, not flush', () => {
+		expect(
+			rankPaiGowFiveCardHand([
+				card(9, 'clubs'),
+				card(13, 'clubs'),
+				card(7, 'clubs'),
+				card(5, 'hearts'),
+				joker,
+			]),
+		).toEqual({ category: 'high-card', tieBreakers: [14, 13, 9, 7, 5] });
+	});
 });
 
 describe('Pai Gow arrangements', () => {

@@ -723,3 +723,9 @@ export function formatBlackjackNet(locale: Locale, value: number): string {
 	if (value === 0) return formatChips(0, locale);
 	return `${value > 0 ? '+' : '−'}${formatChips(Math.abs(value), locale)}`;
 }
+
+/** Localized round result label ("Win", "Loss", "Push"). */
+export function formatBlackjackResult(locale: Locale, result: 'win' | 'loss' | 'push'): string {
+	const t = blackjackTranslator(locale);
+	return t(result === 'win' ? 'resultWin' : result === 'loss' ? 'resultLoss' : 'resultPush');
+}

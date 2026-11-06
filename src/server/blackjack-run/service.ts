@@ -741,7 +741,7 @@ class BlackjackRunServiceImpl implements BlackjackRunService {
 			availableBankroll: replay.availableBankroll,
 			roundsCompleted: replay.roundsCompleted,
 			activeRound: expired ? null : replay.activeRoundPublic,
-			lastRound: expired ? null : replay.lastCompletedRoundPublic,
+			lastRound: expired ? null : replay.lastRoundPublic,
 			rank,
 			percentile,
 		};

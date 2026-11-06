@@ -392,7 +392,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		if (!round) return;
 		renderActiveRound(
 			root.ownerDocument,
-			round,
+			round.phase === 'complete' ? { ...round, activeHandIndex: -1 } : round,
 			dealerHandEl,
 			dealerValueEl,
 			playerHandsEl,

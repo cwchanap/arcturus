@@ -385,7 +385,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		playerHandsEl.replaceChildren();
 	};
 
-	const renderPresentedRound = (round: DailyRunState['activeRound']): void => {
+	const renderPresentedRound = (round: DailyRunState['activeRound'], live: boolean): void => {
 		const outcome = round?.outcome;
 		// The live region stays in the accessibility tree: toggling `hidden`
 		// in the same update that fills it can drop the announcement.
@@ -393,7 +393,9 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 		if (!round) return;
 		renderActiveRound(
 			root.ownerDocument,
-			round,
+			// An archived round — e.g. the abandoned hand presented after a
+			// mid-round forfeit — keeps its cards but never highlights a hand.
+			live ? round : { ...round, activeHandIndex: -1 },
 			dealerHandEl,
 			dealerValueEl,
 			playerHandsEl,
@@ -440,7 +442,10 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 				? formatChips(replay.activeRoundPublic.committedWager, locale)
 				: '\u2014';
 			roundProgressEl.textContent = roundProgressLabel(replay.roundsCompleted);
-			renderPresentedRound(replay.activeRoundPublic ?? replay.lastRoundPublic);
+			renderPresentedRound(
+				replay.activeRoundPublic ?? replay.lastRoundPublic,
+				replay.activeRoundPublic !== null,
+			);
 			if (replay.activeRoundPublic) {
 				statusEl.textContent = '';
 			} else if (replay.status === 'completed') {
@@ -467,7 +472,7 @@ export function createDailyRunRenderer(root: HTMLElement): DailyRunRenderer {
 			? formatChips(state.activeRound.committedWager, locale)
 			: '\u2014';
 		roundProgressEl.textContent = roundProgressLabel(state.roundsCompleted);
-		renderPresentedRound(state.activeRound ?? state.lastRound);
+		renderPresentedRound(state.activeRound ?? state.lastRound, state.activeRound !== null);
 		if (state.activeRound || state.status !== 'active') {
 			statusEl.textContent = '';
 		}

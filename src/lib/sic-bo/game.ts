@@ -94,9 +94,10 @@ export class SicBoGame {
 		return this.copyResult(this.lastResult);
 	}
 
-	/** Start a new round: back to betting, keeping the retained bet slip. */
+	/** Start a new round: back to betting with a fresh, empty slip. */
 	resetRound(): void {
 		this.phase = 'betting';
+		this.bets = {};
 		this.lastResult = null;
 	}
 

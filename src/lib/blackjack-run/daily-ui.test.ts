@@ -475,6 +475,10 @@ describe('daily completed-hand presentation through page controllers', () => {
 				expect(cardTexts('player')).toEqual(scenario.player);
 				expect(get(root, 'daily-challenge-round-result').hidden).toBe(false);
 				expect(get(root, 'daily-challenge-round-result').textContent).toBe(scenario.result);
+				expect(
+					root.querySelectorAll('[data-testid="daily-challenge-player-hand"][data-active="true"]'),
+					'completed round must not highlight an active hand',
+				).toHaveLength(0);
 				expect(get(root, 'daily-challenge-bankroll').textContent).toBe(
 					formatCurrency(scenario.bankroll),
 				);
@@ -505,6 +509,10 @@ describe('daily completed-hand presentation through page controllers', () => {
 				expect(next.activeRound).not.toBeNull();
 				expect(cardTexts('dealer')).toHaveLength(1);
 				expect(cardTexts('player')).not.toEqual(scenario.player);
+				expect(
+					root.querySelectorAll('[data-testid="daily-challenge-player-hand"][data-active="true"]'),
+					'active round highlights exactly one hand',
+				).toHaveLength(1);
 				expect(get(root, 'daily-challenge-round-result').hidden).toBe(true);
 				expect(get(root, 'daily-challenge-round-result').textContent).toBe('');
 				expect(button(root, 'daily-challenge-start-round').disabled).toBe(true);

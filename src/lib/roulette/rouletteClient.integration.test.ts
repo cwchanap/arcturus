@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { Window } from 'happy-dom';
+import { Window, type HTMLButtonElement, type HTMLElement } from 'happy-dom';
 import { initRouletteClient } from './rouletteClient';
 import { CHIP_DENOMINATIONS } from './constants';
 import {
@@ -285,10 +285,10 @@ describe('roulette Active Bets reveal guard', () => {
 						const tag = id.endsWith('-button') ? 'button' : 'div';
 						return `<${tag} id="${id}"></${tag}>`;
 					}).join('') + '<button data-bet-type="red"></button>';
-				const root = win.document.getElementById('roulette-root')!;
+				const el = (id: string) => win.document.getElementById(id)! as HTMLElement;
+				const root = el('roulette-root');
 				root.dataset.guestMode = String(guestMode);
 				initRouletteClient();
-				const el = (id: string) => win.document.getElementById(id)!;
 				win.document.querySelector<HTMLButtonElement>('[data-bet-type]')!.click();
 				el('spin-button').click();
 				await flush();

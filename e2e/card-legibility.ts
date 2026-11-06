@@ -47,6 +47,13 @@ export async function readVisibleCardFaces(root: Locator): Promise<VisibleCardFa
 	);
 }
 
+/** Alpha channel of a computed rgb()/rgba() color; rgb() counts as opaque. */
+export function colorAlpha(color: string): number {
+	const match = color.match(/rgba?\(\d+, \d+, \d+(?:, ([\d.]+))?\)/);
+	if (!match) return 0;
+	return match[1] === undefined ? 1 : Number(match[1]);
+}
+
 /** WCAG relative-luminance contrast ratio between two rgb()/rgba() colors. */
 export function contrastRatio(a: string, b: string): number {
 	const luminance = (color: string): number => {
@@ -69,6 +76,10 @@ export function expectLegibleCardFaces(faces: VisibleCardFace[]): void {
 		expect(face.visible, 'rank and suit elements are visible').toBe(true);
 		expect(face.rankText, 'rank text is non-empty').not.toBe('');
 		expect(face.suitText, 'suit text is non-empty').not.toBe('');
+		expect(
+			colorAlpha(face.backgroundColor),
+			`card background must be opaque before contrast is meaningful, got ${face.backgroundColor}`,
+		).toBe(1);
 		const parts = [
 			['rank', face.textColor],
 			['suit', face.suitColor],

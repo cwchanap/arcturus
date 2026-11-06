@@ -214,10 +214,15 @@ describe('renderBlackjackPlayerHands', () => {
 			},
 		];
 
-		renderBlackjackPlayerHands(document, playerHands, hands, 0, {
-			testIdPrefix: 'ranked',
-			formatWager: (value) => `${value} chips`,
-		});
+		renderBlackjackPlayerHands(
+			document,
+			playerHands,
+			{ phase: 'player-turn', playerHands: hands, activeHandIndex: 0 },
+			{
+				testIdPrefix: 'ranked',
+				formatWager: (value) => `${value} chips`,
+			},
+		);
 
 		const sections = playerHands.querySelectorAll('[data-testid="ranked-player-hand"]');
 		expect(sections).toHaveLength(2);
@@ -247,8 +252,11 @@ describe('renderBlackjackPlayerHands', () => {
 		renderBlackjackPlayerHands(
 			document,
 			playerHands,
-			[{ cards: [{ rank: '5', suit: 'hearts' }], wager: 250, value: HARD_17 }],
-			0,
+			{
+				phase: 'player-turn',
+				playerHands: [{ cards: [{ rank: '5', suit: 'hearts' }], wager: 250, value: HARD_17 }],
+				activeHandIndex: 0,
+			},
 			{
 				testIdPrefix: 'daily-challenge',
 				formatWager: (value) => `${value} chips`,
@@ -266,11 +274,50 @@ describe('renderBlackjackPlayerHands', () => {
 		playerHands.append(document.createElement('section') as unknown as string);
 		document.body.append(playerHands as unknown as string);
 
-		renderBlackjackPlayerHands(document, playerHands, [], 0, {
-			testIdPrefix: 'ranked',
-			formatWager: (value) => `${value} chips`,
-		});
+		renderBlackjackPlayerHands(
+			document,
+			playerHands,
+			{ phase: 'player-turn', playerHands: [], activeHandIndex: 0 },
+			{
+				testIdPrefix: 'ranked',
+				formatWager: (value) => `${value} chips`,
+			},
+		);
 
 		expect(playerHands.children).toHaveLength(0);
+	});
+
+	test('highlights no hand once the round is complete', () => {
+		const playerHands = document.createElement('div');
+		document.body.append(playerHands as unknown as string);
+
+		renderBlackjackPlayerHands(
+			document,
+			playerHands,
+			{
+				phase: 'complete',
+				playerHands: [
+					{
+						cards: [
+							{ rank: '10', suit: 'clubs' },
+							{ rank: '8', suit: 'spades' },
+						],
+						wager: 100,
+						value: HARD_17,
+					},
+				],
+				activeHandIndex: 0,
+			},
+			{
+				testIdPrefix: 'ranked',
+				formatWager: (value) => `${value} chips`,
+			},
+		);
+
+		const sections = playerHands.querySelectorAll<HTMLElement>(
+			'[data-testid="ranked-player-hand"]',
+		);
+		expect(sections).toHaveLength(1);
+		expect(sections[0]?.dataset.active).toBe('false');
 	});
 });

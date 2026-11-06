@@ -20,6 +20,12 @@ export interface BlackjackPlayerHandProjection {
 	readonly value: HandValue;
 }
 
+export interface BlackjackPlayerRoundProjection {
+	readonly phase: 'player-turn' | 'complete';
+	readonly playerHands: readonly BlackjackPlayerHandProjection[];
+	readonly activeHandIndex: number;
+}
+
 const CARD_BASE_CLASS =
 	'playing-card flex h-24 w-16 flex-col items-center justify-center rounded-lg bg-white text-xl font-bold shadow-lg';
 const ACTIVE_HAND_CLASS = 'rounded-xl border-2 border-[var(--deco-brass)] p-4';
@@ -73,13 +79,15 @@ export function renderBlackjackDealer(
 export function renderBlackjackPlayerHands(
 	document: Document,
 	playerHandsContainer: HTMLElement,
-	hands: readonly BlackjackPlayerHandProjection[],
-	activeHandIndex: number,
+	round: BlackjackPlayerRoundProjection,
 	options: BlackjackPresentationOptions,
 ): void {
 	const locale = getDocumentLocale(document);
 	const t = blackjackTranslator(locale);
-	const rendered = hands.map((hand, index) => {
+	// A completed round has no actionable hand — suppress the highlight here
+	// so every caller presents a settled table the same way.
+	const activeHandIndex = round.phase === 'complete' ? -1 : round.activeHandIndex;
+	const rendered = round.playerHands.map((hand, index) => {
 		const isActive = index === activeHandIndex;
 		const section = document.createElement('section');
 		section.dataset.testid = `${options.testIdPrefix}-player-hand`;

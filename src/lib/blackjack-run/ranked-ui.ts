@@ -5,6 +5,7 @@ import {
 	blackjackTranslator,
 	formatBlackjackAmount,
 	formatBlackjackNet,
+	formatBlackjackResult,
 } from '../i18n/messages/blackjack';
 import { getDocumentLocale } from '../i18n/locale';
 import { MAXIMUM_WAGER, MINIMUM_WAGER } from './ranked';
@@ -116,13 +117,7 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 	};
 
 	const renderPlayers = (state: RankedRunState): void => {
-		renderBlackjackPlayerHands(
-			root.ownerDocument,
-			playerHands,
-			state.playerHands,
-			state.activeHandIndex,
-			presentationOptions,
-		);
+		renderBlackjackPlayerHands(root.ownerDocument, playerHands, state, presentationOptions);
 	};
 
 	const renderResult = (state: RankedRunState): void => {
@@ -137,15 +132,7 @@ export function createRankedRunRenderer(root: HTMLElement): RankedRunRenderer {
 			return;
 		}
 		const outcome = state.outcome;
-		resultOutcome.textContent = outcome
-			? t(
-					outcome.result === 'win'
-						? 'resultWin'
-						: outcome.result === 'loss'
-							? 'resultLoss'
-							: 'resultPush',
-				)
-			: '—';
+		resultOutcome.textContent = outcome ? formatBlackjackResult(locale, outcome.result) : '—';
 		resultWager.textContent = formatAmount(state.committedWager);
 		resultPayout.textContent = outcome ? formatAmount(outcome.payout) : formatChips(0, locale);
 		resultNet.textContent = outcome

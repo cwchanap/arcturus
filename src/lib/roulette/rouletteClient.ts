@@ -51,7 +51,6 @@ export function initRouletteClient(): void {
 	const game = new RouletteGame({ initialBalance: restoredGuestBalance });
 	const ui = new RouletteUIRenderer();
 	const sessionKey = `roulette-session:${userId}`;
-	let pendingResultTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const betsDroppedOnRefresh = restoreSavedSession(
 		game,
@@ -87,6 +86,19 @@ export function initRouletteClient(): void {
 	function updateAndPersist(): void {
 		ui.update(game.getState());
 		persistSession();
+	}
+
+	// Reveal the settled round in one paint: the wheel keeps its suspense
+	// animation for SPIN_ANIMATION_MS, then balance, result and controls
+	// appear together.
+	function revealSpin(spinResult: SpinResult): void {
+		ui.update(game.getState());
+		ui.showResult(spinResult);
+	}
+
+	function animateAndScheduleReveal(spinResult: SpinResult): void {
+		ui.animateWheel(spinResult.winningNumber);
+		setTimeout(() => revealSpin(spinResult), SPIN_ANIMATION_MS);
 	}
 
 	let messageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -128,7 +140,6 @@ export function initRouletteClient(): void {
 			newBalance: data.newBalance,
 		};
 		game.applySettlement(spinResult);
-		ui.update(game.getState());
 		if (data.newAchievements?.length) {
 			window.dispatchEvent(
 				new CustomEvent('achievement-earned', {
@@ -137,12 +148,7 @@ export function initRouletteClient(): void {
 			);
 		}
 		persistSession();
-		ui.animateWheel(spinResult.winningNumber);
-		pendingResultTimer = setTimeout(() => {
-			pendingResultTimer = null;
-			ui.showResult(spinResult);
-			ui.update(game.getState());
-		}, SPIN_ANIMATION_MS);
+		animateAndScheduleReveal(spinResult);
 	}
 
 	function adoptDuplicateBalance(data: SpinResponse): void {
@@ -245,7 +251,6 @@ export function initRouletteClient(): void {
 				: `spin-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 		try {
-			let spinResult: SpinResult;
 			if (shouldSyncAccountChips({ isGuestMode })) {
 				const bets = game.beginSpin();
 				const totalBet = bets.reduce((sum, bet) => sum + bet.amount, 0);
@@ -269,17 +274,16 @@ export function initRouletteClient(): void {
 					done();
 				}
 			} else {
+				// The guest domain settles synchronously; hold the visible game on
+				// the pre-spin snapshot in 'spinning' so no control is actionable
+				// while the wheel animates.
+				const preSpinState = game.getState();
+				ui.update({ ...preSpinState, phase: 'spinning' });
 				const winningNumber = generateLocalWinningNumber();
-				spinResult = game.spinGuest(winningNumber);
+				const spinResult = game.spinGuest(winningNumber);
 				spinResult.syncId = syncId;
-				ui.update(game.getState());
 				persistSession();
-				ui.animateWheel(spinResult.winningNumber);
-				pendingResultTimer = setTimeout(() => {
-					pendingResultTimer = null;
-					ui.showResult(spinResult);
-					ui.update(game.getState());
-				}, SPIN_ANIMATION_MS);
+				animateAndScheduleReveal(spinResult);
 			}
 		} catch (error) {
 			console.error('[ROULETTE] Spin failed:', error);
@@ -295,10 +299,6 @@ export function initRouletteClient(): void {
 	});
 
 	document.getElementById('new-round-button')?.addEventListener('click', () => {
-		if (pendingResultTimer !== null) {
-			clearTimeout(pendingResultTimer);
-			pendingResultTimer = null;
-		}
 		game.newRound();
 		ui.clearResult();
 		updateAndPersist();

@@ -440,3 +440,77 @@ test.describe('Roulette — Clear Bets Sync', () => {
 		}
 	});
 });
+
+test.describe('Roulette — Guest Reveal Consistency', () => {
+	// Guest journey: no authenticated storage state, no wallet settlement.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test('locks controls during the wheel animation and reveals balance with the result together', async ({
+		page,
+	}) => {
+		await page.addInitScript(() => {
+			// Wipe guest state only on the first load so the settled-session reload
+			// check at the end still finds its persisted session.
+			if (!localStorage.getItem('roulette-reveal-test-seeded')) {
+				localStorage.setItem('roulette-reveal-test-seeded', '1');
+				localStorage.removeItem('roulette-bankroll:anonymous');
+				localStorage.removeItem('roulette-session:anonymous');
+			}
+			// Deterministic red-1 outcome for the local guest spin.
+			crypto.getRandomValues = ((buf: Uint8Array) => {
+				buf[0] = 1;
+				return buf;
+			}) as typeof crypto.getRandomValues;
+		});
+		await page.goto('/games/roulette', { waitUntil: 'domcontentloaded' });
+
+		await expect(page.getByTestId('roulette-root')).toHaveAttribute('data-guest-mode', 'true');
+		await expect(page.locator('#chip-balance')).toHaveText('1,000 chips');
+
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await expect(page.locator('#chip-balance')).toHaveText('975 chips');
+
+		await page.getByTestId('spin-button').click();
+
+		// While the wheel animates: every control locked, pre-settlement
+		// balance, and no winning number, NET or breakdown visible.
+		await expect(page.locator('#game-phase')).toContainText('No More Bets');
+		await expect(page.locator('[data-bet-type="red"]')).toBeDisabled();
+		await expect(page.getByTestId('clear-bets-button')).toBeDisabled();
+		await expect(page.getByTestId('spin-button')).toBeDisabled();
+		await expect(page.getByTestId('new-round-button')).toBeHidden();
+		await expect(page.locator('#chip-balance')).toHaveText('975 chips');
+		await expect(page.locator('#wheel-result')).not.toContainText(/\b[0-9]{1,2}\b/);
+		// #net-delta SSR-renders the zero placeholder; the settled NET must
+		// not appear before the reveal.
+		await expect(page.locator('#net-delta')).not.toContainText('+25');
+
+		// Reveal: balance, winning number, NET and bet breakdown in one paint.
+		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+		await expect(page.locator('#game-phase')).toContainText('Round Complete');
+		await expect(page.locator('#chip-balance')).toHaveText('1,025 chips');
+		await expect(page.locator('#wheel-result')).toContainText('1');
+		await expect(page.locator('#net-delta')).toContainText('+25 chips');
+		await expect(page.getByTestId('bet-results')).toContainText('Red');
+
+		// New Round clears the revealed round and re-opens betting.
+		await page.getByTestId('new-round-button').click();
+		await expect(page.locator('#game-phase')).toContainText('Place Your Bets');
+		await expect(page.locator('#wheel-result')).not.toContainText(/\b[0-9]{1,2}\b/);
+		await expect(page.locator('#net-delta')).toBeEmpty();
+		await expect(page.getByTestId('new-round-button')).toBeHidden();
+
+		// A settled session survives reload with the result still revealed.
+		await page.getByTestId('chip-25').click();
+		await page.locator('[data-bet-type="red"]').click();
+		await page.getByTestId('spin-button').click();
+		await expect(page.getByTestId('new-round-button')).toBeVisible({ timeout: 15000 });
+		await page.reload({ waitUntil: 'networkidle' });
+		await expect(page.locator('#game-phase')).toContainText('Round Complete');
+		// Round 2 settled at 1,050: 1,025 staked 25 → 1,000, red-1 pays 50.
+		await expect(page.locator('#chip-balance')).toHaveText('1,050 chips');
+		await expect(page.locator('#wheel-result')).toContainText('1');
+		await expect(page.locator('#net-delta')).toContainText('+25');
+	});
+});

@@ -96,9 +96,36 @@ export function initRouletteClient(): void {
 		ui.showResult(spinResult);
 	}
 
-	function animateAndScheduleReveal(spinResult: SpinResult): void {
+	function animateAndScheduleReveal(
+		spinResult: SpinResult,
+		newAchievements?: SpinResponse['newAchievements'],
+	): void {
 		ui.animateWheel(spinResult.winningNumber);
-		setTimeout(() => revealSpin(spinResult), SPIN_ANIMATION_MS);
+		let revealed = false;
+		let revealTimer: ReturnType<typeof setTimeout> | null = null;
+		let offWheelSettled: (() => void) | null = null;
+		const reveal = (): void => {
+			if (revealed) return;
+			revealed = true;
+			if (revealTimer !== null) clearTimeout(revealTimer);
+			offWheelSettled?.();
+			revealSpin(spinResult);
+			// The toast is part of the reveal: announcing an earned achievement
+			// early would leak the outcome while the wheel still spins.
+			if (newAchievements?.length) {
+				window.dispatchEvent(
+					new CustomEvent('achievement-earned', {
+						detail: { achievements: newAchievements },
+					}),
+				);
+			}
+		};
+		// Under prefers-reduced-motion the CSS transition collapses to ~0ms;
+		// reveal on transitionend so the controls aren't locked for the full
+		// SPIN_ANIMATION_MS. The timeout stays as fallback when no transition
+		// runs (hidden element, unsupported environment).
+		offWheelSettled = ui.onWheelSettled(reveal);
+		revealTimer = setTimeout(reveal, SPIN_ANIMATION_MS);
 	}
 
 	let messageTimer: ReturnType<typeof setTimeout> | null = null;
@@ -140,15 +167,8 @@ export function initRouletteClient(): void {
 			newBalance: data.newBalance,
 		};
 		game.applySettlement(spinResult);
-		if (data.newAchievements?.length) {
-			window.dispatchEvent(
-				new CustomEvent('achievement-earned', {
-					detail: { achievements: data.newAchievements },
-				}),
-			);
-		}
 		persistSession();
-		animateAndScheduleReveal(spinResult);
+		animateAndScheduleReveal(spinResult, data.newAchievements);
 	}
 
 	function adoptDuplicateBalance(data: SpinResponse): void {
@@ -295,6 +315,15 @@ export function initRouletteClient(): void {
 			} else if (game.getState().phase === 'spinning') {
 				game.abortSpin();
 				ui.update(game.getState());
+			} else {
+				// The guest domain settles or throws synchronously without ever
+				// entering 'spinning', and an authenticated failure after
+				// applySettlement lands on 'settled'. Neither is covered by the
+				// 'spinning' recovery above: re-render the real state so the
+				// presentation-only 'spinning' paint can't lock every control.
+				const state = game.getState();
+				ui.update(state);
+				if (state.phase === 'settled' && state.lastSpin) ui.showResult(state.lastSpin);
 			}
 		}
 	});

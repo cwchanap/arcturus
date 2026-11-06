@@ -250,6 +250,44 @@ describe('roulette client guest flow', () => {
 		s.betCells.red.dispatchEvent(new MockEvent('click'));
 		expect(s.spinBtn.disabled).toBe(false);
 	});
+
+	it('recovers controls when a guest spin throws before settling', async () => {
+		const s = setup({ guestMode: true, userId: 'guest-fail' });
+		// Dispatching directly bypasses the disabled-button guard, so the
+		// handler reaches spinGuest with no bets and it throws.
+		s.spinBtn.dispatchEvent(new MockEvent('click'));
+		await flush();
+
+		// The presentation-only 'spinning' paint is reverted to the real
+		// 'betting' state instead of locking every control until reload.
+		expect(s.gamePhase.textContent).toBe('Place Your Bets');
+		expect(s.betCells.red.disabled).toBe(false);
+		expect(s.timers.pending).toHaveLength(0);
+	});
+
+	it('reveals the settled guest result when the wheel animation throws', async () => {
+		const s = setup({ guestMode: true, userId: 'guest-anim', winningNumber: 1 });
+		const { RouletteUIRenderer } = await import('./RouletteUIRenderer');
+		const original = RouletteUIRenderer.prototype.animateWheel;
+		RouletteUIRenderer.prototype.animateWheel = () => {
+			throw new Error('animation broke');
+		};
+		try {
+			s.betCells.red.dispatchEvent(new MockEvent('click'));
+			s.spinBtn.dispatchEvent(new MockEvent('click'));
+			await flush();
+		} finally {
+			RouletteUIRenderer.prototype.animateWheel = original;
+		}
+
+		// The spin already settled internally: the result is revealed
+		// immediately instead of locking the controls on the spinning view.
+		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(s.balanceEl.textContent).toBe('1,005 chips');
+		expect(s.roundResult.attributes['aria-label']).toBe('Winning number: 1 Red');
+		expect(s.newRoundBtn.hidden).toBe(false);
+		expect(s.timers.pending).toHaveLength(0);
+	});
 });
 
 describe('roulette Active Bets reveal guard', () => {
@@ -347,13 +385,15 @@ describe('roulette client authenticated flow', () => {
 
 		expect(s.fetchMock.calls.map((call) => call.url)).toEqual(['/api/roulette/spin']);
 		// Settlement is applied immediately but the view stays on spinning
-		// until the reveal.
+		// until the reveal — the achievement toast included, so it cannot
+		// leak the outcome while the wheel animates.
 		expect(s.gamePhase.textContent).toBe('No More Bets');
-		expect(earned).toBe(1);
+		expect(earned).toBe(0);
 
 		s.timers.flush();
 		expect(s.balanceEl.textContent).toContain('995');
 		expect(s.gamePhase.textContent).toBe('Round Complete');
+		expect(earned).toBe(1);
 	});
 
 	it('duplicate settlement adopts balance, clears bets, and shows no historical result', async () => {

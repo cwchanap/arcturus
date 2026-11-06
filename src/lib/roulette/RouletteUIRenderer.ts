@@ -158,6 +158,20 @@ export class RouletteUIRenderer {
 		return getRouletteBetLabel(this.locale, bet);
 	}
 
+	/**
+	 * Calls `callback` when the wheel's transform transition finishes — near-
+	 * instantly under prefers-reduced-motion, where the duration collapses.
+	 * Returns an unsubscribe for callers that settle via another path first.
+	 */
+	onWheelSettled(callback: () => void): () => void {
+		const handler = (event: Event): void => {
+			if ((event as TransitionEvent).propertyName !== 'transform') return;
+			callback();
+		};
+		this.wheelEl.addEventListener('transitionend', handler);
+		return () => this.wheelEl.removeEventListener('transitionend', handler);
+	}
+
 	animateWheel(winningNumber: number): void {
 		const SEGMENT = 360 / 37;
 		const pocketIndex = (WHEEL_ORDER as readonly number[]).indexOf(winningNumber);

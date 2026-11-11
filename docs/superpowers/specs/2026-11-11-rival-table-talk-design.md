@@ -6,17 +6,18 @@
 
 ## Goal and player experience
 
-Give the existing rule-based poker rivals short, personality-specific reactions at notable moments. One noninteractive bubble appears above an AI seat for approximately 2.5 seconds and disappears automatically. It works in **cash Poker and local Sit & Go**. It is decorative: players can still read the actions, click cards/buttons, and see the turn timer.
+Give the existing rule-based poker rivals short, personality-specific reactions at notable moments. One noninteractive bubble appears **inside a rival seat, over its decorative portrait**, for approximately 2.5 seconds and disappears automatically. It works in **cash Poker and local Sit & Go**. It is decorative: players can still read the actions, click cards/buttons, and see the turn timer.
 
 This is a small poker-owned feature, not a dialogue system. No LLM inference, new portrait art, audio, server API, storage, schema or game-rule changes. Private-room multiplayer (`src/lib/mp-poker/`) is out of scope.
 
 ## Existing code and boundaries (current `main`)
 
-- `src/lib/poker/PokerGame.ts` owns the seat array, per-hand state, AI configurations, and action lifecycle. `noteAction(playerId, action, amount)` records both AI and human actions after bet mutations; `showDecision` passes AI moves through it.
+- `src/lib/poker/PokerGame.ts` owns the seat array, per-hand state, AI configurations, and action lifecycle. `noteAction(playerId, action, amount)` records actions after bet mutations; **`showDecision` is the AI-only action funnel** and is the appropriate place to detect rival all-ins. Human actions bypass it.
 - `presentHandResult(awards, tiers, showdown)` runs once the hand has been awarded. It already separates *contested* tiers from returned, uncalled bets, sees per-seat final stacks, renders the recap and knows the current `handBigBlind`. Both walkovers and real showdowns call it. `finishHand` then determines the tournament's terminal state.
 - `handStartStacks` is captured before posting blinds; `aiConfigs` contains the four existing `AIPersonality` values. Seats have stable player IDs, even after a Sit & Go elimination.
-- `PokerUIRenderer` owns DOM work; the page (`src/pages/games/poker.astro`) already renders `#poker-seat-{id}` for each rival. Seats are positioned in `src/styles/poker.css`; existing mobile breakpoints and reduced-motion CSS apply.
-- The existing `pokerTranslator` and `POKER_MESSAGES` provide `en`, `zh-Hant`, `zh-Hans` and `ja` translations. Do not create a parallel localization mechanism.
+- `src/lib/poker/handRecap.ts` already stores each successful `raise` in the hand's street events and exposes those events in the finished `HandRecap` returned by `recap.finish()`; there is no need to track raised rival IDs again.
+- `PokerUIRenderer` owns DOM work; the page (`src/pages/games/poker.astro`) already renders `#poker-seat-{id}` for each rival. Seats are positioned in `src/styles/poker.css`; rival chip-delta floats occupy the **top-right outside edge** of each seat, so the talk bubble must not appear above the seat.
+- The existing `pokerTranslator` and `POKER_MESSAGES` provide `en`, `zh-Hant`, `zh-Hans` and `ja` translations. `defineMessages` enforces matching key sets at compile time. Do not create a parallel localization mechanism.
 
 ## Events and their exact meanings
 
@@ -24,43 +25,45 @@ Only AI players (IDs 1–5 with a configured personality) can speak. A human act
 
 | Event | Detection point | Condition |
 | --- | --- | --- |
-| `allIn` | `noteAction` | Rival's recorded `call` or `raise` actually leaves that player `isAllIn` after the bet is placed; no trigger for a blind, failed raise, check, fold or human action. |
+| `allIn` | `showDecision` (AI only) | The actual recorded `call` or `raise` leaves the rival `isAllIn` **after** the bet is placed. No trigger for a blind, illegal/unaffordable raise (the game converts these to calls or checks), check, fold or human action. |
 | `bigPotWin` | `presentHandResult` | Rival receives contested pot winnings of **at least 20 × the current hand's big blind**. Exclude unmatched/uncalled returns; do not use total pot size alone. |
-| `bluffWin` | `presentHandResult` | Rival takes a pot **without showdown** after having made at least one actual `raise` during that hand (this action also represents a bet in the existing engine). A blind-only walkover is not a bluff event. It is a *playful aggression proxy*, not knowledge of hidden cards or proof the rival bluffed. |
+| `bluffWin` | `presentHandResult` | Rival takes a **contested** pot without showdown after making at least one recorded `raise` in `recap.streets` during the hand (this action also represents a bet in the existing engine). A blind-only walkover or return of an uncalled bet is not a bluff event. It is a *playful aggression proxy*, not knowledge of hidden cards or proof the rival bluffed. |
 | `badBeat` | `presentHandResult` | Rival reaches a **contested showdown**, has a two-pair-or-better `readHand` that uses a hole card, yet receives **no contested award**. Do not label a folded rival, split-pot winner, or side-pot winner a bad beat. |
 | `sngOut` | `presentHandResult` | In `mode === 'sng'`, after all final awards, an AI who started this hand funded (`handStartStacks[id] > 0`) has `chips === 0`. Never trigger on the temporary zero balance of a mid-hand all-in or on cash auto-rebuys. |
 
 The existing `HAND_RANKINGS`/`readHand` helpers are sufficient; do not evaluate poker hands again or change the payout logic. For talk eligibility, **a pot consisting entirely of uncalled returns contributes zero contested winnings** even though the existing result-banner fallback may show an amount.
 
-Maintain one hand-local `Set<number>` of rival IDs that actually raised, populated in `noteAction` and cleared when a new hand is dealt. Resolve end-of-hand candidates after awards from the existing `tiers` and stacks; no new event bus or notification pipeline. If several end-of-hand events apply to the same rival, use the more expressive one first: `sngOut` > `badBeat` > `bigPotWin` > `bluffWin`. Different rivals can be eligible, but only one bubble can be active.
+Derive `raised` from the just-finished recap: `recap.streets.some(street => street.events.some(e => e.playerId === id && e.action === 'raise'))`. The existing AI action funnel already converts invalid raises before recording them. For each completed hand, a small **pure `pickHandOutcomeTalk`** evaluates all rivals from finalized awards, the recap and stacks, then selects **one** `{ playerId, event } | null` using global priority `sngOut` > `badBeat` > `bigPotWin` > `bluffWin`, with seat ID as a deterministic tiebreak. Make just one probability roll for that candidate, not one per eligible seat. No duplicated aggression state, new event bus or notification pipeline.
 
 ## Line selection and throttle
 
-Create `src/lib/poker/rivalTalk.ts` with the five-event union, a small typed mapping for four personalities, and a **pure** `pickRivalLine(personality, event, random)` returning `{ emoji, messageKey }` (or `null` if no line exists). Exactly two distinct lines exist for each personality/event pair: **4 × 5 × 2 = 40 keys per locale**, 160 localized strings total.
+Create `src/lib/poker/rivalTalk.ts` with the five-event union, a fully typed `Record<AIPersonality, Record<RivalTalkEvent, readonly [RivalLine, RivalLine]>>` mapping, a pure `pickRivalLine(personality, event, random)` returning `{ emoji, messageKey }`, and the small pure end-of-hand candidate selector. The message key uses `MessageKey<typeof POKER_MESSAGES>`. The exhaustive table has exactly two options per personality/event pair: **4 × 5 × 2 = 40 keys per locale**, 160 localized strings total.
 
 - Keep `emoji` separate from the translated text and concatenate via `textContent` in the renderer. The line is emoji-led, playful, at most four short words in English; use similarly compact expressions in Chinese and Japanese. Do not generate lines with AI.
 - Use translation keys consistent with `POKER_MESSAGES`, e.g. `rivalTalkSharkBigPotWinA` / `rivalTalkSharkBigPotWinB`. Type-check the keys against the translator. All four personalities must have both options for all five events, in all four locales.
-- Each eligible event is considered once. If there is already a bubble, or two have appeared in this hand, drop the event (do **not** enqueue). Otherwise use a separate RNG draw: show with `random() < 0.5`, then use `pickRivalLine` with the next draw to choose A or B. Only a **successfully rendered** bubble counts against the two-per-hand budget.
-- A new deal resets the hand-local count, raised-ID set, and any stale bubble. No timers survive an old bubble and accidentally dismiss a newer one.
+- Each AI all-in action is considered once; each hand produces at most one end-of-hand candidate. With **two successful bubbles already shown in the hand**, drop further events. Otherwise draw for a 50% appearance chance (`talkRandom() < 0.5`) and another draw to select the line variant. Only a **successfully rendered** bubble consumes one of the two hand slots.
+- During betting, drop an all-in event if a bubble is already active (no queue). For an **end-of-hand** candidate that passes its 50% roll and still has quota, **replace** an active action bubble: clear its node/timer, then render the outcome line. If the roll fails or quota is exhausted, leave the old bubble alone. This preserves the showdown payoff without violating one at a time/two per hand.
+- A new deal resets only the hand-local display count and any stale bubble. The recap already resets itself for each hand; no parallel raised-ID set or its reset is needed. No old timer may dismiss a newer bubble.
 - Keep talk RNG independent from AI strategy RNG; changes in decorative chatter must not change opponents' decisions. A small optional injected RNG is sufficient for deterministic tests—no seeded random subsystem.
 
-The throttle can be a handful of state and a helper in `PokerGame`; the renderer only tracks whether a DOM bubble is active. Avoid new state machines, controllers or services solely for chatter.
+The throttle needs only a count and a small helper in `PokerGame`, plus a **separate fifth-argument talk RNG** (default `Math.random`), not an additional set of action history. The renderer owns whether a DOM bubble is active. Avoid new state machines, controllers or services solely for chatter.
 
 ## Presentation and lifecycle
 
-Add a small `PokerUIRenderer.showRivalTalk(playerId, line): boolean` and `clearRivalTalk(): void`; the renderer translates `line.messageKey` and renders one bubble inside the existing rival seat. If the seat is unavailable or one bubble is already active, return `false` without consuming a quota.
+Add `PokerUIRenderer.showRivalTalk(playerId, line): boolean` and `clearRivalTalk(): void`; the renderer translates `line.messageKey` and renders one bubble as a **direct child of the existing rival seat**. If the seat is unavailable or a bubble is active, return `false` without consuming a quota; `PokerGame` explicitly clears an active bubble first only when a selected end-of-hand reaction is replacing it.
 
 - Create a text-only element with `aria-hidden="true"` and `pointer-events: none`. No live region, modal/focus change, screen-reader announcement, extra button or turn-timer interaction. Use `textContent`, not `innerHTML`.
 - Bubble stays about **2,500 ms**; CSS animates a subtle appearance and fade at the end. One timeout removes it. `clearRivalTalk` cancels that timeout and removes the prior node.
-- Keep the existing portrait, action badge and amount deltas legible. Position above the seat, with bounded width and wrapping; use the existing mobile layout at ≤600px. Do not clip the bubble offscreen or let it cover action buttons/timer. Treat greyed/folded/eliminated seats carefully so their text remains readable.
+- **Fixed placement:** overlay the seat's decorative portrait, **not the space above the seat**. `#poker-seat-{id}` is already `position: relative`; append the bubble directly inside it (outside `.poker-portrait`) with bounded horizontal inset (e.g. `inset-inline: 4px`), `top: 4px`, wrapped short text and a compact height/width. This keeps it clear of the top-right chip-delta float, neighboring seats, board, controls and turn timer. At ≤600px, seats 1 and 5 have 39px portraits: allow the short line to wrap within the seat without hiding the seat action/chip readout. Check this specific mobile case visually.
+- Only live rivals can speak: the all-in actor, uncontested winner, showdown loser or just-eliminated all-in rival is not folded at the event point. **Do not add a folded-seat styling subsystem.** Mount the talk element outside `.poker-portrait` so the existing eliminated-portrait dimming does not also dim the text.
 - Honor `prefers-reduced-motion` by removing fade/translation animation, **not** by hiding the bubble; it still disappears on schedule. The existing global-in-room reduced-motion CSS already disables animation and transition.
 - `PokerGame` clears the prior bubble at the start of each new hand. No cleanup needs to be added to account settlement, wallet or tournament scoring.
 
 ## Tests and acceptance
 
-1. Table-driven unit tests cover all **20 personality/event pairs** and both seeded line choices, and verify all **40** keys are available in all four locales.
-2. Pure event tests cover each trigger and counterexample: genuine raised walkover versus blinds-only; the 20-BB boundary; uncalled return; tie/side-pot payout; weak hand or board-only two pair; rival showdown loss; human actions; final Sit & Go bust versus a mid-hand all-in.
-3. Deterministic throttle tests cover 49%/50% draws, one bubble on screen, two successfully shown per hand, drop-while-active behavior, new-hand reset and stale timer cleanup. The renderer's DOM test checks `aria-hidden`, `pointer-events` via CSS, removal at 2.5s, and reduced-motion behavior.
-4. Browser smoke checks in **cash and Sit & Go**, desktop and narrow phone viewport: speech never prevents action controls, obscures the timer or overruns the table. Existing poker gameplay, AI decisions, hand recap, side pots, cash settlement and Sit & Go rankings stay unchanged.
+1. **Astro type-check** enforces all locale keys, all 20 personality/event combinations and two line variants per combination; one seeded runtime test verifies the A/B boundary. No redundant runtime sweep of the exhaustively typed table or hand-rolled locale-key tests.
+2. Pure event tests cover each trigger and counterexample: genuine raised walkover versus blinds-only; the inclusive 20-BB boundary; uncalled return; tie/side-pot payout; weak hand or board-only two pair; rival showdown loss; final Sit & Go bust versus a mid-hand all-in; and **global** end-of-hand priority with seat tiebreak.
+3. Deterministic throttle tests cover 49%/50% draws, one bubble on screen, two successful bubbles per hand, drop-while-active **during betting**, outcome replacement **at showdown**, new-hand reset and stale timer cleanup. The renderer's JS tests cover `textContent`, `aria-hidden`, removal at 2.5s and stale-timer cancellation; **CSS pointer-events and reduced-motion are manual/browser checks**, not assertions against a mock DOM without a CSS engine.
+4. Browser smoke checks in **cash and Sit & Go**, desktop and narrow phone viewport (especially the 39px-portrait side seats): speech wraps within the seat, never prevents actions or obscures timer/chips, and remains static but visible under reduced motion. Existing poker gameplay, AI decisions, hand recap, side pots, cash settlement and Sit & Go rankings stay unchanged.
 
 **Out of scope:** generated art/SFX, LLM dialogue, portrait mood variants, player chat, private-room Poker, stored dialogue history, analytics, wallet/mission updates, new dependencies or compatibility layers.

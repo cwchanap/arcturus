@@ -1,7 +1,8 @@
-import { describe, expect, test, beforeEach } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, jest } from 'bun:test';
 import { PokerUIRenderer } from './PokerUIRenderer';
 import { HAND_RANKINGS, type PokerHandNameKey } from './constants';
 import { getPokerHandName } from '../i18n/messages/poker';
+import type { RivalLine } from './rivalTalk';
 import type { Card, Player } from './types';
 
 // Using flexible type for test mocks that need custom behavior
@@ -134,8 +135,13 @@ function createMockElement(initialClassName = ''): MockElement {
 		},
 		appendChild: (child: MockElement) => {
 			children.push(child);
+			child.parentElement = el;
 		},
-		remove: () => {},
+		remove: () => {
+			const parent = el.parentElement as MockElement | null;
+			const index = parent?.children?.indexOf(el) ?? -1;
+			if (index >= 0) parent?.children?.splice(index, 1);
+		},
 		replaceChildren: () => {
 			children.length = 0;
 		},
@@ -548,6 +554,122 @@ describe('PokerUIRenderer', () => {
 			});
 			expect(elements['opponent1-action'].textContent).toBe('Straight');
 			expect(elements['opponent1-action'].dataset?.action).toBe('winner');
+		});
+	});
+
+	describe('rival table talk bubble', () => {
+		const allInLine: RivalLine = { emoji: '🦈', messageKey: 'rivalTalkSharkAllInA' };
+		const winLine: RivalLine = { emoji: '💰', messageKey: 'rivalTalkSharkBigPotWinA' };
+
+		// The mock DOM has no CSS engine; placement, click-through and
+		// reduced motion are browser smoke checks, not fake computed styles.
+		afterEach(() => {
+			jest.useRealTimers();
+		});
+
+		test('shows one translated, emoji-led bubble as a direct child of its seat', () => {
+			jest.useFakeTimers();
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+
+			expect(renderer.showRivalTalk(1, allInLine)).toBe(true);
+
+			expect(renderer.hasActiveRivalTalk()).toBe(true);
+			const seat = elements['poker-seat-1'];
+			expect(seat.children?.length).toBe(1);
+			const bubble = seat.children?.[0];
+			expect(bubble?.className).toBe('poker-rival-talk');
+			expect(bubble?.textContent).toBe('🦈 All of it.');
+			expect(bubble?.getAttribute?.('aria-hidden')).toBe('true');
+			// textContent only: no nested markup was built.
+			expect(bubble?.children?.length ?? 0).toBe(0);
+		});
+
+		test('rejects a missing seat and a second bubble', () => {
+			jest.useFakeTimers();
+			const doc = (
+				globalThis as unknown as { document: { getElementById: (id: string) => unknown } }
+			).document;
+			const original = doc.getElementById;
+			doc.getElementById = (id) => (id === 'poker-seat-1' ? null : original(id));
+			expect(renderer.showRivalTalk(1, allInLine)).toBe(false);
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+			doc.getElementById = original;
+
+			expect(renderer.showRivalTalk(1, allInLine)).toBe(true);
+			elements['poker-seat-2'] = createMockElement();
+			expect(renderer.showRivalTalk(2, winLine)).toBe(false);
+			expect(elements['poker-seat-2'].children?.length).toBe(0);
+			expect(elements['poker-seat-1'].children?.[0].textContent).toBe('🦈 All of it.');
+		});
+
+		test('removes the bubble after 2,500 ms', () => {
+			jest.useFakeTimers();
+			renderer.showRivalTalk(1, allInLine);
+			const seat = elements['poker-seat-1'];
+
+			jest.advanceTimersByTime(2_499);
+			expect(renderer.hasActiveRivalTalk()).toBe(true);
+			expect(seat.children?.length).toBe(1);
+
+			jest.advanceTimersByTime(1);
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+			expect(seat.children?.length).toBe(0);
+		});
+
+		test('clearRivalTalk removes early and cancels the pending timer', () => {
+			jest.useFakeTimers();
+			renderer.showRivalTalk(1, allInLine);
+
+			renderer.clearRivalTalk();
+
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+			expect(elements['poker-seat-1'].children?.length).toBe(0);
+			expect(jest.getTimerCount()).toBe(0);
+			jest.advanceTimersByTime(2_500);
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+		});
+
+		test('a newer bubble replaces the old one after a deliberate clear', () => {
+			jest.useFakeTimers();
+			renderer.showRivalTalk(1, allInLine);
+			renderer.clearRivalTalk();
+
+			expect(renderer.showRivalTalk(2, winLine)).toBe(true);
+
+			expect(renderer.hasActiveRivalTalk()).toBe(true);
+			expect(elements['poker-seat-1'].children?.length).toBe(0);
+			expect(elements['poker-seat-2'].children?.length).toBe(1);
+			expect(elements['poker-seat-2'].children?.[0].textContent).toBe('💰 Mine. Naturally.');
+		});
+
+		test('a stale timeout cannot remove a newer bubble', () => {
+			jest.useFakeTimers();
+			renderer.showRivalTalk(1, allInLine);
+			jest.advanceTimersByTime(2_400);
+			// Simulate a cancellation that did not reach the browser timer store.
+			const originalClear = globalThis.clearTimeout;
+			(globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout =
+				(() => {}) as typeof clearTimeout;
+			renderer.clearRivalTalk();
+			(globalThis as unknown as { clearTimeout: typeof clearTimeout }).clearTimeout = originalClear;
+
+			expect(renderer.showRivalTalk(2, winLine)).toBe(true);
+			jest.advanceTimersByTime(100);
+
+			expect(renderer.hasActiveRivalTalk()).toBe(true);
+			expect(elements['poker-seat-2'].children?.[0].textContent).toBe('💰 Mine. Naturally.');
+
+			jest.advanceTimersByTime(2_400);
+			expect(renderer.hasActiveRivalTalk()).toBe(false);
+		});
+
+		test('a bubble can appear again after the previous one expires', () => {
+			jest.useFakeTimers();
+			renderer.showRivalTalk(1, allInLine);
+			jest.advanceTimersByTime(2_500);
+
+			expect(renderer.showRivalTalk(1, allInLine)).toBe(true);
+			expect(elements['poker-seat-1'].children?.length).toBe(1);
 		});
 	});
 

@@ -22,7 +22,6 @@ import { SESSION_STATS_KEY } from './sessionStats';
 import { SNG_START_STACK } from './sitAndGo';
 import { clearLLMCache } from './llmAIStrategy';
 import { RIVAL_TALK_LINES, type RivalLine } from './rivalTalk';
-import { PokerUIRenderer } from './PokerUIRenderer';
 import type { HandRecapRecorder } from './handRecap';
 import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
@@ -208,14 +207,6 @@ type RivalTalkRenderer = {
 	clearRivalTalk: () => void;
 	hasActiveRivalTalk: () => boolean;
 };
-
-// Task 3 adds the talk methods to PokerUIRenderer. Until then these stubs keep
-// every existing deal path running; talk tests replace them per game to observe
-// the game-owned quota/RNG policy.
-const talkRendererPrototype = PokerUIRenderer.prototype as unknown as RivalTalkRenderer;
-talkRendererPrototype.showRivalTalk ??= () => true;
-talkRendererPrototype.clearRivalTalk ??= () => {};
-talkRendererPrototype.hasActiveRivalTalk ??= () => false;
 
 describe('PokerGame Core Logic', () => {
 	beforeEach(() => {

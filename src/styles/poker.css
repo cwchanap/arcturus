@@ -1752,11 +1752,29 @@ a.poker-format:hover {
 		font-size: 18px;
 	}
 	/* Seats 1/5 turn row-oriented on phones. Anchor the bubble to the 39px
-	   portrait instead of stretching it across the name and chip row. */
+	   portrait and cap it five pixels past the portrait, so it covers the
+	   portrait and can never reach the rival label beside it. The 4px inset
+	   from the base rule is the fallback where anchor() is unavailable. */
+	.poker-seat-1 .poker-portrait {
+		anchor-name: --poker-talk-1;
+	}
+	.poker-seat-5 .poker-portrait {
+		anchor-name: --poker-talk-5;
+	}
 	.poker-seat-1 .poker-rival-talk,
 	.poker-seat-5 .poker-rival-talk {
 		inset-inline-end: auto;
-		max-inline-size: 72px;
+		max-inline-size: 44px;
+		max-block-size: 45px;
+		padding: 1px 3px;
+		font-size: 8px;
+		line-height: 1.2;
+	}
+	.poker-seat-1 .poker-rival-talk {
+		inset-inline-start: anchor(--poker-talk-1 start);
+	}
+	.poker-seat-5 .poker-rival-talk {
+		inset-inline-start: anchor(--poker-talk-5 start);
 	}
 }
 @media (prefers-reduced-motion: reduce) {

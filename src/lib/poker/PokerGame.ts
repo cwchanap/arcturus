@@ -49,6 +49,7 @@ import {
 	type PokerSessionStats,
 } from './sessionStats';
 import { HandRecapRecorder, type RecapAction, type RecapReveal } from './handRecap';
+import { pickHandOutcomeTalk, pickRivalLine, type RivalTalkEvent } from './rivalTalk';
 import {
 	SNG_BLINDS,
 	SNG_START_STACK,
@@ -150,6 +151,10 @@ export class PokerGame {
 	private isProcessingAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
 	private aiRandom?: () => number;
+	// Successful rival bubbles shown this hand; the renderer owns the DOM and
+	// its timer, so only the 0–2 quota lives here.
+	private rivalTalkShown = 0;
+	private readonly talkRandom: () => number;
 	private pendingChipReset = false; // Flag to reset chips on next deal
 	private hasServerSyncedBalance = false;
 	private serverSyncedBalance: number = 0; // Last confirmed server chip balance
@@ -197,8 +202,10 @@ export class PokerGame {
 		settlementGate?: SettlementGate,
 		sound?: PokerSound,
 		deckRandom?: () => number,
+		talkRandom: () => number = Math.random,
 	) {
 		this.aiRandom = aiRandom;
+		this.talkRandom = talkRandom;
 		this.settlementGate = settlementGate ?? createSettlementGate();
 		this.sound = sound ?? pokerSound;
 		this.turnTimer = new TurnTimer({
@@ -390,6 +397,31 @@ export class PokerGame {
 	private showDecision(playerId: number, action: RecapAction, amount?: number): void {
 		this.ui.showAIDecision(playerId, action, amount);
 		this.noteAction(playerId, action, amount ?? 0);
+		// The recorded action, after illegal-raise conversion and the bet, is
+		// the all-in the table actually saw. Human paths never come here.
+		if ((action === 'call' || action === 'raise') && this.players[playerId]?.isAllIn) {
+			this.tryRivalTalk(playerId, 'allIn');
+		}
+	}
+
+	/**
+	 * Maybe show one decorative rival line. The hand quota and an active
+	 * betting bubble are checked before any RNG draw; a failed appearance roll
+	 * costs exactly one draw. Hand-end reactions may replace a visible bubble.
+	 */
+	private tryRivalTalk(
+		playerId: number,
+		event: RivalTalkEvent,
+		{ replace = false }: { replace?: boolean } = {},
+	): void {
+		if (this.rivalTalkShown >= 2) return;
+		const personality = this.aiConfigs.get(playerId)?.personality;
+		if (!personality) return;
+		if (!replace && this.ui.hasActiveRivalTalk()) return;
+		if (this.talkRandom() >= 0.5) return;
+		const line = pickRivalLine(personality, event, this.talkRandom);
+		if (replace) this.ui.clearRivalTalk();
+		if (this.ui.showRivalTalk(playerId, line)) this.rivalTalkShown += 1;
 	}
 
 	/** Seat names and rival styles for the recap's avatars. */
@@ -565,6 +597,40 @@ export class PokerGame {
 				}));
 		const recap = this.recap.finish({ reveals, showdown, delta: involved ? delta : null });
 		if (recap) this.ui.renderHandRecap(recap, this.recapSeats());
+
+		// One globally prioritized rival reaction per finished hand. A pot made
+		// entirely of uncalled returns is worth nothing here even though the
+		// banner may display it, so fewer than one contested tier means zero.
+		const talkAward = (playerId: number) =>
+			contestedTiers.length > 0 ? contestedAward(playerId) : 0;
+		const raised = (playerId: number) =>
+			recap?.streets.some((street) =>
+				street.events.some((event) => event.playerId === playerId && event.action === 'raise'),
+			) ?? false;
+		const outcomeTalk = pickHandOutcomeTalk({
+			showdown,
+			mode: this.mode,
+			bigBlind: this.handBigBlind,
+			rivals: this.players.slice(1).flatMap((player) => {
+				const personality = this.aiConfigs.get(player.id)?.personality;
+				if (!personality) return [];
+				return [
+					{
+						id: player.id,
+						personality,
+						contestedWinnings: talkAward(player.id),
+						raised: raised(player.id),
+						readout: readHand(player.hand, this.communityCards),
+						folded: player.folded,
+						startStack: this.handStartStacks.get(player.id) ?? 0,
+						chips: player.chips,
+					},
+				];
+			}),
+		});
+		if (outcomeTalk) {
+			this.tryRivalTalk(outcomeTalk.playerId, outcomeTalk.event, { replace: true });
+		}
 
 		if (involved && delta > 0) {
 			const humanKey = featured === human ? featuredHand?.key : undefined;
@@ -1123,6 +1189,8 @@ export class PokerGame {
 		this.ui.startHandHistory(this.handNumber);
 		this.ui.clearHandResult();
 		this.ui.clearSeatActions();
+		this.rivalTalkShown = 0;
+		this.ui.clearRivalTalk();
 
 		// Deal 2 cards to each funded player
 		for (let i = 0; i < this.players.length; i++) {

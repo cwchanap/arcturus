@@ -21,6 +21,9 @@ import {
 import { SESSION_STATS_KEY } from './sessionStats';
 import { SNG_START_STACK } from './sitAndGo';
 import { clearLLMCache } from './llmAIStrategy';
+import { RIVAL_TALK_LINES, type RivalLine } from './rivalTalk';
+import { PokerUIRenderer } from './PokerUIRenderer';
+import type { HandRecapRecorder } from './handRecap';
 import type { GameSettingsManager } from './GameSettingsManager';
 import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
 import { DEFAULT_SETTINGS } from './types';
@@ -199,6 +202,20 @@ function createPendingSettlementGate(): {
 		release,
 	};
 }
+
+type RivalTalkRenderer = {
+	showRivalTalk: (playerId: number, line: RivalLine) => boolean;
+	clearRivalTalk: () => void;
+	hasActiveRivalTalk: () => boolean;
+};
+
+// Task 3 adds the talk methods to PokerUIRenderer. Until then these stubs keep
+// every existing deal path running; talk tests replace them per game to observe
+// the game-owned quota/RNG policy.
+const talkRendererPrototype = PokerUIRenderer.prototype as unknown as RivalTalkRenderer;
+talkRendererPrototype.showRivalTalk ??= () => true;
+talkRendererPrototype.clearRivalTalk ??= () => {};
+talkRendererPrototype.hasActiveRivalTalk ??= () => false;
 
 describe('PokerGame Core Logic', () => {
 	beforeEach(() => {
@@ -5021,4 +5038,323 @@ describe('PokerGame Sit & Go whole-tournament simulation (HPA-176)', () => {
 			delete (globalThisWithSession as { sessionStorage?: unknown }).sessionStorage;
 		}
 	}, 30000);
+});
+
+describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
+	type TalkGame = {
+		players: Player[];
+		mode: 'cash' | 'sng';
+		handStartChips: number;
+		handStartStacks: Map<number, number>;
+		handBigBlind: number;
+		rivalTalkShown: number;
+		recap: HandRecapRecorder;
+		ui: RivalTalkRenderer;
+		processAITurn: () => Promise<void>;
+		dealNewHand: () => Promise<void>;
+		showDecision: (
+			playerId: number,
+			action: 'call' | 'raise' | 'fold' | 'check',
+			amount?: number,
+		) => void;
+		noteAction: (playerId: number, action: 'call' | 'raise', amount?: number) => void;
+		presentHandResult: (
+			awards: Map<number, number>,
+			tiers: Array<{ amount: number; winners: Player[]; uncontested?: boolean }>,
+			showdown: boolean,
+		) => void;
+	};
+
+	/** A talk RNG that fails loudly if the game draws more than the test allows. */
+	function talkRolls(...values: number[]) {
+		const draws: number[] = [];
+		const random = () => {
+			const value = values[draws.length];
+			if (value === undefined) throw new Error(`unexpected talk roll #${draws.length + 1}`);
+			draws.push(value);
+			return value;
+		};
+		return { random, draws };
+	}
+
+	function talkTable(mode: 'cash' | 'sng', talkRandom?: () => number) {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+			clear: () => {},
+			key: () => null,
+			length: 0,
+		};
+		(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mock(async () => ({
+			ok: true,
+			status: 200,
+			json: async () => ({ balance: 500 }),
+		})) as unknown as typeof fetch;
+		elements['poker-root'] = {
+			addEventListener: () => {},
+			dataset: { guestMode: 'false', pokerMode: mode },
+			innerHTML: '',
+			textContent: '',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: {
+				balance: '5000',
+				balanceAvailable: 'true',
+				guestMode: 'false',
+				userId: 'u_talk',
+			},
+			innerHTML: '',
+			textContent: '$5,000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const game = new PokerGame(
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			talkRandom,
+		) as unknown as TalkGame;
+		game.processAITurn = async () => {};
+		return game;
+	}
+
+	function talkUi(game: TalkGame, options: { active?: boolean; show?: boolean } = {}) {
+		const shown: Array<{ id: number; line: RivalLine }> = [];
+		const events: string[] = [];
+		let active = options.active ?? false;
+		let canShow = options.show ?? true;
+		game.ui.showRivalTalk = (id, line) => {
+			if (!canShow) return false;
+			shown.push({ id, line });
+			events.push(`show:${id}`);
+			active = true;
+			return true;
+		};
+		game.ui.clearRivalTalk = () => {
+			events.push('clear');
+			active = false;
+		};
+		game.ui.hasActiveRivalTalk = () => active;
+		return {
+			shown,
+			events,
+			setActive(next: boolean) {
+				active = next;
+			},
+			setShow(next: boolean) {
+				canShow = next;
+			},
+		};
+	}
+
+	/** Award one contested pot to a rival, as the real settlement already would have. */
+	function finishRivalPot(
+		game: TalkGame,
+		rivalId: number,
+		amount: number,
+		options: { showdown: boolean; raised?: boolean; chips: number },
+	) {
+		game.handBigBlind = 10;
+		game.handStartChips = 500;
+		game.handStartStacks = new Map([
+			[0, 500],
+			[rivalId, 500],
+		]);
+		game.players[0] = { ...game.players[0], chips: 300 };
+		const rival = { ...game.players[rivalId], chips: options.chips, folded: false };
+		game.players[rivalId] = rival;
+		game.recap.start(1, []);
+		if (options.raised) {
+			game.recap.act({ playerId: rivalId, action: 'raise', amount: 50, allIn: false });
+		}
+		game.presentHandResult(
+			new Map([[rivalId, amount]]),
+			[{ amount, winners: [rival], uncontested: false }],
+			options.showdown,
+		);
+	}
+
+	test('an AI all-in call at 49% shows the first line variant', () => {
+		const rolls = talkRolls(0.49, 0.49);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+
+		game.showDecision(1, 'call', 100);
+
+		expect(ui.shown).toEqual([{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].allIn[0] }]);
+		expect(rolls.draws).toEqual([0.49, 0.49]);
+	});
+
+	test('an appearance roll of exactly 0.5 fails after exactly one draw', () => {
+		const rolls = talkRolls(0.5);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+
+		game.showDecision(1, 'raise', 100);
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([0.5]);
+	});
+
+	test('an active betting bubble is rejected before any RNG draw', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game, { active: true });
+		game.players[1] = { ...game.players[1], isAllIn: true };
+
+		game.showDecision(1, 'call', 100);
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([]);
+	});
+
+	test('only an all-in call or raise from the AI decision funnel considers talk', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+
+		game.players[1] = { ...game.players[1], isAllIn: false };
+		game.showDecision(1, 'raise', 100);
+		game.showDecision(1, 'call', 100);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+		game.showDecision(1, 'fold');
+		game.showDecision(1, 'check');
+		// Human handlers, blinds and illegal raises never route through showDecision.
+		game.noteAction(1, 'raise', 100);
+
+		expect(rolls.draws).toEqual([]);
+		expect(ui.shown).toEqual([]);
+	});
+
+	test('two successful bubbles exhaust the hand quota before any further RNG', () => {
+		const rolls = talkRolls(0.1, 0.1, 0.1, 0.1);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+
+		game.showDecision(1, 'call', 100);
+		ui.setActive(false); // the renderer's 2.5s timer removed the first bubble
+		game.showDecision(1, 'call', 100);
+		ui.setActive(false);
+		game.showDecision(1, 'call', 100);
+
+		expect(ui.shown).toHaveLength(2);
+		expect(rolls.draws).toEqual([0.1, 0.1, 0.1, 0.1]);
+	});
+
+	test('a rejected render leaves the hand quota available', () => {
+		const rolls = talkRolls(0.1, 0.1, 0.1, 0.1, 0.1, 0.1);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game, { show: false });
+		game.players[1] = { ...game.players[1], isAllIn: true };
+
+		game.showDecision(1, 'call', 100); // seat unavailable: no quota consumed
+		ui.setShow(true);
+		game.showDecision(1, 'call', 100);
+		ui.setActive(false);
+		game.showDecision(1, 'call', 100);
+		game.showDecision(1, 'call', 100); // quota full
+
+		expect(ui.shown).toHaveLength(2);
+		expect(rolls.draws).toHaveLength(6);
+	});
+
+	test('a cash pot win of 20 big blinds replaces an active betting bubble', () => {
+		const rolls = talkRolls(0.1, 0.1, 0.49, 0.5);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+		game.showDecision(1, 'call', 100);
+
+		finishRivalPot(game, 1, 200, { showdown: true, chips: 700 });
+
+		expect(ui.events).toEqual(['show:1', 'clear', 'show:1']);
+		expect(ui.shown).toEqual([
+			{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].allIn[0] },
+			{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].bigPotWin[1] },
+		]);
+		expect(rolls.draws).toEqual([0.1, 0.1, 0.49, 0.5]);
+		expect(game.rivalTalkShown).toBe(2);
+	});
+
+	test('a failed end-of-hand appearance roll consumes one draw and leaves the bubble', () => {
+		const rolls = talkRolls(0.5);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game, { active: true });
+
+		finishRivalPot(game, 1, 200, { showdown: true, chips: 700 });
+
+		expect(ui.events).toEqual([]);
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([0.5]);
+		expect(game.rivalTalkShown).toBe(0);
+	});
+
+	test('the hand-end candidate is dropped without clearing or drawing at full quota', () => {
+		const rolls = talkRolls(0.1, 0.1, 0.1, 0.1);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+		game.showDecision(1, 'call', 100);
+		ui.setActive(false);
+		game.showDecision(1, 'call', 100);
+		ui.setActive(true);
+
+		finishRivalPot(game, 1, 200, { showdown: true, chips: 700 });
+
+		expect(ui.shown).toHaveLength(2);
+		expect(ui.events).toEqual(['show:1', 'show:1']);
+		expect(rolls.draws).toHaveLength(4);
+	});
+
+	test('a raised walkover with contested winnings is a bluff reaction', () => {
+		const rolls = talkRolls(0.1, 0.1);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+
+		finishRivalPot(game, 1, 100, { showdown: false, raised: true, chips: 600 });
+
+		expect(ui.shown).toEqual([{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].bluffWin[0] }]);
+	});
+
+	test('a blind-only walkover produces no reaction and no RNG draw', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+
+		finishRivalPot(game, 1, 15, { showdown: false, chips: 515 });
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([]);
+	});
+
+	test('a funded SNG rival busted by the final award speaks sngOut', () => {
+		const rolls = talkRolls(0.1, 0.1);
+		const game = talkTable('sng', rolls.random);
+		const ui = talkUi(game);
+
+		finishRivalPot(game, 1, 0, { showdown: true, chips: 0 });
+
+		expect(ui.shown).toEqual([{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].sngOut[0] }]);
+	});
+
+	test('a new deal resets the hand quota and clears a stale bubble', async () => {
+		const game = talkTable('cash');
+		const ui = talkUi(game);
+		game.rivalTalkShown = 2;
+		ui.setActive(true);
+
+		await game.dealNewHand();
+
+		expect(game.rivalTalkShown).toBe(0);
+		expect(ui.events).toEqual(['clear']);
+	});
 });

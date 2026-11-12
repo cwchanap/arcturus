@@ -1178,6 +1178,27 @@ a.poker-format:hover {
 	right: calc(50% + 230px);
 	font-size: 26px;
 }
+/* One compact rival line over the seat's own portrait. It never rises above
+   the seat, where the top-right delta float and adjacent seats live. */
+.poker-rival-talk {
+	position: absolute;
+	top: 4px;
+	inset-inline: 4px;
+	z-index: 4;
+	max-block-size: 58px;
+	overflow: hidden;
+	padding: 4px 7px;
+	border: 1px solid #e4c98899;
+	background: #070b09f2;
+	box-shadow: 0 4px 14px #000a;
+	color: #f4efe6;
+	font-size: 10px;
+	line-height: 1.3;
+	text-align: center;
+	overflow-wrap: anywhere;
+	pointer-events: none;
+	animation: poker-rival-talk 2.5s ease-out forwards;
+}
 
 /* ── Board: result banner in the pot's place, hand callout ─────── */
 .poker-board {
@@ -1662,6 +1683,18 @@ a.poker-format:hover {
 		opacity: 0;
 	}
 }
+@keyframes poker-rival-talk {
+	0% {
+		opacity: 0;
+	}
+	8%,
+	88% {
+		opacity: 1;
+	}
+	100% {
+		opacity: 0;
+	}
+}
 @keyframes poker-blink {
 	50% {
 		opacity: 0.45;
@@ -1718,6 +1751,13 @@ a.poker-format:hover {
 		right: 0;
 		font-size: 18px;
 	}
+	/* Seats 1/5 turn row-oriented on phones. Anchor the bubble to the 39px
+	   portrait instead of stretching it across the name and chip row. */
+	.poker-seat-1 .poker-rival-talk,
+	.poker-seat-5 .poker-rival-talk {
+		inset-inline-end: auto;
+		max-inline-size: 72px;
+	}
 }
 @media (prefers-reduced-motion: reduce) {
 	.poker-room *,
@@ -1731,6 +1771,7 @@ a.poker-format:hover {
 	.poker-seat:not(.poker-human) .poker-seat-delta {
 		display: none !important;
 	}
+	/* Rival table talk stays visible: its JS timeout still removes it. */
 }
 
 /* Keep the hand and actions together on a laptop-height desktop viewport. */

@@ -28,6 +28,7 @@ import {
 	type POKER_MESSAGES,
 } from '../i18n/messages/poker';
 import type { MessageKey } from '../i18n/translate';
+import type { RivalLine } from './rivalTalk';
 
 type Translator = ReturnType<typeof pokerTranslator>;
 
@@ -71,6 +72,8 @@ const RECAP_STREET_KEYS = {
 } as const;
 
 const RECAP_ICONS: Record<RecapAction, string> = { fold: '×', check: '✓', call: '✓', raise: '↑' };
+/** How long a rival's table-talk bubble stays before the renderer removes it. */
+const RIVAL_TALK_MS = 2_500;
 const RANK_LABELS: Partial<Record<number, string>> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
 const SUIT_GLYPHS: Record<Card['suit'], string> = {
 	hearts: '♥',
@@ -121,6 +124,9 @@ export class PokerUIRenderer {
 	private readonly isTournament: boolean;
 	private readonly seatLabels = new Map<number, SeatLabel>();
 	private currentHandLog: HTMLElement | null = null;
+	// The renderer is the only owner of the one live talk bubble and its timer.
+	private rivalTalk: HTMLElement | null = null;
+	private rivalTalkTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(mode: PokerMode) {
 		// AppLayout writes data-locale on <html>; the renderer reads it so the
@@ -247,6 +253,44 @@ export class PokerUIRenderer {
 	/** Forget per-street seat actions (new street or new hand). */
 	public clearSeatActions() {
 		this.seatLabels.clear();
+	}
+
+	/**
+	 * One short rival reaction over its own seat portrait. The game owns the
+	 * quota and RNG; this only refuses a second live bubble or a missing seat.
+	 */
+	public showRivalTalk(playerId: number, line: RivalLine): boolean {
+		if (this.rivalTalk) return false;
+		const seat = document.getElementById(`poker-seat-${playerId}`);
+		if (!seat) return false;
+		const bubble = document.createElement('span');
+		bubble.className = 'poker-rival-talk';
+		bubble.textContent = `${line.emoji} ${this.t(line.messageKey)}`;
+		bubble.setAttribute('aria-hidden', 'true');
+		// Direct child of the seat, outside .poker-portrait: the portrait art
+		// hides its own children, and text must not inherit that.
+		seat.appendChild(bubble);
+		this.rivalTalk = bubble;
+		this.rivalTalkTimer = setTimeout(() => {
+			if (this.rivalTalk !== bubble) return; // a newer bubble owns the screen
+			this.clearRivalTalk();
+		}, RIVAL_TALK_MS);
+		return true;
+	}
+
+	/** Remove any live bubble now, cancelling its dismissal first. */
+	public clearRivalTalk(): void {
+		if (this.rivalTalkTimer !== null) {
+			clearTimeout(this.rivalTalkTimer);
+			this.rivalTalkTimer = null;
+		}
+		this.rivalTalk?.remove();
+		this.rivalTalk = null;
+	}
+
+	/** The game asks before spending talk RNG; no duplicated game-side flag. */
+	public hasActiveRivalTalk(): boolean {
+		return this.rivalTalk !== null;
 	}
 
 	/** Pin a showdown hand name under a seat; winners get the gold treatment. */

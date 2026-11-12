@@ -1199,6 +1199,13 @@ a.poker-format:hover {
 	pointer-events: none;
 	animation: poker-rival-talk 2.5s ease-out forwards;
 }
+/* A live bubble owns the seat's top edge. The transient chip-delta float
+   paints over its corner and, on narrow phone seats, across its text; hide
+   that flourish for the bubble's 2.5s. Chip counts (seat meta, result
+   banner) and the human's own delta still carry the information. */
+.poker-seat:has(.poker-rival-talk) .poker-seat-delta {
+	visibility: hidden;
+}
 
 /* ── Board: result banner in the pot's place, hand callout ─────── */
 .poker-board {

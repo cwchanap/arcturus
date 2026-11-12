@@ -148,6 +148,29 @@ describe('pickHandOutcomeTalk', () => {
 		expect(onePair).toBeNull();
 	});
 
+	test('a board-playing straight is not a bad beat', () => {
+		// The best-five picker can choose the hole 9 over the board 9 in the
+		// equivalent straight, so usesHoleCards alone is not proof the hand
+		// improves on the board.
+		const boardStraight = readHand(
+			[c('9s'), c('Qh')],
+			[c('5h'), c('6d'), c('7c'), c('8s'), c('9h')],
+		)!;
+		expect(boardStraight).toMatchObject({
+			key: 'STRAIGHT',
+			usesHoleCards: true,
+			boardPlays: true,
+		});
+		expect(
+			pickHandOutcomeTalk({
+				rivals: [rival(4, { readout: boardStraight })],
+				showdown: true,
+				mode: 'cash',
+				bigBlind: 10,
+			}),
+		).toBeNull();
+	});
+
 	test('a folded rival cannot claim a bad beat', () => {
 		expect(
 			pickHandOutcomeTalk({

@@ -5336,6 +5336,60 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 		expect(rolls.draws).toEqual([]);
 	});
 
+	test('an all-uncalled raised walkover is not a win and consumes no RNG', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.handBigBlind = 10;
+		game.handStartStacks = new Map([
+			[0, 500],
+			[1, 500],
+		]);
+		game.recap.start(1, []);
+		game.recap.act({ playerId: 1, action: 'raise', amount: 600, allIn: false });
+		const rival = game.players[1];
+
+		// The result banner's fallback displays the whole returned 600, but no
+		// chip was contested: the adapter must zero the selector input.
+		game.presentHandResult(
+			new Map([[rival.id, 600]]),
+			[{ amount: 600, winners: [rival], uncontested: true }],
+			false,
+		);
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([]);
+	});
+
+	test('returned chips do not push a gross award over the 20-BB pot-win trigger', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.handBigBlind = 10;
+		game.handStartStacks = new Map([
+			[0, 500],
+			[1, 500],
+		]);
+		game.players[0] = { ...game.players[0], chips: 100 };
+		const rival = { ...game.players[1], chips: 650 };
+		game.players[1] = rival;
+		game.recap.start(1, []);
+
+		// 400 gross = 150 contested + the rival's own 250 uncalled return. Only
+		// the 150 may count, so the inclusive 200 (20 x BB) trigger is not met.
+		game.presentHandResult(
+			new Map([[rival.id, 400]]),
+			[
+				{ amount: 150, winners: [rival], uncontested: false },
+				{ amount: 250, winners: [rival], uncontested: true },
+			],
+			true,
+		);
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([]);
+	});
+
 	test('a funded SNG rival busted by the final award speaks sngOut', () => {
 		const rolls = talkRolls(0.1, 0.1);
 		const game = talkTable('sng', rolls.random);

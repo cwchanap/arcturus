@@ -176,6 +176,7 @@ function qualifies(
 				rival.contestedWinnings === 0 &&
 				rival.readout !== null &&
 				rival.readout.usesHoleCards &&
+				!rival.readout.boardPlays &&
 				HAND_RANKINGS[rival.readout.key] >= HAND_RANKINGS.TWO_PAIR
 			);
 		case 'bigPotWin':

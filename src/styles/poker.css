@@ -1198,6 +1198,14 @@ a.poker-format:hover {
 	pointer-events: none;
 	animation: poker-rival-talk ease-out forwards;
 }
+/* A live bubble shares the seat's top edge with the chip-delta float. On
+   narrow phone side seats the signed float is wider than the room the bubble
+   reserves, so it would paint across the bubble's first line; hide that
+   transient flourish while a bubble is up. Chip counts (seat meta, result
+   banner) and the human's own delta still carry the information. */
+.poker-seat:has(> .poker-rival-talk) > .poker-seat-delta {
+	visibility: hidden;
+}
 
 /* ── Board: result banner in the pot's place, hand callout ─────── */
 .poker-board {

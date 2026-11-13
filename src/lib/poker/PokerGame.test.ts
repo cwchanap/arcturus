@@ -203,7 +203,7 @@ function createPendingSettlementGate(): {
 }
 
 type RivalTalkRenderer = {
-	showRivalTalk: (playerId: number, line: RivalLine) => boolean;
+	showRivalTalk: (playerId: number, line: RivalLine, options?: { replace?: boolean }) => boolean;
 	clearRivalTalk: () => void;
 	hasActiveRivalTalk: () => boolean;
 };
@@ -5048,7 +5048,7 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 			action: 'call' | 'raise' | 'fold' | 'check',
 			amount?: number,
 		) => void;
-		noteAction: (playerId: number, action: 'call' | 'raise', amount?: number) => void;
+		noteAction: (playerId: number, action: 'call' | 'raise', amount?: number) => boolean;
 		presentHandResult: (
 			awards: Map<number, number>,
 			tiers: Array<{ amount: number; winners: Player[]; uncontested?: boolean }>,
@@ -5120,8 +5120,13 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 		const events: string[] = [];
 		let active = options.active ?? false;
 		let canShow = options.show ?? true;
-		game.ui.showRivalTalk = (id, line) => {
+		game.ui.showRivalTalk = (id, line, showOptions) => {
+			if (!showOptions?.replace && active) return false;
 			if (!canShow) return false;
+			if (showOptions?.replace && active) {
+				events.push('clear');
+				active = false;
+			}
 			shown.push({ id, line });
 			events.push(`show:${id}`);
 			active = true;
@@ -5276,6 +5281,21 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 		expect(game.rivalTalkShown).toBe(2);
 	});
 
+	test('a refused replacement render keeps the active betting bubble intact', () => {
+		const rolls = talkRolls(0.1, 0.1, 0.1, 0.1);
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+		game.players[1] = { ...game.players[1], isAllIn: true };
+		game.showDecision(1, 'call', 100);
+		ui.setShow(false);
+
+		finishRivalPot(game, 1, 200, { showdown: true, chips: 700 });
+
+		expect(ui.events).toEqual(['show:1']);
+		expect(ui.shown).toEqual([{ id: 1, line: RIVAL_TALK_LINES['tight-aggressive'].allIn[0] }]);
+		expect(game.rivalTalkShown).toBe(1);
+	});
+
 	test('a failed end-of-hand appearance roll consumes one draw and leaves the bubble', () => {
 		const rolls = talkRolls(0.5);
 		const game = talkTable('cash', rolls.random);
@@ -5376,6 +5396,17 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 			],
 			true,
 		);
+
+		expect(ui.shown).toEqual([]);
+		expect(rolls.draws).toEqual([]);
+	});
+
+	test('a 20-BB gross contested pot with a 10-BB net profit does not trigger bigPotWin', () => {
+		const rolls = talkRolls();
+		const game = talkTable('cash', rolls.random);
+		const ui = talkUi(game);
+
+		finishRivalPot(game, 1, 200, { showdown: true, chips: 600 });
 
 		expect(ui.shown).toEqual([]);
 		expect(rolls.draws).toEqual([]);

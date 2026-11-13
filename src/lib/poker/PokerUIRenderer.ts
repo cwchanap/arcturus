@@ -257,22 +257,29 @@ export class PokerUIRenderer {
 
 	/**
 	 * One short rival reaction over its own seat portrait. The game owns the
-	 * quota and RNG; this only refuses a second live bubble or a missing seat.
+	 * quota and RNG; this refuses a missing seat, and refuses a second live
+	 * bubble unless `replace` is set (clearing the prior bubble only after the
+	 * new seat is verified).
 	 */
-	public showRivalTalk(playerId: number, line: RivalLine): boolean {
-		if (this.rivalTalk) return false;
+	public showRivalTalk(
+		playerId: number,
+		line: RivalLine,
+		{ replace = false }: { replace?: boolean } = {},
+	): boolean {
+		if (!replace && this.rivalTalk) return false;
 		const seat = document.getElementById(`poker-seat-${playerId}`);
 		if (!seat) return false;
+		if (replace) this.clearRivalTalk();
 		const bubble = document.createElement('span');
 		bubble.className = 'poker-rival-talk';
+		bubble.style.animationDuration = `${RIVAL_TALK_MS}ms`;
 		bubble.textContent = `${line.emoji} ${this.t(line.messageKey)}`;
 		bubble.setAttribute('aria-hidden', 'true');
-		// Direct child of the seat, outside .poker-portrait: the portrait art
-		// hides its own children, and text must not inherit that.
+		// Direct child of the seat, outside .poker-portrait: eliminated seats
+		// dim .poker-portrait, and text must not inherit that.
 		seat.appendChild(bubble);
 		this.rivalTalk = bubble;
 		this.rivalTalkTimer = setTimeout(() => {
-			if (this.rivalTalk !== bubble) return; // a newer bubble owns the screen
 			this.clearRivalTalk();
 		}, RIVAL_TALK_MS);
 		return true;

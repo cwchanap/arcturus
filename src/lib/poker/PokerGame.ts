@@ -40,7 +40,7 @@ import {
 	SMALL_BLIND,
 	POKER_HAND_SETTLED_EVENT,
 } from './constants';
-import { readHand } from './handReadout';
+import { readHand, type HandReadout } from './handReadout';
 import type { WalletFeatId } from '../achievements/achievement-rules';
 import {
 	loadSessionStats,
@@ -386,20 +386,20 @@ export class PokerGame {
 		}
 	}
 
-	/** Record an action for the recap and play its sound. */
-	private noteAction(playerId: number, action: RecapAction, amount = 0): void {
+	/** Record an action for the recap and play its sound; returns whether it put the actor all-in. */
+	private noteAction(playerId: number, action: RecapAction, amount = 0): boolean {
 		const allIn = (action === 'call' || action === 'raise') && !!this.players[playerId]?.isAllIn;
 		this.recap.act({ playerId, action, amount, allIn });
 		this.sound.play(allIn ? 'allIn' : ACTION_SFX[action]);
+		return allIn;
 	}
 
 	/** Show an AI decision on its seat and note it. */
 	private showDecision(playerId: number, action: RecapAction, amount?: number): void {
 		this.ui.showAIDecision(playerId, action, amount);
-		this.noteAction(playerId, action, amount ?? 0);
 		// The recorded action, after illegal-raise conversion and the bet, is
 		// the all-in the table actually saw. Human paths never come here.
-		if ((action === 'call' || action === 'raise') && this.players[playerId]?.isAllIn) {
+		if (this.noteAction(playerId, action, amount ?? 0)) {
 			this.tryRivalTalk(playerId, 'allIn');
 		}
 	}
@@ -420,8 +420,7 @@ export class PokerGame {
 		if (!replace && this.ui.hasActiveRivalTalk()) return;
 		if (this.talkRandom() >= 0.5) return;
 		const line = pickRivalLine(personality, event, this.talkRandom);
-		if (replace) this.ui.clearRivalTalk();
-		if (this.ui.showRivalTalk(playerId, line)) this.rivalTalkShown += 1;
+		if (this.ui.showRivalTalk(playerId, line, { replace })) this.rivalTalkShown += 1;
 	}
 
 	/** Seat names and rival styles for the recap's avatars. */
@@ -528,8 +527,17 @@ export class PokerGame {
 			});
 		}
 
+		const showdownReadouts = new Map<number, HandReadout>();
+		if (showdown) {
+			for (const player of this.players) {
+				if (player.folded) continue;
+				const readout = readHand(player.hand, this.communityCards);
+				if (readout) showdownReadouts.set(player.id, readout);
+			}
+		}
+
 		const featured = humanWon > 0 ? human : headliners[0];
-		const featuredHand = showdown && featured ? readHand(featured.hand, this.communityCards) : null;
+		const featuredHand = featured ? (showdownReadouts.get(featured.id) ?? null) : null;
 		const detail = featuredHand
 			? getPokerHandName(this.locale, featuredHand.key)
 			: !showdown
@@ -549,7 +557,7 @@ export class PokerGame {
 		if (showdown) {
 			for (const player of this.players.slice(1)) {
 				if (player.folded) continue;
-				const readout = readHand(player.hand, this.communityCards);
+				const readout = showdownReadouts.get(player.id);
 				if (readout) this.ui.setSeatHand(player.id, readout.key, winnerIds.has(player.id));
 			}
 			this.ui.highlightWinningCards(this.communityCards, this.players, winnerIds);
@@ -568,8 +576,7 @@ export class PokerGame {
 		// Tournament hands stay out of the cash session tally entirely: the
 		// localStorage write and the toolbar render share this gate.
 		if (involved && this.mode === 'cash') {
-			const humanHand =
-				showdown && !human.folded ? readHand(human.hand, this.communityCards) : null;
+			const humanHand = !human.folded ? (showdownReadouts.get(0) ?? null) : null;
 			this.sessionStats = recordHand(this.sessionStats, {
 				delta,
 				potWon: humanWon,
@@ -586,7 +593,7 @@ export class PokerGame {
 					.map((player) => ({
 						playerId: player.id,
 						cards: player.hand,
-						handKey: readHand(player.hand, this.communityCards)?.key ?? null,
+						handKey: showdownReadouts.get(player.id)?.key ?? null,
 						won: contestedAward(player.id),
 					}))
 			: headliners.map((player) => ({
@@ -620,7 +627,7 @@ export class PokerGame {
 						personality,
 						contestedWinnings: talkAward(player.id),
 						raised: raised(player.id),
-						readout: readHand(player.hand, this.communityCards),
+						readout: showdownReadouts.get(player.id) ?? null,
 						folded: player.folded,
 						startStack: this.handStartStacks.get(player.id) ?? 0,
 						chips: player.chips,

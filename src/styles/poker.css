@@ -1178,15 +1178,14 @@ a.poker-format:hover {
 	right: calc(50% + 230px);
 	font-size: 26px;
 }
-/* One compact rival line over the seat's own portrait. It never rises above
-   the seat, where the top-right delta float and adjacent seats live. */
+/* One compact rival line over the seat's own portrait, kept below the
+   top-right chip-delta float so both remain readable. Duration is driven by
+   RIVAL_TALK_MS in PokerUIRenderer.ts. */
 .poker-rival-talk {
 	position: absolute;
-	top: 4px;
+	top: 34px;
 	inset-inline: 4px;
 	z-index: 4;
-	max-block-size: 58px;
-	overflow: hidden;
 	padding: 4px 7px;
 	border: 1px solid #e4c98899;
 	background: #070b09f2;
@@ -1197,14 +1196,7 @@ a.poker-format:hover {
 	text-align: center;
 	overflow-wrap: anywhere;
 	pointer-events: none;
-	animation: poker-rival-talk 2.5s ease-out forwards;
-}
-/* A live bubble owns the seat's top edge. The transient chip-delta float
-   paints over its corner and, on narrow phone seats, across its text; hide
-   that flourish for the bubble's 2.5s. Chip counts (seat meta, result
-   banner) and the human's own delta still carry the information. */
-.poker-seat:has(.poker-rival-talk) .poker-seat-delta {
-	visibility: hidden;
+	animation: poker-rival-talk ease-out forwards;
 }
 
 /* ── Board: result banner in the pot's place, hand callout ─────── */
@@ -1727,6 +1719,9 @@ a.poker-format:hover {
 	.poker-session dt {
 		font-size: 7px;
 	}
+	.poker-rival-talk {
+		top: 28px;
+	}
 }
 @media (max-width: 600px) {
 	.poker-session {
@@ -1758,20 +1753,17 @@ a.poker-format:hover {
 		right: 0;
 		font-size: 18px;
 	}
-	/* Seats 1/5 turn row-oriented on phones. Give the style label its own
-	   flex line so the readable talk bubble can use the first row: the
-	   portrait and bubble are both centred there, with no anchor support
-	   needed. */
-	.poker-seat-1 .poker-rival,
-	.poker-seat-5 .poker-rival {
-		flex-basis: 100%;
-		text-align: center;
+	.poker-rival-talk {
+		top: 24px;
 	}
+	/* Horizontal phone seats keep their bubble top-left over the portrait
+	   without reflowing the seat or colliding with the top-right delta float. */
 	.poker-seat-1 .poker-rival-talk,
 	.poker-seat-5 .poker-rival-talk {
-		max-inline-size: 120px;
-		max-block-size: 48px;
-		margin-inline: auto;
+		top: 4px;
+		left: 4px;
+		right: auto;
+		max-inline-size: calc(100% - 62px);
 	}
 }
 @media (prefers-reduced-motion: reduce) {

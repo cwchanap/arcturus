@@ -180,7 +180,12 @@ function qualifies(
 				HAND_RANKINGS[rival.readout.key] >= HAND_RANKINGS.TWO_PAIR
 			);
 		case 'bigPotWin':
-			return input.bigBlind > 0 && rival.contestedWinnings >= 20 * input.bigBlind;
+			return (
+				input.bigBlind > 0 &&
+				rival.startStack > 0 &&
+				rival.contestedWinnings > 0 &&
+				rival.chips - rival.startStack >= 20 * input.bigBlind
+			);
 		case 'bluffWin':
 			return !input.showdown && !rival.folded && rival.raised && rival.contestedWinnings > 0;
 	}

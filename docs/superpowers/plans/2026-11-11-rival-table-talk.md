@@ -2,7 +2,7 @@
 
 **Linear:** https://linear.app/cwchanap/issue/HPA-725/poker-rival-table-talk-bubbles
 **Design:** [2026-11-11-rival-table-talk-design.md](../specs/2026-11-11-rival-table-talk-design.md)
-**Delivery contract:** **Exactly one PR for HPA-725.** This documentation-only draft becomes the **same implementation PR** once the design is approved. Do not open a separate coding PR or split the subtasks into multiple PRs.
+**Delivery contract:** **Exactly one PR for HPA-725.** The design draft and implementation share this PR. Do not open a separate coding PR or split the subtasks into multiple PRs.
 
 ## Scope and file map
 
@@ -67,4 +67,4 @@ This is a frontend-only poker feature; the existing six-seat game owns its state
 - [ ] No blocked clicks, obscured timer, mobile overflow, reduced-motion movement or extra screen-reader announcements.
 - [ ] Poker rule engine, AI decision randomness, cash wallet settlement, Sit & Go rankings, and existing tests remain unchanged.
 
-**Review checkpoint:** The initial draft is design/plan only; this checklist records **future** implementation/verification work. Do not claim tests passed until code has been added and run.
+**Status:** Implementation complete on this branch; see Task 4 and PR checks for current verification status.

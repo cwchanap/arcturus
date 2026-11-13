@@ -71,17 +71,22 @@ describe('pickRivalLine', () => {
 });
 
 describe('pickHandOutcomeTalk', () => {
-	test('bigPotWin begins inclusively at 20 big blinds of contested winnings', () => {
-		const talk = (contestedWinnings: number) =>
+	test('bigPotWin begins inclusively at 20 big blinds of net profit', () => {
+		const talk = (overrides: Partial<Omit<RivalHandOutcome, 'id'>>) =>
 			pickHandOutcomeTalk({
-				rivals: [rival(2, { contestedWinnings })],
+				rivals: [rival(2, overrides)],
 				showdown: false,
 				mode: 'cash',
 				bigBlind: 10,
 			});
 
-		expect(talk(199)).toBeNull();
-		expect(talk(200)).toEqual({ playerId: 2, event: 'bigPotWin' });
+		expect(talk({ contestedWinnings: 400, startStack: 500, chips: 699 })).toBeNull();
+		expect(talk({ contestedWinnings: 400, startStack: 500, chips: 700 })).toEqual({
+			playerId: 2,
+			event: 'bigPotWin',
+		});
+		// A 20-BB gross contested pot that only nets 10 BB does not qualify.
+		expect(talk({ contestedWinnings: 200, startStack: 500, chips: 600 })).toBeNull();
 	});
 
 	test('an all-uncalled return is zero contested winnings, not a win', () => {
@@ -222,7 +227,7 @@ describe('pickHandOutcomeTalk', () => {
 			pickHandOutcomeTalk({
 				rivals: [
 					rival(1, { readout: TWO_PAIR }),
-					rival(2, { contestedWinnings: 999 }),
+					rival(2, { contestedWinnings: 999, chips: 1000 }),
 					rival(5, { startStack: 100, chips: 0 }),
 				],
 				showdown: true,
@@ -234,15 +239,15 @@ describe('pickHandOutcomeTalk', () => {
 
 	test('badBeat outranks bigPotWin, which outranks bluffWin', () => {
 		const badBeatOverBigPot = pickHandOutcomeTalk({
-			rivals: [rival(3, { contestedWinnings: 500 }), rival(4, { readout: TWO_PAIR })],
+			rivals: [rival(3, { contestedWinnings: 500, chips: 1000 }), rival(4, { readout: TWO_PAIR })],
 			showdown: true,
 			mode: 'cash',
 			bigBlind: 10,
 		});
 		const bigPotOverBluff = pickHandOutcomeTalk({
 			rivals: [
-				rival(1, { contestedWinnings: 50, raised: true }),
-				rival(2, { contestedWinnings: 500 }),
+				rival(1, { contestedWinnings: 50, raised: true, chips: 550 }),
+				rival(2, { contestedWinnings: 500, chips: 1000 }),
 			],
 			showdown: false,
 			mode: 'cash',
@@ -256,9 +261,9 @@ describe('pickHandOutcomeTalk', () => {
 		expect(
 			pickHandOutcomeTalk({
 				rivals: [
-					rival(4, { contestedWinnings: 400 }),
-					rival(2, { contestedWinnings: 300 }),
-					rival(3, { contestedWinnings: 350 }),
+					rival(4, { contestedWinnings: 400, chips: 900 }),
+					rival(2, { contestedWinnings: 300, chips: 800 }),
+					rival(3, { contestedWinnings: 350, chips: 850 }),
 				],
 				showdown: false,
 				mode: 'cash',

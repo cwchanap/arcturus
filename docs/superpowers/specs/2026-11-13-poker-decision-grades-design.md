@@ -15,21 +15,34 @@ Scope covers the current six-seat local cash Poker and Sit & Go because they use
 
 - `src/lib/poker/handRecap.ts` stores `RecapEvent { playerId, action, amount, allIn }` under each street via `HandRecapRecorder.act`. The recorder finishes into `HandRecap` and remembers only the last finished hand.
 - `PokerGame.noteAction` records every real human and AI action **after** the action has mutated the relevant player's stack/bet. The four human button handlers live in `attachEventListeners`, and the AI path calls `showDecision`.
-- `PokerGame.processAITurn` already constructs an AI `GameContext` with opponent hole cards stripped. `getPlayerPosition` holds the existing position policy. `estimateVisibleEquity` (`aiEquity.ts`) consumes this context and returns `equity`, `potOdds` and `callAmount`. Reuse it rather than introducing another evaluator.
+- `PokerGame.processAITurn` already constructs an AI `GameContext` with opponent hole cards stripped. `getPlayerPosition` holds the existing position policy. `estimateVisibleEquity` (`aiEquity.ts`) consumes this context and returns `equity`, `potOdds` and `callAmount`. Reuse its **equity** only for the grade: its uncapped, full-pot `potOdds` is not the odds the human sees in short-stack decisions. The HUD uses `getRaiseBounds().call` capped by remaining chips, `contestablePot` and `calculatePotOdds` (`PokerGame.ts`'s `renderBetSummary` path).
 - `PokerGame.actOnTimeout` invokes `btn-check.click()` or `btn-fold.click()`. The same DOM handlers handle both deliberate and timer-forced actions: they must be distinguishable or forced folds will be falsely graded.
 - `PokerUIRenderer.renderHandRecap` builds the drawer's DOM with `createElement`/`textContent` and currently assigns an action `title`. The header is in `src/pages/games/poker.astro` (`#recap-hand`, `#recap-delta`); styles live in `src/styles/poker.css`. `POKER_MESSAGES` supports `en`, `zh-Hant`, `zh-Hans` and `ja`.
 
 ## Decision policy
 
-Define a small pure `gradeDecision({ action, equity, potOdds, callAmount }): 'sharp' | 'ok' | 'miss' | null` in new `src/lib/poker/decisionGrade.ts`. Inputs are the 0–1 fractions already returned by `estimateVisibleEquity`. Put the numeric thresholds together in one constants object; no configuration file, persistence or tolerance subsystem.
+Define a small pure `gradeDecision({ action, equity, potOdds, callAmount }): DecisionGrade` in new `src/lib/poker/decisionGrade.ts`, where `DecisionGrade = 'sharp' | 'ok' | 'miss'` and `action: Exclude<RecapAction, 'check'>`. Checks never enter the grader: the input type enforces that requirement at compile time instead of returning `null` at runtime. `equity` is the 0–1 fraction from `estimateVisibleEquity`; `potOdds` is the 0–1 fraction from the **HUD's short-stack-aware formula**. Put the numeric thresholds together in one constants object; no configuration file, persistence or tolerance subsystem.
 
 | Action | Sharp ⭐ | OK 👍 | Miss ⚠️ |
 | --- | --- | --- | --- |
-| `check` | Never graded | Never graded | Never graded (`null`) |
+| `check` | — | — | Never passed to `gradeDecision` (ungraded by design) |
 | `call` | `equity >= potOdds + 0.05` | `potOdds - 0.05 <= equity < potOdds + 0.05` | `equity < potOdds - 0.05` |
 | `fold` facing a bet | `equity < potOdds` | `potOdds <= equity <= potOdds + 0.10` | `equity > potOdds + 0.10` |
 | `fold` when checking is free | — | — | Always miss when `callAmount === 0` |
 | `raise` | `equity >= 0.55` | `0.35 <= equity < 0.55` | `equity < 0.35` |
+
+**Source of displayed odds (review correction):** At the instant a *valid* human fold/call/raise is chosen, use the same inputs and formula as `PokerGame.updateActionButtons` / `PokerUIRenderer.renderBetSummary`, before mutating the action or pot:
+
+```ts
+const human = this.players[0];
+const call = this.getRaiseBounds().call;
+const callCap = Math.min(call, human.chips);
+const equity = estimateVisibleEquity(this.buildVisibleGameContext(human)).equity;
+const potOdds = calculatePotOdds(callCap, contestablePot(this.players, human, callCap));
+const grade = gradeDecision({ action, equity, potOdds, callAmount: callCap });
+```
+
+Do **not** use `estimateVisibleEquity(...).potOdds`: that uses the uncapped call and full pot and can disagree with the HUD during short-stack all-ins. For example, a short-stack fold with equity ~0.458 can be `ok` at uncapped odds ~0.455 but `miss` at the HUD's ~0.313 odds; the latter is the correct recap result. Test this mismatch explicitly. For a free fold, `callCap === 0` still triggers the special guard even though `calculatePotOdds(0, ...)` returns 1.0.
 
 **Ticket ambiguity resolved:** HPA-726 says a fold is OK “within 5%” but only a miss when equity beats odds by **more than 10%**, leaving a 5–10 percentage-point interval unclassified. Treat that interval as **OK** (not a false negative from a heuristic estimate), and test both cutoffs. Exact equality at the pot-odds boundary is OK. Handle a free fold **before comparing equity with odds**: `calculatePotOdds(0, pot)` returns `1.0` and would otherwise incorrectly mark a free fold sharp.
 
@@ -51,7 +64,7 @@ Only manually chosen human calls/folds/raises carry `decision`. A check, rival a
 
 Replace the duplicated inline AI context construction with one small PokerGame method such as `buildVisibleGameContext(player: Player): GameContext`. Preserve exactly the current `minimumBet`, street, phase, board, pot, position and per-player context shape, with every other seat's hidden hand replaced by `[]`. The AI calls this same method, preserving its input and decision behavior. For a human decision, it reveals only the human's own cards.
 
-For each valid manual action, estimate and grade **synchronously before** `foldPlayer` / `placeBet` / any pot or bet update. Pass the resulting lightweight metadata into `noteAction` with the existing action. Never recompute from post-action stack/pot. Since the human's `RecapEvent` is still emitted through `noteAction`, its all-in/action ordering and sound effects are unchanged.
+For each valid manual action, estimate equity and snapshot **HUD-equivalent, short-stack-capped pot odds** synchronously **before** `foldPlayer` / `placeBet` / any pot or bet update. Pass the resulting lightweight metadata into `noteAction` with the existing action. Never recompute from post-action stack/pot. Since the human's `RecapEvent` is still emitted through `noteAction`, its all-in/action ordering and sound effects are unchanged.
 
 Use one narrow synchronous `timeoutAction` flag around the existing programmatic button click (`try/finally`) and suppress metadata while it is set. Do not build a generic action-origin framework or change the button/turn-timer flow. The timeout's fold/check must remain visible in recap, just ungraded.
 
@@ -69,15 +82,15 @@ FLOP                            7♣ 9♥ Q♠
 [You]  ✓ 50  👍
 ```
 
-The existing fold/check/call/raise icon and amount remain intact. Append a second, small `poker-recap-grade` icon to the **same human event** when `event.decision` exists. Never stamp AI rows, a check or a timed-out human action. Make each stamp distinguishable by glyph plus localized accessible name (not by colour alone). Keep the action row's existing `title` and append localized grade/estimated “equity {equity}% vs odds {odds}%” detail there; use rounded percentages for display only. The `aria-label` or labelled grade icon should convey the verdict for assistive technology. No new tooltip controller or prose block.
+The existing fold/check/call/raise icon and amount remain intact. Append a second, small `poker-recap-grade` icon to the **same human event** when `event.decision` exists. Never stamp AI rows, a check or a timed-out human action. Make each stamp distinguishable by glyph plus localized accessible name (not by colour alone). Keep the action row's existing `title` and append localized grade/equity detail there; reuse the existing translated `potOdds` key to describe the rounded odds, so the wording and number match the HUD. Round percentages for display only. The `aria-label` or labelled grade icon conveys the grade (and estimated odds/equity) to assistive technology. **On iOS/touch, a native `title` is not a visible tooltip:** sighted mobile users see the grade glyph; do not promise tap/long-press details. No new tooltip controller, visible numeric span or prose block.
 
-Add `#recap-grade-tally` alongside existing hand number and delta in the header; derive `sharpCount / gradedCount` from recap events. Grade icon and tally must not cover the existing action icon, numbers, drawer close button, or chip delta. The header may wrap on narrow screens. Keep CSS scoped to the recap so other drawers are untouched. Check at 320–390px as well as desktop. Use typed keys in `src/lib/i18n/messages/poker.ts` for grade names, accessible tally label and odds comparison in all four existing locales. No dynamic string keys.
+Add `#recap-grade-tally` alongside existing hand number and delta in the header; derive `sharpCount / gradedCount` from recap events. Grade icon and tally must not cover the existing action icon, numbers, drawer close button, or chip delta. The header may wrap on narrow screens. Keep CSS scoped to the recap so other drawers are untouched. Check at 320–390px as well as desktop. Use typed keys in `src/lib/i18n/messages/poker.ts` for the three grade names, accessible tally label and an equity label in all four existing locales; **reuse** the existing `potOdds` message key for the odds half. No dynamic string keys.
 
 ## Tests, constraints and deliberate non-goals
 
-- Pure table tests cover all decisions and boundary values, the 5–10-point fold gap, equality, and the **free-fold before pot-odds** guard.
-- PokerGame tests confirm pre-action snapshots, shared visible context without rivals' hole cards, manual-call/fold/raise metadata, absence for checks/rivals/timeout decisions, and unmodified AI/turn behavior.
+- Pure table tests cover all **eligible** decisions and boundaries (call/fold/raise), the 5–10-point fold gap, equality, and the **free-fold before pot-odds** guard; compile-time typing excludes `check`.
+- PokerGame tests confirm pre-action snapshots, **HUD-equivalent odds for a short-stack call/fold where uncapped and contestable-pot odds differ**, shared visible context without rivals' hole cards, manual-call/fold/raise metadata, absence for checks/rivals/timeout decisions, and unmodified AI/turn behavior.
 - Recorder and renderer tests verify optional metadata survives a finished hand, stamps only on eligible rows, header `⭐ 2/3` and empty tally handling, locale-specific accessible labels and unchanged result/delta.
-- End-to-end browser smoke verifies a manually chosen fold and a timeout-forced action have different grade behavior. Manual visual verification covers iOS Safari at phone width, macOS Safari/Chrome and Windows Edge; compare against the sketch above because no Linear UI mockup is attached.
+- Playwright browser smoke verifies that a manual human fold row has **exactly one** `.poker-recap-grade` regardless of its actual grade (the deck is not seeded). Use the existing `PokerGame.test.ts` fake-timer integration harness for timeout-forced action exclusion rather than a flaky 20-second browser wait. Manual visual verification covers grade glyph placement and no clipping on iOS Safari at phone width (not a `title` tooltip), plus macOS Safari/Chrome and Windows Edge; compare against the sketch above because no Linear UI mockup is attached.
 
 No server changes, migrations, statistics, historical grades, analytics, player profiles, coaching text, strict input validation for trusted in-process fractions, or settings toggle. This is presentation feedback only: any ungraded existing recap remains valid, and old recap instances require no migration.

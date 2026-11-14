@@ -689,6 +689,9 @@ export class PokerUIRenderer {
 		const sharpCount = gradedEvents.filter((event) => event.decision.grade === 'sharp').length;
 		const tally = document.getElementById('recap-grade-tally');
 		if (tally) {
+			// A generic span ignores aria-label; role="img" lets assistive
+			// technology announce the localized tally over the raw glyph.
+			tally.setAttribute('role', 'img');
 			tally.hidden = gradedEvents.length === 0;
 			if (gradedEvents.length === 0) {
 				tally.textContent = '';

@@ -1385,6 +1385,7 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		const tally = elements['recap-grade-tally'];
 		expect(tally.hidden as boolean).toBe(false);
 		expect(tally.textContent).toBe('⭐ 2/3');
+		expect(tally.getAttribute?.('role')).toBe('img');
 		expect(tally.getAttribute?.('aria-label')).toBe('2 of 3 decisions sharp');
 	});
 
@@ -1538,9 +1539,8 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		expect(elements['recap-grade-tally'].textContent).toBe('⭐ 1/1');
 		expect(elements['recap-hand'].textContent).toBe('#3');
 
-		// Reopen with a different, ungraded hand: no stale tally or number.
-		elements = mockDocument();
-		renderer = new PokerUIRenderer('cash');
+		// Reopen with a different, ungraded hand in the SAME document and
+		// renderer: the existing header nodes must be updated and cleared.
 		renderer.renderHandRecap(
 			recapOf([{ street: 'flop', events: [] }], { handNumber: 4 }),
 			recapSeats,

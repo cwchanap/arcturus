@@ -74,6 +74,73 @@ test.describe('Poker turn flow smoke test', () => {
 		}
 	});
 
+	test('manual fold in the recap carries exactly one grade stamp', async ({ browser, baseURL }) => {
+		// Human folds preflop, then five AIs finish the hand; keep it in budget.
+		test.setTimeout(60000);
+		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
+		try {
+			// A timer-forced fold is never graded; disable the turn timer so the
+			// fold below stays manual without racing the 20-second clock.
+			const timerToggle = page.locator('#btn-turn-timer');
+			await expect(timerToggle).toHaveAttribute('aria-pressed', 'true');
+			await timerToggle.click();
+			await expect(timerToggle).toHaveAttribute('aria-pressed', 'false');
+
+			// Same speed setup as the turn-flow smoke: keeps AI orbits quick.
+			await page.getByRole('button', { name: /configure/i }).click();
+			await page.locator('#setting-ai-speed').selectOption('fast');
+			await page
+				.getByRole('dialog', { name: 'Game Settings' })
+				.getByRole('button', { name: 'Save Settings' })
+				.click();
+
+			const status = page.locator('#game-status');
+			const handEndedOrYourTurn = /Your turn|wins? .* chips|Tie!.*split the .* chips pot|Showdown/i;
+			const dealButton = page.locator('#btn-deal');
+
+			// Rare: five AIs can fold around an on-the-button human before they
+			// act, ending the hand with no manual decision — re-deal instead.
+			let foldedManually = false;
+			for (let attempt = 0; attempt < 3 && !foldedManually; attempt++) {
+				await dealButton.click();
+				// click() can resolve before dealNewHand updates the status, so the
+				// regex below would match the previous hand's terminal text; wait
+				// for the new hand's history group first (status is overwritten in
+				// the same synchronous task that creates it).
+				await expect(page.locator('#poker-history .poker-history-hand')).toHaveCount(attempt + 1, {
+					timeout: 10000,
+				});
+				await expect(status).toHaveText(handEndedOrYourTurn, { timeout: 10000 });
+				if (/Your turn/i.test((await status.textContent()) ?? '')) {
+					foldedManually = true;
+					await page.locator('#btn-fold').click();
+				}
+			}
+			expect(foldedManually, 'human never got a turn across three deals').toBe(true);
+
+			// The recap button appears only once the hand is settled.
+			const recapButton = page.locator('#btn-recap');
+			await expect(recapButton).toBeVisible({ timeout: 45000 });
+			await recapButton.click();
+			const recapPanel = page.locator('#recap-panel');
+			await expect(recapPanel).toBeVisible();
+
+			// The deck is not seeded, so the grade tier is random — assert the
+			// stamp count on the human's folded row, never a particular glyph.
+			const foldRow = recapPanel.locator(
+				'#poker-recap li.poker-recap-action[data-seat="0"][data-action="fold"]',
+			);
+			await expect(foldRow).toBeVisible();
+			await expect(foldRow.locator('.poker-recap-grade')).toHaveCount(1);
+			await expect(foldRow.locator('.poker-recap-grade')).toBeVisible();
+
+			// The tally counts stamped decisions only: exactly one graded fold.
+			await expect(recapPanel.locator('#recap-grade-tally')).toHaveText(/⭐ \d\/1/);
+		} finally {
+			await context.close();
+		}
+	});
+
 	test('a signed-in player sees mission rings beside their seat', async ({ browser, baseURL }) => {
 		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
 		try {

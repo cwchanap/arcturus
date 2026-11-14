@@ -7,7 +7,8 @@ import type { AIDifficulty } from './aiDifficulty';
 import { HAND_RANKINGS, NUM_PLAYERS, type PokerHandNameKey } from './constants';
 import { countDrawingOuts, isSameCard, readHand } from './handReadout';
 import type { PokerSessionStats } from './sessionStats';
-import type { HandRecap, RecapAction } from './handRecap';
+import type { HandRecap, RecapAction, RecapDecision, RecapEvent } from './handRecap';
+import type { DecisionGrade } from './decisionGrade';
 import { TURN_WARN_SECONDS } from './turnTimer';
 import {
 	SNG_BLINDS,
@@ -72,6 +73,12 @@ const RECAP_STREET_KEYS = {
 } as const;
 
 const RECAP_ICONS: Record<RecapAction, string> = { fold: '×', check: '✓', call: '✓', raise: '↑' };
+const GRADE_KEYS: Record<DecisionGrade, MessageKey<typeof POKER_MESSAGES>> = {
+	sharp: 'sharp',
+	ok: 'ok',
+	miss: 'miss',
+};
+const GRADE_GLYPHS: Record<DecisionGrade, string> = { sharp: '⭐', ok: '👍', miss: '⚠️' };
 /** How long a rival's table-talk bubble stays before the renderer removes it. */
 const RIVAL_TALK_MS = 2_500;
 const RANK_LABELS: Partial<Record<number, string>> = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A' };
@@ -608,6 +615,25 @@ export class PokerUIRenderer {
 	}
 
 	/**
+	 * Localized grade, estimated equity, and odds copy for one graded
+	 * decision. Odds reuse the HUD `potOdds` phrase; a null `potOdds` means
+	 * no bet needed calling, so folds say checking is free and raises stay
+	 * equity-only — never the grader's numeric fallback as 100% odds.
+	 */
+	private decisionDetails(decision: RecapDecision, action: RecapAction): string {
+		const parts = [
+			this.t(GRADE_KEYS[decision.grade]),
+			this.t('estimatedEquity', { percent: Math.round(decision.equity * 100) }),
+		];
+		if (decision.potOdds !== null) {
+			parts.push(this.t('potOdds', { percent: Math.round(decision.potOdds * 100) }));
+		} else if (action === 'fold') {
+			parts.push(this.t('checkFree'));
+		}
+		return parts.join(' · ');
+	}
+
+	/**
 	 * Fill the recap panel with the finished hand: one row per street with
 	 * the cards it brought and each action as avatar + icon + amount, then
 	 * the hands shown down. Icons carry the story; words stay in labels.
@@ -655,6 +681,29 @@ export class PokerUIRenderer {
 			delta.dataset.tone =
 				recap.delta === null || recap.delta === 0 ? 'neutral' : recap.delta > 0 ? 'win' : 'loss';
 		}
+		// Tally derives from the recap each render, so reopening another hand
+		// never shows stale counts; only manual graded decisions count.
+		const gradedEvents = recap.streets
+			.flatMap((street) => street.events)
+			.filter((event): event is RecapEvent & { decision: RecapDecision } => !!event.decision);
+		const sharpCount = gradedEvents.filter((event) => event.decision.grade === 'sharp').length;
+		const tally = document.getElementById('recap-grade-tally');
+		if (tally) {
+			// A generic span ignores aria-label; role="img" lets assistive
+			// technology announce the localized tally over the raw glyph.
+			tally.setAttribute('role', 'img');
+			tally.hidden = gradedEvents.length === 0;
+			if (gradedEvents.length === 0) {
+				tally.textContent = '';
+				tally.removeAttribute('aria-label');
+			} else {
+				tally.textContent = `⭐ ${sharpCount}/${gradedEvents.length}`;
+				tally.setAttribute(
+					'aria-label',
+					this.t('gradeTally', { sharp: sharpCount, graded: gradedEvents.length }),
+				);
+			}
+		}
 
 		const rows: HTMLElement[] = [];
 		for (const street of recap.streets) {
@@ -678,6 +727,16 @@ export class PokerUIRenderer {
 						el('span', 'poker-recap-amount', formatWholeNumber(event.amount, this.locale)),
 					);
 				}
+				let gradeDetails: string | null = null;
+				if (event.decision) {
+					gradeDetails = this.decisionDetails(event.decision, event.action);
+					// role="img" + a real label: VoiceOver must speak the grade,
+					// not the emoji name. The glyph itself is the mobile UI.
+					const stamp = el('span', 'poker-recap-grade', GRADE_GLYPHS[event.decision.grade]);
+					stamp.setAttribute('role', 'img');
+					stamp.setAttribute('aria-label', gradeDetails);
+					item.appendChild(stamp);
+				}
 				const actionName =
 					event.action === 'fold'
 						? this.t('badgeFold')
@@ -686,7 +745,7 @@ export class PokerUIRenderer {
 							: this.t(event.action === 'call' ? 'badgeCall' : 'badgeRaise', {
 									amount: formatWholeNumber(event.amount, this.locale),
 								});
-				item.title = `${nameOf(event.playerId)} · ${event.allIn ? this.t('recapAllIn') : actionName}`;
+				item.title = `${nameOf(event.playerId)} · ${event.allIn ? this.t('recapAllIn') : actionName}${gradeDetails ? ` · ${gradeDetails}` : ''}`;
 				actions.appendChild(item);
 			}
 			row.appendChild(actions);

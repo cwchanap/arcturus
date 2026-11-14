@@ -3,10 +3,10 @@ import type { APIRoute } from 'astro';
 import { ALL } from '../pages/api/auth/[...all]';
 
 // Minimal Astro APIContext shape — the handler only reads
-// `context.locals.runtime.env` and `context.request.url`.
+// `context.locals.env` and `context.request.url`.
 function makeContext(env: Record<string, unknown> | undefined) {
 	return {
-		locals: { runtime: env ? { env } : {} },
+		locals: env ? { env } : {},
 		request: new Request('http://localhost:2000/api/auth/signin'),
 	} as unknown as Parameters<APIRoute>[0];
 }

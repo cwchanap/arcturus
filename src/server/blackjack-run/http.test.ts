@@ -192,10 +192,8 @@ function context({
 	return {
 		locals: {
 			user: userId === null ? null : { id: userId },
-			runtime: {
-				env: {
-					DB: { binding: 'db' },
-				},
+			env: {
+				DB: { binding: 'db' },
 			},
 		},
 		params: { runId, periodKey },
@@ -729,7 +727,7 @@ describe('blackjack run HTTP response contract', () => {
 		const response = await handlers.start({
 			locals: {
 				user: { id: USER_ID },
-				runtime: { env: {} },
+				env: {},
 			},
 			request: makeRequest('/api/blackjack-runs', START_BODY),
 		} as never);

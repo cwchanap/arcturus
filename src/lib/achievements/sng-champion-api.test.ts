@@ -21,7 +21,7 @@ function context({
 	return {
 		locals: {
 			user,
-			runtime: { env: db ? { DB: db } : {} },
+			env: db ? { DB: db } : {},
 		},
 		// Empty body by design: the URL carries the whole intent.
 		request: new Request('https://arcturus.example/api/achievements/sng-champion', {

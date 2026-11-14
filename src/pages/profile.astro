@@ -29,9 +29,7 @@ let playerStatisticsState: ProfileStatisticsState = { status: 'error' };
 const { user } = session;
 const fallbackInitial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? 'A';
 
-const runtime = Astro.locals.runtime;
-
-const dbBinding = runtime?.env?.DB ?? null;
+const dbBinding = Astro.locals.env?.DB ?? null;
 
 // Achievements data
 let achievements: AchievementWithStatus[] = [];

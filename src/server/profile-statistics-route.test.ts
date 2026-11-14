@@ -38,7 +38,7 @@ function createContext({
 	return {
 		locals: {
 			session: session ? { user: { id: 'session-user' } } : null,
-			runtime: { env: binding ? { DB: binding } : {} },
+			env: binding ? { DB: binding } : {},
 		},
 		params: { userId: 'attacker-selected-user' },
 		url: new URL('https://arcturus.example/api/profile/statistics?userId=attacker-selected-user'),

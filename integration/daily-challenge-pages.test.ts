@@ -24,9 +24,8 @@ const user = {
 };
 
 function guestLocals(): App.Locals {
-	const runtime = { env: { DB: {} } } as App.Locals['runtime'];
 	return {
-		runtime,
+		env: { DB: {} } as Env,
 		locale: 'en',
 		session: null,
 		user: null,
@@ -34,9 +33,8 @@ function guestLocals(): App.Locals {
 }
 
 function authedLocals(): App.Locals {
-	const runtime = { env: { DB: {} } } as App.Locals['runtime'];
 	return {
-		runtime,
+		env: { DB: {} } as Env,
 		locale: 'en',
 		session: {
 			user,

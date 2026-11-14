@@ -15,7 +15,7 @@ type FetchHandler = (input: string, init?: RequestInit) => Response | Promise<Re
 function makeLocals(namespace?: DurableObjectNamespace) {
 	return {
 		user: { id: USER_ID, name: 'Room Creator' },
-		runtime: { env: { MULTIPLAYER_POKER_ROOMS: namespace } },
+		env: { MULTIPLAYER_POKER_ROOMS: namespace },
 	};
 }
 
@@ -67,7 +67,7 @@ describe('mp/rooms create route', () => {
 	test('rejects an unauthenticated request', async () => {
 		const response = await POST({
 			request: makeRequest(),
-			locals: { runtime: { env: { MULTIPLAYER_POKER_ROOMS: undefined } } } as any,
+			locals: { env: { MULTIPLAYER_POKER_ROOMS: undefined } } as any,
 		} as any);
 
 		expect(response.status).toBe(401);
@@ -218,7 +218,7 @@ describe('mp/rooms metadata route', () => {
 	test('rejects an unauthenticated metadata request', async () => {
 		const response = await metadataGET({
 			params: { code: 'MP-ABC123' },
-			locals: { runtime: { env: { MULTIPLAYER_POKER_ROOMS: undefined } } } as any,
+			locals: { env: { MULTIPLAYER_POKER_ROOMS: undefined } } as any,
 		} as any);
 
 		expect(response.status).toBe(401);

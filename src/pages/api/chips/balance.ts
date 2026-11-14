@@ -11,7 +11,7 @@ export const GET: APIRoute = async ({ locals }) => {
 		});
 	}
 
-	const dbBinding = locals.runtime?.env?.DB;
+	const dbBinding = locals.env?.DB;
 	if (!dbBinding) {
 		return new Response(JSON.stringify({ error: 'DATABASE_UNAVAILABLE' }), {
 			status: 500,

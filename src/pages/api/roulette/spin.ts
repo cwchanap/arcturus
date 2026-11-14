@@ -167,7 +167,7 @@ async function handleSpinRequest(
 		}
 	}
 
-	const dbBinding = locals.runtime?.env?.DB as D1Database | undefined;
+	const dbBinding = locals.env?.DB as D1Database | undefined;
 	if (!dbBinding) return Response.json({ error: 'DATABASE_UNAVAILABLE' }, { status: 500 });
 
 	// Roulette owns the random number, bet evaluation, and result shape. The

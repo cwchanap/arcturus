@@ -14,9 +14,9 @@ updates:
       prefix: 'chore'
       include: 'scope'
     ignore:
-      # vitest 5 (vite 7) breaks integration tests via astro's getViteConfig
-      # ("assetsInclude" must be a string, astro passes a function); revisit
-      # once astro ships a compatible vite baseline
+      # vitest majors are pinned manually alongside astro's vite baseline;
+      # vitest 5 currently works with astro 6 (vite 7). Re-evaluate on the
+      # next astro major rather than letting dependabot auto-bump vitest.
       - dependency-name: 'vitest'
         update-types: ['version-update:semver-major']
     groups:

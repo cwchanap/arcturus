@@ -16,12 +16,15 @@ import { formatWholeNumber } from '../../lib/formatting';
 const session = Astro.locals.session;
 const locale = Astro.locals.locale;
 const t = missionsTranslator(locale);
-if (!session || !Astro.locals.runtime?.env?.DB) {
+if (!session || !Astro.locals.env?.DB) {
 	if (!session) return Astro.redirect('/signin');
 	return new Response(t('serviceUnavailable'), { status: 503 });
 }
 
-const d1 = Astro.locals.runtime.env.DB;
+const d1 = Astro.locals.env?.DB;
+if (!d1) {
+	return new Response(t('serviceUnavailable'), { status: 503 });
+}
 const db = createDb(d1);
 const [userRow] = await db
 	.select({ chipBalance: user.chipBalance })

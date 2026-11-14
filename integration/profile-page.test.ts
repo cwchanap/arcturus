@@ -43,9 +43,9 @@ const user = {
 	updatedAt: now,
 };
 
-const runtime = { env: { DB: dbBinding } } as App.Locals['runtime'];
+const fakeEnv = { DB: dbBinding } as Env;
 const locals: App.Locals = {
-	runtime,
+	env: fakeEnv,
 	locale: 'en',
 	session: {
 		user,

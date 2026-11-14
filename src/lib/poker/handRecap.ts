@@ -6,9 +6,17 @@
 
 import type { Card } from './types';
 import type { PokerHandNameKey } from './constants';
+import type { DecisionGrade } from './decisionGrade';
 
 export type RecapStreet = 'preflop' | 'flop' | 'turn' | 'river';
 export type RecapAction = 'fold' | 'check' | 'call' | 'raise';
+
+/** Grading metadata for one manual decision; potOdds is null when no bet needs calling. */
+export interface RecapDecision {
+	grade: DecisionGrade;
+	equity: number;
+	potOdds: number | null;
+}
 
 export interface RecapEvent {
 	playerId: number;
@@ -16,6 +24,8 @@ export interface RecapEvent {
 	/** Chips put in (call) or raised by (raise); 0 for fold/check. */
 	amount: number;
 	allIn: boolean;
+	/** Set only for graded manual actions; checks, AI and timeout actions have none. */
+	decision?: RecapDecision;
 }
 
 export interface RecapStreetLog {
@@ -65,7 +75,11 @@ export class HandRecapRecorder {
 	}
 
 	act(event: RecapEvent): void {
-		this.recap?.streets.at(-1)?.events.push({ ...event });
+		// Copy the decision too: the recorder owns all stored recap data.
+		this.recap?.streets.at(-1)?.events.push({
+			...event,
+			decision: event.decision ? { ...event.decision } : undefined,
+		});
 	}
 
 	finish(result: Pick<HandRecap, 'reveals' | 'showdown' | 'delta'>): HandRecap | null {

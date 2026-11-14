@@ -5739,10 +5739,9 @@ describe('Poker human decision grades', () => {
 			faceBet(fold.game, 20);
 			fold.game.actOnTimeout();
 			expect(fold.game.players[0].folded).toBe(true);
-			expect(finishRecap(fold.game)?.streets[0].events[0]).toEqual(
-				expect.objectContaining({ playerId: 0, action: 'fold' }),
-			);
-			expect(finishRecap(fold.game)?.streets[0].events[0]?.decision).toBeUndefined();
+			const foldEvent = finishRecap(fold.game)?.streets[0].events[0];
+			expect(foldEvent).toEqual(expect.objectContaining({ playerId: 0, action: 'fold' }));
+			expect(foldEvent?.decision).toBeUndefined();
 
 			// Free check: timer checks, ungraded (checks never grade anyway).
 			const check = setup();
@@ -5750,7 +5749,9 @@ describe('Poker human decision grades', () => {
 			faceBet(check.game, 0);
 			check.game.actOnTimeout();
 			expect(check.game.players[0].hasActed).toBe(true);
-			expect(finishRecap(check.game)?.streets[0].events[0]?.decision).toBeUndefined();
+			const checkEvent = finishRecap(check.game)?.streets[0].events[0];
+			expect(checkEvent).toEqual(expect.objectContaining({ playerId: 0, action: 'check' }));
+			expect(checkEvent?.decision).toBeUndefined();
 		} finally {
 			timers.restore();
 		}

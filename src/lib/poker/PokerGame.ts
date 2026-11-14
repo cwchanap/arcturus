@@ -1324,19 +1324,7 @@ export class PokerGame {
 		// Build game context for AI. Opponent hole cards are stripped so the AI
 		// context never carries hidden information — defense-in-depth against any
 		// future strategy module accidentally reading opponent hands.
-		const sanitizedPlayers = this.players.map((p) =>
-			p.id === currentPlayer.id ? p : { ...p, hand: [] },
-		);
-		const context: GameContext = {
-			player: currentPlayer,
-			players: sanitizedPlayers,
-			communityCards: this.communityCards,
-			pot: this.pot,
-			minimumBet: this.minimumBet,
-			phase: this.gamePhase,
-			bettingRound: this.bettingRound,
-			position: this.getPlayerPosition(currentPlayer),
-		};
+		const context = this.buildVisibleGameContext(currentPlayer);
 
 		// Get AI decision (LLM or rule-based)
 		const settings = this.settingsManager.getSettings();
@@ -1503,6 +1491,25 @@ export class PokerGame {
 			this.updateActionButtons();
 			this.processAITurn();
 		}
+	}
+
+	/**
+	 * The context one seat may act on: its own hand, everyone else's hidden.
+	 * Shared by the AI decision path and human grading so both read exactly the
+	 * same visible information; `this.players` itself is never mutated.
+	 */
+	private buildVisibleGameContext(player: Player): GameContext {
+		const visiblePlayers = this.players.map((p) => (p.id === player.id ? p : { ...p, hand: [] }));
+		return {
+			player,
+			players: visiblePlayers,
+			communityCards: this.communityCards,
+			pot: this.pot,
+			minimumBet: this.minimumBet,
+			phase: this.gamePhase,
+			bettingRound: this.bettingRound,
+			position: this.getPlayerPosition(player),
+		};
 	}
 
 	private getPlayerPosition(player: Player): 'early' | 'middle' | 'late' {

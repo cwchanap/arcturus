@@ -40,6 +40,40 @@ describe('HandRecapRecorder', () => {
 		expect(recorder.last).toBe(first);
 	});
 
+	test('carries optional decision metadata onto the street event and through finish', () => {
+		const recorder = new HandRecapRecorder();
+		recorder.start(1, []);
+		const decision = { grade: 'sharp' as const, equity: 0.4, potOdds: 0.25 };
+		recorder.act({ playerId: 0, action: 'call', amount: 20, allIn: false, decision });
+		recorder.act({ playerId: 1, action: 'check', amount: 0, allIn: false });
+		const recap = recorder.finish({ reveals: [], showdown: false, delta: 20 });
+
+		expect(recap?.streets[0].events[0].decision).toEqual({
+			grade: 'sharp',
+			equity: 0.4,
+			potOdds: 0.25,
+		});
+		// Checks carry no decision metadata.
+		expect(recap?.streets[0].events[1].decision).toBeUndefined();
+	});
+
+	test('stores its own decision copy, preserving potOdds null through finish', () => {
+		const recorder = new HandRecapRecorder();
+		recorder.start(1, []);
+		const decision = { grade: 'ok' as const, equity: 0.3, potOdds: null };
+		recorder.act({ playerId: 0, action: 'raise', amount: 40, allIn: false, decision });
+		// Later caller-side mutations must not rewrite the recorded grade.
+		decision.grade = 'miss';
+		decision.potOdds = 0.5;
+		const recap = recorder.finish({ reveals: [], showdown: false, delta: 0 });
+
+		expect(recap?.streets[0].events[0].decision).toEqual({
+			grade: 'ok',
+			equity: 0.3,
+			potOdds: null,
+		});
+	});
+
 	test('copies inputs so later game mutations do not rewrite the story', () => {
 		const recorder = new HandRecapRecorder();
 		const hole = [c(5, 'hearts'), c(6, 'hearts')];

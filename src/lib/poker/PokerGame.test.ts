@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
 import { Window as DOMWindow } from 'happy-dom';
-import type { Card, Player } from './types';
+import type { Card, GameContext, Player } from './types';
 import {
 	createPlayer,
 	createAIPlayer,
@@ -2010,6 +2010,88 @@ describe('PokerGame processAITurn strips opponent hole cards', () => {
 		} finally {
 			timers.restore();
 		}
+	});
+});
+
+describe('PokerGame buildVisibleGameContext', () => {
+	test('shared context redacts every opponent hand and preserves the AI context shape', () => {
+		const elements = mockPokerGameDOM();
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+
+		const game = new PokerGame(() => 0.5) as unknown as {
+			players: Player[];
+			dealerIndex: number;
+			pot: number;
+			minimumBet: number;
+			gamePhase: GameContext['phase'];
+			bettingRound: GameContext['bettingRound'];
+			communityCards: Card[];
+			buildVisibleGameContext: (player: Player) => GameContext;
+		};
+
+		game.players[0] = {
+			...game.players[0],
+			hand: [card('A', 'hearts', 14), card('K', 'spades', 13)],
+		};
+		game.players[1] = {
+			...game.players[1],
+			hand: [card('Q', 'hearts', 12), card('J', 'hearts', 11)],
+		};
+		game.players[2] = {
+			...game.players[2],
+			hand: [card('9', 'clubs', 9), card('8', 'clubs', 8)],
+		};
+		game.dealerIndex = 0;
+		game.pot = 30;
+		game.minimumBet = 10;
+		game.gamePhase = 'preflop';
+		game.bettingRound = 'preflop';
+		const flop = [card('2', 'diamonds', 2), card('7', 'clubs', 7), card('10', 'spades', 10)];
+		game.communityCards = flop;
+
+		// AI subject: own hand intact, opponents redacted, real players untouched.
+		const aiContext = game.buildVisibleGameContext(game.players[1]);
+		expect(aiContext.player).toBe(game.players[1]);
+		expect(aiContext.players[1]).toBe(game.players[1]);
+		expect(aiContext.players[0].hand).toHaveLength(0);
+		expect(aiContext.players[2].hand).toHaveLength(0);
+		expect(aiContext.players[0]).not.toBe(game.players[0]);
+		expect(game.players[0].hand).toHaveLength(2);
+		expect(game.players[2].hand).toHaveLength(2);
+		// Exactly the fields the AI decision path always received.
+		expect(Object.keys(aiContext).sort()).toEqual([
+			'bettingRound',
+			'communityCards',
+			'minimumBet',
+			'phase',
+			'player',
+			'players',
+			'position',
+			'pot',
+		]);
+		expect(aiContext.pot).toBe(30);
+		expect(aiContext.minimumBet).toBe(10);
+		expect(aiContext.phase).toBe('preflop');
+		expect(aiContext.bettingRound).toBe('preflop');
+		expect(aiContext.communityCards).toBe(flop);
+		// Position policy unchanged: dealer is late, the next seat acts early.
+		expect(aiContext.position).toBe('early');
+
+		// Human subject: the human sees their own cards, never the AIs'.
+		const humanContext = game.buildVisibleGameContext(game.players[0]);
+		expect(humanContext.players[0].hand).toHaveLength(2);
+		expect(humanContext.players[1].hand).toHaveLength(0);
+		expect(humanContext.players[2].hand).toHaveLength(0);
+		expect(humanContext.position).toBe('late');
+		expect(game.players[1].hand).toHaveLength(2);
+		expect(game.players[2].hand).toHaveLength(2);
 	});
 });
 

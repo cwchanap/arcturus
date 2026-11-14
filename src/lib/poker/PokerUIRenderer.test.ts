@@ -1,7 +1,9 @@
 import { describe, expect, test, beforeEach, afterEach, jest } from 'bun:test';
-import { PokerUIRenderer } from './PokerUIRenderer';
+import { PokerUIRenderer, type RecapSeats } from './PokerUIRenderer';
 import { HAND_RANKINGS, type PokerHandNameKey } from './constants';
 import { getPokerHandName } from '../i18n/messages/poker';
+import type { Locale } from '../i18n/locale';
+import type { HandRecap, RecapEvent, RecapStreet } from './handRecap';
 import type { RivalLine } from './rivalTalk';
 import type { Card, Player } from './types';
 
@@ -23,7 +25,8 @@ type MockElement = {
 	appendChild?: (el: MockElement) => void;
 	insertBefore?: (el: MockElement) => void;
 	remove?: () => void;
-	replaceChildren?: () => void;
+	replaceChildren?: (...nodes: MockElement[]) => void;
+	ownerDocument?: { createElement: (tag: string) => MockElement };
 	innerHTML?: string;
 	style?: Record<string, string>;
 	dataset?: Record<string, string>;
@@ -142,8 +145,15 @@ function createMockElement(initialClassName = ''): MockElement {
 			const index = parent?.children?.indexOf(el) ?? -1;
 			if (index >= 0) parent?.children?.splice(index, 1);
 		},
-		replaceChildren: () => {
+		replaceChildren: (...nodes: MockElement[]) => {
 			children.length = 0;
+			for (const node of nodes) {
+				children.push(node);
+				node.parentElement = el;
+			}
+		},
+		ownerDocument: {
+			createElement: (tag: string) => createMockElement(),
 		},
 		dataset: {},
 		style: {},
@@ -200,7 +210,7 @@ function createMockContainerWithSlots(numSlots: number): MockElement {
 }
 
 // Mock DOM environment
-function mockDocument() {
+function mockDocument(locale: Locale = 'en') {
 	const elements: Record<string, MockElement> = {};
 
 	// Pre-create card containers with slots
@@ -222,6 +232,7 @@ function mockDocument() {
 	});
 
 	(global as unknown as { document: unknown }).document = {
+		documentElement: { dataset: { locale } },
 		getElementById: (id: string) => {
 			if (!elements[id]) {
 				elements[id] = createMockElement();
@@ -276,6 +287,37 @@ function player(
 /** Hand-start stacks the engine tracks per hand; participation is a stack above zero. */
 function stacksOf(players: Player[]): Map<number, number> {
 	return new Map(players.map((p) => [p.id, p.chips]));
+}
+
+/** Minimal finished-hand recap with the given street events. */
+function recapOf(
+	streets: Array<{ street: RecapStreet; events: RecapEvent[] }>,
+	opts: Partial<HandRecap> = {},
+): HandRecap {
+	return {
+		handNumber: 3,
+		hole: [card('A', 'hearts', 14), card('K', 'spades', 13)],
+		streets: streets.map(({ street, events }) => ({ street, board: [], events })),
+		reveals: [],
+		showdown: false,
+		delta: 25,
+		...opts,
+	};
+}
+
+const recapSeats: RecapSeats = new Map([[1, { name: 'Rival', style: 'tight-aggressive' }]]);
+
+/** Recap action items, in render order, walked out of the mocked DOM tree. */
+function recapActionItems(root: MockElement): MockElement[] {
+	const items: MockElement[] = [];
+	const walk = (el: MockElement) => {
+		for (const child of el.children ?? []) {
+			if (child.className === 'poker-recap-action') items.push(child);
+			walk(child);
+		}
+	};
+	walk(root);
+	return items;
 }
 
 describe('PokerUIRenderer', () => {
@@ -1224,6 +1266,294 @@ describe('Poker six-max presentation', () => {
 	});
 });
 
+describe('PokerUIRenderer hand recap decision grades', () => {
+	let renderer: PokerUIRenderer;
+	let elements: Record<string, MockElement>;
+
+	function renderRecap(
+		streets: Array<{ street: RecapStreet; events: RecapEvent[] }>,
+		locale: Locale = 'en',
+	): void {
+		elements = mockDocument(locale);
+		renderer = new PokerUIRenderer('cash');
+		renderer.renderHandRecap(recapOf(streets), recapSeats);
+	}
+
+	test('stamps a graded human call, fold and raise with role, label and title details', () => {
+		renderRecap([
+			{
+				street: 'flop',
+				events: [
+					{
+						playerId: 0,
+						action: 'call',
+						amount: 20,
+						allIn: false,
+						decision: { grade: 'ok', equity: 0.4567, potOdds: 0.22 },
+					},
+				],
+			},
+			{
+				street: 'turn',
+				events: [
+					{
+						playerId: 0,
+						action: 'fold',
+						amount: 0,
+						allIn: false,
+						decision: { grade: 'miss', equity: 0.3, potOdds: 0.4 },
+					},
+				],
+			},
+			{
+				street: 'river',
+				events: [
+					{
+						playerId: 0,
+						action: 'raise',
+						amount: 40,
+						allIn: false,
+						decision: { grade: 'sharp', equity: 0.65, potOdds: 0.3 },
+					},
+				],
+			},
+		]);
+
+		const items = recapActionItems(elements['poker-recap']);
+		expect(items.length).toBe(3);
+		const stamps = items.map((item) => item.children?.[item.children.length - 1]);
+		// The stamp sits on the same item, after the action icon/amount.
+		expect(stamps.map((stamp) => stamp?.className)).toEqual([
+			'poker-recap-grade',
+			'poker-recap-grade',
+			'poker-recap-grade',
+		]);
+		// Each stamp belongs to the human's own action item.
+		expect(items.map((item) => item.dataset?.seat)).toEqual(['0', '0', '0']);
+		// Call: OK grade with HUD-matching rounded odds.
+		expect(stamps[0]?.textContent).toBe('👍');
+		expect(stamps[0]?.getAttribute?.('role')).toBe('img');
+		expect(stamps[0]?.getAttribute?.('aria-label')).toBe('OK · Equity ≈46% · Pot odds 22%');
+		expect(items[0].title as string).toBe('You · ✓ CALL 20 · OK · Equity ≈46% · Pot odds 22%');
+		// Fold facing a bet: miss with odds.
+		expect(stamps[1]?.textContent).toBe('⚠️');
+		expect(stamps[1]?.getAttribute?.('aria-label')).toBe('Miss · Equity ≈30% · Pot odds 40%');
+		expect(items[1].title as string).toBe('You · ✕ FOLD · Miss · Equity ≈30% · Pot odds 40%');
+		// Raise: sharp.
+		expect(stamps[2]?.textContent).toBe('⭐');
+		expect(stamps[2]?.getAttribute?.('aria-label')).toBe('Sharp · Equity ≈65% · Pot odds 30%');
+		expect(items[2].title as string).toBe('You · ↑ RAISE 40 · Sharp · Equity ≈65% · Pot odds 30%');
+	});
+
+	test('check, AI and timer-forced rows stay ungraded with no stamp', () => {
+		renderRecap([
+			{
+				street: 'preflop',
+				events: [
+					{ playerId: 0, action: 'check', amount: 0, allIn: false },
+					{ playerId: 1, action: 'call', amount: 20, allIn: false },
+					{ playerId: 0, action: 'fold', amount: 0, allIn: false },
+				],
+			},
+		]);
+
+		const items = recapActionItems(elements['poker-recap']);
+		expect(items.length).toBe(3);
+		for (const item of items) {
+			expect(item.children?.some((child) => child.className === 'poker-recap-grade')).toBe(false);
+		}
+		// Titles keep only the plain name/action copy.
+		expect(items[0].title as string).toBe('You · ✓ CHECK');
+		expect(items[1].title as string).toBe('Rival · ✓ CALL 20');
+		expect(items[2].title as string).toBe('You · ✕ FOLD');
+	});
+
+	test('mixed grades tally ⭐ 2/3 with an accessible label', () => {
+		const graded = (grade: 'sharp' | 'ok' | 'miss') => ({
+			playerId: 0,
+			action: 'call' as const,
+			amount: 10,
+			allIn: false,
+			decision: { grade, equity: 0.4, potOdds: 0.3 },
+		});
+		renderRecap([
+			{ street: 'preflop', events: [graded('sharp')] },
+			{ street: 'flop', events: [graded('miss')] },
+			{ street: 'turn', events: [graded('sharp')] },
+		]);
+
+		const tally = elements['recap-grade-tally'];
+		expect(tally.hidden as boolean).toBe(false);
+		expect(tally.textContent).toBe('⭐ 2/3');
+		expect(tally.getAttribute?.('aria-label')).toBe('2 of 3 decisions sharp');
+	});
+
+	test('an all-miss recap still shows ⭐ 0/N', () => {
+		renderRecap([
+			{
+				street: 'flop',
+				events: [
+					{
+						playerId: 0,
+						action: 'fold',
+						amount: 0,
+						allIn: false,
+						decision: { grade: 'miss', equity: 0.2, potOdds: null },
+					},
+					{
+						playerId: 0,
+						action: 'call',
+						amount: 10,
+						allIn: false,
+						decision: { grade: 'miss', equity: 0.1, potOdds: 0.5 },
+					},
+				],
+			},
+		]);
+
+		const tally = elements['recap-grade-tally'];
+		expect(tally.hidden as boolean).toBe(false);
+		expect(tally.textContent).toBe('⭐ 0/2');
+		expect(tally.getAttribute?.('aria-label')).toBe('0 of 2 decisions sharp');
+	});
+
+	test('a recap without graded decisions hides and clears the tally', () => {
+		renderRecap([
+			{
+				street: 'preflop',
+				events: [
+					{ playerId: 0, action: 'check', amount: 0, allIn: false },
+					{ playerId: 1, action: 'raise', amount: 30, allIn: false },
+				],
+			},
+		]);
+
+		const tally = elements['recap-grade-tally'];
+		expect(tally.hidden as boolean).toBe(true);
+		expect(tally.textContent).toBe('');
+		expect(tally.getAttribute?.('aria-label')).toBeNull();
+	});
+
+	test('a free fold shows check-free copy, never 100% odds', () => {
+		renderRecap([
+			{
+				street: 'preflop',
+				events: [
+					{
+						playerId: 0,
+						action: 'fold',
+						amount: 0,
+						allIn: false,
+						decision: { grade: 'miss', equity: 0.12, potOdds: null },
+					},
+				],
+			},
+		]);
+
+		const item = recapActionItems(elements['poker-recap'])[0];
+		const stamp = item.children?.[item.children.length - 1];
+		expect(stamp?.getAttribute?.('aria-label')).toBe('Miss · Equity ≈12% · Check is free');
+		const title = item.title as string;
+		expect(title).toBe('You · ✕ FOLD · Miss · Equity ≈12% · Check is free');
+		expect(title).not.toContain('Pot odds');
+		expect(title).not.toContain('100%');
+	});
+
+	test('an open raise is equity-only, never 100% odds', () => {
+		renderRecap([
+			{
+				street: 'preflop',
+				events: [
+					{
+						playerId: 0,
+						action: 'raise',
+						amount: 15,
+						allIn: false,
+						decision: { grade: 'sharp', equity: 0.66, potOdds: null },
+					},
+				],
+			},
+		]);
+
+		const item = recapActionItems(elements['poker-recap'])[0];
+		const stamp = item.children?.[item.children.length - 1];
+		expect(stamp?.getAttribute?.('aria-label')).toBe('Sharp · Equity ≈66%');
+		const title = item.title as string;
+		expect(title).toBe('You · ↑ RAISE 15 · Sharp · Equity ≈66%');
+		expect(title).not.toContain('Pot odds');
+		expect(title).not.toContain('100%');
+	});
+
+	test('stamp label, title and tally use the document locale', () => {
+		renderRecap(
+			[
+				{
+					street: 'flop',
+					events: [
+						{
+							playerId: 0,
+							action: 'call',
+							amount: 20,
+							allIn: false,
+							decision: { grade: 'ok', equity: 0.45, potOdds: 0.22 },
+						},
+						{
+							playerId: 0,
+							action: 'raise',
+							amount: 40,
+							allIn: false,
+							decision: { grade: 'sharp', equity: 0.6, potOdds: 0.25 },
+						},
+					],
+				},
+			],
+			'zh-Hant',
+		);
+
+		const items = recapActionItems(elements['poker-recap']);
+		expect(items[0].title as string).toBe('你 · ✓ 跟注 20 · 尚可 · 權益 ≈45% · 底池賠率 22%');
+		expect(items[0].children?.at(-1)?.getAttribute?.('aria-label')).toBe(
+			'尚可 · 權益 ≈45% · 底池賠率 22%',
+		);
+		const tally = elements['recap-grade-tally'];
+		expect(tally.textContent).toBe('⭐ 1/2');
+		expect(tally.getAttribute?.('aria-label')).toBe('2 個決策中 1 個精準');
+	});
+
+	test('a new recap overwrites the previous header tally', () => {
+		renderRecap([
+			{
+				street: 'flop',
+				events: [
+					{
+						playerId: 0,
+						action: 'call',
+						amount: 20,
+						allIn: false,
+						decision: { grade: 'sharp', equity: 0.6, potOdds: 0.22 },
+					},
+				],
+			},
+		]);
+		expect(elements['recap-grade-tally'].textContent).toBe('⭐ 1/1');
+		expect(elements['recap-hand'].textContent).toBe('#3');
+
+		// Reopen with a different, ungraded hand: no stale tally or number.
+		elements = mockDocument();
+		renderer = new PokerUIRenderer('cash');
+		renderer.renderHandRecap(
+			recapOf([{ street: 'flop', events: [] }], { handNumber: 4 }),
+			recapSeats,
+		);
+
+		const tally = elements['recap-grade-tally'];
+		expect(tally.hidden as boolean).toBe(true);
+		expect(tally.textContent).toBe('');
+		expect(tally.getAttribute?.('aria-label')).toBeNull();
+		expect(elements['recap-hand'].textContent).toBe('#4');
+	});
+});
+
 describe('PokerUIRenderer Sit & Go tournament UI', () => {
 	function sngDocument() {
 		// The mode comes from the constructor now — no poker-root sniffing.
@@ -1493,6 +1823,37 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 			handStartStacks,
 		});
 		expect(elements['poker-seat-2'].dataset?.eliminated).toBe('true');
+	});
+
+	test('Sit & Go hands stamp graded decisions with the same renderer', () => {
+		const elements = sngDocument();
+		const renderer = new PokerUIRenderer('sng');
+
+		renderer.renderHandRecap(
+			recapOf([
+				{
+					street: 'flop',
+					events: [
+						{
+							playerId: 0,
+							action: 'call',
+							amount: 20,
+							allIn: false,
+							decision: { grade: 'ok', equity: 0.45, potOdds: 0.22 },
+						},
+					],
+				},
+			]),
+			recapSeats,
+		);
+
+		const stamps = elements['poker-recap'].querySelectorAll?.('.poker-recap-grade') || [];
+		expect(stamps.length).toBe(1);
+		expect(stamps[0].getAttribute?.('role')).toBe('img');
+		expect(stamps[0].getAttribute?.('aria-label')).toBe('OK · Equity ≈45% · Pot odds 22%');
+		const tally = elements['recap-grade-tally'];
+		expect(tally.hidden as boolean).toBe(false);
+		expect(tally.textContent).toBe('⭐ 0/1');
 	});
 
 	test('cash seats never show an eliminated state', () => {

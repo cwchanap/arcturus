@@ -14,7 +14,7 @@ const createIsolatedPokerPage = (browser: Browser, baseURL?: string) =>
 test.describe('Poker turn flow smoke test', () => {
 	test('deal, human action, AI acts, next phase continues', async ({ browser, baseURL }) => {
 		// A 6-max hand runs several AI orbits per street; allow time for a full hand.
-		test.setTimeout(60000);
+		test.setTimeout(120000);
 		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
 		try {
 			await page.getByRole('button', { name: /configure/i }).click();
@@ -75,8 +75,9 @@ test.describe('Poker turn flow smoke test', () => {
 	});
 
 	test('manual fold in the recap carries exactly one grade stamp', async ({ browser, baseURL }) => {
-		// Human folds preflop, then five AIs finish the hand; keep it in budget.
-		test.setTimeout(60000);
+		// Human folds preflop, then five AIs finish the hand; the re-deal loop
+		// alone can burn ~60s of waits before the 45s recap wait, so budget both.
+		test.setTimeout(120000);
 		const { context, page } = await createIsolatedPokerPage(browser, baseURL);
 		try {
 			// A timer-forced fold is never graded; disable the turn timer so the

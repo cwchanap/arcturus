@@ -286,7 +286,7 @@ export const POKER_MESSAGES = defineMessages({
 		sharp: 'Sharp',
 		ok: 'OK',
 		miss: 'Miss',
-		gradeTally: '{sharp} of {graded} decisions sharp',
+		gradeTally: 'Sharp decisions: {sharp} of {graded}',
 		estimatedEquity: 'Equity ≈{percent}%',
 		tournamentChips: 'Tournament chips',
 		tournamentLevel: 'Level',

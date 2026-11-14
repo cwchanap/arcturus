@@ -75,11 +75,12 @@ export class HandRecapRecorder {
 	}
 
 	act(event: RecapEvent): void {
-		// Copy the decision too: the recorder owns all stored recap data.
-		this.recap?.streets.at(-1)?.events.push({
-			...event,
-			decision: event.decision ? { ...event.decision } : undefined,
-		});
+		// Copy the decision too, and only when present: the recorder owns all
+		// stored recap data, and ungraded events keep no `decision` key at all.
+		const { decision, ...rest } = event;
+		this.recap?.streets
+			.at(-1)
+			?.events.push(decision ? { ...rest, decision: { ...decision } } : rest);
 	}
 
 	finish(result: Pick<HandRecap, 'reveals' | 'showdown' | 'delta'>): HandRecap | null {

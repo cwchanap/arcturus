@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { gradeDecision } from './decisionGrade';
 import type { RecapAction } from './handRecap';
 
-// Boundary examples use fractions that survive binary floating point: the
-// boundary expressions mirror the grader's own arithmetic (potOdds ± margin),
-// so equality at an inclusive edge is exact, not approximate.
+// Boundary examples are exact in whole basis points, the unit the grader
+// compares in — inclusive edges hold even for inputs with binary
+// representation noise (e.g. 0.1 + 0.2 is not 0.3 as doubles).
 const ODDS = 0.25;
 
 describe('gradeDecision calls', () => {
@@ -59,6 +59,14 @@ describe('gradeDecision folds facing a bet', () => {
 	test('miss only above potOdds + 10 points', () => {
 		expect(gradeDecision({ action: 'fold', equity: 0.4, potOdds: ODDS, callAmount: 20 })).toBe(
 			'miss',
+		);
+	});
+
+	test('equity exactly at odds is ok even with noisy inputs', () => {
+		// 0.1 + 0.2 is 0.30000000000000004 as doubles: raw float compares put
+		// equity 0.3 strictly below odds and mis-graded this fold 'sharp'.
+		expect(gradeDecision({ action: 'fold', equity: 0.3, potOdds: 0.1 + 0.2, callAmount: 20 })).toBe(
+			'ok',
 		);
 	});
 });

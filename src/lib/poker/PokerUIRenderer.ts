@@ -73,11 +73,6 @@ const RECAP_STREET_KEYS = {
 } as const;
 
 const RECAP_ICONS: Record<RecapAction, string> = { fold: '×', check: '✓', call: '✓', raise: '↑' };
-const GRADE_KEYS: Record<DecisionGrade, MessageKey<typeof POKER_MESSAGES>> = {
-	sharp: 'sharp',
-	ok: 'ok',
-	miss: 'miss',
-};
 const GRADE_GLYPHS: Record<DecisionGrade, string> = { sharp: '⭐', ok: '👍', miss: '⚠️' };
 /** How long a rival's table-talk bubble stays before the renderer removes it. */
 const RIVAL_TALK_MS = 2_500;
@@ -622,7 +617,7 @@ export class PokerUIRenderer {
 	 */
 	private decisionDetails(decision: RecapDecision, action: RecapAction): string {
 		const parts = [
-			this.t(GRADE_KEYS[decision.grade]),
+			this.t(decision.grade),
 			this.t('estimatedEquity', { percent: Math.round(decision.equity * 100) }),
 		];
 		if (decision.potOdds !== null) {
@@ -689,9 +684,6 @@ export class PokerUIRenderer {
 		const sharpCount = gradedEvents.filter((event) => event.decision.grade === 'sharp').length;
 		const tally = document.getElementById('recap-grade-tally');
 		if (tally) {
-			// A generic span ignores aria-label; role="img" lets assistive
-			// technology announce the localized tally over the raw glyph.
-			tally.setAttribute('role', 'img');
 			tally.hidden = gradedEvents.length === 0;
 			if (gradedEvents.length === 0) {
 				tally.textContent = '';
@@ -730,11 +722,11 @@ export class PokerUIRenderer {
 				let gradeDetails: string | null = null;
 				if (event.decision) {
 					gradeDetails = this.decisionDetails(event.decision, event.action);
-					// role="img" + a real label: VoiceOver must speak the grade,
-					// not the emoji name. The glyph itself is the mobile UI.
+					// Decorative glyph only, like the action icon: the item title
+					// below already carries the full grade text, so a stamp label
+					// would make screen readers announce the same text twice.
 					const stamp = el('span', 'poker-recap-grade', GRADE_GLYPHS[event.decision.grade]);
-					stamp.setAttribute('role', 'img');
-					stamp.setAttribute('aria-label', gradeDetails);
+					stamp.setAttribute('aria-hidden', 'true');
 					item.appendChild(stamp);
 				}
 				const actionName =

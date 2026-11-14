@@ -36,7 +36,9 @@ jobs:
           exit 1
 
       - name: Type-check with astro check
-        run: bunx --bun astro check
+        # Node runtime (bin shebang): the cloudflare vite plugin's workerd
+        # socket fails under Bun on Linux (ECONNREFUSED during astro sync).
+        run: bunx astro check
 
       - name: Run ESLint
         run: bun run lint

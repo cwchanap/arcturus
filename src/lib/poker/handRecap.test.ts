@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { HandRecapRecorder } from './handRecap';
+import type { RecapDecision } from './handRecap';
 import type { Card } from './types';
 
 const c = (rank: number, suit: Card['suit']): Card => ({ rank, suit, value: String(rank) });
@@ -60,7 +61,7 @@ describe('HandRecapRecorder', () => {
 	test('stores its own decision copy, preserving potOdds null through finish', () => {
 		const recorder = new HandRecapRecorder();
 		recorder.start(1, []);
-		const decision = { grade: 'ok' as const, equity: 0.3, potOdds: null };
+		const decision: RecapDecision = { grade: 'ok', equity: 0.3, potOdds: null };
 		recorder.act({ playerId: 0, action: 'raise', amount: 40, allIn: false, decision });
 		// Later caller-side mutations must not rewrite the recorded grade.
 		decision.grade = 'miss';

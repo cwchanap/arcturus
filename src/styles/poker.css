@@ -582,12 +582,10 @@ a.poker-format:hover {
 	gap: 12px;
 	border-bottom: 1px solid var(--poker-line);
 }
-/* The recap header carries title + delta + tally + close, so it is the one
-   drawer header allowed to wrap on narrow phones (320–390px); the title
-   shrinks instead of pushing the close button out of reach. */
-#recap-panel > header {
-	flex-wrap: wrap;
-}
+/* The recap header carries title + delta + tally + close. On narrow phones
+   (320–390px) the title wraps inside its own flex item instead of letting
+   the row wrap — flex-wrap would drop the close button onto a second row,
+   since line breaking uses the title's pre-shrink width. */
 #recap-panel > header h2 {
 	flex: 1 1 auto;
 	min-width: 0;
@@ -1989,8 +1987,18 @@ a.poker-format:hover {
 	font-size: 14px;
 	line-height: 1;
 }
-/* Fold dimming lives on the non-grade children so a folded grade stamp
-   stays fully opaque; parent opacity could not be cancelled by a child. */
+.poker-recap-grade {
+	font-size: 14px;
+	line-height: 1;
+}
+/* Fold dimming lives on pre-dimmed pill colors and the non-grade children,
+   so a folded grade stamp stays fully opaque; parent opacity could not be
+   cancelled by a child. The border is --poker-line at ~55% strength, the
+   fill #0d1412 blended 55% over the drawer background. */
+.poker-recap-action[data-action='fold'] {
+	border-color: rgb(200 165 92 / 19%);
+	background: #0a100e;
+}
 .poker-recap-action[data-action='fold'] .poker-recap-avatar,
 .poker-recap-action[data-action='fold'] .poker-recap-icon,
 .poker-recap-action[data-action='fold'] .poker-recap-amount {

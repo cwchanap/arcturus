@@ -231,6 +231,11 @@ function mockDocument(locale: Locale = 'en') {
 		elements[id] = createMockContainerWithSlots(slotCounts[id]);
 	});
 
+	// poker.astro gives the tally its role statically in markup, so the mock
+	// element carries it from creation rather than from any render.
+	elements['recap-grade-tally'] = createMockElement();
+	elements['recap-grade-tally'].setAttribute?.('role', 'img');
+
 	(global as unknown as { document: unknown }).document = {
 		documentElement: { dataset: { locale } },
 		getElementById: (id: string) => {
@@ -1330,18 +1335,19 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		]);
 		// Each stamp belongs to the human's own action item.
 		expect(items.map((item) => item.dataset?.seat)).toEqual(['0', '0', '0']);
-		// Call: OK grade with HUD-matching rounded odds.
+		// Stamps are decorative glyphs like the action icon: aria-hidden, with
+		// the full grade text announced once via the item title/description.
 		expect(stamps[0]?.textContent).toBe('👍');
-		expect(stamps[0]?.getAttribute?.('role')).toBe('img');
-		expect(stamps[0]?.getAttribute?.('aria-label')).toBe('OK · Equity ≈46% · Pot odds 22%');
+		expect(stamps[0]?.getAttribute?.('aria-hidden')).toBe('true');
+		expect(stamps[0]?.getAttribute?.('aria-label')).toBeNull();
 		expect(items[0].title as string).toBe('You · ✓ CALL 20 · OK · Equity ≈46% · Pot odds 22%');
 		// Fold facing a bet: miss with odds.
 		expect(stamps[1]?.textContent).toBe('⚠️');
-		expect(stamps[1]?.getAttribute?.('aria-label')).toBe('Miss · Equity ≈30% · Pot odds 40%');
+		expect(stamps[1]?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(items[1].title as string).toBe('You · ✕ FOLD · Miss · Equity ≈30% · Pot odds 40%');
 		// Raise: sharp.
 		expect(stamps[2]?.textContent).toBe('⭐');
-		expect(stamps[2]?.getAttribute?.('aria-label')).toBe('Sharp · Equity ≈65% · Pot odds 30%');
+		expect(stamps[2]?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(items[2].title as string).toBe('You · ↑ RAISE 40 · Sharp · Equity ≈65% · Pot odds 30%');
 	});
 
@@ -1386,7 +1392,7 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		expect(tally.hidden as boolean).toBe(false);
 		expect(tally.textContent).toBe('⭐ 2/3');
 		expect(tally.getAttribute?.('role')).toBe('img');
-		expect(tally.getAttribute?.('aria-label')).toBe('2 of 3 decisions sharp');
+		expect(tally.getAttribute?.('aria-label')).toBe('Sharp decisions: 2 of 3');
 	});
 
 	test('an all-miss recap still shows ⭐ 0/N', () => {
@@ -1415,7 +1421,7 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		const tally = elements['recap-grade-tally'];
 		expect(tally.hidden as boolean).toBe(false);
 		expect(tally.textContent).toBe('⭐ 0/2');
-		expect(tally.getAttribute?.('aria-label')).toBe('0 of 2 decisions sharp');
+		expect(tally.getAttribute?.('aria-label')).toBe('Sharp decisions: 0 of 2');
 	});
 
 	test('a recap without graded decisions hides and clears the tally', () => {
@@ -1453,7 +1459,8 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 
 		const item = recapActionItems(elements['poker-recap'])[0];
 		const stamp = item.children?.[item.children.length - 1];
-		expect(stamp?.getAttribute?.('aria-label')).toBe('Miss · Equity ≈12% · Check is free');
+		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
+		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
 		const title = item.title as string;
 		expect(title).toBe('You · ✕ FOLD · Miss · Equity ≈12% · Check is free');
 		expect(title).not.toContain('Pot odds');
@@ -1478,7 +1485,8 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 
 		const item = recapActionItems(elements['poker-recap'])[0];
 		const stamp = item.children?.[item.children.length - 1];
-		expect(stamp?.getAttribute?.('aria-label')).toBe('Sharp · Equity ≈66%');
+		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
+		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
 		const title = item.title as string;
 		expect(title).toBe('You · ↑ RAISE 15 · Sharp · Equity ≈66%');
 		expect(title).not.toContain('Pot odds');
@@ -1513,9 +1521,7 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 
 		const items = recapActionItems(elements['poker-recap']);
 		expect(items[0].title as string).toBe('你 · ✓ 跟注 20 · 尚可 · 權益 ≈45% · 底池賠率 22%');
-		expect(items[0].children?.at(-1)?.getAttribute?.('aria-label')).toBe(
-			'尚可 · 權益 ≈45% · 底池賠率 22%',
-		);
+		expect(items[0].children?.at(-1)?.getAttribute?.('aria-hidden')).toBe('true');
 		const tally = elements['recap-grade-tally'];
 		expect(tally.textContent).toBe('⭐ 1/2');
 		expect(tally.getAttribute?.('aria-label')).toBe('2 個決策中 1 個精準');
@@ -1849,8 +1855,7 @@ describe('PokerUIRenderer Sit & Go tournament UI', () => {
 
 		const stamps = elements['poker-recap'].querySelectorAll?.('.poker-recap-grade') || [];
 		expect(stamps.length).toBe(1);
-		expect(stamps[0].getAttribute?.('role')).toBe('img');
-		expect(stamps[0].getAttribute?.('aria-label')).toBe('OK · Equity ≈45% · Pot odds 22%');
+		expect(stamps[0].getAttribute?.('aria-hidden')).toBe('true');
 		const tally = elements['recap-grade-tally'];
 		expect(tally.hidden as boolean).toBe(false);
 		expect(tally.textContent).toBe('⭐ 0/1');

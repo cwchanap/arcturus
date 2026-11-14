@@ -157,9 +157,6 @@ export class PokerGame {
 	private handSmallBlind = SMALL_BLIND;
 	private handBigBlind = BIG_BLIND;
 	private isProcessingAction = false;
-	// Set synchronously around actOnTimeout's programmatic clicks so human
-	// handlers record the forced action without grade metadata.
-	private timeoutAction = false;
 	private aiConfigs: Map<number, AIConfig> = new Map();
 	private aiRandom?: () => number;
 	// Successful rival bubbles shown this hand; the renderer owns the DOM and
@@ -380,14 +377,12 @@ export class PokerGame {
 			this.startTurnTimer();
 			return;
 		}
-		const check = document.getElementById('btn-check') as HTMLButtonElement | null;
-		this.timeoutAction = true;
-		try {
-			if (check && !check.hidden && !check.disabled) check.click();
-			else document.getElementById('btn-fold')?.click();
-		} finally {
-			this.timeoutAction = false;
-		}
+		// Invoke the action directly instead of clicking a button: a forced
+		// action is never deliberate, so it skips grading rather than
+		// smuggling its origin through the click handlers.
+		if (!this.humanCanAct()) return;
+		if (this.getRaiseBounds().call === 0) this.humanCheck();
+		else this.humanFold();
 	}
 
 	/** The human's turn starts or ends with each button refresh. */
@@ -418,15 +413,16 @@ export class PokerGame {
 	/**
 	 * Grading metadata for one deliberate human action, read before any state
 	 * mutation. Same cap and contestable pot as the live HUD, including
-	 * short-stack all-ins; undefined for timer-forced actions (the action
-	 * still records, ungraded).
+	 * short-stack all-ins; `callAmount` is the value the caller just
+	 * validated, so nothing is recomputed here. Timer-forced actions never
+	 * reach this — actOnTimeout calls the action helpers directly, ungraded.
 	 */
-	private snapshotHumanDecision(action: Exclude<RecapAction, 'check'>): RecapDecision | undefined {
-		// Timer clicks are never deliberate; check before estimating anything.
-		if (this.timeoutAction) return undefined;
+	private snapshotHumanDecision(
+		action: Exclude<RecapAction, 'check'>,
+		callAmount: number,
+	): RecapDecision {
 		const human = this.players[0];
-		const call = this.getRaiseBounds().call;
-		const callCap = Math.min(call, human.chips);
+		const callCap = Math.min(callAmount, human.chips);
 		const equity = estimateVisibleEquity(this.buildVisibleGameContext(human)).equity;
 		const potOdds =
 			callCap > 0 ? calculatePotOdds(callCap, contestablePot(this.players, human, callCap)) : null;
@@ -434,6 +430,22 @@ export class PokerGame {
 		// raises ignore odds. Never persist or show 1.0 as free-card odds.
 		const grade = gradeDecision({ action, equity, potOdds: potOdds ?? 1, callAmount: callCap });
 		return { grade, equity, potOdds };
+	}
+
+	/**
+	 * Snapshot grading for a manual click; a grading failure degrades the
+	 * action to ungraded rather than aborting it — the snapshot only feeds
+	 * the recap, so it must never take a real fold/call/raise down with it.
+	 */
+	private gradedDecision(
+		action: Exclude<RecapAction, 'check'>,
+		callAmount: number,
+	): RecapDecision | undefined {
+		try {
+			return this.snapshotHumanDecision(action, callAmount);
+		} catch {
+			return undefined;
+		}
 	}
 
 	/** Show an AI decision on its seat and note it. */
@@ -1587,12 +1599,7 @@ export class PokerGame {
 	private updateActionButtons() {
 		const human = this.players[0];
 		const active = this.bettingRound !== null;
-		const canAct =
-			active &&
-			this.currentPlayerIndex === 0 &&
-			!this.isProcessingAction &&
-			!human.folded &&
-			!human.isAllIn;
+		const canAct = this.humanCanAct();
 		this.syncHumanTurn(canAct);
 		const { call, canRaise } = this.getRaiseBounds();
 		const enabled = {
@@ -1885,125 +1892,133 @@ export class PokerGame {
 		await this.dealNewHand();
 	}
 
+	/**
+	 * The single gate every human action shares — all four action buttons,
+	 * the timeout path and updateActionButtons run through it, so no
+	 * synthetic or stale click can act after the round ends, once folded,
+	 * or while all-in.
+	 */
+	private humanCanAct(): boolean {
+		const human = this.players[0];
+		return (
+			this.bettingRound !== null &&
+			this.currentPlayerIndex === 0 &&
+			!this.isProcessingAction &&
+			!human.folded &&
+			!human.isAllIn
+		);
+	}
+
+	private humanFold(decision?: RecapDecision): void {
+		this.isProcessingAction = true;
+		this.updateActionButtons();
+		try {
+			this.players[0] = foldPlayer(this.players[0]);
+			this.noteAction(0, 'fold', 0, decision);
+			this.ui.updateUI(this.pot, this.players[0]);
+			this.updateGameStatus(this.t('statusYouFolded'));
+			// Sync immediately — human chip count is now locked in for this hand
+			this.settleHand('loss');
+		} finally {
+			this.isProcessingAction = false;
+		}
+		this.advanceTurn();
+	}
+
+	private humanCheck(): void {
+		// Re-checked here so the shared timeout path cannot check into a bet.
+		if (this.getRaiseBounds().call > 0) return;
+		this.isProcessingAction = true;
+		this.updateActionButtons();
+		try {
+			this.players[0] = { ...this.players[0], hasActed: true };
+			this.noteAction(0, 'check');
+			this.updateGameStatus(this.t('statusYouChecked'));
+		} finally {
+			this.scheduleTurnTransition(200, () => {
+				this.isProcessingAction = false;
+				this.advanceTurn();
+			});
+		}
+	}
+
+	private humanCall(callAmount: number, decision?: RecapDecision): void {
+		this.isProcessingAction = true;
+		this.updateActionButtons();
+		try {
+			// placeBet() clamps to remaining chips and marks the player all-in.
+			const actualCall = Math.min(callAmount, this.players[0].chips);
+			this.players[0] = placeBet(this.players[0], callAmount);
+			this.noteAction(0, 'call', actualCall, decision);
+			this.pot = calculatePot(this.players);
+			this.ui.updateUI(this.pot, this.players[0]);
+			const allInNote = this.players[0].isAllIn;
+			this.updateGameStatus(
+				this.t(allInNote ? 'statusYouCalledAllIn' : 'statusYouCalled', {
+					amount: formatChips(actualCall, this.locale),
+				}),
+			);
+		} finally {
+			this.isProcessingAction = false;
+		}
+		this.advanceTurn();
+	}
+
+	private humanRaise(
+		raiseAmount: number,
+		call: number,
+		minimumRaise: number,
+		decision?: RecapDecision,
+	): void {
+		this.isProcessingAction = true;
+		this.updateActionButtons();
+		try {
+			this.players[0] = placeBet(this.players[0], call + raiseAmount);
+			this.noteAction(0, 'raise', raiseAmount, decision);
+			// A short all-in does not reduce the next full raise's minimum.
+			if (raiseAmount >= minimumRaise) {
+				this.lastRaiseAmount = raiseAmount;
+				this.minimumBet = raiseAmount;
+			}
+			this.pot = calculatePot(this.players);
+			this.ui.updateUI(this.pot, this.players[0]);
+			this.updateGameStatus(
+				this.t('statusYouRaised', { amount: formatChips(raiseAmount, this.locale) }),
+			);
+		} finally {
+			this.isProcessingAction = false;
+		}
+		this.advanceTurn();
+	}
+
 	private attachEventListeners() {
 		document.getElementById('btn-deal')?.addEventListener('click', () => this.dealNewHand());
 		document.getElementById('btn-rebuy')?.addEventListener('click', () => this.rebuyBustedGuest());
 
 		document.getElementById('btn-fold')?.addEventListener('click', () => {
-			const human = this.players[0];
-			if (
-				this.isProcessingAction ||
-				this.currentPlayerIndex !== 0 ||
-				this.bettingRound === null ||
-				human.folded ||
-				human.isAllIn
-			)
-				return;
-			this.isProcessingAction = true;
-			this.updateActionButtons();
-
-			try {
-				const decision = this.snapshotHumanDecision('fold');
-				this.players[0] = foldPlayer(this.players[0]);
-				this.noteAction(0, 'fold', 0, decision);
-				this.ui.updateUI(this.pot, this.players[0]);
-				this.updateGameStatus(this.t('statusYouFolded'));
-				// Sync immediately — human chip count is now locked in for this hand
-				this.settleHand('loss');
-			} finally {
-				this.isProcessingAction = false;
-			}
-			this.advanceTurn();
+			if (!this.humanCanAct()) return;
+			this.humanFold(this.gradedDecision('fold', this.getRaiseBounds().call));
 		});
 
 		document.getElementById('btn-check')?.addEventListener('click', () => {
-			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
-			const highestBet = getHighestBet(this.players);
-			const callAmount = getCallAmount(this.players[0], highestBet);
-
-			if (callAmount > 0) {
-				return;
-			}
-
-			this.isProcessingAction = true;
-			this.updateActionButtons();
-			try {
-				this.players[0] = { ...this.players[0], hasActed: true };
-				this.noteAction(0, 'check');
-				this.updateGameStatus(this.t('statusYouChecked'));
-			} finally {
-				this.scheduleTurnTransition(200, () => {
-					this.isProcessingAction = false;
-					this.advanceTurn();
-				});
-			}
+			if (!this.humanCanAct()) return;
+			this.humanCheck();
 		});
 
 		document.getElementById('btn-call')?.addEventListener('click', () => {
-			if (this.isProcessingAction || this.currentPlayerIndex !== 0) return;
-			const highestBet = getHighestBet(this.players);
-			const callAmount = getCallAmount(this.players[0], highestBet);
-
-			if (callAmount <= 0) {
-				return;
-			}
-
-			this.isProcessingAction = true;
-			this.updateActionButtons();
-			try {
-				// placeBet() clamps to remaining chips and marks the player all-in.
-				const decision = this.snapshotHumanDecision('call');
-				const actualCall = Math.min(callAmount, this.players[0].chips);
-				this.players[0] = placeBet(this.players[0], callAmount);
-				this.noteAction(0, 'call', actualCall, decision);
-				this.pot = calculatePot(this.players);
-				this.ui.updateUI(this.pot, this.players[0]);
-				const allInNote = this.players[0].isAllIn;
-				this.updateGameStatus(
-					this.t(allInNote ? 'statusYouCalledAllIn' : 'statusYouCalled', {
-						amount: formatChips(actualCall, this.locale),
-					}),
-				);
-			} finally {
-				this.isProcessingAction = false;
-			}
-			this.advanceTurn();
+			if (!this.humanCanAct()) return;
+			const callAmount = this.getRaiseBounds().call;
+			if (callAmount <= 0) return;
+			this.humanCall(callAmount, this.gradedDecision('call', callAmount));
 		});
 
 		document.getElementById('btn-raise')?.addEventListener('click', () => {
-			const human = this.players[0];
-			if (
-				this.isProcessingAction ||
-				this.currentPlayerIndex !== 0 ||
-				this.bettingRound === null ||
-				human.folded ||
-				human.isAllIn
-			)
-				return;
+			if (!this.humanCanAct()) return;
 			const raiseAmount = Number((document.getElementById('bet-slider') as HTMLInputElement).value);
 			const { call, min, max, minimumRaise, canRaise } = this.getRaiseBounds();
 			if (!canRaise || !Number.isInteger(raiseAmount) || raiseAmount < min || raiseAmount > max)
 				return;
-			this.isProcessingAction = true;
-			this.updateActionButtons();
-			try {
-				const decision = this.snapshotHumanDecision('raise');
-				this.players[0] = placeBet(human, call + raiseAmount);
-				this.noteAction(0, 'raise', raiseAmount, decision);
-				// A short all-in does not reduce the next full raise's minimum.
-				if (raiseAmount >= minimumRaise) {
-					this.lastRaiseAmount = raiseAmount;
-					this.minimumBet = raiseAmount;
-				}
-				this.pot = calculatePot(this.players);
-				this.ui.updateUI(this.pot, this.players[0]);
-				this.updateGameStatus(
-					this.t('statusYouRaised', { amount: formatChips(raiseAmount, this.locale) }),
-				);
-			} finally {
-				this.isProcessingAction = false;
-			}
-			this.advanceTurn();
+			this.humanRaise(raiseAmount, call, minimumRaise, this.gradedDecision('raise', call));
 		});
 
 		const slider = document.getElementById('bet-slider') as HTMLInputElement | null;

@@ -24,12 +24,17 @@ export interface DecisionInput {
 	callAmount: number;
 }
 
-// Grade thresholds as fractions, kept together; not user settings.
-const CALL_SHARP_MARGIN = 0.05;
-const CALL_OK_MARGIN = 0.05;
-const FOLD_MISS_MARGIN = 0.1;
-const RAISE_SHARP = 0.55;
-const RAISE_OK = 0.35;
+// Grade thresholds in basis points (1 bp = 1/100 of a percent), kept
+// together; not user settings. Whole basis points keep the inclusive edges
+// exact — summed fractional margins like `potOdds + 0.05` would leave the
+// boundary grades to binary rounding noise.
+const CALL_SHARP_MARGIN_BPS = 500;
+const CALL_OK_MARGIN_BPS = 500;
+const FOLD_MISS_MARGIN_BPS = 1000;
+const RAISE_SHARP_BPS = 5500;
+const RAISE_OK_BPS = 3500;
+
+const toBasisPoints = (fraction: number) => Math.round(fraction * 10_000);
 
 export function gradeDecision({
 	action,
@@ -37,20 +42,22 @@ export function gradeDecision({
 	potOdds,
 	callAmount,
 }: DecisionInput): DecisionGrade {
+	const equityBps = toBasisPoints(equity);
+	const potOddsBps = toBasisPoints(potOdds);
 	if (action === 'fold') {
 		// Free-fold guard first: checking is free, so folding away is a miss
 		// before any odds comparison (callers may pass a fallback potOdds here).
 		if (callAmount === 0) return 'miss';
-		if (equity < potOdds) return 'sharp';
-		if (equity <= potOdds + FOLD_MISS_MARGIN) return 'ok';
+		if (equityBps < potOddsBps) return 'sharp';
+		if (equityBps <= potOddsBps + FOLD_MISS_MARGIN_BPS) return 'ok';
 		return 'miss';
 	}
 	if (action === 'raise') {
-		if (equity >= RAISE_SHARP) return 'sharp';
-		if (equity >= RAISE_OK) return 'ok';
+		if (equityBps >= RAISE_SHARP_BPS) return 'sharp';
+		if (equityBps >= RAISE_OK_BPS) return 'ok';
 		return 'miss';
 	}
-	if (equity >= potOdds + CALL_SHARP_MARGIN) return 'sharp';
-	if (equity >= potOdds - CALL_OK_MARGIN) return 'ok';
+	if (equityBps >= potOddsBps + CALL_SHARP_MARGIN_BPS) return 'sharp';
+	if (equityBps >= potOddsBps - CALL_OK_MARGIN_BPS) return 'ok';
 	return 'miss';
 }

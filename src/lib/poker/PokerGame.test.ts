@@ -1921,12 +1921,14 @@ describe('PokerGame human call all-in via UI', () => {
 		const game = new PokerGame() as unknown as {
 			players: Player[];
 			currentPlayerIndex: number;
+			bettingRound: string | null;
 			isProcessingAction: boolean;
 			pot: number;
 			processAITurn: () => Promise<void>;
 		};
 
 		// Human's turn, facing a bet larger than their stack.
+		game.bettingRound = 'preflop';
 		game.currentPlayerIndex = 0;
 		game.players[0] = { ...game.players[0], chips: 30, currentBet: 0, folded: false };
 		game.players[1] = { ...game.players[1], currentBet: 100, folded: false };
@@ -5710,14 +5712,19 @@ describe('Poker human decision grades', () => {
 	});
 
 	test('checks record no grade metadata', () => {
-		const { elements, game } = setup();
-		game.recap.start(1, []);
-		faceBet(game, 0);
-		elements['btn-check'].click?.();
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game } = setup();
+			game.recap.start(1, []);
+			faceBet(game, 0);
+			elements['btn-check'].click?.();
 
-		const event = finishRecap(game)?.streets[0].events[0];
-		expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'check' }));
-		expect(event?.decision).toBeUndefined();
+			const event = finishRecap(game)?.streets[0].events[0];
+			expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'check' }));
+			expect(event?.decision).toBeUndefined();
+		} finally {
+			timers.restore();
+		}
 	});
 
 	test('AI actions stay ungraded', () => {
@@ -5757,14 +5764,18 @@ describe('Poker human decision grades', () => {
 		}
 	});
 
-	test('synthetic folds after the round ends, while folded, or all-in compute no snapshot', () => {
-		// After the betting round ends.
+	test('synthetic clicks after the round ends, while folded, or all-in act and grade nothing', () => {
+		// After the betting round ends: fold, call and check are all refused.
 		const ended = setup();
 		ended.game.recap.start(1, []);
 		faceBet(ended.game, 20);
 		ended.game.bettingRound = null;
 		ended.elements['btn-fold'].click?.();
+		ended.elements['btn-call'].click?.();
+		ended.elements['btn-check'].click?.();
 		expect(ended.game.players[0].folded).toBe(false);
+		expect(ended.game.players[0].hasActed).toBe(false);
+		expect(ended.game.players[0].chips).toBe(500);
 		expect(finishRecap(ended.game)?.streets[0].events).toEqual([]);
 
 		// While already folded.
@@ -5773,7 +5784,18 @@ describe('Poker human decision grades', () => {
 		faceBet(folded.game, 20);
 		folded.game.players[0] = { ...folded.game.players[0], folded: true };
 		folded.elements['btn-fold'].click?.();
+		folded.elements['btn-call'].click?.();
+		expect(folded.game.players[0].chips).toBe(500);
 		expect(finishRecap(folded.game)?.streets[0].events).toEqual([]);
+
+		// While folded facing no bet, a synthetic check is still refused.
+		const foldedFree = setup();
+		foldedFree.game.recap.start(1, []);
+		faceBet(foldedFree.game, 0);
+		foldedFree.game.players[0] = { ...foldedFree.game.players[0], folded: true };
+		foldedFree.elements['btn-check'].click?.();
+		expect(foldedFree.game.players[0].hasActed).toBe(false);
+		expect(finishRecap(foldedFree.game)?.streets[0].events).toEqual([]);
 
 		// While all-in.
 		const allIn = setup();

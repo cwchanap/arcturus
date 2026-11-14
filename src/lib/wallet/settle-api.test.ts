@@ -24,7 +24,7 @@ function context({
 	return {
 		locals: {
 			session: session ? ({ user: { id: 'user-1' } } as App.Locals['session']) : null,
-			runtime: { env: db ? { DB: db } : {} },
+			env: db ? { DB: db } : {},
 		},
 		request: new Request('https://arcturus.example/api/wallet/settle', {
 			method: 'POST',

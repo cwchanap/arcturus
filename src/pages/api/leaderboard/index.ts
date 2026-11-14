@@ -34,7 +34,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
 	}
 
 	// Database binding check (Cloudflare Workers pattern)
-	const dbBinding = locals.runtime?.env?.DB ?? null;
+	const dbBinding = locals.env?.DB ?? null;
 	if (!dbBinding) {
 		return jsonResponse({ error: 'Database unavailable' }, { status: 500 });
 	}

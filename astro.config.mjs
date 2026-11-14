@@ -14,14 +14,6 @@ export default defineConfig({
 		// For a casino app with minimal image needs, passthrough is sufficient.
 		// Images are served as-is; optimize source assets at build time if needed.
 		imageService: 'passthrough',
-		platformProxy: {
-			enabled: true,
-		},
-		// Custom entry re-exports Durable Object classes so wrangler can bind them.
-		workerEntryPoint: {
-			path: 'src/worker.ts',
-			namedExports: ['MultiplayerPokerRoom'],
-		},
 	}),
 	server: {
 		port: 2000,

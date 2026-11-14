@@ -26,7 +26,7 @@ export function createStatisticsGetHandler(
 	return async ({ locals }) => {
 		if (!locals.session) return jsonResponse({ error: 'Unauthorized' }, { status: 401 });
 
-		const binding = locals.runtime?.env?.DB ?? null;
+		const binding = locals.env?.DB ?? null;
 		if (!binding) {
 			return jsonResponse({ error: 'Unable to load player statistics' }, { status: 500 });
 		}

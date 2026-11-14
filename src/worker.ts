@@ -1,25 +1,16 @@
-// Custom Cloudflare Worker entry point for Astro.
-// Mirrors @astrojs/cloudflare/entrypoints/server.js and additionally re-exports
-// Durable Object classes so wrangler can resolve them via bindings.
+// Custom Cloudflare Worker entry (Astro 6 / @astrojs/cloudflare v13).
+// The adapter's handle() owns the Astro app; this entry adds the cron
+// scheduled() handler and re-exports the Durable Object class so wrangler
+// can resolve the MULTIPLAYER_POKER_ROOMS binding.
 
-import { App } from 'astro/app';
 import { handle } from '@astrojs/cloudflare/handler';
-import {
-	runRetentionCleanup,
-	runScheduledJobs,
-	type ScheduledJobDeps,
-	type ScheduledJobEnv,
-} from './server/cleanup';
+import { runRetentionCleanup, runScheduledJobs, type ScheduledJobDeps } from './server/cleanup';
 import { MultiplayerPokerRoom } from './server/mp/multiplayer-poker-room';
 import { runBlackjackRunExpiration } from './server/blackjack-run/expiration';
 import { createBlackjackRunRepository } from './server/blackjack-run/repository';
 import { createBlackjackRunService } from './server/blackjack-run/service';
 
-interface AstroManifest {
-	[key: string]: unknown;
-}
-
-type WorkerEnv = ScheduledJobEnv;
+type WorkerEnv = Cloudflare.Env;
 
 const scheduledJobDeps: ScheduledJobDeps = {
 	retentionCleanup: runRetentionCleanup,
@@ -51,30 +42,16 @@ const scheduledJobDeps: ScheduledJobDeps = {
 	},
 };
 
-export function createExports(manifest: AstroManifest) {
-	const app = new App(manifest as ConstructorParameters<typeof App>[0]);
-	const fetch = async (
-		request: Request,
-		env: WorkerEnv,
-		context: ExecutionContext,
-	): Promise<Response> => {
-		return await handle(
-			manifest as Parameters<typeof handle>[0],
-			app,
-			request as unknown as Parameters<typeof handle>[2],
-			env as Parameters<typeof handle>[3],
-			context,
-		);
-	};
+export { MultiplayerPokerRoom };
+
+export default {
+	async fetch(request, env: WorkerEnv, context) {
+		return handle(request, env, context);
+	},
 	// Cron Trigger handler — runs the retention cleanup then expires
 	// Blackjack runs. Each job has an independent error boundary in
 	// runScheduledJobs.
-	const scheduled = async (
-		_controller: ScheduledController,
-		env: WorkerEnv,
-		_ctx: ExecutionContext,
-	): Promise<void> => {
-		await runScheduledJobs(env, scheduledJobDeps);
-	};
-	return { default: { fetch, scheduled }, MultiplayerPokerRoom };
-}
+	async scheduled(_controller: ScheduledController, env: WorkerEnv, _ctx: ExecutionContext) {
+		await runScheduledJobs({ DB: env.DB }, scheduledJobDeps);
+	},
+} satisfies ExportedHandler<WorkerEnv>;

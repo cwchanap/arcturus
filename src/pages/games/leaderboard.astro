@@ -23,7 +23,7 @@ const locale = Astro.locals.locale;
 const t = leaderboardTranslator(locale);
 
 // Handle build-time and runtime edge cases (consistent with missions/index.astro)
-if (!session || !Astro.locals.runtime?.env?.DB) {
+if (!session || !Astro.locals.env?.DB) {
 	if (!session) {
 		return Astro.redirect('/signin');
 	}
@@ -32,7 +32,10 @@ if (!session || !Astro.locals.runtime?.env?.DB) {
 }
 
 const user = session.user;
-const dbBinding = Astro.locals.runtime.env.DB;
+const dbBinding = Astro.locals.env?.DB;
+if (!dbBinding) {
+	return new Response('Service temporarily unavailable', { status: 503 });
+}
 
 // Parse query parameters for tab and metric selection
 const selectedTabRaw = Astro.url.searchParams.get('game') || 'all';

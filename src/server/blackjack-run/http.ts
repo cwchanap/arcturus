@@ -201,7 +201,7 @@ function parseLimit(raw: string | null, min: number, max: number, defaultValue: 
 }
 
 function serviceFor(deps: BlackjackRunHttpHandlerDeps, locals: App.Locals): BlackjackRunService {
-	const db = locals.runtime?.env?.DB;
+	const db = locals.env?.DB;
 	if (!db) throw new BlackjackRunServiceError('INTERNAL_ERROR');
 	return deps.createService({ db });
 }

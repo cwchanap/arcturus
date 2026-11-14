@@ -2,8 +2,7 @@ import { createAuth } from '../../../lib/auth';
 import type { APIRoute } from 'astro';
 
 export const ALL: APIRoute = async (context) => {
-	const runtime = context.locals.runtime;
-	const env = runtime?.env;
+	const env = context.locals.env;
 	const db: D1Database | null = env?.DB || null;
 
 	if (!db || !env) {

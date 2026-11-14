@@ -35,7 +35,7 @@ function context({
 	return {
 		locals: {
 			user,
-			runtime: { env: { DB: db } },
+			env: { DB: db },
 		},
 		request: new Request('https://arcturus.example/api/roulette/spin', {
 			method: 'POST',
@@ -472,7 +472,7 @@ describe('POST /api/roulette/spin - validation error paths', () => {
 		const response = await handler({
 			locals: {
 				user: { id: 'user-1' },
-				runtime: { env: {} },
+				env: {},
 			},
 			request: new Request('https://arcturus.example/api/roulette/spin', {
 				method: 'POST',

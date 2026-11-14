@@ -18,7 +18,7 @@ export function createPostHandler({
 		const user = locals.user;
 		if (!user?.id) return Response.json({ error: 'UNAUTHORIZED' }, { status: 401 });
 
-		const d1 = locals.runtime?.env?.DB;
+		const d1 = locals.env?.DB;
 		if (!d1) return Response.json({ error: 'DATABASE_UNAVAILABLE' }, { status: 500 });
 
 		try {

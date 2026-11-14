@@ -16,9 +16,10 @@ Arcturus is a play-money casino and game project built as one Astro application 
 // ❌ WRONG - process.env doesn't exist in Cloudflare Workers
 const db = process.env.DB;
 
-// ✅ CORRECT - Always use Astro.locals.runtime.env
-const db = Astro.locals.runtime.env.DB;
-const secret = Astro.locals.runtime.env.BETTER_AUTH_SECRET;
+// ✅ CORRECT - Read worker bindings from locals.env (set by middleware
+// from cloudflare:workers in Astro 6 / adapter v13)
+const db = Astro.locals.env?.DB;
+const secret = Astro.locals.env?.BETTER_AUTH_SECRET;
 ```
 
 **Tech Stack**:
@@ -111,7 +112,7 @@ bun run deploy                 # Build + deploy to Cloudflare
 import { createDb } from '../lib/db';
 
 // In Astro pages/API routes:
-const db = createDb(Astro.locals.runtime.env.DB);
+const db = createDb(Astro.locals.env!.DB);
 const [player] = await db.select().from(user).where(eq(user.id, Astro.locals.user.id));
 ```
 
@@ -176,7 +177,7 @@ bun run db:migrate:remote
 1. **Factory Pattern for Cloudflare Bindings**:
 
    ```typescript
-   const db = createDb(Astro.locals.runtime.env.DB);
+   const db = createDb(Astro.locals.env!.DB);
    const auth = createAuth(dbBinding, env, baseURL);
    ```
 
@@ -239,7 +240,7 @@ Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-pro
 
 **E2E Auth**: Playwright uses the guarded auth bootstrap endpoint. Set `APP_ENV=test` or `APP_ENV=ci` with `ENABLE_E2E_AUTH_BOOTSTRAP=true` and `E2E_AUTH_BOOTSTRAP_SECRET` only in local or CI test environments.
 
-**Local E2E env caveat**: `Astro.locals.runtime.env` is populated by `getPlatformProxy()` from `wrangler.toml [vars]` + `.dev.vars`/`.env` files, NOT from the parent process's `process.env`. So `APP_ENV=test bun run dev` in `playwright.config.ts webServer.command` will NOT reach the Worker — the bootstrap plugin still sees `undefined` and `/api/auth/e2e/bootstrap` 404s. To run E2E locally, the bootstrap vars must live in `.dev.vars` (gitignored, so each dev adds them manually). CI works because the env is injected at the runner level into the deployed config.
+**Local E2E env caveat**: Worker vars come from `wrangler.toml [vars]` + `.dev.vars`/`.env` files (via the Cloudflare vite plugin / miniflare), NOT from the parent process's `process.env`. So `APP_ENV=test bun run dev` in `playwright.config.ts webServer.command` will NOT reach the Worker — the bootstrap plugin still sees `undefined` and `/api/auth/e2e/bootstrap` 404s. To run E2E locally, the bootstrap vars must live in `.dev.vars` (gitignored, so each dev adds them manually). CI works because the env is injected at the runner level into the deployed config.
 
 ## Code Style
 
@@ -300,7 +301,7 @@ timestamp; do not rerun SQL that already succeeded.
 
 **Build fails** → Clear cache: `rm -rf .astro node_modules && bun install`
 
-**`process.env` undefined** → Use `Astro.locals.runtime.env` (Cloudflare Workers pattern)
+**`process.env` undefined** → Use `Astro.locals.env` (middleware copies `cloudflare:workers` env into locals; Cloudflare Workers pattern)
 
 **Port conflict** → Dev server uses port 2000, not 4321
 

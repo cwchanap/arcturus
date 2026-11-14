@@ -582,6 +582,16 @@ a.poker-format:hover {
 	gap: 12px;
 	border-bottom: 1px solid var(--poker-line);
 }
+/* The recap header carries title + delta + tally + close, so it is the one
+   drawer header allowed to wrap on narrow phones (320–390px); the title
+   shrinks instead of pushing the close button out of reach. */
+#recap-panel > header {
+	flex-wrap: wrap;
+}
+#recap-panel > header h2 {
+	flex: 1 1 auto;
+	min-width: 0;
+}
 .poker-drawer h2 {
 	font:
 		500 17px 'Playfair Display',
@@ -1906,6 +1916,11 @@ a.poker-format:hover {
 .poker-recap-delta[data-tone='loss'] {
 	color: #e7a6a0;
 }
+.poker-recap-tally {
+	font-size: 13px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
 .poker-recap {
 	list-style: none;
 	margin: 0;
@@ -1974,7 +1989,11 @@ a.poker-format:hover {
 	font-size: 14px;
 	line-height: 1;
 }
-.poker-recap-action[data-action='fold'] {
+/* Fold dimming lives on the non-grade children so a folded grade stamp
+   stays fully opaque; parent opacity could not be cancelled by a child. */
+.poker-recap-action[data-action='fold'] .poker-recap-avatar,
+.poker-recap-action[data-action='fold'] .poker-recap-icon,
+.poker-recap-action[data-action='fold'] .poker-recap-amount {
 	opacity: 0.55;
 }
 .poker-recap-action[data-action='fold'] .poker-recap-icon {

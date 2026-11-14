@@ -103,6 +103,13 @@ test.describe('Poker turn flow smoke test', () => {
 			let foldedManually = false;
 			for (let attempt = 0; attempt < 3 && !foldedManually; attempt++) {
 				await dealButton.click();
+				// click() can resolve before dealNewHand updates the status, so the
+				// regex below would match the previous hand's terminal text; wait
+				// for the new hand's history group first (status is overwritten in
+				// the same synchronous task that creates it).
+				await expect(page.locator('#poker-history .poker-history-hand')).toHaveCount(attempt + 1, {
+					timeout: 10000,
+				});
 				await expect(status).toHaveText(handEndedOrYourTurn, { timeout: 10000 });
 				if (/Your turn/i.test((await status.textContent()) ?? '')) {
 					foldedManually = true;

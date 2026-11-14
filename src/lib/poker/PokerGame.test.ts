@@ -5516,3 +5516,300 @@ describe('Poker rival table talk hand lifecycle (HPA-725)', () => {
 		expect(ui.events).toEqual(['clear']);
 	});
 });
+
+describe('Poker human decision grades', () => {
+	type GradedDecision = { grade: string; equity: number; potOdds: number | null };
+	type GradedEvent = {
+		playerId: number;
+		action: string;
+		amount: number;
+		allIn: boolean;
+		decision?: GradedDecision;
+	};
+	type GradedGame = {
+		players: Player[];
+		currentPlayerIndex: number;
+		bettingRound: string | null;
+		pot: number;
+		processAITurn: () => Promise<void>;
+		updateActionButtons: () => void;
+		actOnTimeout: () => void;
+		showDecision: (playerId: number, action: string, amount?: number) => void;
+		recap: {
+			start: (hand: number, hole: Card[]) => void;
+			finish: (result: {
+				reveals: unknown[];
+				showdown: boolean;
+				delta: number | null;
+			}) => { streets: Array<{ events: GradedEvent[] }> } | null;
+			last: unknown;
+		};
+	};
+
+	function setup() {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { balance: '500' },
+			innerHTML: '',
+			textContent: '500',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const sound = {
+			play: () => {},
+			isMuted: () => false,
+			setMuted: () => {},
+			unlock: () => {},
+		};
+		const game = new PokerGame(undefined, undefined, sound) as unknown as GradedGame;
+		game.processAITurn = async () => {};
+		return { elements, game };
+	}
+
+	/** Snapshot the in-progress recap via the recorder's public finish API. */
+	function finishRecap(game: GradedGame) {
+		return game.recap.finish({ reveals: [], showdown: false, delta: null });
+	}
+
+	/** Human on turn preflop, seats 1–2 having bet `facing`; 3–5 folded; chips/hole cards overridable. */
+	function faceBet(
+		game: GradedGame,
+		facing: number,
+		{ chips = 500, hand }: { chips?: number; hand?: [Card, Card] } = {},
+	) {
+		game.bettingRound = 'preflop';
+		game.currentPlayerIndex = 0;
+		game.players = game.players.map((player) => ({
+			...player,
+			chips: player.id === 0 ? chips : player.chips,
+			hand: player.id === 0 && hand ? hand : player.hand,
+			currentBet: player.id === 0 ? 0 : player.id <= 2 ? facing : 0,
+			totalBet: player.id === 0 ? 0 : player.id <= 2 ? facing : 0,
+			folded: player.id > 2,
+			hasActed: false,
+		}));
+		game.pot = facing * 2;
+		game.updateActionButtons();
+	}
+
+	/** KTo offsuit preflop: equity = 0.5 - 2*0.045 (two active opponents) + 0.03 (dealer is late) = 0.44. */
+	const kingTen: [Card, Card] = [card('K', 'spades', 13), card('10', 'hearts', 10)];
+
+	/**
+	 * Short stack (50 behind a posted 20) facing a 180-chip call: callCap is
+	 * 50, contestable pot 110, displayed odds 50/160 = 0.3125 — while full-pot
+	 * odds (180/420 ≈ 0.43) would grade the call 'ok' and the fold 'ok'.
+	 */
+	function faceShortStackBet(game: GradedGame) {
+		game.bettingRound = 'preflop';
+		game.currentPlayerIndex = 0;
+		game.players = game.players.map((player) => ({
+			...player,
+			hand: player.id === 0 ? kingTen : player.hand,
+			chips: player.id === 0 ? 50 : player.chips,
+			currentBet: player.id === 0 || player.id === 2 ? 20 : player.id === 1 ? 200 : 0,
+			totalBet: player.id === 0 || player.id === 2 ? 20 : player.id === 1 ? 200 : 0,
+			folded: player.id > 2,
+			hasActed: false,
+		}));
+		game.pot = 240;
+		game.updateActionButtons();
+	}
+
+	test('a manual fold facing a bet records the pre-mutation grade', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game } = setup();
+			game.recap.start(1, []);
+			faceBet(game, 20, { hand: kingTen });
+			elements['btn-fold'].click?.();
+
+			const event = finishRecap(game)?.streets[0].events[0];
+			expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'fold', amount: 0 }));
+			// 0.44 equity vs displayed 1/3 odds: folding is above the ok band → miss.
+			expect(event?.decision?.grade).toBe('miss');
+			expect(event?.decision?.equity).toBeCloseTo(0.44, 5);
+			expect(event?.decision?.potOdds).toBeCloseTo(20 / 60, 5);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a free fold grades miss with null pot odds', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game } = setup();
+			game.recap.start(1, []);
+			faceBet(game, 0);
+			elements['btn-fold'].click?.();
+
+			// No bet to call: the HUD says checkFree, never 100% odds.
+			expect(finishRecap(game)?.streets[0].events[0]?.decision).toEqual({
+				grade: 'miss',
+				equity: 0,
+				potOdds: null,
+			});
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('a call grades against the HUD pot odds', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const { elements, game } = setup();
+			game.recap.start(1, []);
+			faceBet(game, 20, { hand: kingTen });
+			elements['btn-call'].click?.();
+
+			const event = finishRecap(game)?.streets[0].events[0];
+			expect(event).toEqual(
+				expect.objectContaining({ playerId: 0, action: 'call', amount: 20, allIn: false }),
+			);
+			// 0.44 equity clears displayed odds + 0.05 → sharp.
+			expect(event?.decision?.grade).toBe('sharp');
+			expect(event?.decision?.equity).toBeCloseTo(0.44, 5);
+			expect(event?.decision?.potOdds).toBeCloseTo(20 / 60, 5);
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('an opening raise with no bet to call records null pot odds', () => {
+		const { elements, game } = setup();
+		game.recap.start(1, []);
+		faceBet(game, 0, { hand: kingTen });
+		elements['bet-slider'].value = '40';
+		elements['btn-raise'].click?.();
+
+		const event = finishRecap(game)?.streets[0].events[0];
+		expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'raise', amount: 40 }));
+		expect(event?.decision?.grade).toBe('ok');
+		expect(event?.decision?.potOdds).toBeNull();
+	});
+
+	test('a raise facing a bet records the HUD odds it ignores', () => {
+		const { elements, game } = setup();
+		game.recap.start(1, []);
+		faceBet(game, 20, { hand: kingTen });
+		elements['bet-slider'].value = '40';
+		elements['btn-raise'].click?.();
+
+		const event = finishRecap(game)?.streets[0].events[0];
+		expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'raise', amount: 40 }));
+		expect(event?.decision?.grade).toBe('ok');
+		expect(event?.decision?.equity).toBeCloseTo(0.44, 5);
+		expect(event?.decision?.potOdds).toBeCloseTo(20 / 60, 5);
+	});
+
+	test('checks record no grade metadata', () => {
+		const { elements, game } = setup();
+		game.recap.start(1, []);
+		faceBet(game, 0);
+		elements['btn-check'].click?.();
+
+		const event = finishRecap(game)?.streets[0].events[0];
+		expect(event).toEqual(expect.objectContaining({ playerId: 0, action: 'check' }));
+		expect(event?.decision).toBeUndefined();
+	});
+
+	test('AI actions stay ungraded', () => {
+		const { game } = setup();
+		game.recap.start(1, []);
+		game.showDecision(1, 'raise', 50);
+
+		const event = finishRecap(game)?.streets[0].events[0];
+		expect(event).toEqual(expect.objectContaining({ playerId: 1, action: 'raise', amount: 50 }));
+		expect(event?.decision).toBeUndefined();
+	});
+
+	test('timeout-forced fold and check record no grade metadata', () => {
+		const timers = mockTrackedTimers();
+		try {
+			// Facing a bet the timer folds — the action records, ungraded.
+			const fold = setup();
+			fold.game.recap.start(1, []);
+			faceBet(fold.game, 20);
+			fold.game.actOnTimeout();
+			expect(fold.game.players[0].folded).toBe(true);
+			expect(finishRecap(fold.game)?.streets[0].events[0]).toEqual(
+				expect.objectContaining({ playerId: 0, action: 'fold' }),
+			);
+			expect(finishRecap(fold.game)?.streets[0].events[0]?.decision).toBeUndefined();
+
+			// Free check: timer checks, ungraded (checks never grade anyway).
+			const check = setup();
+			check.game.recap.start(1, []);
+			faceBet(check.game, 0);
+			check.game.actOnTimeout();
+			expect(check.game.players[0].hasActed).toBe(true);
+			expect(finishRecap(check.game)?.streets[0].events[0]?.decision).toBeUndefined();
+		} finally {
+			timers.restore();
+		}
+	});
+
+	test('synthetic folds after the round ends, while folded, or all-in compute no snapshot', () => {
+		// After the betting round ends.
+		const ended = setup();
+		ended.game.recap.start(1, []);
+		faceBet(ended.game, 20);
+		ended.game.bettingRound = null;
+		ended.elements['btn-fold'].click?.();
+		expect(ended.game.players[0].folded).toBe(false);
+		expect(finishRecap(ended.game)?.streets[0].events).toEqual([]);
+
+		// While already folded.
+		const folded = setup();
+		folded.game.recap.start(1, []);
+		faceBet(folded.game, 20);
+		folded.game.players[0] = { ...folded.game.players[0], folded: true };
+		folded.elements['btn-fold'].click?.();
+		expect(finishRecap(folded.game)?.streets[0].events).toEqual([]);
+
+		// While all-in.
+		const allIn = setup();
+		allIn.game.recap.start(1, []);
+		faceBet(allIn.game, 20);
+		allIn.game.players[0] = { ...allIn.game.players[0], isAllIn: true };
+		allIn.elements['btn-fold'].click?.();
+		expect(finishRecap(allIn.game)?.streets[0].events).toEqual([]);
+	});
+
+	test('short-stack grades use the HUD callCap and contestable pot, not full-pot odds', () => {
+		const timers = mockTrackedTimers();
+		try {
+			const call = setup();
+			call.game.recap.start(1, []);
+			faceShortStackBet(call.game);
+			call.elements['btn-call'].click?.();
+
+			const callEvent = finishRecap(call.game)?.streets[0].events[0];
+			expect(callEvent).toEqual(
+				expect.objectContaining({ playerId: 0, action: 'call', amount: 50, allIn: true }),
+			);
+			expect(callEvent?.decision?.grade).toBe('sharp');
+			expect(callEvent?.decision?.equity).toBeCloseTo(0.44, 5);
+			expect(callEvent?.decision?.potOdds).toBeCloseTo(0.3125, 5);
+
+			const fold = setup();
+			fold.game.recap.start(1, []);
+			faceShortStackBet(fold.game);
+			fold.elements['btn-fold'].click?.();
+
+			const foldEvent = finishRecap(fold.game)?.streets[0].events[0];
+			expect(foldEvent).toEqual(expect.objectContaining({ playerId: 0, action: 'fold' }));
+			expect(foldEvent?.decision?.grade).toBe('miss');
+			expect(foldEvent?.decision?.potOdds).toBeCloseTo(0.3125, 5);
+		} finally {
+			timers.restore();
+		}
+	});
+});

@@ -2,99 +2,74 @@
 
 **Linear:** https://linear.app/cwchanap/issue/HPA-727/missions-poker-specific-daily-and-weekly-missions  
 **Design:** [2026-11-15-poker-missions-design.md](../specs/2026-11-15-poker-missions-design.md)  
-**PR contract:** Exactly **one PR** for HPA-727. This draft PR contains spec and plan first; implementation, tests, and any corrections go into **this same branch/PR** after review. Do not open a follow-up implementation PR. No separate art/SFX task is required.
+**PR contract:** Exactly **one PR** (#88) for HPA-727. Add the implementation to this draft branch following design review; do not split the ticket across PRs. No new art/SFX, schema, API, wallet, or AI changes.
 
-## Current-state check (main, 2026-11-15)
+**Review adjustment (2026-11-15):** Reworked the initial four-stage plan into three individually type-checkable steps, corrected the actual desktop and weekly-card layout problems, reduced repetitive verification, and kept the platform E2E goals without adding a costly permanent browser CI matrix.
 
-- `src/lib/missions/types.ts` has seven closed mission IDs and four metric variants.
-- `src/lib/missions/registry.ts` has three default dailies, three reroll-only dailies, and one default weekly.
-- `src/lib/missions/progress.ts` calculates increments; existing D1 wallet receipt-gating/claim and period-reset logic must stay unchanged.
-- `src/lib/wallet/repository.ts` builds `MissionGameEvent` from `SettleRoundCommand` using true net profit; `PokerGame.buildPokerSettlementCommand` sends a single cash hand per command with `stats.rounds = 1` and net `delta`.
-- `src/lib/poker/tableMissions.ts` filters metrics, refreshes when `POKER_HAND_SETTLED_EVENT` fires, and claims through the shared API. Its DOM tests use happy-dom.
-- `src/pages/missions/index.astro` renders daily/weekly arrays dynamically: no hardcoded three-card layout or API response limit. `src/styles/poker.css` scales rings to 42px on phone.
-- `src/lib/i18n/messages/missions.ts` has typed four-language titles and descriptions; `getMissionTitle` and `getMissionDescription` already supply rings and board cards.
-- Latest open GitHub PR is Dependabot #87, unrelated to this scope; no open HPA-727 PR or HPA-727 branch was found when the plan began.
+## Verified code boundaries
 
-## Change map
+- `src/lib/missions/types.ts` has a closed `MISSION_IDS` tuple and `MissionMetric` variants; adding IDs requires the typed message catalog to change at the same time.
+- `src/lib/missions/registry.ts` has three default daily missions, three reroll-only daily missions, and one weekly. `registry.test.ts` alone hardcodes daily/weekly counts; the board integration tests already derive counts from arrays.
+- `src/lib/missions/progress.ts` computes event increments and uses existing receipt-gated D1 upserts. `src/lib/wallet/repository.ts` already supplies real net profit; one completed cash poker hand produces one settlement command with `stats.rounds: 1`.
+- `src/lib/poker/tableMissions.ts` already renders/claims rings and refreshes on hand settlement. The switch's current default hides unknown metric kinds; make it exhaustive for future additions.
+- `src/pages/missions/index.astro` uses dynamic daily and weekly mission arrays; its weekly wrapper lacks spacing and its English heading is singular.
+- `src/styles/poker.css` currently moves rings to their own centered seat row at max-width **1100px**. With 54px rings and 12px gaps, four take 252px and five take 318px; this collides with bankroll space at 1101–~1260px. The proper targeted breakpoint is **1280px**.
+- `playwright.config.ts` has one Chromium project. `.github/workflows/lint.yml` runs `bunx astro check` for non-draft PRs; keep that as an explicit local step because CI skips the draft.
 
-| File | Intended edit |
+## File map
+
+| File(s) | Change |
 | --- | --- |
-| `src/lib/missions/types.ts` | Four new `MISSION_IDS`; one `bigWin` metric union arm. |
-| `src/lib/missions/registry.ts` | Fourth default daily, two reroll-pool dailies, second weekly at exact targets/rewards. |
-| `src/lib/missions/progress.ts` | One pure `bigWin` branch in `computeIncrement`, game-type filter + inclusive net-delta threshold. |
-| `src/lib/poker/tableMissions.ts` | Let `selectPokerMissions` include matching `bigWin` definitions. |
-| `src/lib/i18n/messages/missions.ts` | Four title/description entries in each of four locales, and all four canonical Poker mappings. |
-| `src/lib/missions/registry.test.ts` | Updated daily/weekly sizes and explicit registry shape/pool checks. |
-| `src/lib/missions/progress.test.ts` | `bigWin` threshold, wrong game, multiple qualifying events, and target semantics. |
-| `src/lib/missions/progress-integration.test.ts` | D1 persistence/cap/period behavior for an active qualifying reroll. |
-| `src/lib/missions/board-integration.test.ts` | Four default dailies, two weekly, selected poker IDs, and reroll replacement view. |
-| `src/lib/poker/tableMissions.test.ts` | Default four, possible five, non-poker big-win rejection, accessible in-table claim. |
-| `src/lib/i18n/messages/missions.test.ts` | Four-locale title/description and canonical Poker game-name substitution. |
-| `e2e/missions.spec.ts` | Signed-in four-daily/two-weekly SSR + refresh and reroll smoke. |
-| `e2e/poker-turn-flow.spec.ts` | Extend ring smoke and a completed cash-hand test, without rigging RNG. |
-| `src/styles/poker.css` (conditional) | **Only** correct an observed five-ring overflow/overlap on phone; do not redesign rings. |
+| `src/lib/missions/types.ts`, `registry.ts`, `progress.ts` | Four IDs, typed optional definition-side `gameType?: GameType`, one `bigWin` union arm + handler, four definitions |
+| `src/lib/i18n/messages/missions.ts` | Four-locale titles/descriptions and canonical `poker` game mappings; English `weeklyGoal` → “Weekly Goals” |
+| `src/lib/missions/registry.test.ts`, `progress.test.ts` | Counts/placement assertions and new threshold behavior |
+| `src/lib/poker/tableMissions.ts`, `tableMissions.test.ts` | `bigWin` filter; exhaustiveness; four-default/five-reroll rings and in-place claim tests |
+| `src/lib/missions/progress-integration.test.ts` | One Miniflare test proving the new reroll-only big-pot definition is reachable |
+| `src/styles/poker.css` | Raise existing centered-ring breakpoint from 1100px to 1280px |
+| `src/pages/missions/index.astro` | Add `grid gap-4` to `#weekly-section` |
+| `e2e/poker-turn-flow.spec.ts` | Extend signed-in ring smoke and one stubbed five-ring geometry assertion |
+| `e2e/missions.spec.ts` (optional) | Extend existing board smoke for 4 daily / 2 weekly if not already covered by ring/registry assertions |
 
-`src/pages/missions/index.astro` and `src/pages/games/poker.astro` should need **no production edits**. No D1 migrations, endpoint changes, new service, new persistence, new media, or extra dependency.
+Do **not** edit `src/lib/wallet/`, `PokerGame.ts`, `src/pages/games/poker.astro`, D1 schema/migrations, new API routes or a new UI framework. Leave existing mid-hand balance-adoption guard and tests intact.
 
-## Task 1 — Registry and typed definition extensions
+## Task 1 — Atomic mission definitions, new metric, and localization
 
-**Files:** `types.ts`, `registry.ts`, `registry.test.ts`.
+**Why atomic:** If `MISSION_IDS` changes without the four-locale catalog, the type checker fails. If a `bigWin` registry row is added without the union arm, it also fails. Ship IDs, definitions, copy, union, and handler **together** in the same implementation step so the tree remains type-checkable.
 
-- [ ] Add these four IDs to the closed tuple: `daily-poker-10`, `daily-poker-wins-3`, `daily-poker-big-pot`, `weekly-poker-wins-15`.
-- [ ] Add `{ kind: 'bigWin'; minDelta: number; gameType?: string }` to `MissionMetric`.
-- [ ] Add `daily-poker-10` as the fourth default daily (`handsPlayed`/`poker`, target 10, reward 500, ♠️).
-- [ ] Add `daily-poker-wins-3` (`roundsWon`/`poker`, target 3, reward 600, ♥️) and `daily-poker-big-pot` (`bigWin`/`poker`, `minDelta: 500`, target 1, reward 800, ♦️) **only** to `REROLL_POOL_DAILY`.
-- [ ] Add `weekly-poker-wins-15` (`roundsWon`/`poker`, target 15, reward 2500, ♣️) to `DEFAULT_WEEKLY_MISSIONS`.
-- [ ] Update the brittle registry tests expecting 3 default daily and 1 weekly to **4/2**, assert exact ID/period/metric/target/reward positions, and preserve no-duplicate/full-ID coverage. Existing reroll mechanics should discover the expanded pool and fourth slot automatically.
+- [ ] Add `daily-poker-10` (default daily; play 10; 500 chips; ♠️), `daily-poker-wins-3` (daily reroll; win 3; 600; ♥️), `daily-poker-big-pot` (daily reroll; +500 net in one winning cash hand; 800; ♦️), and `weekly-poker-wins-15` (default weekly; win 15; 2,500; ♣️).
+- [ ] Import `GameType` from `../game-stats/types` into `src/lib/missions/types.ts` and type optional `gameType` in `handsPlayed`, `roundsWon`, and `bigWin` as `GameType`, not `string`. Keep `MissionGameEvent` unchanged. Add `{ kind: 'bigWin'; minDelta: number; gameType?: GameType }`.
+- [ ] Extend `computeIncrement`: matching `bigWin` adds **1** when `event.delta >= metric.minDelta` and the optional game type matches, otherwise **0**. Respect the existing outcome guard and receipt-gated write path. No payout/pot-size tracking.
+- [ ] Add four game mappings, translated titles, and descriptions to `en`, `zh-Hant`, `zh-Hans`, and `ja`. Translate `{game}` from the canonical catalog, include fixed 500 **net** chips in the big-pot copy, and change the English heading to “Weekly Goals.”
+- [ ] Update `registry.test.ts` expected daily/weekly counts to **4/2**, verify which arrays contain the four new IDs, and retain existing uniqueness tests. In `progress.test.ts`, test +499 → 0, +500 → 1, +750 → 1, −500 → 0, other-game +1000 → 0 (and unscoped metric behavior if needed). Do not duplicate target/reward data into a second giant assertion table.
 
-**Acceptance:** registry tests establish the four precise definitions and show all IDs resolve once; no new registry abstraction.
+**Verification:** `bunx astro check`, `bun run test:unit` on changed tests. No partial commit that breaks the type checker.
 
-## Task 2 — One new event metric, reuse atomic wallet path
+## Task 2 — Ring filtering and one real D1 reroll path
 
-**Files:** `progress.ts`, `progress.test.ts`, `progress-integration.test.ts`; optionally extend an existing wallet-settlement integration assertion if the coverage gap remains.
+- [ ] Make `selectPokerMissions` return a typed `boolean` from its filter callback, check for an absent definition before the switch, handle `handsPlayed` / `roundsWon` / `bigWin` with the same poker-game guard, return true for `gamesTried` and false for `spinsCompleted`. Enumerate every variant **without a default case**, so future kinds fail type checking unless explicitly handled.
+- [ ] Extend `tableMissions.test.ts`: ordinary cash board yields four ring IDs in daily-before-weekly order; rerolling a non-poker daily mission to a poker mission yields five; unrelated-game `bigWin` is excluded; a claimable new ring uses existing claim mechanics and accessible labeling.
+- [ ] In `progress-integration.test.ts`, seed a `mission_override` from a default daily ID to `daily-poker-big-pot` and apply one +500 net poker event with the existing Miniflare D1 harness; assert `daily-poker-big-pot` progress **1**. Do not re-test generic D1 clamping, `completedAt`, UTC periods, or duplicate-receipt behavior, which already have tests.
+- [ ] Reuse the existing board state/reroll code: no new database schema, server endpoint, or fixed-ID checks.
 
-- [ ] Add a `computeIncrement` switch case:
+**Verification:** `bunx astro check`, relevant `bun run test:unit` and `bun run test:integration`. Preserve existing settlement/idempotency tests.
 
-```ts
-case 'bigWin':
-  if (metric.gameType && event.gameType !== metric.gameType) return { amount: 0 };
-  return { amount: event.delta >= metric.minDelta ? 1 : 0 };
-```
+## Task 3 — Two layout fixes and targeted browser smoke
 
-- [ ] Test poker net +499 → 0; +500 → 1; +750 → 1 (not 750); −500 → 0; non-poker +1000 → 0; unscoped `bigWin` accepts any game. Preserve `prepareMissionProgressStatements`' existing no-outcome short circuit.
-- [ ] Test repeated distinct qualifying hands increment target-1 progress to **1** and then clamp, while repeated wallet receipt submissions are ignored by the existing settlement gate. Use the existing D1 test harness rather than a new mocking framework.
-- [ ] Check daily/weekly period keys, new target values, and regular claim behavior through existing functions. **Do not** modify `PokerGame`, `wallet/repository.ts`, `prepareMissionProgressStatements`, or database tables: the current one-hand cash settlement contains all required information.
+- [ ] In `src/styles/poker.css` change the existing centered ring-row breakpoint to `@media (max-width: 1280px)`. Do not wait for a phone failure: the bug is the **1101–~1260px** desktop range. Verify normal absolute placement at **1281px**.
+- [ ] In `src/pages/missions/index.astro` add `class="grid gap-4"` to `#weekly-section`; the dynamic refresh uses that same container. The English heading was changed in Task 1.
+- [ ] Extend the signed-in `e2e/poker-turn-flow.spec.ts` ring test: `daily-poker-10` is visible; finish a cash hand through the existing fast-AI flow (a fold suffices) and assert the ring/board advances to **1/10**, without requiring a random win.
+- [ ] Add one deterministic browser geometry test: intercept `/api/missions/board` to supply five matching poker ring IDs, visit cash poker as signed-in user, set viewport width to **1101px**, and assert mission-ring bounds don't intersect bankroll, cards or actions. Repeat at **1281px**, where the ring row returns to its absolute position. Smoke-check 320px centered layout if existing test helpers make it trivial. Use DOM bounding rectangles and a visual/layout check against the current UI; **no screenshot baseline** against an ASCII sketch.
+- [ ] Check the Missions weekly cards have spacing, the daily card grid remains responsive, and an eligible ring can claim in place; use the existing claim API and UI tests. Do not add a separate browser project or rigged RNG path for the big-pot reward.
 
-**Acceptance:** only eligible *net* poker cash settlements advance the big-pot mission, exactly once per committed settlement, without changing existing metrics.
+**Verification:** `bunx astro check`, `bun run lint`, `bun run format:check`, `bun run build`, the focused existing Chromium Playwright tests, and relevant Bun/Miniflare tests.
 
-## Task 3 — Localized cards and the poker ring filter
+## End-to-end acceptance and completion
 
-**Files:** `tableMissions.ts`, `tableMissions.test.ts`, `messages/missions.ts`, `messages/missions.test.ts`; `poker.css` only if necessary.
+- [ ] **iOS Safari:** signed-in mission board renders four dailies/two weeklies, cash poker shows/updates rings and supports claim on touch-width layout, with the 320px minimum remaining non-overlapping. Prefer a targeted automated WebKit/iOS smoke; record accurately whether this is iPhone emulation or a native device run.
+- [ ] **macOS Safari:** the same signed-in cash-hand → mission progress → ring/board update → claim path works at desktop width, including the new 1280px ring-layout boundary. A focused automated WebKit smoke is enough; no dedicated new CI project.
+- [ ] **Windows Chrome:** the same flow works with the existing Chromium Playwright test. Verify the new two-card weekly gap and 1101px/1281px ring geometry.
+- [ ] **New metric:** deterministic unit cases for the inclusive net threshold and one Miniflare reroll-path test pass; existing shared settlement/claim tests stay green.
+- [ ] **Visual check:** actual browser geometry at 1101px/1281px and current Art Deco layout/spacing, plus small-screen fit, rather than approving screenshots. The Linear ticket has **no UI mockup**, so none is required for visual comparison.
+- [ ] `bunx astro check` passes after every step, and final unit/integration, lint, format, build and focused E2E checks are recorded on this **same PR**. CI covers Android/Linux where applicable; there are no Android/Linux acceptance targets or human sign-off criteria.
 
-- [ ] In `selectPokerMissions`, add `case 'bigWin'` to the same branch as `handsPlayed`/`roundsWon`, including the existing optional game-type guard. Do not filter by hardcoded ID strings.
-- [ ] Keep the default ring order daily then weekly: `daily-win-3`, `daily-poker-10`, `weekly-games-3`, `weekly-poker-wins-15`. Test a reroll that yields a fifth ring and one that does not; also verify a non-poker big-win definition is filtered out.
-- [ ] Extend the title/description catalogs in `en`, `zh-Hant`, `zh-Hans`, `ja`. Add `'poker'` mappings to `MISSION_GAME_KEYS` for each ID, including the big-pot mission; use canonical game name substitution and the existing count formatter. The big-pot description says at least **500 net chips**, not a 500-chip pot or cumulative winnings.
-- [ ] Test localized outputs, mission token ARIA labels and claim via shared API, and the existing completion pop/claimed state with a new ID.
-- [ ] Validate the board's existing responsive grid handles four cards and the table's ring flex row handles five; if a real overflow is detected at 320/390px, adjust only the existing ring container spacing/wrapping in `poker.css`. Do not add a carousel, overlay, separate poker board, or new component.
-
-**Acceptance:** all new goals appear in the intended board sections, matching poker rings are selectable/claimable, and none of the four locales produces a missing key.
-
-## Task 4 — End-to-end checks, visual checks, and review
-
-**Files:** existing `e2e/missions.spec.ts` / `e2e/poker-turn-flow.spec.ts`, only necessary test fixture helpers.
-
-- [ ] Sign in to cash poker, assert four default poker-relevant rings and their localized accessible names, deal/fold a hand using existing fast-AI smoke helpers, wait for the wallet settlement, and assert `daily-poker-10` advances on the board/table regardless of the losing result. Keep the test deterministic with respect to *hand completion*, not win RNG; do not add a rigged-RNG endpoint.
-- [ ] Assert SSR and client-refreshed Missions boards show four daily/two weekly cards, claims work, and a single reroll substitutes (rather than appends) a default daily card.
-- [ ] For states that would require lucky poker outcomes (big pot, three/15 wins), use the D1 integration suite; avoid flaky browser loops waiting for random wins.
-- [ ] Add deterministic presentation fixture snapshots: 390px iOS-like Safari viewport / 1280px desktop, normal 4-ring board and a stubbed 5-ring response; compare screenshots to the design's layout reference and existing Art Deco visuals. Assert ring rectangles do not overlap controls/cards or extend beyond the viewport. No mockup was attached to the Linear issue.
-- [ ] Run `bun run test:unit`, `bun run test:integration`, `bun run lint`, `bun run format:check`, `bun run build`, and the relevant `bun run test:e2e` targets. Record the actual commands and outputs in this same PR; docs-only draft itself does not assert passing tests.
-- [ ] Finish browser end-to-end acceptance on **iOS Safari**, **macOS Safari**, and **Windows Chrome** (or their relevant Playwright browser targets) for board, table rings, reroll, and claim. Leave Android/Linux out of acceptance; rely on CI for them where applicable. Visual validation is screenshot/automated-layout based, **not** human sign-off.
-
-**Acceptance:** tests prove the feature from a signed-in cash hand through D1 mission progress to the visible claimable board/rings on supported user platforms; all checks and visual comparisons are recorded on the same PR.
-
-## Review guardrails
-
-- **YAGNI / KISS:** a single new metric switch arm and four registry records are enough. No generic “event rules engine,” config DSL, new wallet contract, or mission-specific database migration.
-- **No backward-compatibility work:** no deployed clients require a versioned migration for this additive registry feature. Existing mission rows continue naturally; old plays are not backfilled.
-- **No art/SFX:** use the site's current emoji-and-ring presentation. New art/sounds would need a separate ticket, but are not needed here.
-- **One ticket, one PR:** follow reviewer feedback by editing these documents and later implementation on this same PR only. Keep the Linear issue linked and do not mark it done at the planning stage.
+**Cost/complexity guardrails:** No new test matrix, screenshot baseline maintenance, general mission rules engine, new database/API, art/SFX, backward-compatibility layer, or repeated tests for unchanged wallet infrastructure. Keep the existing draft PR until code and tests are ready for review.

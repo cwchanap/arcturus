@@ -47,19 +47,19 @@ All four goals inherit existing UTC periods, clamping, rerolls, wallet receipt i
 
 Add `bigWin` to `selectPokerMissions` with the same optional game-type guard as `handsPlayed` / `roundsWon`, rejecting other-game metrics and accepting unscoped ones. Keep `gamesTried` and explicitly return false for `spinsCompleted`. Make the predicate explicitly return `boolean`, guard missing definitions before switching, and enumerate all known metric kinds **without a default branch** so adding an unhandled kind causes a type-check error. Removing `default` alone, without an explicit return type and missing-definition guard, does not guarantee exhaustiveness.
 
-Default signed-in cash board: `daily-win-3`, `daily-poker-10`, `weekly-games-3`, `weekly-poker-wins-15` — **four rings**, daily first. Rerolling a non-poker default into a poker-only mission can yield **five**. Existing completion pop, claim, and the mid-hand balance-adoption guard stay untouched.
+Default signed-in cash board: `daily-win-3`, `daily-poker-10`, `weekly-games-3`, `weekly-poker-wins-15` — **four rings**, daily first. Rerolling a non-poker default into a poker-only mission can yield **five**. Existing completion pop, claim, and the mid-hand balance-adoption guard stay untouched. For browser checks, **do not assert ring progress immediately after clicking Fold**: cash-wallet settlement starts at fold, but the table's settled event is deferred until the remaining AI players finish and `finishHand()` runs. An AI-only preflop walkover may also finish the hand before a human Fold button is enabled. Wait for the terminal hand/recap state, then for the asynchronous board/ring refresh.
 
 **Required layout fix:** move the existing ring row into its centered, non-overlapping seat row at widths `<= 1280px` (raise the current 1100px CSS breakpoint to 1280px). The 54px desktop rings plus 12px gaps occupy **252px for four** or **318px for five**; free space at 1101px is insufficient, while the existing narrow layout fits five 42px rings on a 320px viewport. Verify geometry at **1101px** and **1281px**, not just a wide desktop and a phone.
 
 ### Localized display
 
-Add all four mission IDs to both `MISSION_TITLES` and `MISSION_DESCRIPTIONS` in all four existing locales. Add `'poker'` to `MISSION_GAME_KEYS` for every new ID so the canonical translated game name is substituted via `{game}`; reuse the existing `{count}` token for 10/3/15 and 1 for the one-time goal. The big-pot description explicitly states **500 net chips** in localized text. This is a fixed feature threshold; do not change the public description-helper signature solely for one mission.
+Add all four mission IDs to both `MISSION_TITLES` and `MISSION_DESCRIPTIONS` in all four existing locales. Add `'poker'` to `MISSION_GAME_KEYS` for every new ID so the canonical translated game name is substituted via `{game}`; in English, `getGameName('en', 'poker')` resolves to **"Texas Hold'em Poker"**, not "Poker". Reuse the existing `{count}` token for 10/3/15 and 1 for the one-time goal. The big-pot description explicitly states **500 net chips** in localized text. This is a fixed feature threshold; do not change the public description-helper signature solely for one mission.
 
-Example English copy (translation equivalents required):
-- `daily-poker-10`: “Poker Hands” — “Play 10 Poker hands”
-- `daily-poker-wins-3`: “Poker Winner” — “Win 3 Poker hands”
-- `daily-poker-big-pot`: “Big Pot” — “Win 1 Poker hand with at least 500 net chips”
-- `weekly-poker-wins-15`: “Poker Regular” — “Win 15 Poker hands”
+Example **English templates** and rendered descriptions (translation equivalents required):
+- `daily-poker-10`: `{game} Hands` — `Play {count} {game} hands` → “Play 10 Texas Hold'em Poker hands”
+- `daily-poker-wins-3`: `{game} Winner` — `Win {count} {game} hands` → “Win 3 Texas Hold'em Poker hands”
+- `daily-poker-big-pot`: `Big Pot` — `Win {count} {game} hand with at least 500 net chips` → “Win 1 Texas Hold'em Poker hand with at least 500 net chips”
+- `weekly-poker-wins-15`: `{game} Regular` — `Win {count} {game} hands` → “Win 15 Texas Hold'em Poker hands”
 
 Do not duplicate the game-name translation in the literal copy. Preserve localized accessible ring labels built by `tableMissions.ts`. The weekly heading must change from English “Weekly Goal” to **“Weekly Goals”**; the Chinese/Japanese headings need no plural changes. Add `class="grid gap-4"` to `#weekly-section` so both server-rendered and subsequently refreshed weekly cards have spacing.
 
@@ -91,9 +91,9 @@ Add a `grid gap-4` weekly wrapper so the second full-width card does not touch t
 
 ## Acceptance criteria (end-to-end; implementation PR)
 
-- [ ] **Signed-in cash poker → board and rings:** on iOS Safari, macOS Safari, and Windows Chrome targets, four daily and two weekly cards appear, poker rings refresh after a completed hand (including a losing hand raising `daily-poker-10` to 1/10), and normal claim/reroll flows work. Use targeted browser end-to-end smoke, not a permanent three-browser CI matrix or a human-approval gate; record when WebKit/device emulation rather than native iOS Safari was used.
+- [ ] **Cross-platform end-to-end (iOS, macOS, Windows):** verify the signed-in cash-hand → completed settlement → mission board/ring refresh → claim/reroll flow on relevant platform browser/device automation. Four daily and two weekly cards appear, and an eligible completed cash hand raises `daily-poker-10` to 1/10 (including a fold or preflop walkover). The existing Chromium Playwright project provides the repeatable baseline; keep any platform-specific WebKit/iOS runs narrowly targeted and outside the permanent CI matrix. **Do not report Chromium or mobile emulation as native Safari coverage.** Record genuinely unavailable platform checks as not run rather than treating manual sign-off as acceptance.
 - [ ] **New metric only:** unit tests prove +499 → 0, +500 → 1, +750 → 1, negative → 0, and wrong-game → 0. A Miniflare test seeds a daily reroll override to `daily-poker-big-pot`, applies a qualifying +500 poker event, and reads progress 1. Existing generic idempotency/clamping/period/claim tests remain the coverage for shared plumbing.
 - [ ] **Responsive visual correctness:** two weekly cards have a visible gap and English plural heading. Existing poker e2e stubs a five-ring `/api/missions/board` response, checks non-intersection with bankroll/cards/controls at 1101px and 1281px, and verifies the existing centered row fits at 320px. Automated DOM geometry and existing Art Deco styling are the visual check; no screenshot baseline is compared to an ASCII sketch.
-- [ ] `bunx astro check` and relevant unit tests pass after **each implementation step**; final lint, format, build, focused Chromium Playwright, and D1 integration tests pass. No Android or Linux acceptance scenarios; CI covers those where applicable. No manual approval criterion.
+- [ ] `bunx astro check` and relevant Bun unit tests pass after **each implementation step**; the new Miniflare test runs via `bun test src/lib/missions/progress-integration.test.ts` (not the Vitest-only `bun run test:integration`). Final lint, format, build, and focused Chromium Playwright checks pass. No Android or Linux acceptance scenarios; CI covers those where applicable. No manual approval criterion.
 
 No implementation or runtime tests are part of this docs-only first draft.

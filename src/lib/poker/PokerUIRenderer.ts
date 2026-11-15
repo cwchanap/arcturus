@@ -719,14 +719,17 @@ export class PokerUIRenderer {
 						el('span', 'poker-recap-amount', formatWholeNumber(event.amount, this.locale)),
 					);
 				}
-				let gradeDetails: string | null = null;
 				if (event.decision) {
-					gradeDetails = this.decisionDetails(event.decision, event.action);
-					// Decorative glyph like the action icon. The grade text rides
-					// in a visually hidden node: the item title below stays for
-					// pointer users but is not announced reliably by screen readers.
+					const gradeDetails = this.decisionDetails(event.decision, event.action);
+					// Decorative glyph like the action icon — aria-hidden, so its
+					// own title never enters the a11y tree and works purely as a
+					// pointer tooltip on the stamp. The grade text rides in a
+					// visually hidden node for screen readers; the row title below
+					// keeps only name/action, so a title surfaced as the item's
+					// accessible description cannot echo the grade a second time.
 					const stamp = el('span', 'poker-recap-grade', GRADE_GLYPHS[event.decision.grade]);
 					stamp.setAttribute('aria-hidden', 'true');
+					stamp.title = gradeDetails;
 					item.appendChild(stamp);
 					item.appendChild(el('span', 'sr-only', gradeDetails));
 				}
@@ -738,7 +741,7 @@ export class PokerUIRenderer {
 							: this.t(event.action === 'call' ? 'badgeCall' : 'badgeRaise', {
 									amount: formatWholeNumber(event.amount, this.locale),
 								});
-				item.title = `${nameOf(event.playerId)} · ${event.allIn ? this.t('recapAllIn') : actionName}${gradeDetails ? ` · ${gradeDetails}` : ''}`;
+				item.title = `${nameOf(event.playerId)} · ${event.allIn ? this.t('recapAllIn') : actionName}`;
 				actions.appendChild(item);
 			}
 			row.appendChild(actions);

@@ -1284,7 +1284,7 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		renderer.renderHandRecap(recapOf(streets), recapSeats);
 	}
 
-	test('stamps a graded human call, fold and raise with role, label and title details', () => {
+	test('stamps a graded human call, fold and raise with hidden text and tooltips', () => {
 		renderRecap([
 			{
 				street: 'flop',
@@ -1337,9 +1337,10 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		]);
 		// Each stamp belongs to the human's own action item.
 		expect(items.map((item) => item.dataset?.seat)).toEqual(['0', '0', '0']);
-		// Stamps are decorative glyphs like the action icon: aria-hidden. The
-		// grade text lands in a trailing visually hidden node, since the item
-		// title repeats it for pointer users only.
+		// Stamps are decorative glyphs like the action icon: aria-hidden, so a
+		// title on the stamp itself is a pointer-only tooltip that never enters
+		// the a11y tree. The grade text lands in a trailing visually hidden node;
+		// the item title keeps just name/action so it cannot repeat the grade.
 		const captions = items.map((item) => item.children?.at(-1));
 		expect(captions.map((caption) => caption?.className)).toEqual([
 			'sr-only',
@@ -1354,15 +1355,18 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		expect(stamps[0]?.textContent).toBe('👍');
 		expect(stamps[0]?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(stamps[0]?.getAttribute?.('aria-label')).toBeNull();
-		expect(items[0].title as string).toBe('You · ✓ CALL 20 · OK · Equity ≈46% · Pot odds 22%');
+		expect(items[0].title as string).toBe('You · ✓ CALL 20');
+		expect(stamps[0]?.title as string).toBe('OK · Equity ≈46% · Pot odds 22%');
 		// Fold facing a bet: miss with odds.
 		expect(stamps[1]?.textContent).toBe('⚠️');
 		expect(stamps[1]?.getAttribute?.('aria-hidden')).toBe('true');
-		expect(items[1].title as string).toBe('You · ✕ FOLD · Miss · Equity ≈30% · Pot odds 40%');
+		expect(items[1].title as string).toBe('You · ✕ FOLD');
+		expect(stamps[1]?.title as string).toBe('Miss · Equity ≈30% · Pot odds 40%');
 		// Raise: sharp.
 		expect(stamps[2]?.textContent).toBe('⭐');
 		expect(stamps[2]?.getAttribute?.('aria-hidden')).toBe('true');
-		expect(items[2].title as string).toBe('You · ↑ RAISE 40 · Sharp · Equity ≈65% · Pot odds 30%');
+		expect(items[2].title as string).toBe('You · ↑ RAISE 40');
+		expect(stamps[2]?.title as string).toBe('Sharp · Equity ≈65% · Pot odds 30%');
 	});
 
 	test('check, AI and timer-forced rows stay ungraded with no stamp', () => {
@@ -1477,10 +1481,11 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
 		expect(item.children?.at(-1)?.className).toBe('sr-only');
 		expect(item.children?.at(-1)?.textContent).toBe('Miss · Equity ≈12% · Check is free');
-		const title = item.title as string;
-		expect(title).toBe('You · ✕ FOLD · Miss · Equity ≈12% · Check is free');
-		expect(title).not.toContain('Pot odds');
-		expect(title).not.toContain('100%');
+		expect(item.title as string).toBe('You · ✕ FOLD');
+		const tip = stamp?.title as string;
+		expect(tip).toBe('Miss · Equity ≈12% · Check is free');
+		expect(tip).not.toContain('Pot odds');
+		expect(tip).not.toContain('100%');
 	});
 
 	test('an open raise is equity-only, never 100% odds', () => {
@@ -1505,13 +1510,14 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
 		expect(item.children?.at(-1)?.className).toBe('sr-only');
 		expect(item.children?.at(-1)?.textContent).toBe('Sharp · Equity ≈66%');
-		const title = item.title as string;
-		expect(title).toBe('You · ↑ RAISE 15 · Sharp · Equity ≈66%');
-		expect(title).not.toContain('Pot odds');
-		expect(title).not.toContain('100%');
+		expect(item.title as string).toBe('You · ↑ RAISE 15');
+		const tip = stamp?.title as string;
+		expect(tip).toBe('Sharp · Equity ≈66%');
+		expect(tip).not.toContain('Pot odds');
+		expect(tip).not.toContain('100%');
 	});
 
-	test('stamp label, title and tally use the document locale', () => {
+	test('stamp text, titles and tally use the document locale', () => {
 		renderRecap(
 			[
 				{
@@ -1538,9 +1544,10 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		);
 
 		const items = recapActionItems(elements['poker-recap']);
-		expect(items[0].title as string).toBe('你 · ✓ 跟注 20 · 尚可 · 權益 ≈45% · 底池賠率 22%');
+		expect(items[0].title as string).toBe('你 · ✓ 跟注 20');
 		const stamp = items[0].children?.find((child) => child.className === 'poker-recap-grade');
 		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
+		expect(stamp?.title as string).toBe('尚可 · 權益 ≈45% · 底池賠率 22%');
 		expect(items[0].children?.at(-1)?.className).toBe('sr-only');
 		expect(items[0].children?.at(-1)?.textContent).toBe('尚可 · 權益 ≈45% · 底池賠率 22%');
 		const tally = elements['recap-grade-tally'];

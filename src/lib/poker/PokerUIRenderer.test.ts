@@ -1326,7 +1326,9 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 
 		const items = recapActionItems(elements['poker-recap']);
 		expect(items.length).toBe(3);
-		const stamps = items.map((item) => item.children?.[item.children.length - 1]);
+		const stamps = items.map((item) =>
+			item.children?.find((child) => child.className === 'poker-recap-grade'),
+		);
 		// The stamp sits on the same item, after the action icon/amount.
 		expect(stamps.map((stamp) => stamp?.className)).toEqual([
 			'poker-recap-grade',
@@ -1335,8 +1337,20 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		]);
 		// Each stamp belongs to the human's own action item.
 		expect(items.map((item) => item.dataset?.seat)).toEqual(['0', '0', '0']);
-		// Stamps are decorative glyphs like the action icon: aria-hidden, with
-		// the full grade text announced once via the item title/description.
+		// Stamps are decorative glyphs like the action icon: aria-hidden. The
+		// grade text lands in a trailing visually hidden node, since the item
+		// title repeats it for pointer users only.
+		const captions = items.map((item) => item.children?.at(-1));
+		expect(captions.map((caption) => caption?.className)).toEqual([
+			'sr-only',
+			'sr-only',
+			'sr-only',
+		]);
+		expect(captions.map((caption) => caption?.textContent)).toEqual([
+			'OK · Equity ≈46% · Pot odds 22%',
+			'Miss · Equity ≈30% · Pot odds 40%',
+			'Sharp · Equity ≈65% · Pot odds 30%',
+		]);
 		expect(stamps[0]?.textContent).toBe('👍');
 		expect(stamps[0]?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(stamps[0]?.getAttribute?.('aria-label')).toBeNull();
@@ -1458,9 +1472,11 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		]);
 
 		const item = recapActionItems(elements['poker-recap'])[0];
-		const stamp = item.children?.[item.children.length - 1];
+		const stamp = item.children?.find((child) => child.className === 'poker-recap-grade');
 		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
+		expect(item.children?.at(-1)?.className).toBe('sr-only');
+		expect(item.children?.at(-1)?.textContent).toBe('Miss · Equity ≈12% · Check is free');
 		const title = item.title as string;
 		expect(title).toBe('You · ✕ FOLD · Miss · Equity ≈12% · Check is free');
 		expect(title).not.toContain('Pot odds');
@@ -1484,9 +1500,11 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 		]);
 
 		const item = recapActionItems(elements['poker-recap'])[0];
-		const stamp = item.children?.[item.children.length - 1];
+		const stamp = item.children?.find((child) => child.className === 'poker-recap-grade');
 		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
 		expect(stamp?.getAttribute?.('aria-label')).toBeNull();
+		expect(item.children?.at(-1)?.className).toBe('sr-only');
+		expect(item.children?.at(-1)?.textContent).toBe('Sharp · Equity ≈66%');
 		const title = item.title as string;
 		expect(title).toBe('You · ↑ RAISE 15 · Sharp · Equity ≈66%');
 		expect(title).not.toContain('Pot odds');
@@ -1521,7 +1539,10 @@ describe('PokerUIRenderer hand recap decision grades', () => {
 
 		const items = recapActionItems(elements['poker-recap']);
 		expect(items[0].title as string).toBe('你 · ✓ 跟注 20 · 尚可 · 權益 ≈45% · 底池賠率 22%');
-		expect(items[0].children?.at(-1)?.getAttribute?.('aria-hidden')).toBe('true');
+		const stamp = items[0].children?.find((child) => child.className === 'poker-recap-grade');
+		expect(stamp?.getAttribute?.('aria-hidden')).toBe('true');
+		expect(items[0].children?.at(-1)?.className).toBe('sr-only');
+		expect(items[0].children?.at(-1)?.textContent).toBe('尚可 · 權益 ≈45% · 底池賠率 22%');
 		const tally = elements['recap-grade-tally'];
 		expect(tally.textContent).toBe('⭐ 1/2');
 		expect(tally.getAttribute?.('aria-label')).toBe('2 個決策中 1 個精準');

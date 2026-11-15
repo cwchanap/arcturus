@@ -722,12 +722,13 @@ export class PokerUIRenderer {
 				let gradeDetails: string | null = null;
 				if (event.decision) {
 					gradeDetails = this.decisionDetails(event.decision, event.action);
-					// Decorative glyph only, like the action icon: the item title
-					// below already carries the full grade text, so a stamp label
-					// would make screen readers announce the same text twice.
+					// Decorative glyph like the action icon. The grade text rides
+					// in a visually hidden node: the item title below stays for
+					// pointer users but is not announced reliably by screen readers.
 					const stamp = el('span', 'poker-recap-grade', GRADE_GLYPHS[event.decision.grade]);
 					stamp.setAttribute('aria-hidden', 'true');
 					item.appendChild(stamp);
+					item.appendChild(el('span', 'sr-only', gradeDetails));
 				}
 				const actionName =
 					event.action === 'fold'

@@ -327,7 +327,13 @@ describe('getBoardState (mocked D1)', () => {
 		const weeklyKey = getWeeklyPeriodKey();
 		mock.onAll('SELECT originalMissionDefId', () => ({ results: [] }));
 		mock.onFirst('SELECT currentStreak', () => null);
-		mock.onAll('SELECT missionDefId', () => ({
+		mock.onAll('SELECT missionDefId, periodKey, gameType FROM mission_game_tried', () => ({
+			results: [
+				{ missionDefId: 'weekly-games-3', periodKey: weeklyKey, gameType: 'blackjack' },
+				{ missionDefId: 'weekly-games-3', periodKey: weeklyKey, gameType: 'poker' },
+			],
+		}));
+		mock.onAll('SELECT missionDefId, periodKey, progress', () => ({
 			results: [
 				{
 					missionDefId: 'weekly-games-3',
@@ -345,6 +351,7 @@ describe('getBoardState (mocked D1)', () => {
 		expect(weekly.progress).toBe(2);
 		expect(weekly.completed).toBe(false);
 		expect(weekly.isOverride).toBe(false);
+		expect(weekly.triedGames).toEqual(['blackjack', 'poker']);
 	});
 
 	test('reflects streak row — already claimed today → not claimable, current preserved', async () => {

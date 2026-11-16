@@ -12,7 +12,7 @@
  *
  */
 
-import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
+import { describe, expect, test, beforeAll, afterAll, setSystemTime } from 'bun:test';
 import { Miniflare } from 'miniflare';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
@@ -254,30 +254,36 @@ describe('applyMissionProgress (Miniflare D1 integration)', () => {
 		const userId = 'user-reroll-bigpot';
 		await insertUser(db!, userId);
 
-		// Reroll a default daily (slots) into the reroll-only big-pot def.
-		await db!
-			.prepare(
-				`INSERT INTO mission_override (userId, periodKey, originalMissionDefId, replacementMissionDefId, rerolledAt)
-				 VALUES (?, ?, ?, ?, ?)`,
-			)
-			.bind(
+		// Freeze UTC clock so the seeded override and applyMissionProgress never straddle UTC midnight.
+		setSystemTime(new Date('2026-06-15T12:00:00Z'));
+		try {
+			// Reroll a default daily (slots) into the reroll-only big-pot def.
+			await db!
+				.prepare(
+					`INSERT INTO mission_override (userId, periodKey, originalMissionDefId, replacementMissionDefId, rerolledAt)
+					 VALUES (?, ?, ?, ?, ?)`,
+				)
+				.bind(
+					userId,
+					getDailyPeriodKey(),
+					'daily-slots-20',
+					'daily-poker-big-pot',
+					Math.trunc(Date.now() / 1000),
+				)
+				.run();
+
+			// One completed cash poker hand with exactly +500 net qualifies.
+			await applyMissionProgress(
+				db!,
 				userId,
-				getDailyPeriodKey(),
-				'daily-slots-20',
-				'daily-poker-big-pot',
-				Math.trunc(Date.now() / 1000),
-			)
-			.run();
+				makeEvent({ gameType: 'poker', outcome: 'win', delta: 500 }),
+			);
 
-		// One completed cash poker hand with exactly +500 net qualifies.
-		await applyMissionProgress(
-			db!,
-			userId,
-			makeEvent({ gameType: 'poker', outcome: 'win', delta: 500 }),
-		);
-
-		const row = await getProgressRow(db!, userId, 'daily-poker-big-pot');
-		expect(row).not.toBeNull();
-		expect(row!.progress).toBe(1);
+			const row = await getProgressRow(db!, userId, 'daily-poker-big-pot');
+			expect(row).not.toBeNull();
+			expect(row!.progress).toBe(1);
+		} finally {
+			setSystemTime();
+		}
 	});
 });

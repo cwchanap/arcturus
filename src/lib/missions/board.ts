@@ -7,7 +7,7 @@ import {
 	getMissionDef,
 } from './registry';
 import { computeEffectiveStreakFromStored } from './streak';
-import { clampProgress } from './progress';
+import { clampProgress, parseMetadata } from './progress';
 import {
 	getDailyPeriodKey,
 	getWeeklyPeriodKey,
@@ -60,6 +60,7 @@ export function buildMissionView(
 		metadataJson: string | null;
 	},
 	isOverride: boolean,
+	triedGames?: string[],
 ): MissionView {
 	const clamped = clampProgress(progress.progress, def.target);
 	// Derive `completed` from the clamped value, not the raw progress, so the
@@ -68,7 +69,7 @@ export function buildMissionView(
 	// `raw >= target` for all target > 0, but keeps a single source of truth.
 	const completed = clamped >= def.target;
 	const claimed = progress.claimedAt !== null;
-	return {
+	const view: MissionView = {
 		missionDefId: def.id,
 		icon: def.icon,
 		period: def.period,
@@ -80,6 +81,11 @@ export function buildMissionView(
 		rewardChips: def.rewardChips,
 		isOverride,
 	};
+	if (def.metric.kind === 'gamesTried') {
+		const fromMetadata = parseMetadata(progress.metadataJson);
+		view.triedGames = triedGames ? [...new Set([...triedGames, ...fromMetadata])] : fromMetadata;
+	}
+	return view;
 }
 
 // ── DB-touching functions ──────────────────────────────────────────────────
@@ -131,6 +137,28 @@ export async function getProgressRows(
 	return map;
 }
 
+export async function getTriedGamesMap(
+	d1: D1Database,
+	userId: string,
+	dailyKey: string,
+	weeklyKey: string,
+): Promise<Map<string, string[]>> {
+	const map = new Map<string, string[]>();
+	const rows = await d1
+		.prepare(
+			`SELECT missionDefId, periodKey, gameType FROM mission_game_tried WHERE userId = ? AND (periodKey = ? OR periodKey = ?) ORDER BY firstTriedAt`,
+		)
+		.bind(userId, dailyKey, weeklyKey)
+		.all<{ missionDefId: string; periodKey: string; gameType: string }>();
+	for (const row of rows.results ?? []) {
+		const key = `${row.missionDefId}:${row.periodKey}`;
+		const list = map.get(key) ?? [];
+		list.push(row.gameType);
+		map.set(key, list);
+	}
+	return map;
+}
+
 export async function getBoardState(
 	d1: D1Database,
 	userId: string,
@@ -139,9 +167,9 @@ export async function getBoardState(
 	const dailyKey = getDailyPeriodKey();
 	const weeklyKey = getWeeklyPeriodKey();
 
-	// The login_streak query is independent of overrides/progress, so start
-	// it alongside getOverrides and await both together.
-	const [overrides, streakRow] = await Promise.all([
+	// The login_streak and mission_game_tried queries are independent of
+	// overrides/progress, so start them alongside getOverrides and await together.
+	const [overrides, streakRow, triedGamesMap] = await Promise.all([
 		getOverrides(d1, userId, dailyKey),
 		d1
 			.prepare(
@@ -149,6 +177,7 @@ export async function getBoardState(
 			)
 			.bind(userId)
 			.first<{ currentStreak: number; longestStreak: number; lastClaimPeriodKey: string }>(),
+		getTriedGamesMap(d1, userId, dailyKey, weeklyKey),
 	]);
 	const activeDaily = applyOverrides(DEFAULT_DAILY_MISSIONS, overrides);
 	const activeDefIds = [...activeDaily, ...DEFAULT_WEEKLY_MISSIONS].map((d) => d.id);
@@ -158,12 +187,17 @@ export async function getBoardState(
 
 	const dailyViews: MissionView[] = activeDaily.map((def) => {
 		const progress = progressMap.get(`${def.id}:${dailyKey}`) ?? emptyProgress();
-		return buildMissionView(def, progress, overrideIds.has(def.id));
+		return buildMissionView(
+			def,
+			progress,
+			overrideIds.has(def.id),
+			triedGamesMap.get(`${def.id}:${dailyKey}`),
+		);
 	});
 
 	const weeklyViews: MissionView[] = DEFAULT_WEEKLY_MISSIONS.map((def) => {
 		const progress = progressMap.get(`${def.id}:${weeklyKey}`) ?? emptyProgress();
-		return buildMissionView(def, progress, false);
+		return buildMissionView(def, progress, false, triedGamesMap.get(`${def.id}:${weeklyKey}`));
 	});
 
 	const effective = computeEffectiveStreakFromStored(streakRow ?? null);

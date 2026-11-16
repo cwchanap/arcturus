@@ -27,7 +27,7 @@ export function selectPokerMissions(board: Pick<BoardState, 'daily' | 'weekly'>)
 			case 'bigWin':
 				return !metric.gameType || metric.gameType === 'poker';
 			case 'gamesTried':
-				return true;
+				return mission.claimable || !(mission.triedGames?.includes('poker') ?? false);
 			case 'spinsCompleted':
 				return false;
 		}

@@ -131,6 +131,12 @@ describe('computeIncrement', () => {
 		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker', delta: 500 }, null)).toEqual({
 			amount: 1,
 		});
+		expect(
+			computeIncrement(def, { ...baseEvent, gameType: 'blackjack', delta: 500 }, null),
+		).toEqual({ amount: 1 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'slots', delta: 750 }, null)).toEqual({
+			amount: 1,
+		});
 		expect(computeIncrement(def, baseEvent, null)).toEqual({ amount: 0 });
 	});
 

@@ -29,6 +29,8 @@
 		0 30px 90px #0009;
 	display: flex;
 	flex-direction: column;
+	container-type: inline-size;
+	container-name: poker-frame;
 }
 .poker-frame::before {
 	content: '';
@@ -349,9 +351,10 @@ a.poker-format:hover {
 }
 .poker-human {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: center;
-	gap: 24px;
+	gap: 16px 24px;
 	padding-top: 18px;
 	margin-top: auto;
 	position: relative;
@@ -1455,10 +1458,13 @@ a.poker-format:hover {
 
 /* ── Missions at the table: progress rings beside the player ────── */
 .poker-missions {
-	position: absolute;
-	top: 50%;
-	left: 0;
-	transform: translateY(-50%);
+	flex: 1 1 0;
+	min-width: max-content;
+}
+.poker-human:has(.poker-missions:not([hidden]))::after {
+	content: '';
+	flex: 1 1 0;
+	min-width: 0;
 }
 .poker-mission-tokens {
 	display: flex;
@@ -1534,17 +1540,16 @@ a.poker-format:hover {
 		transform: scale(1.25);
 	}
 }
-/* Below this width the seat row has no free side, so the rings get their own row. */
-@media (max-width: 1280px) {
-	.poker-human {
-		flex-wrap: wrap;
-		row-gap: 16px;
-	}
+/* Below this container width the row cannot fit five rings plus a wide seat
+   readout on one line, so the rings wrap onto their own centered row. */
+@container poker-frame (max-width: 1100px) {
 	.poker-missions {
-		position: static;
 		order: 1;
-		flex-basis: 100%;
-		transform: none;
+		flex: 0 0 100%;
+		min-width: 0;
+	}
+	.poker-human::after {
+		display: none;
 	}
 	.poker-mission-tokens {
 		justify-content: center;

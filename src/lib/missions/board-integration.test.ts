@@ -393,12 +393,20 @@ describe('getBoardState (Miniflare D1 integration)', () => {
 		await insertUser(db!, userId);
 		const weeklyKey = getWeeklyPeriodKey();
 		await seedProgress(db!, userId, 'weekly-games-3', weeklyKey, 2);
+		await db!
+			.prepare(
+				`INSERT INTO mission_game_tried (userId, missionDefId, periodKey, gameType, firstTriedAt)
+				 VALUES (?, 'weekly-games-3', ?, 'blackjack', 100), (?, 'weekly-games-3', ?, 'poker', 200)`,
+			)
+			.bind(userId, weeklyKey, userId, weeklyKey)
+			.run();
 
 		const state = await getBoardState(db!, userId, 1000);
 		const weekly = state.weekly.find((m) => m.missionDefId === 'weekly-games-3')!;
 		expect(weekly.progress).toBe(2);
 		expect(weekly.completed).toBe(false);
 		expect(weekly.isOverride).toBe(false);
+		expect(weekly.triedGames).toEqual(['blackjack', 'poker']);
 	});
 
 	test('reflects streak row — already claimed today → not claimable, current preserved', async () => {

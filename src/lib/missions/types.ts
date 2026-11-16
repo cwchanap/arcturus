@@ -57,6 +57,8 @@ export interface MissionView {
 	claimable: boolean;
 	rewardChips: number;
 	isOverride: boolean;
+	/** Recorded distinct games for `gamesTried` missions so tables know when they can still advance it. */
+	triedGames?: string[];
 }
 
 export interface StreakView {

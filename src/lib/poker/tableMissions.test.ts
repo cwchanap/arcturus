@@ -116,10 +116,32 @@ describe('selectPokerMissions', () => {
 		]);
 	});
 
-	// The excludes-a-bigWin-metric-scoped-to-another-game case needs a
-	// definition shape the real registry cannot produce, so it is covered
-	// with a mocked registry in tableMissions-mock.test.ts (module mocks
-	// cannot be unregistered, which would leave this file patched).
+	test('hides weekly-games-3 once poker is already tried unless claimable', () => {
+		const alreadyTriedPoker = selectPokerMissions(
+			board([], [{ ...tried(1), triedGames: ['poker'] }]),
+		);
+		expect(alreadyTriedPoker).toEqual([]);
+
+		const triedOtherGames = selectPokerMissions(
+			board([], [{ ...tried(2), triedGames: ['blackjack', 'craps'] }]),
+		);
+		expect(triedOtherGames.map((m) => m.missionDefId)).toEqual(['weekly-games-3']);
+
+		const completedByPokerClaimable = selectPokerMissions(
+			board(
+				[],
+				[
+					{
+						...tried(3),
+						completed: true,
+						claimable: true,
+						triedGames: ['blackjack', 'craps', 'poker'],
+					},
+				],
+			),
+		);
+		expect(completedByPokerClaimable.map((m) => m.missionDefId)).toEqual(['weekly-games-3']);
+	});
 });
 
 describe('findNewlyCompleted', () => {
@@ -354,6 +376,7 @@ describe('initPokerTableMissions', () => {
 						rewardChips: 800,
 						completed: true,
 						claimable: true,
+						isOverride: true,
 					}),
 				]),
 			],

@@ -62,7 +62,7 @@ test.describe('Mission Board', () => {
 		await expect(page.getByTestId('daily-grid')).toBeVisible();
 		await expect(page.getByTestId('weekly-section')).toBeVisible();
 
-		// Four daily cards sit in the responsive grid; five only after a reroll.
+		// Four daily cards sit in the responsive grid (a reroll swaps one in place).
 		await expect(page.getByTestId('daily-grid').locator('.mission-card')).toHaveCount(4);
 
 		// Two weekly cards sit in a spaced grid column under the English heading.

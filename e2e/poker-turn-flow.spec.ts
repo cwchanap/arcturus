@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import type { Browser, Page } from '@playwright/test';
+import { getMissionDef } from '../src/lib/missions/registry';
+import type { MissionId } from '../src/lib/missions/types';
 import { createIsolatedPage } from './isolated-page';
 
 const createIsolatedPokerPage = (browser: Browser, baseURL?: string) =>
@@ -25,25 +27,22 @@ const boxesOverlap = (a: Box, b: Box) =>
  * true targets/rewards keep the rendered badges (0/1 … 0/15) at real widths.
  */
 function boardWithFivePokerRings() {
-	const view = (
-		missionDefId: string,
-		period: 'daily' | 'weekly',
-		icon: string,
-		target: number,
-		rewardChips: number,
-		isOverride = false,
-	) => ({
-		missionDefId,
-		icon,
-		period,
-		progress: 0,
-		target,
-		completed: false,
-		claimed: false,
-		claimable: false,
-		rewardChips,
-		isOverride,
-	});
+	const view = (missionDefId: MissionId, isOverride = false) => {
+		const def = getMissionDef(missionDefId);
+		if (!def) throw new Error(`Missing mission definition for ${missionDefId}`);
+		return {
+			missionDefId,
+			icon: def.icon,
+			period: def.period,
+			progress: 0,
+			target: def.target,
+			completed: false,
+			claimed: false,
+			claimable: false,
+			rewardChips: def.rewardChips,
+			isOverride,
+		};
+	};
 	return {
 		streak: {
 			current: 0,
@@ -54,16 +53,13 @@ function boardWithFivePokerRings() {
 			lastClaimPeriodKey: '',
 		},
 		daily: [
-			view('daily-blackjack-5', 'daily', '\u{1F0CF}', 5, 500),
-			view('daily-win-3', 'daily', '\u{1F3C6}', 3, 750),
+			view('daily-blackjack-5'),
+			view('daily-win-3'),
 			// daily-slots-20 rerolled; the server marks the replacement.
-			view('daily-poker-big-pot', 'daily', '\u{2666}\uFE0F', 1, 800, true),
-			view('daily-poker-10', 'daily', '\u{2660}\uFE0F', 10, 500),
+			view('daily-poker-big-pot', true),
+			view('daily-poker-10'),
 		],
-		weekly: [
-			view('weekly-games-3', 'weekly', '\u{1F4C5}', 3, 2000),
-			view('weekly-poker-wins-15', 'weekly', '\u{2663}\uFE0F', 15, 2500),
-		],
+		weekly: [view('weekly-games-3'), view('weekly-poker-wins-15')],
 		rerollAvailable: false,
 		nextDailyReset: new Date(Date.now() + 86_400_000).toISOString(),
 		nextWeeklyReset: new Date(Date.now() + 7 * 86_400_000).toISOString(),
@@ -256,7 +252,7 @@ test.describe('Poker turn flow smoke test', () => {
 		}
 	});
 
-	test('five mission rings stay clear of bankroll, cards and actions at 1101px, 1281px and 320px', async ({
+	test('five mission rings stay clear of bankroll, cards and actions across desktop and phone viewports', async ({
 		browser,
 		baseURL,
 	}) => {
@@ -296,6 +292,7 @@ test.describe('Poker turn flow smoke test', () => {
 						rings,
 						bankroll: box(document.querySelector('.poker-bankroll')!),
 						cards: box(document.querySelector('#player-cards')!),
+						strength: box(document.querySelector('.poker-hand-strength')!),
 						actions: box(document.querySelector('.poker-actions')!),
 					};
 				});
@@ -305,25 +302,55 @@ test.describe('Poker turn flow smoke test', () => {
 				for (const [index, ring] of m.rings.entries()) {
 					expect(boxesOverlap(ring, m.bankroll), `ring ${index} overlaps bankroll`).toBe(false);
 					expect(boxesOverlap(ring, m.cards), `ring ${index} overlaps cards`).toBe(false);
+					expect(boxesOverlap(ring, m.strength), `ring ${index} overlaps hand strength`).toBe(
+						false,
+					);
 					expect(boxesOverlap(ring, m.actions), `ring ${index} overlaps actions`).toBe(false);
 				}
 				return m;
 			};
 
-			// 1101px: desktop width inside the ring-row breakpoint — the rings
-			// get their own centered row instead of absolute placement.
+			// 1101px: inside the container-query wrap threshold — rings wrap onto
+			// their own centered row below the seat without colliding.
 			await page.setViewportSize({ width: 1101, height: 900 });
-			await page.goto(`${baseURL}/games/poker`, { waitUntil: 'networkidle' });
+			await page.goto('/games/poker', { waitUntil: 'networkidle' });
 			await expect(ringTokens).toHaveCount(5);
 			await expect.poll(ringPosition).toBe('static');
-			await assertNoCollisions();
+			const wrapped = await assertNoCollisions();
+			expect(wrapped.rings[0]!.top).toBeGreaterThanOrEqual(wrapped.cards.bottom);
 
-			// 1281px: one pixel past the breakpoint — the absolute seat-side
-			// placement returns and must also be collision-free.
-			await page.setViewportSize({ width: 1281, height: 900 });
-			await expect(ringTokens).toHaveCount(5);
-			await expect.poll(ringPosition).toBe('absolute');
-			await assertNoCollisions();
+			// Exercise the worst-case seat width: long balance, turn timer visible,
+			// and wide hand label ("Straight Flush").
+			await page.evaluate(() => {
+				document.getElementById('player-balance')!.textContent = '1,234,567 chips';
+				document.getElementById('hand-strength')!.textContent = 'Straight Flush';
+				const timer = document.getElementById('poker-turn-timer')!;
+				timer.hidden = false;
+				document.getElementById('poker-turn-seconds')!.textContent = '20';
+			});
+
+			// 1280x800 laptop: rings stay beside the seat (no extra row), adding 0px
+			// above the action buttons compared to a board with no rings.
+			await page.setViewportSize({ width: 1280, height: 800 });
+			await expect.poll(ringPosition).toBe('static');
+			const laptop = await assertNoCollisions();
+			expect(laptop.rings[0]!.top).toBeLessThan(laptop.cards.bottom);
+			const baselineActionsBottom = await page.evaluate(() => {
+				const missions = document.getElementById('poker-missions')!;
+				missions.hidden = true;
+				const bottom = document.querySelector('.poker-actions')!.getBoundingClientRect().bottom;
+				missions.hidden = false;
+				return bottom;
+			});
+			expect(Math.abs(laptop.actions.bottom - baselineActionsBottom)).toBeLessThanOrEqual(1);
+
+			// 1281x1100 (taller than 1000px where #player-cards widens to 199px):
+			// normal-flow rings still stay clear of the wider seat readout.
+			await page.setViewportSize({ width: 1281, height: 1100 });
+			await expect.poll(ringPosition).toBe('static');
+			const tall = await assertNoCollisions();
+			expect(tall.rings[0]!.top).toBeLessThan(tall.cards.bottom);
+			expect(tall.actions.bottom).toBeLessThanOrEqual(1100);
 
 			// 320px: narrowest supported width — the centered five-ring row must
 			// still fit inside the viewport.

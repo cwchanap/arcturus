@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { applyOverrides, getReplacementPool, buildMissionView } from './board';
-import { DEFAULT_DAILY_MISSIONS, REROLL_POOL_DAILY } from './registry';
+import { DEFAULT_DAILY_MISSIONS, DEFAULT_WEEKLY_MISSIONS, REROLL_POOL_DAILY } from './registry';
 import type { MissionDefinition } from './types';
 
 describe('applyOverrides', () => {
@@ -129,5 +129,23 @@ describe('buildMissionView', () => {
 			overrideIds.has(replacedDef.id),
 		);
 		expect(view.isOverride).toBe(true);
+	});
+
+	test('populates triedGames for gamesTried missions from metadata and triedGames list', () => {
+		const gamesDef = DEFAULT_WEEKLY_MISSIONS.find((m) => m.metric.kind === 'gamesTried')!;
+		const view = buildMissionView(
+			gamesDef,
+			{ progress: 2, completedAt: null, claimedAt: null, metadataJson: '["blackjack","craps"]' },
+			false,
+			['craps', 'poker'],
+		);
+		expect(view.triedGames).toEqual(['craps', 'poker', 'blackjack']);
+
+		const nonGamesView = buildMissionView(
+			DEFAULT_DAILY_MISSIONS[0]!,
+			{ progress: 0, completedAt: null, claimedAt: null, metadataJson: null },
+			false,
+		);
+		expect(nonGamesView.triedGames).toBeUndefined();
 	});
 });

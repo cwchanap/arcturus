@@ -62,6 +62,9 @@ test.describe('Mission Board', () => {
 		await expect(page.getByTestId('daily-grid')).toBeVisible();
 		await expect(page.getByTestId('weekly-section')).toBeVisible();
 
+		// Four daily cards sit in the responsive grid; five only after a reroll.
+		await expect(page.getByTestId('daily-grid').locator('.mission-card')).toHaveCount(4);
+
 		// Two weekly cards sit in a spaced grid column under the English heading.
 		await expect(page.getByRole('heading', { name: 'Weekly Goals' })).toBeVisible();
 		const weekly = page.getByTestId('weekly-section');

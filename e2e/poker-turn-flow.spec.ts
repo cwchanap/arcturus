@@ -18,22 +18,31 @@ const boxesOverlap = (a: Box, b: Box) =>
 	a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 /**
- * Board with the five poker-eligible ring IDs (the rerolled daily shape from
- * the table-missions unit tests), so the table renders a full five-ring row
- * for deterministic layout checks.
+ * Realistic one-override board — the rerolled shape from the table-missions
+ * unit tests: the default dailies with the slots mission rerolled into the
+ * poker "Big Pot" pool mission, plus both default weeklies. A fresh board
+ * always carries four dailies and two weeklies (one reroll per day), and
+ * true targets/rewards keep the rendered badges (0/1 … 0/15) at real widths.
  */
 function boardWithFivePokerRings() {
-	const view = (missionDefId: string, period: 'daily' | 'weekly') => ({
+	const view = (
+		missionDefId: string,
+		period: 'daily' | 'weekly',
+		icon: string,
+		target: number,
+		rewardChips: number,
+		isOverride = false,
+	) => ({
 		missionDefId,
-		icon: '\u2660\uFE0F',
+		icon,
 		period,
 		progress: 0,
-		target: 3,
+		target,
 		completed: false,
 		claimed: false,
 		claimable: false,
-		rewardChips: 500,
-		isOverride: missionDefId === 'daily-poker-wins-3' || missionDefId === 'daily-poker-big-pot',
+		rewardChips,
+		isOverride,
 	});
 	return {
 		streak: {
@@ -44,10 +53,17 @@ function boardWithFivePokerRings() {
 			rewardPreview: 0,
 			lastClaimPeriodKey: '',
 		},
-		daily: ['daily-win-3', 'daily-poker-10', 'daily-poker-wins-3', 'daily-poker-big-pot'].map(
-			(id) => view(id, 'daily'),
-		),
-		weekly: [view('weekly-poker-wins-15', 'weekly')],
+		daily: [
+			view('daily-blackjack-5', 'daily', '\u{1F0CF}', 5, 500),
+			view('daily-win-3', 'daily', '\u{1F3C6}', 3, 750),
+			// daily-slots-20 rerolled; the server marks the replacement.
+			view('daily-poker-big-pot', 'daily', '\u{2666}\uFE0F', 1, 800, true),
+			view('daily-poker-10', 'daily', '\u{2660}\uFE0F', 10, 500),
+		],
+		weekly: [
+			view('weekly-games-3', 'weekly', '\u{1F4C5}', 3, 2000),
+			view('weekly-poker-wins-15', 'weekly', '\u{2663}\uFE0F', 15, 2500),
+		],
 		rerollAvailable: false,
 		nextDailyReset: new Date(Date.now() + 86_400_000).toISOString(),
 		nextWeeklyReset: new Date(Date.now() + 7 * 86_400_000).toISOString(),

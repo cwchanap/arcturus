@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import type { BoardState, MissionMetric, MissionView } from '../missions/types';
+import type { BoardState, MissionView } from '../missions/types';
 import { POKER_HAND_SETTLED_EVENT } from './constants';
 import { findNewlyCompleted, initPokerTableMissions, selectPokerMissions } from './tableMissions';
 
@@ -116,37 +116,10 @@ describe('selectPokerMissions', () => {
 		]);
 	});
 
-	test('excludes a bigWin metric scoped to another game', async () => {
-		// The registry's only bigWin definition is poker-scoped, so this mock
-		// scopes it to another game to prove the shared guard rejects it. The
-		// original getMissionDef is captured before the mock swaps it in and
-		// re-bound afterwards, so nothing leaks.
-		const actual = await import('../missions/registry');
-		const realGetMissionDef = actual.getMissionDef;
-		const blackjackBigWin: MissionMetric = {
-			kind: 'bigWin',
-			minDelta: 500,
-			gameType: 'blackjack',
-		};
-		mock.module('../missions/registry', () => ({
-			...actual,
-			getMissionDef: (id: string) => {
-				const def = realGetMissionDef(id);
-				return id === 'daily-poker-big-pot' && def ? { ...def, metric: blackjackBigWin } : def;
-			},
-		}));
-		try {
-			const selected = selectPokerMissions(
-				board([mission({ missionDefId: 'daily-poker-big-pot', isOverride: true })]),
-			);
-			expect(selected).toEqual([]);
-		} finally {
-			mock.module('../missions/registry', () => ({
-				...actual,
-				getMissionDef: (id: string) => realGetMissionDef(id),
-			}));
-		}
-	});
+	// The excludes-a-bigWin-metric-scoped-to-another-game case needs a
+	// definition shape the real registry cannot produce, so it is covered
+	// with a mocked registry in tableMissions-mock.test.ts (module mocks
+	// cannot be unregistered, which would leave this file patched).
 });
 
 describe('findNewlyCompleted', () => {

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import type { BoardState, MissionView } from '../missions/types';
+import type { BoardState, MissionMetric, MissionView } from '../missions/types';
 import { POKER_HAND_SETTLED_EVENT } from './constants';
 import { findNewlyCompleted, initPokerTableMissions, selectPokerMissions } from './tableMissions';
 
@@ -66,6 +66,86 @@ describe('selectPokerMissions', () => {
 			]),
 		);
 		expect(selected).toEqual([]);
+	});
+
+	test('the default cash board keeps four rings, daily before weekly', () => {
+		const selected = selectPokerMissions(
+			board(
+				[
+					mission({ missionDefId: 'daily-blackjack-5', icon: '🂠' }),
+					mission({ missionDefId: 'daily-win-3', icon: '🏆' }),
+					mission({ missionDefId: 'daily-slots-20', icon: '🎰' }),
+					mission({ missionDefId: 'daily-poker-10', icon: '♠️' }),
+				],
+				[
+					mission({ missionDefId: 'weekly-games-3', icon: '📅', period: 'weekly' }),
+					mission({ missionDefId: 'weekly-poker-wins-15', icon: '♣️', period: 'weekly' }),
+				],
+			),
+		);
+		expect(selected.map((m) => m.missionDefId)).toEqual([
+			'daily-win-3',
+			'daily-poker-10',
+			'weekly-games-3',
+			'weekly-poker-wins-15',
+		]);
+	});
+
+	test('a non-poker daily rerolled into a poker mission yields five rings', () => {
+		const selected = selectPokerMissions(
+			board(
+				[
+					mission({ missionDefId: 'daily-blackjack-5', icon: '🂠' }),
+					mission({ missionDefId: 'daily-win-3', icon: '🏆' }),
+					// daily-slots-20 rerolled; the server applies the override.
+					mission({ missionDefId: 'daily-poker-big-pot', icon: '♦️', isOverride: true }),
+					mission({ missionDefId: 'daily-poker-10', icon: '♠️' }),
+				],
+				[
+					mission({ missionDefId: 'weekly-games-3', icon: '📅', period: 'weekly' }),
+					mission({ missionDefId: 'weekly-poker-wins-15', icon: '♣️', period: 'weekly' }),
+				],
+			),
+		);
+		expect(selected.map((m) => m.missionDefId)).toEqual([
+			'daily-win-3',
+			'daily-poker-big-pot',
+			'daily-poker-10',
+			'weekly-games-3',
+			'weekly-poker-wins-15',
+		]);
+	});
+
+	test('excludes a bigWin metric scoped to another game', async () => {
+		// The registry's only bigWin definition is poker-scoped, so this mock
+		// scopes it to another game to prove the shared guard rejects it. The
+		// original getMissionDef is captured before the mock swaps it in and
+		// re-bound afterwards, so nothing leaks.
+		const actual = await import('../missions/registry');
+		const realGetMissionDef = actual.getMissionDef;
+		const blackjackBigWin: MissionMetric = {
+			kind: 'bigWin',
+			minDelta: 500,
+			gameType: 'blackjack',
+		};
+		mock.module('../missions/registry', () => ({
+			...actual,
+			getMissionDef: (id: string) => {
+				const def = realGetMissionDef(id);
+				return id === 'daily-poker-big-pot' && def ? { ...def, metric: blackjackBigWin } : def;
+			},
+		}));
+		try {
+			const selected = selectPokerMissions(
+				board([mission({ missionDefId: 'daily-poker-big-pot', isOverride: true })]),
+			);
+			expect(selected).toEqual([]);
+		} finally {
+			mock.module('../missions/registry', () => ({
+				...actual,
+				getMissionDef: (id: string) => realGetMissionDef(id),
+			}));
+		}
 	});
 });
 
@@ -287,6 +367,46 @@ describe('initPokerTableMissions', () => {
 		tokens()[0].click();
 		await flush();
 		expect(calls.some((c) => c.url === '/api/missions/claim')).toBe(false);
+	});
+
+	test('a claimable rerolled ring claims in place with an accessible label', async () => {
+		const { calls, balances, tokens } = setup({
+			'/api/missions/board': [
+				board([
+					mission({
+						missionDefId: 'daily-poker-big-pot',
+						icon: '♦️',
+						progress: 1,
+						target: 1,
+						rewardChips: 800,
+						completed: true,
+						claimable: true,
+					}),
+				]),
+			],
+			'/api/missions/claim': [
+				{
+					status: 'completed',
+					missionDefId: 'daily-poker-big-pot',
+					rewardChips: 800,
+					chipBalance: 1800,
+				},
+			],
+		});
+		await flush();
+		const [pot] = tokens();
+		expect(pot.dataset.missionId).toBe('daily-poker-big-pot');
+		expect(pot.dataset.state).toBe('ready');
+		expect(pot.getAttribute('aria-label')).toBe('Big Pot complete. Claim 800 chips');
+		pot.click();
+		await flush();
+		const claim = calls.find((c) => c.url === '/api/missions/claim');
+		expect(claim?.init?.method).toBe('POST');
+		expect(JSON.parse(String(claim?.init?.body))).toEqual({ missionDefId: 'daily-poker-big-pot' });
+		expect(balances).toEqual([1800]);
+		const [claimed] = tokens();
+		expect(claimed.dataset.state).toBe('claimed');
+		expect(claimed.textContent).toBe('♦️✓');
 	});
 
 	test('a failed claim leaves the ring claimable', async () => {

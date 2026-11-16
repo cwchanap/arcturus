@@ -16,15 +16,19 @@ import { POKER_HAND_SETTLED_EVENT } from './constants';
 
 /** Active missions a single-player poker hand can advance, daily first. */
 export function selectPokerMissions(board: Pick<BoardState, 'daily' | 'weekly'>): MissionView[] {
-	return [...board.daily, ...board.weekly].filter((mission) => {
+	return [...board.daily, ...board.weekly].filter((mission): boolean => {
 		const metric = getMissionDef(mission.missionDefId)?.metric;
-		switch (metric?.kind) {
+		if (!metric) return false;
+		// No default case: a new metric kind must be handled here or the
+		// boolean return type fails the type check.
+		switch (metric.kind) {
 			case 'handsPlayed':
 			case 'roundsWon':
+			case 'bigWin':
 				return !metric.gameType || metric.gameType === 'poker';
 			case 'gamesTried':
 				return true;
-			default:
+			case 'spinsCompleted':
 				return false;
 		}
 	});

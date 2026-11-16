@@ -45,9 +45,9 @@
 		"@tailwindcss/vite": "^4.3.5",
 		"@types/canvas-confetti": "^1.9.0",
 		"astro": "^6.4.8",
-		"better-auth": "^1.7.18",
+		"better-auth": "^1.7.23",
 		"better-call": "^1.4.5",
-		"better-sqlite3": "^13.0.3",
+		"better-sqlite3": "^13.1.1",
 		"canvas-confetti": "^1.9.4",
 		"drizzle-orm": "^0.45.4",
 		"tailwindcss": "^4.3.5",
@@ -56,7 +56,7 @@
 	"devDependencies": {
 		"@astrojs/check": "^0.9.12",
 		"@astrojs/cloudflare": "^13.7.0",
-		"@cloudflare/workers-types": "^5.20261106.1",
+		"@cloudflare/workers-types": "^5.20261113.1",
 		"@eslint/js": "^10.0.1",
 		"@fontsource/jost": "^5.3.0",
 		"@fontsource/playfair-display": "^5.3.0",
@@ -70,11 +70,11 @@
 		"husky": "^9.1.7",
 		"lint-staged": "^17.6.0",
 		"miniflare": "4.20260730.0",
-		"prettier": "^3.9.10",
+		"prettier": "^3.10.1",
 		"prettier-plugin-astro": "^1.1.1",
 		"typescript": "6",
-		"typescript-eslint": "^8.72.1",
+		"typescript-eslint": "^8.72.2",
 		"vitest": "^5.1.0",
-		"wrangler": "^4.158.0"
+		"wrangler": "^4.161.0"
 	}
 }

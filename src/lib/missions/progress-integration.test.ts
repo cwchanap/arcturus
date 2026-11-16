@@ -17,6 +17,7 @@ import { Miniflare } from 'miniflare';
 import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { applyMissionProgress } from './progress';
+import { getDailyPeriodKey } from './periods';
 import type { MissionGameEvent } from './types';
 import type { D1Database } from '@cloudflare/workers-types';
 
@@ -247,5 +248,36 @@ describe('applyMissionProgress (Miniflare D1 integration)', () => {
 
 		const count = await countProgressRows(db!, userId);
 		expect(count).toBe(0);
+	});
+
+	test('a rerolled big-pot daily mission advances on one qualifying poker hand', async () => {
+		const userId = 'user-reroll-bigpot';
+		await insertUser(db!, userId);
+
+		// Reroll a default daily (slots) into the reroll-only big-pot def.
+		await db!
+			.prepare(
+				`INSERT INTO mission_override (userId, periodKey, originalMissionDefId, replacementMissionDefId, rerolledAt)
+				 VALUES (?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				userId,
+				getDailyPeriodKey(),
+				'daily-slots-20',
+				'daily-poker-big-pot',
+				Math.trunc(Date.now() / 1000),
+			)
+			.run();
+
+		// One completed cash poker hand with exactly +500 net qualifies.
+		await applyMissionProgress(
+			db!,
+			userId,
+			makeEvent({ gameType: 'poker', outcome: 'win', delta: 500 }),
+		);
+
+		const row = await getProgressRow(db!, userId, 'daily-poker-big-pot');
+		expect(row).not.toBeNull();
+		expect(row!.progress).toBe(1);
 	});
 });

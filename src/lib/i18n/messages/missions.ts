@@ -23,6 +23,10 @@ const MISSION_GAME_KEYS: Partial<Record<MissionId, GameNameKey>> = {
 	'daily-craps-3': 'craps',
 	'daily-baccarat-3': 'baccarat',
 	'daily-keno-5': 'keno',
+	'daily-poker-10': 'poker',
+	'daily-poker-wins-3': 'poker',
+	'daily-poker-big-pot': 'poker',
+	'weekly-poker-wins-15': 'poker',
 };
 
 function missionGameToken(locale: Locale, id: MissionId): MessageTokens | undefined {
@@ -38,7 +42,11 @@ const MISSION_TITLES = defineMessages({
 		'daily-craps-3': 'Dice Roller',
 		'daily-baccarat-3': '{game} Round',
 		'daily-keno-5': 'Lucky Numbers',
+		'daily-poker-10': '{game} Session',
+		'daily-poker-wins-3': '{game} Winner',
+		'daily-poker-big-pot': '{game} Big Pot',
 		'weekly-games-3': 'Variety Seeker',
+		'weekly-poker-wins-15': '{game} Champion',
 	} satisfies Record<MissionId, string>,
 	'zh-Hant': {
 		'daily-blackjack-5': '{game}連勝',
@@ -47,7 +55,11 @@ const MISSION_TITLES = defineMessages({
 		'daily-craps-3': '骰子滾動',
 		'daily-baccarat-3': '{game}回合',
 		'daily-keno-5': '幸運號碼',
+		'daily-poker-10': '{game}時光',
+		'daily-poker-wins-3': '{game}贏家',
+		'daily-poker-big-pot': '{game}大底池',
 		'weekly-games-3': '多元探索者',
+		'weekly-poker-wins-15': '{game}冠軍',
 	},
 	'zh-Hans': {
 		'daily-blackjack-5': '{game}连胜',
@@ -56,7 +68,11 @@ const MISSION_TITLES = defineMessages({
 		'daily-craps-3': '骰子滚动',
 		'daily-baccarat-3': '{game}回合',
 		'daily-keno-5': '幸运号码',
+		'daily-poker-10': '{game}时光',
+		'daily-poker-wins-3': '{game}赢家',
+		'daily-poker-big-pot': '{game}大底池',
 		'weekly-games-3': '多元探索者',
+		'weekly-poker-wins-15': '{game}冠军',
 	},
 	ja: {
 		'daily-blackjack-5': '{game}連勝',
@@ -65,7 +81,11 @@ const MISSION_TITLES = defineMessages({
 		'daily-craps-3': 'ダイスローラー',
 		'daily-baccarat-3': '{game}ラウンド',
 		'daily-keno-5': 'ラッキーナンバー',
+		'daily-poker-10': '{game}セッション',
+		'daily-poker-wins-3': '{game}ウィナー',
+		'daily-poker-big-pot': '{game}ビッグポット',
 		'weekly-games-3': 'バラエティシーカー',
+		'weekly-poker-wins-15': '{game}チャンピオン',
 	},
 });
 
@@ -77,7 +97,11 @@ const MISSION_DESCRIPTIONS = defineMessages({
 		'daily-craps-3': 'Play {count} {game} rounds',
 		'daily-baccarat-3': 'Play {count} {game} hands',
 		'daily-keno-5': 'Play {count} {game} draws',
+		'daily-poker-10': 'Play {count} {game} hands',
+		'daily-poker-wins-3': 'Win {count} {game} rounds',
+		'daily-poker-big-pot': 'Win a single {game} hand with +500 net chips',
 		'weekly-games-3': 'Play {count} different game modes this week',
+		'weekly-poker-wins-15': 'Win {count} {game} rounds this week',
 	} satisfies Record<MissionId, string>,
 	'zh-Hant': {
 		'daily-blackjack-5': '玩 {count} 手{game}',
@@ -86,7 +110,11 @@ const MISSION_DESCRIPTIONS = defineMessages({
 		'daily-craps-3': '玩 {count} 局{game}',
 		'daily-baccarat-3': '玩 {count} 手{game}',
 		'daily-keno-5': '玩 {count} 局{game}',
+		'daily-poker-10': '玩 {count} 手{game}',
+		'daily-poker-wins-3': '在{game}中贏得 {count} 回合',
+		'daily-poker-big-pot': '在單一{game}手牌贏得 +500 淨籌碼',
 		'weekly-games-3': '本週遊玩 {count} 種不同遊戲模式',
+		'weekly-poker-wins-15': '本週在{game}中贏得 {count} 回合',
 	},
 	'zh-Hans': {
 		'daily-blackjack-5': '玩 {count} 手{game}',
@@ -95,7 +123,11 @@ const MISSION_DESCRIPTIONS = defineMessages({
 		'daily-craps-3': '玩 {count} 局{game}',
 		'daily-baccarat-3': '玩 {count} 手{game}',
 		'daily-keno-5': '玩 {count} 局{game}',
+		'daily-poker-10': '玩 {count} 手{game}',
+		'daily-poker-wins-3': '在{game}中赢得 {count} 回合',
+		'daily-poker-big-pot': '在单一{game}手牌赢得 +500 净筹码',
 		'weekly-games-3': '本周游玩 {count} 种不同游戏模式',
+		'weekly-poker-wins-15': '本周在{game}中赢得 {count} 回合',
 	},
 	ja: {
 		'daily-blackjack-5': '{game}を {count} ハンドプレイ',
@@ -104,7 +136,11 @@ const MISSION_DESCRIPTIONS = defineMessages({
 		'daily-craps-3': '{game}を {count} ラウンドプレイ',
 		'daily-baccarat-3': '{game}を {count} ハンドプレイ',
 		'daily-keno-5': '{game}を {count} 回プレイ',
+		'daily-poker-10': '{game}を {count} ハンドプレイ',
+		'daily-poker-wins-3': '{game}で {count} ラウンド勝利',
+		'daily-poker-big-pot': '{game}の1ハンドで +500 ネットチップを獲得',
 		'weekly-games-3': '今週 {count} 種類の異なるゲームモードをプレイ',
+		'weekly-poker-wins-15': '今週{game}で {count} ラウンド勝利',
 	},
 });
 
@@ -120,7 +156,7 @@ export const MISSIONS_MESSAGES = defineMessages({
 		claimed: 'Claimed',
 		inProgress: 'In Progress',
 		dailyQuests: 'Daily Quests',
-		weeklyGoal: 'Weekly Goal',
+		weeklyGoal: 'Weekly Goals',
 		rerolled: '(rerolled)',
 		rerollAriaLabel: 'Reroll mission',
 		serviceUnavailable: 'Service temporarily unavailable',

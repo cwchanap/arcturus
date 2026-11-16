@@ -10,16 +10,30 @@ import {
 } from './registry';
 
 describe('mission registry', () => {
-	test('default daily missions has 3 entries', () => {
-		expect(DEFAULT_DAILY_MISSIONS).toHaveLength(3);
+	test('default daily missions has 4 entries', () => {
+		expect(DEFAULT_DAILY_MISSIONS).toHaveLength(4);
+	});
+
+	test('poker play-10 mission is a default daily mission', () => {
+		expect(DEFAULT_DAILY_MISSIONS.map((m) => m.id)).toContain('daily-poker-10');
 	});
 
 	test('reroll pool has at least 2 entries', () => {
 		expect(REROLL_POOL_DAILY.length).toBeGreaterThanOrEqual(2);
 	});
 
-	test('weekly has 1 entry', () => {
-		expect(DEFAULT_WEEKLY_MISSIONS).toHaveLength(1);
+	test('weekly has 2 entries', () => {
+		expect(DEFAULT_WEEKLY_MISSIONS).toHaveLength(2);
+	});
+
+	test('poker wins-15 mission is a default weekly mission', () => {
+		expect(DEFAULT_WEEKLY_MISSIONS.map((m) => m.id)).toContain('weekly-poker-wins-15');
+	});
+
+	test('poker wins-3 and big-pot missions are in the daily reroll pool', () => {
+		const rerollIds = REROLL_POOL_DAILY.map((m) => m.id);
+		expect(rerollIds).toContain('daily-poker-wins-3');
+		expect(rerollIds).toContain('daily-poker-big-pot');
 	});
 
 	test('all daily definitions = default + reroll pool, no duplicates', () => {

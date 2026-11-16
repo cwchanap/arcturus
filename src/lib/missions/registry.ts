@@ -25,6 +25,14 @@ export const DEFAULT_DAILY_MISSIONS: MissionDefinition[] = [
 		rewardChips: 500,
 		icon: '\u{1F3B0}', // slot machine emoji — matches GAME_TYPE_ICONS.slots
 	},
+	{
+		id: 'daily-poker-10',
+		period: 'daily',
+		metric: { kind: 'handsPlayed', gameType: 'poker' },
+		target: 10,
+		rewardChips: 500,
+		icon: '\u{2660}\uFE0F', // spade suit emoji — matches GAME_TYPE_ICONS.poker
+	},
 ];
 
 export const REROLL_POOL_DAILY: MissionDefinition[] = [
@@ -52,6 +60,22 @@ export const REROLL_POOL_DAILY: MissionDefinition[] = [
 		rewardChips: 600,
 		icon: '\u{1F3B1}', // billiards emoji — matches GAME_TYPE_ICONS.keno
 	},
+	{
+		id: 'daily-poker-wins-3',
+		period: 'daily',
+		metric: { kind: 'roundsWon', gameType: 'poker' },
+		target: 3,
+		rewardChips: 600,
+		icon: '\u{2665}\uFE0F', // heart suit emoji
+	},
+	{
+		id: 'daily-poker-big-pot',
+		period: 'daily',
+		metric: { kind: 'bigWin', minDelta: 500, gameType: 'poker' },
+		target: 1,
+		rewardChips: 800,
+		icon: '\u{2666}\uFE0F', // diamond suit emoji
+	},
 ];
 
 export const DEFAULT_WEEKLY_MISSIONS: MissionDefinition[] = [
@@ -62,6 +86,14 @@ export const DEFAULT_WEEKLY_MISSIONS: MissionDefinition[] = [
 		target: 3,
 		rewardChips: 2000,
 		icon: '\u{1F4C5}', // calendar emoji
+	},
+	{
+		id: 'weekly-poker-wins-15',
+		period: 'weekly',
+		metric: { kind: 'roundsWon', gameType: 'poker' },
+		target: 15,
+		rewardChips: 2500,
+		icon: '\u{2663}\uFE0F', // club suit emoji
 	},
 ];
 

@@ -38,6 +38,10 @@ export function computeIncrement(
 			const wins = event.winsIncrement > 0 ? event.winsIncrement : event.outcome === 'win' ? 1 : 0;
 			return { amount: wins };
 		}
+		case 'bigWin': {
+			if (metric.gameType && event.gameType !== metric.gameType) return { amount: 0 };
+			return { amount: event.delta >= metric.minDelta ? 1 : 0 };
+		}
 		case 'spinsCompleted': {
 			if (event.gameType !== 'slots') return { amount: 0 };
 			return { amount: event.handCount };

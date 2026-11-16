@@ -87,6 +87,53 @@ describe('computeIncrement', () => {
 		});
 	});
 
+	test('bigWin adds 1 at the inclusive minDelta threshold (+500)', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500, gameType: 'poker' });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker', delta: 500 }, null)).toEqual({
+			amount: 1,
+		});
+	});
+
+	test('bigWin adds 1 above the threshold (+750)', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500, gameType: 'poker' });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker', delta: 750 }, null)).toEqual({
+			amount: 1,
+		});
+	});
+
+	test('bigWin adds 0 just below the threshold (+499)', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500, gameType: 'poker' });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker', delta: 499 }, null)).toEqual({
+			amount: 0,
+		});
+	});
+
+	test('bigWin adds 0 for a negative delta (−500)', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500, gameType: 'poker' });
+		expect(
+			computeIncrement(
+				def,
+				{ ...baseEvent, gameType: 'poker', outcome: 'loss', delta: -500 },
+				null,
+			),
+		).toEqual({ amount: 0 });
+	});
+
+	test('bigWin adds 0 when the game type does not match (+1000 in another game)', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500, gameType: 'poker' });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'slots', delta: 1000 }, null)).toEqual({
+			amount: 0,
+		});
+	});
+
+	test('bigWin without gameType matches any game', () => {
+		const def = makeDef('d1', { kind: 'bigWin', minDelta: 500 });
+		expect(computeIncrement(def, { ...baseEvent, gameType: 'poker', delta: 500 }, null)).toEqual({
+			amount: 1,
+		});
+		expect(computeIncrement(def, baseEvent, null)).toEqual({ amount: 0 });
+	});
+
 	test('netChipsEarned dropped for MVP — no test needed', () => {
 		// netChipsEarned was removed from MissionMetric. No mission uses it.
 	});

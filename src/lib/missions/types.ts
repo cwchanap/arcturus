@@ -1,3 +1,5 @@
+import type { GameType } from '../game-stats/types';
+
 /**
  * Closed mission definition ID set: every mission the product ships. Adding a
  * mission means adding its ID here first — the registry definitions, the
@@ -10,14 +12,19 @@ export const MISSION_IDS = [
 	'daily-craps-3',
 	'daily-baccarat-3',
 	'daily-keno-5',
+	'daily-poker-10',
+	'daily-poker-wins-3',
+	'daily-poker-big-pot',
 	'weekly-games-3',
+	'weekly-poker-wins-15',
 ] as const;
 
 export type MissionId = (typeof MISSION_IDS)[number];
 
 export type MissionMetric =
-	| { kind: 'handsPlayed'; gameType?: string }
-	| { kind: 'roundsWon'; gameType?: string }
+	| { kind: 'handsPlayed'; gameType?: GameType }
+	| { kind: 'roundsWon'; gameType?: GameType }
+	| { kind: 'bigWin'; minDelta: number; gameType?: GameType }
 	| { kind: 'spinsCompleted' }
 	| { kind: 'gamesTried' };
 

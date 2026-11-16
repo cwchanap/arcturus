@@ -148,7 +148,7 @@ function formatProgress(progress: number, target: number): string {
 
 			<!-- Weekly Goal -->
 			<h2 class="deco-section-title text-xl mb-4">{t('weeklyGoal')}</h2>
-			<div id="weekly-section" data-testid="weekly-section">
+			<div id="weekly-section" class="grid gap-4" data-testid="weekly-section">
 				{initialBoard.weekly.map((mission) => (
 					<div
 						class="deco-panel p-6 mission-card"

@@ -61,6 +61,25 @@ test.describe('Mission Board', () => {
 		await expect(page.getByTestId('streak-banner')).toBeVisible();
 		await expect(page.getByTestId('daily-grid')).toBeVisible();
 		await expect(page.getByTestId('weekly-section')).toBeVisible();
+
+		// Two weekly cards sit in a spaced grid column under the English heading.
+		await expect(page.getByRole('heading', { name: 'Weekly Goals' })).toBeVisible();
+		const weekly = page.getByTestId('weekly-section');
+		await expect(weekly.locator('.mission-card')).toHaveCount(2);
+		const layout = await weekly.evaluate((el) => {
+			const style = getComputedStyle(el);
+			const tops = [...el.querySelectorAll<HTMLElement>('.mission-card')].map(
+				(card) => card.getBoundingClientRect().top,
+			);
+			return {
+				display: style.display,
+				rowGap: parseFloat(style.rowGap),
+				separated: tops.length === 2 ? tops[1] > tops[0] : false,
+			};
+		});
+		expect(layout.display).toBe('grid');
+		expect(layout.rowGap).toBe(16);
+		expect(layout.separated).toBe(true);
 	});
 
 	test('streak claim grants chips, second claim is idempotent', async ({ missionPage: page }) => {

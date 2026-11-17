@@ -1,60 +1,56 @@
 # HPA-728 — Big-win celebration assets: design specification
 
 **Linear:** https://linear.app/cwchanap/issue/HPA-728/assets-big-win-celebration-sprites-and-sfx  
-**Implementation plan:** [2026-11-16-big-win-fx.md](../plans/2026-11-16-big-win-fx.md)  
-**Delivery:** One PR, [#89](https://github.com/cwchanap/arcturus/pull/89), for the assets; [HPA-729](https://linear.app/cwchanap/issue/HPA-729/all-games-big-win-celebration) is the separate, blocked runtime implementation.
+**Plan:** [2026-11-16-big-win-fx.md](../plans/2026-11-16-big-win-fx.md)  
+**PR:** [#89](https://github.com/cwchanap/arcturus/pull/89), **one PR for this asset ticket**. [HPA-729](https://linear.app/cwchanap/issue/HPA-729/all-games-big-win-celebration) separately owns runtime integration and stays blocked until these assets land.
 
-## Goal and existing references
+## Goal and repository references
 
-Supply small, original, painted Art Deco effects for a rare casino win, matching the existing dark-green/gold poker presentation. **This PR ships only images and audio**—no animations, UI integration, gameplay, mute handling, database/API work, dependencies, or asset pipeline.
+Supply seven original, lightweight painted Art Deco effects matching the current dark-green/gold poker look. No animation/gameplay, UI/runtime code, CSS, database, APIs, dependencies, new asset pipeline or compatibility work belongs in HPA-728.
 
-- `public/images/poker/pot-chips.webp`: 128 × 128 transparent painted **chip pile**, ~5.4 KB; visual treatment reference, not a single-chip sprite to duplicate.
-- `public/images/poker/emblem.webp`: 128 × 128 transparent metallic decoration.
-- `public/images/poker/felt.webp`: 768 × 512 background (~33 KB) used by `src/styles/poker.css` (gold `#e4c988`). `public/images/poker/card-back.webp`: 256 × 384 (~35 KB).
-- `src/components/PokerChip.astro` uses CSS circles; the ticket explicitly calls for painted sprites instead.
-- `src/lib/poker/sound.ts` currently synthesizes `chips`, `allIn`, and `bigWin` through Web Audio (master gain defaults to 0.6), and its header says no audio files ship. `src/lib/poker/PokerGame.ts` already calls `this.sound.play(big ? 'bigWin' : 'win')` after qualifying wins, including ≥20 big blinds or a strong hand. These cues are **not modified in HPA-728**; the runtime overlap must be reconciled in HPA-729.
-
-No UI mockup is attached to Linear; use the existing table and screenshots as the visual reference.
+- `public/images/poker/pot-chips.webp`: 128 × 128 transparent **chip pile** (~5.4 KB), a painting reference, **not** the requested single-chip particle.
+- `public/images/poker/emblem.webp`: 128 × 128 transparent ornament; `felt.webp`: 768 × 512 felt background under dark overlay; `card-back.webp`: 256 × 384. Existing poker gold is `#e4c988` in `src/styles/poker.css`.
+- `src/components/PokerChip.astro` draws CSS circles, not the requested painted particles.
+- `src/lib/poker/sound.ts` currently synthesizes `chips`, `allIn`, `win` and `bigWin` (default master gain 0.6). `src/lib/poker/PokerGame.ts` already plays `this.sound.play(big ? 'bigWin' : 'win')` for qualifying hands. Preserve this implementation in HPA-728; reconcile overlapping audio during HPA-729.
+- Linear provides **no UI mockup**; compare temporary preview screenshots with the existing table.
 
 ## Seven-file contract
 
-| Final path | Visual/audio specification | Format and budget |
+| Final path | Content | Target |
 | --- | --- | --- |
-| `public/images/fx/chip-gold.webp` | Top-down gilded single chip with painted bevel and transparent padding | 128 × 128 WebP |
-| `public/images/fx/chip-red.webp` | Same rim, viewpoint, size and lighting; rich red | 128 × 128 WebP |
-| `public/images/fx/chip-blue.webp` | Same rim, viewpoint, size and lighting; sapphire blue | 128 × 128 WebP |
-| `public/images/fx/sparkle.webp` | Restrained metallic four-point glint; no matte rectangle | 128 × 128 WebP |
-| `public/images/fx/big-win-ribbon.webp` | Art Deco metallic ribbon, **transparent outside its silhouette**, quiet central text region, **no baked text** | ~960 px wide; suggested 960 × 240 WebP |
-| `public/audio/fx/coin-shower.mp3` | Clear, diminishing cascade of chip clicks; ~1.5 s | MP3, ≤100 KB |
-| `public/audio/fx/big-win-sting.mp3` | Original short celebratory flourish; ~2.0 s | MP3, ≤100 KB |
+| `public/images/fx/chip-gold.webp` | Top-down gold single casino chip, painted bevel, true-alpha outside silhouette | 128 × 128 WebP |
+| `public/images/fx/chip-red.webp` | Matching red chip, same silhouette/rim/light/padding | 128 × 128 WebP |
+| `public/images/fx/chip-blue.webp` | Matching sapphire-blue chip | 128 × 128 WebP |
+| `public/images/fx/sparkle.webp` | Small metallic four-point glint with true alpha | 128 × 128 WebP |
+| `public/images/fx/big-win-ribbon.webp` | Gold Art Deco ribbon with quiet central band, true-alpha outside silhouette, **no baked text** | ~960 px wide WebP, flexible ~280–320 px height |
+| `public/audio/fx/coin-shower.mp3` | Clean cascading chip clicks, decaying tail | ~1.5 s, mono 44.1 kHz MP3, ≤100 KB |
+| `public/audio/fx/big-win-sting.mp3` | Short original celebratory fanfare, clean ending | ~2.0 s, mono 44.1 kHz MP3, ≤100 KB |
 
-**All five WebPs together:** target ~100 KB or less, keeping real alpha and edge quality. Preserve fixed paths as HPA-729's public asset interface. Do not ship master source renders, prompts, WAVs or previews in the repository.
+**Five WebPs together:** target **~100 KB or less**. Only these finished assets are committed; generated masters, WAVs, screenshots, mixed preview and prompts stay outside Git.
 
-## Art direction
+## Art direction and mobile layout
 
-- Painted casino look: dark outlines, restrained gold highlights, coherent lighting and silhouettes. Avoid flat emoji, neon, text, numbers, logos, stock assets and rectangular backgrounds.
-- Generate one gold master, recolor/repaint red and blue from the same shape so particles read as a set. Inspect chips at 24–48 CSS px on dark felt.
-- Keep transparent outer pixels on chips, sparkle **and ribbon**; no opaque/translucent rectangle outside the actual ribbon shape. Leave sufficient padding for spinning, and a central region for `Big Win` plus the count-up rendered later in HTML for four locales.
-- **Measure and record the ribbon's text-safe rectangle** in native pixel coordinates `(x, y, width, height)` after final export; check that English, Traditional Chinese, Simplified Chinese and Japanese overlays fit in the scratch preview. Do not guess a safe-area box before the art exists.
-- The ribbon must fit a phone-width overlay without obscuring the entire screen.
+- Painted premium casino style, dark edges and restrained gold highlights; avoid flat emoji, stock art, neon, logos, numbers, letters or solid rectangular backgrounds. Make the gold chip master once, then recolor/redraw red and blue to preserve consistent framing. Check at **24, 32 and 48 CSS px** on felt.
+- **Pre-generation ribbon constraint:** the uninterrupted text-safe *central band* must cover at least **~55% of the image's width and height**. Allow ~960 × 280–320 instead of forcing 960 × 240 so the title and chip count have vertical room when scaled to a ~340 px mobile content width. Do not let ornaments cross the safe band.
+- The title (translated HTML in `en`, `zh-Hant`, `zh-Hans` and `ja`) and count-up are **not baked into** the ribbon. After exporting, record the actual safe-area rectangle `(x, y, width, height)` in native pixels for HPA-729; confirm stacked overlays fit in desktop and phone previews.
+- All chip/glint/ribbon outer corners should actually be transparent; allow space for rotating particle sprites. The ribbon must not occupy the entire phone viewport.
 
-## Sound and layering contract
+## Sound contract and handoff
 
-- Export **mono, 44.1 kHz MP3s**. A pragmatic initial mastering target is around **−20 LUFS integrated** and **≤−6 dBTP per isolated clip**; apply one `ffmpeg loudnorm` pass, measure, and turn down as needed. Avoid pumping away the chip transients.
-- The HPA-729 **huge** tier plays both files **simultaneously** (shower plus sting). Measure and audition the **combined** pair: aim for composite true peak **≤−1 dBTP** and no harshness; an isolated per-file peak cap alone does **not** guarantee the sum will not clip. Include a listen/A–B against the existing synthesized poker `bigWin` cue at representative volume.
-- Clips should start promptly, end cleanly, contain no voices or borrowed melodies, and remain tasteful next to the existing poker sounds. Use `ffprobe`/`ffmpeg` and macOS `afinfo`/`afplay` for metadata, decoder and listening checks.
-- **HPA-729 handoff:** avoid duplicate effects when the existing `PokerGame.ts` `bigWin` sound and the new celebration are triggered by the same hand. Suppress/route the overlapping synth cue where appropriate without silently removing feedback for non-celebration outcomes; update `sound.ts`'s now-stale no-file header while implementing runtime playback.
+- Keep chip transients intact. Measure the decoded final audio with `ffmpeg volumedetect` (or `ebur128`), then apply **fixed linear gain** with `ffmpeg -af volume=<dB>dB` as needed. Do **not** prescribe single-pass `loudnorm` for ~1.5-second transient clips or force an unreliable short-clip LUFS reading.
+- As an initial headroom guide, keep individual true peaks around **≤−6 dBTP**, then render the **actual combined pair**, with shower and sting starting together (`amix=inputs=2:duration=longest:normalize=0`). Verify the composite **≤−1 dBTP**, lowering inputs if needed. The sum, not either isolated peak, determines clipping risk. Measure after MP3 encoding; verify no pops or clipped tails with a decoder.
+- HPA-729's **huge** tier plays both sounds simultaneously; preserve moderate loudness alongside existing table cues. An optional real-device listening comparison against the existing poker `bigWin` cue is a quality check, **not** a substitute for measured peaks.
+- **HPA-729 handoff:** suppress or route the existing `PokerGame.ts` synthesized `bigWin` where the new effect already plays, without losing sound on other winning outcomes; update `sound.ts`'s now-stale “no audio files ship” header. No source changes in HPA-728.
 
-## Preview workflow and automated completion
+## Preview delivery and acceptance
 
-The Linear issue requests **preview approval before committing binary assets**. Assemble one temporary preview outside Git with desktop (1280 × 800) and phone (375 × 812) screenshots showing each sprite on poker felt, a ribbon with temporary localized HTML text, and individual/layered audio playback. Post a **PR #89 Conversation comment** containing screenshots and accessible audio attachments/links. An explicit approval reply on **that preview comment** is the pre-commit go-ahead; if there is no reply or attachment path, keep the PR in planning/preview state rather than silently committing unapproved binaries. This is a sequencing checkpoint, **not a human testing/acceptance criterion**.
+The Linear issue requires preview feedback **before committing final binaries**. Create **one** plain scratch HTML preview outside the repo showing each sprite on existing felt and stacked localized HTML title/count; capture 1280 × 800 and 375 × 812 screenshots. Prepare both individual MP3s and optionally a mixed MP3 **as preview only**. Use Linear's native `prepare_attachment_upload` → raw-byte PUT → `create_attachment_from_upload` workflow to attach screenshots/audio to **HPA-728 Resources**, then place a preview summary/comment on HPA-728 and a link to it in PR #89. GitHub's Markdown comment API cannot upload binary files. The requested feedback/go-ahead on the Linear preview is a **pre-commit workflow checkpoint**, not an end-to-end test.
 
-**Automated acceptance (one platform; run through browser MCP for the visual E2E):**
+**Technical completion criteria (automated):**
 
-- [ ] Seven final files exist at their fixed paths with no application code or new dependencies, and the combined WebPs and individual MP3s meet the stated budgets.
-- [ ] `webpinfo`/Pillow confirms the four 128 × 128 sprites, ~960px ribbon, WebP encoding, actual transparency (including outer pixels), plus consistent chip framing; measurements are recorded.
-- [ ] `ffprobe`/`afinfo` confirms two valid 44.1-kHz mono MP3s near 1.5 s and 2.0 s; `ffmpeg` measures isolated and **layered** peaks, and playback/decode checks pass.
-- [ ] **Browser MCP** exercises the **single scratch preview** at desktop/phone viewport sizes; screenshot evidence is visually checked against the current table for legibility, transparency, ribbon fit and text-safe region. The preview also exercises individual/layered playback controls. No separate Astro-asset HTTP smoke or full gameplay E2E is required for this static-asset ticket.
-- [ ] `bun run format:check` and `bun run build` pass after final files are added (run locally while the PR remains draft); record screenshots, audio measurements, checks and environment in the PR. No manual verification is an acceptance check.
+- [ ] The exact seven fixed assets are committed to PR #89, within size budgets and with no application/dependency changes.
+- [ ] One-off `webpinfo`/Pillow checks validate WebP, dimensions, alpha and transparent outer pixels; `ffprobe`/`ffmpeg`/`afinfo` validate codec, mono/sample rate, approximate durations, final decoded playback and the summed true peak.
+- [ ] **Browser MCP visual end-to-end** exercises the single scratch preview (one platform sufficient): takes desktop/phone screenshots, checks small sprite readability, alpha, table-style consistency, and that the four locale title/count overlays fit within the safe band. This is the **visual screenshot acceptance** in the absence of a Linear mockup; no browser audio E2E, duplicated Astro static-file smoke, or gameplay test is needed for this asset-only change.
+- [ ] Local `bun run format:check` and `bun run build` pass after adding binaries. Record the measured sizes, durations, peak, native-pixel safe box, screenshot evidence, browser/platform and command results in PR #89.
 
-HPA-729 separately owns thresholds, animation, translated runtime text, mute state, and integration with games.
+No manual approval is presented as an automated test result. HPA-729 remains its own ticket/PR.

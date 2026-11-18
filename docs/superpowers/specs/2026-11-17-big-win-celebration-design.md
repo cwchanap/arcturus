@@ -9,7 +9,7 @@
 
 Give meaningful **net-positive** casual single-player wins a shared Art Deco celebration. Cover all **11** entries of `GAME_TYPES`, for both guest and authenticated casual play. This is **presentation-only**: wallet state, odds, random outcomes, score accounting, mission and achievement rules must not change.
 
-Excluded: Ranked Blackjack, Daily Challenge, multiplayer poker rooms, Sit & Go, new generated art/audio, new backend routes or D1 schema, dependencies, generalized animation frameworks, legacy storage migration or compatibility scaffolding. HPA-725/HPA-726 are already merged; the separate HPA-728 assets are already on `main`.
+Excluded: Ranked Blackjack, Daily Challenge, multiplayer poker rooms, new generated art/audio, new backend routes or D1 schema, dependencies, generalized animation frameworks, legacy storage migration or compatibility scaffolding. HPA-725/HPA-726 are already merged; the separate HPA-728 assets are already on `main`.
 
 ## Win contract and tier policy
 
@@ -20,7 +20,7 @@ A pure tier function handles normal games:
 - Ignore non-finite values, invalid/nonpositive stake, and `win <= 0`; an explicit poker tier cannot override the net-positive requirement.
 - `huge` at `win >= 20 * stake`; otherwise `big` at `win >= 5 * stake`; otherwise no effect. Check huge first; comparisons are inclusive.
 - Aggregate all simultaneous payouts and bets **once per round**. A Blackjack split/double-down uses the sum of final hand bets and the sum of `payout - bet` across hands, never a separate celebration for each hand. A win in one sub-bet with net loss overall does not qualify.
-- **Poker cash only:** at presentation time, compute tier from the *contested pot awarded to the human*, with returned uncalled bets excluded. `huge` at `potWon >= 50 * handBigBlind`; `big` at `potWon >= 20 * handBigBlind`. Require `handResultDelta > 0`. Pass the tier as an override, and show the **net delta** as the count-up value. Preserve normal poker feedback for smaller wins. Tournament/Sit & Go rounds are out of scope.
+- **Poker (cash and solo Sit & Go):** at presentation time, compute tier from the *contested pot awarded to the human*, with returned uncalled bets excluded. `huge` at `potWon >= 50 * handBigBlind`; `big` at `potWon >= 20 * handBigBlind`. Require `handResultDelta > 0`. Pass the tier as an override, and show the **net delta** as the count-up value. Preserve normal poker feedback for smaller wins. The same thresholds apply in solo Sit & Go; only private-room multiplayer Poker is excluded.
 
 The caller fires exactly once when its result is **visibly revealed**, not during delayed animation, wallet retry, rerender, restored-state hydration or a generic balance update. Rendering is best-effort and cannot fail a game round.
 
@@ -59,7 +59,7 @@ Create one browser preference with a new key `casino_sound_muted`, default unmut
 | Blackjack | `src/lib/blackjack/blackjackClient.ts` `handleRoundComplete` after `settleRound`, when result text is displayed | Aggregate outcomes `sum(payout - hand.bet)` and `sum(hand.bet)` using the pre-settlement hands; includes split/double |
 | Baccarat | `src/pages/games/baccarat.astro` after `animateRound` and `showResult` | Already captured `roundNetDelta`; stake `sum(outcome.betResults[].bet.amount)` |
 | Craps | `src/pages/games/craps.astro` immediately after `showRollResult` | `result.netDelta`; sum the `amount` of resolved win/lose/push `result.evaluations[].bet`, excluding continue/pending wagers |
-| Poker | `src/lib/poker/PokerGame.ts` `presentHandResult` | Frozen `delta > 0`; qualifying contested `humanWon` relative to `handBigBlind`, cash mode only |
+| Poker | `src/lib/poker/PokerGame.ts` `presentHandResult` | Frozen `delta > 0`; qualifying contested `humanWon` relative to `handBigBlind`, cash and solo Sit & Go |
 | Slots | `src/lib/slots/slotsClient.ts` in the one-time `reveal()` after `renderer.renderResult` | `result.netDelta` / `result.bet` |
 | Roulette | `src/lib/roulette/rouletteClient.ts` in guarded `animateAndScheduleReveal` reveal callback | `spinResult.netDelta` / `spinResult.totalBet`; never reveal before wheel completes or re-fire on hydration |
 | Keno | `src/lib/keno/kenoClient.ts` in `commitDraw` after `renderer.renderLastResult` | `result.netDelta` / `result.bet` |

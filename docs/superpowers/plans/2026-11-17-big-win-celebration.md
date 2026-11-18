@@ -73,7 +73,7 @@ One browser composition call per casual game. Keep domain classes, wallet module
 
 - [ ] All 11 casual games (including solo Sit & Go) use existing reveal seams to pass actual **net** amount and round stake; 5×/20× and Poker 20/50BB trigger correctly, with no effect for negative/zero wins, invalid measure, restored results, wallet retry, Ranked/Daily/private-room play.
 - [ ] One pointer-transparent `aria-hidden` overlay with preexisting HPA-728 imagery/SFX, clean replacement/cleanup and reduced-motion static alternatives. No duplicate Poker big-win audio, no gameplay/input obstruction.
-- [ ] Site-wide `casino_sound_muted` is the **only** sound preference, synchronized between header and Poker, persistent across route navigation; Slots does not retain an inert checkbox.
+- [ ] Site-wide `casino_sound_muted` is the **only effective mute control** for Poker and celebration audio, synchronized between header and Poker and persistent across route navigation; Slots does not retain an inert checkbox. Unused Baccarat/Craps settings remain outside this ticket.
 - [ ] Four-locale ribbon text/count fits the safe area in the Playwright regression across both viewport sizes; **browser-MCP E2E and screenshot visual checks** of big/huge/reduced-motion and a normal game flow pass on one platform.
 - [ ] All code quality, unit/integration, build and relevant E2E/regression checks pass with evidence recorded; no backend changes exist, so backend E2E is not applicable.
 

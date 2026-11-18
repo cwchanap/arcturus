@@ -1,77 +1,80 @@
 # HPA-729 — Big-win celebration: implementation plan
 
-**Ticket:** https://linear.app/cwchanap/issue/HPA-729/all-games-big-win-celebration  
+**Linear:** https://linear.app/cwchanap/issue/HPA-729/all-games-big-win-celebration  
 **Design:** [2026-11-17-big-win-celebration-design.md](../specs/2026-11-17-big-win-celebration-design.md)  
-**Dependencies:** HPA-725 and HPA-726 complete; HPA-728 asset-only [PR #89](https://github.com/cwchanap/arcturus/pull/89) merged.  
-**PR policy:** **one PR** for HPA-729. This PR starts as documentation-only and remains **draft** while implementation and tests are added to the **same branch/PR**. Do not spawn a second implementation PR.
+**Prerequisites:** HPA-725/726 complete; HPA-728 assets merged in [PR #89](https://github.com/cwchanap/arcturus/pull/89).  
+**PR discipline:** **one PR for HPA-729**, initially documents-only. Add code, tests and review fixes to **this same draft PR**; do not create a second PR for implementation.
 
-No backend/API/DB changes, packages, new art or SFX, generalized event bus, unneeded compatibility or new test-only production routes. Existing assets and modules are enough.
+Keep it YAGNI/KISS: no backend, migration, new dependencies, art/SFX, generalized event bus, old settings compatibility, client-side router cleanup or RNG instrumentation.
 
-## 1. Implement the small reusable presentation boundary
+## 1. Centralize the site-wide mute setting
 
-- [ ] Add `src/lib/celebration/` with a pure normal-game tier selector (inclusive 5×/20× thresholds, positive net and stake validation) and the browser function `celebrateWin({ win, stake, anchor?, tier? })`. Keep poker's BB threshold policy **in PokerGame**, supplying only the computed tier override.
-- [ ] Create the effect once on demand: one fixed, pointer-transparent overlay per casino page; 30–40 images using `public/images/fx/{chip-gold,chip-red,chip-blue,sparkle}.webp` with WAAPI gravity-like drift, spin and scaleX coin flip. Anchor is optional; fallback to viewport center. Animate and clean up in ~1.6s; cancel/replace a prior effect on repeat.
-- [ ] Add the `big-win-ribbon.webp` huge-tier overlay with an accessible localized HTML title and net chip count-up. Honor the measured **(165,64,630,192)** text-safe band in the 960×320 ribbon; ensure it scales to 375px without clipping. Use existing `formatChips` and four-locale typed dictionary.
-- [ ] Detect reduced motion and show **static big amount / huge ribbon+amount** instead of particles or number tweening; clean up the static layer too.
-- [ ] Load/preload two shipped MP3s via simple lazy `HTMLAudioElement`; play coin shower for big, both files for huge; ignore blocked audio/absent APIs. No sound plays when muted.
-- [ ] Add focused `*.test.ts` happy-dom tests for boundary ratios and invalid inputs, exact tier selection, one effect at a time, 30–40 chips, cleanup/cancel, reduced motion, banner label/count, mute, and rejected playback. Keep browser globals injectable/mocked only as needed; don't add an FX dependency.
+- [ ] Add `src/lib/sound-preference.ts` as the single state owner: `casino_sound_muted`, default unmuted, `isSoundMuted()`, `setSoundMuted()`, `bindSoundToggle()`. The binder sets `aria-pressed`, localized accessible on/off label, click handler and one same-page change listener. Handle unavailable localStorage with a simple in-memory fallback. No migration from `poker_sound_muted`.
+- [ ] Create small `src/components/SoundToggle.astro` and render it directly next to `LanguagePicker` in the **real** shared header, `src/layouts/AppLayout.astro`. No slot/prop needed.
+- [ ] Update `src/lib/poker/sound.ts` and `PokerGame.ts`: remove captured `muted` state, read shared preference on every play/unlock; bind existing `#btn-sound` with the same helper, rather than custom two-way synchronization. Preserve existing table sounds and constructor testability via `isMuted?: () => boolean` injection; adapt `src/lib/poker/sound.test.ts` instead of maintaining a legacy storage seam. Update obsolete no-audio-file comment.
+- [ ] Remove Slots' misleading `#setting-sound` control from `src/pages/games/slots.astro` and its unused `soundEnabled` handler/render, type, default, and settings sanitizer; the shared header is the sole sound control on Slots. Other games' unused settings are out of scope.
+- [ ] Add focused tests for preference read/write, same-page two-button synchronization, persistence, missing storage and Poker audio gating. Avoid a generalized settings/store layer.
 
-## 2. Wire one preference and one casino header control
+## 2. Add the focused celebration module using existing assets
 
-- [ ] Introduce `casino_sound_muted` as the single localStorage preference, with default unmuted. No old-key migration or history compatibility.
-- [ ] Use `src/layouts/casino.astro` for the casino-specific control but integrate into the actual header markup in `src/layouts/AppLayout.astro` through one small header slot/prop (not a second header). Add accessible localized label and `aria-pressed`; load the preference when the browser script starts.
-- [ ] Adapt `src/lib/poker/sound.ts` to use the same key and react to changes made by the header **after** poker sound's singleton initialized. Conversely, clicking the existing poker `#btn-sound` immediately updates the header. Keep `createPokerSound`'s test-injected storage and preserve other poker SFX; update obsolete file header.
-- [ ] Use one lightweight same-page notification for synchronized toggles; optional browser storage event if needed. Global mute overrides any per-game celebration sound. No complex settings store.
-- [ ] Test both button directions, initial mute, persistence across navigation, correct UI state/accessible label and muted poker/celebration playback in happy-dom.
+- [ ] `src/lib/celebration/tier.ts`: one `WIN_TIER_MULTIPLES` block for **stake: 5×/20×** and **Poker BB: 20/50**; pure `winTier(measure, unit, multiples)` with inclusive thresholds (huge first), nonfinite/zero/negative rejection.
+- [ ] `src/lib/celebration/index.ts`: `celebrateWin({win,stake})` for ordinary games; `showCelebration(tier,amount)` for Poker after calling `winTier(humanWon, handBigBlind, ...bigBlind)`. No `tier?` override or unused `anchor?` argument: bursts start at viewport center until there is a real anchor caller.
+- [ ] Lazily `document.body.append` one fixed, **pointer-transparent, `aria-hidden="true"`** overlay. Big: 30–40 gold/red/blue chip images and small sparkles, animated by WAAPI spin/scaleX, gravity-like drift and fade over about 1.6s. Huge: add existing 960×320 ribbon and a translated title/animated net `formatChips` inside the measured **(165,64,630,192)** native safe rectangle.
+- [ ] Replace a running effect rather than stacking: cancel previous animations, clear any timeout and remove old nodes; clean up after 1.6s. Plain document navigation requires no bespoke cleanup hook. Under reduced motion, show static net amount (big) or ribbon/title/amount (huge), without particles/count-up; still clean up.
+- [ ] Lazily play `public/audio/fx/coin-shower.mp3` on big and both shipped MP3s on huge with `HTMLAudioElement`, gated by `isSoundMuted()`; catch rejected playback. No new audio dependency or gain tuning.
+- [ ] Happy-dom/Bun tests: tier boundaries, loss/push/invalid inputs, overlay replacement/cleanup, reduced motion, localized text, rejected audio, shared mute. The browser result is already announced elsewhere, so do **not** add a live region.
 
-## 3. Add one result-time hook per existing casual game
+## 3. Reuse the two already-established round-measure rules
 
-Treat this table as a checklist; do **not** modify game-rule classes, wallet settlement, or introduce one common game-event framework.
+- [ ] **Blackjack:** in `src/lib/blackjack/blackjackClient.ts`, add `blackjackRoundNet(outcomes, playerHands): {win,stake}` next to `buildBlackjackSettlementCommand` and reuse the per-hand `payout - bet` basis. Use the pre-`settleRound()` player hands; calculate once across split/double bets, including **guest** results. Test helper in existing `blackjackClient.test.ts`.
+- [ ] **Craps:** factor existing win/lose/push filtering out of `src/lib/craps/settlement.ts:buildCrapsSettlementCommand` into `resolvedEvaluations(result)`; reuse it to calculate `sum(evaluation.bet.amount)` for FX stake. Continuing wagers are not resolved. Test in existing `craps/settlement.test.ts`.
+- [ ] Keep these functions near the owning settlement rules; do not add duplicate payout classifiers to the pages or a new cross-game settlement abstraction.
 
-| Game | Planned insertion | Measure and caution |
+## 4. Wire the existing **one-shot visible result** seams
+
+One browser composition call per casual game. Keep domain classes, wallet modules, and API routes unchanged.
+
+| Game | Edit location | Input |
 | --- | --- | --- |
-| Blackjack | `src/lib/blackjack/blackjackClient.ts:handleRoundComplete` after outcomes available and visible | Compute `sum(payout - bet)` and `sum(bet)` across completed split/double hands **once** |
-| Baccarat | `src/pages/games/baccarat.astro` after `animateRound; showResult` | `roundNetDelta`, sum of `outcome.betResults.bet.amount` |
-| Craps | `src/pages/games/craps.astro` after `showRollResult` | `result.netDelta`; sum resolved evaluation wagers only (skip continue) |
-| Poker | `src/lib/poker/PokerGame.ts:presentHandResult` | Cash and solo Sit & Go; `delta>0` and `contested humanWon >=20/50*handBigBlind`; pass tier override; suppress overlapping synthesized `bigWin` and preserve normal cue below threshold |
-| Slots | `src/lib/slots/slotsClient.ts:reveal` | `result.netDelta` / `result.bet`, after spin reveal; do not re-fire on wallet completion |
-| Roulette | `src/lib/roulette/rouletteClient.ts:animateAndScheduleReveal` guarded `reveal` | `spinResult.netDelta` / `totalBet`; never reveal win early or on restored session |
-| Keno | `src/lib/keno/kenoClient.ts:commitDraw` after last-result display | `result.netDelta` / `result.bet` |
-| Video Poker | `src/lib/video-poker/client.ts` after draw+render | `round.netDelta` / `round.wager` |
-| Sic Bo | `src/lib/sic-bo/client.ts` after roll+render | `result.netDelta` / `result.totalStake` |
-| Three-Card Showdown | `src/lib/three-card-showdown/client.ts` after fold/play+render | `round.netDelta` / `round.totalWager` |
-| Pai Gow Poker | `src/lib/pai-gow-poker/client.ts` after confirm+render | `result.netDelta` / `result.wager` |
+| Blackjack | `blackjack/blackjackClient.ts:handleRoundComplete` after visible result | `blackjackRoundNet(outcomes, state.playerHands)`, once including splits/doubles |
+| Baccarat | `pages/games/baccarat.astro` after `animateRound` + `showResult` | `roundNetDelta`, sum `outcome.betResults[].bet.amount` |
+| Craps | `pages/games/craps.astro` after `showRollResult` | `result.netDelta`, sum from `resolvedEvaluations(result)` |
+| Poker | `poker/PokerGame.ts:presentHandResult` | Cash **and solo Sit & Go**; positive frozen `delta` + contested `humanWon` vs 20/50BB thresholds; `showCelebration(tier, delta)` |
+| Slots | `slots/slotsClient.ts:reveal` after `renderResult` | `result.netDelta` / `result.bet` |
+| Roulette | `roulette/rouletteClient.ts:animateAndScheduleReveal` guarded `reveal` | `spinResult.netDelta` / `spinResult.totalBet`; **not** on restore/hydration |
+| Keno | `keno/kenoClient.ts:commitDraw` after `renderLastResult` | `result.netDelta` / `result.bet` |
+| Video Poker | `video-poker/client.ts` after `game.draw()` + `render()` | `round.netDelta` / `round.wager` |
+| Sic Bo | `sic-bo/client.ts` after `game.roll()` + `render()` | `result.netDelta` / `result.totalStake` |
+| Three-Card Showdown | `three-card-showdown/client.ts` after fold/play + `render()` | `round.netDelta` / `round.totalWager` |
+| Pai Gow Poker | `pai-gow-poker/client.ts` after `game.confirm()` + `render()` | `result.netDelta` / `result.wager` |
 
-- [ ] Wire all **11** rows and confirm none of `daily-challenge`, `blackjack-run` ranked route, `poker-mp` imports the feature; solo Sit & Go is included through `PokerGame`.
-- [ ] Reuse current net/round-stake fields; do not infer “net win” from gross payout or account balance after asynchronous wallet reconciliation.
-- [ ] Keep effects cosmetic and synchronous/best-effort. A failed animation/audio request must never block resolution, settlement or the next round. Wallet retry/adoption, state hydration and rerender must not re-fire a celebration.
-- [ ] Add/extend the smallest relevant existing game tests for payload selection and single-fire semantics, especially Blackjack split/double aggregation, Craps pending wagers, Roulette delayed reveal, Poker contested pot and legacy cue, and slots guest/auth paths. Do not build a fake RNG integration framework.
+- [ ] For Poker, replace the synthesized `bigWin` **only when a new tier fires**; keep `win`, action sounds and existing high-ranked-hand `bigWin` for other wins. Suppress duplicate fanfares when both new MP3s play.
+- [ ] Ensure no calls from Ranked Blackjack, Daily Challenge, or private-room Poker. Solo Sit & Go remains in scope through `PokerGame` (no new route).
+- [ ] The existing one-shot reveal location is the single-fire guarantee. Do not build fresh DOM closure harnesses for seven one-line client hooks; cover reusable measures and Poker branch in existing tests and smoke one real end-to-end guest-game flow with browser MCP.
+- [ ] Any audio/DOM failure remains best-effort and **never** blocks wallet settlement or the next game round.
 
-## 4. Browser-MCP end-to-end and visual acceptance
+## 5. Regression tests and browser-MCP acceptance
 
-There is **no UI mockup in Linear**, so screenshots are mandatory. Use **one browser/platform** (desktop Chrome plus phone-size emulation is sufficient).
+**No UI mockup exists in Linear.** All visual verification is screenshot-based against the existing Arcturus style. One browser/platform with phone emulation suffices.
 
-- [ ] Run the real Astro app locally and open a casual single-player game page, including guest play. Use browser MCP to trigger the exported `celebrateWin` on that live page with deterministic 5×/20× values, **without modifying game RNG** or adding a committed debug route.
-- [ ] Capture at least **1280×800 desktop** and **375×812 phone** screenshots of both tiers and the reduced-motion state; compare actual appearance with the established dark-green/gold casino styling and HPA-728 asset preview. Check 24–48px chip legibility, alpha, sparkle, no overflow, and ribbon central text within native safe band.
-- [ ] Switch among `en`, `zh-Hant`, `zh-Hans` and `ja` on the real page, capture/inspect the huge-ribbon HTML text and final localized chip amount. Measure title and count bounding boxes against the ribbon's central safe area at desktop and phone widths. Check no clipped or overlapping text.
-- [ ] Inspect DOM after ~1.6s: effect nodes cleared, repeated invocations do not accumulate children, and elements behind the overlay remain clickable. Test reduced motion with browser emulation: no moving chips/number tween, static text still appears and disappears.
-- [ ] Toggle sound from header and from the poker table separately; verify both `aria-pressed` states synchronize, persistence after page navigation, and no new MP3 playback while muted. Browser audio policies may block sound: verify that rejection does not throw or break a round; unit tests prove playback choice.
-- [ ] Where feasible perform one normal guest game's end-to-end round and inspect the result seam; tier threshold checks remain deterministic unit tests (do **not** require a lucky high payout in live gameplay). Record screenshot links, measured bounds and browser-MCP actions as PR evidence.
-- [ ] No human approval step is an acceptance condition; no Playwright RNG rigging or duplicated multi-browser acceptance required.
+- [ ] Unit/Bun/happy-dom: `winTier` inclusivity (5/20 stake, 20/50BB), negative/invalid inputs; Blackjack split/double aggregate; Craps continuing bets omitted; Poker contested-pot tier and old cue suppression; mute binder, reload, audio rejection; overlay lifecycle/reduced motion. Reuse current test suites rather than inventing client harnesses.
+- [ ] Commit **one small Playwright spec** `e2e/big-win-celebration.spec.ts`. On the existing Vite dev server use `page.evaluate(async () => { const fx = await import('/src/lib/celebration/index.ts'); fx.celebrateWin({ win: 200, stake: 10 }); })` with no production debug route/window global/RNG rigging. Assert ribbon title and count rectangles stay inside the scaled (165,64,630,192) safe rectangle for **en/zh-Hant/zh-Hans/ja × desktop/phone**; check pointer-events and click-through. This automated geometry regression **complements** MCP acceptance, not substitutes for it. Follow existing `e2e/card-legibility.ts` and `e2e/i18n-activation.spec.ts` patterns.
+- [ ] **Browser MCP is the end-to-end acceptance owner:** on a running real casual game page, complete one normal guest round through its UI to verify play/result still works. Then use the same dev-module import in its browser JS console to trigger fixed big, huge and reduced-motion displays without relying on random high wins.
+- [ ] **Browser-MCP screenshot checks** at **1280×800** and **375×812** for big/huge/reduced motion; inspect painted chips/alpha, accessible visual contrast, decorative ribbon and amount, mobile overflow and compatibility with existing game UI. Use the four-locale Playwright geometry evidence; MCP can spot-check copy visually without manually repeating all eight numeric cases.
+- [ ] Record screenshot paths or links, actual browser MCP commands/actions and visual findings in this **same PR**. No human sign-off is an automated acceptance criterion.
 
-## 5. Quality and one-PR completion
+## 6. Run quality checks; keep one PR
 
-- [ ] Run `bun run test`, `bun run lint`, `bun run format:check`, `bunx astro check`, `bun run build` locally on the implemented diff. Existing docs under `docs/superpowers` are Prettier-ignored: review these two Markdown files directly.
-- [ ] Verify that the PR changes stay focused (small shared effect, shared preference, existing 11 client seams, narrow tests and styles), with **zero** DB/schema/API/dependency/asset-generation changes. The HPA-728 seven media assets are reused, not replaced.
-- [ ] Update this **same** PR with implementation, commit hashes, actual commands/results, and browser-MCP screenshot evidence. Keep it **draft until code and automated acceptance complete**; do not claim checks passed while only the documentation exists. Then mark ready for review and update Linear as appropriate.
+- [ ] Verify `bun run test`, `bun run lint`, `bun run format:check`, `bunx astro check`, `bun run build` and the new Playwright regression on the **implemented** code diff. Document actual results; draft PR CI may skip jobs, so don't claim unexecuted checks passed.
+- [ ] Check final diff is focused: one shared sound preference, one shared FX module, existing 11 result seams, removed dead Slots control, narrow tests, no new media/backend/dependencies.
+- [ ] Add implementation commits, review responses and automated MCP screenshot evidence **to PR #91**. Remain draft until implementation and acceptance are complete; then change readiness and Linear status as appropriate. One task/ticket = **one PR**.
 
 ## End-to-end acceptance criteria
 
-- [ ] All **11** casual games invoke the shared effect **once** when a new visible positive-net result crosses the correct tier threshold; loss, push, invalid stake, restored rounds, settlement retry, Ranked/Daily/private-room multiplayer never trigger it.
-- [ ] **5×/20× net ratio** and **20/50 BB contested Poker** boundaries are unit-tested, with Blackjack splits/doubles and Craps resolved-stake calculations covered.
-- [ ] Big and huge render the seven preexisting art/SFX assets as specified; animated nodes/timers are fully cleaned or canceled; ~375px phone remains smooth and no gameplay control is obstructed.
-- [ ] **Browser MCP visual E2E:** real game page at desktop+phone sizes and all four locales; screenshot comparisons and measured ribbon safe-area checks pass without an existing Linear mockup. Reduced motion renders static readable UI; accessible localized amount/title remain correct.
-- [ ] Header and poker mute toggle share persistent state on the same page and across navigation; synthesized poker sound and HTMLAudioElement celebration playback both honor it, with no doubled big-win cue.
-- [ ] Existing code-quality, unit/integration and production-build commands pass, and **real evidence** is recorded on the PR. No new backend behavior exists, so backend E2E is not applicable.
+- [ ] All 11 casual games (including solo Sit & Go) use existing reveal seams to pass actual **net** amount and round stake; 5×/20× and Poker 20/50BB trigger correctly, with no effect for negative/zero wins, invalid measure, restored results, wallet retry, Ranked/Daily/private-room play.
+- [ ] One pointer-transparent `aria-hidden` overlay with preexisting HPA-728 imagery/SFX, clean replacement/cleanup and reduced-motion static alternatives. No duplicate Poker big-win audio, no gameplay/input obstruction.
+- [ ] Site-wide `casino_sound_muted` is the **only** sound preference, synchronized between header and Poker, persistent across route navigation; Slots does not retain an inert checkbox.
+- [ ] Four-locale ribbon text/count fits the safe area in the Playwright regression across both viewport sizes; **browser-MCP E2E and screenshot visual checks** of big/huge/reduced-motion and a normal game flow pass on one platform.
+- [ ] All code quality, unit/integration, build and relevant E2E/regression checks pass with evidence recorded; no backend changes exist, so backend E2E is not applicable.
 
-**Implementation is not part of this initial documentation commit.** All unchecked boxes are work for the implementation phase **within this one draft PR**.
+**Planning-only right now:** no feature code, tests or browser-MCP checks are claimed to have executed.

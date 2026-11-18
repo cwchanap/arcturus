@@ -33,7 +33,7 @@ Treat this table as a checklist; do **not** modify game-rule classes, wallet set
 | Blackjack | `src/lib/blackjack/blackjackClient.ts:handleRoundComplete` after outcomes available and visible | Compute `sum(payout - bet)` and `sum(bet)` across completed split/double hands **once** |
 | Baccarat | `src/pages/games/baccarat.astro` after `animateRound; showResult` | `roundNetDelta`, sum of `outcome.betResults.bet.amount` |
 | Craps | `src/pages/games/craps.astro` after `showRollResult` | `result.netDelta`; sum resolved evaluation wagers only (skip continue) |
-| Poker | `src/lib/poker/PokerGame.ts:presentHandResult` | Cash only; `delta>0` and `contested humanWon >=20/50*handBigBlind`; pass tier override; suppress overlapping synthesized `bigWin` and preserve normal cue below threshold |
+| Poker | `src/lib/poker/PokerGame.ts:presentHandResult` | Cash and solo Sit & Go; `delta>0` and `contested humanWon >=20/50*handBigBlind`; pass tier override; suppress overlapping synthesized `bigWin` and preserve normal cue below threshold |
 | Slots | `src/lib/slots/slotsClient.ts:reveal` | `result.netDelta` / `result.bet`, after spin reveal; do not re-fire on wallet completion |
 | Roulette | `src/lib/roulette/rouletteClient.ts:animateAndScheduleReveal` guarded `reveal` | `spinResult.netDelta` / `totalBet`; never reveal win early or on restored session |
 | Keno | `src/lib/keno/kenoClient.ts:commitDraw` after last-result display | `result.netDelta` / `result.bet` |
@@ -42,7 +42,7 @@ Treat this table as a checklist; do **not** modify game-rule classes, wallet set
 | Three-Card Showdown | `src/lib/three-card-showdown/client.ts` after fold/play+render | `round.netDelta` / `round.totalWager` |
 | Pai Gow Poker | `src/lib/pai-gow-poker/client.ts` after confirm+render | `result.netDelta` / `result.wager` |
 
-- [ ] Wire all **11** rows and confirm none of `daily-challenge`, `blackjack-run` ranked route, `poker-mp` or poker Sit & Go imports the feature.
+- [ ] Wire all **11** rows and confirm none of `daily-challenge`, `blackjack-run` ranked route, `poker-mp` imports the feature; solo Sit & Go is included through `PokerGame`.
 - [ ] Reuse current net/round-stake fields; do not infer “net win” from gross payout or account balance after asynchronous wallet reconciliation.
 - [ ] Keep effects cosmetic and synchronous/best-effort. A failed animation/audio request must never block resolution, settlement or the next round. Wallet retry/adoption, state hydration and rerender must not re-fire a celebration.
 - [ ] Add/extend the smallest relevant existing game tests for payload selection and single-fire semantics, especially Blackjack split/double aggregation, Craps pending wagers, Roulette delayed reveal, Poker contested pot and legacy cue, and slots guest/auth paths. Do not build a fake RNG integration framework.
@@ -67,7 +67,7 @@ There is **no UI mockup in Linear**, so screenshots are mandatory. Use **one bro
 
 ## End-to-end acceptance criteria
 
-- [ ] All **11** casual games invoke the shared effect **once** when a new visible positive-net result crosses the correct tier threshold; loss, push, invalid stake, restored rounds, settlement retry, Ranked/Daily/multiplayer/Sit & Go never trigger it.
+- [ ] All **11** casual games invoke the shared effect **once** when a new visible positive-net result crosses the correct tier threshold; loss, push, invalid stake, restored rounds, settlement retry, Ranked/Daily/private-room multiplayer never trigger it.
 - [ ] **5×/20× net ratio** and **20/50 BB contested Poker** boundaries are unit-tested, with Blackjack splits/doubles and Craps resolved-stake calculations covered.
 - [ ] Big and huge render the seven preexisting art/SFX assets as specified; animated nodes/timers are fully cleaned or canceled; ~375px phone remains smooth and no gameplay control is obstructed.
 - [ ] **Browser MCP visual E2E:** real game page at desktop+phone sizes and all four locales; screenshot comparisons and measured ribbon safe-area checks pass without an existing Linear mockup. Reduced motion renders static readable UI; accessible localized amount/title remain correct.

@@ -8,9 +8,31 @@
 // by src/lib/wallet/public-game-settlement.test.ts.
 
 import { Window } from 'happy-dom';
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { SIC_BO_CHIP_DENOMINATIONS, TOTAL_ODDS } from './rules';
 import { initSicBoClient } from './client';
+
+// The big-win celebration is a pure browser FX layer with its own suite
+// (src/lib/celebration/index.test.ts). Keep it out of this file's happy-dom
+// environment: its image/audio resource loads would otherwise flow through
+// the fetch spy and pollute the settlement-window assertions.
+beforeAll(async () => {
+	const actual = await import(`../celebration/index.ts?sic-bo-spy=${Date.now()}`);
+	mock.module('../celebration/index', () => ({
+		...actual,
+		celebrateWin: () => {},
+		showCelebration: () => {},
+	}));
+});
+
+afterAll(async () => {
+	// Bun's mock.restore() does not reset module overrides from mock.module(),
+	// and rebinding to the original namespace object is ignored. Point the
+	// specifier at a fresh real instance instead (game-stats.test.ts pattern).
+	const restored = await import(`../celebration/index.ts?sic-bo-restore=${Date.now()}`);
+	mock.module('../celebration/index', () => restored);
+	mock.restore();
+});
 
 // ---------------------------------------------------------------------------
 // happy-dom globals (same pattern as video-poker/client.init.test.ts)

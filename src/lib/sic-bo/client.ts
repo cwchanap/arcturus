@@ -6,6 +6,7 @@ import { sicBoTranslator, formatSicBoNet, type SIC_BO_MESSAGES } from '../i18n/m
 import type { MessageKey } from '../i18n/translate';
 import { SicBoGame } from './game';
 import { SIC_BO_CHIP_DENOMINATIONS, isTriple } from './rules';
+import { celebrateWin } from '../celebration/index';
 import type { SicBoBetErrorCode, SicBoBetKey, SicBoRoundResult } from './types';
 
 const BET_ERROR_KEYS: Record<SicBoBetErrorCode, MessageKey<typeof SIC_BO_MESSAGES>> = {
@@ -199,6 +200,7 @@ export function initSicBoClient(): void {
 			recent.unshift(result);
 			recent.splice(20);
 			render();
+			celebrateWin({ win: result.netDelta, stake: result.totalStake });
 
 			// Triple with any winning placed bet earns the feat, even at a net loss.
 			await settlement.completeRound(

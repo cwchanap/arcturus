@@ -516,7 +516,9 @@ const cabinet = cabinetTranslator(locale);
 	import {
 		buildCrapsSettlementCommand,
 		getAvailableCrapsBalance,
+		resolvedCrapsStake,
 	} from '../../lib/craps/settlement';
+	import { celebrateWin } from '../../lib/celebration/index';
 	import { CrapsGame } from '../../lib/craps/CrapsGame';
 	import { getCrapsAdvice } from '../../lib/craps/llmCrapsStrategy';
 	import type {
@@ -1441,6 +1443,9 @@ const cabinet = cabinetTranslator(locale);
 				rollTotalEl.textContent = String(result.roll.total);
 
 				showRollResult(result, prevPhase, prevPoint);
+				// One-shot on the just-visible roll result; the stake counts base
+				// bets plus attached odds, excluding continuing wagers.
+				celebrateWin({ win: result.netDelta, stake: resolvedCrapsStake(result) });
 				addRollToHistory(result.roll.total, prevPhase);
 				// Keep the resolved roll out of durable session state until its wallet
 				// settlement succeeds. Guests and unresolved rolls persist below.

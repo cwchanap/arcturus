@@ -6,6 +6,7 @@ import {
 } from '../public-game-session';
 import { getDocumentLocale } from '../i18n/locale';
 import { slotsTranslator } from '../i18n/messages/slots';
+import { celebrateWin } from '../celebration/index';
 import { MAX_BET, MIN_BET } from './constants';
 import { GameSettingsManager } from './GameSettingsManager';
 import { SlotsGame } from './SlotsGame';
@@ -225,6 +226,7 @@ export function initSlotsClient(): void {
 				renderer.renderGrid(result.grid);
 				if (result.lineWins.length > 0) renderer.highlightWins(result.lineWins);
 				renderer.renderResult(result);
+				celebrateWin({ win: result.netDelta, stake: result.bet });
 				renderer.showStatus(null);
 				renderer.renderRecent(game.getHistory());
 			} finally {

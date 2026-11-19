@@ -29,6 +29,7 @@ import {
 	type SettleRoundCommand,
 	type SettleRoundResult,
 } from '../wallet';
+import { celebrateWin } from '../celebration/index';
 
 /** Build the one wallet command produced by a completed Blackjack round. */
 export function buildBlackjackSettlementCommand(
@@ -915,6 +916,9 @@ export function initBlackjackClient(): void {
 		// Aggregate outcomes for split hands
 		const message = formatBlackjackOutcomeMessage(outcomes, locale);
 		statusEl.textContent = message;
+		// Cosmetic one-shot on the just-visible result; the pre-settleRound
+		// snapshot covers guest and authenticated splits/doubles alike.
+		celebrateWin(blackjackRoundNet(outcomes, state.playerHands));
 
 		// Hide advice box and clear highlights
 		aiAdviceBox.classList.add('hidden');

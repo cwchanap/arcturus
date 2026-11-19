@@ -43,6 +43,7 @@ import {
 	POKER_HAND_SETTLED_EVENT,
 } from './constants';
 import { readHand, type HandReadout } from './handReadout';
+import { showCelebration, WIN_TIER_MULTIPLES, winTier } from '../celebration/index';
 import type { WalletFeatId } from '../achievements/achievement-rules';
 import {
 	loadSessionStats,
@@ -693,10 +694,15 @@ export class PokerGame {
 
 		if (involved && delta > 0) {
 			const humanKey = featured === human ? featuredHand?.key : undefined;
-			const big =
-				humanWon >= 20 * this.handBigBlind ||
-				(humanKey !== undefined && HAND_RANKINGS[humanKey] >= HAND_RANKINGS.FLUSH);
-			this.sound.play(big ? 'bigWin' : 'win');
+			const tier = winTier(humanWon, this.handBigBlind, WIN_TIER_MULTIPLES.bigBlind);
+			// A tiered celebration plays its own SFX: skip the synthesized fanfare
+			// so the two never stack. The high-ranked-hand bigWin stays as the
+			// fallback for wins below the new threshold.
+			if (tier) showCelebration(tier, delta);
+			else {
+				const big = humanKey !== undefined && HAND_RANKINGS[humanKey] >= HAND_RANKINGS.FLUSH;
+				this.sound.play(big ? 'bigWin' : 'win');
+			}
 		} else if (involved && delta < 0 && !human.folded) {
 			this.sound.play('lose');
 		}

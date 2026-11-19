@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll, mock } from 'bun:test';
 import { Window as DOMWindow } from 'happy-dom';
 import type { Card, GameContext, Player } from './types';
 import {
@@ -28,6 +28,7 @@ import type { AIRivalAssistant, AiMove } from './AIRivalAssistant';
 import { DEFAULT_SETTINGS } from './types';
 import { DEFAULT_GUEST_GAME_BALANCE } from '../public-game-session';
 import type { SettlementGate, SettleRoundCommand, SettleRoundResult } from '../wallet';
+import type { WinTier } from '../celebration';
 
 let windowListeners: Record<string, (() => void) | undefined> = {};
 
@@ -3462,6 +3463,188 @@ describe('Poker betting control regressions', () => {
 			(globalThis as { fetch: typeof originalFetch }).fetch = originalFetch;
 			localStorage.removeItem('arcturus-ai-settings');
 		}
+	});
+});
+
+describe('big-win celebration on hand results', () => {
+	// Only `showCelebration` is spied; `winTier` stays real so the tests cover
+	// the actual threshold classification against the hand's big blind.
+	const celebrationCalls: Array<{ tier: WinTier; amount: number }> = [];
+
+	beforeAll(async () => {
+		const actual = await import(`../celebration/index.ts?celebration-spy=${Date.now()}`);
+		mock.module('../celebration/index', () => ({
+			...actual,
+			showCelebration: (tier: WinTier, amount: number) => {
+				celebrationCalls.push({ tier, amount });
+				return undefined;
+			},
+		}));
+	});
+
+	afterAll(async () => {
+		// Bun's mock.restore() does not reset module overrides from mock.module(),
+		// and rebinding to the original namespace object is ignored. Point the
+		// specifier at a fresh real instance instead (game-stats.test.ts pattern).
+		const restored = await import(`../celebration/index.ts?celebration-restore=${Date.now()}`);
+		mock.module('../celebration/index', () => restored);
+		mock.restore();
+	});
+
+	function celebrationSetup(played: string[]) {
+		const elements = mockPokerGameDOM();
+		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		elements['player-balance'] = {
+			addEventListener: () => {},
+			click: () => {},
+			dataset: { balance: '5000' },
+			innerHTML: '',
+			textContent: '5000',
+			classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+			value: '0',
+		};
+		const sound = {
+			play: (sfx: string) => void played.push(sfx),
+			unlock: () => {},
+		};
+		const game = new PokerGame(undefined, undefined, sound) as unknown as {
+			players: Player[];
+			communityCards: Card[];
+			handStartChips: number;
+			handStartStacks: Map<number, number>;
+			handBigBlind: number;
+			handResultDelta: number | null;
+			presentHandResult: (
+				awards: Map<number, number>,
+				tiers: Array<{ amount: number; winners: Player[]; uncontested: boolean }>,
+				showdown: boolean,
+			) => void;
+		};
+		game.handBigBlind = 10;
+		return { game, elements };
+	}
+
+	function contestedWin(game: ReturnType<typeof celebrationSetup>['game'], humanWon: number) {
+		// Human bought in for 5000, put 20 in; the lone rival stakes the rest of
+		// the `humanWon` contested pot and loses it. A contested tier returns the
+		// winner's own bet inside the award, so the net hand delta is the award
+		// minus the 20 the human put in.
+		const [you, rival] = game.players;
+		game.handStartChips = 5000;
+		game.handStartStacks = new Map([
+			[0, 5000],
+			[1, 5000],
+		]);
+		game.players[0] = { ...you, chips: 5000 - 20 + humanWon, totalBet: 20 };
+		game.players[1] = {
+			...rival,
+			chips: 5000 - (humanWon - 20),
+			totalBet: humanWon - 20,
+			folded: false,
+		};
+		game.presentHandResult(
+			new Map([[you.id, humanWon]]),
+			[{ amount: humanWon, winners: [you], uncontested: false }],
+			false,
+		);
+	}
+
+	test('a contested pot win of exactly 20 big blinds celebrates at the big tier instead of the synthesized bigWin', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		contestedWin(game, 200);
+		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 180 }]);
+		expect(played).toEqual([]);
+	});
+
+	test('a contested pot win of 50 big blinds celebrates at the huge tier with the hand net delta', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		contestedWin(game, 520);
+		expect(celebrationCalls).toEqual([{ tier: 'huge', amount: 500 }]);
+		expect(played).toEqual([]);
+	});
+
+	test('an ordinary contested win below the threshold keeps the win cue and never celebrates', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		contestedWin(game, 150);
+		expect(celebrationCalls).toEqual([]);
+		expect(played).toEqual(['win']);
+	});
+
+	test('uncalled returns are excluded from the tier measure even at large awards', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		// Human bet 4950 into a pot the lone rival called for 100 and lost: the
+		// award is 5050 but only 100 (10BB) was ever contested.
+		const [you, rival] = game.players;
+		game.handStartChips = 5000;
+		game.handStartStacks = new Map([
+			[0, 5000],
+			[1, 5000],
+		]);
+		game.players[0] = { ...you, chips: 5100, totalBet: 4950 };
+		game.players[1] = { ...rival, chips: 4900, totalBet: 100, folded: false };
+		game.presentHandResult(
+			new Map([
+				[you.id, 5050],
+				[rival.id, 0],
+			]),
+			[
+				{ amount: 100, winners: [you], uncontested: false },
+				{ amount: 4950, winners: [you], uncontested: true },
+			],
+			false,
+		);
+		expect(celebrationCalls).toEqual([]);
+		expect(played).toEqual(['win']);
+	});
+
+	test('a high-ranked hand below the threshold keeps the synthesized bigWin fallback', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		game.communityCards = [
+			card('K', 'hearts', 13),
+			card('9', 'hearts', 9),
+			card('3', 'hearts', 3),
+			card('8', 'clubs', 8),
+			card('5', 'spades', 5),
+		];
+		const [you, rival] = game.players;
+		game.handStartChips = 5000;
+		game.handStartStacks = new Map([
+			[0, 5000],
+			[1, 5000],
+		]);
+		game.players[0] = {
+			...you,
+			chips: 5150,
+			totalBet: 20,
+			hand: [card('A', 'hearts', 14), card('Q', 'hearts', 12)],
+		};
+		game.players[1] = {
+			...rival,
+			chips: 4850,
+			totalBet: 150,
+			folded: false,
+			hand: [card('A', 'spades', 14), card('K', 'clubs', 13)],
+		};
+		game.presentHandResult(
+			new Map([[you.id, 170]]),
+			[{ amount: 170, winners: [you], uncontested: false }],
+			true,
+		);
+		expect(celebrationCalls).toEqual([]);
+		expect(played).toEqual(['bigWin']);
+	});
+
+	beforeEach(() => {
+		celebrationCalls.length = 0;
 	});
 });
 

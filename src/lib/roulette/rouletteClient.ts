@@ -18,6 +18,7 @@ import {
 import { getDocumentLocale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
 import { rouletteTranslator } from '../i18n/messages/roulette';
+import { celebrateWin } from '../celebration/index';
 
 const SPIN_FETCH_TIMEOUT_MS = 15_000;
 const BALANCE_FETCH_TIMEOUT_MS = 15_000;
@@ -110,6 +111,9 @@ export function initRouletteClient(): void {
 			if (revealTimer !== null) clearTimeout(revealTimer);
 			offWheelSettled?.();
 			revealSpin(spinResult);
+			// The `revealed` guard makes this single-fire, and restore/hydration
+			// paths never reach this closure, so a rehydrated spin never celebrates.
+			celebrateWin({ win: spinResult.netDelta, stake: spinResult.totalBet });
 			// The toast is part of the reveal: announcing an earned achievement
 			// early would leak the outcome while the wheel still spins.
 			if (newAchievements?.length) {

@@ -288,6 +288,35 @@ describe('replacement and cleanup', () => {
 	});
 });
 
+describe('animation failure safety', () => {
+	test('a throwing animate() never reaches the game and partial particles are removed', () => {
+		const imageProto = happyWindow.HTMLImageElement.prototype as unknown as {
+			animate: (
+				this: unknown,
+				...args: unknown[]
+			) => { cancel: () => void; finished?: Promise<unknown> };
+		};
+		const workingAnimate = imageProto.animate;
+		let animateCalls = 0;
+		imageProto.animate = function (this: unknown, ...args: unknown[]) {
+			animateCalls += 1;
+			if (animateCalls > 10) throw new Error('WAAPI unavailable');
+			return workingAnimate.apply(this, args);
+		};
+		try {
+			expect(() => showCelebration('big', 100)).not.toThrow();
+		} finally {
+			imageProto.animate = workingAnimate;
+		}
+		// The stub genuinely fired past the partial-particle point.
+		expect(animateCalls).toBeGreaterThan(10);
+		expect(overlay()).not.toBeNull();
+		// Partial effect torn down instead of left dangling; no orphan timer.
+		expect(overlay()?.children.length).toBe(0);
+		expect(pendingTimers.size).toBe(0);
+	});
+});
+
 describe('reduced motion', () => {
 	test('big shows the static localized amount without particles or count-up', () => {
 		stubReducedMotion(true);
@@ -372,6 +401,28 @@ describe('celebration audio', () => {
 		setSoundMuted(false);
 		showCelebration('big', 100);
 		expect(coinAudio()?.playCalls).toBe(playsBefore + 1);
+	});
+
+	test('reduced motion still plays clips per the mute preference (visuals stay static)', () => {
+		stubReducedMotion(true);
+		const coinBefore = coinAudio()?.playCalls ?? 0;
+		const stingBefore = stingAudio()?.playCalls ?? 0;
+
+		showCelebration('big', 100);
+		expect(celebrationImages()).toHaveLength(0);
+		expect(coinAudio()?.playCalls).toBe(coinBefore + 1);
+		expect(stingAudio()?.playCalls ?? 0).toBe(stingBefore);
+
+		showCelebration('huge', 100);
+		expect(srcsOf(celebrationImages())).toEqual([RIBBON_SRC]);
+		expect(coinAudio()?.playCalls).toBe(coinBefore + 2);
+		expect(stingAudio()?.playCalls).toBe(stingBefore + 1);
+
+		// The mute preference remains the only gate for audio.
+		setSoundMuted(true);
+		const coinMutedBefore = coinAudio()?.playCalls ?? 0;
+		showCelebration('big', 100);
+		expect(coinAudio()?.playCalls ?? 0).toBe(coinMutedBefore);
 	});
 });
 

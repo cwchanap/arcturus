@@ -135,8 +135,9 @@ for (const { name, width, height } of VIEWPORTS) {
 				).toBe(false);
 
 				// A real click passes through the overlay to the element underneath.
-				// The listener records whether the effect was still attached at click
-				// time, so a post-teardown click cannot pass vacuously.
+				// The listener records whether the ribbon and its text were still
+				// rendered at click time — the overlay host persists after teardown
+				// (it is only emptied), so host connection alone proves nothing.
 				await page.evaluate(() => {
 					const w = window as {
 						celebrationE2EClick?: { target: string | null; overlayLive: boolean };
@@ -149,9 +150,20 @@ for (const { name, width, height } of VIEWPORTS) {
 							const overlay = document.querySelector('[data-celebration-overlay]');
 							const insideOverlay =
 								el !== null && overlay !== null && (el === overlay || overlay.contains(el));
+							// Rendered = present inside the overlay with non-zero geometry.
+							// Teardown empties the host, so an emptied overlay reports false.
+							const rendered = (selector: string): boolean => {
+								const node = document.querySelector(selector);
+								if (node === null || overlay === null || !overlay.contains(node)) return false;
+								const rect = node.getBoundingClientRect();
+								return rect.width > 0 && rect.height > 0;
+							};
 							w.celebrationE2EClick = {
 								target: insideOverlay ? 'overlay' : (el?.tagName ?? 'none'),
-								overlayLive: overlay !== null && overlay.isConnected,
+								overlayLive:
+									rendered('[data-celebration-ribbon]') &&
+									rendered('[data-celebration-title]') &&
+									rendered('[data-celebration-amount]'),
 							};
 						},
 						{ once: true, capture: true },
@@ -166,7 +178,7 @@ for (const { name, width, height } of VIEWPORTS) {
 							}
 						).celebrationE2EClick ?? null,
 				);
-				expect(click?.overlayLive, 'celebration still attached at click time').toBe(true);
+				expect(click?.overlayLive, 'ribbon and its text still rendered at click time').toBe(true);
 				expect(click?.target, 'real click lands on the underlying element').toBe(
 					measured.centerHit.tag,
 				);

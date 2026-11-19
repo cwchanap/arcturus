@@ -35,7 +35,7 @@ export function showCelebration(tier: WinTier, amount: number): void;
 
 - `winTier` rejects nonfinite/zero/negative measure or unit. Compare inclusively: **huge first** at 20× (or 50 BB), then big at 5× (or 20 BB). No return below threshold.
 - `celebrateWin` computes `winTier(netWin, roundStake)`, then calls `showCelebration`. `win` means net chips gained, **not** gross payout or total award. A profitable sub-bet cannot trigger the effect when the whole round loses.
-- `showCelebration` accepts a resolved tier and positive finite net amount, rejecting invalid amounts. Poker uses `winTier(contestedHumanPotWon, handBigBlind, WIN_TIER_MULTIPLES.bigBlind)` and `showCelebration(tier, handNetDelta)`. Returned uncalled bets are excluded from `contestedHumanPotWon`. This keeps both threshold sets in one constants block, without a dummy Poker stake or a Poker-only optional override.
+- `showCelebration` accepts a resolved tier and positive finite net amount, rejecting invalid amounts. Poker uses `winTier(handNetDelta, handBigBlind, WIN_TIER_MULTIPLES.bigBlind)` and `showCelebration(tier, handNetDelta)`. The net delta already excludes returned uncalled bets and repaid own stakes, so a barely profitable share of a huge pot cannot inflate the tier. This keeps both threshold sets in one constants block, without a dummy Poker stake or a Poker-only optional override.
 - **No `anchor` argument for this first implementation.** All existing callers use the viewport center; keep the ticket's permitted center fallback, and add anchoring only when a concrete UX need appears.
 - Fire once from an **existing newly visible result/reveal seam**. Do not fire from wallet reconciliation, retry, rerender, restored/hydrated round state, or a generic balance-update event.
 
@@ -70,7 +70,7 @@ Create `src/lib/sound-preference.ts` as the **single owner** of `casino_sound_mu
 | Blackjack | `blackjack/blackjackClient.ts:handleRoundComplete`, after outcomes and result label | New `blackjackRoundNet(outcomes, playerHands)` next to existing settlement builder: sum `payout - hand.bet` and final `hand.bet` across split/double hands once; use the pre-settlement snapshot (guest and authenticated) |
 | Baccarat | `pages/games/baccarat.astro` after `animateRound` and `showResult` | Existing `roundNetDelta`; `sum(outcome.betResults[].bet.amount)` |
 | Craps | `pages/games/craps.astro` after `showRollResult` | `result.netDelta`; use `resolvedCrapsStake(result)` beside existing settlement logic: sum `evaluation.bet.amount + (evaluation.bet.odds ?? 0)` over `resolvedEvaluations(result)` (win/lose/push only, not continuing bets) |
-| Poker (cash and solo Sit & Go) | `poker/PokerGame.ts:presentHandResult` | `delta > 0`, `humanWon` net of uncalled returns; compare to 20/50 `handBigBlind` via `winTier`; render with `showCelebration(tier, delta)` |
+| Poker (cash and solo Sit & Go) | `poker/PokerGame.ts:presentHandResult` | `delta > 0`; compare net `delta` to 20/50 `handBigBlind` via `winTier`; render with `showCelebration(tier, delta)` |
 | Slots | `slots/slotsClient.ts` in `reveal()` after `renderer.renderResult` | `result.netDelta` / `result.bet` |
 | Roulette | `roulette/rouletteClient.ts:animateAndScheduleReveal` inside guarded `reveal()` | `spinResult.netDelta` / `spinResult.totalBet`; never early or on hydration |
 | Keno | `keno/kenoClient.ts:commitDraw` after `renderer.renderLastResult` | `result.netDelta` / `result.bet` |

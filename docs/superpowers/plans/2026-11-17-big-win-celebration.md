@@ -18,7 +18,7 @@ Keep it YAGNI/KISS: no backend, migration, new dependencies, art/SFX, generalize
 ## 2. Add the focused celebration module using existing assets
 
 - [x] `src/lib/celebration/tier.ts`: one `WIN_TIER_MULTIPLES` block for **stake: 5×/20×** and **Poker BB: 20/50**; pure `winTier(measure, unit, multiples)` with inclusive thresholds (huge first), nonfinite/zero/negative rejection.
-- [x] `src/lib/celebration/index.ts`: `celebrateWin({win,stake})` for ordinary games; `showCelebration(tier,amount)` for Poker after calling `winTier(humanWon, handBigBlind, ...bigBlind)`. No `tier?` override or unused `anchor?` argument: bursts start at viewport center until there is a real anchor caller.
+- [x] `src/lib/celebration/index.ts`: `celebrateWin({win,stake})` for ordinary games; `showCelebration(tier,amount)` for Poker after calling `winTier(delta, handBigBlind, ...bigBlind)`. No `tier?` override or unused `anchor?` argument: bursts start at viewport center until there is a real anchor caller.
 - [x] Lazily `document.body.append` one fixed, **pointer-transparent, `aria-hidden="true"`** overlay. Big: 30–40 gold/red/blue chip images and small sparkles, animated by WAAPI spin/scaleX, gravity-like drift and fade over about 1.6s. Huge: add existing 960×320 ribbon and a translated title/animated net `formatChips` inside the measured **(165,64,630,192)** native safe rectangle.
 - [x] Replace a running effect rather than stacking: cancel previous animations, clear any timeout and remove old nodes; clean up after 1.6s. Plain document navigation requires no bespoke cleanup hook. Under reduced motion, show static net amount (big) or ribbon/title/amount (huge), without particles/count-up; still clean up.
 - [x] Lazily play `public/audio/fx/coin-shower.mp3` on big and both shipped MP3s on huge with `HTMLAudioElement`, gated by `isSoundMuted()`; pause/reset any reused clip (`currentTime = 0`) before replaying, and use `try/catch` around `Promise.resolve(audio.play()).catch(() => {})` so synchronous failures, rejected Promises and mock `undefined` returns do not interrupt results. No new audio dependency or gain tuning.
@@ -39,7 +39,7 @@ One browser composition call per casual game. Keep domain classes, wallet module
 | Blackjack | `blackjack/blackjackClient.ts:handleRoundComplete` after visible result | `blackjackRoundNet(outcomes, state.playerHands)`, once including splits/doubles |
 | Baccarat | `pages/games/baccarat.astro` after `animateRound` + `showResult` | `roundNetDelta`, sum `outcome.betResults[].bet.amount` |
 | Craps | `pages/games/craps.astro` after `showRollResult` | `result.netDelta`, `resolvedCrapsStake(result)` (base + attached odds) |
-| Poker | `poker/PokerGame.ts:presentHandResult` | Cash **and solo Sit & Go**; positive frozen `delta` + contested `humanWon` vs 20/50BB thresholds; `showCelebration(tier, delta)` |
+| Poker | `poker/PokerGame.ts:presentHandResult` | Cash **and solo Sit & Go**; positive frozen net `delta` vs 20/50BB thresholds; `showCelebration(tier, delta)` |
 | Slots | `slots/slotsClient.ts:reveal` after `renderResult` | `result.netDelta` / `result.bet` |
 | Roulette | `roulette/rouletteClient.ts:animateAndScheduleReveal` guarded `reveal` | `spinResult.netDelta` / `spinResult.totalBet`; **not** on restore/hydration |
 | Keno | `keno/kenoClient.ts:commitDraw` after `renderLastResult` | `result.netDelta` / `result.bet` |

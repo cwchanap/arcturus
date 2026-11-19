@@ -29,4 +29,10 @@ describe('SoundToggle component', () => {
 		expect(component).toContain("[data-sound-toggle][aria-pressed='false'] .sound-toggle-on");
 		expect(component).toContain('display: none');
 	});
+
+	test('stays hidden until the binder applies the saved preference', () => {
+		// The shipped markup defaults to the unmuted look; without this rule a
+		// muted reader would see "sound on" until the module script runs.
+		expect(component).toContain('[data-sound-toggle]:not([data-sound-bound])');
+	});
 });

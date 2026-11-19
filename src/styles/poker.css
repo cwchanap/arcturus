@@ -1846,6 +1846,11 @@ a.poker-format:hover {
 .poker-toggle[aria-pressed='false'] .poker-toggle-on {
 	display: none;
 }
+/* Ships painted as unmuted; stay hidden until the binder renders the saved
+   preference. */
+#btn-sound:not([data-sound-bound]) {
+	visibility: hidden;
+}
 
 /* ── Turn countdown ring beside the hole cards ───────────────── */
 @property --turn-left {

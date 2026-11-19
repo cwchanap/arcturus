@@ -21,9 +21,9 @@ export function isSoundMuted(): boolean {
 	try {
 		if (storageUnavailable || typeof localStorage === 'undefined') return memoryMuted;
 		const raw = localStorage.getItem(SOUND_MUTED_STORAGE_KEY);
-		if (raw === null) return memoryMuted;
-		// Cache each successful read: if reads later start failing, the last
-		// known choice answers instead of the unmuted default permitting audio.
+		// Cache each successful read — an absent key reads as the unmuted
+		// default — so if reads later start failing, the answer stays whatever
+		// storage last reported instead of a stale in-page choice.
 		memoryMuted = raw === 'true';
 		return memoryMuted;
 	} catch {
@@ -34,8 +34,13 @@ export function isSoundMuted(): boolean {
 export function setSoundMuted(muted: boolean): void {
 	memoryMuted = muted;
 	try {
-		if (!storageUnavailable && typeof localStorage !== 'undefined')
+		if (!storageUnavailable && typeof localStorage !== 'undefined') {
 			localStorage.setItem(SOUND_MUTED_STORAGE_KEY, String(muted));
+			// A write that does not read back is as unusable as a thrown one:
+			// memory keeps answering so a dead store cannot outvote the user.
+			if (localStorage.getItem(SOUND_MUTED_STORAGE_KEY) !== String(muted))
+				storageUnavailable = true;
+		}
 	} catch {
 		// Quota/privacy failure: memory wins from here on, so a stale stored
 		// value can never outvote the choice the user just made.

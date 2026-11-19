@@ -3529,26 +3529,36 @@ describe('big-win celebration on hand results', () => {
 	}
 
 	function contestedWin(game: ReturnType<typeof celebrationSetup>['game'], humanWon: number) {
-		// Human bought in for 5000, put 20 in; the lone rival stakes the rest of
-		// the `humanWon` contested pot and loses it. A contested tier returns the
-		// winner's own bet inside the award, so the net hand delta is the award
-		// minus the 20 the human put in.
+		// Human bought in for 5000 and covered half the contested pot; the lone
+		// rival over-staked the rest. `calculateSidePots` partitions that into a
+		// contested tier of `humanWon` plus an uncalled tier returning the
+		// rival's excess — a single contested tier is only production-reachable
+		// when both players matched it. A contested tier repays the winner's
+		// own bet inside the award, so the net hand delta is the matched half
+		// the rival lost.
 		const [you, rival] = game.players;
+		const matched = humanWon / 2;
 		game.handStartChips = 5000;
 		game.handStartStacks = new Map([
 			[0, 5000],
 			[1, 5000],
 		]);
-		game.players[0] = { ...you, chips: 5000 - 20 + humanWon, totalBet: 20 };
+		game.players[0] = { ...you, chips: 5000 + matched, totalBet: matched };
 		game.players[1] = {
 			...rival,
-			chips: 5000 - (humanWon - 20),
+			chips: 5000 - matched,
 			totalBet: humanWon - 20,
 			folded: false,
 		};
 		game.presentHandResult(
-			new Map([[you.id, humanWon]]),
-			[{ amount: humanWon, winners: [you], uncontested: false }],
+			new Map([
+				[you.id, humanWon],
+				[rival.id, humanWon - 20 - matched],
+			]),
+			[
+				{ amount: humanWon, winners: [you], uncontested: false },
+				{ amount: humanWon - 20 - matched, winners: [rival], uncontested: true },
+			],
 			false,
 		);
 	}
@@ -3557,7 +3567,7 @@ describe('big-win celebration on hand results', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
 		contestedWin(game, 200);
-		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 180 }]);
+		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 100 }]);
 		expect(played).toEqual([]);
 	});
 
@@ -3565,7 +3575,7 @@ describe('big-win celebration on hand results', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
 		contestedWin(game, 520);
-		expect(celebrationCalls).toEqual([{ tier: 'huge', amount: 500 }]);
+		expect(celebrationCalls).toEqual([{ tier: 'huge', amount: 260 }]);
 		expect(played).toEqual([]);
 	});
 
@@ -3581,7 +3591,8 @@ describe('big-win celebration on hand results', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
 		// Human bet 4950 into a pot the lone rival called for 100 and lost: the
-		// award is 5050 but only 100 (10BB) was ever contested.
+		// award is 5050 but only 200 (20BB) was ever contested — the other 4850
+		// is the human's own uncalled bet coming back.
 		const [you, rival] = game.players;
 		game.handStartChips = 5000;
 		game.handStartStacks = new Map([
@@ -3596,13 +3607,16 @@ describe('big-win celebration on hand results', () => {
 				[rival.id, 0],
 			]),
 			[
-				{ amount: 100, winners: [you], uncontested: false },
-				{ amount: 4950, winners: [you], uncontested: true },
+				{ amount: 200, winners: [you], uncontested: false },
+				{ amount: 4850, winners: [you], uncontested: true },
 			],
 			false,
 		);
-		expect(celebrationCalls).toEqual([]);
-		expect(played).toEqual(['win']);
+		// Counting the returned 4850 would measure 5050 and reach the huge
+		// tier; landing exactly on the 20BB big boundary still proves the
+		// uncalled return is excluded.
+		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 100 }]);
+		expect(played).toEqual([]);
 	});
 
 	test('a high-ranked hand below the threshold keeps the synthesized bigWin fallback', () => {
@@ -3664,10 +3678,11 @@ describe('Poker table sound, turn timer and hand recap', () => {
 
 	function setup() {
 		const elements = mockPokerGameDOM();
+		const store = new Map<string, string>();
 		(globalThis as typeof globalThis & { localStorage: Storage }).localStorage = {
-			getItem: () => null,
-			setItem: () => {},
-			removeItem: () => {},
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => void store.set(key, String(value)),
+			removeItem: (key: string) => void store.delete(key),
 		} as unknown as Storage;
 		elements['player-balance'] = {
 			addEventListener: () => {},

@@ -399,10 +399,16 @@ describe('celebration audio', () => {
 		expect(coin?.playCalls).toBeGreaterThanOrEqual(2);
 		expect(coin?.pauseCalls).toBeGreaterThanOrEqual(1);
 		expect(coin?.currentTime).toBe(0);
-		expect(coin?.log.slice(-6)).toEqual([
+		// Each celebration stops every cached clip (pause/reset) before the
+		// selected clip's own pause/reset/replay.
+		expect(coin?.log.slice(-10)).toEqual([
+			'pause',
+			'currentTime=0',
 			'pause',
 			'currentTime=0',
 			'play',
+			'pause',
+			'currentTime=0',
 			'pause',
 			'currentTime=0',
 			'play',
@@ -447,6 +453,24 @@ describe('celebration audio', () => {
 		expect(coin?.playCalls ?? 0).toBe(playsBefore);
 		expect(coin?.pauseCalls).toBeGreaterThan(pausesBefore);
 		expect(coin?.currentTime).toBe(0);
+	});
+
+	test('a muted big replacement also silences the previous huge celebration sting', () => {
+		showCelebration('huge', 100); // unmuted: coin shower and sting are playing
+		const sting = stingAudio();
+		const coin = coinAudio();
+		const stingPlays = sting?.playCalls ?? 0;
+		const stingPauses = sting?.pauseCalls ?? 0;
+		const coinPauses = coin?.pauseCalls ?? 0;
+
+		setSoundMuted(true);
+		showCelebration('big', 100); // muted replacement; big plays no sting itself
+		// The stale sting is stopped and rewound anyway — a replacement never
+		// leaves a clip the new tier does not play running.
+		expect(sting?.playCalls ?? 0).toBe(stingPlays);
+		expect(sting?.pauseCalls).toBeGreaterThan(stingPauses);
+		expect(sting?.currentTime).toBe(0);
+		expect(coin?.pauseCalls).toBeGreaterThan(coinPauses);
 	});
 
 	test('reduced motion still plays clips per the mute preference (visuals stay static)', () => {

@@ -2,8 +2,9 @@
  * The one owner of the site-wide sound preference (`casino_sound_muted`).
  * Every sound toggle on the page — the shared header control and per-game
  * buttons — binds through `bindSoundToggle()`, so all of them stay in sync
- * and flipping one flips all. Pages without usable localStorage keep the
- * choice in memory for the current page only.
+ * and flipping one flips all. A `storage` listener carries the choice to
+ * bound toggles in other tabs too. Pages without usable localStorage keep
+ * the choice in memory for the current page only.
  */
 
 export const SOUND_MUTED_STORAGE_KEY = 'casino_sound_muted';
@@ -49,6 +50,17 @@ export function setSoundMuted(muted: boolean): void {
 	for (const listener of changeListeners) listener(muted);
 }
 
+// The `storage` event fires only in sibling tabs — this tab's own writes are
+// already covered by the same-page listeners — so it carries one tab's
+// toggle into every other tab's bound controls.
+if (typeof window !== 'undefined') {
+	window.addEventListener('storage', (event) => {
+		if (event.key !== null && event.key !== SOUND_MUTED_STORAGE_KEY) return;
+		const muted = isSoundMuted();
+		for (const listener of changeListeners) listener(muted);
+	});
+}
+
 /**
  * Wire a toggle button to the shared preference: one click handler flips the
  * preference, and a same-page change listener keeps this button's
@@ -75,6 +87,9 @@ export function bindSoundToggle(
 	const listener: ChangeListener = () => render();
 	changeListeners.add(listener);
 	render();
+	// Server markup ships the unmuted look; the control stays hidden until the
+	// saved preference has been rendered here.
+	button.setAttribute('data-sound-bound', 'true');
 	button.addEventListener('click', () => {
 		setSoundMuted(!isSoundMuted());
 		onToggle?.(isSoundMuted());

@@ -147,6 +147,43 @@ describe('sound preference', () => {
 		expect(game.attrs.get('aria-label')).toBe('効果音オン');
 	});
 
+	test('marks a bound button once its saved state is rendered', () => {
+		const button = fakeToggle();
+		bindSoundToggle(button);
+		expect(button.attrs.get('data-sound-bound')).toBe('true');
+	});
+
+	test('re-renders bound toggles when another tab changes the preference', async () => {
+		// The module binds `storage` at import time, so capture the handler in
+		// a private instance like the sticky-flag tests above.
+		const handlers: Array<(event: { key: string | null }) => void> = [];
+		const originalWindow = (globalThis as { window?: unknown }).window;
+		(globalThis as { window?: unknown }).window = {
+			addEventListener: (type: string, handler: (event: { key: string | null }) => void) => {
+				if (type === 'storage') handlers.push(handler);
+			},
+		};
+		try {
+			const isolated = (await import(
+				'./sound-preference?storage-event' as string
+			)) as typeof import('./sound-preference');
+			const button = fakeToggle();
+			isolated.bindSoundToggle(button);
+			expect(button.attrs.get('aria-pressed')).toBe('true');
+
+			localStorage.setItem(SOUND_MUTED_STORAGE_KEY, 'true');
+			for (const handler of handlers) handler({ key: SOUND_MUTED_STORAGE_KEY });
+			expect(button.attrs.get('aria-pressed')).toBe('false');
+
+			// Unrelated keys must not disturb the current render.
+			localStorage.setItem(SOUND_MUTED_STORAGE_KEY, 'false');
+			for (const handler of handlers) handler({ key: 'unrelated_key' });
+			expect(button.attrs.get('aria-pressed')).toBe('false');
+		} finally {
+			(globalThis as { window?: unknown }).window = originalWindow;
+		}
+	});
+
 	test('reports each toggle through onToggle', () => {
 		const seen: boolean[] = [];
 		const button = fakeToggle();

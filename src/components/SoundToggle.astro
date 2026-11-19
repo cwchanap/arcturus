@@ -47,6 +47,11 @@ const t = createTranslator(SHELL_MESSAGES, locale);
 	[data-sound-toggle][aria-pressed='false'] .sound-toggle-on {
 		display: none;
 	}
+	/* Ships painted as unmuted; stay hidden until the binder renders the
+	   saved preference. */
+	[data-sound-toggle]:not([data-sound-bound]) {
+		visibility: hidden;
+	}
 </style>
 
 <script>

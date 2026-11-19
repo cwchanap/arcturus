@@ -48,8 +48,8 @@ for (const { name, width, height } of VIEWPORTS) {
 				await page.goto('/games/keno');
 
 				await page.evaluate(async () => {
-					// Runtime string (Vite dev serves the module); typed `any` to keep
-					// astro check from resolving the page-side specifier.
+					// Runtime string (Vite dev serves the module); typed as a plain
+					// string to keep astro check from resolving the page-side specifier.
 					const fx = await import('/src/lib/celebration/index.ts' as string);
 					fx.celebrateWin({ win: 200, stake: 10 });
 				});
@@ -138,6 +138,14 @@ for (const { name, width, height } of VIEWPORTS) {
 				// The listener records whether the ribbon and its text were still
 				// rendered at click time — the overlay host persists after teardown
 				// (it is only emptied), so host connection alone proves nothing.
+				// Retrigger first: the waits and geometry reads above can consume
+				// most of the 1.6s lifetime, and a click after teardown would only
+				// measure an emptied host, not click-through of a live effect.
+				await page.evaluate(async () => {
+					const fx = await import('/src/lib/celebration/index.ts' as string);
+					fx.celebrateWin({ win: 200, stake: 10 });
+				});
+				await expect(title).toBeVisible();
 				await page.evaluate(() => {
 					const w = window as {
 						celebrationE2EClick?: { target: string | null; overlayLive: boolean };

@@ -3679,13 +3679,14 @@ describe('Poker table sound, turn timer and hand recap', () => {
 			value: '0',
 		};
 		const played: string[] = [];
+		const unlocked: number[] = [];
 		const sound = {
 			play: (sfx: string) => void played.push(sfx),
-			unlock: () => {},
+			unlock: () => void unlocked.push(1),
 		};
 		const game = new PokerGame(undefined, undefined, sound) as unknown as TableGame;
 		game.processAITurn = async () => {};
-		return { elements, game, played };
+		return { elements, game, played, unlocked };
 	}
 
 	/** Put the human on turn preflop, facing `facing` chips. */
@@ -3724,6 +3725,33 @@ describe('Poker table sound, turn timer and hand recap', () => {
 		expect(button.getAttribute('aria-pressed')).toBe('true');
 		expect(button.getAttribute('aria-label')).toBe('Sound on');
 		expect(button.getAttribute('title')).toBe('Sound on');
+	});
+
+	test('unmute unlocks and confirms with the check cue in one click; mute stays silent', () => {
+		const { elements, played, unlocked } = setup();
+		const button = elements['btn-sound'] as unknown as { click: () => void };
+
+		// Start unmuted: muting must not play any cue or unlock.
+		button.click();
+		expect(played).toEqual([]);
+		expect(unlocked).toEqual([]);
+
+		// Unmuting unlocks audio and confirms with the table cue inside the
+		// same click listener (browsers only start audio from a user gesture).
+		button.click();
+		expect(unlocked).toEqual([1]);
+		expect(played).toEqual(['check']);
+
+		// Muting again stays silent.
+		button.click();
+		expect(played).toEqual(['check']);
+		expect(unlocked).toEqual([1]);
+
+		// Unmute again: confirmation fires symmetrically, and the shared mute
+		// preference ends unmuted so later suites are not affected.
+		button.click();
+		expect(unlocked).toEqual([1, 1]);
+		expect(played).toEqual(['check', 'check']);
 	});
 
 	afterEach(() => setVisibility(undefined));

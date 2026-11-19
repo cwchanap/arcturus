@@ -1,9 +1,11 @@
 /**
- * Poker table sound effects, synthesized with Web Audio so no audio files
- * ship. Each effect is a short recipe of tones and noise bursts; muting is
- * governed by the shared site-wide preference in `../sound-preference`, read
- * live on every play/unlock. Everything degrades to silence when Web Audio
- * is unavailable (tests, old browsers) or the browser blocks playback.
+ * Poker table sound effects, synthesized with Web Audio — the poker table
+ * itself ships no audio files (the clips under `public/audio/fx/` belong to
+ * the site-wide big-win celebration). Each effect is a short recipe of tones
+ * and noise bursts; muting is governed by the shared site-wide preference in
+ * `../sound-preference`, read live on every play/unlock. Everything degrades
+ * to silence when Web Audio is unavailable (tests, old browsers) or the
+ * browser blocks playback.
  */
 
 import { isSoundMuted } from '../sound-preference';

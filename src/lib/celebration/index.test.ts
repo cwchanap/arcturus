@@ -434,6 +434,21 @@ describe('celebration audio', () => {
 		expect(coinAudio()?.playCalls).toBe(playsBefore + 1);
 	});
 
+	test('a muted replacement celebration silences the previous still-running clip', () => {
+		showCelebration('big', 100); // unmuted: the coin shower is playing
+		const coin = coinAudio();
+		const playsBefore = coin?.playCalls ?? 0;
+		const pausesBefore = coin?.pauseCalls ?? 0;
+
+		setSoundMuted(true);
+		showCelebration('big', 100); // muted replacement
+		// No new playback, but the stale clip from the unmuted celebration is
+		// stopped and rewound instead of being left to finish in the open.
+		expect(coin?.playCalls ?? 0).toBe(playsBefore);
+		expect(coin?.pauseCalls).toBeGreaterThan(pausesBefore);
+		expect(coin?.currentTime).toBe(0);
+	});
+
 	test('reduced motion still plays clips per the mute preference (visuals stay static)', () => {
 		stubReducedMotion(true);
 		const coinBefore = coinAudio()?.playCalls ?? 0;

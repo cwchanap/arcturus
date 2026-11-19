@@ -11,12 +11,15 @@ export const SOUND_MUTED_STORAGE_KEY = 'casino_sound_muted';
 /** In-memory fallback when localStorage is unavailable (private mode). */
 let memoryMuted = false;
 
+/** Sticky: once a write fails (quota, privacy), storage is skipped for reads too. */
+let storageUnavailable = false;
+
 type ChangeListener = (muted: boolean) => void;
 const changeListeners = new Set<ChangeListener>();
 
 export function isSoundMuted(): boolean {
 	try {
-		if (typeof localStorage === 'undefined') return memoryMuted;
+		if (storageUnavailable || typeof localStorage === 'undefined') return memoryMuted;
 		const raw = localStorage.getItem(SOUND_MUTED_STORAGE_KEY);
 		return raw === null ? memoryMuted : raw === 'true';
 	} catch {
@@ -27,10 +30,12 @@ export function isSoundMuted(): boolean {
 export function setSoundMuted(muted: boolean): void {
 	memoryMuted = muted;
 	try {
-		if (typeof localStorage !== 'undefined')
+		if (!storageUnavailable && typeof localStorage !== 'undefined')
 			localStorage.setItem(SOUND_MUTED_STORAGE_KEY, String(muted));
 	} catch {
-		// Private mode: the choice lasts for this page only.
+		// Quota/privacy failure: memory wins from here on, so a stale stored
+		// value can never outvote the choice the user just made.
+		storageUnavailable = true;
 	}
 	for (const listener of changeListeners) listener(muted);
 }

@@ -28,6 +28,17 @@ class MemoryStorage implements Storage {
 	}
 }
 
+/** Reads fine but can no longer persist (e.g. quota exhausted). */
+class QuotaExceededStorage extends MemoryStorage {
+	constructor(seedKey: string, seedValue: string) {
+		super();
+		super.setItem(seedKey, seedValue);
+	}
+	setItem(): never {
+		throw new Error('QuotaExceededError');
+	}
+}
+
 /** Minimal toggle-button double carrying attributes and click handlers. */
 function fakeToggle(labels = { on: 'Sound on', off: 'Sound off' }) {
 	const attrs = new Map<string, string>([
@@ -114,5 +125,18 @@ describe('sound preference', () => {
 
 	test('ignores a missing button', () => {
 		expect(() => bindSoundToggle(null)).not.toThrow();
+	});
+
+	// Kept last: treating storage as unavailable after a failed write is
+	// sticky for the rest of the module's lifetime.
+	test('keeps the choice in memory after a failed write (quota exhausted)', () => {
+		// Storage still holds the stale unmuted value and reads fine, but can
+		// no longer persist (quota exhausted): the stale value must not win.
+		(globalThis as typeof globalThis & { localStorage?: Storage }).localStorage =
+			new QuotaExceededStorage(SOUND_MUTED_STORAGE_KEY, 'false');
+		setSoundMuted(true);
+		expect(isSoundMuted()).toBe(true);
+		setSoundMuted(false);
+		expect(isSoundMuted()).toBe(false);
 	});
 });

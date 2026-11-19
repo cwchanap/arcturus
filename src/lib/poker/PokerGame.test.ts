@@ -60,6 +60,12 @@ function mockPokerGameDOM() {
 			if (!elements[id]) {
 				const listeners: Record<string, (() => void) | undefined> = {};
 				const attrs = new Map<string, string>();
+				if (id === 'btn-sound') {
+					// poker.astro ships localized on/off labels as data attributes
+					// so the shared sound binder can flip the accessible label.
+					attrs.set('data-sound-label-on', 'Sound on');
+					attrs.set('data-sound-label-off', 'Sound off');
+				}
 				elements[id] = {
 					addEventListener: (event: string, handler?: () => void) => {
 						listeners[event] = handler;
@@ -3515,6 +3521,27 @@ describe('Poker table sound, turn timer and hand recap', () => {
 	function setVisibility(state: string | undefined) {
 		(document as unknown as { visibilityState?: string }).visibilityState = state;
 	}
+
+	test('the sound button flips its localized accessible label both ways', () => {
+		const { elements } = setup();
+		const button = elements['btn-sound'] as unknown as {
+			click: () => void;
+			getAttribute: (name: string) => string | null;
+		};
+		// Initial render at bind time: unmuted.
+		expect(button.getAttribute('aria-pressed')).toBe('true');
+		expect(button.getAttribute('aria-label')).toBe('Sound on');
+
+		button.click();
+		expect(button.getAttribute('aria-pressed')).toBe('false');
+		expect(button.getAttribute('aria-label')).toBe('Sound off');
+		expect(button.getAttribute('title')).toBe('Sound off');
+
+		button.click();
+		expect(button.getAttribute('aria-pressed')).toBe('true');
+		expect(button.getAttribute('aria-label')).toBe('Sound on');
+		expect(button.getAttribute('title')).toBe('Sound on');
+	});
 
 	afterEach(() => setVisibility(undefined));
 

@@ -110,6 +110,24 @@ describe('sound preference', () => {
 		expect(isSoundMuted()).toBe(true);
 	});
 
+	test('a successful read with no saved preference restores the unmuted default', () => {
+		setSoundMuted(true);
+		localStorage.removeItem(SOUND_MUTED_STORAGE_KEY);
+		// Storage read fine and held nothing: a fresh page answers unmuted, so
+		// this page must too — the stale muted memory must not outlive the key.
+		expect(isSoundMuted()).toBe(false);
+		// The cache is the last successful read, so later read failures fall
+		// back to the unmuted default rather than the cleared muted value.
+		(globalThis as { localStorage?: Storage }).localStorage = {
+			getItem: () => {
+				throw new Error('storage read denied');
+			},
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		expect(isSoundMuted()).toBe(false);
+	});
+
 	test('keeps bound toggles on the same page in sync', () => {
 		const header = fakeToggle();
 		const game = fakeToggle({ on: '効果音オン', off: '効果音オフ' });
@@ -140,6 +158,25 @@ describe('sound preference', () => {
 
 	test('ignores a missing button', () => {
 		expect(() => bindSoundToggle(null)).not.toThrow();
+	});
+
+	test('a silently non-persisting store keeps the in-page choice in memory', async () => {
+		// Reads and writes both "work" but nothing sticks — a dead store that
+		// never throws. The write read-back marks it unusable so memory keeps
+		// answering instead of an eternally absent key reading as unmuted.
+		(globalThis as { localStorage?: Storage }).localStorage = {
+			getItem: () => null,
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		// Private module instance: the unavailable flag is sticky for life.
+		const isolated = (await import(
+			'./sound-preference?noop-store' as string
+		)) as typeof import('./sound-preference');
+		isolated.setSoundMuted(true);
+		expect(isolated.isSoundMuted()).toBe(true);
+		isolated.setSoundMuted(false);
+		expect(isolated.isSoundMuted()).toBe(false);
 	});
 
 	test('keeps the choice in memory after a failed write (quota exhausted)', async () => {

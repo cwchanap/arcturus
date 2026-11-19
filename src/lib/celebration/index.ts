@@ -64,6 +64,7 @@ export function showCelebration(tier: WinTier, amount: number): void {
 	// never propagate into the caller's settlement path.
 	try {
 		teardown();
+		stopClips();
 		const host = getOverlay();
 		const locale = getDocumentLocale();
 		const reduced = prefersReducedMotion();
@@ -301,6 +302,20 @@ function getClip(src: string): HTMLAudioElement | null {
 		return clip;
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * Pauses and rewinds every cached clip. A replacement must silence clips the
+ * new tier does not play — e.g. a huge celebration's sting keeps sounding
+ * through a following big one if only the replayed clips are stopped.
+ */
+function stopClips(): void {
+	for (const clip of clips.values()) {
+		bestEffort(() => {
+			clip.pause();
+			clip.currentTime = 0;
+		});
 	}
 }
 

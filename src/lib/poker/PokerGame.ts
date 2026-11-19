@@ -694,7 +694,7 @@ export class PokerGame {
 
 		if (involved && delta > 0) {
 			const humanKey = featured === human ? featuredHand?.key : undefined;
-			const tier = winTier(humanWon, this.handBigBlind, WIN_TIER_MULTIPLES.bigBlind);
+			const tier = winTier(delta, this.handBigBlind, WIN_TIER_MULTIPLES.bigBlind);
 			// A tiered celebration plays its own SFX: skip the synthesized fanfare
 			// so the two never stack. The high-ranked-hand bigWin stays as the
 			// fallback for wins below the new threshold.

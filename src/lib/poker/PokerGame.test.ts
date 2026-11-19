@@ -3563,26 +3563,54 @@ describe('big-win celebration on hand results', () => {
 		);
 	}
 
-	test('a contested pot win of exactly 20 big blinds celebrates at the big tier instead of the synthesized bigWin', () => {
+	test('a net win of exactly 20 big blinds celebrates at the big tier instead of the synthesized bigWin', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
-		contestedWin(game, 200);
-		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 100 }]);
+		// Contested award 400 repays the human's 200 bet: net delta is 20BB.
+		contestedWin(game, 400);
+		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 200 }]);
 		expect(played).toEqual([]);
 	});
 
-	test('a contested pot win of 50 big blinds celebrates at the huge tier with the hand net delta', () => {
+	test('a net win of 50 big blinds celebrates at the huge tier with the hand net delta', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
-		contestedWin(game, 520);
-		expect(celebrationCalls).toEqual([{ tier: 'huge', amount: 260 }]);
+		contestedWin(game, 1000);
+		expect(celebrationCalls).toEqual([{ tier: 'huge', amount: 500 }]);
 		expect(played).toEqual([]);
 	});
 
 	test('an ordinary contested win below the threshold keeps the win cue and never celebrates', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
-		contestedWin(game, 150);
+		// Contested award 390 would reach the big tier if the gross award were
+		// measured; the net delta of 195 stays just under 20BB.
+		contestedWin(game, 390);
+		expect(celebrationCalls).toEqual([]);
+		expect(played).toEqual(['win']);
+	});
+
+	test('a split pot that barely profits keeps the win cue instead of celebrating', () => {
+		const played: string[] = [];
+		const { game } = celebrationSetup(played);
+		// The human's contested share is 500 (50BB — huge if the gross award
+		// were measured), but they staked 495 of it, so the hand nets +5.
+		const [you, rival] = game.players;
+		game.handStartChips = 5000;
+		game.handStartStacks = new Map([
+			[0, 5000],
+			[1, 5000],
+		]);
+		game.players[0] = { ...you, chips: 5005, totalBet: 495 };
+		game.players[1] = { ...rival, chips: 4995, totalBet: 505, folded: false };
+		game.presentHandResult(
+			new Map([
+				[you.id, 500],
+				[rival.id, 500],
+			]),
+			[{ amount: 1000, winners: [you, rival], uncontested: false }],
+			false,
+		);
 		expect(celebrationCalls).toEqual([]);
 		expect(played).toEqual(['win']);
 	});
@@ -3590,32 +3618,31 @@ describe('big-win celebration on hand results', () => {
 	test('uncalled returns are excluded from the tier measure even at large awards', () => {
 		const played: string[] = [];
 		const { game } = celebrationSetup(played);
-		// Human bet 4950 into a pot the lone rival called for 100 and lost: the
-		// award is 5050 but only 200 (20BB) was ever contested — the other 4850
-		// is the human's own uncalled bet coming back.
+		// Human bet 5050 into a pot the lone rival called for 200 and lost: the
+		// award is 5250 but only 400 was ever contested — the other 4850 is the
+		// human's own uncalled bet coming back and never enters the net delta.
 		const [you, rival] = game.players;
 		game.handStartChips = 5000;
 		game.handStartStacks = new Map([
 			[0, 5000],
 			[1, 5000],
 		]);
-		game.players[0] = { ...you, chips: 5100, totalBet: 4950 };
-		game.players[1] = { ...rival, chips: 4900, totalBet: 100, folded: false };
+		game.players[0] = { ...you, chips: 5200, totalBet: 5050 };
+		game.players[1] = { ...rival, chips: 4800, totalBet: 200, folded: false };
 		game.presentHandResult(
 			new Map([
-				[you.id, 5050],
+				[you.id, 5250],
 				[rival.id, 0],
 			]),
 			[
-				{ amount: 200, winners: [you], uncontested: false },
+				{ amount: 400, winners: [you], uncontested: false },
 				{ amount: 4850, winners: [you], uncontested: true },
 			],
 			false,
 		);
-		// Counting the returned 4850 would measure 5050 and reach the huge
-		// tier; landing exactly on the 20BB big boundary still proves the
-		// uncalled return is excluded.
-		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 100 }]);
+		// Measuring the gross award (5250) would reach the huge tier; the net
+		// delta of 200 lands exactly on the 20BB big boundary.
+		expect(celebrationCalls).toEqual([{ tier: 'big', amount: 200 }]);
 		expect(played).toEqual([]);
 	});
 

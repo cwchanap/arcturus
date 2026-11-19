@@ -94,6 +94,9 @@ function teardown(): void {
 	}
 	for (const animation of activeAnimations) {
 		try {
+			// Cancel rejects the finished promise; silence it so replacing a
+			// running effect never surfaces an AbortError to the page.
+			animation.finished?.catch(() => {});
 			animation.cancel();
 		} catch {
 			// An already-finished animation may refuse cancel; nothing to do.
@@ -104,8 +107,9 @@ function teardown(): void {
 }
 
 function getOverlay(): HTMLDivElement {
-	// Recreate if the page replaced its body (HMR, tests).
-	if (overlay?.isConnected) return overlay;
+	// Recreate if the page replaced its body or whole document (HMR, tests);
+	// an overlay from a previous document is stale even while still connected.
+	if (overlay?.isConnected && overlay.ownerDocument === document) return overlay;
 	const element = document.createElement('div');
 	element.dataset.celebrationOverlay = '';
 	element.setAttribute('aria-hidden', 'true');
@@ -269,8 +273,14 @@ function startCountUp(element: HTMLElement, amount: number, locale: Locale): voi
 }
 
 const clips = new Map<string, HTMLAudioElement>();
+/** Document the clip cache was built against; a replaced document invalidates it. */
+let clipsDocument: Document | null = null;
 
 function getClip(src: string): HTMLAudioElement | null {
+	if (clipsDocument !== document) {
+		clips.clear();
+		clipsDocument = document;
+	}
 	const cached = clips.get(src);
 	if (cached) return cached;
 	const AudioCtor = typeof window === 'undefined' ? undefined : window.Audio;

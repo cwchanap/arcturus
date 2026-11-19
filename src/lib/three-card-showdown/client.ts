@@ -10,6 +10,7 @@ import {
 import { formatChips } from '../i18n/messages/common';
 import type { MessageKey } from '../i18n/translate';
 import { ThreeCardShowdownGame, MAX_ANTE, MIN_ANTE } from './game';
+import { celebrateWin } from '../celebration/index';
 import type { ThreeCardShowdownRoundResult, ThreeCardWagerErrorCode } from './types';
 
 const ANTE_ERROR_KEYS: Record<
@@ -215,6 +216,7 @@ export function initThreeCardShowdownClient(): void {
 	async function completeDecision(action: 'fold' | 'play'): Promise<void> {
 		const round = action === 'fold' ? game.fold() : game.play();
 		render(); // reveal dealer and show local result immediately
+		celebrateWin({ win: round.netDelta, stake: round.totalWager });
 		await settlement.completeRound(round.netDelta, game.getState().balance);
 		render();
 	}

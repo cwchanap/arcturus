@@ -6,6 +6,7 @@ import {
 	resolvedCrapsStake,
 	resolvedEvaluations,
 } from './settlement';
+import { winTier } from '../celebration/tier';
 
 function bet(id: string, type: CrapsBet['type']): CrapsBet {
 	return { id, type, amount: 25 };
@@ -102,8 +103,11 @@ describe('Craps resolved wagers', () => {
 		});
 
 		// 10 Pass Line + 50 attached Odds = 60 at risk; +110 net is only 1.83×,
-		// not a big win.
+		// not a big win — the celebration classifier must agree.
 		expect(resolvedCrapsStake(result)).toBe(60);
+		expect(winTier(result.netDelta, resolvedCrapsStake(result))).toBeNull();
+		// Same round at a stake-level big win: 300 net over the 60 stake clears 5×.
+		expect(winTier(300, resolvedCrapsStake(result))).toBe('big');
 	});
 });
 

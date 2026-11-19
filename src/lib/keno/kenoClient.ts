@@ -18,6 +18,7 @@ import { KenoUIRenderer } from './KenoUIRenderer';
 import type { DrawResult } from './types';
 import { getDocumentLocale } from '../i18n/locale';
 import { kenoTranslator, getKenoErrorText } from '../i18n/messages/keno';
+import { celebrateWin } from '../celebration/index';
 
 const GAME_KEY = 'keno';
 
@@ -295,6 +296,7 @@ export function initKenoClient(): void {
 			renderer.highlightDrawn(result.drawn, result.hits, settings.getRevealStagger());
 			await sleep(settings.getAnimationDelay());
 			renderer.renderLastResult(result);
+			celebrateWin({ win: result.netDelta, stake: result.bet });
 			renderer.renderRecent(game.getHistory());
 			renderer.setStatus(result.outcome === 'win' ? t('roundCompleteWin') : t('roundComplete'));
 

@@ -469,3 +469,41 @@ describe('entrypoints', () => {
 		expect(coinAudio()?.playCalls ?? 0).toBe(coinBefore);
 	});
 });
+
+// Runs after every cache-counting test above: replacing the document is a
+// page replacement, so the module legitimately rebuilds its caches afterwards.
+describe('document replacement', () => {
+	test('a replaced document gets a fresh overlay and never reuses the stale one', () => {
+		showCelebration('big', 100);
+		expect(overlay()).not.toBeNull();
+
+		// HMR and test files replace the whole document; the cached overlay must
+		// not leak between them (happy-dom suites share the module registry).
+		const second = new Window();
+		const secondDoc = second.document as unknown as Document;
+		const documentOverride = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			writable: true,
+			value: secondDoc,
+		});
+		try {
+			// Replacing the effect cancels the stale burst; happy-dom rejects the
+			// cancelled animations' finished promises, so this must stay silent.
+			expect(() => showCelebration('big', 100)).not.toThrow();
+			expect(secondDoc.querySelector('[data-celebration-overlay]')).not.toBeNull();
+			expect(secondDoc.querySelectorAll('[data-celebration-overlay] img').length).toBeGreaterThan(
+				0,
+			);
+			// The stale overlay stays behind in the old document, untouched.
+			expect(doc.querySelectorAll('[data-celebration-overlay] img').length).toBe(0);
+		} finally {
+			if (documentOverride) {
+				Object.defineProperty(globalThis, 'document', documentOverride);
+			} else {
+				Reflect.deleteProperty(globalThis, 'document');
+			}
+			second.close();
+		}
+	});
+});

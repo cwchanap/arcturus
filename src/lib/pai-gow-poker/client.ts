@@ -12,6 +12,7 @@ import {
 } from '../i18n/messages/pai-gow-poker';
 import type { MessageKey } from '../i18n/translate';
 import { isPaiGowJoker } from './cards';
+import { celebrateWin } from '../celebration/index';
 import { PaiGowPokerGame, MAX_WAGER, MIN_WAGER } from './game';
 import { getArrangement } from './rules';
 import type {
@@ -292,6 +293,7 @@ export function initPaiGowPokerClient(): void {
 		}
 		const result = game.confirm();
 		render();
+		celebrateWin({ win: result.netDelta, stake: result.wager });
 		await settlement.completeRound(result.netDelta, game.getState().balance);
 		render();
 	}

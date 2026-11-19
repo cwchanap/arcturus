@@ -11,6 +11,7 @@ import {
 	type VIDEO_POKER_MESSAGES,
 } from '../i18n/messages/video-poker';
 import { formatChips } from '../i18n/messages/common';
+import { celebrateWin } from '../celebration/index';
 import type { MessageKey } from '../i18n/translate';
 import type { VideoPokerRoundResult, VideoPokerWagerErrorCode } from './types';
 
@@ -228,6 +229,7 @@ export function initVideoPokerClient(): void {
 				render();
 				return;
 			}
+			celebrateWin({ win: round.netDelta, stake: round.wager });
 
 			// Royal draw earns the wallet feat; the command stays clean otherwise.
 			await settlement.completeRound(

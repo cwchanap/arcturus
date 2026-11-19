@@ -59,9 +59,11 @@ export function showCelebration(tier: WinTier, amount: number): void {
 	if (!Number.isFinite(amount) || amount <= 0) return;
 	if (typeof document === 'undefined' || !document.body) return;
 
-	// A new win replaces the previous effect instead of stacking.
-	teardown();
+	// A new win replaces the previous effect instead of stacking; even this
+	// replacement teardown sits inside the boundary so a failing cleanup can
+	// never propagate into the caller's settlement path.
 	try {
+		teardown();
 		const host = getOverlay();
 		const locale = getDocumentLocale();
 		const reduced = prefersReducedMotion();
@@ -83,27 +85,34 @@ export function showCelebration(tier: WinTier, amount: number): void {
 	}
 }
 
+/** Runs one cleanup step; a cosmetic failure must never reach gameplay. */
+function bestEffort(cleanup: () => void): void {
+	try {
+		cleanup();
+	} catch {
+		// A broken/stubbed DOM or timer API must not skip the remaining steps.
+	}
+}
+
 function teardown(): void {
 	if (cleanupTimer !== undefined) {
-		clearTimeout(cleanupTimer);
+		bestEffort(() => clearTimeout(cleanupTimer));
 		cleanupTimer = undefined;
 	}
 	if (countFrame !== null) {
-		cancelAnimationFrame(countFrame);
+		bestEffort(() => cancelAnimationFrame(countFrame));
 		countFrame = null;
 	}
 	for (const animation of activeAnimations) {
-		try {
+		bestEffort(() => {
 			// Cancel rejects the finished promise; silence it so replacing a
 			// running effect never surfaces an AbortError to the page.
 			animation.finished?.catch(() => {});
 			animation.cancel();
-		} catch {
-			// An already-finished animation may refuse cancel; nothing to do.
-		}
+		});
 	}
 	activeAnimations = [];
-	overlay?.replaceChildren();
+	bestEffort(() => overlay?.replaceChildren());
 }
 
 function getOverlay(): HTMLDivElement {

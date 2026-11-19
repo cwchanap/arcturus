@@ -61,21 +61,26 @@ export function showCelebration(tier: WinTier, amount: number): void {
 
 	// A new win replaces the previous effect instead of stacking.
 	teardown();
-	const host = getOverlay();
-	const locale = getDocumentLocale();
-	const reduced = prefersReducedMotion();
+	try {
+		const host = getOverlay();
+		const locale = getDocumentLocale();
+		const reduced = prefersReducedMotion();
 
-	if (!reduced) spawnBurst(host);
-	if (tier === 'huge') {
-		host.appendChild(buildRibbon(amount, locale, reduced));
-	} else if (reduced) {
-		host.appendChild(buildStaticAmount(amount, locale));
-	}
-	if (!reduced) {
+		if (!reduced) spawnBurst(host);
+		if (tier === 'huge') {
+			host.appendChild(buildRibbon(amount, locale, reduced));
+		} else if (reduced) {
+			host.appendChild(buildStaticAmount(amount, locale));
+		}
+		// Audio follows the mute preference alone; reduced motion limits visuals.
 		playClip(COIN_SHOWER_SRC);
 		if (tier === 'huge') playClip(BIG_WIN_STING_SRC);
+		cleanupTimer = setTimeout(teardown, CELEBRATION_DURATION_MS);
+	} catch {
+		// The celebration is purely cosmetic: a failure (e.g. WAAPI missing)
+		// must never reach the game — drop any partial effect instead.
+		teardown();
 	}
-	cleanupTimer = setTimeout(teardown, CELEBRATION_DURATION_MS);
 }
 
 function teardown(): void {

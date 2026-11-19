@@ -100,7 +100,8 @@ function teardown(): void {
 		cleanupTimer = undefined;
 	}
 	if (countFrame !== null) {
-		bestEffort(() => cancelAnimationFrame(countFrame));
+		const frame = countFrame;
+		bestEffort(() => cancelAnimationFrame(frame));
 		countFrame = null;
 	}
 	for (const animation of activeAnimations) {

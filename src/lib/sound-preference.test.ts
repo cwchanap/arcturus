@@ -56,7 +56,7 @@ function fakeToggle(labels = { on: 'Sound on', off: 'Sound off' }) {
 		},
 		getAttribute: (name: string) => attrs.get(name) ?? null,
 		setAttribute: (name: string, value: string) => void attrs.set(name, value),
-	} as unknown as HTMLElement;
+	} as unknown as HTMLElement & { attrs: Map<string, string> };
 }
 
 const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage;
@@ -71,8 +71,7 @@ describe('sound preference', () => {
 	});
 
 	afterEach(() => {
-		(globalThis as typeof globalThis & { localStorage?: Storage }).localStorage =
-			originalLocalStorage;
+		(globalThis as { localStorage?: Storage }).localStorage = originalLocalStorage;
 	});
 
 	test('defaults to unmuted', () => {
@@ -90,7 +89,7 @@ describe('sound preference', () => {
 	});
 
 	test('keeps the choice in memory when localStorage is unavailable', () => {
-		(globalThis as typeof globalThis & { localStorage?: Storage }).localStorage = undefined;
+		(globalThis as { localStorage?: Storage }).localStorage = undefined;
 		setSoundMuted(true);
 		expect(isSoundMuted()).toBe(true);
 	});

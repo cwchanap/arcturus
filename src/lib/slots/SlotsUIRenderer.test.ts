@@ -506,7 +506,7 @@ describe('SlotsUIRenderer', () => {
 	test('getSpinDurationMs delegates to constants for each speed', () => {
 		const r = new SlotsUIRenderer();
 		for (const speed of ['slow', 'normal', 'fast'] as const) {
-			const settings: SlotSettings = { spinSpeed: speed, soundEnabled: true, quickSpin: false };
+			const settings: SlotSettings = { spinSpeed: speed, quickSpin: false };
 			expect(r.getSpinDurationMs(settings)).toBe(constantsGetSpinDurationMs(speed));
 		}
 	});

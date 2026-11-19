@@ -69,7 +69,6 @@ export class GameSettingsManager {
 		) {
 			safe.spinSpeed = candidate.spinSpeed as SpinSpeed;
 		}
-		if (typeof candidate.soundEnabled === 'boolean') safe.soundEnabled = candidate.soundEnabled;
 		if (typeof candidate.quickSpin === 'boolean') safe.quickSpin = candidate.quickSpin;
 		return safe;
 	}

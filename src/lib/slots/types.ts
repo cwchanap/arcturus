@@ -38,7 +38,6 @@ export type SpinSpeed = 'slow' | 'normal' | 'fast';
 
 export interface SlotSettings {
 	spinSpeed: SpinSpeed;
-	soundEnabled: boolean;
 	quickSpin: boolean;
 }
 

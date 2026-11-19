@@ -1,14 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SFX_RECIPES, SOUND_MUTED_STORAGE_KEY, createPokerSound, type PokerSfx } from './sound';
-
-function memoryStorage(initial: Record<string, string> = {}) {
-	const data = new Map(Object.entries(initial));
-	return {
-		getItem: (key: string) => data.get(key) ?? null,
-		setItem: (key: string, value: string) => void data.set(key, value),
-		data,
-	};
-}
+import { SFX_RECIPES, createPokerSound, type PokerSfx } from './sound';
 
 function fakeContext(state: AudioContextState = 'running') {
 	const param = () => ({
@@ -57,7 +48,7 @@ describe('poker sound', () => {
 
 	test('plays an effect through one shared context', () => {
 		const ctx = fakeContext();
-		const sound = createPokerSound({ storage: memoryStorage(), createContext: ctx.make });
+		const sound = createPokerSound({ createContext: ctx.make });
 		sound.play('win');
 		sound.play('fold');
 		expect(ctx.created.contexts).toBe(1);
@@ -65,28 +56,31 @@ describe('poker sound', () => {
 		expect(ctx.created.noises).toBeGreaterThan(0);
 	});
 
-	test('muting persists and silences playback', () => {
-		const storage = memoryStorage();
+	test('gates playback and unlock on the shared mute preference', () => {
 		const ctx = fakeContext();
-		const sound = createPokerSound({ storage, createContext: ctx.make });
-		sound.setMuted(true);
+		let muted = true;
+		const sound = createPokerSound({ createContext: ctx.make, isMuted: () => muted });
 		sound.play('raise');
+		sound.unlock();
 		expect(ctx.created.contexts).toBe(0);
-		expect(storage.data.get(SOUND_MUTED_STORAGE_KEY)).toBe('true');
+		expect(ctx.created.resumes).toBe(0);
 
-		const reloaded = createPokerSound({ storage, createContext: ctx.make });
-		expect(reloaded.isMuted()).toBe(true);
+		muted = false;
+		sound.unlock();
+		expect(ctx.created.contexts).toBe(1);
+		sound.play('win');
+		expect(ctx.created.contexts).toBe(1);
 	});
 
 	test('resumes a suspended context from a gesture', () => {
 		const ctx = fakeContext('suspended');
-		const sound = createPokerSound({ storage: memoryStorage(), createContext: ctx.make });
+		const sound = createPokerSound({ createContext: ctx.make });
 		sound.unlock();
 		expect(ctx.created.resumes).toBe(1);
 	});
 
 	test('stays silent without Web Audio', () => {
-		const sound = createPokerSound({ storage: null, createContext: () => null });
+		const sound = createPokerSound({ createContext: () => null });
 		const all = Object.keys(SFX_RECIPES) as PokerSfx[];
 		expect(() => all.forEach((name) => sound.play(name))).not.toThrow();
 	});

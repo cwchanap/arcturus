@@ -48,6 +48,8 @@ export const SHELL_MESSAGES = defineMessages({
 	en: {
 		premiumCasino: 'Premium Casino',
 		language: 'Language',
+		soundOn: 'Sound on',
+		soundOff: 'Sound off',
 		missions: 'Missions',
 		leaderboard: 'Leaderboard',
 		profile: 'Profile',
@@ -63,6 +65,8 @@ export const SHELL_MESSAGES = defineMessages({
 	'zh-Hant': {
 		premiumCasino: '頂級賭場',
 		language: '語言',
+		soundOn: '音效開',
+		soundOff: '音效關',
 		missions: '任務',
 		leaderboard: '排行榜',
 		profile: '個人檔案',
@@ -78,6 +82,8 @@ export const SHELL_MESSAGES = defineMessages({
 	'zh-Hans': {
 		premiumCasino: '顶级赌场',
 		language: '语言',
+		soundOn: '音效开',
+		soundOff: '音效关',
 		missions: '任务',
 		leaderboard: '排行榜',
 		profile: '个人档案',
@@ -93,6 +99,8 @@ export const SHELL_MESSAGES = defineMessages({
 	ja: {
 		premiumCasino: 'プレミアムカジノ',
 		language: '言語',
+		soundOn: '効果音オン',
+		soundOff: '効果音オフ',
 		missions: 'ミッション',
 		leaderboard: 'ランキング',
 		profile: 'プロフィール',

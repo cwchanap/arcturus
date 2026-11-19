@@ -51,7 +51,6 @@ export const MAX_HISTORY = 20;
 
 export const DEFAULT_SETTINGS: SlotSettings = {
 	spinSpeed: 'normal',
-	soundEnabled: true,
 	quickSpin: false,
 };
 

@@ -69,6 +69,7 @@ import {
 	type PokerMode,
 } from './sitAndGo';
 import { pokerSound, type PokerSfx, type PokerSound } from './sound';
+import { bindSoundToggle } from '../sound-preference';
 import { TURN_TIMER_STORAGE_KEY, TurnTimer } from './turnTimer';
 import { DEFAULT_SETTINGS } from './types';
 import { DeckManager } from './DeckManager';
@@ -346,9 +347,6 @@ export class PokerGame {
 
 	/** Toolbar icon toggles reflect their state through aria-pressed. */
 	private renderToggles(): void {
-		document
-			.getElementById('btn-sound')
-			?.setAttribute?.('aria-pressed', String(!this.sound.isMuted()));
 		document
 			.getElementById('btn-turn-timer')
 			?.setAttribute?.('aria-pressed', String(this.turnTimerEnabled));
@@ -2045,10 +2043,13 @@ export class PokerGame {
 		});
 		const autoDealToggle = document.getElementById('auto-deal-toggle') as HTMLInputElement | null;
 		autoDealToggle?.addEventListener('change', () => this.setAutoDeal(autoDealToggle.checked));
-		document.getElementById('btn-sound')?.addEventListener('click', () => {
-			this.sound.setMuted(!this.sound.isMuted());
-			this.sound.play('check');
-			this.renderToggles();
+		// The shared binder owns mute state, the button's aria-pressed label and
+		// same-page sync with the header toggle; confirm unmute with table audio.
+		bindSoundToggle(document.getElementById('btn-sound'), (muted) => {
+			if (!muted) {
+				this.sound.unlock();
+				this.sound.play('check');
+			}
 		});
 		document
 			.getElementById('btn-turn-timer')

@@ -288,6 +288,37 @@ describe('replacement and cleanup', () => {
 	});
 });
 
+describe('cleanup failure safety', () => {
+	test('failing frame/overlay cleanup never propagates into the next celebration', () => {
+		showCelebration('huge', 500);
+		// Both cleanup APIs are made to throw: the replacement celebration's
+		// initial teardown (and its timer-fired teardown) must not surface them.
+		const harnessCancel = globalThis.cancelAnimationFrame;
+		globalThis.cancelAnimationFrame = (() => {
+			throw new Error('frame cancel refused');
+		}) as unknown as typeof cancelAnimationFrame;
+		const host = overlay() as HTMLElement;
+		const workingReplace = host.replaceChildren.bind(host);
+		host.replaceChildren = () => {
+			throw new Error('overlay clear refused');
+		};
+		try {
+			expect(() => showCelebration('big', 100)).not.toThrow();
+			// The new effect still rendered on top of the un-clearable old one.
+			expect(celebrationImages().length).toBeGreaterThan(0);
+			// Scheduled cleanup of the new effect stays non-throwing too.
+			expect(() => fireCleanupTimer()).not.toThrow();
+		} finally {
+			globalThis.cancelAnimationFrame = harnessCancel;
+			host.replaceChildren = workingReplace;
+		}
+		// With real cleanup restored, the next round still ends spotless.
+		showCelebration('big', 100);
+		fireCleanupTimer();
+		expect(overlay()?.children.length).toBe(0);
+	});
+});
+
 describe('animation failure safety', () => {
 	test('a throwing animate() never reaches the game and partial particles are removed', () => {
 		const imageProto = happyWindow.HTMLImageElement.prototype as unknown as {

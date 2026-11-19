@@ -1,16 +1,29 @@
-import type { RollResult } from './types';
+import type { BetEvaluation, RollResult } from './types';
 import type { SettleRoundCommand } from '../wallet';
 
-export function buildCrapsSettlementCommand(
-	settlementId: string,
-	result: RollResult,
-): SettleRoundCommand | null {
-	const resolved = result.evaluations.filter(
+/** Wagers whose outcome is settled by this roll; continuing wagers are excluded. */
+export function resolvedEvaluations(result: RollResult): BetEvaluation[] {
+	return result.evaluations.filter(
 		(evaluation) =>
 			evaluation.outcome === 'win' ||
 			evaluation.outcome === 'lose' ||
 			evaluation.outcome === 'push',
 	);
+}
+
+/** Total chips that were at risk across the resolved wagers, including attached odds. */
+export function resolvedCrapsStake(result: RollResult): number {
+	return resolvedEvaluations(result).reduce(
+		(stake, evaluation) => stake + evaluation.bet.amount + (evaluation.bet.odds ?? 0),
+		0,
+	);
+}
+
+export function buildCrapsSettlementCommand(
+	settlementId: string,
+	result: RollResult,
+): SettleRoundCommand | null {
+	const resolved = resolvedEvaluations(result);
 	if (resolved.length === 0) return null;
 
 	return {

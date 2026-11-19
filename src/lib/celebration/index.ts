@@ -305,12 +305,18 @@ function getClip(src: string): HTMLAudioElement | null {
 }
 
 function playClip(src: string): void {
-	if (isSoundMuted()) return;
 	const clip = getClip(src);
 	if (!clip) return;
 	try {
+		// Stop and rewind even when muted: a muted celebration must silence
+		// the previous celebration's still-running clip, not just skip its own.
 		clip.pause();
 		clip.currentTime = 0;
+	} catch {
+		// A broken/stubbed audio element must not interrupt the result.
+	}
+	if (isSoundMuted()) return;
+	try {
 		Promise.resolve(clip.play()).catch(() => {
 			// Autoplay policies and odd mocks may reject playback; stay silent.
 		});

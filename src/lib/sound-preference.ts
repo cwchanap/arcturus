@@ -21,7 +21,11 @@ export function isSoundMuted(): boolean {
 	try {
 		if (storageUnavailable || typeof localStorage === 'undefined') return memoryMuted;
 		const raw = localStorage.getItem(SOUND_MUTED_STORAGE_KEY);
-		return raw === null ? memoryMuted : raw === 'true';
+		if (raw === null) return memoryMuted;
+		// Cache each successful read: if reads later start failing, the last
+		// known choice answers instead of the unmuted default permitting audio.
+		memoryMuted = raw === 'true';
+		return memoryMuted;
 	} catch {
 		return memoryMuted;
 	}

@@ -94,6 +94,22 @@ describe('sound preference', () => {
 		expect(isSoundMuted()).toBe(true);
 	});
 
+	test('caches a successful read as the fallback for later read failures', () => {
+		localStorage.setItem(SOUND_MUTED_STORAGE_KEY, 'true');
+		expect(isSoundMuted()).toBe(true);
+		// Reads then start failing (partitioned/evicted storage): the last
+		// successful read must answer, not the unmuted default — muted stays
+		// muted instead of silently permitting audio.
+		(globalThis as { localStorage?: Storage }).localStorage = {
+			getItem: () => {
+				throw new Error('storage read denied');
+			},
+			setItem: () => {},
+			removeItem: () => {},
+		} as unknown as Storage;
+		expect(isSoundMuted()).toBe(true);
+	});
+
 	test('keeps bound toggles on the same page in sync', () => {
 		const header = fakeToggle();
 		const game = fakeToggle({ on: '効果音オン', off: '効果音オフ' });
@@ -126,16 +142,21 @@ describe('sound preference', () => {
 		expect(() => bindSoundToggle(null)).not.toThrow();
 	});
 
-	// Kept last: treating storage as unavailable after a failed write is
-	// sticky for the rest of the module's lifetime.
-	test('keeps the choice in memory after a failed write (quota exhausted)', () => {
+	test('keeps the choice in memory after a failed write (quota exhausted)', async () => {
 		// Storage still holds the stale unmuted value and reads fine, but can
 		// no longer persist (quota exhausted): the stale value must not win.
 		(globalThis as typeof globalThis & { localStorage?: Storage }).localStorage =
 			new QuotaExceededStorage(SOUND_MUTED_STORAGE_KEY, 'false');
-		setSoundMuted(true);
-		expect(isSoundMuted()).toBe(true);
-		setSoundMuted(false);
-		expect(isSoundMuted()).toBe(false);
+		// Bun shares one module registry across test files, and treating
+		// storage as unavailable after a failed write is sticky for the
+		// module's lifetime — so this test trips the flag in a private module
+		// instance instead of polluting every suite that runs afterwards.
+		const isolated = (await import(
+			'./sound-preference?quota' as string
+		)) as typeof import('./sound-preference');
+		isolated.setSoundMuted(true);
+		expect(isolated.isSoundMuted()).toBe(true);
+		isolated.setSoundMuted(false);
+		expect(isolated.isSoundMuted()).toBe(false);
 	});
 });

@@ -54,9 +54,16 @@ for (const { name, width, height } of VIEWPORTS) {
 					fx.celebrateWin({ win: 200, stake: 10 });
 				});
 
+				const overlay = page.locator('[data-celebration-overlay]');
 				const title = page.locator('[data-celebration-title]');
 				const amount = page.locator('[data-celebration-amount]');
+				// Visibility guards: hidden nodes satisfy toHaveText, so require
+				// rendered elements within the ~1.6s effect lifetime.
+				await expect(overlay).toBeVisible();
+				await expect(overlay).toHaveAttribute('aria-hidden', 'true');
+				await expect(title).toBeVisible();
 				await expect(title).toHaveText(TITLE_TEXT[locale]);
+				await expect(amount).toBeVisible();
 				// Count-up (~0.8s) finishes well before the 1.6s teardown.
 				await expect(amount).toHaveText(formatChips(WIN, locale), { timeout: 2_000 });
 
@@ -103,6 +110,9 @@ for (const { name, width, height } of VIEWPORTS) {
 					['title', measured.title],
 					['count', measured.amount],
 				] as const) {
+					// Non-zero geometry: a zero-sized rect passes any containment check.
+					expect(rect.right - rect.left, `${label} has non-zero width`).toBeGreaterThan(0);
+					expect(rect.bottom - rect.top, `${label} has non-zero height`).toBeGreaterThan(0);
 					expect(rect.left, `${label} left edge inside safe band`).toBeGreaterThanOrEqual(
 						band.left - PX_SLACK,
 					);
@@ -125,29 +135,39 @@ for (const { name, width, height } of VIEWPORTS) {
 				).toBe(false);
 
 				// A real click passes through the overlay to the element underneath.
+				// The listener records whether the effect was still attached at click
+				// time, so a post-teardown click cannot pass vacuously.
 				await page.evaluate(() => {
-					const overlay = document.querySelector('[data-celebration-overlay]');
-					(window as { celebrationE2EClickTarget?: string | null }).celebrationE2EClickTarget =
-						null;
+					const w = window as {
+						celebrationE2EClick?: { target: string | null; overlayLive: boolean };
+					};
+					w.celebrationE2EClick = { target: null, overlayLive: false };
 					document.addEventListener(
 						'click',
 						(event) => {
 							const el = event.target instanceof Element ? event.target : null;
+							const overlay = document.querySelector('[data-celebration-overlay]');
 							const insideOverlay =
-								el !== null && (el === overlay || (overlay?.contains(el) ?? false));
-							(window as { celebrationE2EClickTarget?: string | null }).celebrationE2EClickTarget =
-								insideOverlay ? 'overlay' : (el?.tagName ?? 'none');
+								el !== null && overlay !== null && (el === overlay || overlay.contains(el));
+							w.celebrationE2EClick = {
+								target: insideOverlay ? 'overlay' : (el?.tagName ?? 'none'),
+								overlayLive: overlay !== null && overlay.isConnected,
+							};
 						},
 						{ once: true, capture: true },
 					);
 				});
 				await page.mouse.click(width / 2, height / 2);
-				const clickedTag = await page.evaluate(
+				const click = await page.evaluate(
 					() =>
-						(window as { celebrationE2EClickTarget?: string | null }).celebrationE2EClickTarget ??
-						null,
+						(
+							window as {
+								celebrationE2EClick?: { target: string | null; overlayLive: boolean };
+							}
+						).celebrationE2EClick ?? null,
 				);
-				expect(clickedTag, 'real click lands on the underlying element').toBe(
+				expect(click?.overlayLive, 'celebration still attached at click time').toBe(true);
+				expect(click?.target, 'real click lands on the underlying element').toBe(
 					measured.centerHit.tag,
 				);
 			});

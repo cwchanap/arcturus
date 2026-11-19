@@ -38,6 +38,8 @@ function mockPokerGameDOM() {
 		click?: () => void;
 		close?: () => void;
 		dataset?: Record<string, string>;
+		getAttribute?: (name: string) => string | null;
+		setAttribute?: (name: string, value: string) => void;
 		innerHTML?: string;
 		textContent?: string;
 		textContentSet?: string;
@@ -57,6 +59,7 @@ function mockPokerGameDOM() {
 			if (id === 'poker-history' || id.startsWith('poker-seat-')) return null;
 			if (!elements[id]) {
 				const listeners: Record<string, (() => void) | undefined> = {};
+				const attrs = new Map<string, string>();
 				elements[id] = {
 					addEventListener: (event: string, handler?: () => void) => {
 						listeners[event] = handler;
@@ -66,6 +69,8 @@ function mockPokerGameDOM() {
 					},
 					close: () => {},
 					dataset: {},
+					getAttribute: (name: string) => attrs.get(name) ?? null,
+					setAttribute: (name: string, value: string) => void attrs.set(name, value),
 					innerHTML: '',
 					textContent: '',
 					classList: { add: () => {}, remove: () => {}, toggle: () => {} },
@@ -3487,8 +3492,6 @@ describe('Poker table sound, turn timer and hand recap', () => {
 		const played: string[] = [];
 		const sound = {
 			play: (sfx: string) => void played.push(sfx),
-			isMuted: () => false,
-			setMuted: () => {},
 			unlock: () => {},
 		};
 		const game = new PokerGame(undefined, undefined, sound) as unknown as TableGame;
@@ -5566,8 +5569,6 @@ describe('Poker human decision grades', () => {
 		};
 		const sound = {
 			play: () => {},
-			isMuted: () => false,
-			setMuted: () => {},
 			unlock: () => {},
 		};
 		const game = new PokerGame(undefined, undefined, sound) as unknown as GradedGame;

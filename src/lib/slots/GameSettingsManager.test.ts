@@ -80,7 +80,7 @@ describe('GameSettingsManager', () => {
 
 	test('resetToDefaults clears overrides', () => {
 		const mgr = new GameSettingsManager('user-1');
-		mgr.updateSettings({ soundEnabled: false });
+		mgr.updateSettings({ quickSpin: true });
 		mgr.resetToDefaults();
 		expect(mgr.getSettings()).toEqual(DEFAULT_SETTINGS);
 	});

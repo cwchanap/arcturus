@@ -1,9 +1,12 @@
 /**
  * Poker table sound effects, synthesized with Web Audio so no audio files
- * ship. Each effect is a short recipe of tones and noise bursts; the mute
- * choice persists in localStorage. Everything degrades to silence when Web
- * Audio is unavailable (tests, old browsers) or the browser blocks playback.
+ * ship. Each effect is a short recipe of tones and noise bursts; muting is
+ * governed by the shared site-wide preference in `../sound-preference`, read
+ * live on every play/unlock. Everything degrades to silence when Web Audio
+ * is unavailable (tests, old browsers) or the browser blocks playback.
  */
+
+import { isSoundMuted } from '../sound-preference';
 
 export type PokerSfx =
 	| 'deal'
@@ -21,8 +24,6 @@ export type PokerSfx =
 	| 'callout'
 	| 'missionReady'
 	| 'claim';
-
-export const SOUND_MUTED_STORAGE_KEY = 'poker_sound_muted';
 
 interface Tone {
 	kind: 'tone';
@@ -143,26 +144,17 @@ type AudioContextLike = Pick<
 >;
 
 export interface PokerSoundOptions {
-	storage?: Pick<Storage, 'getItem' | 'setItem'> | null;
 	createContext?: () => AudioContextLike | null;
 	/** Master level, 0–1. */
 	volume?: number;
+	/** Overrides the shared mute preference (tests). */
+	isMuted?: () => boolean;
 }
 
 export interface PokerSound {
 	play(sfx: PokerSfx): void;
-	isMuted(): boolean;
-	setMuted(muted: boolean): void;
 	/** Create or resume the audio context from inside a user gesture. */
 	unlock(): void;
-}
-
-function defaultStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
-	try {
-		return typeof localStorage === 'undefined' ? null : localStorage;
-	} catch {
-		return null;
-	}
 }
 
 function defaultContext(): AudioContextLike | null {
@@ -175,15 +167,9 @@ function defaultContext(): AudioContextLike | null {
 }
 
 export function createPokerSound(options: PokerSoundOptions = {}): PokerSound {
-	const storage = options.storage === undefined ? defaultStorage() : options.storage;
 	const createContext = options.createContext ?? defaultContext;
+	const isMuted = options.isMuted ?? isSoundMuted;
 	const volume = options.volume ?? 0.6;
-	let muted = false;
-	try {
-		muted = storage?.getItem(SOUND_MUTED_STORAGE_KEY) === 'true';
-	} catch {
-		muted = false;
-	}
 	let context: AudioContextLike | null = null;
 	let contextFailed = false;
 	let master: GainNode | null = null;
@@ -254,7 +240,7 @@ export function createPokerSound(options: PokerSoundOptions = {}): PokerSound {
 
 	return {
 		play(sfx) {
-			if (muted) return;
+			if (isMuted()) return;
 			const ctx = ensureContext();
 			if (!ctx) return;
 			try {
@@ -265,18 +251,8 @@ export function createPokerSound(options: PokerSoundOptions = {}): PokerSound {
 				// A sound effect is never worth breaking the game for.
 			}
 		},
-		isMuted: () => muted,
-		setMuted(next) {
-			muted = next;
-			try {
-				storage?.setItem(SOUND_MUTED_STORAGE_KEY, String(next));
-			} catch {
-				// Private mode: the choice lasts for this page only.
-			}
-			if (!next) this.unlock();
-		},
 		unlock() {
-			if (muted) return;
+			if (isMuted()) return;
 			const ctx = ensureContext();
 			if (ctx?.state === 'suspended') void ctx.resume().catch(() => {});
 		},

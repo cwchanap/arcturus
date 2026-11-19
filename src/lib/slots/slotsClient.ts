@@ -276,17 +276,12 @@ export function initSlotsClient(): void {
 	speedSelect?.addEventListener('change', () => {
 		settingsMgr.updateSettings({ spinSpeed: speedSelect.value as 'slow' | 'normal' | 'fast' });
 	});
-	document.getElementById('setting-sound')?.addEventListener('change', (e) => {
-		settingsMgr.updateSettings({ soundEnabled: (e.target as HTMLInputElement).checked });
-	});
 	document.getElementById('setting-quick')?.addEventListener('change', (e) => {
 		settingsMgr.updateSettings({ quickSpin: (e.target as HTMLInputElement).checked });
 	});
 	function applySettingsToUi(): void {
 		const s = settingsMgr.getSettings();
 		if (speedSelect) speedSelect.value = s.spinSpeed;
-		const sound = document.getElementById('setting-sound') as HTMLInputElement | null;
-		if (sound) sound.checked = s.soundEnabled;
 		const quick = document.getElementById('setting-quick') as HTMLInputElement | null;
 		if (quick) quick.checked = s.quickSpin;
 	}

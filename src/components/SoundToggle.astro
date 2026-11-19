@@ -1,0 +1,46 @@
+---
+/**
+ * Site-wide sound toggle for the shared header. All state lives in
+ * `src/lib/sound-preference.ts`; this control only renders the initial
+ * (unmuted) state and binds itself, after which the shared preference keeps
+ * its `aria-pressed` and accessible label in sync with any other sound
+ * toggle on the page.
+ */
+import { SHELL_MESSAGES } from '../lib/i18n/messages/common';
+import { createTranslator } from '../lib/i18n/translate';
+
+const locale = Astro.locals.locale ?? 'en';
+const t = createTranslator(SHELL_MESSAGES, locale);
+---
+
+<button
+	type="button"
+	class="rounded-md border border-[var(--deco-brass)] bg-transparent p-1.5 text-[var(--deco-brass)] transition-colors hover:bg-[var(--deco-brass)]/10"
+	data-sound-toggle
+	data-sound-label-on={t('soundOn')}
+	data-sound-label-off={t('soundOff')}
+	aria-pressed="true"
+	aria-label={t('soundOn')}
+	title={t('soundOn')}
+>
+	<svg
+		width="16"
+		height="16"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.8"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		aria-hidden="true"
+	>
+		<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" stroke="none"></path>
+		<path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"></path>
+	</svg>
+</button>
+
+<script>
+	import { bindSoundToggle } from '../lib/sound-preference';
+
+	bindSoundToggle(document.querySelector('[data-sound-toggle]') as HTMLElement | null);
+</script>

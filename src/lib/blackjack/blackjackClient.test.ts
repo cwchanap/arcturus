@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RoundOutcome } from './types';
 import {
+	blackjackRoundNet,
 	buildBlackjackSettlementCommand,
 	canStartBlackjackRound,
 	formatBlackjackOutcomeMessage,
@@ -33,6 +34,25 @@ describe('Blackjack wallet settlement client', () => {
 				biggestWin: 75,
 			},
 		});
+	});
+
+	test('sums round net and stake once across split and double bets', () => {
+		// Hand 0 was doubled (bet 100) and won; hand 1 lost its original 50.
+		const outcomes: RoundOutcome[] = [
+			{ handIndex: 0, result: 'win', payout: 200 },
+			{ handIndex: 1, result: 'loss', payout: 0 },
+		];
+
+		expect(blackjackRoundNet(outcomes, [{ bet: 100 }, { bet: 50 }])).toEqual({
+			win: 50,
+			stake: 150,
+		});
+	});
+
+	test('measures a guest push as zero net with its stake still counted', () => {
+		const outcomes: RoundOutcome[] = [{ handIndex: 0, result: 'push', payout: 25 }];
+
+		expect(blackjackRoundNet(outcomes, [{ bet: 25 }])).toEqual({ win: 0, stake: 25 });
 	});
 
 	test('blocks a new authenticated round while the shared gate is blocked', () => {

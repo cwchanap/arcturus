@@ -58,6 +58,26 @@ export function buildBlackjackSettlementCommand(
 	};
 }
 
+/**
+ * Measure a completed round once across all (split/doubled) hands on the
+ * same per-hand `payout - bet` basis as the settlement command. Pass the
+ * player hands captured before `settleRound()`; guest and authenticated
+ * rounds share the same outcome shape.
+ */
+export function blackjackRoundNet(
+	outcomes: readonly RoundOutcome[],
+	playerHands: readonly { bet: number }[],
+): { win: number; stake: number } {
+	let win = 0;
+	let stake = 0;
+	for (const outcome of outcomes) {
+		const bet = playerHands[outcome.handIndex]?.bet ?? 0;
+		win += outcome.payout - bet;
+		stake += bet;
+	}
+	return { win, stake };
+}
+
 /** Keep guest play local while blocking authenticated rounds behind the gate. */
 export function canStartBlackjackRound({
 	isGuestMode,

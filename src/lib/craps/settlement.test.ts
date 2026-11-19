@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { CrapsBet, RollResult } from './types';
-import { buildCrapsSettlementCommand, getAvailableCrapsBalance } from './settlement';
+import {
+	buildCrapsSettlementCommand,
+	getAvailableCrapsBalance,
+	resolvedCrapsStake,
+	resolvedEvaluations,
+} from './settlement';
 
 function bet(id: string, type: CrapsBet['type']): CrapsBet {
 	return { id, type, amount: 25 };
@@ -62,6 +67,43 @@ describe('Craps wallet settlement command', () => {
 
 		const command = buildCrapsSettlementCommand('craps-win', result)!;
 		expect(command.stats.biggestWin).toBe(75);
+	});
+});
+
+describe('Craps resolved wagers', () => {
+	test('keeps only resolved win/lose/push evaluations', () => {
+		const result = rollResult({
+			evaluations: [
+				{ bet: bet('win', 'passLine'), outcome: 'win', payout: 10 },
+				{ bet: bet('continue', 'place6'), outcome: 'continue', payout: 0 },
+				{ bet: bet('lose', 'field'), outcome: 'lose', payout: 0 },
+				{ bet: bet('push', 'dontPass'), outcome: 'push', payout: 0 },
+			],
+		});
+
+		expect(resolvedEvaluations(result).map((evaluation) => evaluation.bet.id)).toEqual([
+			'win',
+			'lose',
+			'push',
+		]);
+	});
+
+	test('counts attached odds in the stake but excludes continuing wagers', () => {
+		const result = rollResult({
+			evaluations: [
+				{
+					bet: { id: 'pass', type: 'passLine', amount: 10, odds: 50 },
+					outcome: 'win',
+					payout: 60,
+				},
+				{ bet: bet('continue', 'place8'), outcome: 'continue', payout: 0 },
+			],
+			netDelta: 110,
+		});
+
+		// 10 Pass Line + 50 attached Odds = 60 at risk; +110 net is only 1.83×,
+		// not a big win.
+		expect(resolvedCrapsStake(result)).toBe(60);
 	});
 });
 

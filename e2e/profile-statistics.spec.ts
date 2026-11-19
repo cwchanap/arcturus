@@ -182,6 +182,8 @@ test.describe('Player Statistics Dashboard', () => {
 		await page.keyboard.press('Tab');
 		await expect(page.getByRole('banner').locator('[data-locale-picker]')).toBeFocused();
 		await page.keyboard.press('Tab');
+		await expect(page.getByRole('banner').locator('[data-sound-toggle]')).toBeFocused();
+		await page.keyboard.press('Tab');
 		await expect(
 			page.getByRole('banner').getByRole('link', { name: 'Profile', exact: true }),
 		).toBeFocused();

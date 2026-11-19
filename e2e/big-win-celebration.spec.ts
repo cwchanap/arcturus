@@ -145,7 +145,24 @@ for (const { name, width, height } of VIEWPORTS) {
 					const fx = await import('/src/lib/celebration/index.ts' as string);
 					fx.celebrateWin({ win: 200, stake: 10 });
 				});
-				await expect(title).toBeVisible();
+				// The click probe records non-zero geometry for ribbon, title and
+				// amount; the ribbon image and the first count-up frame commit
+				// size asynchronously, so wait for all three before clicking.
+				await page.waitForFunction(() => {
+					const overlay = document.querySelector('[data-celebration-overlay]');
+					if (!overlay) return false;
+					const rendered = (selector: string): boolean => {
+						const node = document.querySelector(selector);
+						if (node === null || !overlay.contains(node)) return false;
+						const rect = node.getBoundingClientRect();
+						return rect.width > 0 && rect.height > 0;
+					};
+					return (
+						rendered('[data-celebration-ribbon]') &&
+						rendered('[data-celebration-title]') &&
+						rendered('[data-celebration-amount]')
+					);
+				});
 				await page.evaluate(() => {
 					const w = window as {
 						celebrationE2EClick?: { target: string | null; overlayLive: boolean };

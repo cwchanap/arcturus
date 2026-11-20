@@ -104,6 +104,26 @@ test.describe('authed user preservation', () => {
 			await expect(isolated.page.locator('#player-balance')).toHaveText(
 				`${settledBalance.toLocaleString('en-US')} chips`,
 			);
+
+			// Reload the same authenticated page and re-assert the settled balance.
+			// A full navigation drops every client-side value, so what renders now
+			// can only come from the server's D1 read (middleware → locals.user
+			// → SSR). data-initial-balance is emitted only by SSR — the client
+			// never writes it — so matching it proves the settlement persisted
+			// rather than being replayed by an optimistic client-only update.
+			await isolated.page.reload({ waitUntil: 'domcontentloaded' });
+			await expect(isolated.page.locator('#blackjack-root')).toHaveAttribute(
+				'data-guest-mode',
+				'false',
+			);
+			await expect(isolated.page.locator('#blackjack-root')).toHaveAttribute(
+				'data-initial-balance',
+				`${settledBalance}`,
+			);
+			await expect(isolated.page.locator('#player-balance')).toHaveText(
+				`${settledBalance.toLocaleString('en-US')} chips`,
+			);
+
 			await isolated.page.waitForLoadState('networkidle');
 			expect(runRequests).toEqual([]);
 		} finally {

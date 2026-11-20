@@ -1,0 +1,71 @@
+$ astro build
+07:53:04 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+07:53:04 [types] Generated 116ms
+07:53:04 [build] output: "server"
+07:53:04 [build] mode: "server"
+07:53:04 [build] directory: /home/opc/orca/workspaces/arcturus/docs-hpa-917-plan-coordinated-astro-7-cloudflare/dist/
+07:53:04 [build] adapter: @astrojs/cloudflare
+07:53:04 [build] Collecting build info...
+07:53:04 [build] ✓ Completed in 389ms.
+07:53:04 [build] Building server entrypoints...
+Using secrets defined in .dev.vars
+07:53:06 [vite] ✓ built in 1.43s
+Using secrets defined in .dev.vars
+07:53:08 [vite] ✓ built in 2.44s
+07:53:09 [vite] ✓ built in 536ms
+07:53:09 [vite] ✓ 50 assets moved from "ssr" to "client" build output.
+dist/client/_astro/playfair-display-cyrillic-500-normal.GO7-LTbC.woff2
+dist/client/_astro/playfair-display-cyrillic-500-normal.DmDODJdV.woff
+dist/client/_astro/playfair-display-vietnamese-500-normal.Jyt54flB.woff2
+dist/client/_astro/playfair-display-vietnamese-500-normal._Z41d-72.woff
+dist/client/_astro/playfair-display-latin-ext-500-normal.DE-Iylxw.woff2
+dist/client/_astro/playfair-display-latin-ext-500-normal.CFxFMdkY.woff
+dist/client/_astro/playfair-display-latin-500-normal.DIxvyhka.woff2
+dist/client/_astro/playfair-display-latin-500-normal.BScSeVwi.woff
+dist/client/_astro/playfair-display-cyrillic-700-normal.Dw3uKy19.woff2
+dist/client/_astro/playfair-display-cyrillic-700-normal.Dk1mTcxf.woff
+dist/client/_astro/playfair-display-vietnamese-700-normal.CaKJSIny.woff2
+dist/client/_astro/playfair-display-vietnamese-700-normal.Cr1rw0mr.woff
+dist/client/_astro/playfair-display-latin-ext-700-normal.C58ejOkc.woff2
+dist/client/_astro/playfair-display-latin-ext-700-normal.D5HUU8GT.woff
+dist/client/_astro/playfair-display-latin-700-normal.CuDiGg7c.woff2
+dist/client/_astro/playfair-display-latin-700-normal.Bc_1Q1cG.woff
+dist/client/_astro/playfair-display-cyrillic-800-normal.BNMG-Q7a.woff2
+dist/client/_astro/playfair-display-cyrillic-800-normal.Drcgs-AM.woff
+dist/client/_astro/playfair-display-vietnamese-800-normal.eAF99_Jc.woff2
+dist/client/_astro/playfair-display-vietnamese-800-normal.DQKEhsq9.woff
+dist/client/_astro/playfair-display-latin-ext-800-normal.ZgHWgVpM.woff2
+dist/client/_astro/playfair-display-latin-ext-800-normal.DD7uHqs8.woff
+dist/client/_astro/playfair-display-latin-800-normal.lwhkvH_6.woff2
+dist/client/_astro/playfair-display-latin-800-normal.D0Xz4t1K.woff
+dist/client/_astro/playfair-display-cyrillic-500-italic.BS1KjYIg.woff2
+dist/client/_astro/playfair-display-cyrillic-500-italic._V8ZrpNH.woff
+dist/client/_astro/playfair-display-vietnamese-500-italic.xd_fw9iO.woff2
+dist/client/_astro/playfair-display-vietnamese-500-italic.0BOUNE9g.woff
+dist/client/_astro/playfair-display-latin-ext-500-italic.CJ9rSulQ.woff2
+dist/client/_astro/playfair-display-latin-ext-500-italic.CJ9UIoiM.woff
+dist/client/_astro/playfair-display-latin-500-italic.BFrGFGAj.woff2
+dist/client/_astro/playfair-display-latin-500-italic.CRSb1Pyp.woff
+dist/client/_astro/jost-cyrillic-400-normal.bVZEi0jL.woff2
+dist/client/_astro/jost-cyrillic-400-normal.Dk3McGkH.woff
+dist/client/_astro/jost-latin-ext-400-normal.CpdMQIMr.woff2
+dist/client/_astro/jost-latin-ext-400-normal.Dsyb2mtt.woff
+dist/client/_astro/jost-latin-400-normal.q-RKOgPK.woff2
+dist/client/_astro/jost-latin-400-normal.C7S-3Ky6.woff
+dist/client/_astro/jost-cyrillic-500-normal.DtB2bvF0.woff2
+dist/client/_astro/jost-cyrillic-500-normal.DlHwnXyv.woff
+dist/client/_astro/jost-latin-ext-500-normal.BkvHgcKf.woff2
+dist/client/_astro/jost-latin-ext-500-normal.Cpxiadwk.woff
+dist/client/_astro/jost-latin-500-normal.41lBe9I9.woff2
+dist/client/_astro/jost-latin-500-normal.B-AtzreL.woff
+dist/client/_astro/jost-cyrillic-600-normal.BEDXyecp.woff2
+dist/client/_astro/jost-cyrillic-600-normal.D0Fzn8un.woff
+dist/client/_astro/jost-latin-ext-600-normal.D8I9kjga.woff2
+dist/client/_astro/jost-latin-ext-600-normal.Pm6OqGZB.woff
+dist/client/_astro/jost-latin-600-normal.C497H-z9.woff2
+dist/client/_astro/jost-latin-600-normal.Bv_M0d15.woff
+07:53:09 [build] Rearranging server assets...
+07:53:09 [build] ✓ Completed in 4.68s.
+07:53:09 [@astrojs/cloudflare] Injected immutable Cache-Control for /_astro/* into _headers.
+07:53:09 [build] Server built in 5.09s
+07:53:09 [build] Complete!

@@ -44,7 +44,7 @@
 		"@noble/hashes": "^2.4.0",
 		"@tailwindcss/vite": "^4.3.5",
 		"@types/canvas-confetti": "^1.9.0",
-		"astro": "^6.4.8",
+		"astro": "^7.4.13",
 		"better-auth": "^1.7.18",
 		"better-call": "^1.4.5",
 		"better-sqlite3": "^13.0.3",
@@ -55,7 +55,7 @@
 	},
 	"devDependencies": {
 		"@astrojs/check": "^0.9.12",
-		"@astrojs/cloudflare": "^13.7.0",
+		"@astrojs/cloudflare": "^14.4.9",
 		"@cloudflare/workers-types": "^5.20261106.1",
 		"@eslint/js": "^10.0.1",
 		"@fontsource/jost": "^5.3.0",

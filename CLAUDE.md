@@ -242,6 +242,8 @@ Do not maintain a duplicated exhaustive table inventory here. Breaking hobby-pro
 
 **Local E2E env caveat**: Worker vars come from `wrangler.toml [vars]` + `.dev.vars`/`.env` files (via the Cloudflare vite plugin / miniflare), NOT from the parent process's `process.env`. So `APP_ENV=test bun run dev` in `playwright.config.ts webServer.command` will NOT reach the Worker — the bootstrap plugin still sees `undefined` and `/api/auth/e2e/bootstrap` 404s. To run E2E locally, the bootstrap vars must live in `.dev.vars` (gitignored, so each dev adds them manually). CI works because the env is injected at the runner level into the deployed config.
 
+**Instrumented build caveat**: `test:e2e:mp`/`test:e2e:worker` build with `PUBLIC_E2E=1`, leaving a `dist/` that exposes `window.__mpClient` and holds a copy of `.dev.vars`. Never `wrangler deploy` that stale output — `bun run deploy` rebuilds first and is the safe path.
+
 ## Code Style
 
 **Auto-enforced by pre-commit hooks** (Husky + lint-staged):

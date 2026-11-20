@@ -105,12 +105,7 @@ test.describe('authed user preservation', () => {
 				`${settledBalance.toLocaleString('en-US')} chips`,
 			);
 
-			// Reload the same authenticated page and re-assert the settled balance.
-			// A full navigation drops every client-side value, so what renders now
-			// can only come from the server's D1 read (middleware → locals.user
-			// → SSR). data-initial-balance is emitted only by SSR — the client
-			// never writes it — so matching it proves the settlement persisted
-			// rather than being replayed by an optimistic client-only update.
+			// data-initial-balance is SSR-emitted and never written by the client, so matching it after reload proves the settled balance persisted in D1.
 			await isolated.page.reload({ waitUntil: 'domcontentloaded' });
 			await expect(isolated.page.locator('#blackjack-root')).toHaveAttribute(
 				'data-guest-mode',

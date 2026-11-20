@@ -3,7 +3,7 @@
 **Linear:** https://linear.app/cwchanap/issue/HPA-917/maintenance-coordinate-ignored-astro-cloudflare-and-tooling-majors  
 **Tracking:** https://linear.app/cwchanap/issue/HPA-913/tracking-dependabot-major-upgrade-plan-by-project  
 **Implementation plan and sole acceptance checklist:** [2026-11-19-hpa-917-astro7-cloudflare14.md](../plans/2026-11-19-hpa-917-astro7-cloudflare14.md)  
-**Baseline:** `main` at `d0e5a55a1ec2c692707aac3aa9196610412de9a7`. This PR (#92) remains **planning only** until implementation and test evidence are committed **to this same PR**.
+**Baseline:** `main` at `d0e5a55a1ec2c692707aac3aa9196610412de9a7`. This PR (#92) now carries the implementation and local test evidence in the same PR as these documents; GitHub Actions results remain pending while it stays a draft.
 
 ## Goal and decisions
 

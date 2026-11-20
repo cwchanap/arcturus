@@ -21,6 +21,14 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+
+      - name: Print Node version
+        run: node --version
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

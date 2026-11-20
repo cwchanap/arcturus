@@ -25,6 +25,14 @@ updates:
       - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
     groups:
+      # astro and @astrojs/* majors must land in one PR: the adapter declares
+      # a peer range on astro, so separate major PRs can each fail install.
+      astro-majors:
+        patterns:
+          - 'astro'
+          - '@astrojs/*'
+        update-types:
+          - 'major'
       js-minor-and-patch:
         patterns:
           - '*'

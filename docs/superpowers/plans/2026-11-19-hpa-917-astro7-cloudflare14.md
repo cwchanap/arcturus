@@ -2,75 +2,73 @@
 
 **Linear:** https://linear.app/cwchanap/issue/HPA-917/maintenance-coordinate-ignored-astro-cloudflare-and-tooling-majors  
 **Design:** [2026-11-19-hpa-917-astro7-cloudflare14-design.md](../specs/2026-11-19-hpa-917-astro7-cloudflare14-design.md)  
-**Baseline:** `main` `d0e5a55a1ec2c692707aac3aa9196610412de9a7`  
-**PR discipline:** **ONE PR for HPA-917**, beginning as documentation-only. Add implementation, regression fixes, evidence and review responses to this same draft PR; do not create a second implementation PR.
+**Baseline:** `main` at `d0e5a55a1ec2c692707aac3aa9196610412de9a7`; [PR #86](https://github.com/cwchanap/arcturus/pull/86) already did Astro 6 / Cloudflare 13 / MDX removal / Vitest 5.  
+**One PR:** **#92 only**. It begins documentation-only; commit subsequent implementation, tests, evidence and review fixes to this same PR. Do not open another PR for HPA-917.
 
-Astro 6 / adapter 13 / Vitest 5 is today's working baseline ([merged #86](https://github.com/cwchanap/arcturus/pull/86)). MDX was already removed, and the historical `assetsInclude` failure predates that compatible stack. Only the paired Astro 7 / adapter 14 upgrade is the required code change. TypeScript 7 is a documented hold; Vitest major is gated on tests. KISS: no refactor or new infrastructure.
+This plan incorporates the [2026-11-19 design review](https://github.com/cwchanap/arcturus/pull/92#pullrequestreview-5987451203): pin Node, reuse built-Worker tests, add the missing CI gate, keep Vitest 5 and TS 6, reduce redundant process. MCP E2E and screenshots remain required acceptance checks.
 
-## 1. Capture baseline and reproducibility
+## 1. Establish runtime and baseline
 
-- [ ] Recheck latest `main` and the Linear issue before code changes; rebase this same PR if needed, and ensure no competing upgrade PR is active.
-- [ ] Capture the current `package.json`, `bun.lock` and `.github/dependabot.yml` state. Verify the source Worker entry (`src/worker.ts`), `astro.config.mjs`, `src/middleware.ts`, `wrangler.toml`, `vitest.config.ts` and CI workflows. Confirm `@astrojs/mdx` is absent; do not add it back.
-- [ ] Use the repository's supported Node runtime and Bun, install with `bun install --frozen-lockfile`, and record baseline results for `bunx astro check`, `bun run test:unit`, `bun run test:integration` and `bun run build`. Record known preexisting failures separately, with log links/commands; do not label a regression as preexisting without a baseline run.
-- [ ] Through **browser MCP**, capture baseline lobby/Poker screenshots at **1280×800** and **375×812** using `main`. These are the visual comparison source because HPA-917 has no Linear mockup.
+- [ ] Add **`.node-version` containing `24`**. Add `actions/setup-node@v6` with `node-version-file: .node-version` to **each job** in `.github/workflows/lint.yml` (lint + build), `test.yml`, and `e2e.yml`, before Bun setup. Check `node --version` locally and in CI. Astro 7.4.x requires Node ≥22.23.4, so Node 22.22.0 is insufficient.
+- [ ] Link the existing CI results on baseline commit `d0e5a55`. Capture any actual existing failures, rather than rerunning every baseline test. Confirm `package.json`, `bun.lock`, `astro.config.mjs`, `src/worker.ts`, `wrangler.toml`, `src/middleware.ts` and `vitest.config.ts` still match the design. `@astrojs/mdx` must remain absent.
+- [ ] Capture the before-upgrade screenshots of lobby and Poker on `main` (or use verifiable existing baseline screenshots), at **1280×800** and **375×812**. There is no Linear mockup.
 
-## 2. Make one coordinated dependency change
+## 2. One coordinated dependency upgrade
 
-- [ ] Upgrade **`astro` to 7.x** and **`@astrojs/cloudflare` to 14.x** together using Bun; choose compatible available patch releases and commit the updated `package.json` and `bun.lock`. Re-run frozen install. Avoid a separate intermediate Astro-only or adapter-only PR.
-- [ ] Keep MDX removed and TypeScript at 6.x. Keep Vitest initially at 5.x until the new integration suite is exercised. Do not change unrelated runtime dependencies simply for freshness.
-- [ ] Verify active compatibility with Astro 7's Vite 8, `@tailwindcss/vite`, `@astrojs/check`, and existing Node/Bun setup. If a specific peer needs a version adjustment, keep it narrowly within this PR and explain the failed gate it addresses.
-- [ ] Check Astro 7's compiler/whitespace migration against this repository. Look for invalid/unclosed Astro markup, `src/fetch.ts` reserved-file collisions, moved configuration, and changed text spacing. Correct only observed failures. Do **not** add a general compiler-compatibility layer or change `compressHTML` globally without a demonstrated need.
+- [ ] Upgrade `astro` to a current compatible **7.x** patch and `@astrojs/cloudflare` to compatible **14.x** together, committing `package.json` and `bun.lock` in this PR. Version examples verified in review: Astro 7.4.13 / adapter 14.4.9; recheck compatibility when performing the upgrade. Run `bun install --frozen-lockfile` and typecheck/build early.
+- [ ] Keep `vitest` **5.x**, TypeScript **6.x**, and MDX removed. Vitest 5 accepts Vite 8 as a peer, and `@tailwindcss/vite` supports Vite 8; do not manufacture a new major-version branch. If a real peer-resolution failure arises, make only the minimal measured change.
+- [ ] Fix only actual Astro 7 compiler, JSX/HTML whitespace, CSS or Vite 8 failures. Check `experimental_AstroContainer` rendering assertions in `integration/*.test.ts`. Do not apply a blanket `compressHTML` change or introduce a compatibility subsystem.
+- [ ] Preserve the existing Cloudflare handler/`src/worker.ts` `fetch()`, `scheduled()`, `MultiplayerPokerRoom`, D1/KV/assets/DO bindings, and middleware `cloudflare:workers` → `Astro.locals.env` seam. Verify `bun run build` and `bunx wrangler deploy --dry-run`.
+- [ ] Update stale pre-upgrade version comments in `src/worker.ts`, `wrangler.toml`, `src/middleware.ts` and `src/env.d.ts` alongside real code/config edits, without changing their runtime behavior solely to update prose.
 
-## 3. Preserve Cloudflare Worker, bindings and behavior
+## 3. Make dependency decisions once, in Dependabot config
 
-- [ ] Run build/typecheck and diagnose adapter 14 errors using the existing `astro.config.mjs`, `src/worker.ts` and `wrangler.toml`. Preserve `fetch` routing through the adapter, `MultiplayerPokerRoom` export, `scheduled()` jobs, D1/KV/DO/assets bindings, and auth secrets contract.
-- [ ] Preserve `src/middleware.ts`'s `cloudflare:workers` → `Astro.locals.env` seam; update it only if the new adapter genuinely requires a change. Do not resurrect `Astro.locals.runtime`, `platformProxy`, or pre-Astro-6 adapter configuration.
-- [ ] Verify `bun run build` plus `bunx wrangler deploy --dry-run` show the correct Worker entry/bindings, and `bun run preview` boots with the configured test bindings. Use a non-production preview; do not deploy to production merely to validate this ticket.
-- [ ] If any existing frontend markup actually changes because of Astro 7's Rust compiler/JSX whitespace default, add the smallest component fix and corresponding focused regression assertion. No style overhaul.
+- [ ] Retain the **Vitest semver-major ignore**, but replace the obsolete "Astro 6 / Vite 7" explanation in `.github/dependabot.yml` with "Astro 7 / Vite 8, Vitest 5 validated by the integration suite." If the suite fails, fix the concrete failure first; don't invent a speculative Vitest 6 upgrade.
+- [ ] Add a targeted **TypeScript semver-major ignore** beside it, with the removal gate in the comment: both `@astrojs/check` and `typescript-eslint` must publish TS 7-compatible peers, then `astro check`, ESLint and tests must pass. Keep TS 6 until then.
+- [ ] Retain the prior `@astrojs/mdx` removal and leave closed Dependabot PRs #72/#73/#74/#77 closed; no mass ignores or alert dismissals.
 
-## 4. Decide the Vitest and TypeScript holds from evidence
+## 4. Automate the *built Worker* regression path
 
-- [ ] Run `bun run test:unit` and `bun run test:integration` on the paired upgrade, including the real `vitest.config.ts` → `getViteConfig()` path. If an `assetsInclude`/Vite 8 load-time error appears, capture exact reproduction and address the smallest compatible test-tool peer change in this **same PR**; never silently skip integration tests.
-- [ ] If **Vitest 5 passes**, retain it and the semver-major Dependabot ignore, but rewrite its stale Astro 6/Vite 7 comment to specify the current tested Vite 8 baseline and the exact gate for a future Vitest major. If a newer Vitest major is genuinely needed, bump only the necessary test dependencies and **remove the ignore only once integration tests pass**.
-- [ ] Keep TypeScript 7 deferred; record the actual upgrade gate: compatible `@astrojs/check` and `typescript-eslint` peers, clean `bunx astro check`, clean ESLint and passing tests with TS 7. Do not fold speculative TS 7 migration into the Astro/adapter upgrade.
-- [ ] Record the already-completed MDX removal as a retain/remove decision (merged #86). Keep closed Dependabot PRs #72/#73/#74/#77 closed; no bulk unignore or security-alert dismissals.
-- [ ] If Astro 7 / adapter 14 cannot meet required checks without disproportionate unrelated changes, leave this PR draft with the documented blocker; do not merge a failing half-upgrade.
+- [ ] Add a focused second job to `.github/workflows/e2e.yml` that installs with frozen Bun, sets up Node 24, installs Chromium, prepares test D1 and `.dev.vars` using the current E2E setup, then runs **`bun run test:e2e:mp`**. Follow the existing job steps; do not create a new test framework or deploy target.
+- [ ] The script uses `PUBLIC_E2E=1 bun run build && wrangler dev` through `playwright.config.mp.ts`, testing **built Astro/adapter output** (not only `astro dev`). `e2e/multiplayer-poker.spec.ts` verifies two authenticated players create/join a room and play over the DO WebSocket.
+- [ ] Keep existing `bun run test:e2e:ci` on the Astro-dev path. An optional follow-up diagnostic can run other compatible specs with `MP_E2E=1 bunx playwright test --config playwright.config.mp.ts`; **do not claim full built-Worker suite coverage without executing it**. The new dedicated job is the narrow long-term regression gate.
 
-## 5. Automated suite, end-to-end via MCP and screenshots
+## 5. Run tests, MCP E2E and visual checks
 
-- [ ] On the **implementation commit SHA**, run and capture exit status/logs for:
-  
-      bun install --frozen-lockfile
-      bunx astro check
-      bun run lint
-      bun run format:check
-      bun run test:unit
-      bun run test:integration
-      bun run build
-      bunx wrangler deploy --dry-run
-      bun run test:e2e:ci
+- [ ] Run the existing checks on the *implemented* branch, record actual outcome and link CI run:
 
-  The E2E job uses the established local D1/test auth bootstrap setup. Follow the repo's `CLAUDE.md` notes for `.dev.vars`; do not change production auth behavior. If a test is flaky, show a justified repeat and preserve the first failure log.
-- [ ] **Browser/Playwright MCP is the end-to-end acceptance owner**. Against a real running Worker preview on one Chromium platform, drive guest routing/one guest round, sign-in through existing test bootstrap, authenticated page/one game round, wallet balance update and its persistence after navigation/reload. Assert actual page and API outcomes, not just mocked service tests.
-- [ ] Exercise one existing private multiplayer Poker create/join exchange against the Durable Object via the real Worker/WebSocket path; reuse `e2e/multiplayer-poker.spec.ts` where appropriate. Check static assets and representative API endpoints. If Worker scheduler/entry wiring changed, also use a terminal/Worker MCP to invoke the existing local scheduled handler through `wrangler dev --test-scheduled` and verify the real D1-facing effect; never fire it on production data.
-- [ ] Smoke the built Cloudflare preview, and, when an existing non-production Cloudflare preview deployment is accessible, verify the same request path there. Record which environment was actually used and any unverified deployment gate instead of treating a local build as proof of a remote deployment.
-- [ ] **Visual screenshot comparison via browser MCP**: on the upgraded app capture `/` and `/games/poker` at **1280×800** and **375×812**. Compare with the `main` screenshots: inspect header controls, localization whitespace (Astro 7 `compressHTML` behavior), table alignment, chips/cards, static asset loads and horizontal overflow. Record screenshot links and observed diffs; fix only actual regressions. There is **no UI mockup**, and no human acceptance requirement.
-- [ ] Single-browser/platform acceptance is enough (no platform-specific implementation). Full Playwright and MCP browser checks are complementary; one cannot substitute for the other.
+  ```sh
+  node --version                 # Node 24
+  bun install --frozen-lockfile
+  bunx astro check
+  bun run lint
+  bun run format:check
+  bun run test:unit
+  bun run test:integration
+  bun run build
+  bunx wrangler deploy --dry-run
+  bun run test:e2e:ci            # astro dev + D1
+  bun run test:e2e:mp            # built Worker + auth + DO/WebSocket
+  ```
 
-## 6. Finalize the same PR and update tracking
+- [ ] **End-to-end acceptance via Browser/Playwright MCP (not merely mocks or unit tests):** start the *built* Worker using the existing local Wrangler/Playwright setup on one Chromium platform; drive (1) guest route + playable round, (2) signed-in game round with a D1-backed wallet balance update that persists after reload/navigation, and (3) a private Poker room create/join and WebSocket exchange. Reuse existing E2E auth/bootstrap and MP test fixtures; no separate general-purpose harness. Record actual observations/links. The CI MP job verifies the DO seam independently.
+- [ ] If `src/worker.ts`'s scheduled handler changes, use a terminal/Worker MCP with the existing `wrangler dev --test-scheduled` recipe on local D1 and assert the job effect; otherwise the current `src/server/cleanup.test.ts` is enough.
+- [ ] **Visual acceptance via browser MCP**, no mockup: screenshot the upgraded lobby `/` and Poker `/games/poker` at **1280×800** and **375×812**, and compare to `main` baseline. Inspect navigation, typography/localized whitespace, cards/chips, images and overflow. Treat these two routes as **spot checks**, with the existing Playwright suite providing broader game-page regression evidence. One platform is sufficient; no human approval criterion.
+- [ ] No non-production Cloudflare `[env.*]` deployment is configured. Use the local production-built Worker + Wrangler dry-run; don't demand a new preview environment or mark remote deployment as tested. Never deploy to production to validate.
 
-- [ ] Document exact before/after dependency versions, all relevant source/config changes, **the implementation commit SHA**, command outcomes, Browser/Worker MCP end-to-end evidence, screenshots and their comparison findings in this PR.
-- [ ] Add a succinct decisions table: **Astro 7 + adapter 14 validated or blocked**, **MDX removed**, **Vitest hold retained or removed with test proof**, **TypeScript 7 deferred with peer/checker gate**. Update HPA-917 so it is no longer based on the pre-#86 baseline, and link this PR under HPA-913.
-- [ ] Check diff remains narrow: `package.json`/`bun.lock`, genuinely needed config/source/compiler fixes, `.github/dependabot.yml` if its comment/hold changes, focused tests, and planning/evidence docs. No game rewrite, new packages without a demonstrated peer need, migration, security-alert dismissal, or additional PR.
-- [ ] PR remains **draft** until implemented and verified. GitHub Actions currently skip draft PRs (`lint.yml`, `test.yml`, `e2e.yml`); after implementation, get green required CI on a ready-for-review PR or explicitly trigger equivalent checks. Do not mark any unchecked box complete merely because this planning draft exists.
+## 6. Finish the same PR
 
-## End-to-end acceptance criteria (all automated / evidence-backed)
+- [ ] Keep a small decisions table in **PR #92**: Astro/adapter validated or blocked; MDX remains removed; Vitest 5 retained (actual integration result); TypeScript 7 deferred (Dependabot peer gate). Link required CI/MCP screenshot evidence in the PR without duplicate tracking files or a separate traceability checklist.
+- [ ] Keep the diff limited to `.node-version`, the three workflow files, `package.json` / `bun.lock`, the Dependabot ignore rationale and TypeScript major rule, stale source comments, necessary Astro 7/adapter 14 fixes and focused tests. No unrelated refactor, new art, or second PR.
+- [ ] Keep PR draft if any required gate fails. CI currently skips draft PRs, so run direct tests while drafting and obtain GitHub Actions results once ready-for-review; do not claim the planning commit validated the upgrade.
 
-- [ ] **Dependency gate:** Astro 7.x + adapter 14.x resolve together, frozen Bun install works, no unused MDX added, TypeScript remains deliberately held pending peer support; Vitest decision accurately documented and tested.
-- [ ] **Runtime gate:** Worker `fetch`, Cloudflare env, D1, KV, assets, Durable Object and scheduled route bindings survive build/preview; Wrangler dry-run confirms required exports/bindings.
-- [ ] **Quality gate:** `astro check`, ESLint, Prettier, Bun unit tests, Vitest integration, production build, and existing Chromium Playwright suite succeed for the implementation SHA. No Vite 8 / `assetsInclude` load-time failure or skipped suite.
-- [ ] **MCP E2E gate:** real Worker request journey verifies auth, a guest and authenticated game, D1 wallet write + reload, and private-room WebSocket path; scheduler smoke if entry/scheduled logic was modified. Save logs/links.
-- [ ] **Visual gate:** browser-MCP side-by-side screenshots of lobby and Poker on desktop **1280×800** and mobile **375×812** show no broken navigation, missing localized spaces, unexpected reflow, clipped cards/chips or missing image assets. No human sign-off.
-- [ ] **Traceability gate:** implementation evidence is tied to the exact commit SHA, Vitest/TypeScript/MDX decisions are linked in HPA-917 and this **single PR**, and any inaccessible Cloudflare preview gate is explicitly unresolved rather than falsely passed.
+## End-to-end acceptance criteria
 
-**Current status:** documentation-only plan. All implementation and acceptance checkboxes are intentionally unchecked.
+- [ ] **Dependencies and toolchain:** Node 24 pinned locally/CI; a compatible Astro 7 + Cloudflare adapter 14 pair installs reproducibly from `bun.lock`; MDX absent, Vitest 5 retained and TypeScript 7 explicitly held in Dependabot; `astro check`, lint, format, unit and integration tests pass.
+- [ ] **Built-Worker backend E2E:** production build and Wrangler dry-run pass, correct D1/KV/DO/asset and Worker entry bindings preserved; existing `test:e2e:mp` passes against the built Worker both locally and through the new GitHub Actions job. Scheduler tested via MCP if its wiring changed.
+- [ ] **Browser-MCP end-to-end:** on one Chromium platform against the built Worker, guest round, authenticated D1 wallet settlement with reload persistence, and two-player private-room WebSocket journey succeed with recorded test evidence.
+- [ ] **Broad regression:** existing `test:e2e:ci` Playwright suite passes without compiler-generated text/DOM regressions; relevant integration snapshots/assertions pass under Astro 7/Vite 8.
+- [ ] **Visual screenshot check:** browser-MCP compares lobby and Poker screenshots with the existing `main` UI at 1280×800 and 375×812; no missing localized spaces, blocked controls, visible overflow, missing chips/cards/images or unexplained layout changes. Screenshots supplement the broad E2E suite and do not alone imply all routes are checked.
+- [ ] **Single-PR delivery:** all implementation and test fixes remain in PR #92; a four-row PR decision summary accurately reports what actually passed or remains blocked. No human sign-off.
+
+**Status:** documentation-only revision in response to design review. All implementation/acceptance checkboxes remain unchecked.

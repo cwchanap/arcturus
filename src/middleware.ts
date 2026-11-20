@@ -37,8 +37,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
 		acceptLanguage: context.request.headers.get('accept-language'),
 	});
 
-	// Astro 6 / adapter v13 removed locals.runtime; expose the workerd env
-	// on a plain locals key so routes/tests keep one mockable seam.
+	// locals.runtime stays removed under Astro 7 / adapter v14; expose the
+	// workerd env on a plain locals key so routes/tests keep one mockable seam.
 	const env = workerEnv as Env | undefined;
 	context.locals.env = env;
 	const dbBinding = env?.DB ?? null;

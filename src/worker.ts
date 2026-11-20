@@ -1,4 +1,4 @@
-// Custom Cloudflare Worker entry (Astro 6 / @astrojs/cloudflare v13).
+// Custom Cloudflare Worker entry (Astro 7 / @astrojs/cloudflare v14).
 // The adapter's handle() owns the Astro app; this entry adds the cron
 // scheduled() handler and re-exports the Durable Object class so wrangler
 // can resolve the MULTIPLAYER_POKER_ROOMS binding.

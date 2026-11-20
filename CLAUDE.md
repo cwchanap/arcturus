@@ -17,7 +17,7 @@ Arcturus is a play-money casino and game project built as one Astro application 
 const db = process.env.DB;
 
 // ✅ CORRECT - Read worker bindings from locals.env (set by middleware
-// from cloudflare:workers in Astro 6 / adapter v13)
+// from cloudflare:workers in Astro 7 / adapter v14)
 const db = Astro.locals.env?.DB;
 const secret = Astro.locals.env?.BETTER_AUTH_SECRET;
 ```

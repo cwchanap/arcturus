@@ -29,8 +29,8 @@ declare namespace App {
 		locale: import('./lib/i18n/locale').Locale;
 		/**
 		 * Worker bindings, copied from cloudflare:workers by middleware.
-		 * (Astro 6 / adapter v13 removed locals.runtime; middleware restores a
-		 * plain, mockable seam so pages/API routes and tests read `locals.env`.)
+		 * (locals.runtime stays removed under Astro 7 / adapter v14; middleware
+		 * restores a plain, mockable seam so pages/API routes and tests read `locals.env`.)
 		 */
 		env?: Env;
 		/** Cloudflare ExecutionContext, provided by the adapter. */

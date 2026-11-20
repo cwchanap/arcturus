@@ -15,9 +15,14 @@ updates:
       include: 'scope'
     ignore:
       # vitest majors are pinned manually alongside astro's vite baseline;
-      # vitest 5 currently works with astro 6 (vite 7). Re-evaluate on the
-      # next astro major rather than letting dependabot auto-bump vitest.
+      # vitest 5 is the tested combination with astro 7 (vite 8). Re-evaluate
+      # on the next astro major rather than letting dependabot auto-bump vitest.
       - dependency-name: 'vitest'
+        update-types: ['version-update:semver-major']
+      # typescript majors are held until @astrojs/check and typescript-eslint
+      # both support TS 7; remove this ignore once they do and typecheck,
+      # lint, and tests all pass on the new major.
+      - dependency-name: 'typescript'
         update-types: ['version-update:semver-major']
     groups:
       js-minor-and-patch:

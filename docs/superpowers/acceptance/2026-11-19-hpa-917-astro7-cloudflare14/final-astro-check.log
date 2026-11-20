@@ -1,0 +1,643 @@
+07:42:22 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+07:42:22 [vite] Re-optimizing dependencies because vite config has changed
+07:42:22 [types] Generated 205ms
+07:42:22 [check] Getting diagnostics for Astro files in /home/opc/orca/workspaces/arcturus/docs-hpa-917-plan-coordinated-astro-7-cloudflare...
+[96meslint.config.js[0m:[93m7[0m:[93m25[0m - [93mwarning[0m[90m ts(6387): [0mThe signature '(...configs: InfiniteDepthConfigWithExtends[]): ConfigArray' of 'tseslint.config' is deprecated.
+
+[7m7[0m export default tseslint.config(
+[7m [0m [93m                        ~~~~~~[0m
+
+[96me2e/big-win-celebration.spec.ts[0m:[93m29[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'STAKE' is declared but its value is never read.
+
+[7m29[0m const STAKE = 10; // 20× stake → huge tier
+[7m  [0m [93m      ~~~~~[0m
+
+[96me2e/blackjack-llm.spec.ts[0m:[93m5[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'OPENAI_ENDPOINT' is declared but its value is never read.
+
+[7m5[0m const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+[7m [0m [93m      ~~~~~~~~~~~~~~~[0m
+
+[96me2e/daily-challenge.spec.ts[0m:[93m1[0m:[93m43[0m - [93mwarning[0m[90m ts(6133): [0m'BrowserContext' is declared but its value is never read.
+
+[7m1[0m import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+[7m [0m [93m                                          ~~~~~~~~~~~~~~[0m
+[96me2e/daily-challenge.spec.ts[0m:[93m1[0m:[93m29[0m - [93mwarning[0m[90m ts(6133): [0m'Browser' is declared but its value is never read.
+
+[7m1[0m import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+[7m [0m [93m                            ~~~~~~~[0m
+
+[96me2e/global-setup.ts[0m:[93m9[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'__dirname' is declared but its value is never read.
+
+[7m9[0m const __dirname = path.dirname(__filename);
+[7m [0m [93m      ~~~~~~~~~[0m
+
+[96msrc/lib/card-slot-utils.test.ts[0m:[93m58[0m:[93m28[0m - [93mwarning[0m[90m ts(6133): [0m'tagName' is declared but its value is never read.
+
+[7m58[0m function createMockElement(tagName: string, attributes: Record<string, string> = {}): MockElement {
+[7m  [0m [93m                           ~~~~~~~[0m
+
+[96msrc/lib/dom-utils.test.ts[0m:[93m66[0m:[93m33[0m - [93mwarning[0m[90m ts(6133): [0m'selector' is declared but its value is never read.
+
+[7m66[0m     querySelectorAll: function (selector: string) {
+[7m  [0m [93m                                ~~~~~~~~[0m
+
+[96msrc/lib/e2e-auth-bootstrap.ts[0m:[93m41[0m:[93m20[0m - [93mwarning[0m[90m ts(6385): [0m'(params?: string | { pattern?: RegExp | undefined; abort?: boolean | undefined; error?: string | $ZodErrorMap<$ZodIssueInvalidStringFormat> | undefined; message?: string | undefined; } | undefined): ZodString' is deprecated.
+
+[7m41[0m  email: z.string().email(),
+[7m  [0m [93m                   ~~~~~[0m
+
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m295[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m295[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m296[0m    fetchJsonWithTimeout('https://example.com', { signal: caller.signal }, 5000),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m297[0m   ).rejects.toThrow('aborted');
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m274[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m274[0m   await expect(fetchJsonWithTimeout('https://example.com', {}, 10)).rejects.toThrow('aborted');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m258[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m258[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m259[0m    fetchJsonWithTimeout('https://example.com', { method: 'GET' }, 20),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m260[0m   ).rejects.toThrow();
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m200[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m200[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m201[0m    fetchWithTimeout('https://example.com', { signal: caller.signal }, 10),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m202[0m   ).rejects.toThrow('aborted');
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m168[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m168[0m   await expect(promise).rejects.toThrow('aborted');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m142[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m142[0m   await expect(fetchWithTimeout('https://example.com', {}, 5000)).resolves.toBe(okResponse);
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m108[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m108[0m   await expect(promise).rejects.toThrow('aborted');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m77[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m77[0m   await expect(
+[7m  [0m [93m  ~~~~~~~~~~~~~[0m
+[7m78[0m    fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000),
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m79[0m   ).rejects.toThrow('aborted');
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m53[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m53[0m   await expect(
+[7m  [0m [93m  ~~~~~~~~~~~~~[0m
+[7m54[0m    fetchWithTimeout('https://example.com', { signal: caller.signal }, 5000),
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m55[0m   ).rejects.toThrow('aborted');
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/fetch-with-timeout.test.ts[0m:[93m32[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m32[0m   await expect(fetchWithTimeout('https://example.com', {}, 10)).rejects.toThrow('aborted');
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/profile-statistics-loader.test.ts[0m:[93m29[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m 29[0m    await expect(
+[7m   [0m [93m   ~~~~~~~~~~~~~[0m
+[7m 30[0m     loadProfileStatisticsState({} as Database, 'user-1', async () => {
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 32[0m     }),
+[7m   [0m [93m~~~~~~~[0m
+[7m 33[0m    ).resolves.toEqual({ status: 'error' });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/profile-statistics-loader.test.ts[0m:[93m17[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m 17[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m 18[0m    loadProfileStatisticsState({} as Database, 'user-1', async () => summary),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m 21[0m    summary,
+[7m   [0m [93m~~~~~~~~~~~[0m
+[7m 22[0m   });
+[7m   [0m [93m~~~~[0m
+
+[96msrc/lib/profile-statistics-payload.ts[0m:[93m7[0m:[93m31[0m - [93mwarning[0m[90m ts(6385): [0m'(params?: unknown): ZodNumber' is deprecated.
+
+[7m7[0m const percentage = z.number().finite().min(0).max(100);
+[7m [0m [93m                              ~~~~~~[0m
+
+[96msrc/lib/achievements/achievement-repository.test.ts[0m:[93m164[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m164[0m    await expect(
+[7m   [0m [93m   ~~~~~~~~~~~~~[0m
+[7m165[0m     grantAchievement(mockDb, 'user1', 'champion', 'baccarat' as GameType),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m166[0m    ).rejects.toThrow('insert failed');
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/achievements/achievements.test.ts[0m:[93m331[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m331[0m    await expect(checkWithCustomChecks(db, 'user1', 5000, {}, customAchievements)).rejects.toBe(
+[7m   [0m [93m   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m332[0m     dbError,
+[7m   [0m [93m~~~~~~~~~~~~[0m
+[7m333[0m    );
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/achievements/achievements.test.ts[0m:[93m247[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m247[0m   await expect(service.checkAndGrantAchievements(db, 'user1', 1000)).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m248[0m    name: 'DatabaseError',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m249[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/achievements/achievements.test.ts[0m:[93m1[0m:[93m28[0m - [93mwarning[0m[90m ts(6133): [0m'mock' is declared but its value is never read.
+
+[7m1[0m import { describe, expect, mock, test } from 'bun:test';
+[7m [0m [93m                           ~~~~[0m
+
+[96msrc/lib/baccarat/BaccaratGame.test.ts[0m:[93m171[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'outcome' is declared but its value is never read.
+
+[7m171[0m    const outcome = game.deal();
+[7m   [0m [93m         ~~~~~~~[0m
+
+[96msrc/lib/baccarat/BaccaratUIRenderer.ts[0m:[93m180[0m:[93m32[0m - [93mwarning[0m[90m ts(6133): [0m'type' is declared but its value is never read.
+
+[7m180[0m  public updateBetAreaHighlight(type: BetType, isActive: boolean, containerSelector: string): void {
+[7m   [0m [93m                               ~~~~[0m
+
+[96msrc/lib/baccarat/llmBaccaratStrategy.test.ts[0m:[93m54[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m54[0m   await expect(getBaccaratAdvice(context, settings)).rejects.toThrow(
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m55[0m    'Provider returned no valid JSON object',
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m56[0m   );
+[7m  [0m [93m~~~[0m
+
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m387[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m387[0m   await expect(client.command(RUN_ID, { command: 'stand' })).rejects.toThrow(
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m388[0m    'No active blackjack run for command',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m389[0m   );
+[7m   [0m [93m~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m347[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m347[0m   await expect(client.command(RUN_ID, { command: 'stand' })).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m348[0m    name: 'BlackjackRunClientError',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m351[0m    retryable: true,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~[0m
+[7m352[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m333[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m333[0m   await expect(client.loadCurrent('ranked')).rejects.toThrow('Blackjack run request failed');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m312[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m312[0m   await expect(client.loadCurrent('ranked')).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m313[0m    name: 'BlackjackRunClientError',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m315[0m    status: null,
+[7m   [0m [93m~~~~~~~~~~~~~~~~[0m
+[7m316[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m288[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m288[0m   await expect(client.command(RUN_ID, { command: 'stand' })).rejects.toThrow('already in flight');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m287[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m287[0m   await expect(client.startRanked(10)).rejects.toThrow('already in flight');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m286[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m286[0m   await expect(client.loadRun(RUN_ID)).rejects.toThrow('already in flight');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m254[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m254[0m   await expect(client.command('differentrunid123456789', { command: 'hit' })).rejects.toThrow(
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m255[0m    'No active blackjack run for command',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m256[0m   );
+[7m   [0m [93m~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m196[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m196[0m   await expect(client.loadRun(RUN_ID)).rejects.toThrow('malformed');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m187[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m187[0m   await expect(client.loadRun(RUN_ID)).rejects.toThrow('malformed');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m164[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m164[0m   await expect(client.loadCurrent('ranked')).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m165[0m    name: 'BlackjackRunClientError',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m168[0m    retryable: false,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~[0m
+[7m169[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m161[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m161[0m   await expect(client.loadCurrent('ranked')).rejects.toThrow(
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m162[0m    'Something went wrong — refresh and retry.',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m163[0m   );
+[7m   [0m [93m~~~[0m
+[96msrc/lib/blackjack-run/client.test.ts[0m:[93m5[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'BlackjackRunClient' is declared but its value is never read.
+
+[7m5[0m  type BlackjackRunClient,
+[7m [0m [93m      ~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/blackjack-run/daily-ui.test.ts[0m:[93m747[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m747[0m   await expect(initDailyChallengePage(root)).rejects.toThrow(TypeError);
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/daily-ui.test.ts[0m:[93m745[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m745[0m   await expect(initDailyChallengePage(root)).rejects.toThrow(TypeError);
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/blackjack-run/daily-ui.test.ts[0m:[93m127[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'EMPTY_LEADERBOARD' is declared but its value is never read.
+
+[7m127[0m const EMPTY_LEADERBOARD: DailyLeaderboardView = { entries: [], currentUser: null };
+[7m   [0m [93m      ~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/game-stats/game-stats-repository.test.ts[0m:[93m177[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m177[0m   await expect(getBulkUserWinsRanks(mockDb, 'user-1')).rejects.toBe(failure);
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/game-stats/game-stats-repository.test.ts[0m:[93m163[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m163[0m   await expect(getBulkUserWinsRanks(mockDb, 'user-1')).rejects.toThrow(
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m164[0m    'Invalid wins rank returned by database',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m165[0m   );
+[7m   [0m [93m~~~[0m
+[96msrc/lib/game-stats/game-stats-repository.test.ts[0m:[93m84[0m:[93m17[0m - [93mwarning[0m[90m ts(6133): [0m'limit' is declared but its value is never read.
+
+[7m84[0m         limit: (limit: number) => {
+[7m  [0m [93m                ~~~~~[0m
+[96msrc/lib/game-stats/game-stats-repository.test.ts[0m:[93m70[0m:[93m12[0m - [93mwarning[0m[90m ts(6133): [0m'table' is declared but its value is never read.
+
+[7m70[0m     from: (table: any) => {
+[7m  [0m [93m           ~~~~~[0m
+[96msrc/lib/game-stats/game-stats-repository.test.ts[0m:[93m9[0m:[93m25[0m - [93mwarning[0m[90m ts(6196): [0m'RankingMetric' is declared but never used.
+
+[7m9[0m import type { GameType, RankingMetric } from './types';
+[7m [0m [93m                        ~~~~~~~~~~~~~[0m
+
+[96msrc/lib/game-stats/game-stats.test.ts[0m:[93m359[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m359[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m360[0m    getGameLeaderboardData({} as any, {
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m365[0m    }),
+[7m   [0m [93m~~~~~~[0m
+[7m366[0m   ).rejects.toThrow(topPlayersError.message);
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/game-stats/player-statistics.test.ts[0m:[93m250[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m250[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m251[0m    rankFailureService.getPlayerStatisticsDashboard({} as Database, 'user-1'),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m252[0m   ).rejects.toBe(rankFailure);
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/game-stats/player-statistics.test.ts[0m:[93m247[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m247[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m248[0m    rowFailureService.getPlayerStatisticsSummary({} as Database, 'user-1'),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m249[0m   ).rejects.toBe(rowFailure);
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/game-stats/player-statistics.test.ts[0m:[93m174[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m174[0m   await expect(service.getPlayerStatisticsSummary({} as Database, 'user-1')).resolves.toEqual({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m175[0m    totalHands: 4,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m180[0m    mostPlayedGame: 'blackjack',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m181[0m   });
+[7m   [0m [93m~~~~[0m
+
+[96msrc/lib/keno/KenoGame.test.ts[0m:[93m142[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'r1' is declared but its value is never read.
+
+[7m142[0m   const r1 = g.draw(
+[7m   [0m [93m        ~~[0m
+
+[96msrc/lib/leaderboard/leaderboard-data.test.ts[0m:[93m119[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m119[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m120[0m    getLeaderboardData({} as never, {
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m123[0m    }),
+[7m   [0m [93m~~~~~~[0m
+[7m124[0m   ).rejects.toThrow(topPlayersError.message);
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/missions/board.test.ts[0m:[93m4[0m:[93m1[0m - [93mwarning[0m[90m ts(6133): [0m'MissionDefinition' is declared but its value is never read.
+
+[7m4[0m import type { MissionDefinition } from './types';
+[7m [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/missions/progress-mock.test.ts[0m:[93m24[0m:[93m1[0m - [93mwarning[0m[90m ts(6192): [0mAll imports in import declaration are unused.
+
+[7m24[0m import { DEFAULT_DAILY_MISSIONS, DEFAULT_WEEKLY_MISSIONS } from './registry';
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/missions/progress-mock.test.ts[0m:[93m23[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'getDailyPeriodKey' is declared but its value is never read.
+
+[7m23[0m import { getDailyPeriodKey, getWeeklyPeriodKey } from './periods';
+[7m  [0m [93m         ~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/missions/reroll-mock.test.ts[0m:[93m21[0m:[93m1[0m - [93mwarning[0m[90m ts(6133): [0m'getDailyPeriodKey' is declared but its value is never read.
+
+[7m21[0m import { getDailyPeriodKey } from './periods';
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/mp-poker/client.test.ts[0m:[93m97[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m97[0m   await expect(client.connect()).rejects.toThrow();
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/mp-poker/client.test.ts[0m:[93m70[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m70[0m   await expect(client.connect()).rejects.toThrow();
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/GameSettingsManager.test.ts[0m:[93m595[0m:[93m28[0m - [93mwarning[0m[90m ts(6133): [0m'consoleErrorSpy' is declared but its value is never read.
+
+[7m595[0m    withMockedConsoleError((consoleErrorSpy) => {
+[7m   [0m [93m                           ~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/PokerGame.test.ts[0m:[93m1034[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'url' is declared but its value is never read.
+
+[7m1034[0m    const url =
+[7m    [0m [93m         ~~~[0m
+
+[96msrc/lib/poker/PokerGame.ts[0m:[93m156[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'lastRaiseAmount' is declared but its value is never read.
+
+[7m156[0m  private lastRaiseAmount = BIG_BLIND;
+[7m   [0m [93m         ~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/PokerUIRenderer.test.ts[0m:[93m156[0m:[93m20[0m - [93mwarning[0m[90m ts(6133): [0m'tag' is declared but its value is never read.
+
+[7m156[0m    createElement: (tag: string) => createMockElement(),
+[7m   [0m [93m                   ~~~[0m
+
+[96msrc/lib/poker/decisionGrade.test.ts[0m:[93m108[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'_checkNeverGrades' is declared but its value is never read.
+
+[7m108[0m   const _checkNeverGrades: Parameters<typeof gradeDecision>[0]['action'] = 'check';
+[7m   [0m [93m        ~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/llmAIStrategy.test.ts[0m:[93m4[0m:[93m42[0m - [93mwarning[0m[90m ts(6196): [0m'BettingRound' is declared but never used.
+
+[7m4[0m import type { GameContext, Player, Card, BettingRound } from './types';
+[7m [0m [93m                                         ~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/player.test.ts[0m:[93m5[0m:[93m2[0m - [93mwarning[0m[90m ts(6133): [0m'createAIPlayer' is declared but its value is never read.
+
+[7m5[0m  createAIPlayer,
+[7m [0m [93m ~~~~~~~~~~~~~~[0m
+
+[96msrc/lib/poker/potCalculator.test.ts[0m:[93m9[0m:[93m2[0m - [93mwarning[0m[90m ts(6133): [0m'getMinimumBet' is declared but its value is never read.
+
+[7m9[0m  getMinimumBet,
+[7m [0m [93m ~~~~~~~~~~~~~[0m
+[96msrc/lib/poker/potCalculator.test.ts[0m:[93m5[0m:[93m2[0m - [93mwarning[0m[90m ts(6133): [0m'calculateRoundPot' is declared but its value is never read.
+
+[7m5[0m  calculateRoundPot,
+[7m [0m [93m ~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/poker/potCalculator.test.ts[0m:[93m4[0m:[93m2[0m - [93mwarning[0m[90m ts(6133): [0m'calculatePot' is declared but its value is never read.
+
+[7m4[0m  calculatePot,
+[7m [0m [93m ~~~~~~~~~~~~[0m
+
+[96msrc/lib/roulette/spin-api.test.ts[0m:[93m432[0m:[93m54[0m - [93mwarning[0m[90m ts(6133): [0m'i' is declared but its value is never read.
+
+[7m432[0m   const tooManyBets = Array.from({ length: 65 }, (_, i) => makeBet('red', 1, undefined));
+[7m   [0m [93m                                                     ~[0m
+
+[96msrc/lib/slots/SlotsGame.test.ts[0m:[93m4[0m:[93m52[0m - [93mwarning[0m[90m ts(6133): [0m'NUM_ROWS' is declared but its value is never read.
+
+[7m4[0m import { MAX_BET, MAX_HISTORY, MIN_BET, NUM_REELS, NUM_ROWS, PAYTABLE } from './constants';
+[7m [0m [93m                                                   ~~~~~~~~[0m
+
+[96msrc/lib/slots/payoutCalculator.test.ts[0m:[93m3[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'NUM_PAYLINES' is declared but its value is never read.
+
+[7m3[0m import { NUM_PAYLINES, PAYLINES, PAYTABLE } from './constants';
+[7m [0m [93m         ~~~~~~~~~~~~[0m
+
+[96msrc/lib/wallet/client.test.ts[0m:[93m64[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m64[0m    await expect(submitWalletSettlement(COMMAND)).rejects.toThrow('timed out');
+[7m  [0m [93m   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/client.test.ts[0m:[93m47[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m47[0m    await expect(submitWalletSettlement(COMMAND)).rejects.toThrow('INSUFFICIENT_BALANCE');
+[7m  [0m [93m   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/client.test.ts[0m:[93m22[0m:[93m4[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m22[0m    await expect(submitWalletSettlement(COMMAND)).resolves.toEqual({
+[7m  [0m [93m   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m23[0m     balance: 1025,
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~[0m
+[7m24[0m     duplicate: false,
+[7m  [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[7m25[0m    });
+[7m  [0m [93m~~~~~[0m
+
+[96msrc/lib/wallet/settle.test.ts[0m:[93m523[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m523[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m524[0m    settleWalletRound(
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m528[0m    ),
+[7m   [0m [93m~~~~~[0m
+[7m529[0m   ).rejects.toMatchObject({ code: 'SETTLEMENT_CONFLICT' });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m508[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m508[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m509[0m    settleWalletRound(
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m513[0m    ),
+[7m   [0m [93m~~~~~[0m
+[7m514[0m   ).resolves.toMatchObject({ balance: 1100, duplicate: false });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m371[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m371[0m   await expect(settleWalletRound(d1, 'user-1', command({ delta: 340 }), 10)).resolves.toEqual({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m372[0m    balance: 1200,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~[0m
+[7m373[0m    duplicate: true,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~[0m
+[7m374[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m348[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m348[0m   await expect(settleWalletRound(d1, 'user-1', command(), 1.5)).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m349[0m    code: 'INVALID_COMMAND',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m350[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m345[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m345[0m   await expect(settleWalletRound(d1, 'user-1', command(), -1)).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m346[0m    code: 'INVALID_COMMAND',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m347[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m324[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m324[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m325[0m    settleWalletRound(
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m330[0m    ),
+[7m   [0m [93m~~~~~[0m
+[7m331[0m   ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m300[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m300[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m301[0m    settleWalletRound(
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~[0m
+[7m...[0m 
+[7m305[0m    ),
+[7m   [0m [93m~~~~~[0m
+[7m306[0m   ).rejects.toMatchObject({ code: 'INSUFFICIENT_BALANCE' });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m281[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m281[0m   await expect(settleWalletRound(d1, 'missing-user', command())).rejects.toMatchObject({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m282[0m    code: 'USER_NOT_FOUND',
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m283[0m   });
+[7m   [0m [93m~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m260[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m260[0m   await expect(
+[7m   [0m [93m  ~~~~~~~~~~~~~[0m
+[7m261[0m    settleWalletRound(d1, 'user-1', command({ feats: ['jackpot'] as never })),
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m262[0m   ).rejects.toMatchObject({ code: 'INVALID_COMMAND' });
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settle.test.ts[0m:[93m241[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m241[0m   await expect(settleWalletRound(d1, 'user-1', command())).resolves.toEqual({
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[7m242[0m    balance: 1200,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~[0m
+[7m243[0m    duplicate: true,
+[7m   [0m [93m~~~~~~~~~~~~~~~~~~~[0m
+[7m244[0m   });
+[7m   [0m [93m~~~~[0m
+
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m137[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m137[0m   await expect(gate.retry()).resolves.toEqual(RESULT);
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m132[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m132[0m   await expect(gate.retry()).rejects.toThrow('offline');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m128[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m128[0m   await expect(gate.settle(COMMAND)).rejects.toThrow('offline');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m114[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m114[0m   await expect(failed.retry()).resolves.toBeNull();
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m110[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m110[0m   await expect(failed.settle(COMMAND)).rejects.toThrow('offline');
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m103[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m103[0m   await expect(gate.retry()).resolves.toBeNull();
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m76[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m76[0m   await expect(gate.retry()).resolves.toEqual(RESULT);
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m75[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m75[0m   await expect(gate.settle(COMMAND)).rejects.toThrow('offline');
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m58[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m58[0m   await expect(gate.settle(COMMAND)).rejects.toThrow('offline');
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/lib/wallet/settlement-gate.test.ts[0m:[93m46[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m46[0m   await expect(resultPromise).resolves.toEqual(RESULT);
+[7m  [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/pages/games/poker-mp/index.astro[0m:[93m72[0m:[93m20[0m - [93mwarning[0m[90m ts(6133): [0m'value' is declared but its value is never read.
+
+[7m72[0m      oninput="this.value=this.value.toUpperCase()"
+[7m  [0m [93m                   ~~~~~[0m
+
+[96msrc/server/blackjack-run/http.test.ts[0m:[93m9[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'BlackjackRunStart' is declared but its value is never read.
+
+[7m9[0m  type BlackjackRunStart,
+[7m [0m [93m      ~~~~~~~~~~~~~~~~~[0m
+[96msrc/server/blackjack-run/http.test.ts[0m:[93m6[0m:[93m7[0m - [93mwarning[0m[90m ts(6133): [0m'BlackjackRunCommand' is declared but its value is never read.
+
+[7m6[0m  type BlackjackRunCommand,
+[7m [0m [93m      ~~~~~~~~~~~~~~~~~~~[0m
+
+[96msrc/server/blackjack-run/service.test.ts[0m:[93m690[0m:[93m3[0m - [93mwarning[0m[90m ts(80007): [0m'await' has no effect on the type of this expression.
+
+[7m690[0m   await expect(retryRepository.findActiveRun(SECOND_USER, 'ranked')).resolves.toBeNull();
+[7m   [0m [93m  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+[96msrc/server/blackjack-run/service.test.ts[0m:[93m288[0m:[93m25[0m - [93mwarning[0m[90m ts(6133): [0m'repository' is declared but its value is never read.
+
+[7m288[0m   const { service, spy, repository } = makeService(randomBytesOf(seedOf(1)));
+[7m   [0m [93m                        ~~~~~~~~~~[0m
+
+Result (522 files): 
+- 0 errors
+- 0 warnings
+- 103 hints
+

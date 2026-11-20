@@ -9,7 +9,7 @@ This plan incorporates [design review #1](https://github.com/cwchanap/arcturus/p
 
 ## 1. Pin Node and establish baseline
 
-- [x] Add `.node-version` containing `24`. Add `actions/setup-node@v6` (with `node-version-file: .node-version`) **before Bun** in every job of `.github/workflows/lint.yml` (lint/build), `test.yml` and `e2e.yml` (both jobs). Verify `node --version` locally (`v24.22.3` observed) and in CI (run pending — workflows skip draft PRs); Astro 7.4.x requires Node ≥22.23.4.
+- [x] Add `.node-version` containing `24`. Add `actions/setup-node@v6` (with `node-version-file: .node-version`) **before Bun** in every job of `.github/workflows/lint.yml` (lint/build), `test.yml` and `e2e.yml` (both jobs). Verify `node --version` locally (`v24.22.3` observed via `mise exec node@24`; the bare shell resolves Node 26 through mise `latest`, so the pin holds where something reads `.node-version` — `setup-node` in CI and version-file-aware managers — while `engines.node >=22.23.4` in `package.json` declares Astro 7.4's floor) and in CI (run pending — workflows skip draft PRs).
 - [x] Link baseline `main` GitHub Actions results rather than duplicating every existing test. Verify `package.json`, `bun.lock`, `astro.config.mjs`, `src/worker.ts`, `wrangler.toml`, `src/middleware.ts`, `vitest.config.ts` and `.github/dependabot.yml` against the code being upgraded. Keep `@astrojs/mdx` absent.
 - [x] Capture baseline `main` lobby `/` and Poker `/games/poker` screenshots at desktop **1280×800** and mobile **375×812** (or link existing evidence of those precise views). These are for the mandatory comparison after upgrading; no Linear mockup exists.
 
@@ -30,10 +30,11 @@ This plan incorporates [design review #1](https://github.com/cwchanap/arcturus/p
 ## 4. Add repeatable production-built Worker coverage
 
 - [x] Extend the existing signed-in **Casual Blackjack** test in `e2e/authed-user-preservation.spec.ts`: after the successful `POST /api/wallet/settle` response and the visible settled-balance assertion, **reload the same authenticated page**, then assert `#player-balance` still equals the *server-returned settled balance*. Ensure the reload is not masked by an optimistic client-only update. Keep its existing isolated user and no-ranked-run assertions.
-- [x] Add a separate, explicitly scoped `package.json` script `test:e2e:worker`. It applies local migrations and runs three existing specs under `playwright.config.mp.ts` with `MP_E2E=1`:
+- [x] Add a separate, explicitly scoped `package.json` script `test:e2e:worker`. It applies local migrations, builds the production Worker, and runs three existing specs under `playwright.config.mp.ts` with `MP_E2E=1`:
 
   ```sh
   bun run db:migrate:local &&
+  PUBLIC_E2E=1 bun run build &&
   MP_E2E=1 bunx playwright test \
     e2e/multiplayer-poker.spec.ts \
     e2e/public-single-player-games.spec.ts \
@@ -41,14 +42,14 @@ This plan incorporates [design review #1](https://github.com/cwchanap/arcturus/p
     --config playwright.config.mp.ts
   ```
 
-  Playwright's MP config starts `PUBLIC_E2E=1 bun run build && wrangler dev`, exercising the **built Worker** with real authentication/D1 and Durable Object WebSockets. Keep the existing narrow `test:e2e:mp` script for standalone MP diagnosis.
+  The script runs `PUBLIC_E2E=1 bun run build` before Playwright so the build stays outside the webServer's 120 s startup timeout; the config then starts `wrangler dev` against `dist/`, exercising the **built Worker** with real authentication/D1 and Durable Object WebSockets. Keep the existing narrow `test:e2e:mp` script for standalone MP diagnosis.
 - [x] **Do not run the whole Playwright test directory under the MP/production-build config.** `e2e/missions.spec.ts` calls `DELETE /api/missions/progress`; that endpoint returns 404 when `import.meta.env.DEV` is false. Always pass these explicit spec paths (also for diagnostics) unless a particular additional spec is separately proven compatible.
 - [x] Add a second job to `.github/workflows/e2e.yml` using the existing E2E bootstrap steps: Node 24, Bun frozen install, Chromium, local D1, `.dev.vars` and `E2E_AUTH_BOOTSTRAP_SECRET`. Run **`bun run test:e2e:worker`**, with the same draft-PR `if:` guard as the existing job and appropriately sized timeout.
-- [x] **Avoid CI artifact collisions:** the new job must upload `playwright-report-mp` and `test-results-mp`; leave the original job's `playwright-report` and `test-results` names unchanged. Both jobs should archive test failures (`if: always()`).
+- [x] **Avoid CI artifact collisions:** the new job must upload `playwright-report-worker` and `test-results-worker` (named for the built-Worker job, not MP — two of its three specs aren't multiplayer); leave the original job's `playwright-report` and `test-results` names unchanged. Both jobs should archive test failures (`if: always()`).
 
 ## 5. Validation and MCP acceptance
 
-- [x] On the implemented branch, run the existing checks and keep actual evidence/CI links (no claimed pass before execution; local evidence recorded — CI links pending while the PR is a draft):
+- [x] On the implemented branch, run the existing checks and keep actual evidence/CI links (no claimed pass before execution; local evidence recorded under `docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/` — CI links pending while the PR is a draft):
 
   ```sh
   node --version                    # Node 24
@@ -84,4 +85,4 @@ This plan incorporates [design review #1](https://github.com/cwchanap/arcturus/p
 - [x] **Visual:** browser MCP screenshot comparison of lobby and Poker at **1280×800** and **375×812** shows no meaningful new text spacing, layout, clipped controls, missing chips/cards/assets or unexpected overflow. No mockup available, no human sign-off; screenshot checks complement broad automated coverage.
 - [ ] **Single-PR closeout:** all fixes and evidence live in PR #92; its decision summary accurately represents test outcomes and any remaining blocker.
 
-**Status (post-implementation):** the checklist was planning-only when first drafted; implementation and local acceptance have since been executed on this branch and recorded under `.superpowers/sdd/2026-11-19-hpa-917-astro7-cloudflare14/` — Node 24 locally, frozen install, `astro check`, lint, format, 3161 unit + 4 integration tests, build, Wrangler dry-run, dev E2E 172 passed (1 intentional MP skip), built-Worker E2E 19 passed, MCP trace inspection 3/3 and local baseline-vs-upgraded screenshot comparisons. Still pending: GitHub Actions results (workflows skip draft PRs), publishing screenshot/trace evidence, and the PR-description decision summary — see the remaining unchecked boxes.
+**Status (post-implementation):** the checklist was planning-only when first drafted; implementation and local acceptance have since been executed on this branch and recorded under [`docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/`](../acceptance/2026-11-19-hpa-917-astro7-cloudflare14/) — Node 24 locally, frozen install, `astro check`, lint, format, 3161 unit + 4 integration tests, build, Wrangler dry-run, dev E2E 172 passed (1 intentional MP skip), built-Worker E2E 19 passed, MCP trace inspection 3/3 and local baseline-vs-upgraded screenshot comparisons. Still pending: GitHub Actions results (workflows skip draft PRs) and the PR-description decision summary — see the remaining unchecked boxes.

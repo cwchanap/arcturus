@@ -270,3 +270,21 @@ export const blackjackDaily = sqliteTable('blackjack_daily', {
 	// (repository get-or-create) must bind Math.trunc(Date.now() / 1000).
 	createdAt: integer('createdAt', { mode: 'timestamp' }).notNull(),
 });
+
+/**
+ * Owned shop cosmetics. Defaults stay implicit — no rows exist for free
+ * items, so a missing row means the kind's catalog default applies.
+ */
+export const userCosmetic = sqliteTable(
+	'user_cosmetic',
+	{
+		userId: text('userId')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		itemId: text('itemId').notNull(),
+		// Unix seconds (not ms).
+		purchasedAt: integer('purchasedAt').notNull(),
+		equipped: integer('equipped', { mode: 'boolean' }).notNull().default(false),
+	},
+	(table) => [primaryKey({ columns: [table.userId, table.itemId] })],
+);

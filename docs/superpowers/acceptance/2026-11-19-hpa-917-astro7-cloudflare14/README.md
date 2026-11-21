@@ -27,7 +27,7 @@ Baseline suite output from `main` before the upgrade: [baseline-tests.log](./bas
 
 ## MCP acceptance (built Worker, Playwright)
 
-Playwright traces from the MCP-driven runs, one per journey ([`.last-run.json`](./test-results-mcp/.last-run.json): `status: passed`):
+Playwright traces from the MCP-driven runs, one per journey ([`.last-run.json`](./test-results-mcp/.last-run.json): `status: passed`). Session-cookie and `x-e2e-auth-bootstrap-secret` header values in the authenticated traces are redacted — they are local-only test credentials.
 
 - [guest Blackjack round without wallet settlement](./test-results-mcp/public-single-player-games-224e3-d-without-wallet-settlement-chromium/trace.zip)
 - [signed-in Casual Blackjack settle + reload-persistent D1 balance](./test-results-mcp/authed-user-preservation-a-f4f2b-rmally-without-run-requests-chromium/trace.zip)

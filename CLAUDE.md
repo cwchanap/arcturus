@@ -41,7 +41,7 @@ bun run build                  # Build for Cloudflare Workers
 bun run preview                # Preview production build
 
 # Database
-bun run db:generate            # Generate migration from schema
+bun run db:generate            # Legacy Drizzle snapshot generator; avoid for current hand-written migrations
 bun run db:migrate:local       # Apply to local D1
 bun run db:migrate:remote      # Apply to production D1
 bun run db:studio              # Open Drizzle Studio
@@ -120,9 +120,8 @@ const [player] = await db.select().from(user).where(eq(user.id, Astro.locals.use
 
 ```bash
 # 1. Edit src/db/schema.ts
-# 2. Generate migration
-bun run db:generate
-
+# 2. Hand-write the next numbered drizzle/*.sql migration to match schema.ts
+#    Existing drizzle/meta snapshots are ignored and incomplete; do not run db:generate
 # 3. Apply locally
 bun run db:migrate:local
 
@@ -135,7 +134,7 @@ bun run db:migrate:remote
 
 **Dynamic Schema Updates**: The middleware includes graceful schema initialization for `chipBalance` column. See `src/middleware.ts` for the pattern of handling missing columns at runtime.
 
-**Important**: `scripts/apply-migrations.ts` automatically discovers numbered SQL files under `drizzle/`. Generate and commit the migration; do not add per-file paths to the migration scripts in `package.json`.
+**Important**: `scripts/apply-migrations.ts` automatically discovers numbered SQL files under `drizzle/`. Commit each hand-written numbered SQL migration alongside the matching `src/db/schema.ts` change; do not add per-file paths to migration scripts in `package.json`. `.gitignore` excludes `drizzle/meta/*`, and the old snapshots do not match the later manual migrations. Running `db:generate` against that metadata can fail or generate a fresh `0000` that duplicates existing tables.
 
 ## Project Structure
 

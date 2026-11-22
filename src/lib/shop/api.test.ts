@@ -3,12 +3,14 @@ import type { APIRoute } from 'astro';
 import type { D1Database } from '@cloudflare/workers-types';
 import { createPostHandler as createPurchaseHandler } from '../../pages/api/shop/purchase';
 import { createPostHandler as createEquipHandler } from '../../pages/api/shop/equip';
+import type { PurchaseResult } from './service';
 
+// Typed so the stub returns keep the closed ShopItemId union under astro check.
 const PURCHASED = {
 	status: 'purchased' as const,
 	itemId: 'card-back-sapphire',
 	chipBalance: 5000,
-};
+} satisfies PurchaseResult;
 
 function context({
 	session = true,

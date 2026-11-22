@@ -124,6 +124,9 @@ const initialAiModel = AI_MODELS[initialAiProvider][0];
 							<span class:list={['deco-pill', user.emailVerified && 'deco-pill-success']}>
 								{user.emailVerified ? t('emailVerified') : t('verificationPending')}
 							</span>
+							<a href="/shop" class="deco-btn deco-btn-outline" data-testid="shop-link">
+								<span>{t('chipShop')}</span>
+							</a>
 							<button id="signout-btn" type="button" class="deco-btn deco-btn-outline">
 								<span>{t('signOut')}</span>
 							</button>

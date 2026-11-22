@@ -1,0 +1,243 @@
+---
+import CasinoLayout from '../layouts/casino.astro';
+import DecoIcon from '../components/DecoIcon.astro';
+import { readWalletBalance } from '../lib/wallet/repository';
+import { CATALOG, SHOP_ITEM_IDS_BY_KIND, SHOP_ITEM_KINDS } from '../lib/shop/catalog';
+import { readShopState } from '../lib/shop/service';
+import { getShopItemName, shopTranslator } from '../lib/i18n/messages/shop';
+import { formatChips } from '../lib/i18n/messages/common';
+
+const session = Astro.locals.session;
+const locale = Astro.locals.locale;
+const t = shopTranslator(locale);
+
+if (!session) return Astro.redirect('/signin');
+
+const d1 = Astro.locals.env?.DB;
+if (!d1) {
+	return new Response(t('serviceUnavailable'), { status: 503 });
+}
+// Authenticated, per-user page: never cached by browsers or intermediaries.
+Astro.response.headers.set('Cache-Control', 'private, no-store');
+
+// The wallet read is the authoritative SSR balance; ownership/equipment come
+// from the shop state read so the rendered tiles agree with the database.
+const [walletBalance, shopState] = await Promise.all([
+	readWalletBalance(d1, session.user.id),
+	readShopState(d1, session.user.id),
+]);
+const chipBalance = walletBalance ?? 0;
+const ownedIds = new Set(shopState.ownedItemIds);
+---
+
+<CasinoLayout title={t('pageTitle')}>
+	<section class="deco-atmosphere relative overflow-hidden">
+		<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20" id="shop-root">
+			<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+				<div>
+					<p class="deco-eyebrow-sm">{t('yourBalance')}</p>
+					<div class="deco-chip-pill mt-2">
+						<DecoIcon name="chip" size={18} class="text-[var(--deco-brass)]" />
+						<span
+							class="font-body font-medium tabular-nums"
+							data-chip-balance
+							data-testid="shop-balance"
+						>
+							{formatChips(chipBalance, locale)}
+						</span>
+					</div>
+				</div>
+				<a
+					href="/games/poker"
+					class="deco-btn deco-btn-outline self-start"
+					data-testid="back-to-poker"
+				>
+					<span>{t('backToPoker')}</span>
+				</a>
+			</div>
+
+			<h1 class="deco-section-title text-3xl mb-4">{t('shopHeading')}</h1>
+			<p
+				id="shop-status"
+				role="status"
+				aria-live="polite"
+				class="deco-text-dim text-sm mb-6 min-h-5"
+				data-testid="shop-status"
+			></p>
+
+			{SHOP_ITEM_KINDS.map((kind) => (
+				<section class="mb-10" data-testid={`shop-section-${kind}`}>
+					<h2 class="deco-section-title text-xl mb-4">
+						{kind === 'card-back' ? t('cardBacks') : t('tableFelts')}
+					</h2>
+					<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+						{SHOP_ITEM_IDS_BY_KIND[kind].map((id) => {
+							const item = CATALOG[id];
+							// Defaults are implicitly owned: no ownership row exists for them.
+							const owned = item.priceChips === 0 || ownedIds.has(id);
+							const equipped = shopState.equippedByKind[kind] === id;
+							const name = getShopItemName(locale, id);
+							const announcement = equipped
+								? t('equippedItem', { item: name })
+								: owned
+									? t('equipItem', { item: name })
+									: t('buyItem', { item: name });
+							const isCardBack = item.kind === 'card-back';
+							return (
+								<article
+									class="deco-panel p-4 flex flex-col items-center text-center"
+									data-shop-item={item.id}
+									data-owned={String(owned)}
+									data-equipped={String(equipped)}
+									data-testid={`shop-item-${item.id}`}
+								>
+									<img
+										src={item.imagePath}
+										alt={name}
+										width={isCardBack ? 80 : 304}
+										height={isCardBack ? 112 : 152}
+										loading="lazy"
+										class={
+											isCardBack
+												? 'h-28 w-20 object-cover rounded-sm'
+												: 'h-24 w-full object-cover rounded-sm'
+										}
+									/>
+									<h3 class="font-body font-semibold mt-3 text-sm">{name}</h3>
+									<p
+										class="deco-text-dim text-sm mt-1"
+										data-shop-price
+										data-testid={`shop-price-${item.id}`}
+									>
+										{owned ? t('owned') : formatChips(item.priceChips, locale)}
+									</p>
+									<p
+										class="deco-eyebrow-sm mt-1"
+										data-shop-equipped-label
+										hidden={!equipped}
+										data-testid={`shop-equipped-${item.id}`}
+									>
+										{t('equipped')}
+									</p>
+									<button
+										type="button"
+										class:list={[
+											'deco-btn deco-btn-primary w-full mt-3',
+											equipped && 'deco-btn-done',
+										]}
+										data-shop-action={equipped ? 'equipped' : owned ? 'equip' : 'purchase'}
+										data-item-id={item.id}
+										aria-pressed={equipped}
+										aria-label={announcement}
+										disabled={equipped}
+										data-testid={`shop-action-${item.id}`}
+									>
+										{equipped ? t('equipped') : owned ? t('equip') : t('buy')}
+									</button>
+								</article>
+							);
+						})}
+					</div>
+				</section>
+			))}
+		</div>
+	</section>
+</CasinoLayout>
+
+<script>
+	import { getDocumentLocale } from '../lib/i18n/locale';
+	import { getShopErrorMessage, getShopNetworkErrorMessage } from '../lib/i18n/messages/shop';
+	import { isShopItemId, SHOP_ITEM_KINDS } from '../lib/shop/catalog';
+	import { applyEquipToDocument, applyPurchaseToDocument } from '../lib/shop/shop-ui';
+
+	const locale = getDocumentLocale(document);
+	const statusRegion = document.getElementById('shop-status');
+
+	interface ShopResponse {
+		status?: string;
+		itemId?: string;
+		balance?: number;
+		kind?: string;
+		equippedItemId?: string;
+		error?: string;
+	}
+
+	function showError(message: string): void {
+		if (statusRegion) statusRegion.textContent = message;
+	}
+
+	async function postJson(
+		url: string,
+		itemId: string,
+	): Promise<{ ok: boolean; data: ShopResponse | null }> {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ itemId }),
+		});
+		let data: ShopResponse | null = null;
+		try {
+			data = (await res.json()) as ShopResponse;
+		} catch {
+			// Non-JSON failure body: fall through to the generic error copy.
+		}
+		return { ok: res.ok, data };
+	}
+
+	document.getElementById('shop-root')?.addEventListener('click', async (event) => {
+		const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
+			'[data-shop-action]',
+		);
+		if (!button || button.disabled) return;
+		const itemId = button.dataset.itemId;
+		const action = button.dataset.shopAction;
+		if (!itemId || (action !== 'purchase' && action !== 'equip')) return;
+
+		// Double-click protection: the pending button stays disabled until the
+		// response is applied (success re-renders it) or it is re-enabled below.
+		button.disabled = true;
+		try {
+			if (action === 'purchase') {
+				const { ok, data } = await postJson('/api/shop/purchase', itemId);
+				const purchasedId = data?.itemId;
+				if (
+					ok &&
+					data?.status === 'purchased' &&
+					typeof purchasedId === 'string' &&
+					isShopItemId(purchasedId) &&
+					typeof data.balance === 'number'
+				) {
+					// One loop updates the shop pill and the shared header pill.
+					applyPurchaseToDocument(document, purchasedId, data.balance, locale);
+					showError('');
+					return;
+				}
+				showError(getShopErrorMessage(locale, data?.error));
+			} else {
+				const { ok, data } = await postJson('/api/shop/equip', itemId);
+				const equippedId = data?.equippedItemId;
+				if (
+					ok &&
+					data &&
+					typeof equippedId === 'string' &&
+					isShopItemId(equippedId) &&
+					(SHOP_ITEM_KINDS as readonly string[]).includes(data.kind ?? '')
+				) {
+					applyEquipToDocument(
+						document,
+						data.kind as (typeof SHOP_ITEM_KINDS)[number],
+						equippedId,
+						locale,
+					);
+					showError('');
+					return;
+				}
+				showError(getShopErrorMessage(locale, data?.error));
+			}
+			button.disabled = false;
+		} catch {
+			showError(getShopNetworkErrorMessage(locale));
+			button.disabled = false;
+		}
+	});
+</script>

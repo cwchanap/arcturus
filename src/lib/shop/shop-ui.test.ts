@@ -1,9 +1,21 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { Window } from 'happy-dom';
-import { SHOP_ITEM_IDS, type ShopItemId } from './catalog';
-import { applyBalanceToDocument, applyEquipToDocument, applyPurchaseToDocument } from './shop-ui';
+import { CATALOG, SHOP_ITEM_IDS, type ShopItemId } from './catalog';
+import {
+	applyBalanceToDocument,
+	applyEquipToDocument,
+	applyPurchaseToDocument,
+	createShopMutationGuard,
+	runShopAction,
+	type ShopActionEnv,
+} from './shop-ui';
 import { SUPPORTED_LOCALES } from '../i18n/locale';
-import { getShopErrorMessage, getShopItemName, shopTranslator } from '../i18n/messages/shop';
+import {
+	getShopErrorMessage,
+	getShopItemName,
+	getShopNetworkErrorMessage,
+	shopTranslator,
+} from '../i18n/messages/shop';
 import { formatChips } from '../i18n/messages/common';
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -46,7 +58,7 @@ function renderShopScaffold(): HTMLElement {
 		<div class="deco-chip-pill"><span data-chip-balance>0 chips</span></div>
 		<span data-chip-balance>0 chips</span>
 		${SHOP_ITEM_IDS.map((id) => {
-			const variant = id.split('-')[1];
+			const variant = id.split('-')[2];
 			const owned = variant === 'default';
 			return `<article data-shop-item="${id}" data-owned="${owned}" data-equipped="false">
 				<p data-shop-price>${owned ? 'Owned' : 'price'}</p>
@@ -118,7 +130,8 @@ describe('applyPurchaseToDocument', () => {
 describe('applyEquipToDocument', () => {
 	test('equips the target and clears only that kind\u2019s previous selection', () => {
 		const root = renderShopScaffold();
-		// Server state: sapphire card back currently equipped.
+		// Server state: sapphire card back currently equipped (equipped implies owned).
+		tile(root, 'card-back-sapphire').dataset.owned = 'true';
 		tile(root, 'card-back-sapphire').dataset.equipped = 'true';
 		applyEquipToDocument(root, 'card-back', 'card-back-jade', 'en');
 
@@ -145,10 +158,41 @@ describe('applyEquipToDocument', () => {
 
 	test('equipping a default resolves the kind to the default tile', () => {
 		const root = renderShopScaffold();
+		tile(root, 'card-back-sapphire').dataset.owned = 'true';
 		tile(root, 'card-back-sapphire').dataset.equipped = 'true';
 		applyEquipToDocument(root, 'card-back', 'card-back-default', 'en');
 		expect(tile(root, 'card-back-default').dataset.equipped).toBe('true');
 		expect(tile(root, 'card-back-sapphire').dataset.equipped).toBe('false');
+	});
+
+	test('equipping keeps unowned same-kind tiles purchasable: price and Buy action retained', () => {
+		const root = renderShopScaffold();
+		// Buy only sapphire, then equip it: its unowned siblings must stay Buy.
+		applyPurchaseToDocument(root, 'card-back-sapphire', 25_000, 'en');
+		applyEquipToDocument(root, 'card-back', 'card-back-sapphire', 'en');
+
+		const equipped = tile(root, 'card-back-sapphire');
+		expect(equipped.dataset.owned).toBe('true');
+		expect(equipped.dataset.equipped).toBe('true');
+		expect(button(root, 'card-back-sapphire').disabled).toBe(true);
+
+		for (const id of ['card-back-crimson', 'card-back-jade'] as const) {
+			const unowned = tile(root, id);
+			expect(unowned.dataset.owned).toBe('false');
+			expect(unowned.querySelector<HTMLElement>('[data-shop-price]')?.textContent).toBe(
+				formatChips(CATALOG[id].priceChips, 'en'),
+			);
+			const btn = button(root, id);
+			expect(btn.textContent).toBe('Buy');
+			expect(btn.dataset.shopAction).toBe('purchase');
+			expect(btn.disabled).toBe(false);
+		}
+
+		// The kind's default stays owned and equipable, just not equipped.
+		const fallback = tile(root, 'card-back-default');
+		expect(fallback.dataset.owned).toBe('true');
+		expect(fallback.dataset.equipped).toBe('false');
+		expect(button(root, 'card-back-default').dataset.shopAction).toBe('equip');
 	});
 });
 
@@ -167,6 +211,120 @@ describe('button announcements', () => {
 				t('equippedItem', { item: name }),
 			);
 		}
+	});
+});
+
+describe('runShopAction', () => {
+	function makeEnv(
+		post: ShopActionEnv['post'],
+		locale: ShopActionEnv['locale'] = 'en',
+	): { env: ShopActionEnv; errors: string[] } {
+		const errors: string[] = [];
+		return {
+			errors,
+			env: {
+				post,
+				showError: (message) => errors.push(message),
+				guard: createShopMutationGuard(),
+				locale,
+			},
+		};
+	}
+
+	test('a successful purchase syncs balances and flips the tile owned', async () => {
+		const root = renderShopScaffold();
+		const { env } = makeEnv(async () => ({
+			ok: true,
+			data: { status: 'purchased', itemId: 'felt-jade', balance: 42 },
+		}));
+		await runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
+
+		expect(tile(root, 'felt-jade').dataset.owned).toBe('true');
+		root
+			.querySelectorAll<HTMLElement>('[data-chip-balance]')
+			.forEach((el) => expect(el.textContent).toBe(formatChips(42, 'en')));
+	});
+
+	test('a failed equip re-enables the button and shows the localized error', async () => {
+		const root = renderShopScaffold();
+		const { env, errors } = makeEnv(
+			async () => ({ ok: false, data: { error: 'NOT_OWNED' } }),
+			'ja',
+		);
+		await runShopAction(env, button(root, 'felt-jade'), 'equip', 'felt-jade');
+
+		expect(errors).toEqual([getShopErrorMessage('ja', 'NOT_OWNED')]);
+		const btn = button(root, 'felt-jade');
+		expect(btn.disabled).toBe(false);
+		expect(btn.dataset.shopAction).toBe('purchase');
+	});
+
+	test('a network failure re-enables the button and shows the network copy', async () => {
+		const root = renderShopScaffold();
+		const { env, errors } = makeEnv(async () => {
+			throw new Error('offline');
+		});
+		await runShopAction(env, button(root, 'card-back-jade'), 'equip', 'card-back-jade');
+
+		expect(errors).toEqual([getShopNetworkErrorMessage('en')]);
+		expect(button(root, 'card-back-jade').disabled).toBe(false);
+	});
+
+	test('a second action while one is pending is refused before fetch, so a delayed response cannot apply out of order', async () => {
+		const root = renderShopScaffold();
+		const calls: string[] = [];
+		let releaseFirst: (() => void) | undefined;
+		const firstGate = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const { env, errors } = makeEnv(async (url, itemId) => {
+			calls.push(`${url}:${itemId}`);
+			if (calls.length === 1) {
+				await firstGate; // the first response is delayed
+				return { ok: true, data: { status: 'purchased', itemId, balance: 500 } };
+			}
+			return { ok: true, data: { status: 'purchased', itemId, balance: 100 } };
+		});
+
+		const first = runShopAction(
+			env,
+			button(root, 'card-back-crimson'),
+			'purchase',
+			'card-back-crimson',
+		);
+		// Second click while the first is in flight: refused before any fetch.
+		const second = runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
+
+		expect(calls).toEqual(['/api/shop/purchase:card-back-crimson']);
+		// The refused click never disabled its button (no pending state to clobber).
+		expect(button(root, 'felt-jade').disabled).toBe(false);
+		expect(button(root, 'felt-jade').dataset.shopAction).toBe('purchase');
+
+		releaseFirst?.();
+		await first;
+		await second;
+
+		// The delayed response applied exactly once at its own balance: no later,
+		// stale overwrite of the balance mirrors.
+		root
+			.querySelectorAll<HTMLElement>('[data-chip-balance]')
+			.forEach((el) => expect(el.textContent).toBe(formatChips(500, 'en')));
+		expect(tile(root, 'card-back-crimson').dataset.owned).toBe('true');
+		// The refused action left its tile untouched and only the success cleared
+		// the status region (one empty message).
+		expect(tile(root, 'felt-jade').dataset.owned).toBe('false');
+		expect(errors).toEqual(['']);
+	});
+
+	test('a new action is accepted again after the pending one finishes', async () => {
+		const root = renderShopScaffold();
+		const { env } = makeEnv(async (_url, itemId) => ({
+			ok: true,
+			data: { status: 'purchased', itemId, balance: 10 },
+		}));
+		await runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
+		await runShopAction(env, button(root, 'felt-crimson'), 'purchase', 'felt-crimson');
+		expect(tile(root, 'felt-crimson').dataset.owned).toBe('true');
 	});
 });
 

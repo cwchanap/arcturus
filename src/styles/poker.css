@@ -22,7 +22,7 @@
 	border-image: linear-gradient(160deg, #e4c988, #8c7438 26%, #5c4a22 52%, #8c7438 76%, #e4c988) 1;
 	background:
 		radial-gradient(ellipse at 50% 60%, #12392933, #081a14b3 46%, #050706f2 84%),
-		url('/images/poker/felt.webp') center / cover no-repeat,
+		var(--poker-felt-image, url('/images/poker/felt.webp')) center / cover no-repeat,
 		#081a14;
 	box-shadow:
 		inset 0 0 100px #0009,
@@ -790,7 +790,8 @@ a.poker-format:hover {
 	font-size: 9px;
 }
 .poker-room .card-back-deco {
-	background: #0a2620 url('/images/poker/card-back.webp') center / cover no-repeat;
+	background: #0a2620 var(--poker-card-back-image, url('/images/poker/card-back.webp')) center /
+		cover no-repeat;
 	border: 0;
 	border-radius: 2px;
 }

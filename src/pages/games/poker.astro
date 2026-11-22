@@ -10,8 +10,28 @@ import { getGameName } from '../../lib/i18n/messages/games';
 import { getPokerHandName, pokerTranslator } from '../../lib/i18n/messages/poker';
 import { MAX_BET, MIN_BET, NUM_PLAYERS, HAND_RANKINGS } from '../../lib/poker/constants';
 import { SNG_START_STACK } from '../../lib/poker/sitAndGo';
+import { getPokerCosmeticVars, pokerCosmeticStyleAttr } from '../../lib/shop/cosmetics';
+import { readShopState } from '../../lib/shop/service';
 
 const user = Astro.locals.user;
+
+// Equipped cosmetics are per-user SSR state, so authenticated responses are
+// never cacheable. Guests, absent selections and read failures all keep the
+// stylesheet's default artwork (style attribute omitted).
+let cosmeticStyle: string | undefined;
+if (user) {
+	Astro.response.headers.set('Cache-Control', 'private, no-store');
+	const d1 = Astro.locals.env?.DB;
+	if (d1) {
+		try {
+			cosmeticStyle = pokerCosmeticStyleAttr(
+				getPokerCosmeticVars((await readShopState(d1, user.id)).equippedByKind),
+			);
+		} catch {
+			// Cosmetic read failure keeps the default artwork.
+		}
+	}
+}
 const gameSession = createPublicGameSession(user);
 // Mode is a literal URL parameter; anything other than 'sng' stays cash.
 const isSng = Astro.url.searchParams.get('mode') === 'sng';
@@ -34,6 +54,7 @@ const clientUserId = gameSession.clientUserId;
 	<div
 		id="poker-root"
 		class="poker-room"
+		style={cosmeticStyle}
 		data-guest-mode={gameSession.guestModeValue}
 		data-poker-mode={isSng ? 'sng' : 'cash'}
 	>

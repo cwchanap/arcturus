@@ -9,8 +9,20 @@
 
 import type { Locale } from '../i18n/locale';
 import { formatChips } from '../i18n/messages/common';
-import { getShopItemName, shopTranslator } from '../i18n/messages/shop';
-import { CATALOG, SHOP_ITEM_IDS_BY_KIND, type ShopItemKind, type ShopItemId } from './catalog';
+import {
+	getShopErrorMessage,
+	getShopItemName,
+	getShopNetworkErrorMessage,
+	shopTranslator,
+} from '../i18n/messages/shop';
+import {
+	CATALOG,
+	isShopItemId,
+	SHOP_ITEM_IDS_BY_KIND,
+	SHOP_ITEM_KINDS,
+	type ShopItemKind,
+	type ShopItemId,
+} from './catalog';
 
 /** The document a root belongs to: the root itself when it is a document. */
 function docOf(root: Element | Document): Document {
@@ -96,6 +108,114 @@ export function applyEquipToDocument(
 	for (const id of SHOP_ITEM_IDS_BY_KIND[kind]) {
 		const tile = doc.querySelector<HTMLElement>(`[data-shop-item="${id}"]`);
 		if (!tile) continue;
-		renderTile(tile, true, id === equippedItemId, locale);
+		// Equip changes only the kind's selection: each tile keeps its existing
+		// ownership so unpurchased siblings keep their price and Buy action.
+		renderTile(tile, tile.dataset.owned === 'true', id === equippedItemId, locale);
+	}
+}
+
+/** Wire format shared with the shop page's inline script: purchase/equip responses. */
+export interface ShopActionResponse {
+	status?: string;
+	itemId?: string;
+	balance?: number;
+	kind?: string;
+	equippedItemId?: string;
+	error?: string;
+}
+
+/** Serializes a page's shop mutations: at most one request in flight. */
+export interface ShopMutationGuard {
+	/** Starts a mutation unless one is already in flight; false means refused. */
+	begin(): boolean;
+	end(): void;
+}
+
+/**
+ * Shared pending guard for one shop page: while a request is in flight further
+ * mutations are refused, so a slow earlier response can never overwrite a newer
+ * one (stale balance/selection) and a tile re-render can never re-enable
+ * another pending button.
+ */
+export function createShopMutationGuard(): ShopMutationGuard {
+	let pending = false;
+	return {
+		begin: () => {
+			if (pending) return false;
+			pending = true;
+			return true;
+		},
+		end: () => {
+			pending = false;
+		},
+	};
+}
+
+/** Everything `runShopAction` needs from the page: transport, error display, locale. */
+export interface ShopActionEnv {
+	post(url: string, itemId: string): Promise<{ ok: boolean; data: ShopActionResponse | null }>;
+	showError(message: string): void;
+	guard: ShopMutationGuard;
+	locale: Locale;
+}
+
+/**
+ * One shop mutation: refused while another is in flight (the shared guard),
+ * with the clicked button disabled until the response is applied — success
+ * re-renders the tiles, which own the button's final state — and re-enabled
+ * on a failed or failed-to-send request.
+ */
+export async function runShopAction(
+	env: ShopActionEnv,
+	button: HTMLButtonElement,
+	action: 'purchase' | 'equip',
+	itemId: string,
+): Promise<void> {
+	if (!env.guard.begin()) return;
+	button.disabled = true;
+	try {
+		if (action === 'purchase') {
+			const { ok, data } = await env.post('/api/shop/purchase', itemId);
+			const purchasedId = data?.itemId;
+			if (
+				ok &&
+				data?.status === 'purchased' &&
+				typeof purchasedId === 'string' &&
+				isShopItemId(purchasedId) &&
+				typeof data.balance === 'number'
+			) {
+				// One loop updates the shop pill and the shared header pill.
+				applyPurchaseToDocument(docOf(button), purchasedId, data.balance, env.locale);
+				env.showError('');
+				return;
+			}
+			env.showError(getShopErrorMessage(env.locale, data?.error));
+		} else {
+			const { ok, data } = await env.post('/api/shop/equip', itemId);
+			const equippedId = data?.equippedItemId;
+			if (
+				ok &&
+				data &&
+				typeof equippedId === 'string' &&
+				isShopItemId(equippedId) &&
+				(SHOP_ITEM_KINDS as readonly string[]).includes(data.kind ?? '')
+			) {
+				applyEquipToDocument(
+					docOf(button),
+					data.kind as (typeof SHOP_ITEM_KINDS)[number],
+					equippedId,
+					env.locale,
+				);
+				env.showError('');
+				return;
+			}
+			env.showError(getShopErrorMessage(env.locale, data?.error));
+		}
+		button.disabled = false;
+	} catch {
+		env.showError(getShopNetworkErrorMessage(env.locale));
+		button.disabled = false;
+	} finally {
+		env.guard.end();
 	}
 }

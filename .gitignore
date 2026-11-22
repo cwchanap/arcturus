@@ -36,14 +36,13 @@ specs/
 .codex/
 .worktrees/
 
-# Generated acceptance captures and raw test output; keep curated screenshots tracked.
-/docs/superpowers/acceptance/2026-11-17-big-win-celebration/*.png
-!/docs/superpowers/acceptance/2026-11-17-big-win-celebration/desktop-huge.png
-!/docs/superpowers/acceptance/2026-11-17-big-win-celebration/phone-huge.png
-/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/*.png
-!/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/baseline-poker-mobile.png
-!/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/upgraded-poker-mobile.png
-/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/*.log
-/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/*.zip
-/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/*.last-run.json
-/docs/superpowers/acceptance/2026-11-19-hpa-917-astro7-cloudflare14/test-results-mcp/
+# Generated acceptance output: put new runs in verification-output/ or a generated subfolder.
+/verification-output/
+/test-results-*/
+/docs/superpowers/acceptance/**/_generated/
+/docs/superpowers/acceptance/**/generated/
+/docs/superpowers/acceptance/**/artifacts/
+/docs/superpowers/acceptance/**/test-results-*/
+/docs/superpowers/acceptance/**/*.log
+/docs/superpowers/acceptance/**/*.last-run.json
+/docs/superpowers/acceptance/**/trace.zip

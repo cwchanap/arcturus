@@ -4,6 +4,8 @@
 
 Browser MCP (chrome-devtools) is the end-to-end acceptance owner per the design; the Playwright spec `e2e/big-win-celebration.spec.ts` (8/8 passing) provides the numeric four-locale × two-viewport geometry regression and complements — not replaces — this record.
 
+The record retains two representative screenshots. Other filenames below describe captures made during acceptance; those captures are no longer tracked in the current tree.
+
 ## Environment
 
 - Server: `chrome-devtools-mcp@latest` (same server configured in `~/.pi/agent/mcp-adapter.json`), driven over stdio JSON-RPC.
@@ -19,7 +21,7 @@ Measured evidence returned by the page:
 
 - `spotCount: "3/10"`, `currentBet: "5 chips"`, draw button enabled after picks;
 - result: `lastResult: "0 of 3 lost 5 chips"`, `status: "Round complete"`, balance 1000 → 995 chips;
-- screenshot: [`desktop-guest-round.png`](./desktop-guest-round.png) — round completes and renders normally with the celebration module wired into the game.
+- screenshot: `desktop-guest-round.png` — round completes and renders normally with the celebration module wired into the game.
 
 ## 2. Fixed-tier celebrations (dev-module import, no rigging)
 
@@ -27,10 +29,10 @@ Measured evidence returned by the page:
 
 | Screenshot | Viewport | Tier | Visual finding |
 | --- | --- | --- | --- |
-| [desktop-big.png](./desktop-big.png) | 1280×800 | big | gold/red/blue chips + sparkles burst from center, alpha painted, rotation/mirrored chips visible; no ribbon (correct); game UI readable around it |
+| `desktop-big.png` | 1280×800 | big | gold/red/blue chips + sparkles burst from center, alpha painted, rotation/mirrored chips visible; no ribbon (correct); game UI readable around it |
 | [desktop-huge.png](./desktop-huge.png) | 1280×800 | huge | Art Deco ribbon centered; brass `Big Win` + ivory `200 chips` both inside the dark text-safe band, no clipping; strong contrast |
-| [desktop-huge-ja.png](./desktop-huge-ja.png) | 1280×800 | huge, `arcturus_locale=ja` | fully localized page (`lang="ja"`); ribbon title `大勝利`, amount `200 チップ` inside the band |
-| [phone-big.png](./phone-big.png) | 375×812 | big | burst stays inside the viewport (`overflow: hidden` overlay); no page overflow; controls unaffected |
+| `desktop-huge-ja.png` | 1280×800 | huge, `arcturus_locale=ja` | fully localized page (`lang="ja"`); ribbon title `大勝利`, amount `200 チップ` inside the band |
+| `phone-big.png` | 375×812 | big | burst stays inside the viewport (`overflow: hidden` overlay); no page overflow; controls unaffected |
 | [phone-huge.png](./phone-huge.png) | 375×812 | huge | ribbon scales to `max-width: 92vw`; title/count still inside the scaled safe band; board intact below |
 
 Lifecycle evidence (same session): after teardown `overlayChildCount: 0` (~1.9 s after trigger, 1.6 s timer) — nodes removed, no residue over the guest-round screenshot.
@@ -39,10 +41,10 @@ Lifecycle evidence (same session): after teardown `overlayChildCount: 0` (~1.9 s
 
 | Screenshot | Viewport | Tier | Measured / visual |
 | --- | --- | --- | --- |
-| [phone-big-reduced.png](./phone-big-reduced.png) | 375×812 | big | `imgCount: 0`, overlay children: 1 static badge; static `60 chips` pill, no motion, legible over the board |
-| [phone-huge-reduced.png](./phone-huge-reduced.png) | 375×812 | huge | `imgCount: 1` (ribbon art only, no particles), `title: "Big Win"`, static `amountText: "200 chips"` |
-| [desktop-big-reduced.png](./desktop-big-reduced.png) | 1280×800 | big | static badge only |
-| [desktop-huge-reduced.png](./desktop-huge-reduced.png) | 1280×800 | huge | static ribbon/title/amount, no particles |
+| `phone-big-reduced.png` | 375×812 | big | `imgCount: 0`, overlay children: 1 static badge; static `60 chips` pill, no motion, legible over the board |
+| `phone-huge-reduced.png` | 375×812 | huge | `imgCount: 1` (ribbon art only, no particles), `title: "Big Win"`, static `amountText: "200 chips"` |
+| `desktop-big-reduced.png` | 1280×800 | big | static badge only |
+| `desktop-huge-reduced.png` | 1280×800 | huge | static ribbon/title/amount, no particles |
 
 ## 4. Console and compatibility
 

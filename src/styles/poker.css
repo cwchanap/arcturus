@@ -891,6 +891,21 @@ a.poker-format:hover {
 	.poker-toolbar {
 		gap: 12px 4px;
 	}
+	/* Phones: the centered title pills and the right-hand tool cluster wrap to
+	   extra rows instead of pushing the header past the viewport. The ornament
+	   rules flanking the title only read on a single line, so they step aside
+	   (decorative, no content or action). */
+	.poker-title {
+		flex-wrap: wrap;
+	}
+	.poker-title::before,
+	.poker-title::after {
+		display: none;
+	}
+	.poker-tools {
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
 	.poker-back {
 		padding: 0 8px;
 	}

@@ -22,10 +22,16 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 
 // The wallet read is the authoritative SSR balance; ownership/equipment come
 // from the shop state read so the rendered tiles agree with the database.
-const [walletBalance, shopState] = await Promise.all([
+// Deploy-first means user_cosmetic can be missing until db:migrate:remote
+// runs; a failed read answers 503 like the missing-binding path above.
+const state = await Promise.all([
 	readWalletBalance(d1, session.user.id),
 	readShopState(d1, session.user.id),
-]);
+]).catch(() => null);
+if (!state) {
+	return new Response(t('serviceUnavailable'), { status: 503 });
+}
+const [walletBalance, shopState] = state;
 const chipBalance = walletBalance ?? 0;
 const ownedIds = new Set(shopState.ownedItemIds);
 ---

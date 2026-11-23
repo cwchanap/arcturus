@@ -11,6 +11,11 @@ export type IsolatedPageOptions = {
 	 * Omit for specs that set up `page.route` mocks before navigating.
 	 */
 	navigate?: (page: Page) => Promise<unknown>;
+	/**
+	 * Explicit context viewport. `test.use({ viewport })` only reaches the
+	 * fixture context, so isolated pages must pass their size here.
+	 */
+	viewport?: { width: number; height: number };
 };
 
 /**
@@ -28,7 +33,7 @@ export async function createIsolatedPage(
 	opts: IsolatedPageOptions,
 ): Promise<{ context: BrowserContext; page: Page }> {
 	const resolvedBaseURL = baseURL ?? DEFAULT_BASE_URL;
-	const context = await browser.newContext({ baseURL: resolvedBaseURL });
+	const context = await browser.newContext({ baseURL: resolvedBaseURL, viewport: opts.viewport });
 	const page = await context.newPage();
 	const nonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	await bootstrapTestUser(context, resolvedBaseURL, {

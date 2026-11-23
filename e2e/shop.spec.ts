@@ -43,10 +43,16 @@ function headerBalance(page: Page) {
 	return page.locator('[data-chip-balance]').first();
 }
 
-function openShop(browser: Browser, baseURL: string | undefined, emailPrefix: string) {
+function openShop(
+	browser: Browser,
+	baseURL: string | undefined,
+	emailPrefix: string,
+	viewport?: { width: number; height: number },
+) {
 	return createIsolatedPage(browser, baseURL, {
 		emailPrefix,
 		namePrefix: 'Shop E2E',
+		viewport,
 		navigate: async (page) => {
 			await page.goto('/shop', { waitUntil: 'domcontentloaded' });
 		},
@@ -316,13 +322,15 @@ test.describe('chip shop journey (isolated 10,000-chip user, cross-user isolatio
 });
 
 test.describe('chip shop mobile balance', () => {
-	test.use({ viewport: { width: 375, height: 667 } });
-
 	test('the shop pill stays the visible mobile mirror after a purchase', async ({
 		browser,
 		baseURL,
 	}) => {
-		const { context, page } = await openShop(browser, baseURL, 'shop-mobile');
+		// The isolated context ignores test.use viewport: pass the mobile size.
+		const { context, page } = await openShop(browser, baseURL, 'shop-mobile', {
+			width: 375,
+			height: 667,
+		});
 		try {
 			// On mobile the desktop header pill is hidden; the shop pill is the
 			// visible balance and both still carry the same value.

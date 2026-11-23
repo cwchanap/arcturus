@@ -198,6 +198,13 @@ export async function runShopAction(
 			if (typeof data?.balance === 'number') {
 				applyBalanceToDocument(docOf(button), data.balance, env.locale);
 			}
+			// A purchase that committed server-side but lost its response
+			// retries as ALREADY_OWNED: reconcile the tile so the item offers
+			// Equip instead of Buy without a reload.
+			if (data?.error === 'ALREADY_OWNED' && isShopItemId(itemId)) {
+				const tile = docOf(button).querySelector<HTMLElement>(`[data-shop-item="${itemId}"]`);
+				if (tile) renderTile(tile, true, false, env.locale);
+			}
 			env.showError(getShopErrorMessage(env.locale, data?.error));
 		} else {
 			const { ok, data } = await env.post('/api/shop/equip', itemId);

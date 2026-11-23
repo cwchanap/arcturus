@@ -267,6 +267,26 @@ describe('runShopAction', () => {
 		expect(tile(root, 'felt-jade').dataset.owned).toBe('false');
 	});
 
+	test('a purchase retried as ALREADY_OWNED flips the tile to owned/Equip and still shows the error', async () => {
+		const root = renderShopScaffold();
+		const { env, errors } = makeEnv(async () => ({
+			ok: false,
+			data: { error: 'ALREADY_OWNED', balance: 123 },
+		}));
+		await runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
+
+		// The server committed the purchase earlier (response was lost): the
+		// tile reconciles to owned so the item offers Equip, not another Buy.
+		expect(tile(root, 'felt-jade').dataset.owned).toBe('true');
+		const btn = button(root, 'felt-jade');
+		expect(btn.dataset.shopAction).toBe('equip');
+		expect(btn.disabled).toBe(false);
+		root
+			.querySelectorAll<HTMLElement>('[data-chip-balance]')
+			.forEach((el) => expect(el.textContent).toBe(formatChips(123, 'en')));
+		expect(errors).toEqual([getShopErrorMessage('en', 'ALREADY_OWNED')]);
+	});
+
 	test('a failed equip re-enables the button and shows the localized error', async () => {
 		const root = renderShopScaffold();
 		const { env, errors } = makeEnv(

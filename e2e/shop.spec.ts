@@ -152,8 +152,8 @@ test.describe('Poker SSR cosmetics (authenticated)', () => {
 	}
 });
 
-test.describe('chip shop journey (one isolated 10,000-chip user)', () => {
-	test('buy, reject, equip, refresh, cash gate, SNG hand, restore defaults', async ({
+test.describe('chip shop journey (isolated 10,000-chip user, cross-user isolation)', () => {
+	test('buy, reject, equip, refresh, isolation, cash gate, SNG hand, restore defaults', async ({
 		browser,
 		baseURL,
 	}) => {
@@ -205,6 +205,34 @@ test.describe('chip shop journey (one isolated 10,000-chip user)', () => {
 			);
 			await expect(shopBalance(page)).toHaveText(AFTER_BOTH_BALANCE);
 			await expect(headerBalance(page)).toHaveText(AFTER_BOTH_BALANCE);
+
+			// Cross-user isolation while the first user still owns and has both
+			// Sapphires equipped: the second isolated user keeps the untouched
+			// balance, owns no paid item, and runs on the default selections.
+			const second = await openShop(browser, baseURL, 'shop-second-user');
+			try {
+				await expect(shopBalance(second.page)).toHaveText(FRESH_BALANCE);
+				for (const itemId of PAID_ITEM_IDS) {
+					await expect(second.page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
+						'data-owned',
+						'false',
+					);
+					await expect(second.page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
+						'data-equipped',
+						'false',
+					);
+				}
+				await expect(second.page.getByTestId('shop-item-card-back-default')).toHaveAttribute(
+					'data-equipped',
+					'true',
+				);
+				await expect(second.page.getByTestId('shop-item-felt-default')).toHaveAttribute(
+					'data-equipped',
+					'true',
+				);
+			} finally {
+				await second.context.close();
+			}
 
 			// Authenticated /shop and Poker responses stay uncacheable.
 			for (const route of ['/shop', '/games/poker']) {
@@ -304,40 +332,6 @@ test.describe('chip shop mobile balance', () => {
 
 			await buyFromShop(page, 'card-back-sapphire', AFTER_CARD_BACK_BALANCE);
 			await expect(shopBalance(page)).toBeVisible();
-		} finally {
-			await context.close();
-		}
-	});
-});
-
-test.describe('chip shop inventory isolation', () => {
-	test('a second isolated user sees no inventory or selection leakage', async ({
-		browser,
-		baseURL,
-	}) => {
-		const { context, page } = await openShop(browser, baseURL, 'shop-second-user');
-		try {
-			await expect(shopBalance(page)).toHaveText(FRESH_BALANCE);
-			// No paid item is owned or equipped for a fresh user...
-			for (const itemId of PAID_ITEM_IDS) {
-				await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
-					'data-owned',
-					'false',
-				);
-				await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
-					'data-equipped',
-					'false',
-				);
-			}
-			// ...and the defaults are the equipped selections.
-			await expect(page.getByTestId('shop-item-card-back-default')).toHaveAttribute(
-				'data-equipped',
-				'true',
-			);
-			await expect(page.getByTestId('shop-item-felt-default')).toHaveAttribute(
-				'data-equipped',
-				'true',
-			);
 		} finally {
 			await context.close();
 		}

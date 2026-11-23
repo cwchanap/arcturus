@@ -243,4 +243,26 @@ test.describe('Profile Page', () => {
 		await expect(page.getByRole('heading', { name: 'Account Details', level: 2 })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'AI Rival Settings', level: 2 })).toBeVisible();
 	});
+
+	test('profile actions wrap inside a 320px viewport without clipping', async ({ page }) => {
+		// The panel hides overflow, so clipping is invisible to scrollWidth:
+		// assert the Shop and Sign out controls' layout boxes stay in bounds.
+		await page.setViewportSize({ width: 320, height: 568 });
+		await page.reload();
+
+		const overflow = await page.evaluate(() => ({
+			scrollWidth: document.documentElement.scrollWidth,
+			clientWidth: document.documentElement.clientWidth,
+		}));
+		expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+
+		for (const selector of ['[data-testid="shop-link"]', '#signout-btn']) {
+			const control = page.locator(selector);
+			await expect(control).toBeVisible();
+			const box = await control.boundingBox();
+			expect(box).not.toBeNull();
+			expect(box!.x).toBeGreaterThanOrEqual(-1);
+			expect(box!.x + box!.width).toBeLessThanOrEqual(321);
+		}
+	});
 });

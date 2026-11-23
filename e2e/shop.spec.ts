@@ -368,9 +368,9 @@ test.describe('poker phone header layout', () => {
 			expect(count).toBeGreaterThan(0);
 			for (let i = 0; i < count; i++) {
 				await expect(controls.nth(i)).toBeVisible();
+				await controls.nth(i).focus();
+				await expect(controls.nth(i)).toBeFocused();
 			}
-			await controls.first().focus();
-			await expect(controls.first()).toBeFocused();
 		});
 	}
 });

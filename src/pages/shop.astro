@@ -127,7 +127,6 @@ const ownedIds = new Set(shopState.ownedItemIds);
 										]}
 										data-shop-action={equipped ? 'equipped' : owned ? 'equip' : 'purchase'}
 										data-item-id={item.id}
-										aria-pressed={equipped}
 										aria-label={announcement}
 										disabled={equipped}
 										data-testid={`shop-action-${item.id}`}

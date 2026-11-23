@@ -58,12 +58,13 @@ function renderShopScaffold(): HTMLElement {
 		<div class="deco-chip-pill"><span data-chip-balance>0 chips</span></div>
 		<span data-chip-balance>0 chips</span>
 		${SHOP_ITEM_IDS.map((id) => {
-			const variant = id.split('-')[2];
-			const owned = variant === 'default';
+			// Defaults are implicitly owned: derive from the catalog price, never
+			// from the ID shape (e.g. `felt-default` has no third dash segment).
+			const owned = CATALOG[id as ShopItemId].priceChips === 0;
 			return `<article data-shop-item="${id}" data-owned="${owned}" data-equipped="false">
 				<p data-shop-price>${owned ? 'Owned' : 'price'}</p>
 				<span data-shop-equipped-label hidden>Equipped</span>
-				<button type="button" data-shop-action="${owned ? 'equip' : 'purchase'}" data-item-id="${id}" aria-pressed="false">action</button>
+				<button type="button" data-shop-action="${owned ? 'equip' : 'purchase'}" data-item-id="${id}">action</button>
 			</article>`;
 		}).join('')}`;
 	document.body.appendChild(root);
@@ -107,7 +108,9 @@ describe('applyPurchaseToDocument', () => {
 		const btn = button(root, 'card-back-sapphire');
 		expect(btn.dataset.shopAction).toBe('equip');
 		expect(btn.disabled).toBe(false);
-		expect(btn.getAttribute('aria-pressed')).toBe('false');
+		// Buy/Equip are action buttons, not toggles: no aria-pressed, no done styling.
+		expect(btn.hasAttribute('aria-pressed')).toBe(false);
+		expect(btn.classList.contains('deco-btn-done')).toBe(false);
 
 		root
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
@@ -141,7 +144,8 @@ describe('applyEquipToDocument', () => {
 		const jadeBtn = button(root, 'card-back-jade');
 		expect(jadeBtn.textContent).toBe('Equipped');
 		expect(jadeBtn.disabled).toBe(true);
-		expect(jadeBtn.getAttribute('aria-pressed')).toBe('true');
+		// The done styling follows the equipped tile during client re-renders.
+		expect(jadeBtn.classList.contains('deco-btn-done')).toBe(true);
 
 		const sapphire = tile(root, 'card-back-sapphire');
 		expect(sapphire.dataset.equipped).toBe('false');
@@ -149,7 +153,7 @@ describe('applyEquipToDocument', () => {
 		const sapphireBtn = button(root, 'card-back-sapphire');
 		expect(sapphireBtn.textContent).toBe('Equip');
 		expect(sapphireBtn.disabled).toBe(false);
-		expect(sapphireBtn.getAttribute('aria-pressed')).toBe('false');
+		expect(sapphireBtn.classList.contains('deco-btn-done')).toBe(false);
 
 		// The other kind is untouched.
 		expect(tile(root, 'felt-jade').dataset.equipped).toBe('false');
@@ -243,6 +247,24 @@ describe('runShopAction', () => {
 		root
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
 			.forEach((el) => expect(el.textContent).toBe(formatChips(42, 'en')));
+	});
+
+	test('a failed purchase with a server balance syncs the stale mirrors and shows the error', async () => {
+		const root = renderShopScaffold();
+		const { env, errors } = makeEnv(async () => ({
+			ok: false,
+			data: { error: 'INSUFFICIENT_CHIPS', balance: 123 },
+		}));
+		await runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
+
+		// The 400/409 failure bodies carry the authoritative current balance;
+		// the client must refresh the stale pill mirrors with it.
+		root
+			.querySelectorAll<HTMLElement>('[data-chip-balance]')
+			.forEach((el) => expect(el.textContent).toBe(formatChips(123, 'en')));
+		expect(errors).toEqual([getShopErrorMessage('en', 'INSUFFICIENT_CHIPS')]);
+		expect(button(root, 'felt-jade').disabled).toBe(false);
+		expect(tile(root, 'felt-jade').dataset.owned).toBe('false');
 	});
 
 	test('a failed equip re-enables the button and shows the localized error', async () => {

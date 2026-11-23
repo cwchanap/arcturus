@@ -73,7 +73,10 @@ function renderTile(tile: HTMLElement, owned: boolean, equipped: boolean, locale
 				: t('buyItem', { item: itemLabel });
 		button.textContent = label;
 		button.disabled = equipped;
-		button.setAttribute('aria-pressed', String(equipped));
+		// Keep the SSR "done" styling in sync with the equipped tile. Buy/Equip
+		// are action buttons, not toggles: state is carried by the visible text,
+		// disabled state and this styling — never aria-pressed.
+		button.classList.toggle('deco-btn-done', equipped);
 		button.setAttribute('aria-label', announcement);
 		// Drives the page script's delegation: equipped tiles no-op.
 		button.dataset.shopAction = equipped ? 'equipped' : owned ? 'equip' : 'purchase';
@@ -188,6 +191,12 @@ export async function runShopAction(
 				applyPurchaseToDocument(docOf(button), purchasedId, data.balance, env.locale);
 				env.showError('');
 				return;
+			}
+			// Failure bodies for purchases carry the authoritative current
+			// balance (INSUFFICIENT_CHIPS/ALREADY_OWNED): refresh the stale pill
+			// mirrors so the tab never keeps showing an outdated amount.
+			if (typeof data?.balance === 'number') {
+				applyBalanceToDocument(docOf(button), data.balance, env.locale);
 			}
 			env.showError(getShopErrorMessage(env.locale, data?.error));
 		} else {

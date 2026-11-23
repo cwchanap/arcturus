@@ -177,7 +177,7 @@ describe('purchaseShopItem (Miniflare D1 integration)', () => {
 
 		// Outside the closed union (API routes reject these first); the service
 		// must not silently debit or insert for an item it cannot price.
-		expect(purchaseShopItem(db!, userId, 'card-back-gold' as ShopItemId)).rejects.toThrow();
+		await expect(purchaseShopItem(db!, userId, 'card-back-gold' as ShopItemId)).rejects.toThrow();
 		expect(await getChipBalance(db!, userId)).toBe(10000);
 		expect(await countRows(db!, userId)).toBe(0);
 	});
@@ -301,7 +301,7 @@ describe('equipShopItem (Miniflare D1 integration)', () => {
 		await buy(db!, userId, 'felt-crimson');
 		await equipShopItem(db!, userId, 'felt-crimson');
 
-		expect(equipShopItem(db!, userId, 'felt-gold' as ShopItemId)).rejects.toThrow();
+		await expect(equipShopItem(db!, userId, 'felt-gold' as ShopItemId)).rejects.toThrow();
 
 		const rows = await getOwnedRows(db!, userId);
 		expect(rows).toHaveLength(1);

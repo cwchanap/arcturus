@@ -72,7 +72,10 @@ function renderTile(tile: HTMLElement, owned: boolean, equipped: boolean, locale
 				? t('equipItem', { item: itemLabel })
 				: t('buyItem', { item: itemLabel });
 		button.textContent = label;
-		button.disabled = equipped;
+		// aria-disabled (not native disabled) keeps keyboard focus on the button
+		// the user just activated; native disabled drops it to the page body.
+		// The click delegation refuses the equipped no-op.
+		button.setAttribute('aria-disabled', String(equipped));
 		// Keep the SSR "done" styling in sync with the equipped tile. Buy/Equip
 		// are action buttons, not toggles: state is carried by the visible text,
 		// disabled state and this styling — never aria-pressed.
@@ -157,16 +160,18 @@ export function createShopMutationGuard(): ShopMutationGuard {
 /** Everything `runShopAction` needs from the page: transport, error display, locale. */
 export interface ShopActionEnv {
 	post(url: string, itemId: string): Promise<{ ok: boolean; data: ShopActionResponse | null }>;
-	showError(message: string): void;
+	/** Errors and success notices share the page's polite live region. */
+	showStatus(message: string): void;
 	guard: ShopMutationGuard;
 	locale: Locale;
 }
 
 /**
  * One shop mutation: refused while another is in flight (the shared guard),
- * with the clicked button disabled until the response is applied — success
- * re-renders the tiles, which own the button's final state — and re-enabled
- * on a failed or failed-to-send request.
+ * with the clicked button aria-disabled until the response is applied —
+ * success re-renders the tiles, which own the button's final state, and
+ * announces the outcome in the status region — and re-enabled on a failed or
+ * failed-to-send request.
  */
 export async function runShopAction(
 	env: ShopActionEnv,
@@ -174,8 +179,14 @@ export async function runShopAction(
 	action: 'purchase' | 'equip',
 	itemId: string,
 ): Promise<void> {
-	if (!env.guard.begin()) return;
-	button.disabled = true;
+	if (!env.guard.begin()) {
+		// Another tile's request is still in flight: say so instead of silently
+		// swallowing the click. The 10s fetch timeout frees the guard.
+		env.showStatus(shopTranslator(env.locale)('busy'));
+		return;
+	}
+	const t = shopTranslator(env.locale);
+	button.setAttribute('aria-disabled', 'true');
 	try {
 		if (action === 'purchase') {
 			const { ok, data } = await env.post('/api/shop/purchase', itemId);
@@ -189,7 +200,7 @@ export async function runShopAction(
 			) {
 				// One loop updates the shop pill and the shared header pill.
 				applyPurchaseToDocument(docOf(button), purchasedId, data.balance, env.locale);
-				env.showError('');
+				env.showStatus(t('purchasedItem', { item: getShopItemName(env.locale, purchasedId) }));
 				return;
 			}
 			// Failure bodies for purchases carry the authoritative current
@@ -205,7 +216,7 @@ export async function runShopAction(
 				const tile = docOf(button).querySelector<HTMLElement>(`[data-shop-item="${itemId}"]`);
 				if (tile) renderTile(tile, true, false, env.locale);
 			}
-			env.showError(getShopErrorMessage(env.locale, data?.error));
+			env.showStatus(getShopErrorMessage(env.locale, data?.error));
 		} else {
 			const { ok, data } = await env.post('/api/shop/equip', itemId);
 			const equippedId = data?.equippedItemId;
@@ -222,15 +233,15 @@ export async function runShopAction(
 					equippedId,
 					env.locale,
 				);
-				env.showError('');
+				env.showStatus(t('equippedItem', { item: getShopItemName(env.locale, equippedId) }));
 				return;
 			}
-			env.showError(getShopErrorMessage(env.locale, data?.error));
+			env.showStatus(getShopErrorMessage(env.locale, data?.error));
 		}
-		button.disabled = false;
+		button.removeAttribute('aria-disabled');
 	} catch {
-		env.showError(getShopNetworkErrorMessage(env.locale));
-		button.disabled = false;
+		env.showStatus(getShopNetworkErrorMessage(env.locale));
+		button.removeAttribute('aria-disabled');
 	} finally {
 		env.guard.end();
 	}

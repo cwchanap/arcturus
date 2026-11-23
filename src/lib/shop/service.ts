@@ -81,6 +81,12 @@ async function ownsItem(d1: D1Database, userId: string, itemId: ShopItemId): Pro
  * `RETURNING` row is the authoritative post-debit balance. On no insert, the
  * failure is classified without debiting; a missing user is an error, never
  * "insufficient".
+ *
+ * shortcut: eligibility reads the committed wallet, but an in-flight Poker
+ * hand's outcome is not reserved until settlement. Spending chips that a losing
+ * hand is about to lose makes that settlement underflow and fail, so the loss is
+ * never charged. Upgrade when wallet settlement reserves stakes at deal time (or
+ * clamps and records the loss).
  */
 export async function purchaseShopItem(
 	d1: D1Database,
@@ -105,11 +111,11 @@ export async function purchaseShopItem(
 
 	const debitStmt = d1
 		.prepare(
-			`UPDATE user SET chipBalance = chipBalance - ?
+			`UPDATE user SET chipBalance = chipBalance - ?, updatedAt = ?
 			 WHERE id = ? AND changes() = 1
 			 RETURNING chipBalance`,
 		)
-		.bind(item.priceChips, userId);
+		.bind(item.priceChips, nowSeconds, userId);
 
 	const results = await d1.batch([insertStmt, debitStmt]);
 	const insertChanges = results[0]?.meta?.changes ?? 0;
@@ -117,6 +123,14 @@ export async function purchaseShopItem(
 	if (insertChanges === 1) {
 		const debited = (results[1]?.results ?? []) as Array<{ chipBalance: number }>;
 		if (debited.length === 0 || typeof debited[0].chipBalance !== 'number') {
+			// The batch has committed, so this cannot be undone here. The insert is
+			// gated on changes() = 1 within the same transaction, which makes this
+			// a theoretical inconsistency; log the pair needed to reconcile it.
+			console.error('[SHOP_PURCHASE] Ownership inserted without a debit:', {
+				userId,
+				itemId,
+				priceChips: item.priceChips,
+			});
 			throw new Error(`purchase debit returned no balance for user ${userId}`);
 		}
 		return { status: 'purchased', itemId, chipBalance: debited[0].chipBalance };

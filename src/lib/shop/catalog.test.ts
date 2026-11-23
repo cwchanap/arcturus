@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
 	CATALOG,
@@ -9,6 +11,10 @@ import {
 	type ShopItem,
 	type ShopItemKind,
 } from './catalog';
+import { SUPPORTED_LOCALES } from '../i18n/locale';
+import { getShopItemName } from '../i18n/messages/shop';
+
+const projectRoot = join(import.meta.dir, '../../..');
 
 const EXPECTED_ITEM_IDS = [
 	'card-back-default',
@@ -83,5 +89,31 @@ describe('shop catalog', () => {
 		expect(isShopItemId('felt-DEFAULT')).toBe(false);
 		expect(isShopItemId('card-back-defaultx')).toBe(false);
 		expect(isShopItemId('card-back-default ')).toBe(false);
+	});
+
+	test('lookup rejects inherited object keys, not just unknown strings', () => {
+		// hasOwnProperty guard: prototype members must never resolve to items.
+		for (const key of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) {
+			expect(isShopItemId(key)).toBe(false);
+		}
+	});
+
+	test('the six paid image paths exist in public/images/shop', () => {
+		const paidItems = SHOP_ITEM_IDS.map((id) => CATALOG[id]).filter((item) => item.priceChips > 0);
+		expect(paidItems).toHaveLength(6);
+		for (const item of paidItems) {
+			expect(item.imagePath.startsWith('/images/shop/')).toBe(true);
+			expect(existsSync(join(projectRoot, 'public', item.imagePath))).toBe(true);
+		}
+	});
+
+	test('every locale name map covers the eight unique IDs with distinct names', () => {
+		for (const locale of SUPPORTED_LOCALES) {
+			const names = SHOP_ITEM_IDS.map((id) => getShopItemName(locale, id));
+			for (const name of names) {
+				expect(name.length).toBeGreaterThan(0);
+			}
+			expect(new Set(names).size).toBe(SHOP_ITEM_IDS.length);
+		}
 	});
 });

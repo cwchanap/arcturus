@@ -110,6 +110,31 @@ describe('POST /api/shop/purchase', () => {
 		expect(await json(response)).toEqual({ error: 'INVALID_ITEM' });
 	});
 
+	test('ignores client-supplied price fields: only the item ID reaches the service', async () => {
+		const calls: Array<{ d1: D1Database; userId: string; itemId: string }> = [];
+		const db = {} as D1Database;
+		const response = await createPurchaseHandler({
+			purchase: async (d1, userId, itemId) => {
+				calls.push({ d1, userId, itemId });
+				return {
+					status: 'purchased' as const,
+					itemId: 'felt-sapphire' as const,
+					chipBalance: 5000,
+				};
+			},
+		})(context({ db, body: { itemId: 'felt-sapphire', priceChips: 0, price: 1 } }));
+
+		// The debit amount is looked up in the catalog server-side; no request
+		// field other than itemId is forwarded.
+		expect(response.status).toBe(200);
+		expect(await json(response)).toEqual({
+			status: 'purchased',
+			itemId: 'felt-sapphire',
+			balance: 5000,
+		});
+		expect(calls).toEqual([{ d1: db, userId: 'user-1', itemId: 'felt-sapphire' }]);
+	});
+
 	test('passes session user, binding and validated item to the service and returns its result', async () => {
 		const calls: Array<{ d1: D1Database; userId: string; itemId: string }> = [];
 		const db = {} as D1Database;
@@ -215,6 +240,26 @@ describe('POST /api/shop/equip', () => {
 
 		expect(response.status).toBe(500);
 		expect(await json(response)).toEqual({ error: 'DATABASE_UNAVAILABLE' });
+	});
+
+	test('rejects malformed JSON before invoking the service', async () => {
+		let called = false;
+		const response = await createEquipHandler({
+			equip: async () => {
+				called = true;
+				return EQUIPPED;
+			},
+		})({
+			...context(),
+			request: new Request('https://arcturus.example/api/shop/equip', {
+				method: 'POST',
+				body: '{not-json',
+			}),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await json(response)).toEqual({ error: 'INVALID_JSON' });
+		expect(called).toBe(false);
 	});
 
 	test('enforces the { itemId } contract and rejects unknown items', async () => {

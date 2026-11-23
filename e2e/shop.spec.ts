@@ -338,6 +338,43 @@ test.describe('chip shop mobile balance', () => {
 	});
 });
 
+test.describe('poker phone header layout', () => {
+	test.use({ viewport: { width: 375, height: 812 } });
+
+	// Read-only layout regression (HPA-731 acceptance): both Poker modes must
+	// fit the 375px phone viewport — no horizontal overflow and no header
+	// action pushed outside it. The shared fixture user is enough; layout does
+	// not depend on wallet or cosmetic state.
+	for (const route of POKER_ROUTES) {
+		test(`${route} fits 375px with every header action visible and focusable`, async ({ page }) => {
+			await page.goto(route, { waitUntil: 'domcontentloaded' });
+
+			const overflow = await page.evaluate(() => {
+				const doc = document.documentElement;
+				const vw = window.innerWidth;
+				const outside = [
+					...document.querySelectorAll('.poker-toolbar a, .poker-toolbar button'),
+				].filter((el) => {
+					const r = el.getBoundingClientRect();
+					return r.width > 0 && (r.right > vw + 1 || r.left < -1);
+				}).length;
+				return { scrollWidth: doc.scrollWidth, clientWidth: doc.clientWidth, outside };
+			});
+			expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth);
+			expect(overflow.outside).toBe(0);
+
+			const controls = page.locator('.poker-toolbar a, .poker-toolbar button');
+			const count = await controls.count();
+			expect(count).toBeGreaterThan(0);
+			for (let i = 0; i < count; i++) {
+				await expect(controls.nth(i)).toBeVisible();
+			}
+			await controls.first().focus();
+			await expect(controls.first()).toBeFocused();
+		});
+	}
+});
+
 test.describe('shop API auth gate', () => {
 	// Cleared storage state: the shared fixture user must not authenticate
 	// these wallet-mutating requests.

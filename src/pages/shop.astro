@@ -27,7 +27,10 @@ Astro.response.headers.set('Cache-Control', 'private, no-store');
 const state = await Promise.all([
 	readWalletBalance(d1, session.user.id),
 	readShopState(d1, session.user.id),
-]).catch(() => null);
+]).catch((error: unknown) => {
+	console.error('[SHOP_PAGE] Failed to load shop state:', error);
+	return null;
+});
 if (!state) {
 	return new Response(t('serviceUnavailable'), { status: 503 });
 }

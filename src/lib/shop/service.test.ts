@@ -15,7 +15,7 @@ import { join } from 'path';
 import type { D1Database } from '@cloudflare/workers-types';
 
 import { purchaseShopItem, equipShopItem, readShopState } from './service';
-import { DEFAULT_SHOP_ITEM_ID_BY_KIND } from './catalog';
+import { DEFAULT_SHOP_ITEM_ID_BY_KIND, type ShopItemId } from './catalog';
 
 const MIGRATIONS_DIR = join(process.cwd(), 'drizzle');
 const MIGRATION_FILES = readdirSync(MIGRATIONS_DIR)
@@ -171,6 +171,17 @@ describe('purchaseShopItem (Miniflare D1 integration)', () => {
 		expect(await countRows(db!, userId)).toBe(0);
 	});
 
+	test('an unknown catalog ID fails loudly and never mutates the wallet', async () => {
+		const userId = 'buy-unknown';
+		await insertUser(db!, userId, 10000);
+
+		// Outside the closed union (API routes reject these first); the service
+		// must not silently debit or insert for an item it cannot price.
+		expect(purchaseShopItem(db!, userId, 'card-back-gold' as ShopItemId)).rejects.toThrow();
+		expect(await getChipBalance(db!, userId)).toBe(10000);
+		expect(await countRows(db!, userId)).toBe(0);
+	});
+
 	test('two concurrent same-item purchases insert one row and debit once', async () => {
 		const userId = 'buy-race-same';
 		await insertUser(db!, userId, 10000);
@@ -282,6 +293,20 @@ describe('equipShopItem (Miniflare D1 integration)', () => {
 		expect(equippedByItem['card-back-sapphire']).toBe(0);
 		// …while the other kind's selection is untouched.
 		expect(equippedByItem['felt-sapphire']).toBe(1);
+	});
+
+	test('equipping an unknown catalog ID fails loudly and leaves rows untouched', async () => {
+		const userId = 'eq-unknown';
+		await insertUser(db!, userId, 100000);
+		await buy(db!, userId, 'felt-crimson');
+		await equipShopItem(db!, userId, 'felt-crimson');
+
+		expect(equipShopItem(db!, userId, 'felt-gold' as ShopItemId)).rejects.toThrow();
+
+		const rows = await getOwnedRows(db!, userId);
+		expect(rows).toHaveLength(1);
+		expect(rows[0].itemId).toBe('felt-crimson');
+		expect(rows[0].equipped).toBe(1);
 	});
 
 	test('equipping an unowned paid item fails NOT_OWNED and cannot clear the previous selection', async () => {

@@ -1,16 +1,29 @@
 import { expect, test } from '@playwright/test';
-import type { Browser, BrowserContext } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { createIsolatedPage } from './isolated-page';
 
 /**
  * Task 4 (HPA-731): executed SSR coverage for the two Poker routes sharing the
  * template — cache header, CSS fallback for defaults/guests, and emission of
- * equipped cosmetics as complete url() values. The full purchase/equip UI
- * journey (balances, computed styles, restore, inventory isolation) extends
- * this file in the planned regression task.
+ * equipped cosmetics as complete url() values.
+ * Task 5: the full isolated chip-shop journey — UI purchase/equip/default
+ * restore, both balance mirrors, cache headers on /shop and Poker, computed
+ * cash/Sit & Go cosmetics, inventory isolation, and the unauthenticated gate.
  */
 
 const POKER_ROUTES = ['/games/poker', '/games/poker?mode=sng'] as const;
+
+const FRESH_BALANCE = '10,000 chips';
+const AFTER_CARD_BACK_BALANCE = '5,000 chips';
+const AFTER_BOTH_BALANCE = '0 chips';
+const PAID_ITEM_IDS = [
+	'card-back-sapphire',
+	'card-back-crimson',
+	'card-back-jade',
+	'felt-sapphire',
+	'felt-crimson',
+	'felt-jade',
+] as const;
 
 /** The shared styled root's opening tag, sliced out of the SSR HTML. */
 function pokerRootTag(html: string): string {
@@ -18,6 +31,49 @@ function pokerRootTag(html: string): string {
 	const tagStart = html.lastIndexOf('<div', rootIndex);
 	const tagEnd = html.indexOf('>', rootIndex);
 	return html.slice(tagStart, tagEnd + 1);
+}
+
+/** Shop-page pill: the only balance mirror visible on mobile viewports. */
+function shopBalance(page: Page) {
+	return page.getByTestId('shop-balance');
+}
+
+/** Shared AppLayout header pill: desktop-only, first [data-chip-balance] in the DOM. */
+function headerBalance(page: Page) {
+	return page.locator('[data-chip-balance]').first();
+}
+
+function openShop(browser: Browser, baseURL: string | undefined, emailPrefix: string) {
+	return createIsolatedPage(browser, baseURL, {
+		emailPrefix,
+		namePrefix: 'Shop E2E',
+		navigate: async (page) => {
+			await page.goto('/shop', { waitUntil: 'domcontentloaded' });
+		},
+	});
+}
+
+/** Buy from a tile and wait for the applied response: tile owned, both balance mirrors updated. */
+async function buyFromShop(page: Page, itemId: string, expectedBalance: string): Promise<void> {
+	await page.getByTestId(`shop-action-${itemId}`).click();
+	await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute('data-owned', 'true');
+	await expect(shopBalance(page)).toHaveText(expectedBalance);
+	await expect(headerBalance(page)).toHaveText(expectedBalance);
+}
+
+/** Equip from a tile (the UI posts the { itemId } contract) and wait for the flip. */
+async function equipFromShop(page: Page, itemId: string): Promise<void> {
+	await page.getByTestId(`shop-action-${itemId}`).click();
+	await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute('data-equipped', 'true');
+}
+
+/** Resolved background-image of the first element matching a selector. */
+function computedBackgroundImage(page: Page, selector: string): Promise<string> {
+	return page.evaluate((sel) => {
+		const el = document.querySelector(sel);
+		if (!el) throw new Error(`${sel} not found`);
+		return getComputedStyle(el).backgroundImage;
+	}, selector);
 }
 
 async function buyAndEquipSapphireSet(context: BrowserContext, baseURL: string): Promise<void> {
@@ -30,7 +86,6 @@ async function buyAndEquipSapphireSet(context: BrowserContext, baseURL: string):
 		expect(equip.status()).toBe(200);
 	}
 }
-
 test.describe('Poker SSR cosmetics (guest)', () => {
 	// Empty storage state so the shared fixture user cannot leak into what
 	// must be an unauthenticated request.
@@ -95,4 +150,216 @@ test.describe('Poker SSR cosmetics (authenticated)', () => {
 			await context.close();
 		});
 	}
+});
+
+test.describe('chip shop journey (one isolated 10,000-chip user)', () => {
+	test('buy, reject, equip, refresh, cash gate, SNG hand, restore defaults', async ({
+		browser,
+		baseURL,
+	}) => {
+		test.setTimeout(90_000);
+		const { context, page } = await openShop(browser, baseURL, 'shop-journey');
+		try {
+			// Fresh wallet: both mirrors agree on 10,000 chips (desktop viewport).
+			await expect(shopBalance(page)).toHaveText(FRESH_BALANCE);
+			await expect(headerBalance(page)).toHaveText(FRESH_BALANCE);
+			await expect(headerBalance(page)).toBeVisible();
+			await expect(shopBalance(page)).toBeVisible();
+
+			// Buy the sapphire card back through the tile UI: exactly 5,000 left.
+			await buyFromShop(page, 'card-back-sapphire', AFTER_CARD_BACK_BALANCE);
+
+			// Repeat and unaffordable purchases are rejected without debiting.
+			const repeat = await context.request.post(`${baseURL}/api/shop/purchase`, {
+				data: { itemId: 'card-back-sapphire' },
+			});
+			expect(repeat.status()).toBe(409);
+			expect(await repeat.json()).toEqual({ error: 'ALREADY_OWNED', balance: 5000 });
+			const jade = await context.request.post(`${baseURL}/api/shop/purchase`, {
+				data: { itemId: 'card-back-jade' },
+			});
+			expect(jade.status()).toBe(400);
+			expect(await jade.json()).toEqual({ error: 'INSUFFICIENT_CHIPS', balance: 5000 });
+			await expect(shopBalance(page)).toHaveText(AFTER_CARD_BACK_BALANCE);
+			await expect(page.getByTestId('shop-item-card-back-jade')).toHaveAttribute(
+				'data-owned',
+				'false',
+			);
+
+			// Buy the sapphire felt: both 5,000-chip sapphires exactly exhaust the wallet.
+			await buyFromShop(page, 'felt-sapphire', AFTER_BOTH_BALANCE);
+
+			// Equip both kinds through the { itemId } contract the tiles post.
+			await equipFromShop(page, 'card-back-sapphire');
+			await equipFromShop(page, 'felt-sapphire');
+
+			// Selection and balance survive a full page refresh (SSR re-read).
+			await page.reload({ waitUntil: 'domcontentloaded' });
+			await expect(page.getByTestId('shop-item-card-back-sapphire')).toHaveAttribute(
+				'data-equipped',
+				'true',
+			);
+			await expect(page.getByTestId('shop-item-felt-sapphire')).toHaveAttribute(
+				'data-equipped',
+				'true',
+			);
+			await expect(shopBalance(page)).toHaveText(AFTER_BOTH_BALANCE);
+			await expect(headerBalance(page)).toHaveText(AFTER_BOTH_BALANCE);
+
+			// Authenticated /shop and Poker responses stay uncacheable.
+			for (const route of ['/shop', '/games/poker']) {
+				const response = await context.request.get(`${baseURL}${route}`);
+				expect(response.status()).toBe(200);
+				expect(response.headers()['cache-control']).toBe('private, no-store');
+			}
+
+			// Cash Poker at 0 chips cannot deal, but the equipped cosmetics render:
+			// felt on the room frame and card back on the SSR-present hidden deco.
+			await page.goto('/games/poker', { waitUntil: 'domcontentloaded' });
+			await expect(page.locator('#poker-root')).toHaveAttribute('data-poker-mode', 'cash');
+			await expect(page.locator('#poker-root')).toHaveAttribute(
+				'style',
+				/--poker-felt-image:url\('\/images\/shop\/felt-sapphire\.webp'\);--poker-card-back-image:url\('\/images\/shop\/card-back-sapphire\.webp'\)/,
+			);
+			expect(await computedBackgroundImage(page, '.poker-frame')).toContain(
+				'/images/shop/felt-sapphire.webp',
+			);
+			expect(await computedBackgroundImage(page, '.card-back-deco')).toContain(
+				'/images/shop/card-back-sapphire.webp',
+			);
+			await page.locator('#btn-deal').click();
+			// The status line carries a [Preflop] phase prefix.
+			await expect(page.locator('#game-status')).toContainText('Game Over - You ran out of chips!');
+			await expect(page.locator('#player-cards [data-slot-state="card"]')).toHaveCount(0);
+
+			// The independent tournament stack still permits a hand, dealt onto
+			// the equipped felt with visible equipped card backs on opponents.
+			await page.goto('/games/poker?mode=sng', { waitUntil: 'domcontentloaded' });
+			await expect(page.locator('#poker-root')).toHaveAttribute('data-poker-mode', 'sng');
+			await page.locator('#btn-deal').click();
+			await expect(page.locator('#tournament-hands')).toHaveText('1');
+			await expect(page.locator('#player-cards [data-slot-state="card"]')).toHaveCount(2);
+			const visibleBack = page.locator('.card-back-deco:visible').first();
+			await expect(visibleBack).toBeVisible();
+			expect(await visibleBack.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
+				'/images/shop/card-back-sapphire.webp',
+			);
+			expect(await computedBackgroundImage(page, '.poker-frame')).toContain(
+				'/images/shop/felt-sapphire.webp',
+			);
+
+			// Restore both defaults through the shop UI; ownership survives.
+			await page.goto('/shop', { waitUntil: 'domcontentloaded' });
+			await equipFromShop(page, 'card-back-default');
+			await equipFromShop(page, 'felt-default');
+			await expect(page.getByTestId('shop-item-card-back-sapphire')).toHaveAttribute(
+				'data-equipped',
+				'false',
+			);
+			await expect(page.getByTestId('shop-item-felt-sapphire')).toHaveAttribute(
+				'data-equipped',
+				'false',
+			);
+			await expect(page.getByTestId('shop-item-card-back-sapphire')).toHaveAttribute(
+				'data-owned',
+				'true',
+			);
+			await expect(page.getByTestId('shop-item-felt-sapphire')).toHaveAttribute(
+				'data-owned',
+				'true',
+			);
+
+			// After reload the SSR omits the variables: computed styles fall back.
+			await page.goto('/games/poker', { waitUntil: 'domcontentloaded' });
+			await expect(page.locator('#poker-root')).not.toHaveAttribute(
+				'style',
+				/--poker-(felt|card-back)-image/,
+			);
+			expect(await computedBackgroundImage(page, '.poker-frame')).toContain(
+				'/images/poker/felt.webp',
+			);
+			expect(await computedBackgroundImage(page, '.card-back-deco')).toContain(
+				'/images/poker/card-back.webp',
+			);
+		} finally {
+			await context.close();
+		}
+	});
+});
+
+test.describe('chip shop mobile balance', () => {
+	test.use({ viewport: { width: 375, height: 667 } });
+
+	test('the shop pill stays the visible mobile mirror after a purchase', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await openShop(browser, baseURL, 'shop-mobile');
+		try {
+			// On mobile the desktop header pill is hidden; the shop pill is the
+			// visible balance and both still carry the same value.
+			await expect(headerBalance(page)).toBeHidden();
+			await expect(shopBalance(page)).toBeVisible();
+			await expect(shopBalance(page)).toHaveText(FRESH_BALANCE);
+
+			await buyFromShop(page, 'card-back-sapphire', AFTER_CARD_BACK_BALANCE);
+			await expect(shopBalance(page)).toBeVisible();
+		} finally {
+			await context.close();
+		}
+	});
+});
+
+test.describe('chip shop inventory isolation', () => {
+	test('a second isolated user sees no inventory or selection leakage', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await openShop(browser, baseURL, 'shop-second-user');
+		try {
+			await expect(shopBalance(page)).toHaveText(FRESH_BALANCE);
+			// No paid item is owned or equipped for a fresh user...
+			for (const itemId of PAID_ITEM_IDS) {
+				await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
+					'data-owned',
+					'false',
+				);
+				await expect(page.getByTestId(`shop-item-${itemId}`)).toHaveAttribute(
+					'data-equipped',
+					'false',
+				);
+			}
+			// ...and the defaults are the equipped selections.
+			await expect(page.getByTestId('shop-item-card-back-default')).toHaveAttribute(
+				'data-equipped',
+				'true',
+			);
+			await expect(page.getByTestId('shop-item-felt-default')).toHaveAttribute(
+				'data-equipped',
+				'true',
+			);
+		} finally {
+			await context.close();
+		}
+	});
+});
+
+test.describe('shop API auth gate', () => {
+	// Cleared storage state: the shared fixture user must not authenticate
+	// these wallet-mutating requests.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test('unauthenticated purchase and equip attempts are rejected', async ({ request, baseURL }) => {
+		const purchase = await request.post(`${baseURL}/api/shop/purchase`, {
+			data: { itemId: 'card-back-sapphire' },
+		});
+		expect(purchase.status()).toBe(401);
+		expect(await purchase.json()).toEqual({ error: 'UNAUTHORIZED' });
+
+		const equip = await request.post(`${baseURL}/api/shop/equip`, {
+			data: { itemId: 'card-back-sapphire' },
+		});
+		expect(equip.status()).toBe(401);
+		expect(await equip.json()).toEqual({ error: 'UNAUTHORIZED' });
+	});
 });

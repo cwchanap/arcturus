@@ -124,17 +124,20 @@ test.describe('Poker SSR cosmetics (authenticated)', () => {
 				emailPrefix: 'shop-defaults',
 				namePrefix: 'Shop Defaults',
 			});
-			const response = await context.request.get(`${baseURL}${route}`);
-			expect(response.status()).toBe(200);
-			expect(response.headers()['cache-control']).toBe('private, no-store');
+			try {
+				const response = await context.request.get(`${baseURL}${route}`);
+				expect(response.status()).toBe(200);
+				expect(response.headers()['cache-control']).toBe('private, no-store');
 
-			const rootTag = pokerRootTag(await response.text());
-			expect(rootTag).toContain('id="poker-root"');
-			// No rows exist yet: both declarations must be omitted so the
-			// stylesheet's default artwork stays active.
-			expect(rootTag).not.toContain('--poker-felt-image');
-			expect(rootTag).not.toContain('--poker-card-back-image');
-			await context.close();
+				const rootTag = pokerRootTag(await response.text());
+				expect(rootTag).toContain('id="poker-root"');
+				// No rows exist yet: both declarations must be omitted so the
+				// stylesheet's default artwork stays active.
+				expect(rootTag).not.toContain('--poker-felt-image');
+				expect(rootTag).not.toContain('--poker-card-back-image');
+			} finally {
+				await context.close();
+			}
 		});
 
 		test(`authenticated ${route} emits equipped cosmetics as complete url() values on #poker-root`, async ({
@@ -145,15 +148,18 @@ test.describe('Poker SSR cosmetics (authenticated)', () => {
 				emailPrefix: 'shop-equipped',
 				namePrefix: 'Shop Equipped',
 			});
-			await buyAndEquipSapphireSet(context, baseURL!);
+			try {
+				await buyAndEquipSapphireSet(context, baseURL!);
 
-			await page.goto(`${baseURL}${route}`, { waitUntil: 'domcontentloaded' });
-			// Both kinds join in felt→card-back order as exact CSS url tokens.
-			await expect(page.locator('#poker-root')).toHaveAttribute(
-				'style',
-				/--poker-felt-image:url\('\/images\/shop\/felt-sapphire\.webp'\);--poker-card-back-image:url\('\/images\/shop\/card-back-sapphire\.webp'\)/,
-			);
-			await context.close();
+				await page.goto(`${baseURL}${route}`, { waitUntil: 'domcontentloaded' });
+				// Both kinds join in felt→card-back order as exact CSS url tokens.
+				await expect(page.locator('#poker-root')).toHaveAttribute(
+					'style',
+					/--poker-felt-image:url\('\/images\/shop\/felt-sapphire\.webp'\);--poker-card-back-image:url\('\/images\/shop\/card-back-sapphire\.webp'\)/,
+				);
+			} finally {
+				await context.close();
+			}
 		});
 	}
 });
@@ -329,7 +335,7 @@ test.describe('chip shop mobile balance', () => {
 		// The isolated context ignores test.use viewport: pass the mobile size.
 		const { context, page } = await openShop(browser, baseURL, 'shop-mobile', {
 			width: 375,
-			height: 667,
+			height: 812,
 		});
 		try {
 			// On mobile the desktop header pill is hidden; the shop pill is the

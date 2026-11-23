@@ -74,6 +74,8 @@ export const SHOP_MESSAGES = defineMessages({
 		buyItem: 'Buy {item}',
 		equipItem: 'Equip {item}',
 		equippedItem: '{item} equipped',
+		purchasedItem: '{item} purchased',
+		busy: 'Please wait…',
 		backToPoker: 'Back to Poker',
 		serviceUnavailable: 'Service temporarily unavailable',
 	},
@@ -90,6 +92,8 @@ export const SHOP_MESSAGES = defineMessages({
 		buyItem: '購買{item}',
 		equipItem: '使用{item}',
 		equippedItem: '{item}使用中',
+		purchasedItem: '已購買{item}',
+		busy: '請稍候…',
 		backToPoker: '返回撲克',
 		serviceUnavailable: '服務暫時無法使用',
 	},
@@ -106,6 +110,8 @@ export const SHOP_MESSAGES = defineMessages({
 		buyItem: '购买{item}',
 		equipItem: '使用{item}',
 		equippedItem: '{item}使用中',
+		purchasedItem: '已购买{item}',
+		busy: '请稍候…',
 		backToPoker: '返回扑克',
 		serviceUnavailable: '服务暂时无法使用',
 	},
@@ -122,6 +128,8 @@ export const SHOP_MESSAGES = defineMessages({
 		buyItem: '{item}を購入',
 		equipItem: '{item}を使用',
 		equippedItem: '{item}使用中',
+		purchasedItem: '{item}を購入しました',
+		busy: 'しばらくお待ちください…',
 		backToPoker: 'ポーカーに戻る',
 		serviceUnavailable: 'サービスは一時的に利用できません',
 	},
@@ -193,7 +201,7 @@ type ShopErrorKey = MessageKey<typeof SHOP_ERROR_MESSAGES>;
 export function getShopErrorMessage(locale: Locale, code: string | null | undefined): string {
 	const t = createTranslator(SHOP_ERROR_MESSAGES, locale);
 	const key: ShopErrorKey =
-		code && code in SHOP_ERROR_MESSAGES.en ? (code as ShopErrorKey) : 'unknown';
+		code && Object.hasOwn(SHOP_ERROR_MESSAGES.en, code) ? (code as ShopErrorKey) : 'unknown';
 	return t(key);
 }
 

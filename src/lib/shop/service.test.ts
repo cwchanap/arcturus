@@ -114,6 +114,13 @@ describe('purchaseShopItem (Miniflare D1 integration)', () => {
 		// purchasedAt is unix seconds (not ms).
 		expect(rows[0].purchasedAt).toBeGreaterThan(1_000_000_000);
 		expect(rows[0].purchasedAt).toBeLessThan(10_000_000_000);
+
+		// The debit stamps user.updatedAt like the other wallet mutations.
+		const userRow = await db!
+			.prepare('SELECT updatedAt FROM user WHERE id = ?')
+			.bind(userId)
+			.first<{ updatedAt: number }>();
+		expect(userRow?.updatedAt).toBeGreaterThan(1_000_000_000);
 	});
 
 	test('exact boundary balance succeeds (price == balance)', async () => {

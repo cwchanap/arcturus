@@ -107,7 +107,7 @@ describe('applyPurchaseToDocument', () => {
 		expect(sapphire.querySelector<HTMLElement>('[data-shop-price]')?.textContent).toBe('Owned');
 		const btn = button(root, 'card-back-sapphire');
 		expect(btn.dataset.shopAction).toBe('equip');
-		expect(btn.disabled).toBe(false);
+		expect(btn.getAttribute('aria-disabled')).toBe('false');
 		// Buy/Equip are action buttons, not toggles: no aria-pressed, no done styling.
 		expect(btn.hasAttribute('aria-pressed')).toBe(false);
 		expect(btn.classList.contains('deco-btn-done')).toBe(false);
@@ -143,7 +143,9 @@ describe('applyEquipToDocument', () => {
 		expect(jade.querySelector<HTMLElement>('[data-shop-equipped-label]')?.hidden).toBe(false);
 		const jadeBtn = button(root, 'card-back-jade');
 		expect(jadeBtn.textContent).toBe('Equipped');
-		expect(jadeBtn.disabled).toBe(true);
+		// aria-disabled, not native disabled: the just-activated button keeps focus.
+		expect(jadeBtn.getAttribute('aria-disabled')).toBe('true');
+		expect(jadeBtn.disabled).toBe(false);
 		// The done styling follows the equipped tile during client re-renders.
 		expect(jadeBtn.classList.contains('deco-btn-done')).toBe(true);
 
@@ -152,7 +154,7 @@ describe('applyEquipToDocument', () => {
 		expect(sapphire.querySelector<HTMLElement>('[data-shop-equipped-label]')?.hidden).toBe(true);
 		const sapphireBtn = button(root, 'card-back-sapphire');
 		expect(sapphireBtn.textContent).toBe('Equip');
-		expect(sapphireBtn.disabled).toBe(false);
+		expect(sapphireBtn.getAttribute('aria-disabled')).toBe('false');
 		expect(sapphireBtn.classList.contains('deco-btn-done')).toBe(false);
 
 		// The other kind is untouched.
@@ -178,7 +180,7 @@ describe('applyEquipToDocument', () => {
 		const equipped = tile(root, 'card-back-sapphire');
 		expect(equipped.dataset.owned).toBe('true');
 		expect(equipped.dataset.equipped).toBe('true');
-		expect(button(root, 'card-back-sapphire').disabled).toBe(true);
+		expect(button(root, 'card-back-sapphire').getAttribute('aria-disabled')).toBe('true');
 
 		for (const id of ['card-back-crimson', 'card-back-jade'] as const) {
 			const unowned = tile(root, id);
@@ -189,7 +191,7 @@ describe('applyEquipToDocument', () => {
 			const btn = button(root, id);
 			expect(btn.textContent).toBe('Buy');
 			expect(btn.dataset.shopAction).toBe('purchase');
-			expect(btn.disabled).toBe(false);
+			expect(btn.getAttribute('aria-disabled')).toBe('false');
 		}
 
 		// The kind's default stays owned and equipable, just not equipped.
@@ -222,22 +224,22 @@ describe('runShopAction', () => {
 	function makeEnv(
 		post: ShopActionEnv['post'],
 		locale: ShopActionEnv['locale'] = 'en',
-	): { env: ShopActionEnv; errors: string[] } {
-		const errors: string[] = [];
+	): { env: ShopActionEnv; messages: string[] } {
+		const messages: string[] = [];
 		return {
-			errors,
+			messages,
 			env: {
 				post,
-				showError: (message) => errors.push(message),
+				showStatus: (message) => messages.push(message),
 				guard: createShopMutationGuard(),
 				locale,
 			},
 		};
 	}
 
-	test('a successful purchase syncs balances and flips the tile owned', async () => {
+	test('a successful purchase syncs balances, flips the tile owned, and announces it', async () => {
 		const root = renderShopScaffold();
-		const { env } = makeEnv(async () => ({
+		const { env, messages } = makeEnv(async () => ({
 			ok: true,
 			data: { status: 'purchased', itemId: 'felt-jade', balance: 42 },
 		}));
@@ -247,11 +249,38 @@ describe('runShopAction', () => {
 		root
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
 			.forEach((el) => expect(el.textContent).toBe(formatChips(42, 'en')));
+		// Success writes the result into the live region instead of clearing it.
+		expect(messages).toEqual([
+			shopTranslator('en')('purchasedItem', {
+				item: getShopItemName('en', 'felt-jade'),
+			}),
+		]);
+	});
+
+	test('a successful equip announces it and leaves the button focusable', async () => {
+		const root = renderShopScaffold();
+		tile(root, 'card-back-sapphire').dataset.owned = 'true';
+		const { env, messages } = makeEnv(async () => ({
+			ok: true,
+			data: { kind: 'card-back', equippedItemId: 'card-back-sapphire' },
+		}));
+		const btn = button(root, 'card-back-sapphire');
+		await runShopAction(env, btn, 'equip', 'card-back-sapphire');
+
+		// aria-disabled keeps focus on the button the user activated; native
+		// disabled would drop it to the page body.
+		expect(btn.getAttribute('aria-disabled')).toBe('true');
+		expect(btn.disabled).toBe(false);
+		expect(messages).toEqual([
+			shopTranslator('en')('equippedItem', {
+				item: getShopItemName('en', 'card-back-sapphire'),
+			}),
+		]);
 	});
 
 	test('a failed purchase with a server balance syncs the stale mirrors and shows the error', async () => {
 		const root = renderShopScaffold();
-		const { env, errors } = makeEnv(async () => ({
+		const { env, messages } = makeEnv(async () => ({
 			ok: false,
 			data: { error: 'INSUFFICIENT_CHIPS', balance: 123 },
 		}));
@@ -262,14 +291,14 @@ describe('runShopAction', () => {
 		root
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
 			.forEach((el) => expect(el.textContent).toBe(formatChips(123, 'en')));
-		expect(errors).toEqual([getShopErrorMessage('en', 'INSUFFICIENT_CHIPS')]);
-		expect(button(root, 'felt-jade').disabled).toBe(false);
+		expect(messages).toEqual([getShopErrorMessage('en', 'INSUFFICIENT_CHIPS')]);
+		expect(button(root, 'felt-jade').getAttribute('aria-disabled')).toBeNull();
 		expect(tile(root, 'felt-jade').dataset.owned).toBe('false');
 	});
 
 	test('a purchase retried as ALREADY_OWNED flips the tile to owned/Equip and still shows the error', async () => {
 		const root = renderShopScaffold();
-		const { env, errors } = makeEnv(async () => ({
+		const { env, messages } = makeEnv(async () => ({
 			ok: false,
 			data: { error: 'ALREADY_OWNED', balance: 123 },
 		}));
@@ -280,36 +309,36 @@ describe('runShopAction', () => {
 		expect(tile(root, 'felt-jade').dataset.owned).toBe('true');
 		const btn = button(root, 'felt-jade');
 		expect(btn.dataset.shopAction).toBe('equip');
-		expect(btn.disabled).toBe(false);
+		expect(btn.getAttribute('aria-disabled')).toBeNull();
 		root
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
 			.forEach((el) => expect(el.textContent).toBe(formatChips(123, 'en')));
-		expect(errors).toEqual([getShopErrorMessage('en', 'ALREADY_OWNED')]);
+		expect(messages).toEqual([getShopErrorMessage('en', 'ALREADY_OWNED')]);
 	});
 
 	test('a failed equip re-enables the button and shows the localized error', async () => {
 		const root = renderShopScaffold();
-		const { env, errors } = makeEnv(
+		const { env, messages } = makeEnv(
 			async () => ({ ok: false, data: { error: 'NOT_OWNED' } }),
 			'ja',
 		);
 		await runShopAction(env, button(root, 'felt-jade'), 'equip', 'felt-jade');
 
-		expect(errors).toEqual([getShopErrorMessage('ja', 'NOT_OWNED')]);
+		expect(messages).toEqual([getShopErrorMessage('ja', 'NOT_OWNED')]);
 		const btn = button(root, 'felt-jade');
-		expect(btn.disabled).toBe(false);
+		expect(btn.getAttribute('aria-disabled')).toBeNull();
 		expect(btn.dataset.shopAction).toBe('purchase');
 	});
 
 	test('a network failure re-enables the button and shows the network copy', async () => {
 		const root = renderShopScaffold();
-		const { env, errors } = makeEnv(async () => {
+		const { env, messages } = makeEnv(async () => {
 			throw new Error('offline');
 		});
 		await runShopAction(env, button(root, 'card-back-jade'), 'equip', 'card-back-jade');
 
-		expect(errors).toEqual([getShopNetworkErrorMessage('en')]);
-		expect(button(root, 'card-back-jade').disabled).toBe(false);
+		expect(messages).toEqual([getShopNetworkErrorMessage('en')]);
+		expect(button(root, 'card-back-jade').getAttribute('aria-disabled')).toBeNull();
 	});
 
 	test('a second action while one is pending is refused before fetch, so a delayed response cannot apply out of order', async () => {
@@ -319,7 +348,7 @@ describe('runShopAction', () => {
 		const firstGate = new Promise<void>((resolve) => {
 			releaseFirst = resolve;
 		});
-		const { env, errors } = makeEnv(async (url, itemId) => {
+		const { env, messages } = makeEnv(async (url, itemId) => {
 			calls.push(`${url}:${itemId}`);
 			if (calls.length === 1) {
 				await firstGate; // the first response is delayed
@@ -338,8 +367,8 @@ describe('runShopAction', () => {
 		const second = runShopAction(env, button(root, 'felt-jade'), 'purchase', 'felt-jade');
 
 		expect(calls).toEqual(['/api/shop/purchase:card-back-crimson']);
-		// The refused click never disabled its button (no pending state to clobber).
-		expect(button(root, 'felt-jade').disabled).toBe(false);
+		// The refused click never touched its button (no pending state to clobber).
+		expect(button(root, 'felt-jade').hasAttribute('aria-disabled')).toBe(false);
 		expect(button(root, 'felt-jade').dataset.shopAction).toBe('purchase');
 
 		releaseFirst?.();
@@ -352,10 +381,16 @@ describe('runShopAction', () => {
 			.querySelectorAll<HTMLElement>('[data-chip-balance]')
 			.forEach((el) => expect(el.textContent).toBe(formatChips(500, 'en')));
 		expect(tile(root, 'card-back-crimson').dataset.owned).toBe('true');
-		// The refused action left its tile untouched and only the success cleared
-		// the status region (one empty message).
+		// The refused action left its tile untouched and only the success wrote
+		// the status region.
 		expect(tile(root, 'felt-jade').dataset.owned).toBe('false');
-		expect(errors).toEqual(['']);
+		// The refused click is announced, then the in-flight success replaces it.
+		expect(messages).toEqual([
+			shopTranslator('en')('busy'),
+			shopTranslator('en')('purchasedItem', {
+				item: getShopItemName('en', 'card-back-crimson'),
+			}),
+		]);
 	});
 
 	test('a new action is accepted again after the pending one finishes', async () => {
@@ -383,5 +418,7 @@ describe('shop message dictionary', () => {
 		expect(getShopErrorMessage('en', 'INSUFFICIENT_CHIPS')).toBeTruthy();
 		expect(getShopErrorMessage('ja', 'NOT_OWNED')).toBeTruthy();
 		expect(getShopErrorMessage('en', 'SOMETHING_ELSE')).toBe(getShopErrorMessage('en', undefined));
+		// Inherited Object.prototype keys are not message keys.
+		expect(getShopErrorMessage('en', 'constructor')).toBe(getShopErrorMessage('en', undefined));
 	});
 });

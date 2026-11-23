@@ -27,7 +27,8 @@ if (user) {
 			cosmeticStyle = pokerCosmeticStyleAttr(
 				getPokerCosmeticVars((await readShopState(d1, user.id)).equippedByKind),
 			);
-		} catch {
+		} catch (error) {
+			console.error('[POKER_PAGE] Failed to load equipped cosmetics:', error);
 			// Cosmetic read failure keeps the default artwork.
 		}
 	}

@@ -137,7 +137,7 @@ const ownedIds = new Set(shopState.ownedItemIds);
 										data-shop-action={equipped ? 'equipped' : owned ? 'equip' : 'purchase'}
 										data-item-id={item.id}
 										aria-label={announcement}
-										disabled={equipped}
+										aria-disabled={equipped}
 										data-testid={`shop-action-${item.id}`}
 									>
 										{equipped ? t('equipped') : owned ? t('equip') : t('buy')}
@@ -171,6 +171,8 @@ const ownedIds = new Set(shopState.ownedItemIds);
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({ itemId }),
+			// A hung request must not hold the single-action guard forever.
+			signal: AbortSignal.timeout(10_000),
 		});
 		let data: ShopActionResponse | null = null;
 		try {
@@ -186,7 +188,7 @@ const ownedIds = new Set(shopState.ownedItemIds);
 	// selection) and a tile re-render can never re-enable another pending button.
 	const shopActionEnv = {
 		post: postJson,
-		showError: (message: string) => {
+		showStatus: (message: string) => {
 			if (statusRegion) statusRegion.textContent = message;
 		},
 		guard: createShopMutationGuard(),
@@ -197,12 +199,12 @@ const ownedIds = new Set(shopState.ownedItemIds);
 		const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
 			'[data-shop-action]',
 		);
-		if (!button || button.disabled) return;
+		if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return;
 		const itemId = button.dataset.itemId;
 		const action = button.dataset.shopAction;
 		if (!itemId || (action !== 'purchase' && action !== 'equip')) return;
 		// Double-click protection lives with the guard: the pending button stays
-		// disabled until the response is applied or the action fails.
+		// aria-disabled until the response is applied or the action fails.
 		void runShopAction(shopActionEnv, button, action, itemId);
 	});
 </script>

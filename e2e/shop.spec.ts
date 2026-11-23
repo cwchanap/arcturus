@@ -327,6 +327,56 @@ test.describe('chip shop journey (isolated 10,000-chip user, cross-user isolatio
 	});
 });
 
+test.describe('chip shop lost purchase response', () => {
+	test('a retry after a dropped purchase response reconciles owned state and balance with one debit', async ({
+		browser,
+		baseURL,
+	}) => {
+		const { context, page } = await openShop(browser, baseURL, 'shop-lost-response');
+		try {
+			// The first request reaches the server (route.fetch commits the
+			// debit + ownership) but its response is dropped, so the client
+			// takes the same failure path as the 10s postJson timeout.
+			let dropped = false;
+			await page.route('**/api/shop/purchase', async (route) => {
+				if (dropped) return route.fallback();
+				dropped = true;
+				await route.fetch();
+				return route.abort();
+			});
+
+			await page.getByTestId('shop-action-card-back-sapphire').click();
+			await expect(page.getByTestId('shop-status')).toHaveText(
+				'Connection problem. Please try again.',
+			);
+			// The committed purchase is invisible until something re-reads it.
+			await expect(page.getByTestId('shop-item-card-back-sapphire')).toHaveAttribute(
+				'data-owned',
+				'false',
+			);
+			await expect(shopBalance(page)).toHaveText(FRESH_BALANCE);
+
+			// Retry: the server answers 409 ALREADY_OWNED carrying the
+			// post-debit balance — proof the second request never charged —
+			// and the tile flips to owned/Equip.
+			await page.getByTestId('shop-action-card-back-sapphire').click();
+			await expect(page.getByTestId('shop-item-card-back-sapphire')).toHaveAttribute(
+				'data-owned',
+				'true',
+			);
+			await expect(page.getByTestId('shop-action-card-back-sapphire')).toHaveAttribute(
+				'data-shop-action',
+				'equip',
+			);
+			await expect(shopBalance(page)).toHaveText(AFTER_CARD_BACK_BALANCE);
+			await expect(headerBalance(page)).toHaveText(AFTER_CARD_BACK_BALANCE);
+			await expect(page.getByTestId('shop-status')).toHaveText('You already own this item.');
+		} finally {
+			await context.close();
+		}
+	});
+});
+
 test.describe('chip shop mobile balance', () => {
 	test('the shop pill stays the visible mobile mirror after a purchase', async ({
 		browser,

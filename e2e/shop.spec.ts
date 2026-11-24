@@ -341,7 +341,10 @@ test.describe('chip shop lost purchase response', () => {
 			await page.route('**/api/shop/purchase', async (route) => {
 				if (dropped) return route.fallback();
 				dropped = true;
-				await route.fetch();
+				// 200 is the only status the API emits for a committed purchase —
+				// anything else means the debit never happened and this test's
+				// premise is broken, so fail here rather than at the retry.
+				expect((await route.fetch()).status()).toBe(200);
 				return route.abort();
 			});
 

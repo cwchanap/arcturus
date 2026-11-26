@@ -38,6 +38,7 @@ specs/
 
 # Generated acceptance output: put new runs in verification-output/ or a generated subfolder.
 /verification-output/
+/.superpowers/sdd/
 /test-results-*/
 /docs/superpowers/acceptance/**/_generated/
 /docs/superpowers/acceptance/**/generated/
